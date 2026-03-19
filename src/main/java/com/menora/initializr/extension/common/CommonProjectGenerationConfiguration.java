@@ -12,12 +12,16 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ClassPathResource;
 
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.Yaml;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @ProjectGenerationConfiguration
 public class CommonProjectGenerationConfiguration {
@@ -133,12 +137,37 @@ public class CommonProjectGenerationConfiguration {
         ClassPathResource resource = new ClassPathResource(classpathPath);
         if (!resource.exists()) return;
         Files.createDirectories(applicationYamlPath.getParent());
-        String content = new String(resource.getInputStream().readAllBytes());
+        String newContent = new String(resource.getInputStream().readAllBytes());
+
+        Yaml yaml = new Yaml();
+        Map<String, Object> merged;
         if (Files.exists(applicationYamlPath)) {
-            Files.writeString(applicationYamlPath, "\n---\n" + content, StandardOpenOption.APPEND);
+            Map<String, Object> existing = yaml.load(Files.readString(applicationYamlPath));
+            Map<String, Object> incoming = yaml.load(newContent);
+            merged = deepMerge(existing, incoming);
         } else {
-            Files.writeString(applicationYamlPath, content);
+            merged = yaml.load(newContent);
         }
+
+        DumperOptions opts = new DumperOptions();
+        opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+        opts.setPrettyFlow(true);
+        Files.writeString(applicationYamlPath, new Yaml(opts).dump(merged));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> deepMerge(Map<String, Object> base, Map<String, Object> override) {
+        Map<String, Object> result = new LinkedHashMap<>(base);
+        for (Map.Entry<String, Object> entry : override.entrySet()) {
+            Object baseVal = result.get(entry.getKey());
+            Object overrideVal = entry.getValue();
+            if (baseVal instanceof Map && overrideVal instanceof Map) {
+                result.put(entry.getKey(), deepMerge((Map<String, Object>) baseVal, (Map<String, Object>) overrideVal));
+            } else {
+                result.put(entry.getKey(), overrideVal);
+            }
+        }
+        return result;
     }
 
     public static void copyClasspathResource(String classpathPath, Path target) throws IOException {
