@@ -93,6 +93,7 @@ class ProjectGenerationIntegrationTests {
         ProjectStructure project = new ProjectStructure(projectDir);
 
         assertThat(project).filePaths().contains(".editorconfig");
+        assertThat(project).filePaths().doesNotContain("src/main/resources/application.properties");
     }
 
     @Test

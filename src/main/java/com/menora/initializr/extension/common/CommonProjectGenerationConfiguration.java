@@ -8,6 +8,8 @@ import io.spring.initializr.generator.project.ProjectGenerationConfiguration;
 import io.spring.initializr.generator.spring.build.BuildCustomizer;
 import io.spring.initializr.generator.project.contributor.ProjectContributor;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
@@ -34,6 +36,15 @@ public class CommonProjectGenerationConfiguration {
                             .name("Menora Artifactory Snapshots")
                             .snapshotsEnabled(true)
                             .build());
+        };
+    }
+
+    @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE)
+    ProjectContributor removeApplicationPropertiesContributor() {
+        return projectRoot -> {
+            Path appProperties = projectRoot.resolve("src/main/resources/application.properties");
+            Files.deleteIfExists(appProperties);
         };
     }
 
