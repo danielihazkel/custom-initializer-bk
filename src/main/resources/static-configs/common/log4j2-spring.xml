@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+
+    <Properties>
+        <Property name="LOG_PATH">${sys:LOG_PATH:-logs}</Property>
+        <Property name="APP_NAME">${spring:spring.application.name:-app}</Property>
+        <Property name="LOG_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="CONSOLE" target="SYSTEM_OUT">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+        </Console>
+
+        <Console name="JSON_CONSOLE" target="SYSTEM_OUT">
+            <JsonTemplateLayout>
+                <EventTemplateAdditionalField key="app" value="${APP_NAME}"/>
+            </JsonTemplateLayout>
+        </Console>
+
+        <RollingFile name="FILE"
+                     fileName="${LOG_PATH}/${APP_NAME}.log"
+                     filePattern="${LOG_PATH}/${APP_NAME}.%d{yyyy-MM-dd}.%i.log.gz">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="100MB"/>
+                <TimeBasedTriggeringPolicy/>
+            </Policies>
+            <DefaultRolloverStrategy>
+                <Delete basePath="${LOG_PATH}" maxDepth="1">
+                    <IfLastModified age="30d"/>
+                    <IfAccumulatedFileSize exceeds="3GB"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+
+        <Async name="ASYNC_PROD">
+            <AppenderRef ref="JSON_CONSOLE"/>
+            <AppenderRef ref="FILE"/>
+        </Async>
+
+        <Routing name="ROUTING">
+            <Routes pattern="${spring:spring.profiles.active}">
+                <Route key="prod" ref="ASYNC_PROD"/>
+                <Route key="staging" ref="ASYNC_PROD"/>
+                <Route ref="CONSOLE"/>
+            </Routes>
+        </Routing>
+    </Appenders>
+
+    <Loggers>
+        <Root level="INFO">
+            <AppenderRef ref="ROUTING"/>
+        </Root>
+    </Loggers>
+
+</Configuration>

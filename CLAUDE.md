@@ -56,7 +56,74 @@ Skipping step 4 means the class is silently ignored — the framework won't auto
 
 ### Template Substitution
 
-Templates in `resources/templates/*.mustache` are **not** processed by a Mustache engine. They use plain `String.replace("{{packageName}}", packageName)`. The only substitution variable is `{{packageName}}`. If more variables are needed in the future, either extend `copyClasspathResource` or add a proper Mustache dependency.
+There are **two distinct substitution systems** — do not confuse them:
+
+1. **`renderTemplate()` in `CommonProjectGenerationConfiguration`** — used for common project files (Dockerfile, Jenkinsfile, k8s-values.yaml, VERSION). Replaces three variables via `String.replace`:
+   - `{{artifactId}}` — from `ProjectDescription.getArtifactId()`
+   - `{{groupId}}` — from `ProjectDescription.getGroupId()`
+   - `{{version}}` — from `ProjectDescription.getVersion()`
+
+2. **`String.replace("{{packageName}}", packageName)`** — used in extension configs when generating Java classes (KafkaConfig, SecurityConfig, JpaConfig, RqueueConfig). Only the `{{packageName}}` variable is supported here.
+
+Neither system uses a real Mustache engine. The `.mustache` file extension is cosmetic only.
+
+### CommonProjectGenerationConfiguration — Files Injected for Every Project
+
+This configuration runs unconditionally. It injects **9 items**:
+
+| Bean | Source (classpath) | Destination in generated project |
+|---|---|---|
+| `log4j2Contributor` | `static-configs/common/log4j2-spring.xml` | `src/main/resources/log4j2-spring.xml` |
+| `editorConfigContributor` | `static-configs/common/.editorconfig` | `.editorconfig` |
+| `entrypointContributor` | `static-configs/common/entrypoint.sh` | `entrypoint.sh` |
+| `settingsXmlContributor` | `static-configs/common/settings.xml` | `settings.xml` |
+| `versionFileContributor` | `templates/VERSION.mustache` (rendered) | `VERSION` |
+| `dockerfileContributor` | `templates/Dockerfile.mustache` (rendered) | `Dockerfile` |
+| `jenkinsfileContributor` | `templates/Jenkinsfile.mustache` (rendered) | `k8s/Jenkinsfile` |
+| `k8sValuesContributor` | `templates/k8s-values.mustache` (rendered) | `k8s/values.yaml` |
+| `artifactoryBuildCustomizer` | *(no file)* | Injects `menora-release` + `menora-snapshot` repos into `pom.xml` |
+
+**log4j2 note:** `log4j2BuildCustomizer` also adds `spring-boot-starter-log4j2` and excludes `spring-boot-starter-logging` from the generated `pom.xml`. `logback-spring.xml` no longer exists — it was replaced by `log4j2-spring.xml`.
+
+### Extension Quick Reference
+
+| Dependency ID | Config class | Files injected into generated project |
+|---|---|---|
+| *(any)* | `CommonProjectGenerationConfiguration` | See table above (9 items) |
+| `kafka` | `KafkaProjectGenerationConfiguration` | `application-kafka.yml`, `KafkaConfig.java` |
+| `security` | `SecurityProjectGenerationConfiguration` | `application-security.yml`, `SecurityConfig.java` |
+| `data-jpa` | `JpaProjectGenerationConfiguration` | `application-jpa.yml`, `JpaConfig.java` |
+| `actuator` | `ObservabilityProjectGenerationConfiguration` | `application-observability.yml` |
+| `rqueue` | `RqueueProjectGenerationConfiguration` | `application-rqueue.yml`, `RqueueConfig.java` |
+| `logging` | `LoggingProjectGenerationConfiguration` | `application-logging.yml` |
+
+YAML configs land in `src/main/resources/`. Java classes land in `src/main/java/<packagePath>/config/`.
+
+### InitializrWebConfiguration
+
+`src/main/java/com/menora/initializr/config/InitializrWebConfiguration.java`
+
+A `@Component`, `@Order(Integer.MIN_VALUE)` servlet filter (extends `OncePerRequestFilter`) that runs before all other filters and wraps every request with two fixes:
+
+1. **`configurationFileFormat` default** — injects `configurationFileFormat=properties` when the parameter is absent. Some clients (e.g. IntelliJ) don't send this param and the framework would otherwise fail.
+
+2. **`X-Forwarded-Port` sanitization** — returns an empty string if the header is absent, unparseable as an integer, or the literal string `"null"`. Prevents the Initializr from concatenating `null` into URLs (e.g. `"8080null"`), which happens when running behind a Vite dev server proxy.
+
+### Test Infrastructure
+
+`src/test/java/com/menora/initializr/TestInvokerConfiguration.java` — a `@TestConfiguration` that provides a `ProjectGenerationInvoker<ProjectRequest>` bean. Test classes import it via `@Import(TestInvokerConfiguration.class)` to invoke project generation directly without HTTP.
+
+**Test coverage summary (`ProjectGenerationIntegrationTests`):**
+- `metadataEndpointReturnsOk` — HTTP smoke test; checks `kafka` and `rqueue` appear in metadata
+- `generatedProjectContainsArtifactoryRepo` — verifies Artifactory repos in generated `pom.xml`
+- `generatedProjectContainsVersionDockerfileAndK8s` — checks VERSION content, Dockerfile artifact ID substitution, k8s/values.yaml group ID substitution
+- `generatedProjectContainsLog4j2` — verifies `log4j2-spring.xml` present, `logback-spring.xml` absent, `spring-boot-starter-log4j2` in pom
+- `generatedProjectContainsEditorconfig` — checks `.editorconfig` present
+- `securityDependencyInjectsSecurityConfig` — checks `application-security.yml` + `SecurityConfig.java`
+- `jpaDependencyInjectsJpaConfig` — checks `application-jpa.yml` + `JpaConfig.java`
+- `actuatorDependencyInjectsObservabilityConfig` — checks `application-observability.yml`
+- `rqueueDependencyInjectsRqueueConfig` — checks `application-rqueue.yml` + `RqueueConfig.java`
+- `multipleDependenciesInjectAllConfigs` — combines kafka + security + jpa + actuator; spot-checks all files
 
 ### Key Version Properties
 

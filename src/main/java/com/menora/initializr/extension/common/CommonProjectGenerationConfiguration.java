@@ -1,5 +1,6 @@
 package com.menora.initializr.extension.common;
 
+import io.spring.initializr.generator.buildsystem.Dependency;
 import io.spring.initializr.generator.buildsystem.MavenRepository;
 import io.spring.initializr.generator.buildsystem.maven.MavenBuild;
 import io.spring.initializr.generator.project.ProjectDescription;
@@ -36,10 +37,23 @@ public class CommonProjectGenerationConfiguration {
     }
 
     @Bean
-    ProjectContributor logbackContributor() {
+    ProjectContributor log4j2Contributor() {
         return projectRoot -> {
-            copyClasspathResource("static-configs/common/logback-spring.xml",
-                    projectRoot.resolve("src/main/resources/logback-spring.xml"));
+            copyClasspathResource("static-configs/common/log4j2-spring.xml",
+                    projectRoot.resolve("src/main/resources/log4j2-spring.xml"));
+        };
+    }
+
+    @Bean
+    BuildCustomizer<MavenBuild> log4j2BuildCustomizer() {
+        return build -> {
+            build.dependencies().add("spring-boot-starter",
+                Dependency.withCoordinates("org.springframework.boot", "spring-boot-starter")
+                    .exclusions(new Dependency.Exclusion("org.springframework.boot", "spring-boot-starter-logging"))
+                    .build());
+            build.dependencies().add("spring-boot-starter-log4j2",
+                Dependency.withCoordinates("org.springframework.boot", "spring-boot-starter-log4j2")
+                    .build());
         };
     }
 

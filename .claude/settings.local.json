@@ -25,7 +25,16 @@
       "Bash(cmd /c \"taskkill /F /IM java.exe\" 2>&1 && sleep 2 && echo \"done\")",
       "Bash(cmd /c \"wmic process where \\\\\"name='java.exe'\\\\\" delete\" 2>&1 && sleep 2 && echo \"done\")",
       "Bash(powershell -Command \"Get-Process -Name java -ErrorAction SilentlyContinue | Stop-Process -Force\" 2>&1 && sleep 3 && netstat -ano | grep \":808\" | grep LISTEN)",
-      "Bash(powershell -Command \"Get-Process -Name java -ErrorAction SilentlyContinue | Stop-Process -Force\" 2>&1; sleep 2; cd C:/Users/DANIEL/projects/offline-spring-init && mvn clean package -Dmaven.test.skip=true -q 2>&1 && echo \"BUILD OK\")"
+      "Bash(powershell -Command \"Get-Process -Name java -ErrorAction SilentlyContinue | Stop-Process -Force\" 2>&1; sleep 2; cd C:/Users/DANIEL/projects/offline-spring-init && mvn clean package -Dmaven.test.skip=true -q 2>&1 && echo \"BUILD OK\")",
+      "Bash(xargs -I{} jar tf {})",
+      "Bash(xargs -I{} jar xf {} io/spring/initializr/generator/buildsystem/Dependency.class)",
+      "Bash(mvn compile:*)",
+      "Bash(mvn test:*)",
+      "Bash(xargs cat:*)",
+      "Bash(grep -v \".class$\")",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Bash(done)"
     ]
   }
 }

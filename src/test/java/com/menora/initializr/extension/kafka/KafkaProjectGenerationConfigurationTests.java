@@ -1,19 +1,21 @@
 package com.menora.initializr.extension.kafka;
 
-import io.spring.initializr.generator.test.ProjectAssertion;
-import io.spring.initializr.generator.test.ProjectStructure;
+import com.menora.initializr.TestInvokerConfiguration;
+import io.spring.initializr.generator.test.project.ProjectStructure;
 import io.spring.initializr.web.project.ProjectGenerationInvoker;
 import io.spring.initializr.web.project.ProjectRequest;
 import io.spring.initializr.web.project.WebProjectRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestInvokerConfiguration.class)
 class KafkaProjectGenerationConfigurationTests {
 
     @Autowired
@@ -29,6 +31,8 @@ class KafkaProjectGenerationConfigurationTests {
         request.setLanguage("java");
         request.setJavaVersion("21");
         request.setType("maven-project");
+        request.setPackaging("jar");
+        request.setConfigurationFileFormat("properties");
         request.getDependencies().add("web");
         request.getDependencies().add("kafka");
 
@@ -50,6 +54,8 @@ class KafkaProjectGenerationConfigurationTests {
         request.setLanguage("java");
         request.setJavaVersion("21");
         request.setType("maven-project");
+        request.setPackaging("jar");
+        request.setConfigurationFileFormat("properties");
         request.getDependencies().add("web");
 
         Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
