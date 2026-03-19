@@ -1,0 +1,69 @@
+pipeline {
+    agent any
+
+    environment {
+        APP_NAME     = '{{artifactId}}'
+        IMAGE_REPO   = "repo.menora.co.il/docker/{{groupId}}/{{artifactId}}"
+        IMAGE_TAG    = sh(script: 'cat VERSION', returnStdout: true).trim()
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh './mvnw clean package -DskipTests -B'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh './mvnw test -B'
+            }
+            post {
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                }
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    docker.withRegistry('https://repo.menora.co.il/docker', 'artifactory-credentials') {
+                        def image = docker.build("${IMAGE_REPO}:${IMAGE_TAG}")
+                        image.push()
+                        image.push('latest')
+                    }
+                }
+            }
+        }
+
+        stage('Deploy') {
+            when {
+                branch 'main'
+            }
+            steps {
+                sh """
+                    helm upgrade --install ${APP_NAME} ./k8s \
+                        --set image.tag=${IMAGE_TAG} \
+                        --namespace ${APP_NAME} \
+                        --create-namespace \
+                        --wait
+                """
+            }
+        }
+
+    }
+
+    post {
+        failure {
+            echo "Pipeline failed for ${APP_NAME}:${IMAGE_TAG}"
+        }
+    }
+}

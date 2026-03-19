@@ -1,0 +1,9 @@
+rqueue:
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+  retry:
+    max-retries: 3
+    backoff-multiplier: 2
+  listener:
+    concurrency: 5

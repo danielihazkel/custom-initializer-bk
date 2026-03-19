@@ -1,0 +1,140 @@
+server:
+  port: 8080
+
+spring:
+  cache:
+    type: jcache
+
+initializr:
+  group-id:
+    value: com.menora
+  artifact-id:
+    value: demo
+  version:
+    value: 0.0.1-SNAPSHOT
+  name:
+    value: demo
+  description:
+    value: Menora Spring Boot project
+  package-name:
+    value: com.menora.demo
+  java-versions:
+    - id: 21
+      default: true
+    - id: 17
+  languages:
+    - name: Java
+      id: java
+      default: true
+    - name: Kotlin
+      id: kotlin
+  boot-versions:
+    - id: 3.2.1
+      name: 3.2.1
+      default: true
+  configuration-file-formats:
+    - name: properties
+      id: properties
+      default: true
+    - name: yaml
+      id: yaml
+  packagings:
+    - name: Jar
+      id: jar
+      default: true
+    - name: War
+      id: war
+  types:
+    - name: Maven Project
+      id: maven-project
+      description: Generate a Maven-based project archive
+      default: true
+      tags:
+        build: maven
+        format: project
+    - name: Gradle Project
+      id: gradle-project
+      description: Generate a Gradle-based project archive
+      tags:
+        build: gradle
+        format: project
+  env:
+    repositories:
+      menora-release:
+        name: Menora Artifactory Releases
+        url: https://repo.menora.co.il/artifactory/libs-release
+        releases-enabled: true
+        snapshots-enabled: false
+      menora-snapshot:
+        name: Menora Artifactory Snapshots
+        url: https://repo.menora.co.il/artifactory/libs-snapshot
+        releases-enabled: false
+        snapshots-enabled: true
+  dependencies:
+    - name: Menora Standards
+      content:
+        - name: Sonus Rqueue
+          id: rqueue
+          groupId: com.sonus
+          artifactId: sonus-rqueue
+          version: 1.0.0
+          description: Sonus Rqueue messaging library
+          repository: menora-release
+
+    - name: Web
+      content:
+        - name: Spring Web
+          id: web
+          description: Build web applications with Spring MVC
+        - name: Spring Reactive Web
+          id: webflux
+          description: Build reactive web applications with Spring WebFlux
+
+    - name: Data
+      content:
+        - name: Spring Data JPA
+          id: data-jpa
+          description: Persist data with JPA and Hibernate
+        - name: PostgreSQL Driver
+          id: postgresql
+          groupId: org.postgresql
+          artifactId: postgresql
+          scope: runtime
+
+    - name: Messaging
+      content:
+        - name: Spring for Apache Kafka
+          id: kafka
+          description: Kafka messaging support
+
+    - name: Security
+      content:
+        - name: Spring Security
+          id: security
+          description: Authentication and authorization framework
+
+    - name: Observability
+      content:
+        - name: Spring Boot Actuator
+          id: actuator
+          description: Production-ready features
+        - name: Micrometer Prometheus
+          id: prometheus
+          groupId: io.micrometer
+          artifactId: micrometer-registry-prometheus
+          scope: runtime
+
+    - name: Logging
+      content:
+        - name: Menora Logging Standards
+          id: logging
+          description: Corporate logging configuration and standards
+          # No external dependency — only injects config files
+          groupId: org.springframework.boot
+          artifactId: spring-boot-starter-logging
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
