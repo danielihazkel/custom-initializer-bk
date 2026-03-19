@@ -27,36 +27,68 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        if (request.getParameter(FORMAT_PARAM) == null) {
-            request = new HttpServletRequestWrapper(request) {
-                @Override
-                public String getParameter(String name) {
-                    if (FORMAT_PARAM.equals(name)) return DEFAULT_FORMAT;
-                    return super.getParameter(name);
-                }
+        chain.doFilter(new HttpServletRequestWrapper(request) {
 
-                @Override
-                public String[] getParameterValues(String name) {
-                    if (FORMAT_PARAM.equals(name)) return new String[]{DEFAULT_FORMAT};
-                    return super.getParameterValues(name);
-                }
+            // Always inject configurationFileFormat default if absent.
+            @Override
+            public String getParameter(String name) {
+                if (FORMAT_PARAM.equals(name) && super.getParameter(name) == null) return DEFAULT_FORMAT;
+                return super.getParameter(name);
+            }
 
-                @Override
-                public Map<String, String[]> getParameterMap() {
-                    Map<String, String[]> map = new LinkedHashMap<>(super.getParameterMap());
-                    map.putIfAbsent(FORMAT_PARAM, new String[]{DEFAULT_FORMAT});
-                    return Collections.unmodifiableMap(map);
-                }
+            @Override
+            public String[] getParameterValues(String name) {
+                if (FORMAT_PARAM.equals(name) && super.getParameter(name) == null) return new String[]{DEFAULT_FORMAT};
+                return super.getParameterValues(name);
+            }
 
-                @Override
-                public Enumeration<String> getParameterNames() {
-                    List<String> names = Collections.list(super.getParameterNames());
-                    if (!names.contains(FORMAT_PARAM)) names.add(FORMAT_PARAM);
-                    return Collections.enumeration(names);
+            @Override
+            public Map<String, String[]> getParameterMap() {
+                Map<String, String[]> map = new LinkedHashMap<>(super.getParameterMap());
+                map.putIfAbsent(FORMAT_PARAM, new String[]{DEFAULT_FORMAT});
+                return Collections.unmodifiableMap(map);
+            }
+
+            @Override
+            public Enumeration<String> getParameterNames() {
+                List<String> names = Collections.list(super.getParameterNames());
+                if (!names.contains(FORMAT_PARAM)) names.add(FORMAT_PARAM);
+                return Collections.enumeration(names);
+            }
+
+            /**
+             * Sanitize X-Forwarded-Port: the initializr concatenates this header value
+             * directly into the app URL string. If the header is absent, Java null
+             * concatenation produces "8080null". Return an empty string instead so the
+             * concatenation resolves to the bare port number (e.g. "8080").
+             */
+            @Override
+            public String getHeader(String name) {
+                if ("X-Forwarded-Port".equalsIgnoreCase(name)) {
+                    String value = super.getHeader(name);
+                    if (value == null) return "";
+                    try {
+                        Integer.parseInt(value.trim());
+                        return value.trim();
+                    } catch (NumberFormatException e) {
+                        return ""; // e.g. Vite sends literal "null" — ignore it
+                    }
                 }
-            };
-        }
-        chain.doFilter(request, response);
+                return super.getHeader(name);
+            }
+
+            @Override
+            public Enumeration<String> getHeaders(String name) {
+                if ("X-Forwarded-Port".equalsIgnoreCase(name)) {
+                    String sanitized = getHeader(name);
+                    return Collections.enumeration(
+                            sanitized.isEmpty() ? Collections.emptyList() : Collections.singletonList(sanitized)
+                    );
+                }
+                return super.getHeaders(name);
+            }
+
+        }, response);
     }
 
 }
