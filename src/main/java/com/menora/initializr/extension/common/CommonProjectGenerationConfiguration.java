@@ -15,6 +15,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 
 @ProjectGenerationConfiguration
 public class CommonProjectGenerationConfiguration {
@@ -115,6 +116,18 @@ public class CommonProjectGenerationConfiguration {
             String content = renderTemplate("templates/k8s-values.mustache", description);
             Files.writeString(k8sDir.resolve("values.yaml"), content);
         };
+    }
+
+    public static void appendToApplicationYaml(String classpathPath, Path applicationYamlPath) throws IOException {
+        ClassPathResource resource = new ClassPathResource(classpathPath);
+        if (!resource.exists()) return;
+        Files.createDirectories(applicationYamlPath.getParent());
+        String content = new String(resource.getInputStream().readAllBytes());
+        if (Files.exists(applicationYamlPath)) {
+            Files.writeString(applicationYamlPath, "\n---\n" + content, StandardOpenOption.APPEND);
+        } else {
+            Files.writeString(applicationYamlPath, content);
+        }
     }
 
     public static void copyClasspathResource(String classpathPath, Path target) throws IOException {

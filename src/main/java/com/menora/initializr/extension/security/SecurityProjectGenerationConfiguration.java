@@ -19,9 +19,9 @@ public class SecurityProjectGenerationConfiguration {
     @Bean
     ProjectContributor securityYamlContributor() {
         return projectRoot -> {
-            CommonProjectGenerationConfiguration.copyClasspathResource(
+            CommonProjectGenerationConfiguration.appendToApplicationYaml(
                     "static-configs/security/application-security.yml",
-                    projectRoot.resolve("src/main/resources/application-security.yml"));
+                    projectRoot.resolve("src/main/resources/application.yaml"));
         };
     }
 

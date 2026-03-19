@@ -19,9 +19,9 @@ public class JpaProjectGenerationConfiguration {
     @Bean
     ProjectContributor jpaYamlContributor() {
         return projectRoot -> {
-            CommonProjectGenerationConfiguration.copyClasspathResource(
+            CommonProjectGenerationConfiguration.appendToApplicationYaml(
                     "static-configs/jpa/application-jpa.yml",
-                    projectRoot.resolve("src/main/resources/application-jpa.yml"));
+                    projectRoot.resolve("src/main/resources/application.yaml"));
         };
     }
 

@@ -19,9 +19,9 @@ public class RqueueProjectGenerationConfiguration {
     @Bean
     ProjectContributor rqueueYamlContributor() {
         return projectRoot -> {
-            CommonProjectGenerationConfiguration.copyClasspathResource(
+            CommonProjectGenerationConfiguration.appendToApplicationYaml(
                     "static-configs/rqueue/application-rqueue.yml",
-                    projectRoot.resolve("src/main/resources/application-rqueue.yml"));
+                    projectRoot.resolve("src/main/resources/application.yaml"));
         };
     }
 

@@ -19,9 +19,9 @@ public class KafkaProjectGenerationConfiguration {
     @Bean
     ProjectContributor kafkaYamlContributor() {
         return projectRoot -> {
-            CommonProjectGenerationConfiguration.copyClasspathResource(
+            CommonProjectGenerationConfiguration.appendToApplicationYaml(
                     "static-configs/kafka/application-kafka.yml",
-                    projectRoot.resolve("src/main/resources/application-kafka.yml"));
+                    projectRoot.resolve("src/main/resources/application.yaml"));
         };
     }
 

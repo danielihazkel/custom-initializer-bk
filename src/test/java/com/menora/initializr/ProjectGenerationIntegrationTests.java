@@ -96,6 +96,20 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void kafkaDependencyInjectsConfigFiles() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("kafka");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("bootstrap-servers");
+        assertThat(project).filePaths()
+                .contains("src/main/java/com/menora/demo/config/KafkaConfig.java");
+    }
+
+    @Test
     void securityDependencyInjectsSecurityConfig() throws Exception {
         WebProjectRequest request = createBaseRequest();
         request.getDependencies().add("web");
@@ -104,8 +118,9 @@ class ProjectGenerationIntegrationTests {
         Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
         ProjectStructure project = new ProjectStructure(projectDir);
 
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("oauth2");
         assertThat(project).filePaths()
-                .contains("src/main/resources/application-security.yml")
                 .contains("src/main/java/com/menora/demo/config/SecurityConfig.java");
     }
 
@@ -118,8 +133,9 @@ class ProjectGenerationIntegrationTests {
         Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
         ProjectStructure project = new ProjectStructure(projectDir);
 
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("datasource");
         assertThat(project).filePaths()
-                .contains("src/main/resources/application-jpa.yml")
                 .contains("src/main/java/com/menora/demo/config/JpaConfig.java");
     }
 
@@ -130,10 +146,9 @@ class ProjectGenerationIntegrationTests {
         request.getDependencies().add("actuator");
 
         Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
-        ProjectStructure project = new ProjectStructure(projectDir);
 
-        assertThat(project).filePaths()
-                .contains("src/main/resources/application-observability.yml");
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("management");
     }
 
     @Test
@@ -144,8 +159,9 @@ class ProjectGenerationIntegrationTests {
         Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
         ProjectStructure project = new ProjectStructure(projectDir);
 
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("rqueue");
         assertThat(project).filePaths()
-                .contains("src/main/resources/application-rqueue.yml")
                 .contains("src/main/java/com/menora/demo/config/RqueueConfig.java");
     }
 
@@ -162,15 +178,19 @@ class ProjectGenerationIntegrationTests {
         ProjectStructure project = new ProjectStructure(projectDir);
 
         assertThat(project).filePaths()
-                .contains("src/main/resources/application-kafka.yml")
-                .contains("src/main/resources/application-security.yml")
-                .contains("src/main/resources/application-jpa.yml")
-                .contains("src/main/resources/application-observability.yml")
+                .contains("src/main/resources/application.yaml")
                 .contains("src/main/resources/log4j2-spring.xml")
                 .contains(".editorconfig")
                 .contains("src/main/java/com/menora/demo/config/KafkaConfig.java")
                 .contains("src/main/java/com/menora/demo/config/SecurityConfig.java")
                 .contains("src/main/java/com/menora/demo/config/JpaConfig.java");
+
+        String appYaml = Files.readString(projectDir.resolve("src/main/resources/application.yaml"));
+        assertThat(appYaml)
+                .contains("bootstrap-servers")
+                .contains("oauth2")
+                .contains("datasource")
+                .contains("management");
     }
 
     private WebProjectRequest createBaseRequest() {

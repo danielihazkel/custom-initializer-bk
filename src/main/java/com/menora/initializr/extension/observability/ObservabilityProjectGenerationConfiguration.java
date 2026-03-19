@@ -13,9 +13,9 @@ public class ObservabilityProjectGenerationConfiguration {
     @Bean
     ProjectContributor observabilityYamlContributor() {
         return projectRoot -> {
-            CommonProjectGenerationConfiguration.copyClasspathResource(
+            CommonProjectGenerationConfiguration.appendToApplicationYaml(
                     "static-configs/observability/application-observability.yml",
-                    projectRoot.resolve("src/main/resources/application-observability.yml"));
+                    projectRoot.resolve("src/main/resources/application.yaml"));
         };
     }
 

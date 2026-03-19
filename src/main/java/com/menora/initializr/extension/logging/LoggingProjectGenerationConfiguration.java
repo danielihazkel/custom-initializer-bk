@@ -13,9 +13,9 @@ public class LoggingProjectGenerationConfiguration {
     @Bean
     ProjectContributor loggingYamlContributor() {
         return projectRoot -> {
-            CommonProjectGenerationConfiguration.copyClasspathResource(
+            CommonProjectGenerationConfiguration.appendToApplicationYaml(
                     "static-configs/logging/application-logging.yml",
-                    projectRoot.resolve("src/main/resources/application-logging.yml"));
+                    projectRoot.resolve("src/main/resources/application.yaml"));
         };
     }
 
