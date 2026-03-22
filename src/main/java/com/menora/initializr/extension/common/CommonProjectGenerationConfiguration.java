@@ -74,6 +74,15 @@ public class CommonProjectGenerationConfiguration {
     }
 
     @Bean
+    BuildCustomizer<MavenBuild> lombokBuildCustomizer() {
+        return build -> {
+            build.dependencies().add("lombok",
+                Dependency.withCoordinates("org.projectlombok", "lombok")
+                    .build());
+        };
+    }
+
+    @Bean
     ProjectContributor editorConfigContributor() {
         return projectRoot -> {
             copyClasspathResource("static-configs/common/.editorconfig",
