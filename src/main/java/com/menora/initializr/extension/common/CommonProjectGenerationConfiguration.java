@@ -117,7 +117,9 @@ public class CommonProjectGenerationConfiguration {
     @Bean
     ProjectContributor dockerfileContributor(ProjectDescription description) {
         return projectRoot -> {
-            String content = renderTemplate("templates/Dockerfile.mustache", description);
+            String javaVersion = description.getLanguage().jvmVersion();
+            String templatePath = "templates/Dockerfile-java" + javaVersion + ".mustache";
+            String content = renderTemplate(templatePath, description);
             Files.writeString(projectRoot.resolve("Dockerfile"), content);
         };
     }
