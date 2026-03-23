@@ -135,6 +135,16 @@ initializr:
           groupId: org.springframework.boot
           artifactId: spring-boot-starter-log4j2
 
+menora:
+  dependency-options:
+    kafka:
+      - id: consumer-example
+        label: "Consumer Example"
+        description: "Add a KafkaConsumerExample.java class"
+      - id: producer-example
+        label: "Producer Example"
+        description: "Add a KafkaProducerExample.java class"
+
 management:
   endpoints:
     web:

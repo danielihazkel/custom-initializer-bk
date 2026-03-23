@@ -22,6 +22,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Add a New Dependency (no custom config needed)](#add-a-new-dependency-no-custom-config-needed)
    - [Add a New Dependency with a Static Config File](#add-a-new-dependency-with-a-static-config-file)
    - [Add a New Dependency with a Generated Java Class](#add-a-new-dependency-with-a-generated-java-class)
+   - [Add Sub-Options to a Dependency](#add-sub-options-to-a-dependency)
    - [Edit an Existing Static Config File](#edit-an-existing-static-config-file)
    - [Edit an Existing Generated Java Class Template](#edit-an-existing-generated-java-class-template)
    - [Change the Artifactory URL](#change-the-artifactory-url)
@@ -177,7 +178,7 @@ curl http://localhost:8080/actuator/health
 
 | Dependency ID | Files Injected |
 |--------------|---------------|
-| `kafka` | `src/main/resources/application-kafka.yml`<br>`src/main/java/.../config/KafkaConfig.java` |
+| `kafka` | `src/main/resources/application-kafka.yml`<br>`src/main/java/.../config/KafkaConfig.java`<br>*(optional)* `KafkaConsumerExample.java`, `KafkaProducerExample.java` |
 | `security` | `src/main/resources/application-security.yml`<br>`src/main/java/.../config/SecurityConfig.java` |
 | `data-jpa` | `src/main/resources/application-jpa.yml`<br>`src/main/java/.../config/JpaConfig.java` |
 | `actuator` | `src/main/resources/application-observability.yml` |
@@ -400,6 +401,103 @@ import java.nio.file.Path;
 
 ---
 
+### Add Sub-Options to a Dependency
+
+Sub-options are optional extras that a user can tick after selecting a dependency. For example, selecting Kafka then ticking "Consumer Example" injects a ready-made `KafkaConsumerExample.java` into the generated project. Sub-options are independent of the base dependency — the base files (YAML config, main config class) are always injected; sub-option files are only injected when explicitly chosen.
+
+#### How it works end-to-end
+
+```
+application.yml  (menora.dependency-options)
+    → GET /metadata/extensions          ← UI fetches this on load, shows checkboxes
+    → /starter.zip?opts-{depId}=opt1,opt2   ← UI sends selected options
+    → InitializrWebConfiguration filter  → ProjectOptionsContext (ThreadLocal)
+    → *ProjectGenerationConfiguration    → checks hasOption() → writes files
+```
+
+#### Step 1 — Declare the sub-options in `application.yml`
+
+Under `menora.dependency-options`, add a key matching the dependency ID. Each entry needs `id`, `label`, and `description`:
+
+```yaml
+menora:
+  dependency-options:
+    kafka:                              # must match the dependency id
+      - id: consumer-example
+        label: "Consumer Example"
+        description: "Add a KafkaConsumerExample.java class"
+      - id: producer-example
+        label: "Producer Example"
+        description: "Add a KafkaProducerExample.java class"
+    my-dep-id:                          # add a new dependency's options here
+      - id: my-option
+        label: "My Option"
+        description: "Add something extra"
+```
+
+This is the only change needed for the frontend — the `/metadata/extensions` endpoint reads directly from this config and the UI renders checkboxes automatically.
+
+#### Step 2 — Create template files (if the option adds a Java class)
+
+Add a `.mustache` file in `src/main/resources/templates/`. The only substitution variable is `{{packageName}}`:
+
+```
+src/main/resources/templates/my-dep-my-option.mustache
+```
+
+```java
+package {{packageName}}.config;
+
+import org.springframework.stereotype.Component;
+
+@Component
+public class MyOptionExample {
+    // ...
+}
+```
+
+If the option adds a static file (YAML, XML) instead of a Java class, put it in `src/main/resources/static-configs/` and use `appendToApplicationYaml` or `Files.copy` in the contributor.
+
+#### Step 3 — Add a conditional contributor bean to the extension config class
+
+In the relevant `*ProjectGenerationConfiguration.java`, inject `ProjectOptionsContext` and add a `@Bean` with an early-return guard:
+
+```java
+@Bean
+ProjectContributor myOptionContributor(ProjectOptionsContext optionsContext, ProjectDescription description) {
+    return projectRoot -> {
+        if (!optionsContext.hasOption("my-dep-id", "my-option")) return;  // skip if not selected
+
+        String packageName = description.getPackageName();
+        String packagePath = packageName.replace('.', '/');
+        Path configDir = projectRoot.resolve("src/main/java/" + packagePath + "/config");
+        Files.createDirectories(configDir);
+
+        try (InputStream in = getClass().getClassLoader()
+                .getResourceAsStream("templates/my-dep-my-option.mustache")) {
+            String content = new String(in.readAllBytes()).replace("{{packageName}}", packageName);
+            Files.writeString(configDir.resolve("MyOptionExample.java"), content);
+        }
+    };
+}
+```
+
+The `ProjectOptionsContext` bean lives in the main application context and is automatically accessible from the generation child context — no additional wiring needed.
+
+#### Modifying existing sub-options
+
+- **Change label/description:** Edit the entry in `application.yml` under `menora.dependency-options`. No code change needed.
+- **Change the generated file content:** Edit the corresponding `.mustache` template. No code change needed.
+- **Add a new option to an existing dependency:** Add a new entry to the YAML list (Step 1) and a new `@Bean` in the config class (Step 3).
+
+#### Removing a sub-option
+
+1. Remove the entry from `application.yml` — the UI will stop showing it.
+2. Remove the corresponding `@Bean` from the extension config class.
+3. Delete the template file if it is no longer used.
+
+---
+
 ### Edit an Existing Static Config File
 
 Just edit the file directly. No Java code changes needed. For example, to change the Kafka consumer group default:
@@ -573,7 +671,7 @@ void myFeatureDependencyInjectsConfig() throws Exception {
 | `webflux` | Spring Reactive Web | Web | No |
 | `data-jpa` | Spring Data JPA | Data | `application-jpa.yml`, `JpaConfig.java` |
 | `postgresql` | PostgreSQL Driver | Data | No |
-| `kafka` | Spring for Apache Kafka | Messaging | `application-kafka.yml`, `KafkaConfig.java` |
+| `kafka` | Spring for Apache Kafka | Messaging | `application-kafka.yml`, `KafkaConfig.java`<br>*(opt)* `KafkaConsumerExample.java`, `KafkaProducerExample.java` |
 | `security` | Spring Security | Security | `application-security.yml`, `SecurityConfig.java` |
 | `actuator` | Spring Boot Actuator | Observability | `application-observability.yml` |
 | `prometheus` | Micrometer Prometheus | Observability | No |
@@ -585,8 +683,11 @@ void myFeatureDependencyInjectsConfig() throws Exception {
 ## Architecture Reference
 
 ```
-Request arrives
+Request arrives  (?dependencies=kafka&opts-kafka=consumer-example)
        │
+       ▼
+InitializrWebConfiguration filter
+       │  populates ProjectOptionsContext (ThreadLocal) with opts-* params
        ▼
 initializr-web (REST layer)
        │
@@ -595,21 +696,23 @@ ProjectGenerationInvoker
        │  creates a child application context per generation request
        ▼
 All registered ProjectGenerationConfigurations evaluated:
-  ┌─────────────────────────────────────────────┐
-  │ CommonProjectGenerationConfiguration        │ ← always runs
-  │   → logback, .editorconfig, Artifactory repo│
-  └─────────────────────────────────────────────┘
-  ┌─────────────────────────────────────────────┐
-  │ KafkaProjectGenerationConfiguration         │ ← only if "kafka" requested
-  │   → application-kafka.yml, KafkaConfig.java │
-  └─────────────────────────────────────────────┘
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ CommonProjectGenerationConfiguration                            │ ← always runs
+  │   → log4j2, .editorconfig, Dockerfile, Jenkinsfile, k8s/...    │
+  └─────────────────────────────────────────────────────────────────┘
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ KafkaProjectGenerationConfiguration                             │ ← only if "kafka" selected
+  │   → application-kafka.yml, KafkaConfig.java                    │
+  │   → KafkaConsumerExample.java  (only if opts-kafka=consumer-...) │
+  │   → KafkaProducerExample.java  (only if opts-kafka=producer-...) │
+  └─────────────────────────────────────────────────────────────────┘
   ... (etc for each extension)
        │
        ▼
 ProjectContributors write files to a temp directory
        │
        ▼
-Temp directory zipped and returned as HTTP response
+Temp directory zipped → filter clears ProjectOptionsContext → HTTP response
 ```
 
-**Registration flow** — the framework discovers `ProjectGenerationConfiguration` classes via `META-INF/spring.factories`. Each one is a Spring `@Configuration` that is loaded in the child context for that generation request. `@ConditionalOnRequestedDependency("id")` gates the whole class on whether the user selected that dependency.
+**Registration flow** — the framework discovers `ProjectGenerationConfiguration` classes via `META-INF/spring.factories`. Each one is a Spring `@Configuration` that is loaded in the child context for that generation request. `@ConditionalOnRequestedDependency("id")` gates the whole class on whether the user selected that dependency. Sub-option contributors within a class use `ProjectOptionsContext.hasOption()` for finer-grained conditionality.

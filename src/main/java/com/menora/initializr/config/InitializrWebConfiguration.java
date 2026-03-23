@@ -23,10 +23,18 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
     private static final String FORMAT_PARAM = "configurationFileFormat";
     private static final String DEFAULT_FORMAT = "properties";
 
+    private final ProjectOptionsContext optionsContext;
+
+    public InitializrWebConfiguration(ProjectOptionsContext optionsContext) {
+        this.optionsContext = optionsContext;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
+        optionsContext.populate(request);
+        try {
         chain.doFilter(new HttpServletRequestWrapper(request) {
 
             // Always inject configurationFileFormat default if absent.
@@ -89,6 +97,9 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
             }
 
         }, response);
+        } finally {
+            optionsContext.clear();
+        }
     }
 
 }
