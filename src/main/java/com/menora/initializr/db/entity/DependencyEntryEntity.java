@@ -13,7 +13,7 @@ public class DependencyEntryEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "group_id", nullable = false)
-    @JsonIgnoreProperties("entries")
+    @JsonIgnoreProperties({"entries", "hibernateLazyInitializer"})
     private DependencyGroupEntity group;
 
     @Column(name = "dep_id", nullable = false, unique = true, length = 50)
