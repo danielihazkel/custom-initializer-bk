@@ -65,7 +65,7 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
         metadata.getDependencies().getContent().addAll(dbGroups);
         metadata.getDependencies().validate();
 
-        log.debug("Loaded {} dependency groups from database, {} types from properties",
+        log.info("Loaded {} dependency groups from database, {} types from properties",
                 dbGroups.size(), metadata.getTypes().getContent().size());
         return metadata;
     }
@@ -101,8 +101,11 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
 
                 dep.resolve();
                 group.getContent().add(dep);
+                log.info("  [metadata] loaded dep '{}' ({}) into group '{}'",
+                        ee.getDepId(), ee.getName(), ge.getName());
             }
 
+            log.info("[metadata] group '{}' — {} entries", ge.getName(), group.getContent().size());
             groups.add(group);
         }
 
