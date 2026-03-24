@@ -1,5 +1,6 @@
 package com.menora.initializr.db.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
 @Entity
@@ -12,6 +13,7 @@ public class DependencyEntryEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "group_id", nullable = false)
+    @JsonIgnoreProperties("entries")
     private DependencyGroupEntity group;
 
     @Column(name = "dep_id", nullable = false, unique = true, length = 50)
