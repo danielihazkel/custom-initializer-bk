@@ -12,7 +12,7 @@ mvn clean package -DskipTests
 mvn test
 
 # Run a single test class
-mvn test -Dtest=KafkaProjectGenerationConfigurationTests
+mvn test -Dtest=ProjectGenerationIntegrationTests
 
 # Run a single test method
 mvn test -Dtest=ProjectGenerationIntegrationTests#kafkaDependencyInjectsConfigFiles
@@ -26,90 +26,91 @@ curl http://localhost:8080/actuator/health
 
 # Generate a test project via API
 curl -o test.zip "http://localhost:8080/starter.zip?dependencies=web,kafka"
+
+# Hot-reload metadata after DB change (no restart needed)
+curl -X POST http://localhost:8080/admin/refresh
 ```
 
 ## Architecture
 
-This app wraps the Spring Initializr framework (`initializr-web` + `initializr-generator-spring` v0.23.x). The framework handles the REST API and ZIP generation; this codebase only adds:
+This app wraps the Spring Initializr framework (`initializr-web` + `initializr-generator-spring` v0.23.x). The framework handles the REST API and ZIP generation; this codebase adds:
 
-1. **A dependency catalog** (`application.yml`) — defines what users can select
-2. **Extension classes** (`extension/*/`) — inject Menora-standard files into generated projects
+1. **A database-driven dependency catalog** — all dependency definitions, file contributions, build customizations, and sub-options live in an H2 database (file-backed in production, in-memory for tests)
+2. **A single dynamic generation config** (`DynamicProjectGenerationConfiguration`) — reads from DB at generation time, replacing what used to be 8 separate hardcoded extension classes
+3. **An admin REST API** (`/admin/*`) — full CRUD for all DB tables + a `/admin/refresh` endpoint to hot-reload the dependency metadata cache
 
 ### Generation Pipeline
 
-When a project is generated, the framework spins up a child Spring application context for that request and calls every `ProjectGenerationConfiguration` registered in `META-INF/spring.factories`. Each configuration class contributes `@Bean`s of two types:
+When a project is generated, the framework spins up a child Spring application context for that request and calls every `ProjectGenerationConfiguration` registered in `META-INF/spring.factories`. Only one is registered: `DynamicProjectGenerationConfiguration`, which contributes three beans:
 
-- **`ProjectContributor`** — writes files into the generated project directory (YAML configs, Java classes, XML)
-- **`BuildCustomizer<MavenBuild>`** — modifies the generated `pom.xml` (used in `CommonProjectGenerationConfiguration` to inject Artifactory `<repository>` blocks)
+- **`dynamicFileContributor`** (`ProjectContributor`) — for each selected dependency (plus the special `__common__` entry), writes/merges all associated `FileContributionEntity` records into the generated project
+- **`dynamicDeleteContributor`** (`ProjectContributor`, `@Order(LOWEST_PRECEDENCE)`) — runs after everything else to delete files registered with `DELETE` type (e.g. `application.properties` written by the framework)
+- **`dynamicBuildCustomizer`** (`BuildCustomizer<MavenBuild>`) — applies all `BuildCustomizationEntity` records (add dependency, exclude dependency, add repository)
 
-`@ConditionalOnRequestedDependency("id")` on a class gates the entire configuration on whether the user selected that dependency ID. `CommonProjectGenerationConfiguration` has no condition — it runs for every project.
+### FileContributionEntity — File Types
 
-### Adding a New Dependency with Custom Config
-
-The full pattern is documented in `README.md`. The mandatory steps in order:
-1. Add entry to `application.yml` under `initializr.dependencies`
-2. Create `static-configs/<name>/application-<name>.yml` (and/or a `.mustache` template if a Java class is needed)
-3. Create `extension/<name>/<Name>ProjectGenerationConfiguration.java` with `@ProjectGenerationConfiguration` + `@ConditionalOnRequestedDependency("<id>")`
-4. Register the class in `META-INF/spring.factories`
-
-Skipping step 4 means the class is silently ignored — the framework won't auto-scan it.
+| Type | Behavior |
+|------|----------|
+| `STATIC_COPY` | Writes content verbatim to target path |
+| `YAML_MERGE` | Deep-merges YAML into the target file (creates if absent) |
+| `TEMPLATE` | Applies substitution variables then writes |
+| `DELETE` | Deletes target file (runs at LOWEST_PRECEDENCE, after framework writes) |
 
 ### Template Substitution
 
-There are **two distinct substitution systems** — do not confuse them:
+Two substitution modes in `FileContributionEntity.SubstitutionType`:
 
-1. **`renderTemplate()` in `CommonProjectGenerationConfiguration`** — used for common project files (Dockerfile, Jenkinsfile, k8s-values.yaml, VERSION). Replaces three variables via `String.replace`:
-   - `{{artifactId}}` — from `ProjectDescription.getArtifactId()`
-   - `{{groupId}}` — from `ProjectDescription.getGroupId()`
-   - `{{version}}` — from `ProjectDescription.getVersion()`
+- **`PROJECT`** — replaces `{{artifactId}}`, `{{groupId}}`, `{{version}}` (used for Dockerfile, Jenkinsfile, k8s-values.yaml, VERSION)
+- **`PACKAGE`** — replaces `{{packageName}}` (used for generated Java config classes)
 
-2. **`String.replace("{{packageName}}", packageName)`** — used in extension configs when generating Java classes (KafkaConfig, SecurityConfig, JpaConfig, RqueueConfig). Only the `{{packageName}}` variable is supported here.
+Target paths may contain `{{packagePath}}` which is resolved to the package name with dots replaced by slashes.
 
 Neither system uses a real Mustache engine. The `.mustache` file extension is cosmetic only.
 
-### CommonProjectGenerationConfiguration — Files Injected for Every Project
+### DataSeeder — First-Startup Seeding
 
-This configuration runs unconditionally. It injects **9 items**:
+`src/main/java/com/menora/initializr/db/DataSeeder.java`
 
-| Bean | Source (classpath) | Destination in generated project |
-|---|---|---|
-| `log4j2Contributor` | `static-configs/common/log4j2-spring.xml` | `src/main/resources/log4j2-spring.xml` |
-| `editorConfigContributor` | `static-configs/common/.editorconfig` | `.editorconfig` |
-| `entrypointContributor` | `static-configs/common/entrypoint.sh` | `entrypoint.sh` |
-| `settingsXmlContributor` | `static-configs/common/settings.xml` | `settings.xml` |
-| `versionFileContributor` | `templates/VERSION.mustache` (rendered) | `VERSION` |
-| `dockerfileContributor` | `templates/Dockerfile.mustache` (rendered) | `Dockerfile` |
-| `jenkinsfileContributor` | `templates/Jenkinsfile.mustache` (rendered) | `k8s/Jenkinsfile` |
-| `k8sValuesContributor` | `templates/k8s-values.mustache` (rendered) | `k8s/values.yaml` |
-| `artifactoryBuildCustomizer` | *(no file)* | Injects `menora-release` + `menora-snapshot` repos into `pom.xml` |
+Runs at startup as a `CommandLineRunner`. If all DB tables are empty it reads every classpath resource (`static-configs/*`, `templates/*`) and inserts them as DB records. This bootstraps the system from the existing files. After seeding, records can be modified via the admin API without touching the filesystem.
 
-**log4j2 note:** `log4j2BuildCustomizer` also adds `spring-boot-starter-log4j2` and excludes `spring-boot-starter-logging` from the generated `pom.xml`. `logback-spring.xml` no longer exists — it was replaced by `log4j2-spring.xml`.
+### Adding or Modifying a Dependency
 
-### Extension Quick Reference
+The DB is the source of truth. Use the admin API or edit the `DataSeeder` for the initial seed:
 
-| Dependency ID | Config class | Files injected into generated project |
-|---|---|---|
-| *(any)* | `CommonProjectGenerationConfiguration` | See table above (9 items) |
-| `kafka` | `KafkaProjectGenerationConfiguration` | `application-kafka.yml`, `KafkaConfig.java` |
-| `security` | `SecurityProjectGenerationConfiguration` | `application-security.yml`, `SecurityConfig.java` |
-| `data-jpa` | `JpaProjectGenerationConfiguration` | `application-jpa.yml`, `JpaConfig.java` |
-| `actuator` | `ObservabilityProjectGenerationConfiguration` | `application-observability.yml` |
-| `rqueue` | `RqueueProjectGenerationConfiguration` | `application-rqueue.yml`, `RqueueConfig.java` |
-| `logging` | `LoggingProjectGenerationConfiguration` | `application-logging.yml` |
+1. **New dependency** — POST to `/admin/dependency-groups` + `/admin/dependency-entries`
+2. **New file to inject** — POST to `/admin/file-contributions` with `dependencyId`, `fileType`, `content`, `targetPath`
+3. **New build customization** — POST to `/admin/build-customizations`
+4. **Hot-reload** — POST to `/admin/refresh` (no restart needed)
 
-YAML configs land in `src/main/resources/`. Java classes land in `src/main/java/<packagePath>/config/`.
+For a permanent change that survives a fresh DB (e.g. new deployment), also update `DataSeeder.java`.
+
+### Sub-Options (Optional Per-Dependency Files)
+
+Some dependencies expose sub-options selectable by the user (e.g. `consumer-example`, `producer-example` for Kafka). URL convention: `opts-{depId}=opt1,opt2`.
+
+`InitializrWebConfiguration` (the `@Order(MIN_VALUE)` servlet filter) calls `ProjectOptionsContext.populate(request)` before generation and `clear()` after. `DynamicProjectGenerationConfiguration` checks `optionsContext.hasOption(depId, subOptionId)` before writing sub-option-gated files.
+
+Sub-options are managed via `/admin/sub-options`.
+
+### Dependency Catalog in Metadata
+
+`DatabaseInitializrMetadataProvider` (`@Primary` bean via `MetadataProviderConfig`) loads the dependency catalog from the DB. Non-dependency metadata (Java versions, Boot versions, packaging, types) still comes from `application.yml`.
+
+The provider caches the metadata. Call `POST /admin/refresh` to invalidate the cache after DB changes.
 
 ### InitializrWebConfiguration
 
 `src/main/java/com/menora/initializr/config/InitializrWebConfiguration.java`
 
-A `@Component`, `@Order(Integer.MIN_VALUE)` servlet filter (extends `OncePerRequestFilter`) that runs before all other filters and wraps every request with two fixes:
+A `@Component`, `@Order(Integer.MIN_VALUE)` servlet filter (extends `OncePerRequestFilter`) that runs before all other filters and wraps every request with three responsibilities:
 
-1. **`configurationFileFormat` default** — injects `configurationFileFormat=properties` when the parameter is absent. Some clients (e.g. IntelliJ) don't send this param and the framework would otherwise fail.
-
-2. **`X-Forwarded-Port` sanitization** — returns an empty string if the header is absent, unparseable as an integer, or the literal string `"null"`. Prevents the Initializr from concatenating `null` into URLs (e.g. `"8080null"`), which happens when running behind a Vite dev server proxy.
+1. **`configurationFileFormat` default** — injects `configurationFileFormat=properties` when absent
+2. **`X-Forwarded-Port` sanitization** — returns empty string if absent/unparseable/`"null"`
+3. **Sub-option context** — calls `optionsContext.populate(request)` before and `clear()` after the filter chain
 
 ### Test Infrastructure
+
+Tests use `src/test/resources/application.properties` which configures an in-memory H2 with `ddl-auto: create-drop`. `DataSeeder` runs automatically at test startup and seeds the DB from classpath, so tests exercise the full DB-driven pipeline.
 
 `src/test/java/com/menora/initializr/TestInvokerConfiguration.java` — a `@TestConfiguration` that provides a `ProjectGenerationInvoker<ProjectRequest>` bean. Test classes import it via `@Import(TestInvokerConfiguration.class)` to invoke project generation directly without HTTP.
 
@@ -118,11 +119,13 @@ A `@Component`, `@Order(Integer.MIN_VALUE)` servlet filter (extends `OncePerRequ
 - `generatedProjectContainsArtifactoryRepo` — verifies Artifactory repos in generated `pom.xml`
 - `generatedProjectContainsVersionDockerfileAndK8s` — checks VERSION content, Dockerfile artifact ID substitution, k8s/values.yaml group ID substitution
 - `generatedProjectContainsLog4j2` — verifies `log4j2-spring.xml` present, `logback-spring.xml` absent, `spring-boot-starter-log4j2` in pom
-- `generatedProjectContainsEditorconfig` — checks `.editorconfig` present
-- `securityDependencyInjectsSecurityConfig` — checks `application-security.yml` + `SecurityConfig.java`
-- `jpaDependencyInjectsJpaConfig` — checks `application-jpa.yml` + `JpaConfig.java`
-- `actuatorDependencyInjectsObservabilityConfig` — checks `application-observability.yml`
-- `rqueueDependencyInjectsRqueueConfig` — checks `application-rqueue.yml` + `RqueueConfig.java`
+- `generatedProjectContainsEditorconfig` — checks `.editorconfig` present, `application.properties` absent
+- `kafkaDependencyInjectsConfigFiles` — checks `application.yaml` contains `bootstrap-servers`, `KafkaConfig.java` present
+- `withoutKafkaDependencyNoKafkaFiles` — verifies kafka files absent when kafka not selected
+- `securityDependencyInjectsSecurityConfig` — checks `application.yaml` + `SecurityConfig.java`
+- `jpaDependencyInjectsJpaConfig` — checks `application.yaml` + `JpaConfig.java`
+- `actuatorDependencyInjectsObservabilityConfig` — checks `application.yaml` contains `management`
+- `rqueueDependencyInjectsRqueueConfig` — checks `application.yaml` + `RqueueConfig.java`
 - `multipleDependenciesInjectAllConfigs` — combines kafka + security + jpa + actuator; spot-checks all files
 
 ### Key Version Properties
@@ -138,4 +141,4 @@ Initializr framework version is controlled solely by `<spring-initializr.version
 The URL `https://repo.menora.co.il/artifactory/libs-release` appears in three places that must be kept in sync:
 1. `pom.xml` `<repositories>` — where this app resolves its own dependencies
 2. `application.yml` `initializr.env.repositories` — exposed in metadata to clients (IntelliJ)
-3. `CommonProjectGenerationConfiguration.java` `artifactoryBuildCustomizer()` — what is written into generated `pom.xml` files
+3. `DataSeeder.seedBuildCustomizations()` — what is written into generated `pom.xml` files (as a `BuildCustomizationEntity`)

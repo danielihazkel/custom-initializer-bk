@@ -16,22 +16,28 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [IntelliJ IDEA Integration](#intellij-idea-integration)
    - [REST API (curl)](#rest-api-curl)
 5. [What Gets Injected Into Generated Projects](#what-gets-injected-into-generated-projects)
-6. [Customization Guide](#customization-guide)
+6. [Admin API](#admin-api)
+   - [Hot-Reload Metadata](#hot-reload-metadata)
+   - [Dependency Groups](#dependency-groups)
+   - [Dependency Entries](#dependency-entries)
+   - [File Contributions](#file-contributions)
+   - [Build Customizations](#build-customizations)
+   - [Sub-Options](#sub-options)
+7. [Customization Guide](#customization-guide)
    - [Change the Spring Boot Version](#change-the-spring-boot-version)
    - [Change the Initializr Version](#change-the-initializr-version)
    - [Add a New Dependency (no custom config needed)](#add-a-new-dependency-no-custom-config-needed)
-   - [Add a New Dependency with a Static Config File](#add-a-new-dependency-with-a-static-config-file)
-   - [Add a New Dependency with a Generated Java Class](#add-a-new-dependency-with-a-generated-java-class)
+   - [Add a Static Config File to a Dependency](#add-a-static-config-file-to-a-dependency)
+   - [Add a Generated Java Class to a Dependency](#add-a-generated-java-class-to-a-dependency)
    - [Add Sub-Options to a Dependency](#add-sub-options-to-a-dependency)
    - [Edit an Existing Static Config File](#edit-an-existing-static-config-file)
    - [Edit an Existing Generated Java Class Template](#edit-an-existing-generated-java-class-template)
    - [Change the Artifactory URL](#change-the-artifactory-url)
    - [Add a New BOM (Bill of Materials)](#add-a-new-bom-bill-of-materials)
    - [Add a New Java Version Option](#add-a-new-java-version-option)
-   - [Modify the Common Files (logback / .editorconfig)](#modify-the-common-files-logback--editorconfig)
-7. [Testing](#testing)
-8. [Dependency Catalog Reference](#dependency-catalog-reference)
-9. [Architecture Reference](#architecture-reference)
+8. [Testing](#testing)
+9. [Dependency Catalog Reference](#dependency-catalog-reference)
+10. [Architecture Reference](#architecture-reference)
 
 ---
 
@@ -41,43 +47,57 @@ The application is built on the open-source [Spring Initializr framework](https:
 
 | Layer | What | Where |
 |-------|------|-------|
-| **Metadata** | Dependency catalog, versions, Artifactory URLs | `application.yml` |
-| **Generation** | Custom config/code injection per dependency | `@ProjectGenerationConfiguration` classes + templates |
+| **Metadata** | Dependency catalog, versions, Artifactory URLs | H2 database (seeded from classpath on first start) |
+| **Generation** | Custom config/code injection per dependency | `DynamicProjectGenerationConfiguration` reads rules from DB |
 | **Web** | REST API understood by IntelliJ and curl | Inherited from `initializr-web` |
 
-When a project is generated, the initializr framework calls every registered `ProjectGenerationConfiguration` class. Each class decides whether it applies (based on which dependencies were selected) and then contributes files to the generated project ZIP.
+The dependency catalog, file contributions, build customizations, and sub-options all live in a persistent H2 database. On first startup, `DataSeeder` bootstraps the DB from the classpath resources in `static-configs/` and `templates/`. After that, all changes are made through the admin API — no code changes or restarts required.
 
 ---
 
 ## Project Structure
 
 ```
-offline-spring-init/
-├── pom.xml                                    # Build: Spring Boot 3.2.1, initializr 0.23.0
-├── Dockerfile                                 # Multi-stage: Maven build → JRE Alpine
-├── executed_plan.md                           # Record of what was built and why
+offline-spring-init/backend/
+├── pom.xml                                      # Build: Spring Boot 3.2.1, initializr 0.23.x
 ├── src/main/
 │   ├── java/com/menora/initializr/
-│   │   ├── OfflineInitializrApplication.java  # Entry point
-│   │   └── extension/
-│   │       ├── common/CommonProjectGenerationConfiguration.java   # Always runs
-│   │       ├── kafka/KafkaProjectGenerationConfiguration.java     # Triggered by: kafka
-│   │       ├── security/SecurityProjectGenerationConfiguration.java # Triggered by: security
-│   │       ├── jpa/JpaProjectGenerationConfiguration.java         # Triggered by: data-jpa
-│   │       ├── observability/ObservabilityProjectGenerationConfiguration.java # Triggered by: actuator
-│   │       ├── rqueue/RqueueProjectGenerationConfiguration.java   # Triggered by: rqueue
-│   │       └── logging/LoggingProjectGenerationConfiguration.java # Triggered by: logging
+│   │   ├── OfflineInitializrApplication.java    # Entry point
+│   │   ├── admin/
+│   │   │   └── AdminController.java             # REST CRUD for all DB tables + /admin/refresh
+│   │   ├── config/
+│   │   │   ├── DatabaseInitializrMetadataProvider.java  # Loads dep catalog from DB
+│   │   │   ├── ExtensionMetadataController.java         # GET /metadata/extensions (sub-options)
+│   │   │   ├── InitializrWebConfiguration.java          # Filter: opts-* params, format default
+│   │   │   ├── MetadataProviderConfig.java              # Wires @Primary metadata provider bean
+│   │   │   └── ProjectOptionsContext.java               # ThreadLocal for sub-option selections
+│   │   ├── db/
+│   │   │   ├── DataSeeder.java                  # Seeds DB from classpath on first startup
+│   │   │   ├── DependencyConfigService.java     # Query service for generation pipeline
+│   │   │   ├── entity/                          # JPA entities (5 tables)
+│   │   │   └── repository/                      # Spring Data repos (5 repos)
+│   │   └── extension/dynamic/
+│   │       └── DynamicProjectGenerationConfiguration.java  # Single config replacing 8 classes
 │   └── resources/
-│       ├── application.yml                    # Dependency catalog + Artifactory config
-│       ├── META-INF/spring.factories          # Registers all generation configs
-│       ├── templates/                         # Mustache-style templates → generated Java classes
+│       ├── application.yml                      # Boot/Java versions, types, Artifactory URLs
+│       ├── META-INF/spring.factories            # Registers DynamicProjectGenerationConfiguration
+│       ├── templates/                           # Mustache-style templates → generated Java classes
 │       │   ├── kafka-config.mustache
+│       │   ├── kafka-consumer-example.mustache
+│       │   ├── kafka-producer-example.mustache
 │       │   ├── security-config.mustache
 │       │   ├── jpa-config.mustache
-│       │   └── rqueue-config.mustache
-│       └── static-configs/                    # YAML/XML files copied into generated projects
-│           ├── common/logback-spring.xml
+│       │   ├── rqueue-config.mustache
+│       │   ├── Dockerfile-java17.mustache
+│       │   ├── Dockerfile-java21.mustache
+│       │   ├── Jenkinsfile.mustache
+│       │   ├── k8s-values.mustache
+│       │   └── VERSION.mustache
+│       └── static-configs/                      # YAML/XML files copied into generated projects
+│           ├── common/log4j2-spring.xml
 │           ├── common/.editorconfig
+│           ├── common/entrypoint.sh
+│           ├── common/settings.xml
 │           ├── kafka/application-kafka.yml
 │           ├── security/application-security.yml
 │           ├── jpa/application-jpa.yml
@@ -85,8 +105,7 @@ offline-spring-init/
 │           ├── rqueue/application-rqueue.yml
 │           └── logging/application-logging.yml
 └── src/test/java/com/menora/initializr/
-    ├── ProjectGenerationIntegrationTests.java          # 8 integration tests
-    └── extension/kafka/KafkaProjectGenerationConfigurationTests.java
+    └── ProjectGenerationIntegrationTests.java   # 12 integration tests
 ```
 
 ---
@@ -109,7 +128,9 @@ mvn clean package -DskipTests
 java -jar target/offline-spring-init-1.0.0-SNAPSHOT.jar
 ```
 
-The service starts on **port 8080** by default.
+The service starts on **port 8080** by default. On first startup, `DataSeeder` populates the H2 database from classpath resources (takes a few seconds, logged at INFO).
+
+The H2 database is persisted to `./data/initializr` (relative to the working directory).
 
 To change the port:
 ```bash
@@ -122,8 +143,8 @@ java -jar target/offline-spring-init-1.0.0-SNAPSHOT.jar --server.port=9090
 # Build the image
 docker build -t menora/spring-init .
 
-# Run the container
-docker run -p 8080:8080 menora/spring-init
+# Run the container (mount a volume to persist the H2 database)
+docker run -p 8080:8080 -v /opt/menora/initializr-data:/app/data menora/spring-init
 ```
 
 ---
@@ -142,7 +163,7 @@ IntelliJ has built-in Spring Initializr support. To point it at this server:
 
 **Check the metadata (dependency catalog):**
 ```bash
-curl http://localhost:8080/metadata/client
+curl -H "Accept: application/json" http://localhost:8080/metadata/client
 ```
 
 **Generate a project:**
@@ -152,6 +173,9 @@ curl -o myproject.zip "http://localhost:8080/starter.zip?dependencies=web,kafka&
 
 # Web + Security + JPA + Actuator
 curl -o myproject.zip "http://localhost:8080/starter.zip?dependencies=web,security,data-jpa,actuator&groupId=com.menora&artifactId=myapp"
+
+# Kafka with sub-options (consumer + producer example classes)
+curl -o myproject.zip "http://localhost:8080/starter.zip?dependencies=kafka&opts-kafka=consumer-example,producer-example&groupId=com.menora&artifactId=myapp"
 
 # Unzip
 unzip myproject.zip -d myapp/
@@ -170,20 +194,249 @@ curl http://localhost:8080/actuator/health
 
 | File | Destination |
 |------|------------|
-| `logback-spring.xml` | `src/main/resources/logback-spring.xml` |
+| `log4j2-spring.xml` | `src/main/resources/log4j2-spring.xml` |
 | `.editorconfig` | `.editorconfig` (project root) |
-| Artifactory `<repository>` entries | Inside the generated `pom.xml` |
+| `entrypoint.sh` | `entrypoint.sh` (project root) |
+| `settings.xml` | `settings.xml` (project root) |
+| `VERSION` | `VERSION` (project root, contains the version string) |
+| `Dockerfile` | `Dockerfile` (version-specific: java17 or java21 template) |
+| `Jenkinsfile` | `k8s/Jenkinsfile` |
+| `values.yaml` | `k8s/values.yaml` |
+| Artifactory repos | Inside the generated `pom.xml` |
+| log4j2 dependency | `spring-boot-starter-log4j2` added, `spring-boot-starter-logging` excluded from `pom.xml` |
+| Lombok | `lombok` added to `pom.xml` |
+| `application.properties` | **Deleted** (framework writes it; we remove it) |
 
 ### Conditional (based on selected dependencies)
 
+All per-dependency YAML config is **deep-merged** into `src/main/resources/application.yaml`. Selecting multiple dependencies (e.g. kafka + security + jpa) produces a single `application.yaml` that contains all their settings combined.
+
 | Dependency ID | Files Injected |
-|--------------|---------------|
-| `kafka` | `src/main/resources/application-kafka.yml`<br>`src/main/java/.../config/KafkaConfig.java`<br>*(optional)* `KafkaConsumerExample.java`, `KafkaProducerExample.java` |
-| `security` | `src/main/resources/application-security.yml`<br>`src/main/java/.../config/SecurityConfig.java` |
-| `data-jpa` | `src/main/resources/application-jpa.yml`<br>`src/main/java/.../config/JpaConfig.java` |
-| `actuator` | `src/main/resources/application-observability.yml` |
-| `rqueue` | `src/main/resources/application-rqueue.yml`<br>`src/main/java/.../config/RqueueConfig.java` |
-| `logging` | `src/main/resources/application-logging.yml` |
+|--------------|----------------|
+| `kafka` | `application.yaml` (kafka section merged)<br>`src/main/java/.../config/KafkaConfig.java`<br>*(optional)* `KafkaConsumerExample.java` (sub-option: `consumer-example`)<br>*(optional)* `KafkaProducerExample.java` (sub-option: `producer-example`) |
+| `security` | `application.yaml` (security section merged)<br>`src/main/java/.../config/SecurityConfig.java` |
+| `data-jpa` | `application.yaml` (datasource section merged)<br>`src/main/java/.../config/JpaConfig.java` |
+| `actuator` | `application.yaml` (management section merged) |
+| `rqueue` | `application.yaml` (rqueue section merged)<br>`src/main/java/.../config/RqueueConfig.java` |
+| `logging` | `application.yaml` (logging section merged) |
+
+---
+
+## Admin API
+
+The admin API manages the database that drives project generation. All changes take effect immediately after calling `/admin/refresh` — no restart needed.
+
+> **Note:** The admin API has no authentication. Restrict access at the network or reverse-proxy level.
+
+### Hot-Reload Metadata
+
+```bash
+# After any DB change, reload the dependency metadata cache:
+POST /admin/refresh
+```
+
+```bash
+curl -X POST http://localhost:8080/admin/refresh
+# → "Metadata refreshed from database"
+```
+
+### Dependency Groups
+
+Groups are categories shown in the UI (e.g. "Web", "Data", "Messaging").
+
+```bash
+GET    /admin/dependency-groups        # list all
+POST   /admin/dependency-groups        # create
+PUT    /admin/dependency-groups/{id}   # update
+DELETE /admin/dependency-groups/{id}   # delete
+```
+
+Example — create a group:
+```bash
+curl -X POST http://localhost:8080/admin/dependency-groups \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Caching", "sortOrder": 7}'
+```
+
+### Dependency Entries
+
+Individual dependencies within a group.
+
+```bash
+GET    /admin/dependency-entries        # list all
+POST   /admin/dependency-entries        # create
+PUT    /admin/dependency-entries/{id}   # update
+DELETE /admin/dependency-entries/{id}   # delete
+```
+
+Example — add a dependency with no custom injection (Spring Boot manages its coordinates):
+```bash
+curl -X POST http://localhost:8080/admin/dependency-entries \
+  -H "Content-Type: application/json" \
+  -d '{
+    "group": {"id": 3},
+    "depId": "cache",
+    "name": "Spring Cache Abstraction",
+    "description": "Spring caching support",
+    "sortOrder": 0
+  }'
+```
+
+Example — add a dependency with explicit coordinates from Menora Artifactory:
+```bash
+curl -X POST http://localhost:8080/admin/dependency-entries \
+  -H "Content-Type: application/json" \
+  -d '{
+    "group": {"id": 1},
+    "depId": "my-lib",
+    "name": "My Internal Lib",
+    "description": "Internal Menora library",
+    "mavenGroupId": "com.menora.internal",
+    "mavenArtifactId": "my-internal-lib",
+    "version": "2.1.0",
+    "repository": "menora-release",
+    "sortOrder": 5
+  }'
+```
+
+After creating, call `/admin/refresh` so the UI picks it up.
+
+### File Contributions
+
+Rules that write, merge, or delete files in generated projects. Every rule is tied to a `dependencyId` — use `__common__` for files injected into every project.
+
+```bash
+GET    /admin/file-contributions        # list all
+POST   /admin/file-contributions        # create
+PUT    /admin/file-contributions/{id}   # update
+DELETE /admin/file-contributions/{id}   # delete
+```
+
+**Field reference:**
+
+| Field | Values | Description |
+|-------|--------|-------------|
+| `dependencyId` | any dep ID, or `__common__` | When this dep is selected, this rule applies |
+| `fileType` | `STATIC_COPY` | Write content verbatim to `targetPath` |
+| | `YAML_MERGE` | Deep-merge content into the target YAML file |
+| | `TEMPLATE` | Apply variable substitution, then write |
+| | `DELETE` | Delete `targetPath` (runs after all writes) |
+| `substitutionType` | `NONE` | No substitution |
+| | `PROJECT` | Replace `{{artifactId}}`, `{{groupId}}`, `{{version}}` |
+| | `PACKAGE` | Replace `{{packageName}}` |
+| `targetPath` | path string | Destination in the generated project. May contain `{{packagePath}}` (e.g. `src/main/java/{{packagePath}}/config/MyConfig.java`) |
+| `javaVersion` | `"17"`, `"21"`, or `null` | If set, only apply when the project's Java version matches |
+| `subOptionId` | string or `null` | If set, only apply when this sub-option is selected |
+| `sortOrder` | integer | Lower numbers run first |
+
+Example — add a YAML merge rule for a new dependency:
+```bash
+curl -X POST http://localhost:8080/admin/file-contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "cache",
+    "fileType": "YAML_MERGE",
+    "content": "spring:\n  cache:\n    type: redis\n",
+    "targetPath": "src/main/resources/application.yaml",
+    "substitutionType": "NONE",
+    "sortOrder": 0
+  }'
+```
+
+Example — add a Java class template for a new dependency:
+```bash
+curl -X POST http://localhost:8080/admin/file-contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "cache",
+    "fileType": "TEMPLATE",
+    "content": "package {{packageName}}.config;\n\nimport org.springframework.context.annotation.Configuration;\n\n@Configuration\npublic class CacheConfig {\n}\n",
+    "targetPath": "src/main/java/{{packagePath}}/config/CacheConfig.java",
+    "substitutionType": "PACKAGE",
+    "sortOrder": 1
+  }'
+```
+
+### Build Customizations
+
+Rules that modify the generated `pom.xml`. Also tied to a `dependencyId` (use `__common__` for always-applied rules).
+
+```bash
+GET    /admin/build-customizations        # list all
+POST   /admin/build-customizations        # create
+PUT    /admin/build-customizations/{id}   # update
+DELETE /admin/build-customizations/{id}   # delete
+```
+
+**Customization types:**
+
+`ADD_DEPENDENCY` — add a Maven dependency:
+```bash
+curl -X POST http://localhost:8080/admin/build-customizations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "cache",
+    "customizationType": "ADD_DEPENDENCY",
+    "mavenGroupId": "org.springframework.boot",
+    "mavenArtifactId": "spring-boot-starter-data-redis",
+    "sortOrder": 0
+  }'
+```
+
+`EXCLUDE_DEPENDENCY` — add a dependency with an exclusion:
+```bash
+curl -X POST http://localhost:8080/admin/build-customizations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "__common__",
+    "customizationType": "EXCLUDE_DEPENDENCY",
+    "excludeFromGroupId": "org.springframework.boot",
+    "excludeFromArtifactId": "spring-boot-starter",
+    "mavenGroupId": "org.springframework.boot",
+    "mavenArtifactId": "spring-boot-starter-logging",
+    "sortOrder": 2
+  }'
+```
+
+`ADD_REPOSITORY` — add a Maven repository:
+```bash
+curl -X POST http://localhost:8080/admin/build-customizations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "__common__",
+    "customizationType": "ADD_REPOSITORY",
+    "repoId": "menora-release",
+    "repoName": "Menora Artifactory Releases",
+    "repoUrl": "https://repo.menora.co.il/artifactory/libs-release",
+    "snapshotsEnabled": false,
+    "sortOrder": 0
+  }'
+```
+
+### Sub-Options
+
+Optional extras within a dependency (e.g. "Consumer Example" for Kafka). Displayed as checkboxes in the UI after selecting the parent dependency.
+
+```bash
+GET    /admin/sub-options        # list all
+POST   /admin/sub-options        # create
+PUT    /admin/sub-options/{id}   # update
+DELETE /admin/sub-options/{id}   # delete
+```
+
+```bash
+curl -X POST http://localhost:8080/admin/sub-options \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "cache",
+    "optionId": "redis-example",
+    "label": "Redis Example",
+    "description": "Add a RedisExample.java class",
+    "sortOrder": 0
+  }'
+```
+
+The sub-option only controls visibility in the UI. For it to actually inject a file, create a `FileContributionEntity` with the matching `dependencyId` and `subOptionId`.
 
 ---
 
@@ -211,17 +464,6 @@ initializr:
       default: true
 ```
 
-To offer **multiple Boot versions** for users to choose from:
-```yaml
-initializr:
-  boot-versions:
-    - id: 3.3.5
-      name: 3.3.5
-    - id: 3.2.1
-      name: 3.2.1
-      default: true
-```
-
 ---
 
 ### Change the Initializr Version
@@ -233,304 +475,179 @@ In `pom.xml`:
 </properties>
 ```
 
-Check available versions at `https://repo.spring.io/release/io/spring/initializr/initializr-web/`.
-
 ---
 
 ### Add a New Dependency (no custom config needed)
 
-Only touch `application.yml`. Find or create a category under `initializr.dependencies` and add an entry:
+Use the Admin API — no code changes, no restart.
 
-```yaml
-initializr:
-  dependencies:
-    - name: Web          # existing category
-      content:
-        - name: Spring Web
-          id: web
-          description: Build web applications with Spring MVC
-        # add your new dependency here:
-        - name: Spring HATEOAS
-          id: hateoas
-          description: Hypermedia links in REST responses
-          # groupId/artifactId are inferred from Spring Boot's dependency management
-          # if managed by Spring Boot BOM, you don't need to specify them
+```bash
+# 1. Find or create the group
+curl http://localhost:8080/admin/dependency-groups
+# Use an existing group id, or POST a new one
+
+# 2. Create the dependency entry (Spring Boot manages the coordinates)
+curl -X POST http://localhost:8080/admin/dependency-entries \
+  -H "Content-Type: application/json" \
+  -d '{
+    "group": {"id": 2},
+    "depId": "hateoas",
+    "name": "Spring HATEOAS",
+    "description": "Hypermedia links in REST responses",
+    "sortOrder": 2
+  }'
+
+# 3. Refresh metadata
+curl -X POST http://localhost:8080/admin/refresh
 ```
 
-For a library **not** managed by Spring Boot (no version in BOM), specify explicitly:
-```yaml
-        - name: MapStruct
-          id: mapstruct
-          groupId: org.mapstruct
-          artifactId: mapstruct
-          version: 1.5.5.Final
-          description: Java bean mapping framework
-```
+For a library **not** managed by Spring Boot's BOM, include `mavenGroupId`, `mavenArtifactId`, and `version` in the entry body.
 
-For a library from **Menora Artifactory** (not in Maven Central):
-```yaml
-        - name: My Internal Lib
-          id: my-internal-lib
-          groupId: com.menora.internal
-          artifactId: my-internal-lib
-          version: 2.1.0
-          description: Internal Menora library
-          repository: menora-release   # must match a key in initializr.env.repositories
-```
+For a library from **Menora Artifactory** (not in Maven Central), also add `"repository": "menora-release"`.
 
 ---
 
-### Add a New Dependency with a Static Config File
+### Add a Static Config File to a Dependency
 
-This is for a dependency that needs a pre-filled YAML (or XML) file in the generated project.
+To inject a YAML or XML file into a generated project when a dependency is selected:
 
-**Step 1 — Add the dependency to `application.yml`** (same as above)
-
-**Step 2 — Create the static config file:**
-```
-src/main/resources/static-configs/myfeature/application-myfeature.yml
-```
-
-Example content:
-```yaml
-myfeature:
-  enabled: true
-  endpoint: ${MYFEATURE_URL:http://localhost:9999}
-  timeout: 5000
-```
-
-**Step 3 — Create the `ProjectGenerationConfiguration` class:**
-
-Create `src/main/java/com/menora/initializr/extension/myfeature/MyFeatureProjectGenerationConfiguration.java`:
-
-```java
-package com.menora.initializr.extension.myfeature;
-
-import com.menora.initializr.extension.common.CommonProjectGenerationConfiguration;
-import io.spring.initializr.generator.condition.ConditionalOnRequestedDependency;
-import io.spring.initializr.generator.project.ProjectGenerationConfiguration;
-import io.spring.initializr.generator.project.contributor.ProjectContributor;
-import org.springframework.context.annotation.Bean;
-
-@ProjectGenerationConfiguration
-@ConditionalOnRequestedDependency("my-dep-id")   // must match the "id" in application.yml
-public class MyFeatureProjectGenerationConfiguration {
-
-    @Bean
-    ProjectContributor myFeatureYamlContributor() {
-        return projectRoot -> {
-            CommonProjectGenerationConfiguration.copyClasspathResource(
-                    "static-configs/myfeature/application-myfeature.yml",
-                    projectRoot.resolve("src/main/resources/application-myfeature.yml"));
-        };
-    }
-
-}
+**Option A — Admin API (no restart):**
+```bash
+curl -X POST http://localhost:8080/admin/file-contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "my-dep-id",
+    "fileType": "YAML_MERGE",
+    "content": "myfeature:\n  enabled: true\n  endpoint: ${MYFEATURE_URL:http://localhost:9999}\n",
+    "targetPath": "src/main/resources/application.yaml",
+    "substitutionType": "NONE",
+    "sortOrder": 0
+  }'
 ```
 
-**Step 4 — Register in `META-INF/spring.factories`:**
+**Option B — Permanent (survives a fresh DB):**
 
-Open `src/main/resources/META-INF/spring.factories` and append your class:
-```properties
-io.spring.initializr.generator.project.ProjectGenerationConfiguration=\
-  com.menora.initializr.extension.common.CommonProjectGenerationConfiguration,\
-  ...existing entries...,\
-  com.menora.initializr.extension.myfeature.MyFeatureProjectGenerationConfiguration
-```
-
-Rebuild and restart — done.
+1. Create `src/main/resources/static-configs/myfeature/application-myfeature.yml`
+2. Add a call in `DataSeeder.seedDependencyFileContributions()`:
+   ```java
+   fc("my-dep-id", FileContributionEntity.FileType.YAML_MERGE,
+       readClasspath("static-configs/myfeature/application-myfeature.yml"),
+       "src/main/resources/application.yaml",
+       FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+   ```
+3. Rebuild and restart (DataSeeder runs only when DB is empty, so delete `./data/` first to re-seed, or call the admin API directly)
 
 ---
 
-### Add a New Dependency with a Generated Java Class
+### Add a Generated Java Class to a Dependency
 
-This is for a dependency that needs a Java configuration class generated with the project's package name substituted in.
+To inject a Java class (with the project's package name substituted in):
 
-**Steps 1–4** are the same as above, plus:
-
-**Step 5 — Create a template** in `src/main/resources/templates/myfeature-config.mustache`:
-
-```java
-package {{packageName}}.config;
-
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class MyFeatureConfig {
-
-    @Bean
-    public SomeBean someBean() {
-        return new SomeBean();
-    }
-
-}
+**Option A — Admin API (no restart):**
+```bash
+curl -X POST http://localhost:8080/admin/file-contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "my-dep-id",
+    "fileType": "TEMPLATE",
+    "content": "package {{packageName}}.config;\n\nimport org.springframework.context.annotation.Configuration;\n\n@Configuration\npublic class MyFeatureConfig {\n}\n",
+    "targetPath": "src/main/java/{{packagePath}}/config/MyFeatureConfig.java",
+    "substitutionType": "PACKAGE",
+    "sortOrder": 1
+  }'
 ```
 
-The only substitution variable available is `{{packageName}}` — it is replaced with the user's chosen package name (e.g., `com.menora.myapp`).
+**Option B — Permanent (survives a fresh DB):**
 
-**Step 6 — Add a second `ProjectContributor` bean** to your configuration class:
+1. Create `src/main/resources/templates/myfeature-config.mustache`:
+   ```java
+   package {{packageName}}.config;
 
-```java
-@Bean
-ProjectContributor myFeatureConfigClassContributor(ProjectDescription description) {
-    return projectRoot -> {
-        String packageName = description.getPackageName();
-        String packagePath = packageName.replace('.', '/');
-        Path configDir = projectRoot.resolve("src/main/java/" + packagePath + "/config");
-        Files.createDirectories(configDir);
+   import org.springframework.context.annotation.Configuration;
 
-        // Read the template
-        try (InputStream in = getClass().getClassLoader()
-                .getResourceAsStream("templates/myfeature-config.mustache")) {
-            String content = new String(in.readAllBytes())
-                    .replace("{{packageName}}", packageName);
-            Files.writeString(configDir.resolve("MyFeatureConfig.java"), content);
-        }
-    };
-}
-```
-
-Add the import at the top of your class:
-```java
-import io.spring.initializr.generator.project.ProjectDescription;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-```
+   @Configuration
+   public class MyFeatureConfig {
+   }
+   ```
+2. Add a call in `DataSeeder.seedDependencyFileContributions()`:
+   ```java
+   fc("my-dep-id", FileContributionEntity.FileType.TEMPLATE,
+       readClasspath("templates/myfeature-config.mustache"),
+       "src/main/java/{{packagePath}}/config/MyFeatureConfig.java",
+       FileContributionEntity.SubstitutionType.PACKAGE, null, null, 1);
+   ```
+3. Rebuild and restart (or delete `./data/` to re-seed)
 
 ---
 
 ### Add Sub-Options to a Dependency
 
-Sub-options are optional extras that a user can tick after selecting a dependency. For example, selecting Kafka then ticking "Consumer Example" injects a ready-made `KafkaConsumerExample.java` into the generated project. Sub-options are independent of the base dependency — the base files (YAML config, main config class) are always injected; sub-option files are only injected when explicitly chosen.
+Sub-options are optional extras the user can tick after selecting a dependency. Selecting Kafka + ticking "Consumer Example" injects a `KafkaConsumerExample.java` into the generated project.
 
-#### How it works end-to-end
-
-```
-application.yml  (menora.dependency-options)
-    → GET /metadata/extensions          ← UI fetches this on load, shows checkboxes
-    → /starter.zip?opts-{depId}=opt1,opt2   ← UI sends selected options
-    → InitializrWebConfiguration filter  → ProjectOptionsContext (ThreadLocal)
-    → *ProjectGenerationConfiguration    → checks hasOption() → writes files
-```
-
-#### Step 1 — Declare the sub-options in `application.yml`
-
-Under `menora.dependency-options`, add a key matching the dependency ID. Each entry needs `id`, `label`, and `description`:
-
-```yaml
-menora:
-  dependency-options:
-    kafka:                              # must match the dependency id
-      - id: consumer-example
-        label: "Consumer Example"
-        description: "Add a KafkaConsumerExample.java class"
-      - id: producer-example
-        label: "Producer Example"
-        description: "Add a KafkaProducerExample.java class"
-    my-dep-id:                          # add a new dependency's options here
-      - id: my-option
-        label: "My Option"
-        description: "Add something extra"
+**Step 1 — Register the sub-option:**
+```bash
+curl -X POST http://localhost:8080/admin/sub-options \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "my-dep-id",
+    "optionId": "my-option",
+    "label": "My Option",
+    "description": "Add a MyOptionExample.java class",
+    "sortOrder": 0
+  }'
 ```
 
-This is the only change needed for the frontend — the `/metadata/extensions` endpoint reads directly from this config and the UI renders checkboxes automatically.
-
-#### Step 2 — Create template files (if the option adds a Java class)
-
-Add a `.mustache` file in `src/main/resources/templates/`. The only substitution variable is `{{packageName}}`:
-
-```
-src/main/resources/templates/my-dep-my-option.mustache
-```
-
-```java
-package {{packageName}}.config;
-
-import org.springframework.stereotype.Component;
-
-@Component
-public class MyOptionExample {
-    // ...
-}
+**Step 2 — Create a file contribution gated on the sub-option:**
+```bash
+curl -X POST http://localhost:8080/admin/file-contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "my-dep-id",
+    "fileType": "TEMPLATE",
+    "content": "package {{packageName}}.config;\n\n@Component\npublic class MyOptionExample {}\n",
+    "targetPath": "src/main/java/{{packagePath}}/config/MyOptionExample.java",
+    "substitutionType": "PACKAGE",
+    "subOptionId": "my-option",
+    "sortOrder": 2
+  }'
 ```
 
-If the option adds a static file (YAML, XML) instead of a Java class, put it in `src/main/resources/static-configs/` and use `appendToApplicationYaml` or `Files.copy` in the contributor.
-
-#### Step 3 — Add a conditional contributor bean to the extension config class
-
-In the relevant `*ProjectGenerationConfiguration.java`, inject `ProjectOptionsContext` and add a `@Bean` with an early-return guard:
-
-```java
-@Bean
-ProjectContributor myOptionContributor(ProjectOptionsContext optionsContext, ProjectDescription description) {
-    return projectRoot -> {
-        if (!optionsContext.hasOption("my-dep-id", "my-option")) return;  // skip if not selected
-
-        String packageName = description.getPackageName();
-        String packagePath = packageName.replace('.', '/');
-        Path configDir = projectRoot.resolve("src/main/java/" + packagePath + "/config");
-        Files.createDirectories(configDir);
-
-        try (InputStream in = getClass().getClassLoader()
-                .getResourceAsStream("templates/my-dep-my-option.mustache")) {
-            String content = new String(in.readAllBytes()).replace("{{packageName}}", packageName);
-            Files.writeString(configDir.resolve("MyOptionExample.java"), content);
-        }
-    };
-}
+**Step 3 — Refresh:**
+```bash
+curl -X POST http://localhost:8080/admin/refresh
 ```
 
-The `ProjectOptionsContext` bean lives in the main application context and is automatically accessible from the generation child context — no additional wiring needed.
-
-#### Modifying existing sub-options
-
-- **Change label/description:** Edit the entry in `application.yml` under `menora.dependency-options`. No code change needed.
-- **Change the generated file content:** Edit the corresponding `.mustache` template. No code change needed.
-- **Add a new option to an existing dependency:** Add a new entry to the YAML list (Step 1) and a new `@Bean` in the config class (Step 3).
-
-#### Removing a sub-option
-
-1. Remove the entry from `application.yml` — the UI will stop showing it.
-2. Remove the corresponding `@Bean` from the extension config class.
-3. Delete the template file if it is no longer used.
+The UI calls `GET /metadata/extensions` to discover sub-options and renders checkboxes automatically. When the user selects one, the UI appends `opts-{depId}=my-option` to the generation request URL.
 
 ---
 
 ### Edit an Existing Static Config File
 
-Just edit the file directly. No Java code changes needed. For example, to change the Kafka consumer group default:
+**Quick edit (no restart):** Fetch the file contribution record, update its `content` field, and PUT it back:
 
-**`src/main/resources/static-configs/kafka/application-kafka.yml`:**
-```yaml
-spring:
-  kafka:
-    consumer:
-      group-id: my-new-default-group   # change this
+```bash
+# Find the record
+curl http://localhost:8080/admin/file-contributions | python -m json.tool | grep -A5 '"kafka"'
+
+# Update content (replace {id} with the actual record ID)
+curl -X PUT http://localhost:8080/admin/file-contributions/{id} \
+  -H "Content-Type: application/json" \
+  -d '{...full record with updated content...}'
 ```
 
-Rebuild (`mvn package`) and restart. The next project generated with `kafka` selected will use the new defaults.
+**Permanent edit (survives a fresh DB):** Edit `src/main/resources/static-configs/kafka/application-kafka.yml` directly. Changes take effect for new DB installs (re-seeding).
 
 ---
 
 ### Edit an Existing Generated Java Class Template
 
-Edit the `.mustache` file. For example, to add a default topic to `KafkaConfig.java`:
-
-**`src/main/resources/templates/kafka-config.mustache`:**
-```java
-// Add at the class level:
-public static final String DEFAULT_TOPIC = "menora.events";
-```
-
-The `{{packageName}}` placeholder is the only dynamic value. Everything else is literal Java.
+Same approach as above: update the `content` field of the relevant `FileContributionEntity` via the admin API, or edit the `.mustache` file for permanent changes.
 
 ---
 
 ### Change the Artifactory URL
 
-The Artifactory URL appears in two places:
+The Artifactory URL appears in three places that must be kept in sync:
 
 **1. Where the Initializr app itself resolves artifacts** — `pom.xml`:
 ```xml
@@ -542,29 +659,25 @@ The Artifactory URL appears in two places:
 </repositories>
 ```
 
-**2. What gets injected into generated projects** — two places:
+**2. What gets injected into generated projects** — update the `BUILD_CUSTOMIZATION` record for `__common__` via the admin API:
+```bash
+curl http://localhost:8080/admin/build-customizations
+# Find the ADD_REPOSITORY record with repoId="menora-release", note its {id}
 
-`application.yml` (exposed to IntelliJ UI as available repositories):
+curl -X PUT http://localhost:8080/admin/build-customizations/{id} \
+  -H "Content-Type: application/json" \
+  -d '{...record with updated repoUrl...}'
+```
+
+And for permanent seeding, update `DataSeeder.seedBuildCustomizations()`.
+
+**3. Exposed to IntelliJ as an available repository** — `application.yml`:
 ```yaml
 initializr:
   env:
     repositories:
       menora-release:
         url: https://repo.menora.co.il/artifactory/libs-release  # change here
-```
-
-`CommonProjectGenerationConfiguration.java` (what actually goes into the generated pom.xml):
-```java
-@Bean
-BuildCustomizer<MavenBuild> artifactoryBuildCustomizer() {
-    return build -> {
-        build.repositories().add("menora-release",
-            MavenRepository.withIdAndUrl("menora-release",
-                "https://repo.menora.co.il/artifactory/libs-release")  // change here
-                .name("Menora Artifactory Releases")
-                .build());
-    };
-}
 ```
 
 ---
@@ -585,14 +698,7 @@ initializr:
           - menora-release
 ```
 
-Then reference it from a dependency:
-```yaml
-    - name: My Internal Lib
-      id: my-internal-lib
-      groupId: com.menora
-      artifactId: my-internal-lib
-      bom: menora-internal-bom   # version comes from the BOM
-```
+Then reference it from a dependency entry by including `"bom": "menora-internal-bom"` — the version comes from the BOM. (BOM config is still YAML-only; it is not yet stored in the database.)
 
 ---
 
@@ -608,23 +714,19 @@ initializr:
     - id: 23      # add new version here
 ```
 
----
-
-### Modify the Common Files (logback / .editorconfig)
-
-These files are always injected into every generated project (no dependency condition).
-
-- **Logback config:** `src/main/resources/static-configs/common/logback-spring.xml`
-- **Editor config:** `src/main/resources/static-configs/common/.editorconfig`
-
-Edit them directly. No Java code changes needed. They are copied verbatim into each generated project.
-
-If you want to **stop injecting one of these files** (e.g., skip `.editorconfig`), remove the corresponding `@Bean` from `CommonProjectGenerationConfiguration.java`:
-
-```java
-// Remove or comment out this bean:
-@Bean
-ProjectContributor editorConfigContributor() { ... }
+If you add a new Java version that needs a distinct Dockerfile, create `templates/Dockerfile-java23.mustache` and add a file contribution:
+```bash
+curl -X POST http://localhost:8080/admin/file-contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "__common__",
+    "fileType": "TEMPLATE",
+    "content": "...",
+    "targetPath": "Dockerfile",
+    "substitutionType": "PROJECT",
+    "javaVersion": "23",
+    "sortOrder": 7
+  }'
 ```
 
 ---
@@ -636,27 +738,35 @@ Run all tests:
 mvn test
 ```
 
-The test suite covers:
-- `/metadata/client` returns HTTP 200 with the full dependency catalog
-- Every generated project contains `logback-spring.xml`, `.editorconfig`, and Artifactory repo in `pom.xml`
-- Each dependency triggers its corresponding config injection
-- Selecting `kafka` → `application-kafka.yml` + `KafkaConfig.java` present
-- Not selecting `kafka` → those files absent
-- Multiple dependencies simultaneously all inject correctly
+Tests use an in-memory H2 database (`src/test/resources/application.properties`). `DataSeeder` seeds it automatically at startup, so the full DB-driven pipeline is exercised — no mocking.
 
-To add a test for a new dependency you added, follow this pattern in `ProjectGenerationIntegrationTests.java`:
+**Test coverage (`ProjectGenerationIntegrationTests`):**
+- `metadataEndpointReturnsOk` — `/metadata/client` returns HTTP 200 with `kafka` and `rqueue` in catalog
+- `generatedProjectContainsArtifactoryRepo` — Artifactory repos present in generated `pom.xml`
+- `generatedProjectContainsVersionDockerfileAndK8s` — VERSION, Dockerfile, Jenkinsfile, k8s/values.yaml injected
+- `generatedProjectContainsLog4j2` — `log4j2-spring.xml` present, `logback-spring.xml` absent, `spring-boot-starter-log4j2` in pom
+- `generatedProjectContainsEditorconfig` — `.editorconfig` present, `application.properties` absent
+- `kafkaDependencyInjectsConfigFiles` — `application.yaml` contains `bootstrap-servers`, `KafkaConfig.java` present
+- `withoutKafkaDependencyNoKafkaFiles` — `KafkaConfig.java` absent when kafka not selected
+- `securityDependencyInjectsSecurityConfig` — `application.yaml` + `SecurityConfig.java`
+- `jpaDependencyInjectsJpaConfig` — `application.yaml` + `JpaConfig.java`
+- `actuatorDependencyInjectsObservabilityConfig` — `application.yaml` contains `management`
+- `rqueueDependencyInjectsRqueueConfig` — `application.yaml` + `RqueueConfig.java`
+- `multipleDependenciesInjectAllConfigs` — kafka + security + jpa + actuator combined, all files present
 
+To add a test for a new dependency:
 ```java
 @Test
-void myFeatureDependencyInjectsConfig() throws Exception {
+void myDepInjectsConfig() throws Exception {
     WebProjectRequest request = createBaseRequest();
-    request.getDependencies().add("my-dep-id");  // must match id in application.yml
+    request.getDependencies().add("my-dep-id");
 
     Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
     ProjectStructure project = new ProjectStructure(projectDir);
 
+    assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+            .contains("my-key");
     assertThat(project).filePaths()
-            .contains("src/main/resources/application-myfeature.yml")
             .contains("src/main/java/com/menora/demo/config/MyFeatureConfig.java");
 }
 ```
@@ -665,18 +775,18 @@ void myFeatureDependencyInjectsConfig() throws Exception {
 
 ## Dependency Catalog Reference
 
-| ID | Name | Category | Custom Config Injected |
-|----|------|----------|----------------------|
-| `web` | Spring Web | Web | No |
-| `webflux` | Spring Reactive Web | Web | No |
-| `data-jpa` | Spring Data JPA | Data | `application-jpa.yml`, `JpaConfig.java` |
-| `postgresql` | PostgreSQL Driver | Data | No |
-| `kafka` | Spring for Apache Kafka | Messaging | `application-kafka.yml`, `KafkaConfig.java`<br>*(opt)* `KafkaConsumerExample.java`, `KafkaProducerExample.java` |
-| `security` | Spring Security | Security | `application-security.yml`, `SecurityConfig.java` |
-| `actuator` | Spring Boot Actuator | Observability | `application-observability.yml` |
-| `prometheus` | Micrometer Prometheus | Observability | No |
-| `logging` | Menora Logging Standards | Logging | `application-logging.yml` |
-| `rqueue` | Sonus Rqueue | Menora Standards | `application-rqueue.yml`, `RqueueConfig.java` |
+| ID | Name | Category | Config Injected into `application.yaml` | Java Class |
+|----|------|----------|-----------------------------------------|------------|
+| `web` | Spring Web | Web | — | — |
+| `webflux` | Spring Reactive Web | Web | — | — |
+| `data-jpa` | Spring Data JPA | Data | datasource, JPA properties | `JpaConfig.java` |
+| `postgresql` | PostgreSQL Driver | Data | — | — |
+| `kafka` | Spring for Apache Kafka | Messaging | kafka (bootstrap-servers, producer, consumer) | `KafkaConfig.java`<br>*(opt)* `KafkaConsumerExample.java`<br>*(opt)* `KafkaProducerExample.java` |
+| `security` | Spring Security | Security | oauth2 resource server | `SecurityConfig.java` |
+| `actuator` | Spring Boot Actuator | Observability | management endpoints | — |
+| `prometheus` | Micrometer Prometheus | Observability | — | — |
+| `logging` | Menora Logging Standards | Logging | logging config | — |
+| `rqueue` | Sonus Rqueue | Menora Standards | rqueue properties | `RqueueConfig.java` |
 
 ---
 
@@ -686,33 +796,49 @@ void myFeatureDependencyInjectsConfig() throws Exception {
 Request arrives  (?dependencies=kafka&opts-kafka=consumer-example)
        │
        ▼
-InitializrWebConfiguration filter
-       │  populates ProjectOptionsContext (ThreadLocal) with opts-* params
+InitializrWebConfiguration  (@Order MIN_VALUE servlet filter)
+       │  ① populates ProjectOptionsContext (ThreadLocal) with opts-* params
+       │  ② injects configurationFileFormat=properties default
+       │  ③ sanitizes X-Forwarded-Port header
        ▼
 initializr-web (REST layer)
-       │
+       │  resolves metadata from DatabaseInitializrMetadataProvider
+       │  (dependency catalog loaded from H2 DB, cached, refreshable via /admin/refresh)
        ▼
 ProjectGenerationInvoker
        │  creates a child application context per generation request
        ▼
-All registered ProjectGenerationConfigurations evaluated:
-  ┌─────────────────────────────────────────────────────────────────┐
-  │ CommonProjectGenerationConfiguration                            │ ← always runs
-  │   → log4j2, .editorconfig, Dockerfile, Jenkinsfile, k8s/...    │
-  └─────────────────────────────────────────────────────────────────┘
-  ┌─────────────────────────────────────────────────────────────────┐
-  │ KafkaProjectGenerationConfiguration                             │ ← only if "kafka" selected
-  │   → application-kafka.yml, KafkaConfig.java                    │
-  │   → KafkaConsumerExample.java  (only if opts-kafka=consumer-...) │
-  │   → KafkaProducerExample.java  (only if opts-kafka=producer-...) │
-  └─────────────────────────────────────────────────────────────────┘
-  ... (etc for each extension)
-       │
-       ▼
-ProjectContributors write files to a temp directory
+DynamicProjectGenerationConfiguration  (the only registered @ProjectGenerationConfiguration)
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │ dynamicBuildCustomizer                                                     │
+  │   → reads BuildCustomizationEntity rows for selected deps + __common__     │
+  │   → adds/excludes dependencies, adds repositories in pom.xml              │
+  ├────────────────────────────────────────────────────────────────────────────┤
+  │ dynamicFileContributor                                                     │
+  │   → reads FileContributionEntity rows for selected deps + __common__       │
+  │   → for each row: applies javaVersion and subOptionId gates               │
+  │   → STATIC_COPY: writes verbatim                                          │
+  │   → YAML_MERGE:  deep-merges into application.yaml                        │
+  │   → TEMPLATE:    substitutes {{artifactId}}/{{packageName}} then writes    │
+  ├────────────────────────────────────────────────────────────────────────────┤
+  │ dynamicDeleteContributor  (@Order LOWEST_PRECEDENCE)                       │
+  │   → runs last, after framework writes application.properties               │
+  │   → deletes files registered with DELETE type                             │
+  └────────────────────────────────────────────────────────────────────────────┘
        │
        ▼
 Temp directory zipped → filter clears ProjectOptionsContext → HTTP response
 ```
 
-**Registration flow** — the framework discovers `ProjectGenerationConfiguration` classes via `META-INF/spring.factories`. Each one is a Spring `@Configuration` that is loaded in the child context for that generation request. `@ConditionalOnRequestedDependency("id")` gates the whole class on whether the user selected that dependency. Sub-option contributors within a class use `ProjectOptionsContext.hasOption()` for finer-grained conditionality.
+**Database tables:**
+
+| Table | Purpose |
+|-------|---------|
+| `dependency_group` | Categories (Web, Data, Messaging, …) |
+| `dependency_entry` | Individual dependencies with Maven coordinates |
+| `file_contribution` | Files/YAML to inject per dependency |
+| `build_customization` | pom.xml modifications per dependency |
+| `dependency_sub_option` | Optional extras within a dependency |
+
+**First-startup seeding:**
+`DataSeeder` (a `CommandLineRunner`) runs when all tables are empty. It reads every classpath resource from `static-configs/` and `templates/` and inserts them as DB records. After seeding, operators manage everything through the admin API. To reset to defaults: stop the app, delete `./data/`, restart.

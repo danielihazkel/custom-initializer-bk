@@ -1,8 +1,2 @@
 io.spring.initializr.generator.project.ProjectGenerationConfiguration=\
-  com.menora.initializr.extension.common.CommonProjectGenerationConfiguration,\
-  com.menora.initializr.extension.kafka.KafkaProjectGenerationConfiguration,\
-  com.menora.initializr.extension.security.SecurityProjectGenerationConfiguration,\
-  com.menora.initializr.extension.jpa.JpaProjectGenerationConfiguration,\
-  com.menora.initializr.extension.observability.ObservabilityProjectGenerationConfiguration,\
-  com.menora.initializr.extension.rqueue.RqueueProjectGenerationConfiguration,\
-  com.menora.initializr.extension.logging.LoggingProjectGenerationConfiguration
+  com.menora.initializr.extension.dynamic.DynamicProjectGenerationConfiguration

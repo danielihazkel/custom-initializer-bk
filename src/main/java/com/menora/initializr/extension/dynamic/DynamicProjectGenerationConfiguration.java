@@ -1,0 +1,194 @@
+package com.menora.initializr.extension.dynamic;
+
+import com.menora.initializr.config.ProjectOptionsContext;
+import com.menora.initializr.db.DependencyConfigService;
+import com.menora.initializr.db.entity.BuildCustomizationEntity;
+import com.menora.initializr.db.entity.FileContributionEntity;
+import io.spring.initializr.generator.buildsystem.Dependency;
+import io.spring.initializr.generator.buildsystem.MavenRepository;
+import io.spring.initializr.generator.buildsystem.maven.MavenBuild;
+import io.spring.initializr.generator.project.ProjectDescription;
+import io.spring.initializr.generator.project.ProjectGenerationConfiguration;
+import io.spring.initializr.generator.spring.build.BuildCustomizer;
+import io.spring.initializr.generator.project.contributor.ProjectContributor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.Yaml;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/**
+ * Single generic ProjectGenerationConfiguration that replaces all per-dependency
+ * configuration classes. Reads file contributions and build customizations from
+ * the database at generation time.
+ */
+@ProjectGenerationConfiguration
+public class DynamicProjectGenerationConfiguration {
+
+    @Bean
+    ProjectContributor dynamicFileContributor(
+            ProjectDescription description,
+            DependencyConfigService configService,
+            ProjectOptionsContext optionsContext) {
+        return projectRoot -> {
+            Set<String> depIds = selectedDepIds(description);
+            List<FileContributionEntity> contributions = configService.getFileContributions(depIds);
+
+            for (FileContributionEntity fc : contributions) {
+                // Skip if gated on a sub-option that wasn't selected
+                if (fc.getSubOptionId() != null
+                        && !optionsContext.hasOption(fc.getDependencyId(), fc.getSubOptionId())) {
+                    continue;
+                }
+                // Skip if gated on a Java version that doesn't match
+                if (fc.getJavaVersion() != null
+                        && !fc.getJavaVersion().equals(description.getLanguage().jvmVersion())) {
+                    continue;
+                }
+
+                String targetPath = resolveTargetPath(fc.getTargetPath(), description);
+                Path target = projectRoot.resolve(targetPath);
+
+                switch (fc.getFileType()) {
+                    case YAML_MERGE -> mergeYaml(fc.getContent(), target);
+                    case TEMPLATE -> writeTemplate(fc, description, target);
+                    case STATIC_COPY -> writeStatic(fc.getContent(), target);
+                    case DELETE -> Files.deleteIfExists(target);
+                }
+            }
+        };
+    }
+
+    /**
+     * Runs at LOWEST_PRECEDENCE so the DELETE contributors run after all writes.
+     * The main contributor above handles ordering via sortOrder already, but
+     * the DELETE of application.properties must happen after the framework writes it.
+     */
+    @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE)
+    ProjectContributor dynamicDeleteContributor(
+            ProjectDescription description,
+            DependencyConfigService configService) {
+        return projectRoot -> {
+            Set<String> depIds = selectedDepIds(description);
+            List<FileContributionEntity> contributions = configService.getFileContributions(depIds);
+
+            for (FileContributionEntity fc : contributions) {
+                if (fc.getFileType() == FileContributionEntity.FileType.DELETE) {
+                    Files.deleteIfExists(projectRoot.resolve(fc.getTargetPath()));
+                }
+            }
+        };
+    }
+
+    @Bean
+    BuildCustomizer<MavenBuild> dynamicBuildCustomizer(
+            ProjectDescription description,
+            DependencyConfigService configService) {
+        return build -> {
+            Set<String> depIds = selectedDepIds(description);
+            List<BuildCustomizationEntity> customizations = configService.getBuildCustomizations(depIds);
+
+            for (BuildCustomizationEntity bc : customizations) {
+                switch (bc.getCustomizationType()) {
+                    case ADD_DEPENDENCY -> build.dependencies().add(
+                            bc.getMavenArtifactId(),
+                            Dependency.withCoordinates(bc.getMavenGroupId(), bc.getMavenArtifactId())
+                                    .build());
+                    case EXCLUDE_DEPENDENCY -> build.dependencies().add(
+                            bc.getExcludeFromArtifactId(),
+                            Dependency.withCoordinates(bc.getExcludeFromGroupId(), bc.getExcludeFromArtifactId())
+                                    .exclusions(new Dependency.Exclusion(bc.getMavenGroupId(), bc.getMavenArtifactId()))
+                                    .build());
+                    case ADD_REPOSITORY -> {
+                        MavenRepository.Builder repoBuilder = MavenRepository
+                                .withIdAndUrl(bc.getRepoId(), bc.getRepoUrl())
+                                .name(bc.getRepoName());
+                        if (bc.isSnapshotsEnabled()) {
+                            repoBuilder.snapshotsEnabled(true);
+                        }
+                        build.repositories().add(bc.getRepoId(), repoBuilder.build());
+                    }
+                }
+            }
+        };
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private Set<String> selectedDepIds(ProjectDescription description) {
+        return description.getRequestedDependencies().keySet();
+    }
+
+    /**
+     * Resolves {{packagePath}} placeholder in target paths using the project's package name.
+     */
+    private String resolveTargetPath(String targetPath, ProjectDescription description) {
+        if (targetPath.contains("{{packagePath}}")) {
+            String packagePath = description.getPackageName().replace('.', '/');
+            targetPath = targetPath.replace("{{packagePath}}", packagePath);
+        }
+        return targetPath;
+    }
+
+    private void writeTemplate(FileContributionEntity fc, ProjectDescription description, Path target)
+            throws IOException {
+        String content = fc.getContent();
+        if (fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.PROJECT) {
+            content = content
+                    .replace("{{artifactId}}", description.getArtifactId())
+                    .replace("{{groupId}}", description.getGroupId())
+                    .replace("{{version}}", description.getVersion());
+        } else if (fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.PACKAGE) {
+            content = content.replace("{{packageName}}", description.getPackageName());
+        }
+        Files.createDirectories(target.getParent());
+        Files.writeString(target, content);
+    }
+
+    private void writeStatic(String content, Path target) throws IOException {
+        Files.createDirectories(target.getParent());
+        Files.writeString(target, content);
+    }
+
+    private void mergeYaml(String newContent, Path targetYamlPath) throws IOException {
+        Yaml yaml = new Yaml();
+        Map<String, Object> merged;
+        if (Files.exists(targetYamlPath)) {
+            Map<String, Object> existing = yaml.load(Files.readString(targetYamlPath));
+            Map<String, Object> incoming = yaml.load(newContent);
+            merged = deepMerge(existing, incoming);
+        } else {
+            merged = yaml.load(newContent);
+        }
+        Files.createDirectories(targetYamlPath.getParent());
+        DumperOptions opts = new DumperOptions();
+        opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+        opts.setPrettyFlow(true);
+        Files.writeString(targetYamlPath, new Yaml(opts).dump(merged));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> deepMerge(Map<String, Object> base, Map<String, Object> override) {
+        Map<String, Object> result = new LinkedHashMap<>(base);
+        for (Map.Entry<String, Object> entry : override.entrySet()) {
+            Object baseVal = result.get(entry.getKey());
+            Object overrideVal = entry.getValue();
+            if (baseVal instanceof Map && overrideVal instanceof Map) {
+                result.put(entry.getKey(), deepMerge((Map<String, Object>) baseVal, (Map<String, Object>) overrideVal));
+            } else {
+                result.put(entry.getKey(), overrideVal);
+            }
+        }
+        return result;
+    }
+}

@@ -1,24 +1,33 @@
 package com.menora.initializr.config;
 
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import com.menora.initializr.db.DependencyConfigService;
+import com.menora.initializr.db.entity.DependencySubOptionEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
-@EnableConfigurationProperties(DependencyOptionsProperties.class)
 public class ExtensionMetadataController {
 
-    private final DependencyOptionsProperties props;
+    private final DependencyConfigService configService;
 
-    public ExtensionMetadataController(DependencyOptionsProperties props) {
-        this.props = props;
+    public ExtensionMetadataController(DependencyConfigService configService) {
+        this.configService = configService;
     }
 
     @GetMapping("/metadata/extensions")
-    public Map<String, List<DependencyOptionsProperties.SubOption>> extensions() {
-        return props.dependencyOptions() != null ? props.dependencyOptions() : Map.of();
+    public Map<String, List<SubOptionDto>> extensions() {
+        return configService.getAllSubOptions().entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        e -> e.getValue().stream()
+                                .map(so -> new SubOptionDto(so.getOptionId(), so.getLabel(), so.getDescription()))
+                                .collect(Collectors.toList())
+                ));
     }
+
+    public record SubOptionDto(String id, String label, String description) {}
 }

@@ -4,6 +4,19 @@ server:
 spring:
   cache:
     type: jcache
+  datasource:
+    url: jdbc:h2:file:./data/initializr
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
 
 initializr:
   group-id:
@@ -72,79 +85,6 @@ initializr:
         url: https://repo.menora.co.il/artifactory/libs-snapshot
         releases-enabled: false
         snapshots-enabled: true
-  dependencies:
-    - name: Menora Standards
-      content:
-        - name: Sonus Rqueue
-          id: rqueue
-          groupId: com.sonus
-          artifactId: sonus-rqueue
-          version: 1.0.0
-          description: Sonus Rqueue messaging library
-          repository: menora-release
-
-    - name: Web
-      content:
-        - name: Spring Web
-          id: web
-          description: Build web applications with Spring MVC
-        - name: Spring Reactive Web
-          id: webflux
-          description: Build reactive web applications with Spring WebFlux
-
-    - name: Data
-      content:
-        - name: Spring Data JPA
-          id: data-jpa
-          description: Persist data with JPA and Hibernate
-        - name: PostgreSQL Driver
-          id: postgresql
-          groupId: org.postgresql
-          artifactId: postgresql
-          scope: runtime
-
-    - name: Messaging
-      content:
-        - name: Spring for Apache Kafka
-          id: kafka
-          description: Kafka messaging support
-
-    - name: Security
-      content:
-        - name: Spring Security
-          id: security
-          description: Authentication and authorization framework
-
-    - name: Observability
-      content:
-        - name: Spring Boot Actuator
-          id: actuator
-          description: Production-ready features
-        - name: Micrometer Prometheus
-          id: prometheus
-          groupId: io.micrometer
-          artifactId: micrometer-registry-prometheus
-          scope: runtime
-
-    - name: Logging
-      content:
-        - name: Menora Logging Standards
-          id: logging
-          description: Corporate logging configuration and standards
-          # No external dependency — only injects config files
-          groupId: org.springframework.boot
-          artifactId: spring-boot-starter-log4j2
-
-menora:
-  dependency-options:
-    kafka:
-      - id: consumer-example
-        label: "Consumer Example"
-        description: "Add a KafkaConsumerExample.java class"
-      - id: producer-example
-        label: "Producer Example"
-        description: "Add a KafkaProducerExample.java class"
-
 management:
   endpoints:
     web:

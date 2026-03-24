@@ -167,6 +167,18 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void withoutKafkaDependencyNoKafkaFiles() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("web");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        assertThat(project).filePaths()
+                .doesNotContain("src/main/java/com/menora/demo/config/KafkaConfig.java");
+    }
+
+    @Test
     void multipleDependenciesInjectAllConfigs() throws Exception {
         WebProjectRequest request = createBaseRequest();
         request.getDependencies().add("web");
