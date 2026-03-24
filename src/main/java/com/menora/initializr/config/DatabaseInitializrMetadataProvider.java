@@ -83,19 +83,19 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
                 dep.setName(ee.getName());
                 dep.setDescription(ee.getDescription());
 
-                if (ee.getMavenGroupId() != null) {
+                if (ee.getMavenGroupId() != null && !ee.getMavenGroupId().isBlank()) {
                     dep.setGroupId(ee.getMavenGroupId());
                 }
-                if (ee.getMavenArtifactId() != null) {
+                if (ee.getMavenArtifactId() != null && !ee.getMavenArtifactId().isBlank()) {
                     dep.setArtifactId(ee.getMavenArtifactId());
                 }
-                if (ee.getVersion() != null) {
+                if (ee.getVersion() != null && !ee.getVersion().isBlank()) {
                     dep.setVersion(ee.getVersion());
                 }
-                if (ee.getScope() != null) {
+                if (ee.getScope() != null && !ee.getScope().isBlank()) {
                     dep.setScope(ee.getScope());
                 }
-                if (ee.getRepository() != null) {
+                if (ee.getRepository() != null && !ee.getRepository().isBlank()) {
                     dep.setRepository(ee.getRepository());
                 }
 
