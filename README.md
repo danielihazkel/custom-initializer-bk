@@ -16,7 +16,8 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [IntelliJ IDEA Integration](#intellij-idea-integration)
    - [REST API (curl)](#rest-api-curl)
 5. [What Gets Injected Into Generated Projects](#what-gets-injected-into-generated-projects)
-6. [Admin API](#admin-api)
+6. [Project Preview](#project-preview)
+7. [Admin API](#admin-api)
    - [Hot-Reload Metadata](#hot-reload-metadata)
    - [Dependency Groups](#dependency-groups)
    - [Dependency Entries](#dependency-entries)
@@ -69,10 +70,12 @@ offline-spring-init/backend/
 │   │   │   └── AdminController.java             # REST CRUD for all DB tables + /admin/refresh
 │   │   ├── config/
 │   │   │   ├── DatabaseInitializrMetadataProvider.java  # Loads dep catalog from DB
-│   │   │   ├── ExtensionMetadataController.java         # GET /metadata/extensions (sub-options)
+│   │   │   ├── ExtensionMetadataController.java         # GET /metadata/extensions + /metadata/compatibility
 │   │   │   ├── InitializrWebConfiguration.java          # Filter: opts-* params, format default
 │   │   │   ├── MetadataProviderConfig.java              # Wires @Primary metadata provider bean
-│   │   │   └── ProjectOptionsContext.java               # ThreadLocal for sub-option selections
+│   │   │   ├── ProjectOptionsContext.java               # ThreadLocal for sub-option selections
+│   │   │   ├── ProjectPreviewConfig.java                # Ensures ProjectGenerationInvoker bean exists
+│   │   │   └── ProjectPreviewController.java            # GET /starter.preview → JSON file tree
 │   │   ├── db/
 │   │   │   ├── DataSeeder.java                  # Seeds DB from classpath on first startup
 │   │   │   ├── DependencyConfigService.java     # Query service for generation pipeline
@@ -221,6 +224,48 @@ All per-dependency YAML config is **deep-merged** into `src/main/resources/appli
 | `actuator` | `application.yaml` (management section merged) |
 | `rqueue` | `application.yaml` (rqueue section merged)<br>`src/main/java/.../config/RqueueConfig.java` |
 | `logging` | `application.yaml` (logging section merged) |
+
+---
+
+## Project Preview
+
+Before downloading a ZIP you can inspect the full generated file tree and the contents of every file. Click the **Explore** button in the top-right corner of the UI — a full-screen modal opens with:
+
+- **Left panel** — collapsible file tree (all folders expanded by default)
+- **Right panel** — file content viewer with line numbers; click any file in the tree to display it
+- **Download ZIP** button in the header to proceed with the actual download
+
+### Preview API
+
+The preview endpoint accepts the same query parameters as `/starter.zip`:
+
+```bash
+curl "http://localhost:8080/starter.preview?\
+type=maven-project&language=java&bootVersion=3.2.1&\
+groupId=com.menora&artifactId=demo&packageName=com.menora.demo&\
+packaging=jar&javaVersion=21&dependencies=web,kafka" | python -m json.tool
+```
+
+Response shape:
+```json
+{
+  "files": [
+    { "path": "pom.xml",                                    "content": "..." },
+    { "path": "src/main/java/com/menora/demo/DemoApplication.java", "content": "..." }
+  ],
+  "tree": [
+    { "name": "pom.xml", "path": "pom.xml", "type": "file", "children": [] },
+    { "name": "src",     "path": "src",     "type": "directory", "children": [
+      { "name": "main", "path": "src/main", "type": "directory", "children": [ "..." ] }
+    ]}
+  ]
+}
+```
+
+Sub-options work exactly as with `/starter.zip` — append `opts-{depId}=opt1,opt2`:
+```bash
+curl "http://localhost:8080/starter.preview?dependencies=kafka&opts-kafka=consumer-example&..."
+```
 
 ---
 
