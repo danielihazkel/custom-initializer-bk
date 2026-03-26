@@ -23,6 +23,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [File Contributions](#file-contributions)
    - [Build Customizations](#build-customizations)
    - [Sub-Options](#sub-options)
+   - [Compatibility Rules](#compatibility-rules)
 7. [Customization Guide](#customization-guide)
    - [Change the Spring Boot Version](#change-the-spring-boot-version)
    - [Change the Initializr Version](#change-the-initializr-version)
@@ -30,6 +31,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Add a Static Config File to a Dependency](#add-a-static-config-file-to-a-dependency)
    - [Add a Generated Java Class to a Dependency](#add-a-generated-java-class-to-a-dependency)
    - [Add Sub-Options to a Dependency](#add-sub-options-to-a-dependency)
+   - [Add a Compatibility Rule](#add-a-compatibility-rule)
    - [Edit an Existing Static Config File](#edit-an-existing-static-config-file)
    - [Edit an Existing Generated Java Class Template](#edit-an-existing-generated-java-class-template)
    - [Change the Artifactory URL](#change-the-artifactory-url)
@@ -74,8 +76,8 @@ offline-spring-init/backend/
 │   │   ├── db/
 │   │   │   ├── DataSeeder.java                  # Seeds DB from classpath on first startup
 │   │   │   ├── DependencyConfigService.java     # Query service for generation pipeline
-│   │   │   ├── entity/                          # JPA entities (5 tables)
-│   │   │   └── repository/                      # Spring Data repos (5 repos)
+│   │   │   ├── entity/                          # JPA entities (6 tables)
+│   │   │   └── repository/                      # Spring Data repos (6 repos)
 │   │   └── extension/dynamic/
 │   │       └── DynamicProjectGenerationConfiguration.java  # Single config replacing 8 classes
 │   └── resources/
@@ -438,6 +440,73 @@ curl -X POST http://localhost:8080/admin/sub-options \
 
 The sub-option only controls visibility in the UI. For it to actually inject a file, create a `FileContributionEntity` with the matching `dependencyId` and `subOptionId`.
 
+### Compatibility Rules
+
+Compatibility rules teach the UI about relationships between dependencies and display inline warnings as users build their selection. Three relationship types are supported:
+
+| Type | UI behaviour |
+|------|-------------|
+| `CONFLICTS` | Red warning banner — "these two deps conflict, choose one" |
+| `REQUIRES` | Yellow banner with an **Add** button — "source needs target to work" |
+| `RECOMMENDS` | Blue banner with an **Add** button — "target is suggested alongside source" |
+
+```bash
+GET    /admin/compatibility        # list all rules
+POST   /admin/compatibility        # create
+PUT    /admin/compatibility/{id}   # update
+DELETE /admin/compatibility/{id}   # delete
+```
+
+**Field reference:**
+
+| Field | Description |
+|-------|-------------|
+| `sourceDepId` | The dependency that triggers the rule (e.g. `web`) |
+| `targetDepId` | The dependency the rule points to (e.g. `webflux`) |
+| `relationType` | `CONFLICTS`, `REQUIRES`, or `RECOMMENDS` |
+| `description` | Human-readable message shown in the warning banner |
+| `sortOrder` | Display order (lower = first) |
+
+Example — mark two dependencies as conflicting:
+```bash
+curl -X POST http://localhost:8080/admin/compatibility \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sourceDepId": "web",
+    "targetDepId": "webflux",
+    "relationType": "CONFLICTS",
+    "description": "Spring MVC and WebFlux use incompatible server models — choose one",
+    "sortOrder": 0
+  }'
+```
+
+Example — declare that one dependency requires another:
+```bash
+curl -X POST http://localhost:8080/admin/compatibility \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sourceDepId": "rqueue",
+    "targetDepId": "data-jpa",
+    "relationType": "REQUIRES",
+    "description": "Sonus Rqueue requires a JPA datasource to persist job state",
+    "sortOrder": 1
+  }'
+```
+
+Rules are served to the browser at `GET /metadata/compatibility` (no auth required). The **Selected Dependencies** panel updates live as the user selects or removes dependencies — no page reload needed.
+
+> **Note:** Rules are directional. A CONFLICTS rule from `web` → `webflux` does **not** automatically create the reverse. Add both directions if you want the warning to appear regardless of which dependency was selected first.
+
+**Seeded defaults** (applied on first startup when the DB is empty):
+
+| Source | Relation | Target | Reason |
+|--------|----------|--------|--------|
+| `web` | CONFLICTS | `webflux` | Incompatible server models |
+| `data-jpa` | RECOMMENDS | `postgresql` | JPA needs a database driver |
+| `actuator` | RECOMMENDS | `prometheus` | Metrics export for Prometheus |
+| `rqueue` | REQUIRES | `data-jpa` | Rqueue persists state via JPA |
+| `security` | REQUIRES | `web` | Security needs a web layer |
+
 ---
 
 ## Customization Guide
@@ -618,6 +687,29 @@ curl -X POST http://localhost:8080/admin/refresh
 ```
 
 The UI calls `GET /metadata/extensions` to discover sub-options and renders checkboxes automatically. When the user selects one, the UI appends `opts-{depId}=my-option` to the generation request URL.
+
+---
+
+### Add a Compatibility Rule
+
+Use the admin API or the **Compatibility** tab in the admin UI:
+
+```bash
+# Warn when both deps are selected together
+curl -X POST http://localhost:8080/admin/compatibility \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sourceDepId": "cache",
+    "targetDepId": "data-jpa",
+    "relationType": "RECOMMENDS",
+    "description": "Caching often pairs with JPA to reduce database load",
+    "sortOrder": 0
+  }'
+```
+
+Rules take effect immediately — no refresh needed. The browser fetches `/metadata/compatibility` on page load and re-evaluates warnings client-side on every selection change.
+
+For a rule that should survive a fresh DB, add a call to `DataSeeder.seedCompatibilityRules()` using the `compatibility(source, target, type, desc, order)` helper.
 
 ---
 
@@ -839,6 +931,7 @@ Temp directory zipped → filter clears ProjectOptionsContext → HTTP response
 | `file_contribution` | Files/YAML to inject per dependency |
 | `build_customization` | pom.xml modifications per dependency |
 | `dependency_sub_option` | Optional extras within a dependency |
+| `dependency_compatibility` | REQUIRES / CONFLICTS / RECOMMENDS rules between deps |
 
 **First-startup seeding:**
 `DataSeeder` (a `CommandLineRunner`) runs when all tables are empty. It reads every classpath resource from `static-configs/` and `templates/` and inserts them as DB records. After seeding, operators manage everything through the admin API. To reset to defaults: stop the app, delete `./data/`, restart.

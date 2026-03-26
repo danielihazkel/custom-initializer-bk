@@ -27,17 +27,20 @@ public class DataSeeder implements CommandLineRunner {
     private final FileContributionRepository fileContribRepo;
     private final BuildCustomizationRepository buildCustomRepo;
     private final DependencySubOptionRepository subOptionRepo;
+    private final DependencyCompatibilityRepository compatibilityRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
                       FileContributionRepository fileContribRepo,
                       BuildCustomizationRepository buildCustomRepo,
-                      DependencySubOptionRepository subOptionRepo) {
+                      DependencySubOptionRepository subOptionRepo,
+                      DependencyCompatibilityRepository compatibilityRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
         this.buildCustomRepo = buildCustomRepo;
         this.subOptionRepo = subOptionRepo;
+        this.compatibilityRepo = compatibilityRepo;
     }
 
     @Override
@@ -53,6 +56,7 @@ public class DataSeeder implements CommandLineRunner {
         seedDependencyFileContributions();
         seedBuildCustomizations();
         seedSubOptions();
+        seedCompatibilityRules();
         log.info("Database seeding complete");
     }
 
@@ -319,6 +323,31 @@ public class DataSeeder implements CommandLineRunner {
         e.setSnapshotsEnabled(snapshotsEnabled);
         e.setSortOrder(order);
         buildCustomRepo.save(e);
+    }
+
+    private void seedCompatibilityRules() {
+        compatibility("web", "webflux", DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Spring MVC and WebFlux use incompatible server models — choose one", 0);
+        compatibility("data-jpa", "postgresql", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "JPA requires a database driver — add the PostgreSQL Driver", 1);
+        compatibility("actuator", "prometheus", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "Add Micrometer Prometheus to export Actuator metrics to Prometheus", 2);
+        compatibility("rqueue", "data-jpa", DependencyCompatibilityEntity.RelationType.REQUIRES,
+                "Sonus Rqueue requires a JPA datasource to persist job state", 3);
+        compatibility("security", "web", DependencyCompatibilityEntity.RelationType.REQUIRES,
+                "Spring Security requires a web layer — add Spring Web", 4);
+    }
+
+    private void compatibility(String source, String target,
+                                DependencyCompatibilityEntity.RelationType type,
+                                String desc, int order) {
+        DependencyCompatibilityEntity e = new DependencyCompatibilityEntity();
+        e.setSourceDepId(source);
+        e.setTargetDepId(target);
+        e.setRelationType(type);
+        e.setDescription(desc);
+        e.setSortOrder(order);
+        compatibilityRepo.save(e);
     }
 
     private void subOption(String depId, String optionId, String label, String desc, int order) {

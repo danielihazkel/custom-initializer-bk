@@ -27,19 +27,22 @@ public class AdminController {
     private final FileContributionRepository fileContribRepo;
     private final BuildCustomizationRepository buildCustomRepo;
     private final DependencySubOptionRepository subOptionRepo;
+    private final DependencyCompatibilityRepository compatibilityRepo;
 
     public AdminController(InitializrMetadataProvider metadataProvider,
                            DependencyGroupRepository groupRepo,
                            DependencyEntryRepository entryRepo,
                            FileContributionRepository fileContribRepo,
                            BuildCustomizationRepository buildCustomRepo,
-                           DependencySubOptionRepository subOptionRepo) {
+                           DependencySubOptionRepository subOptionRepo,
+                           DependencyCompatibilityRepository compatibilityRepo) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
         this.buildCustomRepo = buildCustomRepo;
         this.subOptionRepo = subOptionRepo;
+        this.compatibilityRepo = compatibilityRepo;
     }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
@@ -170,6 +173,30 @@ public class AdminController {
     @DeleteMapping("/sub-options/{id}")
     public ResponseEntity<Void> deleteSubOption(@PathVariable Long id) {
         subOptionRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Compatibility Rules ───────────────────────────────────────────────────
+
+    @GetMapping("/compatibility")
+    public List<DependencyCompatibilityEntity> listCompatibility() {
+        return compatibilityRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PostMapping("/compatibility")
+    public DependencyCompatibilityEntity createCompatibility(@RequestBody DependencyCompatibilityEntity rule) {
+        return compatibilityRepo.save(rule);
+    }
+
+    @PutMapping("/compatibility/{id}")
+    public DependencyCompatibilityEntity updateCompatibility(@PathVariable Long id, @RequestBody DependencyCompatibilityEntity rule) {
+        rule.setId(id);
+        return compatibilityRepo.save(rule);
+    }
+
+    @DeleteMapping("/compatibility/{id}")
+    public ResponseEntity<Void> deleteCompatibility(@PathVariable Long id) {
+        compatibilityRepo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
 }

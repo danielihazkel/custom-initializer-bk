@@ -2,6 +2,7 @@ package com.menora.initializr.config;
 
 import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.entity.DependencySubOptionEntity;
+import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -13,9 +14,12 @@ import java.util.stream.Collectors;
 public class ExtensionMetadataController {
 
     private final DependencyConfigService configService;
+    private final DependencyCompatibilityRepository compatibilityRepo;
 
-    public ExtensionMetadataController(DependencyConfigService configService) {
+    public ExtensionMetadataController(DependencyConfigService configService,
+                                       DependencyCompatibilityRepository compatibilityRepo) {
         this.configService = configService;
+        this.compatibilityRepo = compatibilityRepo;
     }
 
     @GetMapping("/metadata/extensions")
@@ -29,5 +33,17 @@ public class ExtensionMetadataController {
                 ));
     }
 
+    @GetMapping("/metadata/compatibility")
+    public List<CompatibilityRuleDto> compatibility() {
+        return compatibilityRepo.findAllByOrderBySortOrderAsc().stream()
+                .map(r -> new CompatibilityRuleDto(
+                        r.getSourceDepId(),
+                        r.getTargetDepId(),
+                        r.getRelationType().name(),
+                        r.getDescription()))
+                .toList();
+    }
+
     public record SubOptionDto(String id, String label, String description) {}
+    public record CompatibilityRuleDto(String sourceDepId, String targetDepId, String relationType, String description) {}
 }
