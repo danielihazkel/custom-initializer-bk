@@ -43,6 +43,9 @@ public class DependencyEntryEntity {
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
+    @Column(name = "compatibility_range", length = 100)
+    private String compatibilityRange;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public DependencyGroupEntity getGroup() { return group; }
@@ -65,4 +68,6 @@ public class DependencyEntryEntity {
     public void setRepository(String repository) { this.repository = repository; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    public String getCompatibilityRange() { return compatibilityRange; }
+    public void setCompatibilityRange(String compatibilityRange) { this.compatibilityRange = compatibilityRange; }
 }

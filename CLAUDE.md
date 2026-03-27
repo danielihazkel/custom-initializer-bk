@@ -98,6 +98,22 @@ Sub-options are managed via `/admin/sub-options`.
 
 The provider caches the metadata. Call `POST /admin/refresh` to invalidate the cache after DB changes.
 
+### Dependency Version Compatibility Ranges
+
+Each `DependencyEntryEntity` has an optional `compatibilityRange` field (column: `compatibility_range`). When set, the Spring Initializr framework automatically:
+
+- Excludes the dependency from `/metadata/client` responses when the selected Boot version falls outside the range
+- Includes `"versionRange"` in the metadata JSON for clients to display
+
+**Range syntax** (interval notation):
+- `[3.2.0,4.0.0)` — Boot ≥ 3.2.0 and < 4.0.0 (most common)
+- `3.2.0` — Boot ≥ 3.2.0 (open upper bound)
+- `[3.2.0,3.3.0]` — inclusive on both ends
+
+A blank/null range means the dependency is compatible with all Boot versions (default behavior).
+
+Set via the admin UI (Dependencies tab → edit → Compatibility Range field) or directly in `DataSeeder` for fresh-DB seeds. The range is validated by `dep.resolve()` at metadata-build time — a malformed range throws immediately on refresh.
+
 ### InitializrWebConfiguration
 
 `src/main/java/com/menora/initializr/config/InitializrWebConfiguration.java`

@@ -98,6 +98,9 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
                 if (ee.getRepository() != null && !ee.getRepository().isBlank()) {
                     dep.setRepository(ee.getRepository());
                 }
+                if (ee.getCompatibilityRange() != null && !ee.getCompatibilityRange().isBlank()) {
+                    dep.setCompatibilityRange(ee.getCompatibilityRange());
+                }
 
                 dep.resolve();
                 group.getContent().add(dep);

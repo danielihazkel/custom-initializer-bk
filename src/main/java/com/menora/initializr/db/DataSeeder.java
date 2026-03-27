@@ -88,6 +88,10 @@ public class DataSeeder implements CommandLineRunner {
         DependencyGroupEntity menora = group("Menora Standards", 0);
         entry(menora, "rqueue", "Sonus Rqueue", "Sonus Rqueue messaging library",
                 "com.sonus", "sonus-rqueue", "1.0.0", null, "menora-release", 0);
+        entryRepo.findAll().stream()
+                .filter(e -> "rqueue".equals(e.getDepId()))
+                .findFirst()
+                .ifPresent(e -> { e.setCompatibilityRange("[3.2.0,4.0.0)"); entryRepo.save(e); });
 
         DependencyGroupEntity web = group("Web", 1);
         entry(web, "web", "Spring Web", "Build web applications with Spring MVC",
