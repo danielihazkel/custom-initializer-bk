@@ -25,6 +25,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Build Customizations](#build-customizations)
    - [Sub-Options](#sub-options)
    - [Compatibility Rules](#compatibility-rules)
+   - [Dependency Version Ranges](#dependency-version-ranges)
 7. [Customization Guide](#customization-guide)
    - [Change the Spring Boot Version](#change-the-spring-boot-version)
    - [Change the Initializr Version](#change-the-initializr-version)
@@ -33,6 +34,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Add a Generated Java Class to a Dependency](#add-a-generated-java-class-to-a-dependency)
    - [Add Sub-Options to a Dependency](#add-sub-options-to-a-dependency)
    - [Add a Compatibility Rule](#add-a-compatibility-rule)
+   - [Restrict a Dependency to Specific Boot Versions](#restrict-a-dependency-to-specific-boot-versions)
    - [Edit an Existing Static Config File](#edit-an-existing-static-config-file)
    - [Edit an Existing Generated Java Class Template](#edit-an-existing-generated-java-class-template)
    - [Change the Artifactory URL](#change-the-artifactory-url)
@@ -552,6 +554,37 @@ Rules are served to the browser at `GET /metadata/compatibility` (no auth requir
 | `rqueue` | REQUIRES | `data-jpa` | Rqueue persists state via JPA |
 | `security` | REQUIRES | `web` | Security needs a web layer |
 
+### Dependency Version Ranges
+
+Each dependency entry has an optional `compatibilityRange` field. When set, the Spring Initializr framework automatically filters that dependency out of the metadata for any selected Boot version that falls outside the range, and the UI shows a version badge (e.g. **Boot [3.2.0,4.0.0)**) next to the dependency name.
+
+**Range syntax** — mathematical interval notation:
+
+| Syntax | Meaning |
+|--------|---------|
+| `[3.2.0,4.0.0)` | Boot ≥ 3.2.0 and < 4.0.0 (inclusive lower, exclusive upper — most common) |
+| `3.2.0` | Boot ≥ 3.2.0 (open upper bound) |
+| `[3.2.0,3.3.0]` | Boot ≥ 3.2.0 and ≤ 3.3.0 (inclusive on both ends) |
+
+A blank or null range means the dependency is compatible with all Boot versions (the default).
+
+Set via the admin API:
+```bash
+curl -X PUT http://localhost:8080/admin/dependency-entries/{id} \
+  -H "Content-Type: application/json" \
+  -d '{
+    ...,
+    "compatibilityRange": "[3.2.0,4.0.0)"
+  }'
+curl -X POST http://localhost:8080/admin/refresh
+```
+
+Or edit it in the Admin UI: **Configuration → Dependencies → edit → Compatibility Range**.
+
+The range is validated by the framework at metadata-build time — a malformed range causes `/admin/refresh` to throw immediately with a clear error rather than silently producing bad metadata.
+
+**Seeded example:** `rqueue` is seeded with `[3.2.0,4.0.0)`. It will be hidden from the catalog if a Spring Boot 4.x version is added to `application.yml`.
+
 ---
 
 ## Customization Guide
@@ -839,6 +872,46 @@ Then reference it from a dependency entry by including `"bom": "menora-internal-
 
 ---
 
+### Restrict a Dependency to Specific Boot Versions
+
+Use the `compatibilityRange` field on a dependency entry to control which Boot versions it appears for.
+
+**Via admin API (no restart):**
+```bash
+# Find the entry's numeric id
+curl http://localhost:8080/admin/dependency-entries | python -m json.tool
+
+# Set the range — replaces the whole record, so include all existing fields
+curl -X PUT http://localhost:8080/admin/dependency-entries/{id} \
+  -H "Content-Type: application/json" \
+  -d '{
+    "group": {"id": 1},
+    "depId": "rqueue",
+    "name": "Sonus Rqueue",
+    "description": "Sonus Rqueue messaging library",
+    "mavenGroupId": "com.sonus",
+    "mavenArtifactId": "sonus-rqueue",
+    "version": "1.0.0",
+    "repository": "menora-release",
+    "compatibilityRange": "[3.2.0,4.0.0)",
+    "sortOrder": 0
+  }'
+
+curl -X POST http://localhost:8080/admin/refresh
+```
+
+**Permanently (survives a fresh DB):** after the `entry(...)` call in `DataSeeder.seedDependencyCatalog()`, look up the entry and set the range:
+```java
+entryRepo.findAll().stream()
+    .filter(e -> "rqueue".equals(e.getDepId()))
+    .findFirst()
+    .ifPresent(e -> { e.setCompatibilityRange("[3.2.0,4.0.0)"); entryRepo.save(e); });
+```
+
+To remove a range (make the dep visible for all versions), PUT the record with `"compatibilityRange": null` or `""` and refresh.
+
+---
+
 ### Add a New Java Version Option
 
 In `application.yml`:
@@ -912,18 +985,18 @@ void myDepInjectsConfig() throws Exception {
 
 ## Dependency Catalog Reference
 
-| ID | Name | Category | Config Injected into `application.yaml` | Java Class |
-|----|------|----------|-----------------------------------------|------------|
-| `web` | Spring Web | Web | — | — |
-| `webflux` | Spring Reactive Web | Web | — | — |
-| `data-jpa` | Spring Data JPA | Data | datasource, JPA properties | `JpaConfig.java` |
-| `postgresql` | PostgreSQL Driver | Data | — | — |
-| `kafka` | Spring for Apache Kafka | Messaging | kafka (bootstrap-servers, producer, consumer) | `KafkaConfig.java`<br>*(opt)* `KafkaConsumerExample.java`<br>*(opt)* `KafkaProducerExample.java` |
-| `security` | Spring Security | Security | oauth2 resource server | `SecurityConfig.java` |
-| `actuator` | Spring Boot Actuator | Observability | management endpoints | — |
-| `prometheus` | Micrometer Prometheus | Observability | — | — |
-| `logging` | Menora Logging Standards | Logging | logging config | — |
-| `rqueue` | Sonus Rqueue | Menora Standards | rqueue properties | `RqueueConfig.java` |
+| ID | Name | Category | Config Injected into `application.yaml` | Java Class | Boot Range |
+|----|------|----------|-----------------------------------------|------------|------------|
+| `web` | Spring Web | Web | — | — | — |
+| `webflux` | Spring Reactive Web | Web | — | — | — |
+| `data-jpa` | Spring Data JPA | Data | datasource, JPA properties | `JpaConfig.java` | — |
+| `postgresql` | PostgreSQL Driver | Data | — | — | — |
+| `kafka` | Spring for Apache Kafka | Messaging | kafka (bootstrap-servers, producer, consumer) | `KafkaConfig.java`<br>*(opt)* `KafkaConsumerExample.java`<br>*(opt)* `KafkaProducerExample.java` | — |
+| `security` | Spring Security | Security | oauth2 resource server | `SecurityConfig.java` | — |
+| `actuator` | Spring Boot Actuator | Observability | management endpoints | — | — |
+| `prometheus` | Micrometer Prometheus | Observability | — | — | — |
+| `logging` | Menora Logging Standards | Logging | logging config | — | — |
+| `rqueue` | Sonus Rqueue | Menora Standards | rqueue properties | `RqueueConfig.java` | `[3.2.0,4.0.0)` |
 
 ---
 
