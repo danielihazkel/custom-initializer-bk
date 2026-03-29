@@ -30,6 +30,8 @@ public class DataSeeder implements CommandLineRunner {
     private final DependencyCompatibilityRepository compatibilityRepo;
     private final StarterTemplateRepository templateRepo;
     private final StarterTemplateDepRepository templateDepRepo;
+    private final ModuleTemplateRepository moduleRepo;
+    private final ModuleDependencyMappingRepository moduleMappingRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
@@ -38,7 +40,9 @@ public class DataSeeder implements CommandLineRunner {
                       DependencySubOptionRepository subOptionRepo,
                       DependencyCompatibilityRepository compatibilityRepo,
                       StarterTemplateRepository templateRepo,
-                      StarterTemplateDepRepository templateDepRepo) {
+                      StarterTemplateDepRepository templateDepRepo,
+                      ModuleTemplateRepository moduleRepo,
+                      ModuleDependencyMappingRepository moduleMappingRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
@@ -47,6 +51,8 @@ public class DataSeeder implements CommandLineRunner {
         this.compatibilityRepo = compatibilityRepo;
         this.templateRepo = templateRepo;
         this.templateDepRepo = templateDepRepo;
+        this.moduleRepo = moduleRepo;
+        this.moduleMappingRepo = moduleMappingRepo;
     }
 
     @Override
@@ -64,6 +70,7 @@ public class DataSeeder implements CommandLineRunner {
         seedSubOptions();
         seedCompatibilityRules();
         seedStarterTemplates();
+        seedModuleTemplates();
         log.info("Database seeding complete");
     }
 
@@ -431,6 +438,56 @@ public class DataSeeder implements CommandLineRunner {
         e.setDepId(depId);
         e.setSubOptions(subOptions);
         templateDepRepo.save(e);
+    }
+
+    // ── Module templates ──────────────────────────────────────────────────
+
+    private void seedModuleTemplates() {
+        // API module — gets the main class and web-facing dependencies
+        moduleTemplate("api", "API Module",
+                "REST controllers, web layer, and application entry point",
+                "-api", "jar", true, 0);
+
+        // Core module — shared business logic, no web or DB
+        moduleTemplate("core", "Core Module",
+                "Shared domain models, services, and utilities",
+                "-core", "jar", false, 1);
+
+        // Persistence module — JPA entities and repositories
+        moduleTemplate("persistence", "Persistence Module",
+                "JPA entities, repositories, and database configuration",
+                "-persistence", "jar", false, 2);
+
+        // Module-to-dependency mappings
+        moduleDepMapping("api", "web", 0);
+        moduleDepMapping("api", "security", 1);
+        moduleDepMapping("api", "actuator", 2);
+
+        moduleDepMapping("persistence", "data-jpa", 0);
+        moduleDepMapping("persistence", "postgresql", 1);
+
+        moduleDepMapping("core", "logging", 0);
+    }
+
+    private void moduleTemplate(String moduleId, String label, String description,
+                                 String suffix, String packaging, boolean hasMainClass, int sortOrder) {
+        ModuleTemplateEntity e = new ModuleTemplateEntity();
+        e.setModuleId(moduleId);
+        e.setLabel(label);
+        e.setDescription(description);
+        e.setSuffix(suffix);
+        e.setPackaging(packaging);
+        e.setHasMainClass(hasMainClass);
+        e.setSortOrder(sortOrder);
+        moduleRepo.save(e);
+    }
+
+    private void moduleDepMapping(String moduleId, String depId, int sortOrder) {
+        ModuleDependencyMappingEntity e = new ModuleDependencyMappingEntity();
+        e.setModuleId(moduleId);
+        e.setDependencyId(depId);
+        e.setSortOrder(sortOrder);
+        moduleMappingRepo.save(e);
     }
 
     private String readClasspath(String path) throws IOException {

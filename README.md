@@ -27,6 +27,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Compatibility Rules](#compatibility-rules)
    - [Dependency Version Ranges](#dependency-version-ranges)
    - [Starter Templates](#starter-templates)
+   - [Module Templates (Multi-Module)](#module-templates-multi-module)
 7. [Customization Guide](#customization-guide)
    - [Change the Spring Boot Version](#change-the-spring-boot-version)
    - [Change the Initializr Version](#change-the-initializr-version)
@@ -73,17 +74,18 @@ offline-spring-init/backend/
 │   │   │   └── AdminController.java             # REST CRUD for all DB tables + /admin/refresh
 │   │   ├── config/
 │   │   │   ├── DatabaseInitializrMetadataProvider.java  # Loads dep catalog from DB
-│   │   │   ├── ExtensionMetadataController.java         # GET /metadata/extensions + /metadata/compatibility
+│   │   │   ├── ExtensionMetadataController.java         # GET /metadata/extensions + /metadata/compatibility + /metadata/module-templates
 │   │   │   ├── InitializrWebConfiguration.java          # Filter: opts-* params, format default
 │   │   │   ├── MetadataProviderConfig.java              # Wires @Primary metadata provider bean
+│   │   │   ├── MultiModuleController.java               # GET /starter-multimodule.zip + .preview
 │   │   │   ├── ProjectOptionsContext.java               # ThreadLocal for sub-option selections
 │   │   │   ├── ProjectPreviewConfig.java                # Ensures ProjectGenerationInvoker bean exists
 │   │   │   └── ProjectPreviewController.java            # GET /starter.preview → JSON file tree
 │   │   ├── db/
 │   │   │   ├── DataSeeder.java                  # Seeds DB from classpath on first startup
 │   │   │   ├── DependencyConfigService.java     # Query service for generation pipeline
-│   │   │   ├── entity/                          # JPA entities (8 tables)
-│   │   │   └── repository/                      # Spring Data repos (8 repos)
+│   │   │   ├── entity/                          # JPA entities (10 tables)
+│   │   │   └── repository/                      # Spring Data repos (10 repos)
 │   │   └── extension/dynamic/
 │   │       └── DynamicProjectGenerationConfiguration.java  # Single config replacing 8 classes
 │   └── resources/
@@ -988,6 +990,135 @@ The UI fetches templates from `GET /metadata/starter-templates` (a public endpoi
 | `event-driven` | Event-Driven Service | kafka (with consumer/producer examples), data-jpa, postgresql, actuator, logging |
 | `microservice` | Microservice (Full Stack) | web, kafka, data-jpa, postgresql, security, actuator, prometheus, logging |
 
+### Module Templates (Multi-Module)
+
+Module templates enable **multi-module Maven project generation**. Instead of a single project, the initializr generates a parent POM with `<modules>` entries and a sub-directory for each selected module — each with its own `pom.xml`, dependencies, and generated files.
+
+#### How it works
+
+1. An admin defines **module templates** — each with a unique ID, a suffix (e.g. `-api`), packaging, and whether it contains the `@SpringBootApplication` entry point.
+2. An admin maps **dependencies to modules** — e.g. `web` and `security` go to the `api` module, `data-jpa` goes to `persistence`.
+3. The user enables **Multi-Module Project** in the UI, selects which modules to include, and clicks Generate.
+4. The backend generates each module as a sub-project (using the standard generation pipeline), strips the main class from non-entry-point modules, and wraps everything in a parent POM.
+
+#### UI Usage
+
+In the main initializr view, a **Multi-Module Project** toggle appears below the packaging options (only visible when module templates are configured). Enable it to reveal a module picker with checkboxes. Each module card shows:
+- Module label and artifact suffix (e.g. `-api`)
+- Whether it's the entry point module
+- Which dependencies are mapped to it
+
+Any dependencies selected in the dependency picker are added to **all** modules as extras, in addition to each module's mapped dependencies.
+
+#### REST API
+
+**Generate a multi-module ZIP:**
+```bash
+curl -o myapp.zip "http://localhost:8080/starter-multimodule.zip?\
+modules=api,core,persistence&\
+groupId=com.menora&artifactId=myapp&\
+bootVersion=3.2.1&javaVersion=21"
+```
+
+This produces:
+```
+myapp/
+├── pom.xml                  ← parent POM (packaging: pom, <modules> block)
+├── myapp-api/
+│   ├── pom.xml              ← web, security, actuator + common files
+│   └── src/main/java/...   ← includes @SpringBootApplication
+├── myapp-core/
+│   ├── pom.xml              ← logging + common files
+│   └── src/main/java/...   ← no main class
+└── myapp-persistence/
+    ├── pom.xml              ← data-jpa, postgresql + common files
+    └── src/main/java/...   ← no main class
+```
+
+**Preview a multi-module project (JSON):**
+```bash
+curl "http://localhost:8080/starter-multimodule.preview?\
+modules=api,persistence&groupId=com.menora&artifactId=myapp" | python -m json.tool
+```
+
+Extra dependencies can be passed via `dependencies=` to add them to every module:
+```bash
+curl -o myapp.zip "http://localhost:8080/starter-multimodule.zip?\
+modules=api,persistence&dependencies=logging,actuator&\
+groupId=com.menora&artifactId=myapp"
+```
+
+#### Admin API
+
+```bash
+# Module templates
+GET    /admin/module-templates        # list all
+POST   /admin/module-templates        # create
+PUT    /admin/module-templates/{id}   # update
+DELETE /admin/module-templates/{id}   # delete
+
+# Module dependency mappings
+GET    /admin/module-dep-mappings        # list all
+POST   /admin/module-dep-mappings        # create
+PUT    /admin/module-dep-mappings/{id}   # update
+DELETE /admin/module-dep-mappings/{id}   # delete
+```
+
+**Module template fields:**
+
+| Field | Description |
+|-------|-------------|
+| `moduleId` | Unique slug (e.g. `api`, `core`, `persistence`) |
+| `label` | Display name (e.g. "API Module") |
+| `description` | What the module provides |
+| `suffix` | Appended to artifactId (e.g. `-api` → `myapp-api`) |
+| `packaging` | `jar` or `war` |
+| `hasMainClass` | `true` for the module that gets `@SpringBootApplication` (only one should be true) |
+| `sortOrder` | Display order |
+
+**Module dependency mapping fields:**
+
+| Field | Description |
+|-------|-------------|
+| `moduleId` | Which module this dependency belongs to |
+| `dependencyId` | Dependency entry ID (e.g. `web`, `data-jpa`) |
+| `sortOrder` | Order within the module |
+
+Example — create a module and map dependencies:
+```bash
+# Create the module
+curl -X POST http://localhost:8080/admin/module-templates \
+  -H "Content-Type: application/json" \
+  -d '{
+    "moduleId": "api",
+    "label": "API Module",
+    "description": "REST controllers and application entry point",
+    "suffix": "-api",
+    "packaging": "jar",
+    "hasMainClass": true,
+    "sortOrder": 0
+  }'
+
+# Map dependencies to the module
+curl -X POST http://localhost:8080/admin/module-dep-mappings \
+  -H "Content-Type: application/json" \
+  -d '{"moduleId": "api", "dependencyId": "web", "sortOrder": 0}'
+
+curl -X POST http://localhost:8080/admin/module-dep-mappings \
+  -H "Content-Type: application/json" \
+  -d '{"moduleId": "api", "dependencyId": "security", "sortOrder": 1}'
+```
+
+The UI fetches module templates from `GET /metadata/module-templates` (public, no auth). No `/admin/refresh` is needed.
+
+**Seeded defaults** (applied on first startup when the DB is empty):
+
+| Module ID | Label | Suffix | Main Class | Mapped Dependencies |
+|-----------|-------|--------|------------|---------------------|
+| `api` | API Module | `-api` | Yes | web, security, actuator |
+| `core` | Core Module | `-core` | No | logging |
+| `persistence` | Persistence Module | `-persistence` | No | data-jpa, postgresql |
+
 ---
 
 ### Add a New Java Version Option
@@ -1130,6 +1261,8 @@ Temp directory zipped → filter clears ProjectOptionsContext → HTTP response
 | `dependency_compatibility` | REQUIRES / CONFLICTS / RECOMMENDS rules between deps |
 | `starter_template` | Admin-curated project presets (Quick Start cards) |
 | `starter_template_dep` | Dependencies included in each starter template |
+| `module_template` | Sub-module definitions for multi-module generation |
+| `module_dependency_mapping` | Maps dependencies to specific modules |
 
 **First-startup seeding:**
 `DataSeeder` (a `CommandLineRunner`) runs when all tables are empty. It reads every classpath resource from `static-configs/` and `templates/` and inserts them as DB records. After seeding, operators manage everything through the admin API. To reset to defaults: stop the app, delete `./data/`, restart.

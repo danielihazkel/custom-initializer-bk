@@ -30,6 +30,8 @@ public class AdminController {
     private final DependencyCompatibilityRepository compatibilityRepo;
     private final StarterTemplateRepository templateRepo;
     private final StarterTemplateDepRepository templateDepRepo;
+    private final ModuleTemplateRepository moduleRepo;
+    private final ModuleDependencyMappingRepository moduleMappingRepo;
 
     public AdminController(InitializrMetadataProvider metadataProvider,
                            DependencyGroupRepository groupRepo,
@@ -39,7 +41,9 @@ public class AdminController {
                            DependencySubOptionRepository subOptionRepo,
                            DependencyCompatibilityRepository compatibilityRepo,
                            StarterTemplateRepository templateRepo,
-                           StarterTemplateDepRepository templateDepRepo) {
+                           StarterTemplateDepRepository templateDepRepo,
+                           ModuleTemplateRepository moduleRepo,
+                           ModuleDependencyMappingRepository moduleMappingRepo) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -49,6 +53,8 @@ public class AdminController {
         this.compatibilityRepo = compatibilityRepo;
         this.templateRepo = templateRepo;
         this.templateDepRepo = templateDepRepo;
+        this.moduleRepo = moduleRepo;
+        this.moduleMappingRepo = moduleMappingRepo;
     }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
@@ -254,6 +260,54 @@ public class AdminController {
     @DeleteMapping("/starter-template-deps/{id}")
     public ResponseEntity<Void> deleteTemplateDep(@PathVariable Long id) {
         templateDepRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Module Templates ──────────────────────────────────────────────────────
+
+    @GetMapping("/module-templates")
+    public List<ModuleTemplateEntity> listModules() {
+        return moduleRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PostMapping("/module-templates")
+    public ModuleTemplateEntity createModule(@RequestBody ModuleTemplateEntity module) {
+        return moduleRepo.save(module);
+    }
+
+    @PutMapping("/module-templates/{id}")
+    public ModuleTemplateEntity updateModule(@PathVariable Long id, @RequestBody ModuleTemplateEntity module) {
+        module.setId(id);
+        return moduleRepo.save(module);
+    }
+
+    @DeleteMapping("/module-templates/{id}")
+    public ResponseEntity<Void> deleteModule(@PathVariable Long id) {
+        moduleRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Module Dependency Mappings ─────────────────────────────────────────────
+
+    @GetMapping("/module-dep-mappings")
+    public List<ModuleDependencyMappingEntity> listModuleMappings() {
+        return moduleMappingRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PostMapping("/module-dep-mappings")
+    public ModuleDependencyMappingEntity createModuleMapping(@RequestBody ModuleDependencyMappingEntity mapping) {
+        return moduleMappingRepo.save(mapping);
+    }
+
+    @PutMapping("/module-dep-mappings/{id}")
+    public ModuleDependencyMappingEntity updateModuleMapping(@PathVariable Long id, @RequestBody ModuleDependencyMappingEntity mapping) {
+        mapping.setId(id);
+        return moduleMappingRepo.save(mapping);
+    }
+
+    @DeleteMapping("/module-dep-mappings/{id}")
+    public ResponseEntity<Void> deleteModuleMapping(@PathVariable Long id) {
+        moduleMappingRepo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
 }

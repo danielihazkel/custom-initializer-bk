@@ -2,8 +2,11 @@ package com.menora.initializr.config;
 
 import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.entity.DependencySubOptionEntity;
+import com.menora.initializr.db.entity.ModuleDependencyMappingEntity;
 import com.menora.initializr.db.entity.StarterTemplateDepEntity;
 import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
+import com.menora.initializr.db.repository.ModuleDependencyMappingRepository;
+import com.menora.initializr.db.repository.ModuleTemplateRepository;
 import com.menora.initializr.db.repository.StarterTemplateDepRepository;
 import com.menora.initializr.db.repository.StarterTemplateRepository;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -20,15 +24,21 @@ public class ExtensionMetadataController {
     private final DependencyCompatibilityRepository compatibilityRepo;
     private final StarterTemplateRepository templateRepo;
     private final StarterTemplateDepRepository templateDepRepo;
+    private final ModuleTemplateRepository moduleRepo;
+    private final ModuleDependencyMappingRepository moduleMappingRepo;
 
     public ExtensionMetadataController(DependencyConfigService configService,
                                        DependencyCompatibilityRepository compatibilityRepo,
                                        StarterTemplateRepository templateRepo,
-                                       StarterTemplateDepRepository templateDepRepo) {
+                                       StarterTemplateDepRepository templateDepRepo,
+                                       ModuleTemplateRepository moduleRepo,
+                                       ModuleDependencyMappingRepository moduleMappingRepo) {
         this.configService = configService;
         this.compatibilityRepo = compatibilityRepo;
         this.templateRepo = templateRepo;
         this.templateDepRepo = templateDepRepo;
+        this.moduleRepo = moduleRepo;
+        this.moduleMappingRepo = moduleMappingRepo;
     }
 
     @GetMapping("/metadata/extensions")
@@ -74,6 +84,22 @@ public class ExtensionMetadataController {
                 .toList();
     }
 
+    @GetMapping("/metadata/module-templates")
+    public List<ModuleTemplateDto> moduleTemplates() {
+        List<ModuleDependencyMappingEntity> allMappings = moduleMappingRepo.findAllByOrderBySortOrderAsc();
+        Map<String, List<String>> mappingsByModule = allMappings.stream()
+                .collect(Collectors.groupingBy(
+                        ModuleDependencyMappingEntity::getModuleId,
+                        Collectors.mapping(ModuleDependencyMappingEntity::getDependencyId, Collectors.toList())));
+
+        return moduleRepo.findAllByOrderBySortOrderAsc().stream()
+                .map(m -> new ModuleTemplateDto(
+                        m.getModuleId(), m.getLabel(), m.getDescription(),
+                        m.getSuffix(), m.getPackaging(), m.isHasMainClass(),
+                        mappingsByModule.getOrDefault(m.getModuleId(), List.of())))
+                .toList();
+    }
+
     public record SubOptionDto(String id, String label, String description) {}
     public record CompatibilityRuleDto(String sourceDepId, String targetDepId, String relationType, String description) {}
     public record TemplateDepDto(String depId, List<String> subOptions) {}
@@ -82,4 +108,8 @@ public class ExtensionMetadataController {
             String icon, String color,
             String bootVersion, String javaVersion, String packaging,
             List<TemplateDepDto> dependencies) {}
+    public record ModuleTemplateDto(
+            String moduleId, String label, String description,
+            String suffix, String packaging, boolean hasMainClass,
+            List<String> dependencyIds) {}
 }
