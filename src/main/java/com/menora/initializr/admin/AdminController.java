@@ -28,6 +28,8 @@ public class AdminController {
     private final BuildCustomizationRepository buildCustomRepo;
     private final DependencySubOptionRepository subOptionRepo;
     private final DependencyCompatibilityRepository compatibilityRepo;
+    private final StarterTemplateRepository templateRepo;
+    private final StarterTemplateDepRepository templateDepRepo;
 
     public AdminController(InitializrMetadataProvider metadataProvider,
                            DependencyGroupRepository groupRepo,
@@ -35,7 +37,9 @@ public class AdminController {
                            FileContributionRepository fileContribRepo,
                            BuildCustomizationRepository buildCustomRepo,
                            DependencySubOptionRepository subOptionRepo,
-                           DependencyCompatibilityRepository compatibilityRepo) {
+                           DependencyCompatibilityRepository compatibilityRepo,
+                           StarterTemplateRepository templateRepo,
+                           StarterTemplateDepRepository templateDepRepo) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -43,6 +47,8 @@ public class AdminController {
         this.buildCustomRepo = buildCustomRepo;
         this.subOptionRepo = subOptionRepo;
         this.compatibilityRepo = compatibilityRepo;
+        this.templateRepo = templateRepo;
+        this.templateDepRepo = templateDepRepo;
     }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
@@ -197,6 +203,57 @@ public class AdminController {
     @DeleteMapping("/compatibility/{id}")
     public ResponseEntity<Void> deleteCompatibility(@PathVariable Long id) {
         compatibilityRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Starter Templates ──────────────────────────────────────────────────────
+
+    @GetMapping("/starter-templates")
+    public List<StarterTemplateEntity> listTemplates() {
+        return templateRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PostMapping("/starter-templates")
+    public StarterTemplateEntity createTemplate(@RequestBody StarterTemplateEntity template) {
+        return templateRepo.save(template);
+    }
+
+    @PutMapping("/starter-templates/{id}")
+    public StarterTemplateEntity updateTemplate(@PathVariable Long id, @RequestBody StarterTemplateEntity template) {
+        template.setId(id);
+        return templateRepo.save(template);
+    }
+
+    @DeleteMapping("/starter-templates/{id}")
+    public ResponseEntity<Void> deleteTemplate(@PathVariable Long id) {
+        templateRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Starter Template Dependencies ──────────────────────────────────────────
+
+    @GetMapping("/starter-template-deps")
+    public List<StarterTemplateDepEntity> listTemplateDeps(
+            @RequestParam(required = false) Long templateId) {
+        return templateId != null
+                ? templateDepRepo.findAllByTemplateId(templateId)
+                : templateDepRepo.findAll();
+    }
+
+    @PostMapping("/starter-template-deps")
+    public StarterTemplateDepEntity createTemplateDep(@RequestBody StarterTemplateDepEntity dep) {
+        return templateDepRepo.save(dep);
+    }
+
+    @PutMapping("/starter-template-deps/{id}")
+    public StarterTemplateDepEntity updateTemplateDep(@PathVariable Long id, @RequestBody StarterTemplateDepEntity dep) {
+        dep.setId(id);
+        return templateDepRepo.save(dep);
+    }
+
+    @DeleteMapping("/starter-template-deps/{id}")
+    public ResponseEntity<Void> deleteTemplateDep(@PathVariable Long id) {
+        templateDepRepo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
 }

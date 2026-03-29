@@ -26,6 +26,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Sub-Options](#sub-options)
    - [Compatibility Rules](#compatibility-rules)
    - [Dependency Version Ranges](#dependency-version-ranges)
+   - [Starter Templates](#starter-templates)
 7. [Customization Guide](#customization-guide)
    - [Change the Spring Boot Version](#change-the-spring-boot-version)
    - [Change the Initializr Version](#change-the-initializr-version)
@@ -81,8 +82,8 @@ offline-spring-init/backend/
 │   │   ├── db/
 │   │   │   ├── DataSeeder.java                  # Seeds DB from classpath on first startup
 │   │   │   ├── DependencyConfigService.java     # Query service for generation pipeline
-│   │   │   ├── entity/                          # JPA entities (6 tables)
-│   │   │   └── repository/                      # Spring Data repos (6 repos)
+│   │   │   ├── entity/                          # JPA entities (8 tables)
+│   │   │   └── repository/                      # Spring Data repos (8 repos)
 │   │   └── extension/dynamic/
 │   │       └── DynamicProjectGenerationConfiguration.java  # Single config replacing 8 classes
 │   └── resources/
@@ -910,6 +911,83 @@ entryRepo.findAll().stream()
 
 To remove a range (make the dep visible for all versions), PUT the record with `"compatibilityRange": null` or `""` and refresh.
 
+### Starter Templates
+
+Starter templates are admin-curated project presets (e.g. "REST API Service", "Event-Driven Service") that appear as quick-start cards in the UI. Selecting a template pre-fills the dependency selection, sub-options, and optionally overrides Boot version, Java version, or packaging. Users can still customize everything after applying a template.
+
+```bash
+GET    /admin/starter-templates        # list all
+POST   /admin/starter-templates        # create
+PUT    /admin/starter-templates/{id}   # update
+DELETE /admin/starter-templates/{id}   # delete
+
+GET    /admin/starter-template-deps              # list all (supports ?templateId={id} filter)
+POST   /admin/starter-template-deps              # create
+PUT    /admin/starter-template-deps/{id}         # update
+DELETE /admin/starter-template-deps/{id}         # delete
+```
+
+**Template fields:**
+
+| Field | Description |
+|-------|-------------|
+| `templateId` | URL-friendly slug (e.g. `rest-api`), must be unique |
+| `name` | Display name shown on the card (e.g. "REST API Service") |
+| `description` | Short description shown below the name |
+| `icon` | Material Symbols icon name (e.g. `api`, `bolt`, `cloud`) |
+| `color` | CSS color for card accent (e.g. `#4CAF50`) |
+| `bootVersion` | Optional — overrides Boot version when applied (null = no override) |
+| `javaVersion` | Optional — overrides Java version when applied |
+| `packaging` | Optional — overrides packaging (jar/war) when applied |
+| `sortOrder` | Display order (lower = first) |
+
+**Template dependency fields:**
+
+| Field | Description |
+|-------|-------------|
+| `template` | FK reference: `{"id": <template-id>}` |
+| `depId` | Dependency entry ID to pre-select (e.g. `web`, `kafka`) |
+| `subOptions` | Comma-separated sub-option IDs (e.g. `consumer-example,producer-example`), or null |
+
+Example — create a template with dependencies:
+```bash
+# 1. Create the template
+curl -X POST http://localhost:8080/admin/starter-templates \
+  -H "Content-Type: application/json" \
+  -d '{
+    "templateId": "rest-api",
+    "name": "REST API Service",
+    "description": "Spring Web + JPA + PostgreSQL + Actuator",
+    "icon": "api",
+    "color": "#4CAF50",
+    "sortOrder": 0
+  }'
+# Note the returned id (e.g. 1)
+
+# 2. Add dependencies to the template
+curl -X POST http://localhost:8080/admin/starter-template-deps \
+  -H "Content-Type: application/json" \
+  -d '{"template": {"id": 1}, "depId": "web", "subOptions": null}'
+
+curl -X POST http://localhost:8080/admin/starter-template-deps \
+  -H "Content-Type: application/json" \
+  -d '{"template": {"id": 1}, "depId": "data-jpa", "subOptions": null}'
+
+curl -X POST http://localhost:8080/admin/starter-template-deps \
+  -H "Content-Type: application/json" \
+  -d '{"template": {"id": 1}, "depId": "actuator", "subOptions": null}'
+```
+
+The UI fetches templates from `GET /metadata/starter-templates` (a public endpoint that aggregates templates with their dependencies). No `/admin/refresh` is needed — template changes are served directly from the DB.
+
+**Seeded defaults** (applied on first startup when the DB is empty):
+
+| Template ID | Name | Dependencies |
+|-------------|------|-------------|
+| `rest-api` | REST API Service | web, data-jpa, postgresql, actuator, logging |
+| `event-driven` | Event-Driven Service | kafka (with consumer/producer examples), data-jpa, postgresql, actuator, logging |
+| `microservice` | Microservice (Full Stack) | web, kafka, data-jpa, postgresql, security, actuator, prometheus, logging |
+
 ---
 
 ### Add a New Java Version Option
@@ -1050,6 +1128,8 @@ Temp directory zipped → filter clears ProjectOptionsContext → HTTP response
 | `build_customization` | pom.xml modifications per dependency |
 | `dependency_sub_option` | Optional extras within a dependency |
 | `dependency_compatibility` | REQUIRES / CONFLICTS / RECOMMENDS rules between deps |
+| `starter_template` | Admin-curated project presets (Quick Start cards) |
+| `starter_template_dep` | Dependencies included in each starter template |
 
 **First-startup seeding:**
 `DataSeeder` (a `CommandLineRunner`) runs when all tables are empty. It reads every classpath resource from `static-configs/` and `templates/` and inserts them as DB records. After seeding, operators manage everything through the admin API. To reset to defaults: stop the app, delete `./data/`, restart.

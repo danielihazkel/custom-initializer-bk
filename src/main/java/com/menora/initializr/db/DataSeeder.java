@@ -28,19 +28,25 @@ public class DataSeeder implements CommandLineRunner {
     private final BuildCustomizationRepository buildCustomRepo;
     private final DependencySubOptionRepository subOptionRepo;
     private final DependencyCompatibilityRepository compatibilityRepo;
+    private final StarterTemplateRepository templateRepo;
+    private final StarterTemplateDepRepository templateDepRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
                       FileContributionRepository fileContribRepo,
                       BuildCustomizationRepository buildCustomRepo,
                       DependencySubOptionRepository subOptionRepo,
-                      DependencyCompatibilityRepository compatibilityRepo) {
+                      DependencyCompatibilityRepository compatibilityRepo,
+                      StarterTemplateRepository templateRepo,
+                      StarterTemplateDepRepository templateDepRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
         this.buildCustomRepo = buildCustomRepo;
         this.subOptionRepo = subOptionRepo;
         this.compatibilityRepo = compatibilityRepo;
+        this.templateRepo = templateRepo;
+        this.templateDepRepo = templateDepRepo;
     }
 
     @Override
@@ -57,6 +63,7 @@ public class DataSeeder implements CommandLineRunner {
         seedBuildCustomizations();
         seedSubOptions();
         seedCompatibilityRules();
+        seedStarterTemplates();
         log.info("Database seeding complete");
     }
 
@@ -362,6 +369,68 @@ public class DataSeeder implements CommandLineRunner {
         e.setDescription(desc);
         e.setSortOrder(order);
         subOptionRepo.save(e);
+    }
+
+    // ── Starter templates ───────────────────────────────────────────────────
+
+    private void seedStarterTemplates() {
+        StarterTemplateEntity restApi = starterTemplate(
+                "rest-api", "REST API Service",
+                "Spring Web + JPA + PostgreSQL + Actuator",
+                "api", "#4CAF50", null, null, null, 0);
+        templateDep(restApi, "web", null);
+        templateDep(restApi, "data-jpa", null);
+        templateDep(restApi, "postgresql", null);
+        templateDep(restApi, "actuator", null);
+        templateDep(restApi, "logging", null);
+
+        StarterTemplateEntity eventDriven = starterTemplate(
+                "event-driven", "Event-Driven Service",
+                "Kafka + JPA + Consumer/Producer examples",
+                "bolt", "#FF9800", null, null, null, 1);
+        templateDep(eventDriven, "kafka", "consumer-example,producer-example");
+        templateDep(eventDriven, "data-jpa", null);
+        templateDep(eventDriven, "postgresql", null);
+        templateDep(eventDriven, "actuator", null);
+        templateDep(eventDriven, "logging", null);
+
+        StarterTemplateEntity microservice = starterTemplate(
+                "microservice", "Microservice (Full Stack)",
+                "Web + Kafka + JPA + Security + Observability",
+                "cloud", "#2196F3", null, null, null, 2);
+        templateDep(microservice, "web", null);
+        templateDep(microservice, "kafka", null);
+        templateDep(microservice, "data-jpa", null);
+        templateDep(microservice, "postgresql", null);
+        templateDep(microservice, "security", null);
+        templateDep(microservice, "actuator", null);
+        templateDep(microservice, "prometheus", null);
+        templateDep(microservice, "logging", null);
+    }
+
+    private StarterTemplateEntity starterTemplate(String templateId, String name, String description,
+                                                   String icon, String color,
+                                                   String bootVersion, String javaVersion, String packaging,
+                                                   int sortOrder) {
+        StarterTemplateEntity e = new StarterTemplateEntity();
+        e.setTemplateId(templateId);
+        e.setName(name);
+        e.setDescription(description);
+        e.setIcon(icon);
+        e.setColor(color);
+        e.setBootVersion(bootVersion);
+        e.setJavaVersion(javaVersion);
+        e.setPackaging(packaging);
+        e.setSortOrder(sortOrder);
+        return templateRepo.save(e);
+    }
+
+    private void templateDep(StarterTemplateEntity template, String depId, String subOptions) {
+        StarterTemplateDepEntity e = new StarterTemplateDepEntity();
+        e.setTemplate(template);
+        e.setDepId(depId);
+        e.setSubOptions(subOptions);
+        templateDepRepo.save(e);
     }
 
     private String readClasspath(String path) throws IOException {
