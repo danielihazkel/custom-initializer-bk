@@ -2,6 +2,9 @@ package com.menora.initializr.db.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "dependency_entry")
@@ -11,14 +14,17 @@ public class DependencyEntryEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotNull
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "group_id", nullable = false)
     @JsonIgnoreProperties({"entries", "hibernateLazyInitializer"})
     private DependencyGroupEntity group;
 
+    @NotBlank @Size(max = 50)
     @Column(name = "dep_id", nullable = false, unique = true, length = 50)
     private String depId;
 
+    @NotBlank @Size(max = 100)
     @Column(nullable = false, length = 100)
     private String name;
 

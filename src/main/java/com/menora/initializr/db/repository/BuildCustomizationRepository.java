@@ -8,4 +8,6 @@ import java.util.Set;
 
 public interface BuildCustomizationRepository extends JpaRepository<BuildCustomizationEntity, Long> {
     List<BuildCustomizationEntity> findByDependencyIdInOrderBySortOrderAsc(Set<String> dependencyIds);
+    long countByDependencyId(String dependencyId);
+    void deleteByDependencyId(String dependencyId);
 }

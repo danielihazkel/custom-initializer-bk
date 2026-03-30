@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface DependencyCompatibilityRepository extends JpaRepository<DependencyCompatibilityEntity, Long> {
     List<DependencyCompatibilityEntity> findAllByOrderBySortOrderAsc();
+    long countBySourceDepIdOrTargetDepId(String sourceDepId, String targetDepId);
+    void deleteBySourceDepIdOrTargetDepId(String sourceDepId, String targetDepId);
 }

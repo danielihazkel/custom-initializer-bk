@@ -1,6 +1,8 @@
 package com.menora.initializr.db.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "module_dependency_mapping",
@@ -11,9 +13,11 @@ public class ModuleDependencyMappingEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotBlank @Size(max = 50)
     @Column(name = "dependency_id", nullable = false, length = 50)
     private String dependencyId;
 
+    @NotBlank @Size(max = 50)
     @Column(name = "module_id", nullable = false, length = 50)
     private String moduleId;
 

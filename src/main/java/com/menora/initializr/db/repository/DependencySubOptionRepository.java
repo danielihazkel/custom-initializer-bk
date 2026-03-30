@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface DependencySubOptionRepository extends JpaRepository<DependencySubOptionEntity, Long> {
     List<DependencySubOptionEntity> findAllByOrderByDependencyIdAscSortOrderAsc();
+    long countByDependencyId(String dependencyId);
+    void deleteByDependencyId(String dependencyId);
 }

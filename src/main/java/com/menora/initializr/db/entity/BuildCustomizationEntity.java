@@ -1,6 +1,9 @@
 package com.menora.initializr.db.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "build_customization")
@@ -17,9 +20,11 @@ public class BuildCustomizationEntity {
     private Long id;
 
     /** dep_id from dependency_entry, or '__common__' for customizations applied to every project */
+    @NotBlank @Size(max = 50)
     @Column(name = "dependency_id", nullable = false, length = 50)
     private String dependencyId;
 
+    @NotNull
     @Enumerated(EnumType.STRING)
     @Column(name = "customization_type", nullable = false, length = 30)
     private CustomizationType customizationType;

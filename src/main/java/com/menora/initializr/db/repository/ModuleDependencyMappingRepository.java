@@ -9,4 +9,8 @@ import java.util.Set;
 public interface ModuleDependencyMappingRepository extends JpaRepository<ModuleDependencyMappingEntity, Long> {
     List<ModuleDependencyMappingEntity> findAllByOrderBySortOrderAsc();
     List<ModuleDependencyMappingEntity> findByDependencyIdIn(Set<String> depIds);
+    long countByDependencyId(String dependencyId);
+    void deleteByDependencyId(String dependencyId);
+    long countByModuleId(String moduleId);
+    void deleteByModuleId(String moduleId);
 }

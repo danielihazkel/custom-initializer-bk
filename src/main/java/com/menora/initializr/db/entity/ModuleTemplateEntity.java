@@ -1,6 +1,8 @@
 package com.menora.initializr.db.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "module_template")
@@ -10,9 +12,11 @@ public class ModuleTemplateEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotBlank @Size(max = 50)
     @Column(name = "module_id", nullable = false, unique = true, length = 50)
     private String moduleId;
 
+    @NotBlank @Size(max = 100)
     @Column(nullable = false, length = 100)
     private String label;
 
@@ -20,9 +24,11 @@ public class ModuleTemplateEntity {
     private String description;
 
     /** Appended to artifactId, e.g. "-api" → "myapp-api" */
+    @NotBlank @Size(max = 50)
     @Column(nullable = false, length = 50)
     private String suffix;
 
+    @NotBlank @Size(max = 20)
     @Column(nullable = false, length = 20)
     private String packaging = "jar";
 

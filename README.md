@@ -28,6 +28,9 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Dependency Version Ranges](#dependency-version-ranges)
    - [Starter Templates](#starter-templates)
    - [Module Templates (Multi-Module)](#module-templates-multi-module)
+   - [Input Validation](#input-validation)
+   - [Orphan Detection on Delete](#orphan-detection-on-delete)
+   - [Configuration Export/Import](#configuration-exportimport)
 7. [Customization Guide](#customization-guide)
    - [Change the Spring Boot Version](#change-the-spring-boot-version)
    - [Change the Initializr Version](#change-the-initializr-version)
@@ -278,7 +281,7 @@ curl "http://localhost:8080/starter.preview?dependencies=kafka&opts-kafka=consum
 
 The admin API manages the database that drives project generation. All changes take effect immediately after calling `/admin/refresh` — no restart needed.
 
-> **Note:** The admin API has no authentication. Restrict access at the network or reverse-proxy level.
+> **Note:** The admin API is protected by password authentication. On first startup, a random password is generated and printed to the console. Set a custom password via the `ADMIN_PASSWORD` environment variable. The admin UI manages login/logout automatically; for curl, include `Authorization: Bearer <token>` after calling `POST /admin/login`.
 
 ### Hot-Reload Metadata
 
@@ -1118,6 +1121,121 @@ The UI fetches module templates from `GET /metadata/module-templates` (public, n
 | `api` | API Module | `-api` | Yes | web, security, actuator |
 | `core` | Core Module | `-core` | No | logging |
 | `persistence` | Persistence Module | `-persistence` | No | data-jpa, postgresql |
+
+### Input Validation
+
+All admin API endpoints validate request bodies using Jakarta Bean Validation. Invalid requests return HTTP 400 with field-level error details.
+
+**Validated fields** — every required field has `@NotBlank` or `@NotNull` annotations, and string fields have `@Size` limits matching the database column lengths. For example, `depId` requires `@NotBlank @Size(max=50)`, `name` requires `@NotBlank @Size(max=100)`, and enum fields like `fileType` and `customizationType` require `@NotNull`.
+
+**Error response format (400):**
+```json
+{
+  "errors": {
+    "depId": "must not be blank",
+    "name": "size must be between 0 and 100"
+  }
+}
+```
+
+**Duplicate values (409):** Unique constraint violations (e.g. duplicate `depId`, `templateId`, or `moduleId`) return:
+```json
+{
+  "error": "Duplicate or constraint violation",
+  "detail": "..."
+}
+```
+
+**Invalid enum values (400):** Sending an invalid value for enum fields like `fileType` or `relationType` returns:
+```json
+{
+  "error": "Invalid request body",
+  "detail": "..."
+}
+```
+
+### Orphan Detection on Delete
+
+Deleting a dependency group, dependency entry, starter template, or module template checks for referencing records in other tables. If references exist, the delete returns HTTP 409 with a breakdown of what would be orphaned.
+
+**Affected delete endpoints:**
+- `DELETE /admin/dependency-groups/{id}` — checks all entries in the group, and each entry's references
+- `DELETE /admin/dependency-entries/{id}` — checks file contributions, build customizations, sub-options, compatibility rules, starter template deps, and module dependency mappings
+- `DELETE /admin/starter-templates/{id}` — checks starter template dependencies
+- `DELETE /admin/module-templates/{id}` — checks module dependency mappings
+
+**409 response example:**
+```json
+{
+  "message": "Cannot delete: referenced by 3 file contributions, 2 build customizations, and 1 compatibility rule",
+  "references": {
+    "fileContributions": 3,
+    "buildCustomizations": 2,
+    "subOptions": 0,
+    "compatibilityRules": 1,
+    "starterTemplateDeps": 0,
+    "moduleDependencyMappings": 0
+  }
+}
+```
+
+**Force delete:** To delete anyway and cascade-remove all references, append `?force=true`:
+```bash
+curl -X DELETE "http://localhost:8080/admin/dependency-entries/5?force=true" \
+  -H "Authorization: Bearer <token>"
+```
+
+The admin UI handles this automatically — when a delete is blocked, a dialog shows the reference breakdown and offers a "Delete Anyway" button.
+
+Leaf entities (file contributions, build customizations, sub-options, compatibility rules, starter template deps, module dep mappings) are not referenced by anything else, so they delete without checks.
+
+### Configuration Export/Import
+
+Export the entire admin configuration as a portable JSON file, or import one to replace all current data. Useful for backup, migration between environments, or sharing configurations between teams.
+
+**Export:**
+```bash
+curl http://localhost:8080/admin/export \
+  -H "Accept: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -o initializr-config.json
+```
+
+Returns a JSON document containing all 10 tables (dependency groups, entries, file contributions, build customizations, sub-options, compatibility rules, starter templates, starter template deps, module templates, module dependency mappings). The export uses **natural keys** (group names, dep IDs, template IDs) instead of auto-generated database IDs, making it portable across environments.
+
+**Import:**
+```bash
+curl -X POST http://localhost:8080/admin/import \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d @initializr-config.json
+```
+
+Import **replaces all** current configuration — all existing records are deleted and replaced with the imported data. This is an all-or-nothing transaction: if any validation fails, nothing is changed.
+
+**Import response (200):**
+```json
+{
+  "imported": {
+    "dependencyGroups": 4,
+    "dependencyEntries": 10,
+    "fileContributions": 25,
+    "buildCustomizations": 8,
+    "subOptions": 3,
+    "compatibilityRules": 5,
+    "starterTemplates": 3,
+    "starterTemplateDeps": 12,
+    "moduleTemplates": 3,
+    "moduleDependencyMappings": 6
+  }
+}
+```
+
+**Validation:** The import validates referential integrity within the JSON before making any changes — every dependency entry must reference an existing group name, and every template dependency must reference an existing template ID. Invalid imports return HTTP 400 with a descriptive error.
+
+The metadata cache is automatically refreshed after a successful import — no need to call `/admin/refresh` separately.
+
+The admin UI provides **Export** and **Import** buttons in the tab bar. Export downloads the JSON file directly. Import shows a confirmation dialog warning that all data will be replaced, then reloads all tabs on success.
 
 ---
 

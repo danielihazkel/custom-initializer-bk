@@ -1,6 +1,8 @@
 package com.menora.initializr.db.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "starter_template")
@@ -10,9 +12,11 @@ public class StarterTemplateEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotBlank @Size(max = 50)
     @Column(name = "template_id", nullable = false, unique = true, length = 50)
     private String templateId;
 
+    @NotBlank @Size(max = 100)
     @Column(nullable = false, length = 100)
     private String name;
 

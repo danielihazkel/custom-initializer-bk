@@ -1,13 +1,18 @@
 package com.menora.initializr.admin;
 
+import com.menora.initializr.admin.dto.ConfigurationExport;
+import com.menora.initializr.admin.dto.OrphanCheckResponse;
 import com.menora.initializr.config.DatabaseInitializrMetadataProvider;
 import com.menora.initializr.db.entity.*;
 import com.menora.initializr.db.repository.*;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Admin REST API for managing dependency configuration in the database.
@@ -32,6 +37,8 @@ public class AdminController {
     private final StarterTemplateDepRepository templateDepRepo;
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
+    private final OrphanDetectionService orphanService;
+    private final ConfigurationExportImportService exportImportService;
 
     public AdminController(InitializrMetadataProvider metadataProvider,
                            DependencyGroupRepository groupRepo,
@@ -43,7 +50,9 @@ public class AdminController {
                            StarterTemplateRepository templateRepo,
                            StarterTemplateDepRepository templateDepRepo,
                            ModuleTemplateRepository moduleRepo,
-                           ModuleDependencyMappingRepository moduleMappingRepo) {
+                           ModuleDependencyMappingRepository moduleMappingRepo,
+                           OrphanDetectionService orphanService,
+                           ConfigurationExportImportService exportImportService) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -55,6 +64,8 @@ public class AdminController {
         this.templateDepRepo = templateDepRepo;
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
+        this.orphanService = orphanService;
+        this.exportImportService = exportImportService;
     }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
@@ -76,18 +87,24 @@ public class AdminController {
     }
 
     @PostMapping("/dependency-groups")
-    public DependencyGroupEntity createGroup(@RequestBody DependencyGroupEntity group) {
+    public DependencyGroupEntity createGroup(@Valid @RequestBody DependencyGroupEntity group) {
         return groupRepo.save(group);
     }
 
     @PutMapping("/dependency-groups/{id}")
-    public DependencyGroupEntity updateGroup(@PathVariable Long id, @RequestBody DependencyGroupEntity group) {
+    public DependencyGroupEntity updateGroup(@PathVariable Long id, @Valid @RequestBody DependencyGroupEntity group) {
         group.setId(id);
         return groupRepo.save(group);
     }
 
     @DeleteMapping("/dependency-groups/{id}")
-    public ResponseEntity<Void> deleteGroup(@PathVariable Long id) {
+    public ResponseEntity<?> deleteGroup(@PathVariable Long id,
+                                         @RequestParam(defaultValue = "false") boolean force) {
+        OrphanCheckResponse refs = orphanService.findReferencesForGroup(id);
+        if (refs.hasReferences() && !force) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(refs);
+        }
+        if (force) orphanService.cascadeDeleteGroupReferences(id);
         groupRepo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
@@ -100,18 +117,26 @@ public class AdminController {
     }
 
     @PostMapping("/dependency-entries")
-    public DependencyEntryEntity createEntry(@RequestBody DependencyEntryEntity entry) {
+    public DependencyEntryEntity createEntry(@Valid @RequestBody DependencyEntryEntity entry) {
         return entryRepo.save(entry);
     }
 
     @PutMapping("/dependency-entries/{id}")
-    public DependencyEntryEntity updateEntry(@PathVariable Long id, @RequestBody DependencyEntryEntity entry) {
+    public DependencyEntryEntity updateEntry(@PathVariable Long id, @Valid @RequestBody DependencyEntryEntity entry) {
         entry.setId(id);
         return entryRepo.save(entry);
     }
 
     @DeleteMapping("/dependency-entries/{id}")
-    public ResponseEntity<Void> deleteEntry(@PathVariable Long id) {
+    public ResponseEntity<?> deleteEntry(@PathVariable Long id,
+                                         @RequestParam(defaultValue = "false") boolean force) {
+        DependencyEntryEntity entry = entryRepo.findById(id).orElse(null);
+        if (entry == null) return ResponseEntity.noContent().build();
+        OrphanCheckResponse refs = orphanService.findReferencesForDependency(entry.getDepId());
+        if (refs.hasReferences() && !force) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(refs);
+        }
+        if (force) orphanService.cascadeDeleteDependencyReferences(entry.getDepId());
         entryRepo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
@@ -124,12 +149,12 @@ public class AdminController {
     }
 
     @PostMapping("/file-contributions")
-    public FileContributionEntity createFileContribution(@RequestBody FileContributionEntity fc) {
+    public FileContributionEntity createFileContribution(@Valid @RequestBody FileContributionEntity fc) {
         return fileContribRepo.save(fc);
     }
 
     @PutMapping("/file-contributions/{id}")
-    public FileContributionEntity updateFileContribution(@PathVariable Long id, @RequestBody FileContributionEntity fc) {
+    public FileContributionEntity updateFileContribution(@PathVariable Long id, @Valid @RequestBody FileContributionEntity fc) {
         fc.setId(id);
         return fileContribRepo.save(fc);
     }
@@ -148,12 +173,12 @@ public class AdminController {
     }
 
     @PostMapping("/build-customizations")
-    public BuildCustomizationEntity createBuildCustomization(@RequestBody BuildCustomizationEntity bc) {
+    public BuildCustomizationEntity createBuildCustomization(@Valid @RequestBody BuildCustomizationEntity bc) {
         return buildCustomRepo.save(bc);
     }
 
     @PutMapping("/build-customizations/{id}")
-    public BuildCustomizationEntity updateBuildCustomization(@PathVariable Long id, @RequestBody BuildCustomizationEntity bc) {
+    public BuildCustomizationEntity updateBuildCustomization(@PathVariable Long id, @Valid @RequestBody BuildCustomizationEntity bc) {
         bc.setId(id);
         return buildCustomRepo.save(bc);
     }
@@ -172,12 +197,12 @@ public class AdminController {
     }
 
     @PostMapping("/sub-options")
-    public DependencySubOptionEntity createSubOption(@RequestBody DependencySubOptionEntity so) {
+    public DependencySubOptionEntity createSubOption(@Valid @RequestBody DependencySubOptionEntity so) {
         return subOptionRepo.save(so);
     }
 
     @PutMapping("/sub-options/{id}")
-    public DependencySubOptionEntity updateSubOption(@PathVariable Long id, @RequestBody DependencySubOptionEntity so) {
+    public DependencySubOptionEntity updateSubOption(@PathVariable Long id, @Valid @RequestBody DependencySubOptionEntity so) {
         so.setId(id);
         return subOptionRepo.save(so);
     }
@@ -196,12 +221,12 @@ public class AdminController {
     }
 
     @PostMapping("/compatibility")
-    public DependencyCompatibilityEntity createCompatibility(@RequestBody DependencyCompatibilityEntity rule) {
+    public DependencyCompatibilityEntity createCompatibility(@Valid @RequestBody DependencyCompatibilityEntity rule) {
         return compatibilityRepo.save(rule);
     }
 
     @PutMapping("/compatibility/{id}")
-    public DependencyCompatibilityEntity updateCompatibility(@PathVariable Long id, @RequestBody DependencyCompatibilityEntity rule) {
+    public DependencyCompatibilityEntity updateCompatibility(@PathVariable Long id, @Valid @RequestBody DependencyCompatibilityEntity rule) {
         rule.setId(id);
         return compatibilityRepo.save(rule);
     }
@@ -220,18 +245,24 @@ public class AdminController {
     }
 
     @PostMapping("/starter-templates")
-    public StarterTemplateEntity createTemplate(@RequestBody StarterTemplateEntity template) {
+    public StarterTemplateEntity createTemplate(@Valid @RequestBody StarterTemplateEntity template) {
         return templateRepo.save(template);
     }
 
     @PutMapping("/starter-templates/{id}")
-    public StarterTemplateEntity updateTemplate(@PathVariable Long id, @RequestBody StarterTemplateEntity template) {
+    public StarterTemplateEntity updateTemplate(@PathVariable Long id, @Valid @RequestBody StarterTemplateEntity template) {
         template.setId(id);
         return templateRepo.save(template);
     }
 
     @DeleteMapping("/starter-templates/{id}")
-    public ResponseEntity<Void> deleteTemplate(@PathVariable Long id) {
+    public ResponseEntity<?> deleteTemplate(@PathVariable Long id,
+                                            @RequestParam(defaultValue = "false") boolean force) {
+        OrphanCheckResponse refs = orphanService.findReferencesForStarterTemplate(id);
+        if (refs.hasReferences() && !force) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(refs);
+        }
+        if (force) orphanService.cascadeDeleteStarterTemplateReferences(id);
         templateRepo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
@@ -247,12 +278,12 @@ public class AdminController {
     }
 
     @PostMapping("/starter-template-deps")
-    public StarterTemplateDepEntity createTemplateDep(@RequestBody StarterTemplateDepEntity dep) {
+    public StarterTemplateDepEntity createTemplateDep(@Valid @RequestBody StarterTemplateDepEntity dep) {
         return templateDepRepo.save(dep);
     }
 
     @PutMapping("/starter-template-deps/{id}")
-    public StarterTemplateDepEntity updateTemplateDep(@PathVariable Long id, @RequestBody StarterTemplateDepEntity dep) {
+    public StarterTemplateDepEntity updateTemplateDep(@PathVariable Long id, @Valid @RequestBody StarterTemplateDepEntity dep) {
         dep.setId(id);
         return templateDepRepo.save(dep);
     }
@@ -271,18 +302,26 @@ public class AdminController {
     }
 
     @PostMapping("/module-templates")
-    public ModuleTemplateEntity createModule(@RequestBody ModuleTemplateEntity module) {
+    public ModuleTemplateEntity createModule(@Valid @RequestBody ModuleTemplateEntity module) {
         return moduleRepo.save(module);
     }
 
     @PutMapping("/module-templates/{id}")
-    public ModuleTemplateEntity updateModule(@PathVariable Long id, @RequestBody ModuleTemplateEntity module) {
+    public ModuleTemplateEntity updateModule(@PathVariable Long id, @Valid @RequestBody ModuleTemplateEntity module) {
         module.setId(id);
         return moduleRepo.save(module);
     }
 
     @DeleteMapping("/module-templates/{id}")
-    public ResponseEntity<Void> deleteModule(@PathVariable Long id) {
+    public ResponseEntity<?> deleteModule(@PathVariable Long id,
+                                          @RequestParam(defaultValue = "false") boolean force) {
+        ModuleTemplateEntity module = moduleRepo.findById(id).orElse(null);
+        if (module == null) return ResponseEntity.noContent().build();
+        OrphanCheckResponse refs = orphanService.findReferencesForModule(module.getModuleId());
+        if (refs.hasReferences() && !force) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(refs);
+        }
+        if (force) orphanService.cascadeDeleteModuleReferences(module.getModuleId());
         moduleRepo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
@@ -295,12 +334,12 @@ public class AdminController {
     }
 
     @PostMapping("/module-dep-mappings")
-    public ModuleDependencyMappingEntity createModuleMapping(@RequestBody ModuleDependencyMappingEntity mapping) {
+    public ModuleDependencyMappingEntity createModuleMapping(@Valid @RequestBody ModuleDependencyMappingEntity mapping) {
         return moduleMappingRepo.save(mapping);
     }
 
     @PutMapping("/module-dep-mappings/{id}")
-    public ModuleDependencyMappingEntity updateModuleMapping(@PathVariable Long id, @RequestBody ModuleDependencyMappingEntity mapping) {
+    public ModuleDependencyMappingEntity updateModuleMapping(@PathVariable Long id, @Valid @RequestBody ModuleDependencyMappingEntity mapping) {
         mapping.setId(id);
         return moduleMappingRepo.save(mapping);
     }
@@ -309,5 +348,18 @@ public class AdminController {
     public ResponseEntity<Void> deleteModuleMapping(@PathVariable Long id) {
         moduleMappingRepo.deleteById(id);
         return ResponseEntity.noContent().build();
+    }
+
+    // ── Export / Import ───────────────────────────────────────────────────────
+
+    @GetMapping("/export")
+    public ConfigurationExport exportConfiguration() {
+        return exportImportService.exportAll();
+    }
+
+    @PostMapping("/import")
+    public ResponseEntity<Map<String, Object>> importConfiguration(@RequestBody ConfigurationExport data) {
+        Map<String, Integer> counts = exportImportService.importAll(data);
+        return ResponseEntity.ok(Map.of("imported", counts));
     }
 }

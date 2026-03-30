@@ -1,6 +1,8 @@
 package com.menora.initializr.db.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "dependency_sub_option")
@@ -10,12 +12,15 @@ public class DependencySubOptionEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotBlank @Size(max = 50)
     @Column(name = "dependency_id", nullable = false, length = 50)
     private String dependencyId;
 
+    @NotBlank @Size(max = 50)
     @Column(name = "option_id", nullable = false, length = 50)
     private String optionId;
 
+    @NotBlank @Size(max = 100)
     @Column(nullable = false, length = 100)
     private String label;
 

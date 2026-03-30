@@ -1,6 +1,9 @@
 package com.menora.initializr.db.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "file_contribution")
@@ -21,9 +24,11 @@ public class FileContributionEntity {
     private Long id;
 
     /** dep_id from dependency_entry, or '__common__' for files added to every project */
+    @NotBlank @Size(max = 50)
     @Column(name = "dependency_id", nullable = false, length = 50)
     private String dependencyId;
 
+    @NotNull
     @Enumerated(EnumType.STRING)
     @Column(name = "file_type", nullable = false, length = 20)
     private FileType fileType;
@@ -32,6 +37,7 @@ public class FileContributionEntity {
     @Column(columnDefinition = "CLOB")
     private String content;
 
+    @NotBlank @Size(max = 500)
     @Column(name = "target_path", nullable = false, length = 500)
     private String targetPath;
 
