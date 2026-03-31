@@ -1,0 +1,86 @@
+package {{packageName}}.service;
+
+import jakarta.mail.Folder;
+import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
+import jakarta.mail.Session;
+import jakarta.mail.Store;
+import jakarta.mail.internet.MimeMessage;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+
+@Service
+@Slf4j
+public class InboxReaderService {
+
+    @Value("${mail.imap.host}")
+    private String imapHost;
+
+    @Value("${mail.imap.port}")
+    private int imapPort;
+
+    @Value("${spring.mail.username}")
+    private String username;
+
+    @Value("${spring.mail.password}")
+    private String password;
+
+    @Value("${mail.imap.folder}")
+    private String folderName;
+
+    /**
+     * Read the most recent emails from the configured inbox.
+     *
+     * @param maxMessages maximum number of messages to retrieve
+     * @return list of {@link EmailMessage} records
+     */
+    public List<EmailMessage> readInbox(int maxMessages) throws MessagingException {
+        Properties props = new Properties();
+        props.put("mail.store.protocol", "imaps");
+        props.put("mail.imaps.host", imapHost);
+        props.put("mail.imaps.port", String.valueOf(imapPort));
+        props.put("mail.imaps.ssl.enable", "true");
+        props.put("mail.imaps.starttls.enable", "true");
+
+        Session session = Session.getInstance(props);
+        List<EmailMessage> emails = new ArrayList<>();
+
+        try (Store store = session.getStore("imaps")) {
+            store.connect(imapHost, imapPort, username, password);
+
+            try (Folder folder = store.getFolder(folderName)) {
+                folder.open(Folder.READ_ONLY);
+
+                int messageCount = folder.getMessageCount();
+                int start = Math.max(1, messageCount - maxMessages + 1);
+                Message[] messages = folder.getMessages(start, messageCount);
+
+                for (Message message : messages) {
+                    emails.add(new EmailMessage(
+                            message.getFrom()[0].toString(),
+                            message.getSubject(),
+                            message.getSentDate(),
+                            message.getContentType()
+                    ));
+                }
+
+                log.info("Read {} emails from {}", emails.size(), folderName);
+            }
+        }
+
+        return emails;
+    }
+
+    public record EmailMessage(
+            String from,
+            String subject,
+            java.util.Date sentDate,
+            String contentType
+    ) {}
+
+}

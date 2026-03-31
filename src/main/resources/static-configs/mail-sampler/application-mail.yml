@@ -14,3 +14,9 @@ spring:
           timeout: 5000
           writetimeout: 5000
     default-encoding: UTF-8
+
+mail:
+  imap:
+    host: ${MAIL_IMAP_HOST:outlook.office365.com}
+    port: ${MAIL_IMAP_PORT:993}
+    folder: ${MAIL_IMAP_FOLDER:INBOX}
