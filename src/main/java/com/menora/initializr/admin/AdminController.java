@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.transaction.annotation.Transactional;
+
 /**
  * Admin REST API for managing dependency configuration in the database.
  *
@@ -89,6 +91,20 @@ public class AdminController {
     @PostMapping("/dependency-groups")
     public DependencyGroupEntity createGroup(@Valid @RequestBody DependencyGroupEntity group) {
         return groupRepo.save(group);
+    }
+
+    @PutMapping("/dependency-groups/reorder")
+    @Transactional
+    public ResponseEntity<Void> reorderGroups(@RequestBody List<Map<String, Long>> orderings) {
+        for (Map<String, Long> entry : orderings) {
+            Long id = entry.get("id");
+            int sortOrder = entry.get("sortOrder").intValue();
+            groupRepo.findById(id).ifPresent(group -> {
+                group.setSortOrder(sortOrder);
+                groupRepo.save(group);
+            });
+        }
+        return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/dependency-groups/{id}")
