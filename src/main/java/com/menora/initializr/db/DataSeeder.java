@@ -137,6 +137,11 @@ public class DataSeeder implements CommandLineRunner {
         entry(logging, "logging", "Menora Logging Standards",
                 "Corporate logging configuration and standards",
                 "org.springframework.boot", "spring-boot-starter-log4j2", null, null, null, 0);
+
+        DependencyGroupEntity communication = group("Communication", 7);
+        entry(communication, "mail-sampler", "Mail Sampler",
+                "Outlook mail integration for internal organization",
+                null, null, null, null, null, 0);
     }
 
     // ── Common file contributions (every project) ────────────────────────────
@@ -258,6 +263,20 @@ public class DataSeeder implements CommandLineRunner {
                 readClasspath("static-configs/logging/application-logging.yml"),
                 "src/main/resources/application.yaml",
                 FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+
+        // mail-sampler
+        fc("mail-sampler", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/mail-sampler/application-mail.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("mail-sampler", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mail-config.mustache"),
+                "src/main/java/{{packagePath}}/config/MailConfig.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, null, 1);
+        fc("mail-sampler", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mail-service.mustache"),
+                "src/main/java/{{packagePath}}/service/MailService.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, null, 2);
     }
 
     // ── Build customizations ──────────────────────────────────────────────────
@@ -279,6 +298,10 @@ public class DataSeeder implements CommandLineRunner {
         // Common: Lombok
         addDep(DependencyConfigService.COMMON_ID,
                 "org.projectlombok", "lombok", null, null, 4);
+
+        // Mail Sampler: spring-boot-starter-mail
+        addDep("mail-sampler",
+                "org.springframework.boot", "spring-boot-starter-mail", null, null, 0);
     }
 
     private void seedSubOptions() {
@@ -354,6 +377,8 @@ public class DataSeeder implements CommandLineRunner {
                 "Sonus Rqueue requires a JPA datasource to persist job state", 3);
         compatibility("security", "web", DependencyCompatibilityEntity.RelationType.REQUIRES,
                 "Spring Security requires a web layer — add Spring Web", 4);
+        compatibility("mail-sampler", "web", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "Mail Sampler works best with a web layer for REST endpoints", 5);
     }
 
     private void compatibility(String source, String target,
