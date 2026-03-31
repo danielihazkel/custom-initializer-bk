@@ -276,7 +276,7 @@ public class DataSeeder implements CommandLineRunner {
         fc("mail-sampler", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/mail-service.mustache"),
                 "src/main/java/{{packagePath}}/service/MailService.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, null, 2);
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "send-mail", 2);
         fc("mail-sampler", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/mail-inbox-reader.mustache"),
                 "src/main/java/{{packagePath}}/service/InboxReaderService.java",
@@ -314,8 +314,10 @@ public class DataSeeder implements CommandLineRunner {
         subOption("kafka", "producer-example", "Producer Example",
                 "Add a KafkaProducerExample.java class", 1);
 
+        subOption("mail-sampler", "send-mail", "Send Mail Example",
+                "Add a MailService.java with simple and HTML email sending", 0);
         subOption("mail-sampler", "inbox-reader", "Inbox Reader Example",
-                "Add an InboxReaderService.java that reads emails via IMAP", 0);
+                "Add an InboxReaderService.java that reads emails via IMAP", 1);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
