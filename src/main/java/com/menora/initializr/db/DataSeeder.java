@@ -116,8 +116,14 @@ public class DataSeeder implements CommandLineRunner {
         DependencyGroupEntity data = group("Data", 2);
         entry(data, "data-jpa", "Spring Data JPA", "Persist data with JPA and Hibernate",
                 null, null, null, null, null, 0);
-        entry(data, "postgresql", "PostgreSQL Driver", null,
+        entry(data, "postgresql", "PostgreSQL Driver", "PostgreSQL JDBC driver",
                 "org.postgresql", "postgresql", null, "runtime", null, 1);
+        entry(data, "mssql", "Microsoft SQL Server Driver", "Microsoft SQL Server JDBC driver",
+                "com.microsoft.sqlserver", "mssql-jdbc", null, "runtime", null, 2);
+        entry(data, "db2", "IBM DB2 Driver", "IBM DB2 JDBC driver",
+                "com.ibm.db2", "jcc", null, "runtime", null, 3);
+        entry(data, "oracle", "Oracle Database Driver", "Oracle JDBC driver",
+                "com.oracle.database.jdbc", "ojdbc11", null, "runtime", null, 4);
 
         DependencyGroupEntity messaging = group("Messaging", 3);
         entry(messaging, "kafka", "Spring for Apache Kafka", "Kafka messaging support",
@@ -232,15 +238,69 @@ public class DataSeeder implements CommandLineRunner {
                 "src/main/java/{{packagePath}}/config/SecurityConfig.java",
                 FileContributionEntity.SubstitutionType.PACKAGE, null, null, 1);
 
-        // data-jpa
+        // data-jpa (shared JPA properties only — datasource config comes from each driver)
         fc("data-jpa", FileContributionEntity.FileType.YAML_MERGE,
                 readClasspath("static-configs/jpa/application-jpa.yml"),
                 "src/main/resources/application.yaml",
                 FileContributionEntity.SubstitutionType.NONE, null, null, 0);
-        fc("data-jpa", FileContributionEntity.FileType.TEMPLATE,
-                readClasspath("templates/jpa-config.mustache"),
-                "src/main/java/{{packagePath}}/config/JpaConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, null, 1);
+
+        // ── Per-driver datasource configurations ────────────────────────────
+
+        // PostgreSQL
+        fc("postgresql", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/postgresql/application-postgresql.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("postgresql", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/postgresql-config-primary.mustache"),
+                "src/main/java/{{packagePath}}/config/PostgresqlConfig.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "pg-primary", 1);
+        fc("postgresql", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/postgresql-config-secondary.mustache"),
+                "src/main/java/{{packagePath}}/config/PostgresqlConfig.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "pg-secondary", 2);
+
+        // MSSQL
+        fc("mssql", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/mssql/application-mssql.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("mssql", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mssql-config-primary.mustache"),
+                "src/main/java/{{packagePath}}/config/MssqlConfig.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "mssql-primary", 1);
+        fc("mssql", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mssql-config-secondary.mustache"),
+                "src/main/java/{{packagePath}}/config/MssqlConfig.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "mssql-secondary", 2);
+
+        // DB2
+        fc("db2", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/db2/application-db2.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("db2", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/db2-config-primary.mustache"),
+                "src/main/java/{{packagePath}}/config/Db2Config.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "db2-primary", 1);
+        fc("db2", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/db2-config-secondary.mustache"),
+                "src/main/java/{{packagePath}}/config/Db2Config.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "db2-secondary", 2);
+
+        // Oracle
+        fc("oracle", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/oracle/application-oracle.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("oracle", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/oracle-config-primary.mustache"),
+                "src/main/java/{{packagePath}}/config/OracleConfig.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "oracle-primary", 1);
+        fc("oracle", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/oracle-config-secondary.mustache"),
+                "src/main/java/{{packagePath}}/config/OracleConfig.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "oracle-secondary", 2);
 
         // actuator / observability
         fc("actuator", FileContributionEntity.FileType.YAML_MERGE,
@@ -318,6 +378,27 @@ public class DataSeeder implements CommandLineRunner {
                 "Add a MailService.java with simple and HTML email sending", 0);
         subOption("mail-sampler", "inbox-reader", "Inbox Reader Example",
                 "Add an InboxReaderService.java that reads emails via IMAP", 1);
+
+        // Database driver primary/secondary sub-options (managed automatically by the UI)
+        subOption("postgresql", "pg-primary", "Primary DataSource",
+                "Mark this database as the primary datasource (@Primary)", 0);
+        subOption("postgresql", "pg-secondary", "Secondary DataSource",
+                "Use this database as a secondary datasource", 1);
+
+        subOption("mssql", "mssql-primary", "Primary DataSource",
+                "Mark this database as the primary datasource (@Primary)", 0);
+        subOption("mssql", "mssql-secondary", "Secondary DataSource",
+                "Use this database as a secondary datasource", 1);
+
+        subOption("db2", "db2-primary", "Primary DataSource",
+                "Mark this database as the primary datasource (@Primary)", 0);
+        subOption("db2", "db2-secondary", "Secondary DataSource",
+                "Use this database as a secondary datasource", 1);
+
+        subOption("oracle", "oracle-primary", "Primary DataSource",
+                "Mark this database as the primary datasource (@Primary)", 0);
+        subOption("oracle", "oracle-secondary", "Secondary DataSource",
+                "Use this database as a secondary datasource", 1);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -380,6 +461,12 @@ public class DataSeeder implements CommandLineRunner {
                 "Spring MVC and WebFlux use incompatible server models — choose one", 0);
         compatibility("data-jpa", "postgresql", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
                 "JPA requires a database driver — add the PostgreSQL Driver", 1);
+        compatibility("mssql", "data-jpa", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "MSSQL driver works best with Spring Data JPA", 6);
+        compatibility("db2", "data-jpa", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "DB2 driver works best with Spring Data JPA", 7);
+        compatibility("oracle", "data-jpa", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "Oracle driver works best with Spring Data JPA", 8);
         compatibility("actuator", "prometheus", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
                 "Add Micrometer Prometheus to export Actuator metrics to Prometheus", 2);
         compatibility("rqueue", "data-jpa", DependencyCompatibilityEntity.RelationType.REQUIRES,
@@ -421,7 +508,7 @@ public class DataSeeder implements CommandLineRunner {
                 "api", "#4CAF50", null, null, null, 0);
         templateDep(restApi, "web", null);
         templateDep(restApi, "data-jpa", null);
-        templateDep(restApi, "postgresql", null);
+        templateDep(restApi, "postgresql", "pg-primary");
         templateDep(restApi, "actuator", null);
         templateDep(restApi, "logging", null);
 
@@ -431,7 +518,7 @@ public class DataSeeder implements CommandLineRunner {
                 "bolt", "#FF9800", null, null, null, 1);
         templateDep(eventDriven, "kafka", "consumer-example,producer-example");
         templateDep(eventDriven, "data-jpa", null);
-        templateDep(eventDriven, "postgresql", null);
+        templateDep(eventDriven, "postgresql", "pg-primary");
         templateDep(eventDriven, "actuator", null);
         templateDep(eventDriven, "logging", null);
 
@@ -442,7 +529,7 @@ public class DataSeeder implements CommandLineRunner {
         templateDep(microservice, "web", null);
         templateDep(microservice, "kafka", null);
         templateDep(microservice, "data-jpa", null);
-        templateDep(microservice, "postgresql", null);
+        templateDep(microservice, "postgresql", "pg-primary");
         templateDep(microservice, "security", null);
         templateDep(microservice, "actuator", null);
         templateDep(microservice, "prometheus", null);

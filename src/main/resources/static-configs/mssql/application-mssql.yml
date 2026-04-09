@@ -1,0 +1,15 @@
+mssql:
+  datasource:
+    url: ${MSSQL_DB_URL:jdbc:sqlserver://localhost:1433;databaseName=appdb}
+    username: ${MSSQL_DB_USERNAME:sa}
+    password: ${MSSQL_DB_PASSWORD:password}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+  hibernate:
+    dialect: org.hibernate.dialect.SQLServerDialect
+    hbm2ddl-auto: validate

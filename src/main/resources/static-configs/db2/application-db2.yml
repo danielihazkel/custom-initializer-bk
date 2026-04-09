@@ -1,0 +1,15 @@
+db2:
+  datasource:
+    url: ${DB2_DB_URL:jdbc:db2://localhost:50000/appdb}
+    username: ${DB2_DB_USERNAME:db2inst1}
+    password: ${DB2_DB_PASSWORD:password}
+    driver-class-name: com.ibm.db2.jcc.DB2Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+  hibernate:
+    dialect: org.hibernate.dialect.DB2Dialect
+    hbm2ddl-auto: validate

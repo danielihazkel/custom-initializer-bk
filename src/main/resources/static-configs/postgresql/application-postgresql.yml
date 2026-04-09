@@ -1,0 +1,15 @@
+postgresql:
+  datasource:
+    url: ${PG_DB_URL:jdbc:postgresql://localhost:5432/appdb}
+    username: ${PG_DB_USERNAME:postgres}
+    password: ${PG_DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+  hibernate:
+    dialect: org.hibernate.dialect.PostgreSQLDialect
+    hbm2ddl-auto: validate

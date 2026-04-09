@@ -16,8 +16,9 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [IntelliJ IDEA Integration](#intellij-idea-integration)
    - [REST API (curl)](#rest-api-curl)
 5. [What Gets Injected Into Generated Projects](#what-gets-injected-into-generated-projects)
-6. [Project Preview](#project-preview)
-7. [Admin API](#admin-api)
+6. [Multi-Database Configuration](#multi-database-configuration)
+7. [Project Preview](#project-preview)
+8. [Admin API](#admin-api)
    - [Hot-Reload Metadata](#hot-reload-metadata)
    - [Dependency Groups](#dependency-groups)
    - [Dependency Entries](#dependency-entries)
@@ -99,7 +100,14 @@ offline-spring-init/backend/
 │       │   ├── kafka-consumer-example.mustache
 │       │   ├── kafka-producer-example.mustache
 │       │   ├── security-config.mustache
-│       │   ├── jpa-config.mustache
+│       │   ├── postgresql-config-primary.mustache    # PostgreSQL DataSource (primary variant)
+│       │   ├── postgresql-config-secondary.mustache  # PostgreSQL DataSource (secondary variant)
+│       │   ├── mssql-config-primary.mustache         # MSSQL DataSource (primary variant)
+│       │   ├── mssql-config-secondary.mustache       # MSSQL DataSource (secondary variant)
+│       │   ├── db2-config-primary.mustache           # DB2 DataSource (primary variant)
+│       │   ├── db2-config-secondary.mustache         # DB2 DataSource (secondary variant)
+│       │   ├── oracle-config-primary.mustache        # Oracle DataSource (primary variant)
+│       │   ├── oracle-config-secondary.mustache      # Oracle DataSource (secondary variant)
 │       │   ├── rqueue-config.mustache
 │       │   ├── Dockerfile-java17.mustache
 │       │   ├── Dockerfile-java21.mustache
@@ -113,7 +121,11 @@ offline-spring-init/backend/
 │           ├── common/settings.xml
 │           ├── kafka/application-kafka.yml
 │           ├── security/application-security.yml
-│           ├── jpa/application-jpa.yml
+│           ├── jpa/application-jpa.yml             # shared spring.jpa.* properties only
+│           ├── postgresql/application-postgresql.yml
+│           ├── mssql/application-mssql.yml
+│           ├── db2/application-db2.yml
+│           ├── oracle/application-oracle.yml
 │           ├── observability/application-observability.yml
 │           ├── rqueue/application-rqueue.yml
 │           └── logging/application-logging.yml
@@ -228,10 +240,130 @@ All per-dependency YAML config is **deep-merged** into `src/main/resources/appli
 |--------------|----------------|
 | `kafka` | `application.yaml` (kafka section merged)<br>`src/main/java/.../config/KafkaConfig.java`<br>*(optional)* `KafkaConsumerExample.java` (sub-option: `consumer-example`)<br>*(optional)* `KafkaProducerExample.java` (sub-option: `producer-example`) |
 | `security` | `application.yaml` (security section merged)<br>`src/main/java/.../config/SecurityConfig.java` |
-| `data-jpa` | `application.yaml` (datasource section merged)<br>`src/main/java/.../config/JpaConfig.java` |
+| `data-jpa` | `application.yaml` (shared `spring.jpa.*` properties merged) |
+| `postgresql` | `application.yaml` (`postgresql.datasource.*` section merged)<br>`src/main/java/.../config/PostgresqlConfig.java` (with `@Primary` — sub-option: `pg-primary`, or without — sub-option: `pg-secondary`) |
+| `mssql` | `application.yaml` (`mssql.datasource.*` section merged)<br>`src/main/java/.../config/MssqlConfig.java` (with `@Primary` — sub-option: `mssql-primary`, or without — sub-option: `mssql-secondary`) |
+| `db2` | `application.yaml` (`db2.datasource.*` section merged)<br>`src/main/java/.../config/Db2Config.java` (with `@Primary` — sub-option: `db2-primary`, or without — sub-option: `db2-secondary`) |
+| `oracle` | `application.yaml` (`oracle.datasource.*` section merged)<br>`src/main/java/.../config/OracleConfig.java` (with `@Primary` — sub-option: `oracle-primary`, or without — sub-option: `oracle-secondary`) |
 | `actuator` | `application.yaml` (management section merged) |
 | `rqueue` | `application.yaml` (rqueue section merged)<br>`src/main/java/.../config/RqueueConfig.java` |
 | `logging` | `application.yaml` (logging section merged) |
+
+---
+
+## Multi-Database Configuration
+
+The initializr supports generating projects with **multiple datasources** (PostgreSQL, Microsoft SQL Server, IBM DB2, Oracle). Each selected database driver injects its own full multi-datasource configuration class with separate `DataSource`, `EntityManagerFactory`, and `TransactionManager` beans.
+
+### How It Works
+
+Each database driver (`postgresql`, `mssql`, `db2`, `oracle`) is a standalone dependency. When selected alongside `data-jpa`, it contributes:
+
+1. A YAML section under its own prefix (e.g. `postgresql.datasource.*`) — never under `spring.datasource.*`, so multiple DBs don't collide.
+2. A config class (`PostgresqlConfig.java`, `MssqlConfig.java`, etc.) that manually wires `DataSource` → `EntityManagerFactory` → `TransactionManager`.
+3. `@EnableJpaRepositories` scoped to a DB-specific sub-package (e.g. `*.postgresql.repository`).
+
+Exactly **one** config class gets `@Primary` on all three beans — controlled by the `{db}-primary` / `{db}-secondary` sub-options.
+
+### Selecting the Primary Database (UI)
+
+The **Selected Dependencies** panel displays a **Primary Database** radio group whenever one or more database drivers are selected. The first selected driver is automatically set as primary. Change it by clicking a different driver in the radio group — the sub-options update instantly and the correct template variant is used at generation time.
+
+### Selecting the Primary Database (curl / REST)
+
+Pass `opts-{depId}=<optionId>` for each selected driver:
+
+```bash
+# Single DB — PostgreSQL as primary (the "pg-primary" sub-option selects the @Primary variant)
+curl -o myapp.zip "http://localhost:8080/starter.zip?\
+dependencies=data-jpa,postgresql&opts-postgresql=pg-primary&\
+groupId=com.menora&artifactId=myapp"
+
+# Two DBs — PostgreSQL primary, MSSQL secondary
+curl -o myapp.zip "http://localhost:8080/starter.zip?\
+dependencies=data-jpa,postgresql,mssql&\
+opts-postgresql=pg-primary&opts-mssql=mssql-secondary&\
+groupId=com.menora&artifactId=myapp"
+
+# Three DBs — MSSQL primary, PostgreSQL secondary, Oracle secondary
+curl -o myapp.zip "http://localhost:8080/starter.zip?\
+dependencies=data-jpa,postgresql,mssql,oracle&\
+opts-mssql=mssql-primary&opts-postgresql=pg-secondary&opts-oracle=oracle-secondary&\
+groupId=com.menora&artifactId=myapp"
+```
+
+### Generated Config Class Pattern
+
+Each database produces the same structure. Below is `MssqlConfig.java` when selected as primary:
+
+```java
+@Configuration
+@EnableJpaRepositories(
+        basePackages = "com.menora.myapp.mssql.repository",
+        entityManagerFactoryRef = "mssqlEntityManagerFactory",
+        transactionManagerRef = "mssqlTransactionManager"
+)
+public class MssqlConfig {
+
+    @Primary @Bean @ConfigurationProperties(prefix = "mssql.datasource")
+    public DataSource mssqlDataSource() { ... }
+
+    @Primary @Bean(name = "mssqlEntityManagerFactory")
+    public LocalContainerEntityManagerFactoryBean mssqlEntityManagerFactory(...) { ... }
+
+    @Primary @Bean(name = "mssqlTransactionManager")
+    public PlatformTransactionManager mssqlTransactionManager(...) { ... }
+}
+```
+
+Without `@Primary` (secondary variant), the annotations are omitted. Entities and repositories should live under the DB-specific sub-package (e.g. `com.menora.myapp.mssql`).
+
+### Database Driver Reference
+
+| Dep ID | Name | Bean prefix | Repository package | JDBC URL default |
+|--------|------|------------|-------------------|-----------------|
+| `postgresql` | PostgreSQL Driver | `pg` | `*.postgresql.repository` | `jdbc:postgresql://localhost:5432/appdb` |
+| `mssql` | Microsoft SQL Server Driver | `mssql` | `*.mssql.repository` | `jdbc:sqlserver://localhost:1433;databaseName=appdb` |
+| `db2` | IBM DB2 Driver | `db2` | `*.db2.repository` | `jdbc:db2://localhost:50000/appdb` |
+| `oracle` | Oracle Database Driver | `oracle` | `*.oracle.repository` | `jdbc:oracle:thin:@localhost:1521:appdb` |
+
+### YAML Structure (Multi-DB Example)
+
+When `data-jpa` + `postgresql` + `mssql` are all selected, the merged `application.yaml` looks like:
+
+```yaml
+spring:
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc.batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+postgresql:
+  datasource:
+    url: ${PG_DB_URL:jdbc:postgresql://localhost:5432/appdb}
+    username: ${PG_DB_USERNAME:postgres}
+    password: ${PG_DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari: { maximum-pool-size: 20, minimum-idle: 5, ... }
+  hibernate:
+    dialect: org.hibernate.dialect.PostgreSQLDialect
+    hbm2ddl-auto: validate
+
+mssql:
+  datasource:
+    url: ${MSSQL_DB_URL:jdbc:sqlserver://localhost:1433;databaseName=appdb}
+    username: ${MSSQL_DB_USERNAME:sa}
+    password: ${MSSQL_DB_PASSWORD:password}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    hikari: { maximum-pool-size: 20, minimum-idle: 5, ... }
+  hibernate:
+    dialect: org.hibernate.dialect.SQLServerDialect
+    hbm2ddl-auto: validate
+```
 
 ---
 
@@ -556,6 +688,9 @@ Rules are served to the browser at `GET /metadata/compatibility` (no auth requir
 |--------|----------|--------|--------|
 | `web` | CONFLICTS | `webflux` | Incompatible server models |
 | `data-jpa` | RECOMMENDS | `postgresql` | JPA needs a database driver |
+| `mssql` | RECOMMENDS | `data-jpa` | MSSQL driver works best with Spring Data JPA |
+| `db2` | RECOMMENDS | `data-jpa` | DB2 driver works best with Spring Data JPA |
+| `oracle` | RECOMMENDS | `data-jpa` | Oracle driver works best with Spring Data JPA |
 | `actuator` | RECOMMENDS | `prometheus` | Metrics export for Prometheus |
 | `rqueue` | REQUIRES | `data-jpa` | Rqueue persists state via JPA |
 | `security` | REQUIRES | `web` | Security needs a web layer |
@@ -989,9 +1124,9 @@ The UI fetches templates from `GET /metadata/starter-templates` (a public endpoi
 
 | Template ID | Name | Dependencies |
 |-------------|------|-------------|
-| `rest-api` | REST API Service | web, data-jpa, postgresql, actuator, logging |
-| `event-driven` | Event-Driven Service | kafka (with consumer/producer examples), data-jpa, postgresql, actuator, logging |
-| `microservice` | Microservice (Full Stack) | web, kafka, data-jpa, postgresql, security, actuator, prometheus, logging |
+| `rest-api` | REST API Service | web, data-jpa, postgresql (`pg-primary`), actuator, logging |
+| `event-driven` | Event-Driven Service | kafka (with consumer/producer examples), data-jpa, postgresql (`pg-primary`), actuator, logging |
+| `microservice` | Microservice (Full Stack) | web, kafka, data-jpa, postgresql (`pg-primary`), security, actuator, prometheus, logging |
 
 ### Module Templates (Multi-Module)
 
@@ -1286,7 +1421,7 @@ Tests use an in-memory H2 database (`src/test/resources/application.properties`)
 - `kafkaDependencyInjectsConfigFiles` — `application.yaml` contains `bootstrap-servers`, `KafkaConfig.java` present
 - `withoutKafkaDependencyNoKafkaFiles` — `KafkaConfig.java` absent when kafka not selected
 - `securityDependencyInjectsSecurityConfig` — `application.yaml` + `SecurityConfig.java`
-- `jpaDependencyInjectsJpaConfig` — `application.yaml` + `JpaConfig.java`
+- `jpaDependencyInjectsJpaConfig` — `application.yaml` (JPA properties) + `PostgresqlConfig.java` when `postgresql` + `pg-primary` are selected
 - `actuatorDependencyInjectsObservabilityConfig` — `application.yaml` contains `management`
 - `rqueueDependencyInjectsRqueueConfig` — `application.yaml` + `RqueueConfig.java`
 - `multipleDependenciesInjectAllConfigs` — kafka + security + jpa + actuator combined, all files present
@@ -1316,8 +1451,11 @@ void myDepInjectsConfig() throws Exception {
 |----|------|----------|-----------------------------------------|------------|------------|
 | `web` | Spring Web | Web | — | — | — |
 | `webflux` | Spring Reactive Web | Web | — | — | — |
-| `data-jpa` | Spring Data JPA | Data | datasource, JPA properties | `JpaConfig.java` | — |
-| `postgresql` | PostgreSQL Driver | Data | — | — | — |
+| `data-jpa` | Spring Data JPA | Data | shared `spring.jpa.*` properties | — | — |
+| `postgresql` | PostgreSQL Driver | Data | `postgresql.datasource.*` | `PostgresqlConfig.java` (primary or secondary) | — |
+| `mssql` | Microsoft SQL Server Driver | Data | `mssql.datasource.*` | `MssqlConfig.java` (primary or secondary) | — |
+| `db2` | IBM DB2 Driver | Data | `db2.datasource.*` | `Db2Config.java` (primary or secondary) | — |
+| `oracle` | Oracle Database Driver | Data | `oracle.datasource.*` | `OracleConfig.java` (primary or secondary) | — |
 | `kafka` | Spring for Apache Kafka | Messaging | kafka (bootstrap-servers, producer, consumer) | `KafkaConfig.java`<br>*(opt)* `KafkaConsumerExample.java`<br>*(opt)* `KafkaProducerExample.java` | — |
 | `security` | Spring Security | Security | oauth2 resource server | `SecurityConfig.java` | — |
 | `actuator` | Spring Boot Actuator | Observability | management endpoints | — | — |
