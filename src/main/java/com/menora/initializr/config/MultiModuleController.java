@@ -96,6 +96,7 @@ public class MultiModuleController {
                 Arrays.stream(dependencies.split(",")).map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toSet());
 
         // Generate each module as a sub-project
+        String defaultVersion = (String) metadataProvider.get().defaults().get("version");
         Path tempDir = Files.createTempDirectory("multimodule-");
         try {
             List<String> moduleNames = new ArrayList<>();
@@ -125,7 +126,7 @@ public class MultiModuleController {
                 if (!moduleDeps.isEmpty()) {
                     request.setDependencies(new ArrayList<>(moduleDeps));
                 }
-                request.initialize(metadataProvider.get());
+                request.setVersion(defaultVersion);
 
                 Path moduleDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
                 try {
@@ -194,6 +195,7 @@ public class MultiModuleController {
         Set<String> extraDeps = dependencies.isBlank() ? Set.of() :
                 Arrays.stream(dependencies.split(",")).map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toSet());
 
+        String defaultVersion = (String) metadataProvider.get().defaults().get("version");
         Path tempDir = Files.createTempDirectory("multimodule-preview-");
         try {
             List<String> moduleNames = new ArrayList<>();
@@ -218,7 +220,7 @@ public class MultiModuleController {
                 if (!moduleDeps.isEmpty()) {
                     request.setDependencies(new ArrayList<>(moduleDeps));
                 }
-                request.initialize(metadataProvider.get());
+                request.setVersion(defaultVersion);
 
                 Path moduleDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
                 try {

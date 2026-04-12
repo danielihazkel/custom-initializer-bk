@@ -1,5 +1,6 @@
 package com.menora.initializr.config;
 
+import io.spring.initializr.metadata.InitializrMetadata;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
 import io.spring.initializr.web.project.ProjectGenerationInvoker;
 import io.spring.initializr.web.project.ProjectRequest;
@@ -41,7 +42,14 @@ public class ProjectPreviewController {
 
     @GetMapping("/starter.preview")
     public PreviewResponse preview(@ModelAttribute WebProjectRequest request) throws IOException {
-        request.initialize(metadataProvider.get());
+        // Do NOT call request.initialize(metadata) here — it unconditionally
+        // overwrites all properties with defaults, undoing @ModelAttribute binding
+        // (e.g. javaVersion reverts to "21" even when the user selected "17").
+        // Only fill in "version" which the frontend doesn't send.
+        InitializrMetadata metadata = metadataProvider.get();
+        if (request.getVersion() == null || request.getVersion().isEmpty()) {
+            request.setVersion((String) metadata.defaults().get("version"));
+        }
         Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
         try {
             List<PreviewFile> files = new ArrayList<>();
