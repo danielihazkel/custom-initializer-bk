@@ -1,0 +1,3 @@
+mongodb:
+  uri: ${MONGODB_URI:mongodb://localhost:27017/appdb}
+  database: ${MONGODB_DATABASE:appdb}

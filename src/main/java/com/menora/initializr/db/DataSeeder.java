@@ -124,6 +124,8 @@ public class DataSeeder implements CommandLineRunner {
                 "com.ibm.db2", "jcc", null, "runtime", null, 3);
         entry(data, "oracle", "Oracle Database Driver", "Oracle JDBC driver",
                 "com.oracle.database.jdbc", "ojdbc11", null, "runtime", null, 4);
+        entry(data, "mongodb", "MongoDB", "Spring Data MongoDB — document database driver",
+                null, null, null, null, null, 5);
 
         DependencyGroupEntity messaging = group("Messaging", 3);
         entry(messaging, "kafka", "Spring for Apache Kafka", "Kafka messaging support",
@@ -302,6 +304,20 @@ public class DataSeeder implements CommandLineRunner {
                 "src/main/java/{{packagePath}}/config/OracleConfig.java",
                 FileContributionEntity.SubstitutionType.PACKAGE, null, "oracle-secondary", 2);
 
+        // MongoDB
+        fc("mongodb", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/mongodb/application-mongodb.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("mongodb", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mongodb-config-primary.mustache"),
+                "src/main/java/{{packagePath}}/config/MongoConfig.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "mongodb-primary", 1);
+        fc("mongodb", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mongodb-config-secondary.mustache"),
+                "src/main/java/{{packagePath}}/config/MongoConfig.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "mongodb-secondary", 2);
+
         // actuator / observability
         fc("actuator", FileContributionEntity.FileType.YAML_MERGE,
                 readClasspath("static-configs/observability/application-observability.yml"),
@@ -399,6 +415,11 @@ public class DataSeeder implements CommandLineRunner {
                 "Mark this database as the primary datasource (@Primary)", 0);
         subOption("oracle", "oracle-secondary", "Secondary DataSource",
                 "Use this database as a secondary datasource", 1);
+
+        subOption("mongodb", "mongodb-primary", "Primary DataSource",
+                "Mark this MongoDB connection as the primary datasource (@Primary)", 0);
+        subOption("mongodb", "mongodb-secondary", "Secondary DataSource",
+                "Use this MongoDB connection as a secondary datasource", 1);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
