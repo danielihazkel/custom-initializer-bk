@@ -124,8 +124,11 @@ public class DataSeeder implements CommandLineRunner {
                 "com.ibm.db2", "jcc", null, "runtime", null, 3);
         entry(data, "oracle", "Oracle Database Driver", "Oracle JDBC driver",
                 "com.oracle.database.jdbc", "ojdbc11", null, "runtime", null, 4);
+        entry(data, "h2", "H2 Database",
+                "Embedded relational database — ideal for development and testing",
+                "com.h2database", "h2", null, "runtime", null, 5);
         entry(data, "mongodb", "MongoDB", "Spring Data MongoDB — document database driver",
-                null, null, null, null, null, 5);
+                null, null, null, null, null, 6);
 
         DependencyGroupEntity messaging = group("Messaging", 3);
         entry(messaging, "kafka", "Spring for Apache Kafka", "Kafka messaging support",
@@ -304,6 +307,20 @@ public class DataSeeder implements CommandLineRunner {
                 "src/main/java/{{packagePath}}/config/OracleConfig.java",
                 FileContributionEntity.SubstitutionType.PACKAGE, null, "oracle-secondary", 2);
 
+        // H2
+        fc("h2", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/h2/application-h2.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("h2", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/h2-config-primary.mustache"),
+                "src/main/java/{{packagePath}}/config/H2Config.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "h2-primary", 1);
+        fc("h2", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/h2-config-secondary.mustache"),
+                "src/main/java/{{packagePath}}/config/H2Config.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "h2-secondary", 2);
+
         // MongoDB
         fc("mongodb", FileContributionEntity.FileType.YAML_MERGE,
                 readClasspath("static-configs/mongodb/application-mongodb.yml"),
@@ -420,6 +437,11 @@ public class DataSeeder implements CommandLineRunner {
                 "Mark this MongoDB connection as the primary datasource (@Primary)", 0);
         subOption("mongodb", "mongodb-secondary", "Secondary DataSource",
                 "Use this MongoDB connection as a secondary datasource", 1);
+
+        subOption("h2", "h2-primary", "Primary DataSource",
+                "Mark this database as the primary datasource (@Primary)", 0);
+        subOption("h2", "h2-secondary", "Secondary DataSource",
+                "Use this database as a secondary datasource", 1);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -496,6 +518,8 @@ public class DataSeeder implements CommandLineRunner {
                 "Spring Security requires a web layer — add Spring Web", 4);
         compatibility("mail-sampler", "web", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
                 "Mail Sampler works best with a web layer for REST endpoints", 5);
+        compatibility("data-jpa", "h2", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "JPA requires a database driver — add H2 for development/testing", 9);
     }
 
     private void compatibility(String source, String target,
