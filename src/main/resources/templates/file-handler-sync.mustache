@@ -1,0 +1,31 @@
+package {{packageName}}.util;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+public final class SyncFileHandler {
+
+    private SyncFileHandler() {
+    }
+
+    public static String readString(Path path) throws IOException {
+        return Files.readString(path, StandardCharsets.UTF_8);
+    }
+
+    public static List<String> readLines(Path path) throws IOException {
+        return Files.readAllLines(path, StandardCharsets.UTF_8);
+    }
+
+    public static void writeString(Path path, String content) throws IOException {
+        Files.writeString(path, content, StandardCharsets.UTF_8);
+    }
+
+    public static void appendString(Path path, String content) throws IOException {
+        Files.writeString(path, content, StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+}

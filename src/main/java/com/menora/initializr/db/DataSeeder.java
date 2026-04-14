@@ -153,6 +153,11 @@ public class DataSeeder implements CommandLineRunner {
         entry(communication, "mail-sampler", "Mail Sampler",
                 "Outlook mail integration for internal organization",
                 null, null, null, null, null, 0);
+
+        DependencyGroupEntity utilities = group("Utilities", 8);
+        entry(utilities, "file-handler-utils", "File Handler Utils",
+                "Drop-in helper classes for reading/writing files — no pom dependency added",
+                null, null, null, null, null, 0);
     }
 
     // ── Common file contributions (every project) ────────────────────────────
@@ -374,6 +379,16 @@ public class DataSeeder implements CommandLineRunner {
                 readClasspath("templates/mail-inbox-reader.mustache"),
                 "src/main/java/{{packagePath}}/service/InboxReaderService.java",
                 FileContributionEntity.SubstitutionType.PACKAGE, null, "inbox-reader", 3);
+
+        // file-handler-utils — file-only option (no pom dependency)
+        fc("file-handler-utils", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/file-handler-sync.mustache"),
+                "src/main/java/{{packagePath}}/util/SyncFileHandler.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "sync-handler", 0);
+        fc("file-handler-utils", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/file-handler-async.mustache"),
+                "src/main/java/{{packagePath}}/util/AsyncFileHandler.java",
+                FileContributionEntity.SubstitutionType.PACKAGE, null, "async-handler", 1);
     }
 
     // ── Build customizations ──────────────────────────────────────────────────
@@ -442,6 +457,11 @@ public class DataSeeder implements CommandLineRunner {
                 "Mark this database as the primary datasource (@Primary)", 0);
         subOption("h2", "h2-secondary", "Secondary DataSource",
                 "Use this database as a secondary datasource", 1);
+
+        subOption("file-handler-utils", "sync-handler", "Synchronous Handler",
+                "Add SyncFileHandler.java — blocking read/write helpers", 0);
+        subOption("file-handler-utils", "async-handler", "Asynchronous Handler",
+                "Add AsyncFileHandler.java — CompletableFuture-based read/write helpers", 1);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
