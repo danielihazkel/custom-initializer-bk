@@ -210,6 +210,13 @@ public class DataSeeder implements CommandLineRunner {
     private void seedCommonFileContributions() throws IOException {
         int order = 0;
 
+        // Base application.yaml — written first (sortOrder=-1) so every project gets
+        // spring.application.name before dependency-specific YAML_MERGE entries run.
+        fc(DependencyConfigService.COMMON_ID, FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/application-base.mustache"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.PROJECT, null, null, -1);
+
         fc(DependencyConfigService.COMMON_ID, FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/common/log4j2-spring.xml"),
                 "src/main/resources/log4j2-spring.xml",
