@@ -9,4 +9,5 @@ import java.util.Optional;
 public interface DependencyEntryRepository extends JpaRepository<DependencyEntryEntity, Long> {
     Optional<DependencyEntryEntity> findByDepId(String depId);
     List<DependencyEntryEntity> findByGroupId(Long groupId);
+    List<DependencyEntryEntity> findByDepIdIn(Iterable<String> depIds);
 }

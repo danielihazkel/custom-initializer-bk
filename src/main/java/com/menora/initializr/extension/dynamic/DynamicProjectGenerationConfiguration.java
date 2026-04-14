@@ -11,6 +11,8 @@ import io.spring.initializr.generator.project.ProjectDescription;
 import io.spring.initializr.generator.project.ProjectGenerationConfiguration;
 import io.spring.initializr.generator.spring.build.BuildCustomizer;
 import io.spring.initializr.generator.project.contributor.ProjectContributor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -34,6 +36,8 @@ import java.util.stream.Collectors;
 @ProjectGenerationConfiguration
 public class DynamicProjectGenerationConfiguration {
 
+    private static final Logger log = LoggerFactory.getLogger(DynamicProjectGenerationConfiguration.class);
+
     @Bean
     ProjectContributor dynamicFileContributor(
             ProjectDescription description,
@@ -41,17 +45,23 @@ public class DynamicProjectGenerationConfiguration {
             ProjectOptionsContext optionsContext) {
         return projectRoot -> {
             Set<String> depIds = selectedDepIds(description);
+            log.info("generation: selectedDepIds={}", depIds);
             List<FileContributionEntity> contributions = configService.getFileContributions(depIds);
 
             for (FileContributionEntity fc : contributions) {
                 // Skip if gated on a sub-option that wasn't selected
                 if (fc.getSubOptionId() != null
                         && !optionsContext.hasOption(fc.getDependencyId(), fc.getSubOptionId())) {
+                    log.debug("skip fc id={} dep={} target={}: sub-option '{}' not selected",
+                            fc.getId(), fc.getDependencyId(), fc.getTargetPath(), fc.getSubOptionId());
                     continue;
                 }
                 // Skip if gated on a Java version that doesn't match
                 if (fc.getJavaVersion() != null
                         && !fc.getJavaVersion().equals(description.getLanguage().jvmVersion())) {
+                    log.debug("skip fc id={} dep={} target={}: javaVersion='{}' != project '{}'",
+                            fc.getId(), fc.getDependencyId(), fc.getTargetPath(),
+                            fc.getJavaVersion(), description.getLanguage().jvmVersion());
                     continue;
                 }
 
@@ -119,6 +129,41 @@ public class DynamicProjectGenerationConfiguration {
                         build.repositories().add(bc.getRepoId(), repoBuilder.build());
                     }
                 }
+            }
+
+            // Remove file-only deps — the framework adds every requested dep to the
+            // build by default, but file-only entries (starter=false) must not produce
+            // a pom.xml <dependency> entry.
+            Set<String> fileOnlyIds = configService.getFileOnlyDepIds(depIds);
+            for (String id : fileOnlyIds) {
+                boolean removed = build.dependencies().remove(id);
+                log.debug("file-only dep '{}': removed from build={}", id, removed);
+            }
+
+        };
+    }
+
+    /**
+     * Removes the bare {@code spring-boot-starter} that Spring Initializr's
+     * {@code DefaultStarterBuildCustomizer} adds under the internal key {@code "root_starter"}
+     * when it finds no metadata-known starters in the build.
+     *
+     * <p>This runs as a {@link ProjectContributor} (not a {@link BuildCustomizer}) so that it
+     * executes <em>after</em> all {@code BuildCustomizer} beans — including the framework's own
+     * {@code DefaultStarterBuildCustomizer} — have finished modifying the build. At that point we
+     * can see both entries in {@link MavenBuild#dependencies()} and remove the duplicate.
+     *
+     * <p>Our {@code EXCLUDE_DEPENDENCY} build customization for {@code __common__} explicitly adds
+     * {@code spring-boot-starter} (with the logging exclusion) under the key {@code "spring-boot-starter"}.
+     * Keeping both keys produces two identical {@code <dependency>} blocks in the pom.
+     */
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    ProjectContributor deduplicateRootStarterContributor(MavenBuild build) {
+        return projectRoot -> {
+            if (build.dependencies().has("spring-boot-starter") && build.dependencies().has("root_starter")) {
+                build.dependencies().remove("root_starter");
+                log.debug("removed duplicate 'root_starter' — spring-boot-starter already present with exclusion");
             }
         };
     }

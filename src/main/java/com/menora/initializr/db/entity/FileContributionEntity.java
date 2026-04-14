@@ -69,9 +69,13 @@ public class FileContributionEntity {
     public SubstitutionType getSubstitutionType() { return substitutionType; }
     public void setSubstitutionType(SubstitutionType substitutionType) { this.substitutionType = substitutionType; }
     public String getJavaVersion() { return javaVersion; }
-    public void setJavaVersion(String javaVersion) { this.javaVersion = javaVersion; }
+    public void setJavaVersion(String javaVersion) { this.javaVersion = blankToNull(javaVersion); }
     public String getSubOptionId() { return subOptionId; }
-    public void setSubOptionId(String subOptionId) { this.subOptionId = subOptionId; }
+    public void setSubOptionId(String subOptionId) { this.subOptionId = blankToNull(subOptionId); }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
+    }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
 }

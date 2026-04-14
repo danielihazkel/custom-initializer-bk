@@ -78,34 +78,40 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
             DependencyGroup group = DependencyGroup.create(ge.getName());
 
             for (DependencyEntryEntity ee : ge.getEntries()) {
-                Dependency dep = new Dependency();
-                dep.setId(ee.getDepId());
-                dep.setName(ee.getName());
-                dep.setDescription(ee.getDescription());
+                try {
+                    Dependency dep = new Dependency();
+                    dep.setId(ee.getDepId());
+                    dep.setName(ee.getName());
+                    dep.setDescription(ee.getDescription());
+                    dep.setStarter(ee.isStarter());
 
-                if (ee.getMavenGroupId() != null && !ee.getMavenGroupId().isBlank()) {
-                    dep.setGroupId(ee.getMavenGroupId());
-                }
-                if (ee.getMavenArtifactId() != null && !ee.getMavenArtifactId().isBlank()) {
-                    dep.setArtifactId(ee.getMavenArtifactId());
-                }
-                if (ee.getVersion() != null && !ee.getVersion().isBlank()) {
-                    dep.setVersion(ee.getVersion());
-                }
-                if (ee.getScope() != null && !ee.getScope().isBlank()) {
-                    dep.setScope(ee.getScope());
-                }
-                if (ee.getRepository() != null && !ee.getRepository().isBlank()) {
-                    dep.setRepository(ee.getRepository());
-                }
-                if (ee.getCompatibilityRange() != null && !ee.getCompatibilityRange().isBlank()) {
-                    dep.setCompatibilityRange(ee.getCompatibilityRange());
-                }
+                    if (ee.getMavenGroupId() != null && !ee.getMavenGroupId().isBlank()) {
+                        dep.setGroupId(ee.getMavenGroupId());
+                    }
+                    if (ee.getMavenArtifactId() != null && !ee.getMavenArtifactId().isBlank()) {
+                        dep.setArtifactId(ee.getMavenArtifactId());
+                    }
+                    if (ee.getVersion() != null && !ee.getVersion().isBlank()) {
+                        dep.setVersion(ee.getVersion());
+                    }
+                    if (ee.getScope() != null && !ee.getScope().isBlank()) {
+                        dep.setScope(ee.getScope());
+                    }
+                    if (ee.getRepository() != null && !ee.getRepository().isBlank()) {
+                        dep.setRepository(ee.getRepository());
+                    }
+                    if (ee.getCompatibilityRange() != null && !ee.getCompatibilityRange().isBlank()) {
+                        dep.setCompatibilityRange(ee.getCompatibilityRange());
+                    }
 
-                dep.resolve();
-                group.getContent().add(dep);
-                log.info("  [metadata] loaded dep '{}' ({}) into group '{}'",
-                        ee.getDepId(), ee.getName(), ge.getName());
+                    dep.resolve();
+                    group.getContent().add(dep);
+                    log.info("  [metadata] loaded dep '{}' ({}) into group '{}'",
+                            ee.getDepId(), ee.getName(), ge.getName());
+                } catch (Exception ex) {
+                    log.error("  [metadata] failed to load dep id='{}' name='{}' in group '{}': {}",
+                            ee.getDepId(), ee.getName(), ge.getName(), ex.toString());
+                }
             }
 
             log.info("[metadata] group '{}' — {} entries", ge.getName(), group.getContent().size());

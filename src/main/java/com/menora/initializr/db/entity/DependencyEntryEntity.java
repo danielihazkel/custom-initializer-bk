@@ -52,6 +52,9 @@ public class DependencyEntryEntity {
     @Column(name = "compatibility_range", length = 100)
     private String compatibilityRange;
 
+    @Column(name = "is_starter", nullable = false)
+    private boolean starter = true;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public DependencyGroupEntity getGroup() { return group; }
@@ -61,19 +64,25 @@ public class DependencyEntryEntity {
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
+    public void setDescription(String description) { this.description = blankToNull(description); }
     public String getMavenGroupId() { return mavenGroupId; }
-    public void setMavenGroupId(String mavenGroupId) { this.mavenGroupId = mavenGroupId; }
+    public void setMavenGroupId(String mavenGroupId) { this.mavenGroupId = blankToNull(mavenGroupId); }
     public String getMavenArtifactId() { return mavenArtifactId; }
-    public void setMavenArtifactId(String mavenArtifactId) { this.mavenArtifactId = mavenArtifactId; }
+    public void setMavenArtifactId(String mavenArtifactId) { this.mavenArtifactId = blankToNull(mavenArtifactId); }
     public String getVersion() { return version; }
-    public void setVersion(String version) { this.version = version; }
+    public void setVersion(String version) { this.version = blankToNull(version); }
     public String getScope() { return scope; }
-    public void setScope(String scope) { this.scope = scope; }
+    public void setScope(String scope) { this.scope = blankToNull(scope); }
     public String getRepository() { return repository; }
-    public void setRepository(String repository) { this.repository = repository; }
+    public void setRepository(String repository) { this.repository = blankToNull(repository); }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     public String getCompatibilityRange() { return compatibilityRange; }
-    public void setCompatibilityRange(String compatibilityRange) { this.compatibilityRange = compatibilityRange; }
+    public void setCompatibilityRange(String compatibilityRange) { this.compatibilityRange = blankToNull(compatibilityRange); }
+    public boolean isStarter() { return starter; }
+    public void setStarter(boolean starter) { this.starter = starter; }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
+    }
 }

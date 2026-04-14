@@ -60,6 +60,7 @@ public class DataSeeder implements CommandLineRunner {
     public void run(String... args) throws Exception {
         if (groupRepo.count() > 0) {
             log.info("Database already seeded — skipping DataSeeder");
+            normalizeLegacyBlankStrings();
             return;
         }
         log.info("Seeding database from classpath resources...");
@@ -72,6 +73,46 @@ public class DataSeeder implements CommandLineRunner {
         seedStarterTemplates();
         seedModuleTemplates();
         log.info("Database seeding complete");
+    }
+
+    /**
+     * Legacy rows inserted through the admin UI before the entity setters were
+     * taught to coerce blank strings to null. Re-saving each row runs the now-coercing
+     * setters and flushes NULLs to columns that used to hold "".
+     */
+    private void normalizeLegacyBlankStrings() {
+        int fcFixed = 0;
+        for (FileContributionEntity f : fileContribRepo.findAll()) {
+            boolean bad = "".equals(f.getSubOptionId()) || "".equals(f.getJavaVersion());
+            if (bad) {
+                f.setSubOptionId(f.getSubOptionId());
+                f.setJavaVersion(f.getJavaVersion());
+                fileContribRepo.save(f);
+                fcFixed++;
+            }
+        }
+        int entryFixed = 0;
+        for (DependencyEntryEntity e : entryRepo.findAll()) {
+            boolean bad = "".equals(e.getMavenGroupId()) || "".equals(e.getMavenArtifactId())
+                    || "".equals(e.getVersion()) || "".equals(e.getScope())
+                    || "".equals(e.getRepository()) || "".equals(e.getCompatibilityRange())
+                    || "".equals(e.getDescription());
+            if (bad) {
+                e.setMavenGroupId(e.getMavenGroupId());
+                e.setMavenArtifactId(e.getMavenArtifactId());
+                e.setVersion(e.getVersion());
+                e.setScope(e.getScope());
+                e.setRepository(e.getRepository());
+                e.setCompatibilityRange(e.getCompatibilityRange());
+                e.setDescription(e.getDescription());
+                entryRepo.save(e);
+                entryFixed++;
+            }
+        }
+        if (fcFixed + entryFixed > 0) {
+            log.info("Normalized legacy blank strings: {} file contributions, {} dependency entries",
+                    fcFixed, entryFixed);
+        }
     }
 
     private DependencyGroupEntity group(String name, int order) {
@@ -158,6 +199,10 @@ public class DataSeeder implements CommandLineRunner {
         entry(utilities, "file-handler-utils", "File Handler Utils",
                 "Drop-in helper classes for reading/writing files — no pom dependency added",
                 null, null, null, null, null, 0);
+        entryRepo.findAll().stream()
+                .filter(e -> "file-handler-utils".equals(e.getDepId()))
+                .findFirst()
+                .ifPresent(e -> { e.setStarter(false); entryRepo.save(e); });
     }
 
     // ── Common file contributions (every project) ────────────────────────────

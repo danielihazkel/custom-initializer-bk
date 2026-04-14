@@ -1,6 +1,7 @@
 package com.menora.initializr.db;
 
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
+import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.DependencyGroupEntity;
 import com.menora.initializr.db.entity.DependencySubOptionEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
@@ -17,15 +18,18 @@ public class DependencyConfigService {
     public static final String COMMON_ID = "__common__";
 
     private final DependencyGroupRepository groupRepo;
+    private final DependencyEntryRepository entryRepo;
     private final FileContributionRepository fileContribRepo;
     private final BuildCustomizationRepository buildCustomRepo;
     private final DependencySubOptionRepository subOptionRepo;
 
     public DependencyConfigService(DependencyGroupRepository groupRepo,
+                                   DependencyEntryRepository entryRepo,
                                    FileContributionRepository fileContribRepo,
                                    BuildCustomizationRepository buildCustomRepo,
                                    DependencySubOptionRepository subOptionRepo) {
         this.groupRepo = groupRepo;
+        this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
         this.buildCustomRepo = buildCustomRepo;
         this.subOptionRepo = subOptionRepo;
@@ -59,5 +63,18 @@ public class DependencyConfigService {
     @Transactional(readOnly = true)
     public List<DependencyGroupEntity> getAllGroupsWithEntries() {
         return groupRepo.findAllWithEntriesSorted();
+    }
+
+    /**
+     * Returns the subset of {@code candidateIds} that belong to file-only entries
+     * (starter=false). These should be removed from the Maven build so they don't
+     * produce a pom.xml dependency entry.
+     */
+    @Transactional(readOnly = true)
+    public Set<String> getFileOnlyDepIds(Set<String> candidateIds) {
+        return entryRepo.findByDepIdIn(candidateIds).stream()
+                .filter(e -> !e.isStarter())
+                .map(DependencyEntryEntity::getDepId)
+                .collect(java.util.stream.Collectors.toSet());
     }
 }

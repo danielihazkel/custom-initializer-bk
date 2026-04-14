@@ -81,6 +81,13 @@ public class AdminController {
         return ResponseEntity.badRequest().body("Metadata provider does not support refresh");
     }
 
+    /** Invalidate the metadata cache after a catalog-affecting write. */
+    private void refreshMetadata() {
+        if (metadataProvider instanceof DatabaseInitializrMetadataProvider dbProvider) {
+            dbProvider.refresh();
+        }
+    }
+
     // ── Dependency Groups ─────────────────────────────────────────────────────
 
     @GetMapping("/dependency-groups")
@@ -90,7 +97,9 @@ public class AdminController {
 
     @PostMapping("/dependency-groups")
     public DependencyGroupEntity createGroup(@Valid @RequestBody DependencyGroupEntity group) {
-        return groupRepo.save(group);
+        DependencyGroupEntity saved = groupRepo.save(group);
+        refreshMetadata();
+        return saved;
     }
 
     @PutMapping("/dependency-groups/reorder")
@@ -104,13 +113,16 @@ public class AdminController {
                 groupRepo.save(group);
             });
         }
+        refreshMetadata();
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/dependency-groups/{id}")
     public DependencyGroupEntity updateGroup(@PathVariable Long id, @Valid @RequestBody DependencyGroupEntity group) {
         group.setId(id);
-        return groupRepo.save(group);
+        DependencyGroupEntity saved = groupRepo.save(group);
+        refreshMetadata();
+        return saved;
     }
 
     @DeleteMapping("/dependency-groups/{id}")
@@ -122,6 +134,7 @@ public class AdminController {
         }
         if (force) orphanService.cascadeDeleteGroupReferences(id);
         groupRepo.deleteById(id);
+        refreshMetadata();
         return ResponseEntity.noContent().build();
     }
 
@@ -134,13 +147,17 @@ public class AdminController {
 
     @PostMapping("/dependency-entries")
     public DependencyEntryEntity createEntry(@Valid @RequestBody DependencyEntryEntity entry) {
-        return entryRepo.save(entry);
+        DependencyEntryEntity saved = entryRepo.save(entry);
+        refreshMetadata();
+        return saved;
     }
 
     @PutMapping("/dependency-entries/{id}")
     public DependencyEntryEntity updateEntry(@PathVariable Long id, @Valid @RequestBody DependencyEntryEntity entry) {
         entry.setId(id);
-        return entryRepo.save(entry);
+        DependencyEntryEntity saved = entryRepo.save(entry);
+        refreshMetadata();
+        return saved;
     }
 
     @DeleteMapping("/dependency-entries/{id}")
@@ -154,6 +171,7 @@ public class AdminController {
         }
         if (force) orphanService.cascadeDeleteDependencyReferences(entry.getDepId());
         entryRepo.deleteById(id);
+        refreshMetadata();
         return ResponseEntity.noContent().build();
     }
 
@@ -214,18 +232,23 @@ public class AdminController {
 
     @PostMapping("/sub-options")
     public DependencySubOptionEntity createSubOption(@Valid @RequestBody DependencySubOptionEntity so) {
-        return subOptionRepo.save(so);
+        DependencySubOptionEntity saved = subOptionRepo.save(so);
+        refreshMetadata();
+        return saved;
     }
 
     @PutMapping("/sub-options/{id}")
     public DependencySubOptionEntity updateSubOption(@PathVariable Long id, @Valid @RequestBody DependencySubOptionEntity so) {
         so.setId(id);
-        return subOptionRepo.save(so);
+        DependencySubOptionEntity saved = subOptionRepo.save(so);
+        refreshMetadata();
+        return saved;
     }
 
     @DeleteMapping("/sub-options/{id}")
     public ResponseEntity<Void> deleteSubOption(@PathVariable Long id) {
         subOptionRepo.deleteById(id);
+        refreshMetadata();
         return ResponseEntity.noContent().build();
     }
 
@@ -238,18 +261,23 @@ public class AdminController {
 
     @PostMapping("/compatibility")
     public DependencyCompatibilityEntity createCompatibility(@Valid @RequestBody DependencyCompatibilityEntity rule) {
-        return compatibilityRepo.save(rule);
+        DependencyCompatibilityEntity saved = compatibilityRepo.save(rule);
+        refreshMetadata();
+        return saved;
     }
 
     @PutMapping("/compatibility/{id}")
     public DependencyCompatibilityEntity updateCompatibility(@PathVariable Long id, @Valid @RequestBody DependencyCompatibilityEntity rule) {
         rule.setId(id);
-        return compatibilityRepo.save(rule);
+        DependencyCompatibilityEntity saved = compatibilityRepo.save(rule);
+        refreshMetadata();
+        return saved;
     }
 
     @DeleteMapping("/compatibility/{id}")
     public ResponseEntity<Void> deleteCompatibility(@PathVariable Long id) {
         compatibilityRepo.deleteById(id);
+        refreshMetadata();
         return ResponseEntity.noContent().build();
     }
 

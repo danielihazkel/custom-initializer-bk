@@ -19,6 +19,7 @@ CREATE TABLE dependency_entry (
     repository VARCHAR(50),
     sort_order INTEGER NOT NULL,
     compatibility_range VARCHAR(100),
+    is_starter BOOLEAN,
     CONSTRAINT uk_dependency_entry_dep_id UNIQUE (dep_id),
     CONSTRAINT fk_dependency_entry_group FOREIGN KEY (group_id) REFERENCES dependency_group (id)
 );
