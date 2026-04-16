@@ -10,4 +10,5 @@ public interface FileContributionRepository extends JpaRepository<FileContributi
     List<FileContributionEntity> findByDependencyIdInOrderBySortOrderAsc(Set<String> dependencyIds);
     long countByDependencyId(String dependencyId);
     void deleteByDependencyId(String dependencyId);
+    List<FileContributionEntity> findAllByOrderBySortOrderAsc();
 }

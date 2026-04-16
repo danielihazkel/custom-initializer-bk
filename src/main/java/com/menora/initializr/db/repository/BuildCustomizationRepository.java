@@ -10,4 +10,5 @@ public interface BuildCustomizationRepository extends JpaRepository<BuildCustomi
     List<BuildCustomizationEntity> findByDependencyIdInOrderBySortOrderAsc(Set<String> dependencyIds);
     long countByDependencyId(String dependencyId);
     void deleteByDependencyId(String dependencyId);
+    List<BuildCustomizationEntity> findAllByOrderBySortOrderAsc();
 }

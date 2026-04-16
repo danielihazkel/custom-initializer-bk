@@ -142,7 +142,22 @@ public class AdminController {
 
     @GetMapping("/dependency-entries")
     public List<DependencyEntryEntity> listEntries() {
-        return entryRepo.findAll();
+        return entryRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PutMapping("/dependency-entries/reorder")
+    @Transactional
+    public ResponseEntity<Void> reorderEntries(@RequestBody List<Map<String, Long>> orderings) {
+        for (Map<String, Long> entry : orderings) {
+            Long id = entry.get("id");
+            int sortOrder = entry.get("sortOrder").intValue();
+            entryRepo.findById(id).ifPresent(e -> {
+                e.setSortOrder(sortOrder);
+                entryRepo.save(e);
+            });
+        }
+        refreshMetadata();
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/dependency-entries")
@@ -179,7 +194,21 @@ public class AdminController {
 
     @GetMapping("/file-contributions")
     public List<FileContributionEntity> listFileContributions() {
-        return fileContribRepo.findAll();
+        return fileContribRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PutMapping("/file-contributions/reorder")
+    @Transactional
+    public ResponseEntity<Void> reorderFileContributions(@RequestBody List<Map<String, Long>> orderings) {
+        for (Map<String, Long> entry : orderings) {
+            Long id = entry.get("id");
+            int sortOrder = entry.get("sortOrder").intValue();
+            fileContribRepo.findById(id).ifPresent(fc -> {
+                fc.setSortOrder(sortOrder);
+                fileContribRepo.save(fc);
+            });
+        }
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/file-contributions")
@@ -203,7 +232,21 @@ public class AdminController {
 
     @GetMapping("/build-customizations")
     public List<BuildCustomizationEntity> listBuildCustomizations() {
-        return buildCustomRepo.findAll();
+        return buildCustomRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PutMapping("/build-customizations/reorder")
+    @Transactional
+    public ResponseEntity<Void> reorderBuildCustomizations(@RequestBody List<Map<String, Long>> orderings) {
+        for (Map<String, Long> entry : orderings) {
+            Long id = entry.get("id");
+            int sortOrder = entry.get("sortOrder").intValue();
+            buildCustomRepo.findById(id).ifPresent(bc -> {
+                bc.setSortOrder(sortOrder);
+                buildCustomRepo.save(bc);
+            });
+        }
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/build-customizations")
@@ -227,7 +270,22 @@ public class AdminController {
 
     @GetMapping("/sub-options")
     public List<DependencySubOptionEntity> listSubOptions() {
-        return subOptionRepo.findAll();
+        return subOptionRepo.findAllByOrderByDependencyIdAscSortOrderAsc();
+    }
+
+    @PutMapping("/sub-options/reorder")
+    @Transactional
+    public ResponseEntity<Void> reorderSubOptions(@RequestBody List<Map<String, Long>> orderings) {
+        for (Map<String, Long> entry : orderings) {
+            Long id = entry.get("id");
+            int sortOrder = entry.get("sortOrder").intValue();
+            subOptionRepo.findById(id).ifPresent(so -> {
+                so.setSortOrder(sortOrder);
+                subOptionRepo.save(so);
+            });
+        }
+        refreshMetadata();
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/sub-options")
@@ -259,6 +317,21 @@ public class AdminController {
         return compatibilityRepo.findAllByOrderBySortOrderAsc();
     }
 
+    @PutMapping("/compatibility/reorder")
+    @Transactional
+    public ResponseEntity<Void> reorderCompatibility(@RequestBody List<Map<String, Long>> orderings) {
+        for (Map<String, Long> entry : orderings) {
+            Long id = entry.get("id");
+            int sortOrder = entry.get("sortOrder").intValue();
+            compatibilityRepo.findById(id).ifPresent(rule -> {
+                rule.setSortOrder(sortOrder);
+                compatibilityRepo.save(rule);
+            });
+        }
+        refreshMetadata();
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/compatibility")
     public DependencyCompatibilityEntity createCompatibility(@Valid @RequestBody DependencyCompatibilityEntity rule) {
         DependencyCompatibilityEntity saved = compatibilityRepo.save(rule);
@@ -286,6 +359,20 @@ public class AdminController {
     @GetMapping("/starter-templates")
     public List<StarterTemplateEntity> listTemplates() {
         return templateRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PutMapping("/starter-templates/reorder")
+    @Transactional
+    public ResponseEntity<Void> reorderTemplates(@RequestBody List<Map<String, Long>> orderings) {
+        for (Map<String, Long> entry : orderings) {
+            Long id = entry.get("id");
+            int sortOrder = entry.get("sortOrder").intValue();
+            templateRepo.findById(id).ifPresent(t -> {
+                t.setSortOrder(sortOrder);
+                templateRepo.save(t);
+            });
+        }
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/starter-templates")
@@ -345,6 +432,20 @@ public class AdminController {
         return moduleRepo.findAllByOrderBySortOrderAsc();
     }
 
+    @PutMapping("/module-templates/reorder")
+    @Transactional
+    public ResponseEntity<Void> reorderModules(@RequestBody List<Map<String, Long>> orderings) {
+        for (Map<String, Long> entry : orderings) {
+            Long id = entry.get("id");
+            int sortOrder = entry.get("sortOrder").intValue();
+            moduleRepo.findById(id).ifPresent(m -> {
+                m.setSortOrder(sortOrder);
+                moduleRepo.save(m);
+            });
+        }
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/module-templates")
     public ModuleTemplateEntity createModule(@Valid @RequestBody ModuleTemplateEntity module) {
         return moduleRepo.save(module);
@@ -375,6 +476,20 @@ public class AdminController {
     @GetMapping("/module-dep-mappings")
     public List<ModuleDependencyMappingEntity> listModuleMappings() {
         return moduleMappingRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PutMapping("/module-dep-mappings/reorder")
+    @Transactional
+    public ResponseEntity<Void> reorderModuleMappings(@RequestBody List<Map<String, Long>> orderings) {
+        for (Map<String, Long> entry : orderings) {
+            Long id = entry.get("id");
+            int sortOrder = entry.get("sortOrder").intValue();
+            moduleMappingRepo.findById(id).ifPresent(m -> {
+                m.setSortOrder(sortOrder);
+                moduleMappingRepo.save(m);
+            });
+        }
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/module-dep-mappings")

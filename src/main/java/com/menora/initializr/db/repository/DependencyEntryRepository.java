@@ -10,4 +10,5 @@ public interface DependencyEntryRepository extends JpaRepository<DependencyEntry
     Optional<DependencyEntryEntity> findByDepId(String depId);
     List<DependencyEntryEntity> findByGroupId(Long groupId);
     List<DependencyEntryEntity> findByDepIdIn(Iterable<String> depIds);
+    List<DependencyEntryEntity> findAllByOrderBySortOrderAsc();
 }
