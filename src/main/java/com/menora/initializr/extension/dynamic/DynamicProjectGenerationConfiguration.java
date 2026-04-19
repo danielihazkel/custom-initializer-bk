@@ -105,6 +105,8 @@ public class DynamicProjectGenerationConfiguration {
             ProjectDescription description,
             DependencyConfigService configService) {
         return build -> {
+            build.settings().finalName("${project.artifactId}");
+
             Set<String> depIds = selectedDepIds(description);
             List<BuildCustomizationEntity> customizations = configService.getBuildCustomizations(depIds);
 
