@@ -22,6 +22,7 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
 
     private static final String FORMAT_PARAM = "configurationFileFormat";
     private static final String DEFAULT_FORMAT = "properties";
+    private static final String BOOT_VERSION_PARAM = "bootVersion";
 
     private final ProjectOptionsContext optionsContext;
 
@@ -41,12 +42,18 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
             @Override
             public String getParameter(String name) {
                 if (FORMAT_PARAM.equals(name) && super.getParameter(name) == null) return DEFAULT_FORMAT;
+                if (BOOT_VERSION_PARAM.equals(name)) return normalizeBootVersion(super.getParameter(name));
                 return super.getParameter(name);
             }
 
             @Override
             public String[] getParameterValues(String name) {
                 if (FORMAT_PARAM.equals(name) && super.getParameter(name) == null) return new String[]{DEFAULT_FORMAT};
+                if (BOOT_VERSION_PARAM.equals(name)) {
+                    String[] vals = super.getParameterValues(name);
+                    if (vals == null) return null;
+                    return new String[]{normalizeBootVersion(vals[0])};
+                }
                 return super.getParameterValues(name);
             }
 
@@ -54,6 +61,7 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
             public Map<String, String[]> getParameterMap() {
                 Map<String, String[]> map = new LinkedHashMap<>(super.getParameterMap());
                 map.putIfAbsent(FORMAT_PARAM, new String[]{DEFAULT_FORMAT});
+                map.computeIfPresent(BOOT_VERSION_PARAM, (k, v) -> new String[]{normalizeBootVersion(v[0])});
                 return Collections.unmodifiableMap(map);
             }
 
@@ -100,6 +108,11 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
         } finally {
             optionsContext.clear();
         }
+    }
+
+    private static String normalizeBootVersion(String v) {
+        if (v == null) return null;
+        return v.replaceAll("[.\\-]RELEASE$", "");
     }
 
 }

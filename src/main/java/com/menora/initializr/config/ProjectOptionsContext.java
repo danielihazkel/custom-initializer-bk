@@ -6,6 +6,8 @@ import org.springframework.stereotype.Component;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Arrays;
@@ -44,6 +46,20 @@ public class ProjectOptionsContext {
             }
         }
         OPTIONS.set(options);
+    }
+
+    /** Direct map-based populate for callers that don't have an HttpServletRequest
+     *  (e.g. JSON-body POST endpoints). Keys are dep ids, values are the selected option ids. */
+    public void populate(Map<String, List<String>> optsByDep) {
+        Map<String, Set<String>> normalised = new HashMap<>();
+        if (optsByDep != null) {
+            for (var e : optsByDep.entrySet()) {
+                if (e.getValue() != null && !e.getValue().isEmpty()) {
+                    normalised.put(e.getKey(), new HashSet<>(e.getValue()));
+                }
+            }
+        }
+        OPTIONS.set(normalised);
     }
 
     public void clear() {

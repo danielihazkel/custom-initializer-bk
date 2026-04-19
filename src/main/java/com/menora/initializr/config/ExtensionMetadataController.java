@@ -1,17 +1,22 @@
 package com.menora.initializr.config;
 
 import com.menora.initializr.db.DependencyConfigService;
+import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.DependencySubOptionEntity;
 import com.menora.initializr.db.entity.ModuleDependencyMappingEntity;
 import com.menora.initializr.db.entity.StarterTemplateDepEntity;
 import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
+import com.menora.initializr.db.repository.DependencyEntryRepository;
 import com.menora.initializr.db.repository.ModuleDependencyMappingRepository;
 import com.menora.initializr.db.repository.ModuleTemplateRepository;
 import com.menora.initializr.db.repository.StarterTemplateDepRepository;
 import com.menora.initializr.db.repository.StarterTemplateRepository;
+import com.menora.initializr.sql.SqlDialect;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,19 +31,22 @@ public class ExtensionMetadataController {
     private final StarterTemplateDepRepository templateDepRepo;
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
+    private final DependencyEntryRepository entryRepo;
 
     public ExtensionMetadataController(DependencyConfigService configService,
                                        DependencyCompatibilityRepository compatibilityRepo,
                                        StarterTemplateRepository templateRepo,
                                        StarterTemplateDepRepository templateDepRepo,
                                        ModuleTemplateRepository moduleRepo,
-                                       ModuleDependencyMappingRepository moduleMappingRepo) {
+                                       ModuleDependencyMappingRepository moduleMappingRepo,
+                                       DependencyEntryRepository entryRepo) {
         this.configService = configService;
         this.compatibilityRepo = compatibilityRepo;
         this.templateRepo = templateRepo;
         this.templateDepRepo = templateDepRepo;
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
+        this.entryRepo = entryRepo;
     }
 
     @GetMapping("/metadata/extensions")
@@ -98,6 +106,27 @@ public class ExtensionMetadataController {
                         m.getSuffix(), m.getPackaging(), m.isHasMainClass(),
                         mappingsByModule.getOrDefault(m.getModuleId(), List.of())))
                 .toList();
+    }
+
+    /**
+     * Dep-id → dialect-enum-name for drivers the SQL wizard can handle AND that
+     * currently exist in the dependency catalog. Empty map → UI hides the wizard.
+     */
+    @GetMapping("/metadata/sql-dialects")
+    public Map<String, String> sqlDialects() {
+        Set<String> candidateDepIds = Arrays.stream(SqlDialect.values())
+                .map(SqlDialect::depId)
+                .collect(Collectors.toSet());
+        Set<String> present = entryRepo.findByDepIdIn(candidateDepIds).stream()
+                .map(DependencyEntryEntity::getDepId)
+                .collect(Collectors.toSet());
+        Map<String, String> result = new LinkedHashMap<>();
+        for (SqlDialect d : SqlDialect.values()) {
+            if (present.contains(d.depId())) {
+                result.put(d.depId(), d.name());
+            }
+        }
+        return result;
     }
 
     public record SubOptionDto(String id, String label, String description) {}
