@@ -17,7 +17,8 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [REST API (curl)](#rest-api-curl)
 5. [What Gets Injected Into Generated Projects](#what-gets-injected-into-generated-projects)
 6. [Multi-Database Configuration](#multi-database-configuration)
-7. [Project Preview](#project-preview)
+7. [SQL → JPA Entity Wizard](#sql--jpa-entity-wizard)
+8. [Project Preview](#project-preview)
 8. [Admin API](#admin-api)
    - [Hot-Reload Metadata](#hot-reload-metadata)
    - [Dependency Groups](#dependency-groups)
@@ -364,6 +365,103 @@ mssql:
     dialect: org.hibernate.dialect.SQLServerDialect
     hbm2ddl-auto: validate
 ```
+
+---
+
+## SQL → JPA Entity Wizard
+
+Once a JDBC driver dependency is selected (PostgreSQL, MSSQL, Oracle, DB2, H2, MySQL), the UI exposes a **"Generate entities from SQL…"** button on that driver's card. Clicking it opens a wizard where the user pastes one or more `CREATE TABLE` scripts; on download, the backend parses the DDL and writes `@Entity` classes (and optional `JpaRepository` interfaces) into the generated project — already mapped to the correct Java types for the selected dialect.
+
+This removes the tedium of hand-writing entity classes after project generation, while leaving the regular GET `/starter.zip` flow unchanged for users who don't need it.
+
+### How It Works
+
+1. The UI queries `GET /metadata/sql-dialects` at page load to learn which dep IDs map to a supported dialect **and** currently exist in the catalog. Only dep cards that appear in this response render the wizard button.
+2. The wizard drawer uses CodeMirror with SQL highlighting. As the user types, a regex detects `CREATE TABLE <name>` occurrences and renders one row per table with a **Generate repository** checkbox (default: on). The optional sub-package field defaults to `entity` (repositories always go to `repository/`).
+3. On Generate, if any wizard entries are attached, the UI switches from a `<a href>` GET to a `fetch` **POST** `/starter-sql.zip` with a JSON body. The Preview/Explore flow does the same for `POST /starter-sql.preview`. URL-length limits that would otherwise break the GET with realistic schemas are avoided entirely.
+4. Backend parses the SQL with **JSqlParser**, maps each column to a Java type per dialect (see table below), and renders entity source via a `StringBuilder`. Foreign-key columns are kept as scalar fields with a `// TODO: map as @ManyToOne` comment — v1 never auto-generates associations.
+5. Generated entities use **Lombok** (`@Data`, `@NoArgsConstructor`, `@AllArgsConstructor`). The contributor transparently adds `org.projectlombok:lombok` (scope: `annotationProcessor`) to the Maven build whenever SQL is attached — projects generated without the wizard are unaffected.
+
+### Type Mapping (Highlights)
+
+| SQL Type | Java Type | Notes |
+|----------|-----------|-------|
+| `VARCHAR`, `CHAR`, `TEXT`, `CLOB`, `NVARCHAR` | `String` | `length` copied to `@Column(length=...)` |
+| `INT`, `INTEGER` | `Integer` | |
+| `BIGINT`, `BIGSERIAL`, `SERIAL` | `Long` | SERIAL/BIGSERIAL also sets `@GeneratedValue(IDENTITY)` |
+| `SMALLINT` | `Short` | |
+| `BOOLEAN`, `BIT` (MSSQL), `TINYINT(1)` (MySQL) | `Boolean` | |
+| `DATE` | `LocalDate` | |
+| `TIMESTAMP`, `DATETIME`, `DATETIME2` (MSSQL) | `LocalDateTime` | |
+| `TIME` | `LocalTime` | |
+| `NUMERIC(p,s)`, `DECIMAL(p,s)` | `BigDecimal` | precision/scale copied to `@Column` |
+| `NUMBER(p,0)` (Oracle) | `Integer` / `Long` | chosen by precision: ≤9 → Integer, else Long |
+| `NUMBER(p,s)` (Oracle, s > 0) | `BigDecimal` | |
+| `UUID` (PostgreSQL), `UNIQUEIDENTIFIER` (MSSQL) | `UUID` | |
+| `JSON`, `JSONB` (PostgreSQL) | `String` | |
+| `BYTEA` (PostgreSQL), `BLOB` | `byte[]` | |
+
+Column names: `snake_case` → `camelCase` for fields; preserves the raw column name via `@Column(name = "...")` when it differs. Table names: `snake_case` → `PascalCase` for class names (`user_orders` → `UserOrders`). Composite primary keys emit an `@IdClass` companion.
+
+### POST API
+
+**Request body** for `POST /starter-sql.zip` and `POST /starter-sql.preview`:
+
+```json
+{
+  "groupId": "com.menora",
+  "artifactId": "demo",
+  "name": "demo",
+  "packageName": "com.menora.demo",
+  "type": "maven-project",
+  "language": "java",
+  "bootVersion": "3.2.1",
+  "packaging": "jar",
+  "javaVersion": "21",
+  "dependencies": ["postgresql", "data-jpa", "web"],
+  "opts": { "postgresql": ["pg-primary"] },
+  "sqlByDep": {
+    "postgresql": "CREATE TABLE users (id BIGSERIAL PRIMARY KEY, email VARCHAR(200) NOT NULL);"
+  },
+  "sqlOptions": {
+    "postgresql": {
+      "subPackage": "entity",
+      "tables": [{ "name": "users", "generateRepository": true }]
+    }
+  }
+}
+```
+
+**Example — generate a project with a `users` entity and its repository:**
+
+```bash
+curl -o demo.zip -X POST http://localhost:8080/starter-sql.zip \
+  -H "Content-Type: application/json" \
+  -d '{
+    "groupId":"com.menora","artifactId":"demo","name":"demo",
+    "packageName":"com.menora.demo","type":"maven-project","language":"java",
+    "bootVersion":"3.2.1","packaging":"jar","javaVersion":"21",
+    "dependencies":["postgresql","data-jpa","web"],
+    "sqlByDep":{"postgresql":"CREATE TABLE users (id BIGSERIAL PRIMARY KEY, email VARCHAR(200) NOT NULL);"},
+    "sqlOptions":{"postgresql":{"subPackage":"entity","tables":[{"name":"users","generateRepository":true}]}}
+  }'
+unzip -p demo.zip demo/src/main/java/com/menora/demo/entity/Users.java
+```
+
+**Companion endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/metadata/sql-dialects` | Dep-id → dialect enum map (only deps currently present in the catalog) |
+| `POST` | `/starter-sql.zip` | Generate ZIP with entities/repositories |
+| `POST` | `/starter-sql.preview` | Same shape as `/starter.preview` — file tree + contents |
+| `POST` | `/starter-sql.tables` | `{ sql }` → `["users", "orders", ...]` (server-side parse for wizard preview) |
+
+### Notes & Limitations (v1)
+
+- **Foreign keys** stay as scalar columns with a `// TODO: map as @ManyToOne` comment above the field. Cardinality and fetch strategy are deferred to the developer — we never auto-generate associations.
+- **MongoDB** is excluded — it has no DDL contract, so the wizard button does not appear on the MongoDB dep card.
+- Dialect list is driven by `SqlDialect.forDepId(...)` — adding a new JDBC driver to the catalog that matches a known dialect automatically surfaces the wizard for it; no metadata change is needed.
 
 ---
 
