@@ -10,10 +10,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
+import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -204,6 +211,80 @@ class ProjectGenerationIntegrationTests {
                 .contains("oauth2")
                 .contains("datasource")
                 .contains("management");
+    }
+
+    @Test
+    void sqlWizardGeneratesEntitiesAndRepositoriesAndLombokDep() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "demo");
+        body.put("name", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("type", "maven-project");
+        body.put("language", "java");
+        body.put("bootVersion", "3.2.1");
+        body.put("packaging", "jar");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("postgresql", "data-jpa"));
+        body.put("opts", Map.of("postgresql", List.of("pg-primary")));
+        body.put("sqlByDep", Map.of("postgresql", """
+                CREATE TABLE users (
+                    id BIGSERIAL PRIMARY KEY,
+                    email VARCHAR(200) NOT NULL,
+                    created_at TIMESTAMP
+                );
+                CREATE TABLE orders (
+                    id BIGINT PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    total NUMERIC(10,2)
+                );
+                """));
+        body.put("sqlOptions", Map.of("postgresql", Map.of(
+                "subPackage", "entity",
+                "tables", List.of(
+                        Map.of("name", "users", "generateRepository", true),
+                        Map.of("name", "orders", "generateRepository", false)))));
+
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                "/starter-sql.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getHeaders().getContentType())
+                .isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
+
+        Map<String, String> files = unzip(response.getBody());
+        String usersEntity = files.get("demo/src/main/java/com/menora/demo/entity/Users.java");
+        assertThat(usersEntity)
+                .as("Users entity")
+                .isNotNull()
+                .contains("@Entity")
+                .contains("@Table(name = \"users\")")
+                .contains("@Data")
+                .contains("private Long id;")
+                .contains("private String email;")
+                .contains("private LocalDateTime createdAt;");
+
+        assertThat(files)
+                .containsKey("demo/src/main/java/com/menora/demo/entity/Orders.java")
+                .containsKey("demo/src/main/java/com/menora/demo/repository/UsersRepository.java");
+        // orders has generateRepository=false → no repo
+        assertThat(files)
+                .doesNotContainKey("demo/src/main/java/com/menora/demo/repository/OrdersRepository.java");
+
+        String pom = files.get("demo/pom.xml");
+        assertThat(pom).isNotNull().contains("<artifactId>lombok</artifactId>");
+    }
+
+    private Map<String, String> unzip(byte[] zipBytes) throws Exception {
+        Map<String, String> out = new LinkedHashMap<>();
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+            ZipEntry e;
+            while ((e = zis.getNextEntry()) != null) {
+                if (e.isDirectory()) continue;
+                byte[] buf = zis.readAllBytes();
+                out.put(e.getName(), new String(buf, java.nio.charset.StandardCharsets.UTF_8));
+            }
+        }
+        return out;
     }
 
     private WebProjectRequest createBaseRequest() {

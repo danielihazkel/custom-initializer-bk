@@ -1,10 +1,16 @@
 package com.menora.initializr.extension.dynamic;
 
 import com.menora.initializr.config.ProjectOptionsContext;
+import com.menora.initializr.config.SqlScriptsContext;
 import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
+import com.menora.initializr.sql.GeneratedJavaFile;
+import com.menora.initializr.sql.SqlDepOptions;
+import com.menora.initializr.sql.SqlDialect;
+import com.menora.initializr.sql.SqlEntityGenerator;
 import io.spring.initializr.generator.buildsystem.Dependency;
+import io.spring.initializr.generator.buildsystem.DependencyScope;
 import io.spring.initializr.generator.buildsystem.MavenRepository;
 import io.spring.initializr.generator.buildsystem.maven.MavenBuild;
 import io.spring.initializr.generator.project.ProjectDescription;
@@ -167,6 +173,54 @@ public class DynamicProjectGenerationConfiguration {
                 build.dependencies().remove("root_starter");
                 log.debug("removed duplicate 'root_starter' — spring-boot-starter already present with exclusion");
             }
+        };
+    }
+
+    /**
+     * Writes JPA entity (and optional repository) classes parsed from SQL the
+     * user pasted into the wizard. Runs per-request; skips silently when no
+     * SQL was supplied.
+     */
+    @Bean
+    ProjectContributor sqlEntityContributor(
+            ProjectDescription description,
+            SqlScriptsContext sqlContext,
+            SqlEntityGenerator generator) {
+        return projectRoot -> {
+            if (sqlContext.isEmpty()) return;
+            for (var entry : sqlContext.all().entrySet()) {
+                SqlDialect dialect = SqlDialect.forDepId(entry.getKey());
+                if (dialect == null || entry.getValue() == null || entry.getValue().isBlank()) {
+                    continue;
+                }
+                SqlDepOptions opts = sqlContext.optionsFor(entry.getKey());
+                List<GeneratedJavaFile> files = generator.generate(
+                        entry.getValue(), dialect, description.getPackageName(), opts);
+                String packagePath = description.getPackageName().replace('.', '/');
+                for (GeneratedJavaFile f : files) {
+                    Path target = projectRoot.resolve(
+                            f.relativePath().replace("{{packagePath}}", packagePath));
+                    Files.createDirectories(target.getParent());
+                    Files.writeString(target, f.content());
+                }
+            }
+        };
+    }
+
+    /**
+     * Adds Lombok to the generated pom when the SQL wizard was used. Scope
+     * {@code ANNOTATION_PROCESSOR} → the Maven writer emits the dep as
+     * {@code <optional>true</optional>} and the parent BOM manages the version.
+     */
+    @Bean
+    BuildCustomizer<MavenBuild> sqlLombokCustomizer(SqlScriptsContext sqlContext) {
+        return build -> {
+            if (sqlContext.isEmpty()) return;
+            if (build.dependencies().has("lombok")) return;
+            build.dependencies().add("lombok",
+                    Dependency.withCoordinates("org.projectlombok", "lombok")
+                            .scope(DependencyScope.ANNOTATION_PROCESSOR)
+                            .build());
         };
     }
 
