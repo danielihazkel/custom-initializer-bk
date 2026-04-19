@@ -33,6 +33,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Input Validation](#input-validation)
    - [Orphan Detection on Delete](#orphan-detection-on-delete)
    - [Configuration Export/Import](#configuration-exportimport)
+   - [Activity & Audit](#activity--audit)
 7. [Customization Guide](#customization-guide)
    - [Change the Spring Boot Version](#change-the-spring-boot-version)
    - [Change the Initializr Version](#change-the-initializr-version)
@@ -1469,6 +1470,75 @@ Import **replaces all** current configuration — all existing records are delet
 The metadata cache is automatically refreshed after a successful import — no need to call `/admin/refresh` separately.
 
 The admin UI provides **Export** and **Import** buttons in the tab bar. Export downloads the JSON file directly. Import shows a confirmation dialog warning that all data will be replaced, then reloads all tabs on success.
+
+---
+
+### Activity & Audit
+
+Every call to a `/starter*` endpoint (`/starter.zip`, `/starter.preview`, `/starter-sql.zip`, `/starter-multimodule.zip`, etc.) is recorded in the `generation_event` table with enough detail to answer: *what do teams actually generate, how fast, how often does it fail?*
+
+The audit is implemented as a servlet filter (`GenerationAuditFilter`, order=5) that wraps the request, times it, captures query parameters (`artifactId`, `groupId`, `bootVersion`, `javaVersion`, `packaging`, `language`, `dependencies`), records the outcome (SUCCESS if status < 400, FAILURE otherwise), and writes the event asynchronously — a DB hiccup never breaks project generation.
+
+**Admin endpoints:**
+
+```bash
+GET /admin/activity/recent?limit=50       # most recent events, newest first
+GET /admin/activity/summary?days=30       # rolled-up stats for the window
+```
+
+`/admin/activity/summary` response shape:
+```json
+{
+  "days": 30,
+  "totalCount": 142,
+  "successCount": 138,
+  "failureCount": 4,
+  "successRate": 0.9718,
+  "p50Ms": 48,
+  "p95Ms": 312,
+  "p99Ms": 891,
+  "topDependencies": [{ "depId": "web", "count": 97 }, ...],
+  "topBootVersions": [{ "bootVersion": "3.2.1", "count": 142 }]
+}
+```
+
+**Micrometer metrics** (exposed via `GET /actuator/metrics`):
+
+| Metric | Tags | Description |
+|---|---|---|
+| `menora.generation.count` | `status=success\|failure` | Number of generations |
+| `menora.generation.duration` | `status=success\|failure` | Duration timer with p50/p95/p99 percentiles |
+
+```bash
+curl http://localhost:8080/actuator/metrics/menora.generation.count
+curl http://localhost:8080/actuator/metrics/menora.generation.duration
+```
+
+**Configuration** (`application.yml`):
+
+```yaml
+menora:
+  audit:
+    log-remote-addr: true      # set to false to omit client IPs (GDPR/privacy)
+```
+
+The filter honors `X-Forwarded-For` when present, falling back to `getRemoteAddr()`. Remote addresses are capped at 64 characters.
+
+The admin UI surfaces all of this under the **Activity** tab: four summary cards (total, success rate, p50, p95), two ranked lists (top dependencies, top boot versions), and a recent-events table with status badges. The time window is switchable between 1d / 7d / 30d / 90d.
+
+**Schema** (Flyway migration `V2__generation_event.sql`):
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | BIGINT PK | auto |
+| `event_timestamp` | TIMESTAMP | indexed |
+| `endpoint` | VARCHAR(64) | e.g. `starter.zip`, `starter-sql.zip` |
+| `artifact_id`, `group_id`, `boot_version`, `java_version`, `packaging`, `language` | VARCHAR | |
+| `dependency_ids` | CLOB | comma-separated |
+| `duration_ms` | BIGINT | |
+| `status` | VARCHAR(16) | `SUCCESS` / `FAILURE` |
+| `error_message` | VARCHAR(1024) | populated on FAILURE |
+| `remote_addr` | VARCHAR(64) | nullable when `log-remote-addr=false` |
 
 ---
 
