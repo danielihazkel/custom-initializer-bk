@@ -61,7 +61,8 @@ public class OpenApiCodeGenerator {
     public List<GeneratedOpenApiFile> generate(String spec, String packageName, OpenApiWizardOptions options) {
         if (spec == null || spec.isBlank()) return List.of();
         OpenAPI api = parseOrThrow(spec);
-        OpenApiWizardOptions opts = options != null ? options : new OpenApiWizardOptions(null, null);
+        OpenApiWizardOptions opts = options != null ? options
+                : new OpenApiWizardOptions(null, null, null, null, null);
 
         Map<String, SchemaModel> schemas = buildSchemas(api);
         List<OperationModel> operations = buildOperations(api, schemas.keySet());
@@ -70,8 +71,18 @@ public class OpenApiCodeGenerator {
         for (SchemaModel s : schemas.values()) {
             out.add(renderRecord(s, packageName, opts));
         }
-        for (var group : groupByTag(operations).entrySet()) {
-            out.add(renderController(group.getKey(), group.getValue(), packageName, opts));
+        Map<String, List<OperationModel>> byTag = groupByTag(operations);
+        if (opts.emitControllers()) {
+            for (var group : byTag.entrySet()) {
+                out.add(renderController(group.getKey(), group.getValue(), packageName, opts));
+            }
+        }
+        if (opts.emitClient() && !byTag.isEmpty()) {
+            for (var group : byTag.entrySet()) {
+                out.add(renderRestTemplateClient(group.getKey(), group.getValue(), packageName, opts));
+            }
+            out.add(renderClientConfig(packageName, opts));
+            out.add(renderApplicationYmlStub(opts));
         }
         return out;
     }
@@ -386,6 +397,223 @@ public class OpenApiCodeGenerator {
             case "PATCH" -> "PatchMapping";
             default -> "RequestMapping";
         };
+    }
+
+    // ── Operations → RestTemplate client ──────────────────────────────────────
+
+    private GeneratedOpenApiFile renderRestTemplateClient(String tag, List<OperationModel> ops,
+                                                          String packageName, OpenApiWizardOptions opts) {
+        String clientPkg = opts.clientPackageOrDefault();
+        String dtoPkg = opts.dtoPackageOrDefault();
+        String fullPkg = packageName + "." + clientPkg;
+        String dtoFullPkg = packageName + "." + dtoPkg;
+        String baseUrlProp = opts.baseUrlPropertyOrDefault();
+        String className = tag + "Client";
+
+        Set<String> imports = new TreeSet<>();
+        imports.add("org.springframework.beans.factory.annotation.Value");
+        imports.add("org.springframework.http.HttpEntity");
+        imports.add("org.springframework.http.HttpHeaders");
+        imports.add("org.springframework.http.HttpMethod");
+        imports.add("org.springframework.http.ResponseEntity");
+        imports.add("org.springframework.stereotype.Component");
+        imports.add("org.springframework.web.client.RestTemplate");
+        imports.add("org.springframework.web.util.UriComponentsBuilder");
+
+        boolean anyQuery = false, anyHeader = false, anyListResponse = false;
+        for (OperationModel op : ops) {
+            for (ParamModel p : op.params()) {
+                switch (p.in()) {
+                    case QUERY, COOKIE -> anyQuery = true;
+                    case HEADER -> anyHeader = true;
+                    default -> {}
+                }
+                imports.addAll(p.imports());
+                addDtoImportIfLocal(imports, p.javaType(), dtoFullPkg);
+            }
+            if (op.requestBodyType() != null) {
+                imports.addAll(op.requestBodyImports());
+                addDtoImportIfLocal(imports, op.requestBodyType(), dtoFullPkg);
+            }
+            if (op.responseType() != null) {
+                imports.addAll(op.responseImports());
+                addDtoImportIfLocal(imports, op.responseType(), dtoFullPkg);
+                if (op.responseType().startsWith("List<")) anyListResponse = true;
+            }
+        }
+        if (anyListResponse) imports.add("org.springframework.core.ParameterizedTypeReference");
+        if (anyHeader) {
+            // HttpHeaders already imported
+        }
+        if (anyQuery) {
+            // handled via UriComponentsBuilder, no extra imports
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("package ").append(fullPkg).append(";\n\n");
+        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
+        sb.append('\n');
+
+        sb.append("@Component\n");
+        sb.append("public class ").append(className).append(" {\n\n");
+        sb.append("    private final RestTemplate restTemplate;\n");
+        sb.append("    private final String baseUrl;\n\n");
+        sb.append("    public ").append(className)
+                .append("(RestTemplate restTemplate, @Value(\"${").append(baseUrlProp).append("}\") String baseUrl) {\n");
+        sb.append("        this.restTemplate = restTemplate;\n");
+        sb.append("        this.baseUrl = baseUrl;\n");
+        sb.append("    }\n\n");
+
+        for (OperationModel op : ops) appendClientMethod(sb, op);
+        sb.append("}\n");
+
+        return new GeneratedOpenApiFile(
+                "src/main/java/{{packagePath}}/" + clientPkg + "/" + className + ".java",
+                sb.toString());
+    }
+
+    private void appendClientMethod(StringBuilder sb, OperationModel op) {
+        if (op.summary() != null && !op.summary().isBlank()) {
+            sb.append("    /** ").append(escapeJavadoc(op.summary())).append(" */\n");
+        }
+        String ret = op.responseType() == null ? "void" : op.responseType();
+        sb.append("    public ").append(ret).append(' ').append(op.operationId()).append('(');
+
+        List<String> args = new ArrayList<>();
+        for (ParamModel p : op.params()) {
+            args.add(p.javaType() + " " + p.name());
+        }
+        if (op.requestBodyType() != null) {
+            args.add(op.requestBodyType() + " body");
+        }
+        sb.append(String.join(", ", args)).append(") {\n");
+
+        // Build URI from baseUrl + path, substituting path variables and appending query params.
+        sb.append("        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(baseUrl)\n");
+        sb.append("                .path(\"").append(op.path()).append("\");\n");
+
+        for (ParamModel p : op.params()) {
+            if (p.in() == ParamModel.ParamLocation.QUERY || p.in() == ParamModel.ParamLocation.COOKIE) {
+                if (p.required()) {
+                    sb.append("        builder.queryParam(\"").append(p.name()).append("\", ").append(p.name()).append(");\n");
+                } else {
+                    sb.append("        if (").append(p.name()).append(" != null) builder.queryParam(\"")
+                            .append(p.name()).append("\", ").append(p.name()).append(");\n");
+                }
+            }
+        }
+
+        // Path-variable substitution via buildAndExpand
+        List<ParamModel> pathParams = new ArrayList<>();
+        for (ParamModel p : op.params()) if (p.in() == ParamModel.ParamLocation.PATH) pathParams.add(p);
+        if (!pathParams.isEmpty()) {
+            sb.append("        String uri = builder.buildAndExpand(");
+            List<String> names = new ArrayList<>();
+            for (ParamModel p : pathParams) names.add(p.name());
+            sb.append(String.join(", ", names));
+            sb.append(").toUriString();\n");
+        } else {
+            sb.append("        String uri = builder.toUriString();\n");
+        }
+
+        // Headers
+        boolean hasHeader = false;
+        for (ParamModel p : op.params()) if (p.in() == ParamModel.ParamLocation.HEADER) { hasHeader = true; break; }
+        if (hasHeader) {
+            sb.append("        HttpHeaders headers = new HttpHeaders();\n");
+            for (ParamModel p : op.params()) {
+                if (p.in() != ParamModel.ParamLocation.HEADER) continue;
+                if (p.required()) {
+                    sb.append("        headers.add(\"").append(p.name()).append("\", String.valueOf(").append(p.name()).append("));\n");
+                } else {
+                    sb.append("        if (").append(p.name()).append(" != null) headers.add(\"")
+                            .append(p.name()).append("\", String.valueOf(").append(p.name()).append("));\n");
+                }
+            }
+        }
+
+        // Entity
+        String entityExpr;
+        if (op.requestBodyType() != null && hasHeader) {
+            entityExpr = "new HttpEntity<>(body, headers)";
+        } else if (op.requestBodyType() != null) {
+            entityExpr = "new HttpEntity<>(body)";
+        } else if (hasHeader) {
+            entityExpr = "new HttpEntity<>(headers)";
+        } else {
+            entityExpr = "HttpEntity.EMPTY";
+        }
+
+        String httpMethodEnum = op.httpMethod().toUpperCase(Locale.ROOT);
+        boolean isList = op.responseType() != null && op.responseType().startsWith("List<");
+        String respTypeArg;
+        if (op.responseType() == null) {
+            respTypeArg = "Void.class";
+        } else if (isList) {
+            respTypeArg = "new ParameterizedTypeReference<" + op.responseType() + ">() {}";
+        } else {
+            respTypeArg = op.responseType() + ".class";
+        }
+
+        sb.append("        ResponseEntity<").append(op.responseType() == null ? "Void" : op.responseType()).append("> response =\n");
+        sb.append("                restTemplate.exchange(uri, HttpMethod.").append(httpMethodEnum)
+                .append(", ").append(entityExpr).append(", ").append(respTypeArg).append(");\n");
+
+        if (op.responseType() != null) {
+            sb.append("        return response.getBody();\n");
+        }
+        sb.append("    }\n\n");
+    }
+
+    private GeneratedOpenApiFile renderClientConfig(String packageName, OpenApiWizardOptions opts) {
+        String clientPkg = opts.clientPackageOrDefault();
+        String fullPkg = packageName + "." + clientPkg;
+        String baseUrlProp = opts.baseUrlPropertyOrDefault();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("package ").append(fullPkg).append(";\n\n");
+        sb.append("import org.springframework.boot.web.client.RestTemplateBuilder;\n");
+        sb.append("import org.springframework.context.annotation.Bean;\n");
+        sb.append("import org.springframework.context.annotation.Configuration;\n");
+        sb.append("import org.springframework.web.client.RestTemplate;\n\n");
+        sb.append("/**\n");
+        sb.append(" * Provides the RestTemplate bean used by the generated OpenAPI clients.\n");
+        sb.append(" * The base URL is read from the {@code ").append(baseUrlProp).append("} property\n");
+        sb.append(" * (see application-openapi-client.yml).\n");
+        sb.append(" */\n");
+        sb.append("@Configuration\n");
+        sb.append("public class OpenApiClientConfig {\n\n");
+        sb.append("    @Bean\n");
+        sb.append("    public RestTemplate openApiRestTemplate(RestTemplateBuilder builder) {\n");
+        sb.append("        return builder.build();\n");
+        sb.append("    }\n");
+        sb.append("}\n");
+
+        return new GeneratedOpenApiFile(
+                "src/main/java/{{packagePath}}/" + clientPkg + "/OpenApiClientConfig.java",
+                sb.toString());
+    }
+
+    private GeneratedOpenApiFile renderApplicationYmlStub(OpenApiWizardOptions opts) {
+        String prop = opts.baseUrlPropertyOrDefault();
+        String[] parts = prop.split("\\.");
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("# Base URL for OpenAPI-generated clients.\n");
+        sb.append("# Merge this into your main application.yml, or activate the `openapi-client` profile.\n");
+        for (int i = 0; i < parts.length; i++) {
+            for (int s = 0; s < i * 2; s++) sb.append(' ');
+            sb.append(parts[i]);
+            if (i == parts.length - 1) {
+                sb.append(": http://localhost:8080\n");
+            } else {
+                sb.append(":\n");
+            }
+        }
+
+        return new GeneratedOpenApiFile(
+                "src/main/resources/application-openapi-client.yml",
+                sb.toString());
     }
 
     // ── Type mapping ──────────────────────────────────────────────────────────

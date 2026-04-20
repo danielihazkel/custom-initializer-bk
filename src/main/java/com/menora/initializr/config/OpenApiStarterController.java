@@ -179,8 +179,13 @@ public class OpenApiStarterController {
     }
 
     private static OpenApiWizardOptions toOptions(OpenApiOptionsDto dto) {
-        if (dto == null) return new OpenApiWizardOptions(null, null);
-        return new OpenApiWizardOptions(dto.apiSubPackage(), dto.dtoSubPackage());
+        if (dto == null) return new OpenApiWizardOptions(null, null, null, null, null);
+        return new OpenApiWizardOptions(
+                dto.apiSubPackage(),
+                dto.dtoSubPackage(),
+                dto.clientSubPackage(),
+                OpenApiWizardOptions.GenerationMode.parse(dto.mode()),
+                dto.baseUrlProperty());
     }
 
     private static String orDefault(String v, String fallback) {
@@ -258,7 +263,12 @@ public class OpenApiStarterController {
             Map<String, OpenApiOptionsDto> openApiOptions) {
     }
 
-    public record OpenApiOptionsDto(String apiSubPackage, String dtoSubPackage) {}
+    public record OpenApiOptionsDto(
+            String apiSubPackage,
+            String dtoSubPackage,
+            String clientSubPackage,
+            String mode,
+            String baseUrlProperty) {}
 
     public record DetectPathsRequest(String spec) {}
 }
