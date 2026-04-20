@@ -18,7 +18,8 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
 5. [What Gets Injected Into Generated Projects](#what-gets-injected-into-generated-projects)
 6. [Multi-Database Configuration](#multi-database-configuration)
 7. [SQL → JPA Entity Wizard](#sql--jpa-entity-wizard)
-8. [Project Preview](#project-preview)
+8. [OpenAPI → Controller/DTO Wizard](#openapi--controllerdto-wizard)
+9. [Project Preview](#project-preview)
 8. [Admin API](#admin-api)
    - [Hot-Reload Metadata](#hot-reload-metadata)
    - [Dependency Groups](#dependency-groups)
@@ -463,6 +464,123 @@ unzip -p demo.zip demo/src/main/java/com/menora/demo/entity/Users.java
 - **Foreign keys** stay as scalar columns with a `// TODO: map as @ManyToOne` comment above the field. Cardinality and fetch strategy are deferred to the developer — we never auto-generate associations.
 - **MongoDB** is excluded — it has no DDL contract, so the wizard button does not appear on the MongoDB dep card.
 - Dialect list is driven by `SqlDialect.forDepId(...)` — adding a new JDBC driver to the catalog that matches a known dialect automatically surfaces the wizard for it; no metadata change is needed.
+
+---
+
+## OpenAPI → Controller/DTO Wizard
+
+The symmetrical twin of the SQL wizard for API-first teams. Once a web stack dependency (`web` or `webflux`) is selected, an **"OpenAPI…"** button appears on that card. Clicking it opens a drawer where the user pastes an OpenAPI 3.x spec (YAML or JSON); on download, the backend parses the spec and writes `@RestController` classes plus DTO `record`s into the generated project — already wired up with Spring MVC annotations, parameter binding, and validation.
+
+This removes the boilerplate of hand-writing controller signatures and request/response DTOs. Method bodies throw `UnsupportedOperationException` so the project still compiles on first run — developers fill in the implementation.
+
+### How It Works
+
+1. The UI queries `GET /metadata/openapi-capable-deps` at page load to learn which dep IDs support the wizard. Only dep cards in this response render the OpenAPI button (currently `web`, `webflux`).
+2. The drawer uses CodeMirror with YAML highlighting and a file upload for `.yaml`/`.yml`/`.json`. As the user types, a debounced POST to `/starter-openapi.paths` returns the list of detected operations (`GET /pets/{id}`, `POST /pets`, …) for a live preview. Parse errors surface as a yellow banner — the download button stays disabled until the spec parses cleanly.
+3. Two sub-package fields default to `api` (controllers) and `dto` (records). Both are independently editable.
+4. On Generate, if any OpenAPI entries are attached, the UI switches to `POST /starter-openapi.zip` with a JSON body (same reason as the SQL wizard — OpenAPI specs routinely exceed URL-length limits). Preview/Explore uses `POST /starter-openapi.preview`.
+5. Backend parses the spec with **swagger-parser v2** (`io.swagger.v3.parser.OpenAPIV3Parser`), groups operations by their first tag (untagged operations go to `DefaultController`), and renders controllers + records via `StringBuilder`. Schema composition (`allOf`/`oneOf`/`anyOf`) falls back to `Object` with a `// TODO: unsupported schema composition` comment.
+6. In v1 the OpenAPI and SQL wizards are **mutually exclusive** per generation — whichever has content takes precedence (OpenAPI first). The UI localStorage keeps both so switching between them never loses work.
+
+### Type Mapping (Highlights)
+
+| OpenAPI Schema | Java Type | Notes |
+|----------------|-----------|-------|
+| `string` | `String` | |
+| `string`, `format: date` | `LocalDate` | |
+| `string`, `format: date-time` | `LocalDateTime` | |
+| `string`, `format: uuid` | `UUID` | |
+| `string`, `format: binary` | `byte[]` | |
+| `integer` | `Integer` | |
+| `integer`, `format: int64` | `Long` | |
+| `number` / `number`, `format: float` | `Double` / `Float` | |
+| `number`, `format: double` | `Double` | |
+| `boolean` | `Boolean` | |
+| `array` | `List<T>` | recurses on `items` |
+| `object` with `$ref` | referenced record name | |
+| `allOf` / `oneOf` / `anyOf` | `Object` | with `// TODO` comment — deferred to developer |
+
+Component schemas under `components.schemas.*` become Java `record`s in `{pkg}.{dtoSubPackage}` (default `dto`). Operations become methods on `{Tag}Controller` classes in `{pkg}.{apiSubPackage}` (default `api`), annotated `@Validated` at the class level. Parameters bind via `@PathVariable`, `@RequestParam`, `@RequestHeader`, and `@RequestBody` (with `@Valid`). Duplicate `operationId`s within a tag are disambiguated by appending `_2`, `_3`, …
+
+### POST API
+
+**Request body** for `POST /starter-openapi.zip` and `POST /starter-openapi.preview`:
+
+```json
+{
+  "groupId": "com.menora",
+  "artifactId": "demo",
+  "name": "demo",
+  "packageName": "com.menora.demo",
+  "type": "maven-project",
+  "language": "java",
+  "bootVersion": "3.2.1",
+  "packaging": "jar",
+  "javaVersion": "21",
+  "dependencies": ["web"],
+  "opts": {},
+  "specByDep": {
+    "web": "openapi: 3.0.3\ninfo:\n  title: Petstore\n  version: 1.0.0\npaths: ..."
+  },
+  "openApiOptions": {
+    "web": { "apiSubPackage": "api", "dtoSubPackage": "dto" }
+  }
+}
+```
+
+**Example — generate a project from a tiny Petstore spec:**
+
+```bash
+curl -o demo.zip -X POST http://localhost:8080/starter-openapi.zip \
+  -H "Content-Type: application/json" \
+  -d '{
+    "groupId":"com.menora","artifactId":"demo","name":"demo",
+    "packageName":"com.menora.demo","type":"maven-project","language":"java",
+    "bootVersion":"3.2.1","packaging":"jar","javaVersion":"21",
+    "dependencies":["web"],
+    "specByDep":{"web":"openapi: 3.0.3\ninfo: { title: Petstore, version: 1.0.0 }\npaths:\n  /pets/{id}:\n    get:\n      tags: [pets]\n      operationId: getPetById\n      parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]\n      responses: { 200: { content: { application/json: { schema: { $ref: \"#/components/schemas/Pet\" } } } } }\ncomponents:\n  schemas:\n    Pet: { type: object, properties: { id: { type: integer, format: int64 }, name: { type: string } }, required: [id, name] }"},
+    "openApiOptions":{"web":{"apiSubPackage":"api","dtoSubPackage":"dto"}}
+  }'
+unzip -p demo.zip demo/src/main/java/com/menora/demo/api/PetsController.java
+unzip -p demo.zip demo/src/main/java/com/menora/demo/dto/Pet.java
+```
+
+The generated `PetsController.java` contains:
+
+```java
+@RestController
+@Validated
+public class PetsController {
+
+    @GetMapping("/pets/{id}")
+    public Pet getPetById(@PathVariable Long id) {
+        throw new UnsupportedOperationException("TODO: implement getPetById");
+    }
+}
+```
+
+And `Pet.java`:
+
+```java
+public record Pet(Long id, String name) {}
+```
+
+**Companion endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/metadata/openapi-capable-deps` | Dep IDs eligible for the wizard (intersected with deps in the catalog) |
+| `POST` | `/starter-openapi.zip` | Generate ZIP with controllers and DTO records |
+| `POST` | `/starter-openapi.preview` | Same shape as `/starter.preview` — file tree + contents |
+| `POST` | `/starter-openapi.paths` | `{ spec }` → `["GET /pets", "POST /pets", "GET /pets/{id}"]` for the drawer's live preview |
+
+### Notes & Limitations (v1)
+
+- **No client stubs** — only server-side controllers + DTO records are emitted. No Feign/RestTemplate clients.
+- **Method bodies** always throw `UnsupportedOperationException`. The goal is a compiling skeleton, not a working implementation.
+- **Schema composition** (`allOf`/`oneOf`/`anyOf`) falls back to `Object`. Polymorphic schemas and inline nested schemas are v2 work.
+- **Parse errors** return HTTP 400 with `{ error, messages }` — the drawer shows the parser's messages in a yellow banner.
+- **Mutually exclusive** with the SQL wizard in v1 — only one wizard per generation request.
 
 ---
 

@@ -109,6 +109,20 @@ public class ExtensionMetadataController {
     }
 
     /**
+     * Dep IDs for which the OpenAPI → Controller/DTO wizard is surfaced, filtered
+     * to those currently in the catalog. The wizard is meaningful for web-layer
+     * starters only.
+     */
+    @GetMapping("/metadata/openapi-capable-deps")
+    public List<String> openApiCapableDeps() {
+        Set<String> candidates = Set.of("web", "webflux");
+        return entryRepo.findByDepIdIn(candidates).stream()
+                .map(DependencyEntryEntity::getDepId)
+                .sorted()
+                .toList();
+    }
+
+    /**
      * Dep-id → dialect-enum-name for drivers the SQL wizard can handle AND that
      * currently exist in the dependency catalog. Empty map → UI hides the wizard.
      */

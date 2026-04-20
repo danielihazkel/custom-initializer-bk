@@ -1,10 +1,14 @@
 package com.menora.initializr.extension.dynamic;
 
+import com.menora.initializr.config.OpenApiSpecContext;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.config.SqlScriptsContext;
 import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
+import com.menora.initializr.openapi.GeneratedOpenApiFile;
+import com.menora.initializr.openapi.OpenApiCodeGenerator;
+import com.menora.initializr.openapi.OpenApiWizardOptions;
 import com.menora.initializr.sql.GeneratedJavaFile;
 import com.menora.initializr.sql.SqlDepOptions;
 import com.menora.initializr.sql.SqlDialect;
@@ -198,6 +202,35 @@ public class DynamicProjectGenerationConfiguration {
                         entry.getValue(), dialect, description.getPackageName(), opts);
                 String packagePath = description.getPackageName().replace('.', '/');
                 for (GeneratedJavaFile f : files) {
+                    Path target = projectRoot.resolve(
+                            f.relativePath().replace("{{packagePath}}", packagePath));
+                    Files.createDirectories(target.getParent());
+                    Files.writeString(target, f.content());
+                }
+            }
+        };
+    }
+
+    /**
+     * Writes controller + DTO record source files from the OpenAPI spec pasted
+     * into the wizard. Symmetric counterpart to {@link #sqlEntityContributor}.
+     * Skips silently when no spec was supplied.
+     */
+    @Bean
+    ProjectContributor openApiCodeContributor(
+            ProjectDescription description,
+            OpenApiSpecContext specContext,
+            OpenApiCodeGenerator generator) {
+        return projectRoot -> {
+            if (specContext.isEmpty()) return;
+            for (var entry : specContext.all().entrySet()) {
+                String spec = entry.getValue();
+                if (spec == null || spec.isBlank()) continue;
+                OpenApiWizardOptions opts = specContext.optionsFor(entry.getKey());
+                List<GeneratedOpenApiFile> files = generator.generate(
+                        spec, description.getPackageName(), opts);
+                String packagePath = description.getPackageName().replace('.', '/');
+                for (GeneratedOpenApiFile f : files) {
                     Path target = projectRoot.resolve(
                             f.relativePath().replace("{{packagePath}}", packagePath));
                     Files.createDirectories(target.getParent());

@@ -274,6 +274,119 @@ class ProjectGenerationIntegrationTests {
         assertThat(pom).isNotNull().contains("<artifactId>lombok</artifactId>");
     }
 
+    @Test
+    void openApiWizardGeneratesController() throws Exception {
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                "/starter-openapi.zip", openApiPetstoreBody(), byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getHeaders().getContentType())
+                .isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
+
+        Map<String, String> files = unzip(response.getBody());
+        String controller = files.get("demo/src/main/java/com/menora/demo/api/PetsController.java");
+        assertThat(controller)
+                .as("PetsController.java")
+                .isNotNull()
+                .contains("@RestController")
+                .contains("@GetMapping(\"/pets/{id}\")")
+                .contains("@PathVariable")
+                .contains("throw new UnsupportedOperationException");
+    }
+
+    @Test
+    void openApiWizardGeneratesRecord() throws Exception {
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                "/starter-openapi.zip", openApiPetstoreBody(), byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, String> files = unzip(response.getBody());
+        String dto = files.get("demo/src/main/java/com/menora/demo/dto/Pet.java");
+        assertThat(dto)
+                .as("Pet.java")
+                .isNotNull()
+                .contains("public record Pet(")
+                .contains("Long id")
+                .contains("String name");
+    }
+
+    @Test
+    void openApiWizardParseErrorReturns400() {
+        Map<String, Object> body = openApiBaseBody();
+        body.put("specByDep", Map.of("web", "this is not: valid: yaml: at: all: ["));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/starter-openapi.zip", body, String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void openApiMetadataEndpoint() {
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                "/metadata/openapi-capable-deps", String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).contains("web");
+    }
+
+    private Map<String, Object> openApiBaseBody() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "demo");
+        body.put("name", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("type", "maven-project");
+        body.put("language", "java");
+        body.put("bootVersion", "3.2.1");
+        body.put("packaging", "jar");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("web"));
+        body.put("opts", Map.of());
+        return body;
+    }
+
+    private Map<String, Object> openApiPetstoreBody() {
+        Map<String, Object> body = openApiBaseBody();
+        body.put("specByDep", Map.of("web", """
+                openapi: 3.0.3
+                info:
+                  title: Petstore
+                  version: 1.0.0
+                paths:
+                  /pets/{id}:
+                    get:
+                      tags: [pets]
+                      operationId: getPetById
+                      parameters:
+                        - name: id
+                          in: path
+                          required: true
+                          schema:
+                            type: integer
+                            format: int64
+                      responses:
+                        '200':
+                          description: ok
+                          content:
+                            application/json:
+                              schema:
+                                $ref: '#/components/schemas/Pet'
+                components:
+                  schemas:
+                    Pet:
+                      type: object
+                      required: [id, name]
+                      properties:
+                        id:
+                          type: integer
+                          format: int64
+                        name:
+                          type: string
+                """));
+        body.put("openApiOptions", Map.of("web", Map.of(
+                "apiSubPackage", "api",
+                "dtoSubPackage", "dto")));
+        return body;
+    }
+
     private Map<String, String> unzip(byte[] zipBytes) throws Exception {
         Map<String, String> out = new LinkedHashMap<>();
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
