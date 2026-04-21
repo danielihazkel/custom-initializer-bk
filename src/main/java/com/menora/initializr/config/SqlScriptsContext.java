@@ -10,9 +10,9 @@ import java.util.Map;
  * Thread-local carrier for SQL scripts + per-dep wizard options across the
  * project-generation child context. Structural twin of {@link ProjectOptionsContext}.
  *
- * <p>Populated by {@code SqlStarterController} before invoking the generator and
- * cleared in {@code finally}. Reads (from the contributor beans) return empty
- * collections when the wizard isn't in play.
+ * <p>Populated by {@code WizardStarterController} before invoking the generator
+ * and cleared in {@code finally}. Reads (from the contributor beans) return
+ * empty collections when the wizard isn't in play.
  */
 @Component
 public class SqlScriptsContext {

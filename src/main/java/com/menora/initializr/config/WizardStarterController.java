@@ -1,7 +1,8 @@
 package com.menora.initializr.config;
 
+import com.menora.initializr.openapi.OpenApiCodeGenerator;
+import com.menora.initializr.openapi.OpenApiWizardOptions;
 import com.menora.initializr.sql.SqlDepOptions;
-import com.menora.initializr.sql.SqlEntityGenerator;
 import com.menora.initializr.sql.SqlTableOptions;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.spring.initializr.metadata.InitializrMetadata;
@@ -13,6 +14,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.FileSystemUtils;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,37 +34,46 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 /**
- * POST sibling of {@code /starter.zip} that accepts a JSON body carrying
- * {@code CREATE TABLE} scripts. The body cannot fit in a URL for realistic
- * schemas, hence the new endpoint — the GET flow is left untouched.
+ * Unified POST sibling of {@code /starter.zip} that accepts a single JSON body
+ * carrying both SQL scripts and OpenAPI specs. Replaces the earlier
+ * {@code /starter-sql.*} and {@code /starter-openapi.*} endpoints — the wizards
+ * are now composable in one request.
+ *
+ * <p>Either {@code sqlByDep} or {@code specByDep} (or both, or neither) may be
+ * present. When both are absent the call is equivalent to the standard
+ * {@code GET /starter.zip} flow.
  *
  * <p>Binds all the same base parameters as {@link WebProjectRequest}, populates
- * {@link ProjectOptionsContext} and {@link SqlScriptsContext}, and delegates
- * to {@link ProjectGenerationInvoker}.
+ * {@link ProjectOptionsContext}, {@link SqlScriptsContext} and
+ * {@link OpenApiSpecContext}, and delegates to {@link ProjectGenerationInvoker}.
  */
 @RestController
-public class SqlStarterController {
+public class WizardStarterController {
 
     private final ProjectGenerationInvoker<ProjectRequest> invoker;
     private final InitializrMetadataProvider metadataProvider;
     private final ProjectOptionsContext optionsContext;
     private final SqlScriptsContext sqlContext;
-    private final SqlEntityGenerator generator;
+    private final OpenApiSpecContext specContext;
+    private final OpenApiCodeGenerator openApiGenerator;
 
-    public SqlStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
-                                InitializrMetadataProvider metadataProvider,
-                                ProjectOptionsContext optionsContext,
-                                SqlScriptsContext sqlContext,
-                                SqlEntityGenerator generator) {
+    public WizardStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
+                                   InitializrMetadataProvider metadataProvider,
+                                   ProjectOptionsContext optionsContext,
+                                   SqlScriptsContext sqlContext,
+                                   OpenApiSpecContext specContext,
+                                   OpenApiCodeGenerator openApiGenerator) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
         this.sqlContext = sqlContext;
-        this.generator = generator;
+        this.specContext = specContext;
+        this.openApiGenerator = openApiGenerator;
     }
 
-    @PostMapping("/starter-sql.zip")
-    public ResponseEntity<byte[]> generate(@RequestBody SqlStarterRequest body) throws IOException {
+    @PostMapping("/starter-wizard.zip")
+    public ResponseEntity<byte[]> generate(@RequestBody WizardStarterRequest body) throws IOException {
+        validateSpecs(body);
         WebProjectRequest request = toWebRequest(body);
         populateContexts(body);
         Path projectDir = null;
@@ -76,13 +87,13 @@ public class SqlStarterController {
                     .body(zip);
         } finally {
             if (projectDir != null) FileSystemUtils.deleteRecursively(projectDir);
-            sqlContext.clear();
-            optionsContext.clear();
+            clearAllContexts();
         }
     }
 
-    @PostMapping("/starter-sql.preview")
-    public ProjectPreviewController.PreviewResponse preview(@RequestBody SqlStarterRequest body) throws IOException {
+    @PostMapping("/starter-wizard.preview")
+    public ProjectPreviewController.PreviewResponse preview(@RequestBody WizardStarterRequest body) throws IOException {
+        validateSpecs(body);
         WebProjectRequest request = toWebRequest(body);
         populateContexts(body);
         Path projectDir = null;
@@ -99,23 +110,49 @@ public class SqlStarterController {
                         });
             }
             return new ProjectPreviewController.PreviewResponse(files,
-                    buildChildren("", files.stream().map(ProjectPreviewController.PreviewFile::path).sorted().toList()));
+                    buildChildren("", files.stream()
+                            .map(ProjectPreviewController.PreviewFile::path).sorted().toList()));
         } finally {
             if (projectDir != null) FileSystemUtils.deleteRecursively(projectDir);
-            sqlContext.clear();
-            optionsContext.clear();
+            clearAllContexts();
         }
     }
 
-    /** Server-side parse for the wizard's live table-name preview. */
-    @PostMapping("/starter-sql.tables")
-    public List<String> detectTables(@RequestBody DetectTablesRequest body) {
-        return generator.detectTableNames(body.sql());
+    /** Server-side path detection for the OpenAPI wizard's live preview. */
+    @PostMapping("/starter-wizard.detect-paths")
+    public List<String> detectPaths(@RequestBody DetectPathsRequest body) {
+        return openApiGenerator.detectPaths(body.spec());
+    }
+
+    @ExceptionHandler(OpenApiCodeGenerator.OpenApiParseException.class)
+    public ResponseEntity<Map<String, Object>> handleParseException(OpenApiCodeGenerator.OpenApiParseException ex) {
+        clearAllContexts();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "Invalid OpenAPI spec");
+        body.put("messages", ex.messages());
+        return ResponseEntity.badRequest().body(body);
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
-    private WebProjectRequest toWebRequest(SqlStarterRequest body) {
+    /**
+     * Runs every submitted spec through the generator once up-front so parse
+     * errors surface as HTTP 400 instead of leaking out of a
+     * {@code ProjectContributor} (which would otherwise become a 500 with a
+     * partially-generated project on disk).
+     */
+    private void validateSpecs(WizardStarterRequest body) {
+        if (body.specByDep() == null) return;
+        for (var e : body.specByDep().entrySet()) {
+            String spec = e.getValue();
+            if (spec == null || spec.isBlank()) continue;
+            openApiGenerator.detectPaths(spec); // does not throw
+            openApiGenerator.generate(spec, "com.menora.demo",
+                    body.openApiOptions() == null ? null : toOpenApiOptions(body.openApiOptions().get(e.getKey())));
+        }
+    }
+
+    private WebProjectRequest toWebRequest(WizardStarterRequest body) {
         InitializrMetadata metadata = metadataProvider.get();
         WebProjectRequest r = new WebProjectRequest();
         r.setType(orDefault(body.type(), "maven-project"));
@@ -138,23 +175,51 @@ public class SqlStarterController {
         return r;
     }
 
-    private void populateContexts(SqlStarterRequest body) {
-        // The servlet filter that normally populates ProjectOptionsContext from
-        // opts-* URL params isn't in our chain here (JSON body, not query string).
+    private void populateContexts(WizardStarterRequest body) {
+        // The servlet filter that populates ProjectOptionsContext from opts-*
+        // URL params isn't in our chain here (JSON body, not query string).
         optionsContext.populate(body.opts());
 
-        Map<String, SqlDepOptions> opts = new LinkedHashMap<>();
+        // SQL side — always populate (empty map is a no-op for the contributor).
+        Map<String, SqlDepOptions> sqlOpts = new LinkedHashMap<>();
         if (body.sqlOptions() != null) {
             for (var e : body.sqlOptions().entrySet()) {
                 SqlDepOptionsDto dto = e.getValue();
+                if (dto == null) continue;
                 List<SqlTableOptions> tables = dto.tables() == null ? List.of()
                         : dto.tables().stream()
-                                .map(t -> new SqlTableOptions(t.name(), t.generateRepository() == null || t.generateRepository()))
+                                .map(t -> new SqlTableOptions(t.name(),
+                                        t.generateRepository() == null || t.generateRepository()))
                                 .toList();
-                opts.put(e.getKey(), new SqlDepOptions(dto.subPackage(), tables));
+                sqlOpts.put(e.getKey(), new SqlDepOptions(dto.subPackage(), tables));
             }
         }
-        sqlContext.populate(body.sqlByDep() == null ? Map.of() : body.sqlByDep(), opts);
+        sqlContext.populate(body.sqlByDep() == null ? Map.of() : body.sqlByDep(), sqlOpts);
+
+        // OpenAPI side — same treatment.
+        Map<String, OpenApiWizardOptions> openApiOpts = new LinkedHashMap<>();
+        if (body.openApiOptions() != null) {
+            for (var e : body.openApiOptions().entrySet()) {
+                openApiOpts.put(e.getKey(), toOpenApiOptions(e.getValue()));
+            }
+        }
+        specContext.populate(body.specByDep() == null ? Map.of() : body.specByDep(), openApiOpts);
+    }
+
+    private void clearAllContexts() {
+        sqlContext.clear();
+        specContext.clear();
+        optionsContext.clear();
+    }
+
+    private static OpenApiWizardOptions toOpenApiOptions(OpenApiOptionsDto dto) {
+        if (dto == null) return new OpenApiWizardOptions(null, null, null, null, null);
+        return new OpenApiWizardOptions(
+                dto.apiSubPackage(),
+                dto.dtoSubPackage(),
+                dto.clientSubPackage(),
+                OpenApiWizardOptions.GenerationMode.parse(dto.mode()),
+                dto.baseUrlProperty());
     }
 
     private static String orDefault(String v, String fallback) {
@@ -190,7 +255,6 @@ public class SqlStarterController {
         }
     }
 
-    // Tree builder — same recursion as ProjectPreviewController
     private List<ProjectPreviewController.TreeNode> buildChildren(String prefix, List<String> paths) {
         Map<String, List<String>> subdirs = new LinkedHashMap<>();
         List<String> directFiles = new ArrayList<>();
@@ -222,7 +286,7 @@ public class SqlStarterController {
     // ── Request records ───────────────────────────────────────────────────────
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record SqlStarterRequest(
+    public record WizardStarterRequest(
             String groupId, String artifactId, String name, String description,
             String packageName, String type, String language, String bootVersion,
             String packaging, String javaVersion, String version,
@@ -230,12 +294,21 @@ public class SqlStarterController {
             List<String> dependencies,
             Map<String, List<String>> opts,
             Map<String, String> sqlByDep,
-            Map<String, SqlDepOptionsDto> sqlOptions) {
+            Map<String, SqlDepOptionsDto> sqlOptions,
+            Map<String, String> specByDep,
+            Map<String, OpenApiOptionsDto> openApiOptions) {
     }
 
     public record SqlDepOptionsDto(String subPackage, List<SqlTableOptionsDto> tables) {}
 
     public record SqlTableOptionsDto(String name, Boolean generateRepository) {}
 
-    public record DetectTablesRequest(String sql) {}
+    public record OpenApiOptionsDto(
+            String apiSubPackage,
+            String dtoSubPackage,
+            String clientSubPackage,
+            String mode,
+            String baseUrlProperty) {}
+
+    public record DetectPathsRequest(String spec) {}
 }

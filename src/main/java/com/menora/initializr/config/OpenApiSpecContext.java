@@ -10,7 +10,7 @@ import java.util.Map;
  * Thread-local carrier for OpenAPI spec text + per-dep wizard options across the
  * project-generation child context. Structural twin of {@link SqlScriptsContext}.
  *
- * <p>Populated by {@code OpenApiStarterController} before invoking the generator
+ * <p>Populated by {@code WizardStarterController} before invoking the generator
  * and cleared in {@code finally}. Reads (from the contributor beans) return
  * empty collections when the wizard isn't in play.
  */

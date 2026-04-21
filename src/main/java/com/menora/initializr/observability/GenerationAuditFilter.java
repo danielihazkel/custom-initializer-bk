@@ -78,7 +78,7 @@ public class GenerationAuditFilter {
                 }
             }
         });
-        reg.addUrlPatterns("/starter*", "/starter.*", "/starter-sql.*", "/starter-multimodule.*");
+        reg.addUrlPatterns("/starter*", "/starter.*", "/starter-wizard.*", "/starter-multimodule.*");
         // Order=5 runs after AdminAuthFilter (order=1) and after InitializrWebConfiguration (Integer.MIN_VALUE),
         // so timing reflects what the end user sees.
         reg.setOrder(5);

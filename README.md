@@ -380,7 +380,7 @@ This removes the tedium of hand-writing entity classes after project generation,
 
 1. The UI queries `GET /metadata/sql-dialects` at page load to learn which dep IDs map to a supported dialect **and** currently exist in the catalog. Only dep cards that appear in this response render the wizard button.
 2. The wizard drawer uses CodeMirror with SQL highlighting. As the user types, a regex detects `CREATE TABLE <name>` occurrences and renders one row per table with a **Generate repository** checkbox (default: on). The optional sub-package field defaults to `entity` (repositories always go to `repository/`).
-3. On Generate, if any wizard entries are attached, the UI switches from a `<a href>` GET to a `fetch` **POST** `/starter-sql.zip` with a JSON body. The Preview/Explore flow does the same for `POST /starter-sql.preview`. URL-length limits that would otherwise break the GET with realistic schemas are avoided entirely.
+3. On Generate, if any wizard entries are attached (SQL or OpenAPI), the UI switches from a `<a href>` GET to a `fetch` **POST** `/starter-wizard.zip` with a JSON body. The Preview/Explore flow does the same for `POST /starter-wizard.preview`. URL-length limits that would otherwise break the GET with realistic schemas are avoided entirely.
 4. Backend parses the SQL with **JSqlParser**, maps each column to a Java type per dialect (see table below), and renders entity source via a `StringBuilder`. Foreign-key columns are kept as scalar fields with a `// TODO: map as @ManyToOne` comment — v1 never auto-generates associations.
 5. Generated entities use **Lombok** (`@Data`, `@NoArgsConstructor`, `@AllArgsConstructor`). The contributor transparently adds `org.projectlombok:lombok` (scope: `annotationProcessor`) to the Maven build whenever SQL is attached — projects generated without the wizard are unaffected.
 
@@ -407,7 +407,7 @@ Column names: `snake_case` → `camelCase` for fields; preserves the raw column 
 
 ### POST API
 
-**Request body** for `POST /starter-sql.zip` and `POST /starter-sql.preview`:
+**Request body** for `POST /starter-wizard.zip` and `POST /starter-wizard.preview` (SQL-only shape; see the OpenAPI section for `specByDep`/`openApiOptions`, which can be combined in the same body):
 
 ```json
 {
@@ -437,7 +437,7 @@ Column names: `snake_case` → `camelCase` for fields; preserves the raw column 
 **Example — generate a project with a `users` entity and its repository:**
 
 ```bash
-curl -o demo.zip -X POST http://localhost:8080/starter-sql.zip \
+curl -o demo.zip -X POST http://localhost:8080/starter-wizard.zip \
   -H "Content-Type: application/json" \
   -d '{
     "groupId":"com.menora","artifactId":"demo","name":"demo",
@@ -455,9 +455,8 @@ unzip -p demo.zip demo/src/main/java/com/menora/demo/entity/Users.java
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/metadata/sql-dialects` | Dep-id → dialect enum map (only deps currently present in the catalog) |
-| `POST` | `/starter-sql.zip` | Generate ZIP with entities/repositories |
-| `POST` | `/starter-sql.preview` | Same shape as `/starter.preview` — file tree + contents |
-| `POST` | `/starter-sql.tables` | `{ sql }` → `["users", "orders", ...]` (server-side parse for wizard preview) |
+| `POST` | `/starter-wizard.zip` | Generate ZIP with entities/repositories (shared with the OpenAPI wizard; both payloads can coexist) |
+| `POST` | `/starter-wizard.preview` | Same shape as `/starter.preview` — file tree + contents |
 
 ### Notes & Limitations (v1)
 
@@ -476,11 +475,10 @@ This removes the boilerplate of hand-writing controller signatures and request/r
 ### How It Works
 
 1. The UI queries `GET /metadata/openapi-capable-deps` at page load to learn which dep IDs support the wizard. Only dep cards in this response render the OpenAPI button (currently `web`, `webflux`).
-2. The drawer uses CodeMirror with YAML highlighting and a file upload for `.yaml`/`.yml`/`.json`. As the user types, a debounced POST to `/starter-openapi.paths` returns the list of detected operations (`GET /pets/{id}`, `POST /pets`, …) for a live preview. Parse errors surface as a yellow banner — the download button stays disabled until the spec parses cleanly.
+2. The drawer uses CodeMirror with YAML highlighting and a file upload for `.yaml`/`.yml`/`.json`. As the user types, a debounced POST to `/starter-wizard.detect-paths` returns the list of detected operations (`GET /pets/{id}`, `POST /pets`, …) for a live preview. Parse errors surface as a yellow banner — the download button stays disabled until the spec parses cleanly.
 3. Two sub-package fields default to `api` (controllers) and `dto` (records). Both are independently editable.
-4. On Generate, if any OpenAPI entries are attached, the UI switches to `POST /starter-openapi.zip` with a JSON body (same reason as the SQL wizard — OpenAPI specs routinely exceed URL-length limits). Preview/Explore uses `POST /starter-openapi.preview`.
+4. On Generate, if any OpenAPI entries are attached, the UI sends `POST /starter-wizard.zip` with a JSON body (same reason as the SQL wizard — OpenAPI specs routinely exceed URL-length limits). Preview/Explore uses `POST /starter-wizard.preview`. The endpoint is shared with the SQL wizard, so a single request can carry both `sqlByDep` and `specByDep`; empty maps are a no-op.
 5. Backend parses the spec with **swagger-parser v2** (`io.swagger.v3.parser.OpenAPIV3Parser`), groups operations by their first tag (untagged operations go to `DefaultController`), and renders controllers + records via `StringBuilder`. Schema composition (`allOf`/`oneOf`/`anyOf`) falls back to `Object` with a `// TODO: unsupported schema composition` comment.
-6. In v1 the OpenAPI and SQL wizards are **mutually exclusive** per generation — whichever has content takes precedence (OpenAPI first). The UI localStorage keeps both so switching between them never loses work.
 
 ### Type Mapping (Highlights)
 
@@ -504,7 +502,7 @@ Component schemas under `components.schemas.*` become Java `record`s in `{pkg}.{
 
 ### POST API
 
-**Request body** for `POST /starter-openapi.zip` and `POST /starter-openapi.preview`:
+**Request body** for `POST /starter-wizard.zip` and `POST /starter-wizard.preview` (OpenAPI-only shape; add `sqlByDep`/`sqlOptions` to combine with the SQL wizard in the same request):
 
 ```json
 {
@@ -531,7 +529,7 @@ Component schemas under `components.schemas.*` become Java `record`s in `{pkg}.{
 **Example — generate a project from a tiny Petstore spec:**
 
 ```bash
-curl -o demo.zip -X POST http://localhost:8080/starter-openapi.zip \
+curl -o demo.zip -X POST http://localhost:8080/starter-wizard.zip \
   -H "Content-Type: application/json" \
   -d '{
     "groupId":"com.menora","artifactId":"demo","name":"demo",
@@ -570,9 +568,9 @@ public record Pet(Long id, String name) {}
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/metadata/openapi-capable-deps` | Dep IDs eligible for the wizard (intersected with deps in the catalog) |
-| `POST` | `/starter-openapi.zip` | Generate ZIP with controllers and DTO records |
-| `POST` | `/starter-openapi.preview` | Same shape as `/starter.preview` — file tree + contents |
-| `POST` | `/starter-openapi.paths` | `{ spec }` → `["GET /pets", "POST /pets", "GET /pets/{id}"]` for the drawer's live preview |
+| `POST` | `/starter-wizard.zip` | Generate ZIP with controllers and DTO records (shared with the SQL wizard; both payloads can coexist) |
+| `POST` | `/starter-wizard.preview` | Same shape as `/starter.preview` — file tree + contents |
+| `POST` | `/starter-wizard.detect-paths` | `{ spec }` → `["GET /pets", "POST /pets", "GET /pets/{id}"]` for the drawer's live preview |
 
 ### Notes & Limitations (v1)
 
@@ -580,7 +578,7 @@ public record Pet(Long id, String name) {}
 - **Method bodies** always throw `UnsupportedOperationException`. The goal is a compiling skeleton, not a working implementation.
 - **Schema composition** (`allOf`/`oneOf`/`anyOf`) falls back to `Object`. Polymorphic schemas and inline nested schemas are v2 work.
 - **Parse errors** return HTTP 400 with `{ error, messages }` — the drawer shows the parser's messages in a yellow banner.
-- **Mutually exclusive** with the SQL wizard in v1 — only one wizard per generation request.
+- **Composable with the SQL wizard** — both wizards share `POST /starter-wizard.zip`, so a single request can carry `sqlByDep` and `specByDep` together; the UI allows them on different dependencies in the same project.
 
 ---
 
@@ -1593,7 +1591,7 @@ The admin UI provides **Export** and **Import** buttons in the tab bar. Export d
 
 ### Activity & Audit
 
-Every call to a `/starter*` endpoint (`/starter.zip`, `/starter.preview`, `/starter-sql.zip`, `/starter-multimodule.zip`, etc.) is recorded in the `generation_event` table with enough detail to answer: *what do teams actually generate, how fast, how often does it fail?*
+Every call to a `/starter*` endpoint (`/starter.zip`, `/starter.preview`, `/starter-wizard.zip`, `/starter-multimodule.zip`, etc.) is recorded in the `generation_event` table with enough detail to answer: *what do teams actually generate, how fast, how often does it fail?*
 
 The audit is implemented as a servlet filter (`GenerationAuditFilter`, order=5) that wraps the request, times it, captures query parameters (`artifactId`, `groupId`, `bootVersion`, `javaVersion`, `packaging`, `language`, `dependencies`), records the outcome (SUCCESS if status < 400, FAILURE otherwise), and writes the event asynchronously — a DB hiccup never breaks project generation.
 
@@ -1650,7 +1648,7 @@ The admin UI surfaces all of this under the **Activity** tab: four summary cards
 |---|---|---|
 | `id` | BIGINT PK | auto |
 | `event_timestamp` | TIMESTAMP | indexed |
-| `endpoint` | VARCHAR(64) | e.g. `starter.zip`, `starter-sql.zip` |
+| `endpoint` | VARCHAR(64) | e.g. `starter.zip`, `starter-wizard.zip` |
 | `artifact_id`, `group_id`, `boot_version`, `java_version`, `packaging`, `language` | VARCHAR | |
 | `dependency_ids` | CLOB | comma-separated |
 | `duration_ms` | BIGINT | |

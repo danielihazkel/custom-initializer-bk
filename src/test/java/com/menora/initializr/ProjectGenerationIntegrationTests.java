@@ -246,7 +246,7 @@ class ProjectGenerationIntegrationTests {
                         Map.of("name", "orders", "generateRepository", false)))));
 
         ResponseEntity<byte[]> response = restTemplate.postForEntity(
-                "/starter-sql.zip", body, byte[].class);
+                "/starter-wizard.zip", body, byte[].class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getHeaders().getContentType())
                 .isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
@@ -277,7 +277,7 @@ class ProjectGenerationIntegrationTests {
     @Test
     void openApiWizardGeneratesController() throws Exception {
         ResponseEntity<byte[]> response = restTemplate.postForEntity(
-                "/starter-openapi.zip", openApiPetstoreBody(), byte[].class);
+                "/starter-wizard.zip", openApiPetstoreBody(), byte[].class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getHeaders().getContentType())
                 .isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
@@ -296,7 +296,7 @@ class ProjectGenerationIntegrationTests {
     @Test
     void openApiWizardGeneratesRecord() throws Exception {
         ResponseEntity<byte[]> response = restTemplate.postForEntity(
-                "/starter-openapi.zip", openApiPetstoreBody(), byte[].class);
+                "/starter-wizard.zip", openApiPetstoreBody(), byte[].class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         Map<String, String> files = unzip(response.getBody());
@@ -315,7 +315,7 @@ class ProjectGenerationIntegrationTests {
         body.put("specByDep", Map.of("web", "this is not: valid: yaml: at: all: ["));
 
         ResponseEntity<String> response = restTemplate.postForEntity(
-                "/starter-openapi.zip", body, String.class);
+                "/starter-wizard.zip", body, String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
@@ -325,6 +325,86 @@ class ProjectGenerationIntegrationTests {
                 "/metadata/openapi-capable-deps", String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).contains("web");
+    }
+
+    @Test
+    void combinedSqlAndOpenApiGenerateTogether() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "demo");
+        body.put("name", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("type", "maven-project");
+        body.put("language", "java");
+        body.put("bootVersion", "3.2.1");
+        body.put("packaging", "jar");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("postgresql", "data-jpa", "web"));
+        body.put("opts", Map.of("postgresql", List.of("pg-primary")));
+        body.put("sqlByDep", Map.of("postgresql", """
+                CREATE TABLE users (
+                    id BIGSERIAL PRIMARY KEY,
+                    email VARCHAR(200) NOT NULL
+                );
+                """));
+        body.put("sqlOptions", Map.of("postgresql", Map.of(
+                "subPackage", "entity",
+                "tables", List.of(Map.of("name", "users", "generateRepository", true)))));
+        body.put("specByDep", Map.of("web", """
+                openapi: 3.0.3
+                info:
+                  title: Petstore
+                  version: 1.0.0
+                paths:
+                  /pets/{id}:
+                    get:
+                      tags: [pets]
+                      operationId: getPetById
+                      parameters:
+                        - name: id
+                          in: path
+                          required: true
+                          schema:
+                            type: integer
+                            format: int64
+                      responses:
+                        '200':
+                          description: ok
+                          content:
+                            application/json:
+                              schema:
+                                $ref: '#/components/schemas/Pet'
+                components:
+                  schemas:
+                    Pet:
+                      type: object
+                      required: [id, name]
+                      properties:
+                        id:
+                          type: integer
+                          format: int64
+                        name:
+                          type: string
+                """));
+        body.put("openApiOptions", Map.of("web", Map.of(
+                "apiSubPackage", "api",
+                "dtoSubPackage", "dto")));
+
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                "/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, String> files = unzip(response.getBody());
+        // SQL wizard output
+        assertThat(files)
+                .as("SQL entity and repository should be present")
+                .containsKey("demo/src/main/java/com/menora/demo/entity/Users.java")
+                .containsKey("demo/src/main/java/com/menora/demo/repository/UsersRepository.java");
+        // OpenAPI wizard output
+        assertThat(files)
+                .as("OpenAPI controller and DTO should be present in the same ZIP")
+                .containsKey("demo/src/main/java/com/menora/demo/api/PetsController.java")
+                .containsKey("demo/src/main/java/com/menora/demo/dto/Pet.java");
     }
 
     private Map<String, Object> openApiBaseBody() {
