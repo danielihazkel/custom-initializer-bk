@@ -2,16 +2,21 @@ package com.menora.initializr.admin;
 
 import org.springframework.stereotype.Component;
 
-import java.util.Set;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 @Component
 public class AdminTokenStore {
 
-    private final Set<String> tokens = ConcurrentHashMap.newKeySet();
+    private static final Duration TTL = Duration.ofHours(8);
+
+    private final ConcurrentMap<String, Instant> tokens = new ConcurrentHashMap<>();
 
     public void add(String token) {
-        tokens.add(token);
+        sweep();
+        tokens.put(token, Instant.now().plus(TTL));
     }
 
     public void remove(String token) {
@@ -19,6 +24,18 @@ public class AdminTokenStore {
     }
 
     public boolean isValid(String token) {
-        return token != null && tokens.contains(token);
+        if (token == null) return false;
+        Instant expiresAt = tokens.get(token);
+        if (expiresAt == null) return false;
+        if (Instant.now().isAfter(expiresAt)) {
+            tokens.remove(token);
+            return false;
+        }
+        return true;
+    }
+
+    private void sweep() {
+        Instant now = Instant.now();
+        tokens.entrySet().removeIf(e -> now.isAfter(e.getValue()));
     }
 }

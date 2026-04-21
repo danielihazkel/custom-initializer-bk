@@ -38,7 +38,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Single generic ProjectGenerationConfiguration that replaces all per-dependency
@@ -53,6 +52,12 @@ public class DynamicProjectGenerationConfiguration {
     // escapeHTML=false: we render Java, Dockerfile, YAML — never HTML.
     private static final Mustache.Compiler MUSTACHE = Mustache.compiler().escapeHTML(false);
 
+    private static final DumperOptions YAML_DUMPER_OPTIONS = new DumperOptions();
+    static {
+        YAML_DUMPER_OPTIONS.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+        YAML_DUMPER_OPTIONS.setPrettyFlow(true);
+    }
+
     @Bean
     @Order(0)
     ProjectContributor dynamicFileContributor(
@@ -66,6 +71,9 @@ public class DynamicProjectGenerationConfiguration {
 
             Map<String, Object> baseContext = buildBaseContext(description, depIds, optionsContext);
 
+            String projectJavaVersion = description.getLanguage() == null
+                    ? null : description.getLanguage().jvmVersion();
+
             for (FileContributionEntity fc : contributions) {
                 // Skip if gated on a sub-option that wasn't selected
                 if (fc.getSubOptionId() != null
@@ -76,15 +84,20 @@ public class DynamicProjectGenerationConfiguration {
                 }
                 // Skip if gated on a Java version that doesn't match
                 if (fc.getJavaVersion() != null
-                        && !fc.getJavaVersion().equals(description.getLanguage().jvmVersion())) {
+                        && !fc.getJavaVersion().equals(projectJavaVersion)) {
                     log.debug("skip fc id={} dep={} target={}: javaVersion='{}' != project '{}'",
                             fc.getId(), fc.getDependencyId(), fc.getTargetPath(),
-                            fc.getJavaVersion(), description.getLanguage().jvmVersion());
+                            fc.getJavaVersion(), projectJavaVersion);
                     continue;
                 }
 
                 String targetPath = resolveTargetPath(fc.getTargetPath(), description);
-                Path target = projectRoot.resolve(targetPath);
+                Path target = projectRoot.resolve(targetPath).normalize();
+                if (!target.startsWith(projectRoot.normalize())) {
+                    throw new IllegalStateException(
+                            "FileContribution id=" + fc.getId() + " dep=" + fc.getDependencyId()
+                                    + " has unsafe targetPath '" + fc.getTargetPath() + "' that escapes the project root");
+                }
 
                 switch (fc.getFileType()) {
                     case YAML_MERGE -> mergeYaml(fc.getContent(), target);
@@ -108,12 +121,11 @@ public class DynamicProjectGenerationConfiguration {
             DependencyConfigService configService) {
         return projectRoot -> {
             Set<String> depIds = selectedDepIds(description);
-            List<FileContributionEntity> contributions = configService.getFileContributions(depIds);
+            List<FileContributionEntity> contributions = configService.getFileContributions(
+                    depIds, FileContributionEntity.FileType.DELETE);
 
             for (FileContributionEntity fc : contributions) {
-                if (fc.getFileType() == FileContributionEntity.FileType.DELETE) {
-                    Files.deleteIfExists(projectRoot.resolve(fc.getTargetPath()));
-                }
+                Files.deleteIfExists(projectRoot.resolve(fc.getTargetPath()));
             }
         };
     }
@@ -358,15 +370,15 @@ public class DynamicProjectGenerationConfiguration {
         if (Files.exists(targetYamlPath)) {
             Map<String, Object> existing = yaml.load(Files.readString(targetYamlPath));
             Map<String, Object> incoming = yaml.load(newContent);
+            if (existing == null) existing = new LinkedHashMap<>();
+            if (incoming == null) incoming = new LinkedHashMap<>();
             merged = deepMerge(existing, incoming);
         } else {
             merged = yaml.load(newContent);
+            if (merged == null) merged = new LinkedHashMap<>();
         }
         Files.createDirectories(targetYamlPath.getParent());
-        DumperOptions opts = new DumperOptions();
-        opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-        opts.setPrettyFlow(true);
-        Files.writeString(targetYamlPath, new Yaml(opts).dump(merged));
+        Files.writeString(targetYamlPath, new Yaml(YAML_DUMPER_OPTIONS).dump(merged));
     }
 
     @SuppressWarnings("unchecked")

@@ -34,9 +34,9 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        optionsContext.populate(request);
         try {
-        chain.doFilter(new HttpServletRequestWrapper(request) {
+            optionsContext.populate(request);
+            chain.doFilter(new HttpServletRequestWrapper(request) {
 
             // Always inject configurationFileFormat default if absent.
             @Override

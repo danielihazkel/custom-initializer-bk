@@ -8,6 +8,8 @@ import java.util.Set;
 
 public interface FileContributionRepository extends JpaRepository<FileContributionEntity, Long> {
     List<FileContributionEntity> findByDependencyIdInOrderBySortOrderAsc(Set<String> dependencyIds);
+    List<FileContributionEntity> findByDependencyIdInAndFileTypeOrderBySortOrderAsc(
+            Set<String> dependencyIds, FileContributionEntity.FileType fileType);
     long countByDependencyId(String dependencyId);
     void deleteByDependencyId(String dependencyId);
 }

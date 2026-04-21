@@ -43,6 +43,15 @@ public class DependencyConfigService {
         return fileContribRepo.findByDependencyIdInOrderBySortOrderAsc(ids);
     }
 
+    /** Returns file contributions of a specific type for the selected deps plus the common ones. */
+    @Transactional(readOnly = true)
+    public List<FileContributionEntity> getFileContributions(Set<String> selectedDepIds,
+                                                             FileContributionEntity.FileType type) {
+        Set<String> ids = new HashSet<>(selectedDepIds);
+        ids.add(COMMON_ID);
+        return fileContribRepo.findByDependencyIdInAndFileTypeOrderBySortOrderAsc(ids, type);
+    }
+
     /** Returns build customizations for the selected deps plus the common ones. */
     @Transactional(readOnly = true)
     public List<BuildCustomizationEntity> getBuildCustomizations(Set<String> selectedDepIds) {
@@ -72,9 +81,6 @@ public class DependencyConfigService {
      */
     @Transactional(readOnly = true)
     public Set<String> getFileOnlyDepIds(Set<String> candidateIds) {
-        return entryRepo.findByDepIdIn(candidateIds).stream()
-                .filter(e -> !e.isStarter())
-                .map(DependencyEntryEntity::getDepId)
-                .collect(java.util.stream.Collectors.toSet());
+        return new HashSet<>(entryRepo.findFileOnlyDepIdsIn(candidateIds));
     }
 }
