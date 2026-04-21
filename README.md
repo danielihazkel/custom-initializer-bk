@@ -42,6 +42,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Add a Static Config File to a Dependency](#add-a-static-config-file-to-a-dependency)
    - [Add a Generated Java Class to a Dependency](#add-a-generated-java-class-to-a-dependency)
    - [Add Sub-Options to a Dependency](#add-sub-options-to-a-dependency)
+   - [Conditional Content with Mustache Sections](#conditional-content-with-mustache-sections)
    - [Add a Compatibility Rule](#add-a-compatibility-rule)
    - [Restrict a Dependency to Specific Boot Versions](#restrict-a-dependency-to-specific-boot-versions)
    - [Edit an Existing Static Config File](#edit-an-existing-static-config-file)
@@ -723,9 +724,8 @@ DELETE /admin/file-contributions/{id}   # delete
 | | `YAML_MERGE` | Deep-merge content into the target YAML file |
 | | `TEMPLATE` | Apply variable substitution, then write |
 | | `DELETE` | Delete `targetPath` (runs after all writes) |
-| `substitutionType` | `NONE` | No substitution |
-| | `PROJECT` | Replace `{{artifactId}}`, `{{groupId}}`, `{{version}}` |
-| | `PACKAGE` | Replace `{{packageName}}` |
+| `substitutionType` | `NONE` | Write content verbatim (no rendering) |
+| | `MUSTACHE` | Render content through jmustache with the unified project context (see [Conditional Content with Mustache Sections](#conditional-content-with-mustache-sections)) |
 | `targetPath` | path string | Destination in the generated project. May contain `{{packagePath}}` (e.g. `src/main/java/{{packagePath}}/config/MyConfig.java`) |
 | `javaVersion` | `"17"`, `"21"`, or `null` | If set, only apply when the project's Java version matches |
 | `subOptionId` | string or `null` | If set, only apply when this sub-option is selected |
@@ -754,7 +754,7 @@ curl -X POST http://localhost:8080/admin/file-contributions \
     "fileType": "TEMPLATE",
     "content": "package {{packageName}}.config;\n\nimport org.springframework.context.annotation.Configuration;\n\n@Configuration\npublic class CacheConfig {\n}\n",
     "targetPath": "src/main/java/{{packagePath}}/config/CacheConfig.java",
-    "substitutionType": "PACKAGE",
+    "substitutionType": "MUSTACHE",
     "sortOrder": 1
   }'
 ```
@@ -1055,7 +1055,7 @@ curl -X POST http://localhost:8080/admin/file-contributions \
     "fileType": "TEMPLATE",
     "content": "package {{packageName}}.config;\n\nimport org.springframework.context.annotation.Configuration;\n\n@Configuration\npublic class MyFeatureConfig {\n}\n",
     "targetPath": "src/main/java/{{packagePath}}/config/MyFeatureConfig.java",
-    "substitutionType": "PACKAGE",
+    "substitutionType": "MUSTACHE",
     "sortOrder": 1
   }'
 ```
@@ -1077,7 +1077,7 @@ curl -X POST http://localhost:8080/admin/file-contributions \
    fc("my-dep-id", FileContributionEntity.FileType.TEMPLATE,
        readClasspath("templates/myfeature-config.mustache"),
        "src/main/java/{{packagePath}}/config/MyFeatureConfig.java",
-       FileContributionEntity.SubstitutionType.PACKAGE, null, null, 1);
+       FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
    ```
 3. Rebuild and restart (or delete `./data/` to re-seed)
 
@@ -1109,7 +1109,7 @@ curl -X POST http://localhost:8080/admin/file-contributions \
     "fileType": "TEMPLATE",
     "content": "package {{packageName}}.config;\n\n@Component\npublic class MyOptionExample {}\n",
     "targetPath": "src/main/java/{{packagePath}}/config/MyOptionExample.java",
-    "substitutionType": "PACKAGE",
+    "substitutionType": "MUSTACHE",
     "subOptionId": "my-option",
     "sortOrder": 2
   }'
@@ -1121,6 +1121,180 @@ curl -X POST http://localhost:8080/admin/refresh
 ```
 
 The UI calls `GET /metadata/extensions` to discover sub-options and renders checkboxes automatically. When the user selects one, the UI appends `opts-{depId}=my-option` to the generation request URL.
+
+---
+
+### Conditional Content with Mustache Sections
+
+`TEMPLATE` file contributions whose `substitutionType` is `MUSTACHE` are rendered through the [jmustache](https://github.com/samskivert/jmustache) engine with HTML-escaping disabled. This means a single template can vary its output based on which dependencies or sub-options the user selected — you no longer need a separate `FileContributionEntity` row per variation.
+
+#### Context Reference
+
+Every `MUSTACHE` template receives the same unified context. Variables render as text; sections (`{{#name}}…{{/name}}`) render their body only when the named value is truthy.
+
+| Key | Type | Value | Example |
+|-----|------|-------|---------|
+| `artifactId` | string | Project artifact ID | `demo` |
+| `groupId` | string | Project group ID | `com.menora` |
+| `version` | string | Project version | `0.0.1-SNAPSHOT` |
+| `packageName` | string | Base package | `com.menora.demo` |
+| `packagePath` | string | `packageName` with `.` → `/` | `com/menora/demo` |
+| `javaVersion` | string | JDK the user picked | `17` or `21` |
+| `packaging` | string | Packaging type | `jar` or `war` |
+| `has<Dep>` | boolean | `true` when that dependency is selected | `hasKafka`, `hasSecurity`, `hasMailSampler` |
+| `opt<Dep><Option>` | boolean | `true` when that sub-option is ticked | `optKafkaConsumerExample`, `optMailSamplerSendMail` |
+
+**Naming rules:**
+- Dep boolean keys are `has` + PascalCase of the dep ID. `-`, `_`, and `.` are word separators. `kafka` → `hasKafka`, `spring-boot-starter` → `hasSpringBootStarter`, `mail-sampler` → `hasMailSampler`.
+- Sub-option keys are `opt` + PascalCase(depId) + PascalCase(optionId). `kafka` + `consumer-example` → `optKafkaConsumerExample`.
+
+> Use `{{packagePath}}` in both the **content** and the **target path** (`src/main/java/{{packagePath}}/...`) — path substitution is applied independently of `substitutionType`.
+
+#### Mustache Syntax Cheat-sheet
+
+| Tag | Meaning |
+|-----|---------|
+| `{{name}}` | Render the value of `name` as text. |
+| `{{#name}}…{{/name}}` | Section: render the body **only if** `name` is truthy. |
+| `{{^name}}…{{/name}}` | Inverted section: render the body **only if** `name` is absent/falsy. |
+| `{{! comment }}` | Comment — stripped from output. Use for template-only notes. |
+| `{{{name}}}` | Unescaped output. (Equivalent to `{{name}}` here because `escapeHTML` is already off.) |
+
+#### Example 1 — Gate a block on a selected dependency
+
+One Java class that emits a Kafka bean **only if Kafka is selected**, otherwise falls back to a stub. Without Mustache sections, you would need two `FileContributionEntity` rows that write the same file path.
+
+```java
+package {{packageName}}.config;
+
+import org.springframework.context.annotation.Configuration;
+{{#hasKafka}}
+import org.springframework.kafka.annotation.EnableKafka;
+{{/hasKafka}}
+
+@Configuration
+{{#hasKafka}}
+@EnableKafka
+{{/hasKafka}}
+public class MessagingConfig {
+    {{^hasKafka}}
+    // Kafka not selected — no messaging infrastructure wired.
+    {{/hasKafka}}
+}
+```
+
+Seed it as a single contribution:
+
+```bash
+curl -X POST http://localhost:8080/admin/file-contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "__common__",
+    "fileType": "TEMPLATE",
+    "substitutionType": "MUSTACHE",
+    "targetPath": "src/main/java/{{packagePath}}/config/MessagingConfig.java",
+    "content": "package {{packageName}}.config;\n\nimport org.springframework.context.annotation.Configuration;\n{{#hasKafka}}\nimport org.springframework.kafka.annotation.EnableKafka;\n{{/hasKafka}}\n\n@Configuration\n{{#hasKafka}}\n@EnableKafka\n{{/hasKafka}}\npublic class MessagingConfig {\n    {{^hasKafka}}// Kafka not selected — no messaging infrastructure wired.{{/hasKafka}}\n}\n",
+    "sortOrder": 10
+  }'
+```
+
+#### Example 2 — Gate a block on a sub-option
+
+Inside a Kafka-specific template, emit a consumer example **only when the user ticked the Consumer Example sub-option**.
+
+```java
+package {{packageName}}.kafka;
+
+{{#optKafkaConsumerExample}}
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Component;
+
+@Component
+public class KafkaConsumerExample {
+    @KafkaListener(topics = "demo-topic", groupId = "{{artifactId}}")
+    public void listen(String message) {
+        System.out.println("Received: " + message);
+    }
+}
+{{/optKafkaConsumerExample}}
+{{^optKafkaConsumerExample}}
+// Enable the "Consumer Example" sub-option to generate a sample @KafkaListener.
+{{/optKafkaConsumerExample}}
+```
+
+Note that `{{artifactId}}` inside the section still resolves — the full context is visible everywhere.
+
+#### Example 3 — Java-version and packaging branches in YAML
+
+A single `application.yaml` merge that picks a different datasource URL scheme depending on selections:
+
+```yaml
+spring:
+  application:
+    name: {{artifactId}}
+{{#hasDataJpa}}
+  datasource:
+    url: jdbc:h2:mem:{{artifactId}}
+    username: sa
+{{/hasDataJpa}}
+{{#hasActuator}}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info{{#hasSecurity}},metrics{{/hasSecurity}}
+{{/hasActuator}}
+server:
+  port: {{#hasWeb}}8080{{/hasWeb}}{{^hasWeb}}0{{/hasWeb}}
+
+# Generated for {{packaging}} packaging on Java {{javaVersion}}.
+```
+
+Seed it with `fileType: YAML_MERGE` and `substitutionType: MUSTACHE` — the merge engine runs **after** Mustache renders.
+
+#### Example 4 — Before / After: collapsing two rows into one
+
+**Before** (two `FileContributionEntity` rows, both with `targetPath = src/main/java/{{packagePath}}/config/AppConfig.java`):
+
+```
+Row A — subOptionId = null                  Row B — subOptionId = "async-handler"
+--------------------------------------       --------------------------------------
+package {{packageName}}.config;              package {{packageName}}.config;
+
+@Configuration                               @Configuration
+public class AppConfig {                     @EnableAsync
+}                                            public class AppConfig {
+                                             }
+```
+
+These would collide — the framework writes one file, not both. With the old `PACKAGE` substitution the author had to pick one.
+
+**After** (a single `FileContributionEntity` row):
+
+```java
+package {{packageName}}.config;
+
+{{#optMyDepAsyncHandler}}
+import org.springframework.scheduling.annotation.EnableAsync;
+{{/optMyDepAsyncHandler}}
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+{{#optMyDepAsyncHandler}}
+@EnableAsync
+{{/optMyDepAsyncHandler}}
+public class AppConfig {
+}
+```
+
+One row, one target path, two behaviors.
+
+#### Gotchas
+
+- **Mustache sections strip trailing newlines** around `{{#name}}` and `{{/name}}` tags that occupy their own line (standard Mustache "standalone tag" behavior). This keeps generated Java clean. If you need a literal newline, put content on the same line as the tag.
+- **Unknown variables render as empty strings.** A typo in `{{hasKafak}}` silently renders nothing. Grep your templates when onboarding a new dep to sanity-check references.
+- **Escaping the `{{` character** is rarely needed — use the delimiter-switch `{{=<% %>=}}` if a template must produce literal `{{` output (e.g. generating a Mustache template of its own).
+- **`NONE` still exists** for binary-identical files (log4j2 XML, .editorconfig, entrypoint.sh). Use it when you want the content written verbatim and know it doesn't contain stray `{{…}}` sequences.
 
 ---
 
@@ -1679,7 +1853,7 @@ curl -X POST http://localhost:8080/admin/file-contributions \
     "fileType": "TEMPLATE",
     "content": "...",
     "targetPath": "Dockerfile",
-    "substitutionType": "PROJECT",
+    "substitutionType": "MUSTACHE",
     "javaVersion": "23",
     "sortOrder": 7
   }'

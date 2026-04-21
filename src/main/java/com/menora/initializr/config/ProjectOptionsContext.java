@@ -69,4 +69,9 @@ public class ProjectOptionsContext {
     public boolean hasOption(String depId, String optId) {
         return OPTIONS.get().getOrDefault(depId, Collections.emptySet()).contains(optId);
     }
+
+    /** All sub-option ids selected for {@code depId}; empty set when none. */
+    public Set<String> selectedOptions(String depId) {
+        return OPTIONS.get().getOrDefault(depId, Collections.emptySet());
+    }
 }

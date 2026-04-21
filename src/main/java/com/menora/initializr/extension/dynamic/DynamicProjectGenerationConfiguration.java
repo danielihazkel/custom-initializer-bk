@@ -13,6 +13,7 @@ import com.menora.initializr.sql.GeneratedJavaFile;
 import com.menora.initializr.sql.SqlDepOptions;
 import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
+import com.samskivert.mustache.Mustache;
 import io.spring.initializr.generator.buildsystem.Dependency;
 import io.spring.initializr.generator.buildsystem.DependencyScope;
 import io.spring.initializr.generator.buildsystem.MavenRepository;
@@ -32,6 +33,7 @@ import org.yaml.snakeyaml.Yaml;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +50,9 @@ public class DynamicProjectGenerationConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicProjectGenerationConfiguration.class);
 
+    // escapeHTML=false: we render Java, Dockerfile, YAML — never HTML.
+    private static final Mustache.Compiler MUSTACHE = Mustache.compiler().escapeHTML(false);
+
     @Bean
     ProjectContributor dynamicFileContributor(
             ProjectDescription description,
@@ -57,6 +62,8 @@ public class DynamicProjectGenerationConfiguration {
             Set<String> depIds = selectedDepIds(description);
             log.info("generation: selectedDepIds={}", depIds);
             List<FileContributionEntity> contributions = configService.getFileContributions(depIds);
+
+            Map<String, Object> baseContext = buildBaseContext(description, depIds, optionsContext);
 
             for (FileContributionEntity fc : contributions) {
                 // Skip if gated on a sub-option that wasn't selected
@@ -80,7 +87,7 @@ public class DynamicProjectGenerationConfiguration {
 
                 switch (fc.getFileType()) {
                     case YAML_MERGE -> mergeYaml(fc.getContent(), target);
-                    case TEMPLATE -> writeTemplate(fc, description, target);
+                    case TEMPLATE -> writeTemplate(fc, baseContext, target);
                     case STATIC_COPY -> writeStatic(fc.getContent(), target);
                     case DELETE -> Files.deleteIfExists(target);
                 }
@@ -274,19 +281,59 @@ public class DynamicProjectGenerationConfiguration {
         return targetPath;
     }
 
-    private void writeTemplate(FileContributionEntity fc, ProjectDescription description, Path target)
+    private void writeTemplate(FileContributionEntity fc, Map<String, Object> ctx, Path target)
             throws IOException {
-        String content = fc.getContent();
-        if (fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.PROJECT) {
-            content = content
-                    .replace("{{artifactId}}", description.getArtifactId())
-                    .replace("{{groupId}}", description.getGroupId())
-                    .replace("{{version}}", description.getVersion());
-        } else if (fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.PACKAGE) {
-            content = content.replace("{{packageName}}", description.getPackageName());
-        }
+        String content = fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.MUSTACHE
+                ? MUSTACHE.compile(fc.getContent()).execute(ctx)
+                : fc.getContent();
         Files.createDirectories(target.getParent());
         Files.writeString(target, content);
+    }
+
+    /**
+     * Builds the Mustache context exposed to every TEMPLATE file contribution.
+     * Contains project fields, resolved {@code packagePath}, {@code javaVersion},
+     * {@code packaging}, plus boolean flags for each selected dependency
+     * ({@code hasKafka}, {@code hasSpringBootStarter}, …) and sub-option
+     * ({@code optKafkaConsumerExample}, …).
+     */
+    private Map<String, Object> buildBaseContext(ProjectDescription description,
+                                                 Set<String> depIds,
+                                                 ProjectOptionsContext optionsContext) {
+        Map<String, Object> ctx = new HashMap<>();
+        ctx.put("artifactId", description.getArtifactId());
+        ctx.put("groupId", description.getGroupId());
+        ctx.put("version", description.getVersion());
+        ctx.put("packageName", description.getPackageName());
+        ctx.put("packagePath", description.getPackageName().replace('.', '/'));
+        ctx.put("javaVersion", description.getLanguage().jvmVersion());
+        ctx.put("packaging", description.getPackaging() != null ? description.getPackaging().id() : null);
+
+        for (String depId : depIds) {
+            ctx.put("has" + toPascalCase(depId), Boolean.TRUE);
+            for (String optId : optionsContext.selectedOptions(depId)) {
+                ctx.put("opt" + toPascalCase(depId) + toPascalCase(optId), Boolean.TRUE);
+            }
+        }
+        return ctx;
+    }
+
+    /** {@code "kafka"} → {@code "Kafka"}; {@code "mail-sampler"} → {@code "MailSampler"}. */
+    private static String toPascalCase(String id) {
+        StringBuilder sb = new StringBuilder(id.length());
+        boolean upper = true;
+        for (int i = 0; i < id.length(); i++) {
+            char c = id.charAt(i);
+            if (c == '-' || c == '_' || c == '.') {
+                upper = true;
+            } else if (upper) {
+                sb.append(Character.toUpperCase(c));
+                upper = false;
+            } else {
+                sb.append(Character.toLowerCase(c));
+            }
+        }
+        return sb.toString();
     }
 
     private void writeStatic(String content, Path target) throws IOException {

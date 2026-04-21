@@ -72,7 +72,7 @@ spring:
 | Dependency ID | `mail-sampler` |
 | File Type | `TEMPLATE` |
 | Target Path | `src/main/java/{{packagePath}}/config/MailConfig.java` |
-| Substitution Type | `PACKAGE` |
+| Substitution Type | `MUSTACHE` |
 | Content | your Java class (use `{{packageName}}` for the package declaration) |
 
 ```java
@@ -89,7 +89,7 @@ public class MailConfig {
 
 #### 3c. Service class (optional)
 
-Same pattern — `File Type: TEMPLATE`, `Substitution Type: PACKAGE`, target path under `{{packagePath}}/service/`.
+Same pattern — `File Type: TEMPLATE`, `Substitution Type: MUSTACHE`, target path under `{{packagePath}}/service/`.
 
 ### Step 4: Add Build Customizations (Maven dependencies)
 
@@ -181,7 +181,7 @@ fc("my-dep", FileContributionEntity.FileType.YAML_MERGE,
 fc("my-dep", FileContributionEntity.FileType.TEMPLATE,
         readClasspath("templates/my-dep-config.mustache"),
         "src/main/java/{{packagePath}}/config/MyDepConfig.java",
-        FileContributionEntity.SubstitutionType.PACKAGE, null, null, 1);
+        FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
 ```
 
 Parameters: `(depId, fileType, content, targetPath, substitutionType, javaVersion, subOptionId, sortOrder)`
@@ -211,18 +211,23 @@ compatibility("my-dep", "web", DependencyCompatibilityEntity.RelationType.RECOMM
 
 ## Template Variable Reference
 
-### Substitution Type: `PACKAGE`
-| Variable | Resolves To | Example |
-|----------|-------------|---------|
-| `{{packageName}}` | Java package name | `com.menora.demo` |
-| `{{packagePath}}` | Directory path (in target path only) | `com/menora/demo` |
+### Substitution Type: `MUSTACHE`
 
-### Substitution Type: `PROJECT`
+TEMPLATE contributions with `substitutionType = MUSTACHE` are rendered through jmustache. The context exposes:
+
 | Variable | Resolves To | Example |
 |----------|-------------|---------|
 | `{{artifactId}}` | Project artifact ID | `demo` |
 | `{{groupId}}` | Project group ID | `com.menora` |
 | `{{version}}` | Project version | `0.0.1-SNAPSHOT` |
+| `{{packageName}}` | Java package name | `com.menora.demo` |
+| `{{packagePath}}` | Directory path (also usable in Target Path) | `com/menora/demo` |
+| `{{javaVersion}}` | Selected JVM version | `21` |
+| `{{packaging}}` | Project packaging | `jar` |
+| `{{#has<Dep>}}…{{/has<Dep>}}` | Renders when that dep is selected. Dep id PascalCased | `{{#hasKafka}}…{{/hasKafka}}` |
+| `{{#opt<Dep><Option>}}…{{/opt<Dep><Option>}}` | Renders when that sub-option is selected | `{{#optKafkaConsumerExample}}…{{/optKafkaConsumerExample}}` |
+
+Use `{{^…}}…{{/…}}` (inverted section) to render when the flag is *absent*.
 
 ### File Types
 | Type | Behavior |
