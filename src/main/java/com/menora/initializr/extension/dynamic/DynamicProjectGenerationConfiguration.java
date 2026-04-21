@@ -54,6 +54,7 @@ public class DynamicProjectGenerationConfiguration {
     private static final Mustache.Compiler MUSTACHE = Mustache.compiler().escapeHTML(false);
 
     @Bean
+    @Order(0)
     ProjectContributor dynamicFileContributor(
             ProjectDescription description,
             DependencyConfigService configService,
@@ -224,6 +225,7 @@ public class DynamicProjectGenerationConfiguration {
      * Skips silently when no spec was supplied.
      */
     @Bean
+    @Order(100)
     ProjectContributor openApiCodeContributor(
             ProjectDescription description,
             OpenApiSpecContext specContext,
@@ -240,11 +242,20 @@ public class DynamicProjectGenerationConfiguration {
                 for (GeneratedOpenApiFile f : files) {
                     Path target = projectRoot.resolve(
                             f.relativePath().replace("{{packagePath}}", packagePath));
-                    Files.createDirectories(target.getParent());
-                    Files.writeString(target, f.content());
+                    if (isYaml(target)) {
+                        mergeYaml(f.content(), target);
+                    } else {
+                        Files.createDirectories(target.getParent());
+                        Files.writeString(target, f.content());
+                    }
                 }
             }
         };
+    }
+
+    private static boolean isYaml(Path path) {
+        String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        return name.endsWith(".yaml") || name.endsWith(".yml");
     }
 
     /**

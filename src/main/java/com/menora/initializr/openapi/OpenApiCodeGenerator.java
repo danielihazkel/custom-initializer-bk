@@ -579,7 +579,7 @@ public class OpenApiCodeGenerator {
         sb.append("/**\n");
         sb.append(" * Provides the RestTemplate bean used by the generated OpenAPI clients.\n");
         sb.append(" * The base URL is read from the {@code ").append(baseUrlProp).append("} property\n");
-        sb.append(" * (see application-openapi-client.yml).\n");
+        sb.append(" * in application.yaml.\n");
         sb.append(" */\n");
         sb.append("@Configuration\n");
         sb.append("public class OpenApiClientConfig {\n\n");
@@ -599,8 +599,6 @@ public class OpenApiCodeGenerator {
         String[] parts = prop.split("\\.");
 
         StringBuilder sb = new StringBuilder();
-        sb.append("# Base URL for OpenAPI-generated clients.\n");
-        sb.append("# Merge this into your main application.yml, or activate the `openapi-client` profile.\n");
         for (int i = 0; i < parts.length; i++) {
             for (int s = 0; s < i * 2; s++) sb.append(' ');
             sb.append(parts[i]);
@@ -612,7 +610,7 @@ public class OpenApiCodeGenerator {
         }
 
         return new GeneratedOpenApiFile(
-                "src/main/resources/application-openapi-client.yml",
+                "src/main/resources/application.yaml",
                 sb.toString());
     }
 
