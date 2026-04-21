@@ -275,6 +275,57 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void sqlWizardEmitsManyToOneAcrossKnownTables() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "demo");
+        body.put("name", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("type", "maven-project");
+        body.put("language", "java");
+        body.put("bootVersion", "3.2.1");
+        body.put("packaging", "jar");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("postgresql", "data-jpa"));
+        body.put("opts", Map.of("postgresql", List.of("pg-primary")));
+        body.put("sqlByDep", Map.of("postgresql", """
+                CREATE TABLE authors (
+                    id BIGSERIAL PRIMARY KEY,
+                    name VARCHAR(200) NOT NULL
+                );
+                CREATE TABLE books (
+                    id BIGSERIAL PRIMARY KEY,
+                    title VARCHAR(200) NOT NULL,
+                    author_id BIGINT NOT NULL,
+                    FOREIGN KEY (author_id) REFERENCES authors(id)
+                );
+                """));
+        body.put("sqlOptions", Map.of("postgresql", Map.of(
+                "subPackage", "entity",
+                "tables", List.of(
+                        Map.of("name", "authors", "generateRepository", false),
+                        Map.of("name", "books", "generateRepository", false)))));
+
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                "/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, String> files = unzip(response.getBody());
+        String books = files.get("demo/src/main/java/com/menora/demo/entity/Books.java");
+        assertThat(books)
+                .as("Books entity")
+                .isNotNull()
+                .contains("import jakarta.persistence.ManyToOne;")
+                .contains("import jakarta.persistence.JoinColumn;")
+                .contains("import jakarta.persistence.FetchType;")
+                .contains("@ManyToOne(fetch = FetchType.LAZY)")
+                .contains("@JoinColumn(name = \"author_id\", nullable = false)")
+                .contains("private Authors author;")
+                .doesNotContain("// TODO: map as @ManyToOne")
+                .doesNotContain("private Long authorId;");
+    }
+
+    @Test
     void openApiWizardGeneratesController() throws Exception {
         ResponseEntity<byte[]> response = restTemplate.postForEntity(
                 "/starter-wizard.zip", openApiPetstoreBody(), byte[].class);

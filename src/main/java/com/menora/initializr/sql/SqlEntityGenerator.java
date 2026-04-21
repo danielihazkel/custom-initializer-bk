@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -45,9 +46,12 @@ public class SqlEntityGenerator {
             return List.of();
         }
 
+        Set<String> knownTableNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (TableModel t : tables) knownTableNames.add(t.name());
+
         List<GeneratedJavaFile> files = new ArrayList<>();
         for (TableModel table : tables) {
-            files.add(renderEntity(table, dialect, packageName, opts));
+            files.add(renderEntity(table, dialect, packageName, opts, knownTableNames));
             if (table.hasCompositePk()) {
                 files.add(renderIdClass(table, packageName, opts));
             }
@@ -182,7 +186,8 @@ public class SqlEntityGenerator {
     // ── Rendering ─────────────────────────────────────────────────────────────
 
     private GeneratedJavaFile renderEntity(TableModel table, SqlDialect dialect,
-                                           String packageName, SqlDepOptions opts) {
+                                           String packageName, SqlDepOptions opts,
+                                           Set<String> knownTableNames) {
         String className = toPascalCase(table.name());
         String subPkg = opts.subPackage();
         String fullPkg = packageName + "." + subPkg;
@@ -206,11 +211,13 @@ public class SqlEntityGenerator {
             imports.add("jakarta.persistence.IdClass");
         }
 
+        Set<ForeignKey> emittedFks = new HashSet<>();
+        Set<String> usedFieldNames = new HashSet<>();
         StringBuilder body = new StringBuilder();
         for (ColumnModel c : table.columns()) {
             JavaType jt = TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale());
             imports.addAll(jt.imports());
-            appendField(body, c, jt, table);
+            processColumn(body, c, jt, table, knownTableNames, emittedFks, usedFieldNames, imports);
         }
 
         StringBuilder sb = new StringBuilder();
@@ -235,15 +242,113 @@ public class SqlEntityGenerator {
         return new GeneratedJavaFile(path, sb.toString());
     }
 
-    private void appendField(StringBuilder body, ColumnModel c, JavaType jt, TableModel table) {
-        String fieldName = toCamelCase(c.name());
-        boolean renameViaColumn = !fieldName.equals(c.name());
-        boolean isPk = c.isPk();
+    /**
+     * Decide how to render a single column: as a JPA association (@ManyToOne /
+     * shared-PK @MapsId), as part of a composite-FK association, or as a plain
+     * scalar field. Falls back to scalar+TODO when the FK target table is not
+     * in the same generation batch.
+     */
+    private void processColumn(StringBuilder body, ColumnModel c, JavaType jt, TableModel table,
+                               Set<String> knownTableNames, Set<ForeignKey> emittedFks,
+                               Set<String> usedFieldNames, Set<String> imports) {
+        ForeignKey compositeFk = findCompositeForeignKey(c.name(), table.foreignKeys());
+        if (compositeFk != null) {
+            boolean refKnown = knownTableNames.contains(compositeFk.referencedTable());
+            if (refKnown && !emittedFks.contains(compositeFk)) {
+                appendCompositeAssociation(body, compositeFk, usedFieldNames, imports);
+                emittedFks.add(compositeFk);
+            }
+            // PK columns must still emit their scalar @Id field for @IdClass to bind.
+            // Non-PK composite-FK columns are absorbed by the association unless the
+            // ref table is missing (then fall back to scalar+TODO).
+            if (c.isPk()) {
+                appendScalarField(body, c, jt, usedFieldNames);
+            } else if (!refKnown) {
+                body.append("    // TODO: map as @ManyToOne (composite FK to unknown table)\n");
+                appendScalarField(body, c, jt, usedFieldNames);
+            }
+            return;
+        }
+
+        ForeignKey singleFk = findSingleForeignKey(c.name(), table.foreignKeys());
+        if (singleFk != null && knownTableNames.contains(singleFk.referencedTable())) {
+            appendSingleAssociation(body, c, singleFk, table, usedFieldNames, imports);
+            emittedFks.add(singleFk);
+            return;
+        }
 
         if (c.isForeignKey()) {
             body.append("    // TODO: map as @ManyToOne\n");
         }
-        if (isPk) {
+        appendScalarField(body, c, jt, usedFieldNames);
+    }
+
+    private void appendSingleAssociation(StringBuilder body, ColumnModel c, ForeignKey fk,
+                                         TableModel table, Set<String> usedFieldNames,
+                                         Set<String> imports) {
+        String refEntity = toPascalCase(fk.referencedTable());
+        String fieldName = pickAssociationFieldName(c, fk, usedFieldNames, false);
+        usedFieldNames.add(fieldName);
+        imports.add("jakarta.persistence.ManyToOne");
+        imports.add("jakarta.persistence.JoinColumn");
+        imports.add("jakarta.persistence.FetchType");
+
+        // Shared-PK one-to-one: single PK column that is also a single-column FK.
+        if (c.isPk() && table.pkColumns().size() == 1) {
+            imports.add("jakarta.persistence.OneToOne");
+            imports.add("jakarta.persistence.MapsId");
+            body.append("    @Id\n");
+            body.append("    @OneToOne(fetch = FetchType.LAZY)\n");
+            body.append("    @MapsId\n");
+            body.append("    @JoinColumn(name = \"").append(c.name()).append("\")\n");
+            body.append("    private ").append(refEntity).append(' ').append(fieldName).append(";\n\n");
+            return;
+        }
+
+        body.append("    @ManyToOne(fetch = FetchType.LAZY)\n");
+        body.append("    @JoinColumn(name = \"").append(c.name()).append('"');
+        if (!c.nullable()) body.append(", nullable = false");
+        body.append(")\n");
+        body.append("    private ").append(refEntity).append(' ').append(fieldName).append(";\n\n");
+    }
+
+    private void appendCompositeAssociation(StringBuilder body, ForeignKey fk,
+                                            Set<String> usedFieldNames, Set<String> imports) {
+        String refEntity = toPascalCase(fk.referencedTable());
+        String fieldName = pickAssociationFieldName(null, fk, usedFieldNames, true);
+        usedFieldNames.add(fieldName);
+        imports.add("jakarta.persistence.ManyToOne");
+        imports.add("jakarta.persistence.JoinColumn");
+        imports.add("jakarta.persistence.JoinColumns");
+        imports.add("jakarta.persistence.FetchType");
+
+        body.append("    @ManyToOne(fetch = FetchType.LAZY)\n");
+        body.append("    @JoinColumns({\n");
+        for (int i = 0; i < fk.columns().size(); i++) {
+            String col = fk.columns().get(i);
+            String refCol = i < fk.referencedColumns().size()
+                    ? fk.referencedColumns().get(i) : col;
+            body.append("        @JoinColumn(name = \"").append(col)
+                    .append("\", referencedColumnName = \"").append(refCol).append("\")");
+            if (i < fk.columns().size() - 1) body.append(',');
+            body.append('\n');
+        }
+        body.append("    })\n");
+        body.append("    private ").append(refEntity).append(' ').append(fieldName).append(";\n\n");
+    }
+
+    private void appendScalarField(StringBuilder body, ColumnModel c, JavaType jt,
+                                   Set<String> usedFieldNames) {
+        String fieldName = toCamelCase(c.name());
+        if (usedFieldNames.contains(fieldName)) {
+            int n = 2;
+            while (usedFieldNames.contains(fieldName + n)) n++;
+            fieldName = fieldName + n;
+        }
+        usedFieldNames.add(fieldName);
+        boolean renameViaColumn = !fieldName.equals(c.name());
+
+        if (c.isPk()) {
             body.append("    @Id\n");
             if (c.isAutoIncrement()) {
                 body.append("    @GeneratedValue(strategy = GenerationType.IDENTITY)\n");
@@ -261,7 +366,7 @@ public class SqlEntityGenerator {
             if (c.scale() != null) parts.add("scale = " + c.scale());
         }
         if (parts.isEmpty()) {
-            col.setLength(0); // skip empty @Column
+            col.setLength(0);
         } else {
             col.append(String.join(", ", parts)).append(")\n");
         }
@@ -269,6 +374,61 @@ public class SqlEntityGenerator {
 
         body.append("    private ").append(jt.simpleName()).append(' ')
                 .append(fieldName).append(";\n\n");
+    }
+
+    private static ForeignKey findSingleForeignKey(String columnName, List<ForeignKey> fks) {
+        for (ForeignKey fk : fks) {
+            if (fk.columns().size() == 1 && fk.columns().get(0).equalsIgnoreCase(columnName)) {
+                return fk;
+            }
+        }
+        return null;
+    }
+
+    private static ForeignKey findCompositeForeignKey(String columnName, List<ForeignKey> fks) {
+        for (ForeignKey fk : fks) {
+            if (fk.columns().size() > 1
+                    && fk.columns().stream().anyMatch(n -> n.equalsIgnoreCase(columnName))) {
+                return fk;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Pick a field name for a JPA association without colliding with previously
+     * emitted fields. Single-column FKs prefer the column name with a trailing
+     * {@code _id}/{@code _fk}/{@code _uuid} stripped (e.g. {@code buyer_id} →
+     * {@code buyer}), so two FKs from one table to the same target get distinct
+     * names. Composite FKs default to the referenced table name.
+     */
+    private String pickAssociationFieldName(ColumnModel c, ForeignKey fk,
+                                            Set<String> usedFieldNames, boolean composite) {
+        String base;
+        if (composite) {
+            base = toCamelCase(fk.referencedTable());
+        } else {
+            String stripped = stripFkSuffix(c.name());
+            base = stripped.isEmpty()
+                    ? toCamelCase(fk.referencedTable())
+                    : toCamelCase(stripped);
+        }
+        if (!usedFieldNames.contains(base)) return base;
+        String fallback = composite ? base : toCamelCase(c.name());
+        if (!usedFieldNames.contains(fallback)) return fallback;
+        int n = 2;
+        while (usedFieldNames.contains(fallback + n)) n++;
+        return fallback + n;
+    }
+
+    private static String stripFkSuffix(String column) {
+        String upper = column.toUpperCase(Locale.ROOT);
+        for (String suffix : new String[]{"_ID", "_FK", "_UUID"}) {
+            if (upper.endsWith(suffix)) {
+                return column.substring(0, column.length() - suffix.length());
+            }
+        }
+        return column;
     }
 
     private GeneratedJavaFile renderIdClass(TableModel table, String packageName, SqlDepOptions opts) {
