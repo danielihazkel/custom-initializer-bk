@@ -113,6 +113,46 @@ class SqlEntityGeneratorTest {
                 .contains("private String description;");
     }
 
+    @Test
+    void oracle_numberWildcardPrecisionMapsToBigDecimal() {
+        // Oracle's NUMBER(*, N) means "max precision (38), scale N". JSqlParser
+        // rejects * in type args, so the generator normalizes to NUMBER(38, N)
+        // before parsing — which then maps to BigDecimal (precision 38 > 18).
+        String sql = """
+                CREATE TABLE employees (
+                    employee_id   NUMBER(*, 0) PRIMARY KEY,
+                    first_name    VARCHAR2(50),
+                    last_name     VARCHAR2(50),
+                    age           NUMBER(*, 0),
+                    salary        NUMBER(10, 2),
+                    department_id NUMBER(*, 0),
+                    created_at    DATE DEFAULT SYSDATE
+                );
+                """;
+        String entity = findFile(generator.generate(sql, SqlDialect.ORACLE, "p", null),
+                "entity/Employees.java").content();
+        assertThat(entity)
+                .contains("import java.math.BigDecimal;")
+                .contains("import java.time.LocalDate;")
+                .contains("private BigDecimal employeeId;")
+                .contains("private String firstName;")
+                .contains("private String lastName;")
+                .contains("private BigDecimal age;")
+                .contains("private BigDecimal salary;")
+                .contains("private BigDecimal departmentId;")
+                .contains("private LocalDate createdAt;");
+    }
+
+    @Test
+    void oracle_numberSingleWildcardNormalizes() {
+        String sql = "CREATE TABLE t (x NUMBER(*) PRIMARY KEY);";
+        String entity = findFile(generator.generate(sql, SqlDialect.ORACLE, "p", null),
+                "entity/T.java").content();
+        assertThat(entity)
+                .contains("import java.math.BigDecimal;")
+                .contains("private BigDecimal x;");
+    }
+
     // ── Dialect: H2 ───────────────────────────────────────────────────────────
 
     @Test
@@ -318,10 +358,10 @@ class SqlEntityGeneratorTest {
     }
 
     @Test
-    void invalidSqlThrowsIllegalArgument() {
+    void invalidSqlThrowsSqlParseException() {
         assertThatThrownBy(() ->
-                generator.generate("not sql at all", SqlDialect.POSTGRESQL, "p", null))
-                .isInstanceOf(IllegalArgumentException.class);
+                generator.generate("CREATE TABLE x (( nonsense", SqlDialect.POSTGRESQL, "p", null))
+                .isInstanceOf(SqlEntityGenerator.SqlParseException.class);
     }
 
     @Test
@@ -333,7 +373,7 @@ class SqlEntityGeneratorTest {
     @Test
     void detectTableNamesReturnsOrderedList() {
         String sql = "CREATE TABLE a (id BIGINT); CREATE TABLE b (id BIGINT);";
-        assertThat(generator.detectTableNames(sql)).containsExactly("a", "b");
+        assertThat(generator.detectTableNames(sql, SqlDialect.POSTGRESQL)).containsExactly("a", "b");
     }
 
     // ── Helper ───────────────────────────────────────────────────────────────
