@@ -2,6 +2,7 @@ package com.menora.initializr.admin;
 
 import com.menora.initializr.admin.dto.ConfigurationExport;
 import com.menora.initializr.admin.dto.OrphanCheckResponse;
+import com.menora.initializr.admin.validation.FileContributionContentValidator;
 import com.menora.initializr.config.DatabaseInitializrMetadataProvider;
 import com.menora.initializr.db.entity.*;
 import com.menora.initializr.db.repository.*;
@@ -41,6 +42,7 @@ public class AdminController {
     private final ModuleDependencyMappingRepository moduleMappingRepo;
     private final OrphanDetectionService orphanService;
     private final ConfigurationExportImportService exportImportService;
+    private final FileContributionContentValidator contentValidator;
 
     public AdminController(InitializrMetadataProvider metadataProvider,
                            DependencyGroupRepository groupRepo,
@@ -54,7 +56,8 @@ public class AdminController {
                            ModuleTemplateRepository moduleRepo,
                            ModuleDependencyMappingRepository moduleMappingRepo,
                            OrphanDetectionService orphanService,
-                           ConfigurationExportImportService exportImportService) {
+                           ConfigurationExportImportService exportImportService,
+                           FileContributionContentValidator contentValidator) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -68,6 +71,7 @@ public class AdminController {
         this.moduleMappingRepo = moduleMappingRepo;
         this.orphanService = orphanService;
         this.exportImportService = exportImportService;
+        this.contentValidator = contentValidator;
     }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
@@ -213,13 +217,24 @@ public class AdminController {
 
     @PostMapping("/file-contributions")
     public FileContributionEntity createFileContribution(@Valid @RequestBody FileContributionEntity fc) {
+        validateContent(fc);
         return fileContribRepo.save(fc);
     }
 
     @PutMapping("/file-contributions/{id}")
     public FileContributionEntity updateFileContribution(@PathVariable Long id, @Valid @RequestBody FileContributionEntity fc) {
         fc.setId(id);
+        validateContent(fc);
         return fileContribRepo.save(fc);
+    }
+
+    private void validateContent(FileContributionEntity fc) {
+        List<String> errors = contentValidator.validate(fc);
+        if (errors.isEmpty()) return;
+        String detail = errors.get(0);
+        if (errors.size() > 1) detail += " (+" + (errors.size() - 1) + " more)";
+        throw new IllegalArgumentException(
+                "Syntax validation failed for " + fc.getTargetPath() + ": " + detail);
     }
 
     @DeleteMapping("/file-contributions/{id}")

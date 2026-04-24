@@ -215,7 +215,7 @@ public class DataSeeder implements CommandLineRunner {
         fc(DependencyConfigService.COMMON_ID, FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/application-base.mustache"),
                 "src/main/resources/application.yaml",
-                FileContributionEntity.SubstitutionType.PROJECT, null, null, -1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, -1);
 
         fc(DependencyConfigService.COMMON_ID, FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/common/log4j2-spring.xml"),
@@ -240,28 +240,28 @@ public class DataSeeder implements CommandLineRunner {
         fc(DependencyConfigService.COMMON_ID, FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/VERSION.mustache"),
                 "VERSION",
-                FileContributionEntity.SubstitutionType.PROJECT, null, null, order++);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, order++);
 
         // Dockerfile — version-specific
         fc(DependencyConfigService.COMMON_ID, FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/Dockerfile-java17.mustache"),
                 "Dockerfile",
-                FileContributionEntity.SubstitutionType.PROJECT, "17", null, order++);
+                FileContributionEntity.SubstitutionType.MUSTACHE, "17", null, order++);
 
         fc(DependencyConfigService.COMMON_ID, FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/Dockerfile-java21.mustache"),
                 "Dockerfile",
-                FileContributionEntity.SubstitutionType.PROJECT, "21", null, order++);
+                FileContributionEntity.SubstitutionType.MUSTACHE, "21", null, order++);
 
         fc(DependencyConfigService.COMMON_ID, FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/Jenkinsfile.mustache"),
                 "k8s/Jenkinsfile",
-                FileContributionEntity.SubstitutionType.PROJECT, null, null, order++);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, order++);
 
         fc(DependencyConfigService.COMMON_ID, FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/k8s-values.mustache"),
                 "k8s/values.yaml",
-                FileContributionEntity.SubstitutionType.PROJECT, null, null, order++);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, order++);
 
         // Delete application.properties (lowest precedence — large sort order)
         fc(DependencyConfigService.COMMON_ID, FileContributionEntity.FileType.DELETE,
@@ -280,15 +280,15 @@ public class DataSeeder implements CommandLineRunner {
         fc("kafka", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/kafka-config.mustache"),
                 "src/main/java/{{packagePath}}/config/KafkaConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, null, 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
         fc("kafka", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/kafka-consumer-example.mustache"),
                 "src/main/java/{{packagePath}}/config/KafkaConsumerExample.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "consumer-example", 2);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "consumer-example", 2);
         fc("kafka", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/kafka-producer-example.mustache"),
                 "src/main/java/{{packagePath}}/config/KafkaProducerExample.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "producer-example", 3);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "producer-example", 3);
 
         // security
         fc("security", FileContributionEntity.FileType.YAML_MERGE,
@@ -298,7 +298,7 @@ public class DataSeeder implements CommandLineRunner {
         fc("security", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/security-config.mustache"),
                 "src/main/java/{{packagePath}}/config/SecurityConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, null, 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
 
         // data-jpa (shared JPA properties only — datasource config comes from each driver)
         fc("data-jpa", FileContributionEntity.FileType.YAML_MERGE,
@@ -316,11 +316,11 @@ public class DataSeeder implements CommandLineRunner {
         fc("postgresql", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/postgresql-config-primary.mustache"),
                 "src/main/java/{{packagePath}}/config/PostgresqlConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "pg-primary", 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "pg-primary", 1);
         fc("postgresql", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/postgresql-config-secondary.mustache"),
                 "src/main/java/{{packagePath}}/config/PostgresqlConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "pg-secondary", 2);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "pg-secondary", 2);
 
         // MSSQL
         fc("mssql", FileContributionEntity.FileType.YAML_MERGE,
@@ -330,11 +330,11 @@ public class DataSeeder implements CommandLineRunner {
         fc("mssql", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/mssql-config-primary.mustache"),
                 "src/main/java/{{packagePath}}/config/MssqlConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "mssql-primary", 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "mssql-primary", 1);
         fc("mssql", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/mssql-config-secondary.mustache"),
                 "src/main/java/{{packagePath}}/config/MssqlConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "mssql-secondary", 2);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "mssql-secondary", 2);
 
         // DB2
         fc("db2", FileContributionEntity.FileType.YAML_MERGE,
@@ -344,11 +344,11 @@ public class DataSeeder implements CommandLineRunner {
         fc("db2", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/db2-config-primary.mustache"),
                 "src/main/java/{{packagePath}}/config/Db2Config.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "db2-primary", 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "db2-primary", 1);
         fc("db2", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/db2-config-secondary.mustache"),
                 "src/main/java/{{packagePath}}/config/Db2Config.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "db2-secondary", 2);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "db2-secondary", 2);
 
         // Oracle
         fc("oracle", FileContributionEntity.FileType.YAML_MERGE,
@@ -358,11 +358,11 @@ public class DataSeeder implements CommandLineRunner {
         fc("oracle", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/oracle-config-primary.mustache"),
                 "src/main/java/{{packagePath}}/config/OracleConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "oracle-primary", 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "oracle-primary", 1);
         fc("oracle", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/oracle-config-secondary.mustache"),
                 "src/main/java/{{packagePath}}/config/OracleConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "oracle-secondary", 2);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "oracle-secondary", 2);
 
         // H2
         fc("h2", FileContributionEntity.FileType.YAML_MERGE,
@@ -372,11 +372,11 @@ public class DataSeeder implements CommandLineRunner {
         fc("h2", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/h2-config-primary.mustache"),
                 "src/main/java/{{packagePath}}/config/H2Config.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "h2-primary", 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "h2-primary", 1);
         fc("h2", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/h2-config-secondary.mustache"),
                 "src/main/java/{{packagePath}}/config/H2Config.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "h2-secondary", 2);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "h2-secondary", 2);
 
         // MongoDB
         fc("mongodb", FileContributionEntity.FileType.YAML_MERGE,
@@ -386,11 +386,11 @@ public class DataSeeder implements CommandLineRunner {
         fc("mongodb", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/mongodb-config-primary.mustache"),
                 "src/main/java/{{packagePath}}/config/MongoConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "mongodb-primary", 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "mongodb-primary", 1);
         fc("mongodb", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/mongodb-config-secondary.mustache"),
                 "src/main/java/{{packagePath}}/config/MongoConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "mongodb-secondary", 2);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "mongodb-secondary", 2);
 
         // actuator / observability
         fc("actuator", FileContributionEntity.FileType.YAML_MERGE,
@@ -406,7 +406,7 @@ public class DataSeeder implements CommandLineRunner {
         fc("rqueue", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/rqueue-config.mustache"),
                 "src/main/java/{{packagePath}}/config/RqueueConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, null, 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
 
         // logging
         fc("logging", FileContributionEntity.FileType.YAML_MERGE,
@@ -422,25 +422,25 @@ public class DataSeeder implements CommandLineRunner {
         fc("mail-sampler", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/mail-config.mustache"),
                 "src/main/java/{{packagePath}}/config/MailConfig.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, null, 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
         fc("mail-sampler", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/mail-service.mustache"),
                 "src/main/java/{{packagePath}}/service/MailService.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "send-mail", 2);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "send-mail", 2);
         fc("mail-sampler", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/mail-inbox-reader.mustache"),
                 "src/main/java/{{packagePath}}/service/InboxReaderService.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "inbox-reader", 3);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "inbox-reader", 3);
 
         // file-handler-utils — file-only option (no pom dependency)
         fc("file-handler-utils", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/file-handler-sync.mustache"),
                 "src/main/java/{{packagePath}}/util/SyncFileHandler.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "sync-handler", 0);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "sync-handler", 0);
         fc("file-handler-utils", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/file-handler-async.mustache"),
                 "src/main/java/{{packagePath}}/util/AsyncFileHandler.java",
-                FileContributionEntity.SubstitutionType.PACKAGE, null, "async-handler", 1);
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "async-handler", 1);
     }
 
     // ── Build customizations ──────────────────────────────────────────────────

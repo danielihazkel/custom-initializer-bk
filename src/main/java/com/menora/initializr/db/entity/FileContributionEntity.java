@@ -14,9 +14,8 @@ public class FileContributionEntity {
     }
 
     public enum SubstitutionType {
-        PROJECT,  // replaces {{artifactId}}, {{groupId}}, {{version}}
-        PACKAGE,  // replaces {{packageName}}
-        NONE
+        MUSTACHE, // render content through jmustache with the unified project context
+        NONE      // write content verbatim
     }
 
     @Id

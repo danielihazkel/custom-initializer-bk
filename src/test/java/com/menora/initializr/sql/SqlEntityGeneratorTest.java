@@ -113,6 +113,46 @@ class SqlEntityGeneratorTest {
                 .contains("private String description;");
     }
 
+    @Test
+    void oracle_numberWildcardPrecisionMapsToBigDecimal() {
+        // Oracle's NUMBER(*, N) means "max precision (38), scale N". JSqlParser
+        // rejects * in type args, so the generator normalizes to NUMBER(38, N)
+        // before parsing — which then maps to BigDecimal (precision 38 > 18).
+        String sql = """
+                CREATE TABLE employees (
+                    employee_id   NUMBER(*, 0) PRIMARY KEY,
+                    first_name    VARCHAR2(50),
+                    last_name     VARCHAR2(50),
+                    age           NUMBER(*, 0),
+                    salary        NUMBER(10, 2),
+                    department_id NUMBER(*, 0),
+                    created_at    DATE DEFAULT SYSDATE
+                );
+                """;
+        String entity = findFile(generator.generate(sql, SqlDialect.ORACLE, "p", null),
+                "entity/Employees.java").content();
+        assertThat(entity)
+                .contains("import java.math.BigDecimal;")
+                .contains("import java.time.LocalDate;")
+                .contains("private BigDecimal employeeId;")
+                .contains("private String firstName;")
+                .contains("private String lastName;")
+                .contains("private BigDecimal age;")
+                .contains("private BigDecimal salary;")
+                .contains("private BigDecimal departmentId;")
+                .contains("private LocalDate createdAt;");
+    }
+
+    @Test
+    void oracle_numberSingleWildcardNormalizes() {
+        String sql = "CREATE TABLE t (x NUMBER(*) PRIMARY KEY);";
+        String entity = findFile(generator.generate(sql, SqlDialect.ORACLE, "p", null),
+                "entity/T.java").content();
+        assertThat(entity)
+                .contains("import java.math.BigDecimal;")
+                .contains("private BigDecimal x;");
+    }
+
     // ── Dialect: H2 ───────────────────────────────────────────────────────────
 
     @Test
@@ -176,7 +216,7 @@ class SqlEntityGeneratorTest {
     }
 
     @Test
-    void foreignKeyColumnGetsTodoComment() {
+    void foreignKeyToUnknownTableFallsBackToTodo() {
         String sql = """
                 CREATE TABLE orders (
                     id BIGINT PRIMARY KEY,
@@ -188,7 +228,107 @@ class SqlEntityGeneratorTest {
                 "entity/Orders.java").content();
         assertThat(entity)
                 .contains("// TODO: map as @ManyToOne")
-                .contains("private Long userId;");
+                .contains("private Long userId;")
+                .doesNotContain("@ManyToOne(");
+    }
+
+    @Test
+    void foreignKeyToKnownTableEmitsManyToOne() {
+        String sql = """
+                CREATE TABLE users (
+                    id BIGINT PRIMARY KEY,
+                    email VARCHAR(200)
+                );
+                CREATE TABLE orders (
+                    id BIGINT PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                );
+                """;
+        String entity = findFile(generator.generate(sql, SqlDialect.POSTGRESQL, "p", null),
+                "entity/Orders.java").content();
+        assertThat(entity)
+                .contains("import jakarta.persistence.ManyToOne;")
+                .contains("import jakarta.persistence.JoinColumn;")
+                .contains("import jakarta.persistence.FetchType;")
+                .contains("@ManyToOne(fetch = FetchType.LAZY)")
+                .contains("@JoinColumn(name = \"user_id\", nullable = false)")
+                .contains("private Users user;")
+                .doesNotContain("// TODO: map as @ManyToOne")
+                .doesNotContain("private Long userId;");
+    }
+
+    @Test
+    void multipleForeignKeysToSameTableGetDistinctFieldNames() {
+        String sql = """
+                CREATE TABLE users (
+                    id BIGINT PRIMARY KEY
+                );
+                CREATE TABLE orders (
+                    id BIGINT PRIMARY KEY,
+                    buyer_id BIGINT NOT NULL,
+                    seller_id BIGINT NOT NULL,
+                    FOREIGN KEY (buyer_id) REFERENCES users(id),
+                    FOREIGN KEY (seller_id) REFERENCES users(id)
+                );
+                """;
+        String entity = findFile(generator.generate(sql, SqlDialect.POSTGRESQL, "p", null),
+                "entity/Orders.java").content();
+        assertThat(entity)
+                .contains("@JoinColumn(name = \"buyer_id\", nullable = false)")
+                .contains("private Users buyer;")
+                .contains("@JoinColumn(name = \"seller_id\", nullable = false)")
+                .contains("private Users seller;");
+    }
+
+    @Test
+    void selfReferentialForeignKeyResolves() {
+        String sql = """
+                CREATE TABLE employees (
+                    id BIGINT PRIMARY KEY,
+                    manager_id BIGINT,
+                    FOREIGN KEY (manager_id) REFERENCES employees(id)
+                );
+                """;
+        String entity = findFile(generator.generate(sql, SqlDialect.POSTGRESQL, "p", null),
+                "entity/Employees.java").content();
+        assertThat(entity)
+                .contains("@ManyToOne(fetch = FetchType.LAZY)")
+                .contains("@JoinColumn(name = \"manager_id\")")
+                .contains("private Employees manager;")
+                .doesNotContain("// TODO: map as @ManyToOne");
+    }
+
+    @Test
+    void compositeForeignKeyEmitsJoinColumns() {
+        String sql = """
+                CREATE TABLE parent (
+                    a BIGINT NOT NULL,
+                    b BIGINT NOT NULL,
+                    PRIMARY KEY (a, b)
+                );
+                CREATE TABLE child (
+                    id BIGINT PRIMARY KEY,
+                    a BIGINT NOT NULL,
+                    b BIGINT NOT NULL,
+                    FOREIGN KEY (a, b) REFERENCES parent(a, b)
+                );
+                """;
+        String entity = findFile(generator.generate(sql, SqlDialect.POSTGRESQL, "p", null),
+                "entity/Child.java").content();
+        assertThat(entity)
+                .contains("import jakarta.persistence.JoinColumns;")
+                .contains("@ManyToOne(fetch = FetchType.LAZY)")
+                .contains("@JoinColumns({")
+                .contains("@JoinColumn(name = \"a\", referencedColumnName = \"a\")")
+                .contains("@JoinColumn(name = \"b\", referencedColumnName = \"b\")")
+                .contains("private Parent parent;");
+        // Only one association block should be emitted for the composite FK
+        assertThat(entity.split("@ManyToOne", -1).length - 1).isEqualTo(1);
+        // Non-PK composite-FK columns are absorbed by the association
+        assertThat(entity)
+                .doesNotContain("private Long a;")
+                .doesNotContain("private Long b;");
     }
 
     @Test
@@ -218,10 +358,10 @@ class SqlEntityGeneratorTest {
     }
 
     @Test
-    void invalidSqlThrowsIllegalArgument() {
+    void invalidSqlThrowsSqlParseException() {
         assertThatThrownBy(() ->
-                generator.generate("not sql at all", SqlDialect.POSTGRESQL, "p", null))
-                .isInstanceOf(IllegalArgumentException.class);
+                generator.generate("CREATE TABLE x (( nonsense", SqlDialect.POSTGRESQL, "p", null))
+                .isInstanceOf(SqlEntityGenerator.SqlParseException.class);
     }
 
     @Test
@@ -233,7 +373,7 @@ class SqlEntityGeneratorTest {
     @Test
     void detectTableNamesReturnsOrderedList() {
         String sql = "CREATE TABLE a (id BIGINT); CREATE TABLE b (id BIGINT);";
-        assertThat(generator.detectTableNames(sql)).containsExactly("a", "b");
+        assertThat(generator.detectTableNames(sql, SqlDialect.POSTGRESQL)).containsExactly("a", "b");
     }
 
     // ── Helper ───────────────────────────────────────────────────────────────

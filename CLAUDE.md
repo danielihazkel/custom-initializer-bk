@@ -58,14 +58,23 @@ When a project is generated, the framework spins up a child Spring application c
 
 ### Template Substitution
 
-Two substitution modes in `FileContributionEntity.SubstitutionType`:
+`TEMPLATE` contributions are rendered through a real Mustache engine (`com.samskivert:jmustache`, `escapeHTML=false`). `FileContributionEntity.SubstitutionType` has two values:
 
-- **`PROJECT`** — replaces `{{artifactId}}`, `{{groupId}}`, `{{version}}` (used for Dockerfile, Jenkinsfile, k8s-values.yaml, VERSION)
-- **`PACKAGE`** — replaces `{{packageName}}` (used for generated Java config classes)
+- **`MUSTACHE`** — render content with the unified context below
+- **`NONE`** — write content verbatim
 
-Target paths may contain `{{packagePath}}` which is resolved to the package name with dots replaced by slashes.
+The context exposed to every MUSTACHE template is:
 
-Neither system uses a real Mustache engine. The `.mustache` file extension is cosmetic only.
+| Key | Meaning |
+|-----|---------|
+| `artifactId`, `groupId`, `version`, `packageName` | straight from `ProjectDescription` |
+| `packagePath` | `packageName` with `.` → `/` (also available in Target Path — resolved separately) |
+| `javaVersion` | `description.getLanguage().jvmVersion()` — e.g. `"17"`, `"21"` |
+| `packaging` | `description.getPackaging().id()` — e.g. `"jar"`, `"war"` |
+| `has<Dep>` | `true` for every selected dep. Dep id is PascalCased: `kafka` → `hasKafka`, `mail-sampler` → `hasMailSampler` |
+| `opt<Dep><Option>` | `true` for every selected sub-option. e.g. `optKafkaConsumerExample` |
+
+This unlocks conditional file content — e.g. a single template can gate a block on a sub-option using `{{#optKafkaConsumerExample}}…{{/optKafkaConsumerExample}}` instead of requiring a separate `FileContributionEntity` row per variation.
 
 ### DataSeeder — First-Startup Seeding
 
