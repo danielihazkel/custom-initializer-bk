@@ -25,6 +25,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Dependency Groups](#dependency-groups)
    - [Dependency Entries](#dependency-entries)
    - [File Contributions](#file-contributions)
+   - [Content Syntax Validation](#content-syntax-validation)
    - [Build Customizations](#build-customizations)
    - [Sub-Options](#sub-options)
    - [Compatibility Rules](#compatibility-rules)
@@ -758,6 +759,40 @@ curl -X POST http://localhost:8080/admin/file-contributions \
     "sortOrder": 1
   }'
 ```
+
+### Content Syntax Validation
+
+`POST /admin/file-contributions` and `PUT /admin/file-contributions/{id}` validate the `content` field before persisting — broken syntax is rejected with HTTP 400 instead of surviving until project generation.
+
+**Languages checked** — dispatched by the extension of `targetPath`:
+
+| Extension | Parser | Source |
+|-----------|--------|--------|
+| `.java` | JavaParser | `com.github.javaparser:javaparser-core` |
+| `.yaml`, `.yml` | SnakeYAML | already used by the YAML-merge pipeline |
+| `.xml` | JAXP `DocumentBuilder` | JDK built-in |
+| `.json` | Jackson `ObjectMapper` | already on the classpath via Spring Web |
+| `.sql` | JSqlParser | `com.github.jsqlparser:jsqlparser` |
+| `.properties` | `java.util.Properties` | JDK built-in |
+
+Unrecognised extensions are skipped. `fileType=DELETE` and empty `content` are skipped.
+
+**Mustache templates** — when `fileType=TEMPLATE` and `substitutionType=MUSTACHE`, the content is first compiled by jmustache (unbalanced `{{#section}}…{{/section}}` is caught immediately) and then rendered against a "maximally enabled" dummy context before the rendered output is handed to the language parser:
+
+- Known project keys (`artifactId`, `groupId`, `version`, `packageName`, `packagePath`, `javaVersion`, `packaging`) are replaced with plausible placeholders.
+- Every `has<Dep>` and `opt<Dep><Option>` flag returns `true`, so every conditional section expands — the validator sees the fullest possible rendering of the template.
+
+This means `{{#hasKafka}}…{{/hasKafka}}` blocks are validated too: a missing brace inside a conditional Java block fails validation even though the condition is set dynamically at generation time.
+
+**Error response (400):**
+```json
+{
+  "error": "Validation failed",
+  "detail": "Syntax validation failed for src/main/java/com/example/Hello.java: line 4: ';' expected"
+}
+```
+
+The admin UI surfaces the error both as a toast and inline under the CodeMirror editor so it can be fixed without closing the drawer.
 
 ### Build Customizations
 

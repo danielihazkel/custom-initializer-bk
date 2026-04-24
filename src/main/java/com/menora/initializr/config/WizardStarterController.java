@@ -3,6 +3,8 @@ package com.menora.initializr.config;
 import com.menora.initializr.openapi.OpenApiCodeGenerator;
 import com.menora.initializr.openapi.OpenApiWizardOptions;
 import com.menora.initializr.sql.SqlDepOptions;
+import com.menora.initializr.sql.SqlDialect;
+import com.menora.initializr.sql.SqlEntityGenerator;
 import com.menora.initializr.sql.SqlTableOptions;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.spring.initializr.metadata.InitializrMetadata;
@@ -56,24 +58,28 @@ public class WizardStarterController {
     private final SqlScriptsContext sqlContext;
     private final OpenApiSpecContext specContext;
     private final OpenApiCodeGenerator openApiGenerator;
+    private final SqlEntityGenerator sqlGenerator;
 
     public WizardStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                    InitializrMetadataProvider metadataProvider,
                                    ProjectOptionsContext optionsContext,
                                    SqlScriptsContext sqlContext,
                                    OpenApiSpecContext specContext,
-                                   OpenApiCodeGenerator openApiGenerator) {
+                                   OpenApiCodeGenerator openApiGenerator,
+                                   SqlEntityGenerator sqlGenerator) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
         this.sqlContext = sqlContext;
         this.specContext = specContext;
         this.openApiGenerator = openApiGenerator;
+        this.sqlGenerator = sqlGenerator;
     }
 
     @PostMapping("/starter-wizard.zip")
     public ResponseEntity<byte[]> generate(@RequestBody WizardStarterRequest body) throws IOException {
         validateSpecs(body);
+        validateSql(body);
         WebProjectRequest request = toWebRequest(body);
         populateContexts(body);
         Path projectDir = null;
@@ -94,6 +100,7 @@ public class WizardStarterController {
     @PostMapping("/starter-wizard.preview")
     public ProjectPreviewController.PreviewResponse preview(@RequestBody WizardStarterRequest body) throws IOException {
         validateSpecs(body);
+        validateSql(body);
         WebProjectRequest request = toWebRequest(body);
         populateContexts(body);
         Path projectDir = null;
@@ -133,6 +140,16 @@ public class WizardStarterController {
         return ResponseEntity.badRequest().body(body);
     }
 
+    @ExceptionHandler(SqlEntityGenerator.SqlParseException.class)
+    public ResponseEntity<Map<String, Object>> handleSqlParseException(SqlEntityGenerator.SqlParseException ex) {
+        clearAllContexts();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "Invalid SQL");
+        if (ex.depId() != null) body.put("dep", ex.depId());
+        body.put("detail", ex.getMessage());
+        return ResponseEntity.badRequest().body(body);
+    }
+
     // ── Internals ─────────────────────────────────────────────────────────────
 
     /**
@@ -149,6 +166,28 @@ public class WizardStarterController {
             openApiGenerator.detectPaths(spec); // does not throw
             openApiGenerator.generate(spec, "com.menora.demo",
                     body.openApiOptions() == null ? null : toOpenApiOptions(body.openApiOptions().get(e.getKey())));
+        }
+    }
+
+    /**
+     * Up-front parse of every submitted SQL script so {@code SqlParseException}
+     * surfaces as HTTP 400 here — instead of inside the {@code sqlEntityContributor}
+     * {@link io.spring.initializr.generator.project.contributor.ProjectContributor}
+     * where it would bubble out as a 500 with a partial project on disk.
+     */
+    private void validateSql(WizardStarterRequest body) {
+        if (body.sqlByDep() == null) return;
+        for (var e : body.sqlByDep().entrySet()) {
+            String depId = e.getKey();
+            String sql = e.getValue();
+            if (sql == null || sql.isBlank()) continue;
+            SqlDialect dialect = SqlDialect.forDepId(depId);
+            if (dialect == null) continue;
+            try {
+                sqlGenerator.detectTableNames(sql, dialect);
+            } catch (SqlEntityGenerator.SqlParseException ex) {
+                throw new SqlEntityGenerator.SqlParseException(depId, ex.getMessage(), ex.getCause());
+            }
         }
     }
 

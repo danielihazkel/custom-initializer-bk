@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 
 /**
  * Parses CREATE TABLE DDL via JSqlParser and emits JPA entity (and optionally
@@ -40,7 +41,7 @@ public class SqlEntityGenerator {
         }
         SqlDepOptions opts = options != null ? options : new SqlDepOptions("entity", List.of());
 
-        List<TableModel> tables = parseTables(sql);
+        List<TableModel> tables = parseTables(sql, dialect);
         if (tables.isEmpty()) {
             log.warn("SQL parse produced no CREATE TABLE statements for dialect {}", dialect);
             return List.of();
@@ -62,19 +63,29 @@ public class SqlEntityGenerator {
         return files;
     }
 
-    /** Exposed for lightweight preview — just returns detected table names. */
-    public List<String> detectTableNames(String sql) {
-        return parseTables(sql).stream().map(TableModel::name).toList();
+    /** Exposed for lightweight preview and up-front validation — just returns
+     *  detected table names (also throws {@link SqlParseException} if the DDL
+     *  cannot be parsed, so controllers can surface the error as HTTP 400). */
+    public List<String> detectTableNames(String sql, SqlDialect dialect) {
+        return parseTables(sql, dialect).stream().map(TableModel::name).toList();
     }
 
     // ── Parsing ───────────────────────────────────────────────────────────────
 
-    private List<TableModel> parseTables(String sql) {
+    /** Oracle's {@code NUMBER(*, N)} / {@code NUMBER(*)} syntax means "max
+     *  precision (38), scale N". JSqlParser's grammar rejects {@code *} in the
+     *  argument position, so normalize to {@code NUMBER(38, N)} before parsing. */
+    private static final Pattern ORACLE_NUMBER_WILDCARD =
+            Pattern.compile("\\bNUMBER\\s*\\(\\s*\\*\\s*(,\\s*\\d+\\s*)?\\)",
+                    Pattern.CASE_INSENSITIVE);
+
+    private List<TableModel> parseTables(String sql, SqlDialect dialect) {
+        String prepared = dialect == SqlDialect.ORACLE ? normalizeOracle(sql) : sql;
         Statements parsed;
         try {
-            parsed = CCJSqlParserUtil.parseStatements(sql);
+            parsed = CCJSqlParserUtil.parseStatements(prepared);
         } catch (JSQLParserException e) {
-            throw new IllegalArgumentException("Could not parse SQL: " + e.getMessage(), e);
+            throw new SqlParseException("Could not parse SQL: " + e.getMessage(), e);
         }
         List<TableModel> result = new ArrayList<>();
         for (Statement s : parsed) {
@@ -83,6 +94,27 @@ public class SqlEntityGenerator {
             }
         }
         return result;
+    }
+
+    private static String normalizeOracle(String sql) {
+        return ORACLE_NUMBER_WILDCARD.matcher(sql).replaceAll(m ->
+                m.group(1) == null ? "NUMBER(38)" : "NUMBER(38" + m.group(1) + ")");
+    }
+
+    /** Thrown when the submitted DDL cannot be parsed. Callers in a request
+     *  context should surface this as HTTP 400. {@code depId} is populated by
+     *  the controller that knows which dep-keyed script failed; the generator
+     *  itself leaves it null. */
+    public static class SqlParseException extends RuntimeException {
+        private final String depId;
+        public SqlParseException(String message, Throwable cause) {
+            this(null, message, cause);
+        }
+        public SqlParseException(String depId, String message, Throwable cause) {
+            super(message, cause);
+            this.depId = depId;
+        }
+        public String depId() { return depId; }
     }
 
     private TableModel toTableModel(CreateTable ct) {
