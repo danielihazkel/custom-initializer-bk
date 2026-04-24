@@ -144,12 +144,9 @@ class ProjectGenerationIntegrationTests {
         request.getDependencies().add("data-jpa");
 
         Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
-        ProjectStructure project = new ProjectStructure(projectDir);
 
-//        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
-//                .contains("datasource");
-//        assertThat(project).filePaths()
-//                .contains("src/main/java/com/menora/demo/config/JpaConfig.java");
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("open-in-view");
     }
 
     @Test

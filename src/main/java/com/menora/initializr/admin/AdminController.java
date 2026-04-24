@@ -189,14 +189,18 @@ public class AdminController {
     @PostMapping("/file-contributions")
     public FileContributionEntity createFileContribution(@Valid @RequestBody FileContributionEntity fc) {
         validateContent(fc);
-        return fileContribRepo.save(fc);
+        FileContributionEntity saved = fileContribRepo.save(fc);
+        refreshMetadata();
+        return saved;
     }
 
     @PutMapping("/file-contributions/{id}")
     public FileContributionEntity updateFileContribution(@PathVariable Long id, @Valid @RequestBody FileContributionEntity fc) {
         fc.setId(id);
         validateContent(fc);
-        return fileContribRepo.save(fc);
+        FileContributionEntity saved = fileContribRepo.save(fc);
+        refreshMetadata();
+        return saved;
     }
 
     private void validateContent(FileContributionEntity fc) {
@@ -211,6 +215,7 @@ public class AdminController {
     @DeleteMapping("/file-contributions/{id}")
     public ResponseEntity<Void> deleteFileContribution(@PathVariable Long id) {
         fileContribRepo.deleteById(id);
+        refreshMetadata();
         return ResponseEntity.noContent().build();
     }
 
@@ -223,18 +228,23 @@ public class AdminController {
 
     @PostMapping("/build-customizations")
     public BuildCustomizationEntity createBuildCustomization(@Valid @RequestBody BuildCustomizationEntity bc) {
-        return buildCustomRepo.save(bc);
+        BuildCustomizationEntity saved = buildCustomRepo.save(bc);
+        refreshMetadata();
+        return saved;
     }
 
     @PutMapping("/build-customizations/{id}")
     public BuildCustomizationEntity updateBuildCustomization(@PathVariable Long id, @Valid @RequestBody BuildCustomizationEntity bc) {
         bc.setId(id);
-        return buildCustomRepo.save(bc);
+        BuildCustomizationEntity saved = buildCustomRepo.save(bc);
+        refreshMetadata();
+        return saved;
     }
 
     @DeleteMapping("/build-customizations/{id}")
     public ResponseEntity<Void> deleteBuildCustomization(@PathVariable Long id) {
         buildCustomRepo.deleteById(id);
+        refreshMetadata();
         return ResponseEntity.noContent().build();
     }
 

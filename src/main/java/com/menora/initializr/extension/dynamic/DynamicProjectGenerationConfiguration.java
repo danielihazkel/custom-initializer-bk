@@ -364,10 +364,18 @@ public class DynamicProjectGenerationConfiguration {
         Files.writeString(target, content);
     }
 
+    private static final long MAX_YAML_MERGE_SIZE = 1_000_000L;
+
     private void mergeYaml(String newContent, Path targetYamlPath) throws IOException {
         Yaml yaml = new Yaml();
         Map<String, Object> merged;
         if (Files.exists(targetYamlPath)) {
+            long size = Files.size(targetYamlPath);
+            if (size > MAX_YAML_MERGE_SIZE) {
+                log.warn("skipping YAML merge into {}: existing file is {} bytes (> {} byte cap)",
+                        targetYamlPath, size, MAX_YAML_MERGE_SIZE);
+                return;
+            }
             Map<String, Object> existing = yaml.load(Files.readString(targetYamlPath));
             Map<String, Object> incoming = yaml.load(newContent);
             if (existing == null) existing = new LinkedHashMap<>();
@@ -381,6 +389,11 @@ public class DynamicProjectGenerationConfiguration {
         Files.writeString(targetYamlPath, new Yaml(YAML_DUMPER_OPTIONS).dump(merged));
     }
 
+    /**
+     * Recursively merges {@code override} on top of {@code base}.
+     * Map-vs-map keys recurse; everything else (scalars, lists, type-mismatches)
+     * is replaced wholesale by the override value. The base map is not mutated.
+     */
     @SuppressWarnings("unchecked")
     private static Map<String, Object> deepMerge(Map<String, Object> base, Map<String, Object> override) {
         Map<String, Object> result = new LinkedHashMap<>(base);
