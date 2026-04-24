@@ -127,6 +127,10 @@ public class MultiModuleController {
                     request.setDependencies(new ArrayList<>(moduleDeps));
                 }
                 request.setVersion(defaultVersion);
+                // The framework reads this to pick application.properties vs .yml.
+                // Unlike /starter.zip, no servlet filter injects a default for us
+                // here because we construct the WebProjectRequest directly.
+                request.setConfigurationFileFormat("properties");
 
                 Path moduleDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
                 try {
@@ -221,6 +225,7 @@ public class MultiModuleController {
                     request.setDependencies(new ArrayList<>(moduleDeps));
                 }
                 request.setVersion(defaultVersion);
+                request.setConfigurationFileFormat("properties");
 
                 Path moduleDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
                 try {
