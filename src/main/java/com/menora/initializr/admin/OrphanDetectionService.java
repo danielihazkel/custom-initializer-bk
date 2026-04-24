@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class OrphanDetectionService {
@@ -50,18 +51,19 @@ public class OrphanDetectionService {
 
     public OrphanCheckResponse findReferencesForGroup(Long groupId) {
         List<DependencyEntryEntity> entries = entryRepo.findByGroupId(groupId);
-        long totalFiles = 0, totalBuilds = 0, totalSubs = 0, totalCompat = 0, totalTemplateDeps = 0, totalModuleMappings = 0;
-        for (DependencyEntryEntity entry : entries) {
-            String depId = entry.getDepId();
-            totalFiles += fileContribRepo.countByDependencyId(depId);
-            totalBuilds += buildCustomRepo.countByDependencyId(depId);
-            totalSubs += subOptionRepo.countByDependencyId(depId);
-            totalCompat += compatibilityRepo.countBySourceDepIdOrTargetDepId(depId, depId);
-            totalTemplateDeps += templateDepRepo.countByDepId(depId);
-            totalModuleMappings += moduleMappingRepo.countByDependencyId(depId);
+        Set<String> depIds = entries.stream().map(DependencyEntryEntity::getDepId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (depIds.isEmpty()) {
+            return new OrphanCheckResponse(OrphanCheckResponse.depRefsMap(0, 0, 0, 0, 0, 0));
         }
         return new OrphanCheckResponse(OrphanCheckResponse.depRefsMap(
-                totalFiles, totalBuilds, totalSubs, totalCompat, totalTemplateDeps, totalModuleMappings));
+                fileContribRepo.countByDependencyIdIn(depIds),
+                buildCustomRepo.countByDependencyIdIn(depIds),
+                subOptionRepo.countByDependencyIdIn(depIds),
+                compatibilityRepo.countBySourceDepIdInOrTargetDepIdIn(depIds, depIds),
+                templateDepRepo.countByDepIdIn(depIds),
+                moduleMappingRepo.countByDependencyIdIn(depIds)
+        ));
     }
 
     public OrphanCheckResponse findReferencesForModule(String moduleId) {

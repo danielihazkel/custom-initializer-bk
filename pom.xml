@@ -123,6 +123,9 @@
     </build>
 
     <repositories>
+        <!-- KEEP IN SYNC with menora.artifactory.* in src/main/resources/application.yml.
+             pom.xml is resolved at build time, before Spring Boot reads application.yml,
+             so the URL can't be templated from there. -->
         <repository>
             <id>menora-release</id>
             <name>Menora Artifactory Releases</name>

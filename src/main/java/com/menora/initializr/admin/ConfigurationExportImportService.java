@@ -153,7 +153,7 @@ public class ConfigurationExportImportService {
                 }).toList());
 
         export_.setStarterTemplateDeps(
-                templateDepRepo.findAll().stream().map(td -> {
+                templateDepRepo.findAllWithTemplate().stream().map(td -> {
                     TemplateDepExport tde = new TemplateDepExport();
                     tde.setTemplateId(td.getTemplate().getTemplateId());
                     tde.setDepId(td.getDepId());

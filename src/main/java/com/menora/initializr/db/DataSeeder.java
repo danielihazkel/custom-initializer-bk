@@ -4,6 +4,7 @@ import com.menora.initializr.db.entity.*;
 import com.menora.initializr.db.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
@@ -33,6 +34,15 @@ public class DataSeeder implements CommandLineRunner {
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
 
+    @Value("${menora.run-legacy-blank-string-normalization:false}")
+    private boolean runLegacyNormalization;
+
+    @Value("${menora.artifactory.release-url}")
+    private String artifactoryReleaseUrl;
+
+    @Value("${menora.artifactory.snapshot-url}")
+    private String artifactorySnapshotUrl;
+
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
                       FileContributionRepository fileContribRepo,
@@ -60,7 +70,9 @@ public class DataSeeder implements CommandLineRunner {
     public void run(String... args) throws Exception {
         if (groupRepo.count() > 0) {
             log.info("Database already seeded — skipping DataSeeder");
-            normalizeLegacyBlankStrings();
+            if (runLegacyNormalization) {
+                normalizeLegacyBlankStrings();
+            }
             return;
         }
         log.info("Seeding database from classpath resources...");
@@ -76,9 +88,11 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     /**
-     * Legacy rows inserted through the admin UI before the entity setters were
-     * taught to coerce blank strings to null. Re-saving each row runs the now-coercing
-     * setters and flushes NULLs to columns that used to hold "".
+     * One-time repair for legacy rows inserted before the entity setters coerced
+     * blank strings to null. Off by default — opt in with
+     * {@code menora.run-legacy-blank-string-normalization=true} when migrating an
+     * older H2 file. Re-saving each affected row runs the now-coercing setters
+     * and flushes NULLs to columns that used to hold "".
      */
     private void normalizeLegacyBlankStrings() {
         int fcFixed = 0;
@@ -446,11 +460,11 @@ public class DataSeeder implements CommandLineRunner {
     // ── Build customizations ──────────────────────────────────────────────────
 
     private void seedBuildCustomizations() {
-        // Common: Artifactory repos
+        // Common: Artifactory repos — URLs sourced from menora.artifactory.* in application.yml
         repo(DependencyConfigService.COMMON_ID, "menora-release", "Menora Artifactory Releases",
-                "https://repo.menora.co.il/artifactory/libs-release", false, 0);
+                artifactoryReleaseUrl, false, 0);
         repo(DependencyConfigService.COMMON_ID, "menora-snapshot", "Menora Artifactory Snapshots",
-                "https://repo.menora.co.il/artifactory/libs-snapshot", true, 1);
+                artifactorySnapshotUrl, true, 1);
 
         // Common: log4j2 — exclude logging starter, add log4j2 starter
         excludeDep(DependencyConfigService.COMMON_ID,

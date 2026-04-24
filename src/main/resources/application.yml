@@ -83,12 +83,12 @@ initializr:
     repositories:
       menora-release:
         name: Menora Artifactory Releases
-        url: https://repo.menora.co.il/artifactory/libs-release
+        url: ${menora.artifactory.release-url}
         releases-enabled: true
         snapshots-enabled: false
       menora-snapshot:
         name: Menora Artifactory Snapshots
-        url: https://repo.menora.co.il/artifactory/libs-snapshot
+        url: ${menora.artifactory.snapshot-url}
         releases-enabled: false
         snapshots-enabled: true
 management:
@@ -98,5 +98,12 @@ management:
         include: health,info,metrics
 
 menora:
+  artifactory:
+    # Single source of truth for the Artifactory URLs at runtime. Referenced by
+    # initializr.env.repositories.* (above) and injected into DataSeeder so the
+    # same URLs end up in generated POMs. NOTE: pom.xml has its own copy that
+    # must stay in sync — it's resolved at build time, before this file is read.
+    release-url: https://repo.menora.co.il/artifactory/libs-release
+    snapshot-url: https://repo.menora.co.il/artifactory/libs-snapshot
   audit:
     log-remote-addr: true

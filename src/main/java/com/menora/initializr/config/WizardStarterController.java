@@ -81,9 +81,9 @@ public class WizardStarterController {
         validateSpecs(body);
         validateSql(body);
         WebProjectRequest request = toWebRequest(body);
-        populateContexts(body);
         Path projectDir = null;
         try {
+            populateContexts(body);
             projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
             byte[] zip = zipDirectory(projectDir, request.getArtifactId());
             return ResponseEntity.ok()
@@ -102,9 +102,9 @@ public class WizardStarterController {
         validateSpecs(body);
         validateSql(body);
         WebProjectRequest request = toWebRequest(body);
-        populateContexts(body);
         Path projectDir = null;
         try {
+            populateContexts(body);
             projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
             List<ProjectPreviewController.PreviewFile> files = new ArrayList<>();
             final Path root = projectDir;
