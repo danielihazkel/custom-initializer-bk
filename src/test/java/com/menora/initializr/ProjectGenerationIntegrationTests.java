@@ -18,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +46,25 @@ class ProjectGenerationIntegrationTests {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).contains("kafka");
         assertThat(response.getBody()).contains("rqueue");
+    }
+
+    @Test
+    void starterZipEndpointReturnsValidZip() throws Exception {
+        ResponseEntity<byte[]> response = restTemplate.getForEntity(
+                "/starter.zip?dependencies=web&groupId=com.menora&artifactId=demo&type=maven-project",
+                byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotEmpty();
+
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(response.getBody()))) {
+            List<String> names = new ArrayList<>();
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                names.add(entry.getName());
+            }
+            assertThat(names).anyMatch(n -> n.endsWith("pom.xml"));
+        }
     }
 
     @Test
