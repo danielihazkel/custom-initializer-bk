@@ -572,6 +572,182 @@ class ProjectGenerationIntegrationTests {
         return body;
     }
 
+    @Test
+    void soapWizardEmitsEndpointAndConfig() throws Exception {
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                "/starter-wizard.zip", soapCountryBody("ENDPOINTS"), byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, String> files = unzip(response.getBody());
+        assertThat(files)
+                .as("WSDL should be dropped into resources")
+                .containsKey("demo/src/main/resources/wsdl/country-service.wsdl");
+
+        String endpoint = files.get("demo/src/main/java/com/menora/demo/endpoint/CountryServiceEndpoint.java");
+        assertThat(endpoint)
+                .as("CountryServiceEndpoint.java")
+                .isNotNull()
+                .contains("@Endpoint")
+                .contains("@PayloadRoot")
+                .contains("namespace = \"http://example.com/country\"")
+                .contains("localPart = \"getCountryRequest\"")
+                .contains("public GetCountryResponse getCountry")
+                .contains("throw new UnsupportedOperationException");
+
+        String config = files.get("demo/src/main/java/com/menora/demo/endpoint/WebServiceConfig.java");
+        assertThat(config)
+                .as("WebServiceConfig.java")
+                .isNotNull()
+                .contains("@EnableWs")
+                .contains("MessageDispatcherServlet")
+                .contains("SimpleWsdl11Definition")
+                .contains("country-service.wsdl");
+
+        String pom = files.get("demo/pom.xml");
+        assertThat(pom)
+                .as("pom.xml should declare the JAX-WS plugin and web-services starter")
+                .contains("spring-boot-starter-web-services")
+                .contains("jaxws-maven-plugin")
+                .contains("wsimport")
+                .contains("country-service.wsdl");
+    }
+
+    @Test
+    void soapWizardClientMode() throws Exception {
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                "/starter-wizard.zip", soapCountryBody("CLIENT"), byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, String> files = unzip(response.getBody());
+        String client = files.get("demo/src/main/java/com/menora/demo/client/CountryServiceClient.java");
+        assertThat(client)
+                .as("CountryServiceClient.java")
+                .isNotNull()
+                .contains("extends WebServiceGatewaySupport")
+                .contains("public GetCountryResponse getCountry(GetCountryRequest request)")
+                .contains("marshalSendAndReceive(request)");
+
+        String config = files.get("demo/src/main/java/com/menora/demo/client/SoapClientConfig.java");
+        assertThat(config)
+                .as("SoapClientConfig.java")
+                .isNotNull()
+                .contains("Jaxb2Marshaller")
+                .contains("\"com.menora.demo.generated\"")
+                .contains("@Value(\"${soap.client.base-url}\")");
+
+        String yaml = files.get("demo/src/main/resources/application.yaml");
+        assertThat(yaml)
+                .as("application.yaml should contain the soap.client.base-url key")
+                .isNotNull()
+                .contains("soap")
+                .contains("base-url");
+    }
+
+    @Test
+    void soapWizardParseErrorReturns400() {
+        Map<String, Object> body = soapBaseBody();
+        body.put("wsdlByDep", Map.of("web-services", "<not><valid>wsdl"));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/starter-wizard.zip", body, String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void soapMetadataEndpoint() {
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                "/metadata/soap-capable-deps", String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).contains("web-services");
+    }
+
+    @Test
+    void soapDetectServicesEndpoint() {
+        Map<String, Object> req = Map.of("wsdl", SAMPLE_WSDL);
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/starter-wizard.detect-services", req, String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).contains("CountryService").contains("getCountry");
+    }
+
+    private Map<String, Object> soapBaseBody() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "demo");
+        body.put("name", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("type", "maven-project");
+        body.put("language", "java");
+        body.put("bootVersion", "3.2.1");
+        body.put("packaging", "jar");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("web-services"));
+        body.put("opts", Map.of());
+        return body;
+    }
+
+    private Map<String, Object> soapCountryBody(String mode) {
+        Map<String, Object> body = soapBaseBody();
+        body.put("wsdlByDep", Map.of("web-services", SAMPLE_WSDL));
+        body.put("soapOptions", Map.of("web-services", Map.of("mode", mode)));
+        return body;
+    }
+
+    private static final String SAMPLE_WSDL = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                              xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                              xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                              xmlns:tns="http://example.com/country"
+                              targetNamespace="http://example.com/country">
+              <wsdl:types>
+                <xsd:schema targetNamespace="http://example.com/country"
+                            xmlns="http://example.com/country"
+                            elementFormDefault="qualified">
+                  <xsd:element name="getCountryRequest">
+                    <xsd:complexType>
+                      <xsd:sequence>
+                        <xsd:element name="name" type="xsd:string"/>
+                      </xsd:sequence>
+                    </xsd:complexType>
+                  </xsd:element>
+                  <xsd:element name="getCountryResponse">
+                    <xsd:complexType>
+                      <xsd:sequence>
+                        <xsd:element name="population" type="xsd:int"/>
+                      </xsd:sequence>
+                    </xsd:complexType>
+                  </xsd:element>
+                </xsd:schema>
+              </wsdl:types>
+              <wsdl:message name="getCountryRequest">
+                <wsdl:part name="parameters" element="tns:getCountryRequest"/>
+              </wsdl:message>
+              <wsdl:message name="getCountryResponse">
+                <wsdl:part name="parameters" element="tns:getCountryResponse"/>
+              </wsdl:message>
+              <wsdl:portType name="CountryPort">
+                <wsdl:operation name="getCountry">
+                  <wsdl:input message="tns:getCountryRequest"/>
+                  <wsdl:output message="tns:getCountryResponse"/>
+                </wsdl:operation>
+              </wsdl:portType>
+              <wsdl:binding name="CountryBinding" type="tns:CountryPort">
+                <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+                <wsdl:operation name="getCountry">
+                  <soap:operation soapAction=""/>
+                  <wsdl:input><soap:body use="literal"/></wsdl:input>
+                  <wsdl:output><soap:body use="literal"/></wsdl:output>
+                </wsdl:operation>
+              </wsdl:binding>
+              <wsdl:service name="CountryService">
+                <wsdl:port name="CountryPort" binding="tns:CountryBinding">
+                  <soap:address location="http://localhost:8080/ws"/>
+                </wsdl:port>
+              </wsdl:service>
+            </wsdl:definitions>
+            """;
+
     private Map<String, String> unzip(byte[] zipBytes) throws Exception {
         Map<String, String> out = new LinkedHashMap<>();
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {

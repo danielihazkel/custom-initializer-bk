@@ -99,6 +99,12 @@
             <version>3.26.2</version>
         </dependency>
 
+        <dependency>
+            <groupId>wsdl4j</groupId>
+            <artifactId>wsdl4j</artifactId>
+            <version>1.6.3</version>
+        </dependency>
+
         <!-- Pin commons-io to a version compatible with commons-compress 1.27.1
              (transitive via initializr-web). swagger-parser pulls 2.15.1, which
              lacks FileTimes.isUnixTime and breaks /starter.zip. -->
