@@ -21,7 +21,14 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
 8. [OpenAPI → Controller/DTO Wizard](#openapi--controllerdto-wizard)
 9. [WSDL → SOAP Endpoint/Client Wizard](#wsdl--soap-endpointclient-wizard)
 10. [Project Preview](#project-preview)
-8. [Admin API](#admin-api)
+11. [Agent Contract (AI Scaffolding)](#agent-contract-ai-scaffolding)
+    - [GET /agent/manifest — Discovery](#get-agentmanifest--discovery)
+    - [POST /agent/scaffold — Generation](#post-agentscaffold--generation)
+    - [.menora-init.json Manifest](#menora-initjson-manifest)
+    - [OpenAPI Spec (Swagger)](#openapi-spec-swagger)
+    - [TypeScript SDK](#typescript-sdk)
+    - [MCP Server (Claude Code)](#mcp-server-claude-code)
+12. [Admin API](#admin-api)
    - [Hot-Reload Metadata](#hot-reload-metadata)
    - [Dependency Groups](#dependency-groups)
    - [Dependency Entries](#dependency-entries)
@@ -749,6 +756,234 @@ Sub-options work exactly as with `/starter.zip` — append `opts-{depId}=opt1,op
 ```bash
 curl "http://localhost:8080/starter.preview?dependencies=kafka&opts-kafka=consumer-example&..."
 ```
+
+---
+
+## Agent Contract (AI Scaffolding)
+
+A small surface designed for AI agents (and any HTTP client that doesn't want to handle ZIPs). Agents call this contract to scaffold a Spring Boot project, then continue editing the generated tree with their own business logic. Three pieces:
+
+1. **`GET /agent/manifest`** — one-shot discovery of every dep, sub-option, template, and wizard.
+2. **`POST /agent/scaffold`** — same wizard pipeline as `/starter-wizard.zip`, but returns a JSON file tree (utf-8 + base64) instead of a binary ZIP.
+3. **`.menora-init.json`** — manifest dropped at the project root with inputs + per-file SHA-256, so future calls (or the agent itself) can tell scaffold-owned files from agent-edited ones.
+
+The contract is unauthed (matching the existing public endpoints). Authentication can be layered later if needed.
+
+### GET /agent/manifest — Discovery
+
+Replaces seven separate `/metadata/*` round-trips. Cacheable.
+
+```bash
+curl http://localhost:8080/agent/manifest | jq '.dependencies | length, .wizards.sql.capableDeps'
+```
+
+Response shape (truncated):
+```json
+{
+  "schemaVersion": 1,
+  "bootVersions": ["3.2.1"],
+  "javaVersions": ["21", "17"],
+  "languages": ["java", "kotlin"],
+  "packagings": ["jar", "war"],
+  "types": ["maven-project"],
+  "dependencies": [
+    {
+      "id": "web",
+      "name": "Spring Web",
+      "groupName": "Web",
+      "compatibilityRange": "[3.2.0,4.0.0)",
+      "subOptions": []
+    },
+    {
+      "id": "postgresql",
+      "name": "PostgreSQL Driver",
+      "groupName": "Data",
+      "compatibilityRange": null,
+      "subOptions": [
+        { "id": "pg-primary", "label": "Primary DataSource", "description": "..." }
+      ]
+    }
+  ],
+  "starterTemplates": [ /* ... */ ],
+  "moduleTemplates": [ /* ... */ ],
+  "compatibilityRules": [ /* ... */ ],
+  "wizards": {
+    "sql":     { "capableDeps": ["postgresql","h2","mssql","oracle","db2"], "dialects": { "postgresql": "POSTGRESQL", "h2": "H2", ... } },
+    "openApi": { "capableDeps": ["web","webflux"], "dialects": {} },
+    "soap":    { "capableDeps": ["web-services"], "dialects": {} }
+  },
+  "defaultGroupId": "com.menora",
+  "defaultArtifactId": "demo",
+  "defaultBootVersion": "3.2.1",
+  "defaultJavaVersion": "21"
+}
+```
+
+### POST /agent/scaffold — Generation
+
+Accepts the same JSON body as `/starter-wizard.zip` plus a `mode` flag:
+
+| Mode | Behavior |
+|------|----------|
+| `wizard` (default) | Single project; SQL/OpenAPI/SOAP wizard fields are honored |
+| `starter` | Single project; equivalent to `wizard` with empty wizard fields |
+| `multimodule` | Returns HTTP 501 — use `GET /starter-multimodule.zip` for now |
+
+```bash
+curl -s -X POST http://localhost:8080/agent/scaffold \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "groupId": "com.acme",
+    "artifactId": "svc",
+    "bootVersion": "3.2.1",
+    "javaVersion": "21",
+    "packaging": "jar",
+    "language": "java",
+    "dependencies": ["web", "data-jpa", "postgresql"],
+    "opts": { "postgresql": ["pg-primary"] }
+  }' | jq '.files | length'
+```
+
+Response shape:
+```json
+{
+  "manifest": { /* parsed .menora-init.json — see below */ },
+  "files": [
+    { "path": "pom.xml",                  "encoding": "utf-8",  "content": "<project>...</project>",        "sha256": "abc..." },
+    { "path": "src/main/java/.../App.java","encoding": "utf-8",  "content": "package ...;",                  "sha256": "def..." },
+    { "path": ".mvn/wrapper/mvn-wrapper.jar","encoding": "base64","content": "UEsDBBQACA...",                "sha256": "789..." },
+    { "path": ".menora-init.json",         "encoding": "utf-8",  "content": "{\n  \"schemaVersion\": 1...", "sha256": "xyz..." }
+  ]
+}
+```
+
+Text files (`.java`, `.xml`, `.yaml`, `.properties`, `Dockerfile`, `mvnw`, `.gitignore`, etc.) are inlined as UTF-8. Anything else falls back to base64. The `sha256` field always reflects the raw bytes — verify with:
+```bash
+echo -n "<utf-8 content>" | sha256sum
+# or for base64: base64 -d <<< "<content>" | sha256sum
+```
+
+Wizard inputs work identically to `/starter-wizard.zip`:
+```bash
+curl -s -X POST http://localhost:8080/agent/scaffold \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "bootVersion": "3.2.1",
+    "dependencies": ["postgresql","data-jpa"],
+    "opts": { "postgresql": ["pg-primary"] },
+    "sqlByDep": {
+      "postgresql": "CREATE TABLE users (id BIGSERIAL PRIMARY KEY, email VARCHAR(200) NOT NULL);"
+    },
+    "sqlOptions": {
+      "postgresql": {
+        "subPackage": "entity",
+        "tables": [{ "name": "users", "generateRepository": true }]
+      }
+    }
+  }' | jq '.files[].path' | grep entity
+```
+
+### .menora-init.json Manifest
+
+Every project generated through `/agent/scaffold` ships with `.menora-init.json` at its root:
+
+```json
+{
+  "schemaVersion": 1,
+  "generator": {
+    "name": "menora-initializr",
+    "version": "1.0.0-SNAPSHOT",
+    "generatedAt": "2026-04-27T12:34:56.789Z"
+  },
+  "inputs": {
+    "mode": "wizard",
+    "groupId": "com.acme",
+    "artifactId": "svc",
+    "bootVersion": "3.2.1",
+    "javaVersion": "21",
+    "packaging": "jar",
+    "language": "java",
+    "dependencies": ["web","data-jpa","postgresql"],
+    "modules": [],
+    "opts": { "postgresql": ["pg-primary"] },
+    "wizards": null
+  },
+  "files": [
+    { "path": "pom.xml", "sha256": "abc..." },
+    { "path": "src/main/java/.../App.java", "sha256": "def..." }
+  ]
+}
+```
+
+The agent-side rule is straightforward:
+
+| Working-tree state | Meaning |
+|--------------------|---------|
+| File path is in manifest **and** sha matches | Scaffold-owned, untouched |
+| File path is in manifest **and** sha differs | Agent edited a scaffold file |
+| File path is **not** in manifest | Agent added a new file |
+| File path is in manifest **and** missing on disk | Agent deleted a scaffold file |
+
+This makes safe re-scaffolding tractable: future iterations can compute a 3-way diff (old scaffold → new scaffold → agent edits) instead of clobbering the agent's work.
+
+### OpenAPI Spec (Swagger)
+
+The agent endpoints are documented through `springdoc-openapi`:
+
+- **JSON spec** — `GET /v3/api-docs`
+- **Swagger UI** — `GET /swagger-ui.html`
+
+The OpenAPI scan is scoped to `com.menora.initializr.agent` only — the existing browser-facing wizard controllers are excluded so the spec stays focused on the agent surface. Wire `openapi-typescript` or any code generator at this URL to keep your client SDK in sync.
+
+### TypeScript SDK
+
+A typed client lives at [`clients/typescript/`](../clients/typescript) (package name `@menora/initializr-client`).
+
+```ts
+import { InitializrClient, anthropicTools, executeAgentTool } from "@menora/initializr-client";
+
+const client = new InitializrClient({ baseUrl: "http://localhost:8080" });
+
+// Discovery
+const cap = await client.manifest();
+
+// Scaffolding
+const project = await client.scaffold({
+  bootVersion: cap.defaultBootVersion!,
+  dependencies: ["web", "actuator"],
+});
+for (const file of project.files) {
+  // write file.content (utf-8 or base64) to disk under your target path
+}
+
+// In Anthropic SDK apps: get tool definitions + a dispatch helper
+const tools = anthropicTools();             // pass to messages.create({ tools })
+const result = await executeAgentTool(name, input, client); // call inside your tool_use handler
+```
+
+The SDK uses `globalThis.fetch`, so it runs unmodified in Node 18+, browsers, Bun, Deno, and Cloudflare Workers. Build with `npm run build`.
+
+### MCP Server (Claude Code)
+
+A Model Context Protocol server lives at [`mcp-server/`](../mcp-server). It exposes the agent contract as MCP tools so Claude Code (and any MCP client) can drive scaffolding natively:
+
+```bash
+cd mcp-server && npm install && npm run build
+claude mcp add menora-initializr -- node /abs/path/to/mcp-server/dist/index.js
+# Then in Claude Code:
+#   "Use menora-initializr to scaffold a Spring Boot 3.2.1 service with web + data-jpa"
+```
+
+Configure the backend URL via `MENORA_INITIALIZR_URL` (defaults to `http://localhost:8080`).
+
+Tools exposed:
+
+| Tool | Backing endpoint | Use |
+|------|------------------|-----|
+| `list_capabilities` | `GET /agent/manifest` | discover deps, sub-options, wizard support |
+| `scaffold_project` | `POST /agent/scaffold` | generate the project (returns JSON file tree + manifest) |
+| `detect_openapi_paths` | `POST /starter-wizard.detect-paths` | validate an OpenAPI spec before passing it via `specByDep` |
+| `detect_wsdl_services` | `POST /starter-wizard.detect-services` | validate a WSDL before passing it via `wsdlByDep` |
 
 ---
 

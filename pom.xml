@@ -105,6 +105,22 @@
             <version>1.6.3</version>
         </dependency>
 
+        <!-- Agent contract: serves /v3/api-docs (OpenAPI) and /swagger-ui.html
+             so AI agents and SDK generators can discover the /agent/* surface. -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.3.0</version>
+        </dependency>
+        <!-- swagger-core 2.2.x reflectively probes for javax.xml.bind.annotation.XmlElement
+             when computing required-markers. We're on Jakarta — provide the legacy stubs
+             so the lookup resolves cleanly instead of throwing NoClassDefFoundError. -->
+        <dependency>
+            <groupId>javax.xml.bind</groupId>
+            <artifactId>jaxb-api</artifactId>
+            <version>2.3.1</version>
+        </dependency>
+
         <!-- Pin commons-io to a version compatible with commons-compress 1.27.1
              (transitive via initializr-web). swagger-parser pulls 2.15.1, which
              lacks FileTimes.isUnixTime and breaks /starter.zip. -->
