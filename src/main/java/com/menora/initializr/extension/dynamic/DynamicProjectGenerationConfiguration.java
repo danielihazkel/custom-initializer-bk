@@ -2,6 +2,7 @@ package com.menora.initializr.extension.dynamic;
 
 import com.menora.initializr.config.OpenApiSpecContext;
 import com.menora.initializr.config.ProjectOptionsContext;
+import com.menora.initializr.config.SoapSpecContext;
 import com.menora.initializr.config.SqlScriptsContext;
 import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
@@ -9,6 +10,9 @@ import com.menora.initializr.db.entity.FileContributionEntity;
 import com.menora.initializr.openapi.GeneratedOpenApiFile;
 import com.menora.initializr.openapi.OpenApiCodeGenerator;
 import com.menora.initializr.openapi.OpenApiWizardOptions;
+import com.menora.initializr.soap.GeneratedSoapFile;
+import com.menora.initializr.soap.SoapCodeGenerator;
+import com.menora.initializr.soap.SoapWizardOptions;
 import com.menora.initializr.sql.GeneratedJavaFile;
 import com.menora.initializr.sql.SqlDepOptions;
 import com.menora.initializr.sql.SqlDialect;
@@ -256,6 +260,90 @@ public class DynamicProjectGenerationConfiguration {
     private static boolean isYaml(Path path) {
         String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
         return name.endsWith(".yaml") || name.endsWith(".yml");
+    }
+
+    /**
+     * Writes Spring-WS endpoint and/or client source files plus the WSDL itself
+     * from the WSDL pasted into the SOAP wizard. Symmetric counterpart to
+     * {@link #openApiCodeContributor}. Skips silently when no WSDL was supplied.
+     */
+    @Bean
+    @Order(100)
+    ProjectContributor soapCodeContributor(
+            ProjectDescription description,
+            SoapSpecContext soapContext,
+            SoapCodeGenerator generator) {
+        return projectRoot -> {
+            if (soapContext.isEmpty()) return;
+            for (var entry : soapContext.all().entrySet()) {
+                String wsdl = entry.getValue();
+                if (wsdl == null || wsdl.isBlank()) continue;
+                SoapWizardOptions opts = soapContext.optionsFor(entry.getKey());
+                List<GeneratedSoapFile> files = generator.generate(
+                        wsdl, description.getPackageName(), opts);
+                String packagePath = description.getPackageName().replace('.', '/');
+                for (GeneratedSoapFile f : files) {
+                    Path target = projectRoot.resolve(
+                            f.relativePath().replace("{{packagePath}}", packagePath));
+                    if (isYaml(target)) {
+                        mergeYaml(f.content(), target);
+                    } else {
+                        Files.createDirectories(target.getParent());
+                        Files.writeString(target, f.content());
+                    }
+                }
+            }
+        };
+    }
+
+    /**
+     * Configures the JAX-WS Maven plugin (wsimport goal) for every WSDL the
+     * SOAP wizard dropped into {@code src/main/resources/wsdl/}. Generated
+     * JAXB classes land under {@code <projectPackage>.<payloadSubPackage>}
+     * during the {@code generate-sources} phase.
+     */
+    @Bean
+    BuildCustomizer<MavenBuild> soapBuildCustomizer(
+            ProjectDescription description,
+            SoapSpecContext soapContext,
+            SoapCodeGenerator generator) {
+        return build -> {
+            if (soapContext.isEmpty()) return;
+
+            List<String> allWsdlFiles = new java.util.ArrayList<>();
+            String payloadPackage = null;
+            for (var entry : soapContext.all().entrySet()) {
+                String wsdl = entry.getValue();
+                if (wsdl == null || wsdl.isBlank()) continue;
+                SoapWizardOptions opts = soapContext.optionsFor(entry.getKey());
+                if (payloadPackage == null) {
+                    payloadPackage = SoapCodeGenerator.payloadFullPackage(description.getPackageName(), opts);
+                }
+                for (String name : generator.resolveWsdlFileNames(wsdl)) {
+                    allWsdlFiles.add(name + ".wsdl");
+                }
+            }
+            if (allWsdlFiles.isEmpty()) return;
+
+            final String pkg = payloadPackage;
+            build.plugins().add("com.sun.xml.ws", "jaxws-maven-plugin", plugin -> {
+                plugin.version("4.0.2");
+                plugin.execution("wsimport-generate", execution -> {
+                    execution.phase("generate-sources");
+                    execution.goal("wsimport");
+                    execution.configuration(config -> {
+                        config.add("packageName", pkg);
+                        config.add("wsdlDirectory", "${project.basedir}/src/main/resources/wsdl");
+                        config.add("sourceDestDir", "${project.build.directory}/generated-sources/jaxws");
+                        config.add("wsdlFiles", wsdlFiles -> {
+                            for (String f : allWsdlFiles) {
+                                wsdlFiles.add("wsdlFile", f);
+                            }
+                        });
+                    });
+                });
+            });
+        };
     }
 
     /**

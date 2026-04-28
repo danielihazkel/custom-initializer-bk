@@ -153,6 +153,9 @@ public class DataSeeder implements CommandLineRunner {
                 null, null, null, null, null, 0);
         entry(web, "webflux", "Spring Reactive Web", "Build reactive web applications with Spring WebFlux",
                 null, null, null, null, null, 1);
+        entry(web, "web-services", "Spring Web Services",
+                "Contract-first SOAP services and clients with Spring-WS",
+                "org.springframework.boot", "spring-boot-starter-web-services", null, null, null, 2);
 
         DependencyGroupEntity data = group("Data", 2);
         entry(data, "data-jpa", "Spring Data JPA", "Persist data with JPA and Hibernate",

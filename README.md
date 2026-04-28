@@ -19,8 +19,16 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
 6. [Multi-Database Configuration](#multi-database-configuration)
 7. [SQL → JPA Entity Wizard](#sql--jpa-entity-wizard)
 8. [OpenAPI → Controller/DTO Wizard](#openapi--controllerdto-wizard)
-9. [Project Preview](#project-preview)
-8. [Admin API](#admin-api)
+9. [WSDL → SOAP Endpoint/Client Wizard](#wsdl--soap-endpointclient-wizard)
+10. [Project Preview](#project-preview)
+11. [Agent Contract (AI Scaffolding)](#agent-contract-ai-scaffolding)
+    - [GET /agent/manifest — Discovery](#get-agentmanifest--discovery)
+    - [POST /agent/scaffold — Generation](#post-agentscaffold--generation)
+    - [.menora-init.json Manifest](#menora-initjson-manifest)
+    - [OpenAPI Spec (Swagger)](#openapi-spec-swagger)
+    - [TypeScript SDK](#typescript-sdk)
+    - [MCP Server (Claude Code)](#mcp-server-claude-code)
+12. [Admin API](#admin-api)
    - [Hot-Reload Metadata](#hot-reload-metadata)
    - [Dependency Groups](#dependency-groups)
    - [Dependency Entries](#dependency-entries)
@@ -584,6 +592,131 @@ public record Pet(Long id, String name) {}
 
 ---
 
+## WSDL → SOAP Endpoint/Client Wizard
+
+The third wizard, paralleling the SQL and OpenAPI ones, takes a WSDL 1.1 document and emits Spring Web Services scaffolding. Once the `web-services` dependency is selected, a **"SOAP…"** button appears on its card; clicking it opens a drawer where the user pastes a WSDL. On download, the backend parses the WSDL, drops it into `src/main/resources/wsdl/`, configures the JAX-WS Maven plugin to generate JAXB payload classes at build time, and writes one of three things — server `@Endpoint` stubs, a `WebServiceGatewaySupport` client, or both — depending on the chosen mode.
+
+This kills the boilerplate for both contract-first SOAP servers and SOAP consumers. Method bodies in endpoint stubs throw `UnsupportedOperationException`; client stubs delegate to `WebServiceTemplate.marshalSendAndReceive` and are usable as soon as a real base URL is set.
+
+### How It Works
+
+1. The UI queries `GET /metadata/soap-capable-deps` at page load — the button only renders for dep cards present in the response (currently just `web-services`, intersected with the catalog).
+2. The drawer uses CodeMirror with XML highlighting and a file upload for `.wsdl`/`.xml`. As the user types, a debounced POST to `/starter-wizard.detect-services` returns lines like `CountryService.CountryPort: getCountry, listCountries` for a live preview.
+3. Three modes — **Endpoints**, **Client**, **Both** — gate which packages and config classes are emitted. Sub-package fields default to `endpoint`, `client`, and `generated`. Endpoint mode also exposes a servlet **context path** (default `/ws`); client mode exposes a **base URL property** (default `soap.client.base-url`).
+4. On Generate, if any SOAP entries are attached, the UI sends `POST /starter-wizard.zip` with a JSON body. The endpoint is shared with the SQL and OpenAPI wizards — a single request can carry `sqlByDep`, `specByDep`, and `wsdlByDep` together; empty maps are a no-op.
+5. Backend parses the WSDL with **wsdl4j** (`javax.wsdl.*`), iterates services → ports → bindings → operations, derives request/response element names from the messages, and renders `@Endpoint` / `WebServiceGatewaySupport` classes via `StringBuilder`. The WSDL itself is written verbatim to `src/main/resources/wsdl/`.
+6. The build customizer adds `com.sun.xml.ws:jaxws-maven-plugin:4.0.2` to the generated `pom.xml`, bound to `generate-sources` with the `wsimport` goal. JAXB classes are emitted into `${groupId}.${artifactId}.generated` (configurable via `payloadSubPackage`).
+
+### Generation Output by Mode
+
+| Mode | Files emitted (besides the WSDL itself and the JAX-WS plugin in pom.xml) |
+|------|--------------------------------------------------------------------------|
+| `ENDPOINTS` | `{Service}Endpoint.java` (`@Endpoint`, one method per operation) + `WebServiceConfig.java` (MessageDispatcherServlet at `contextPath`, `SimpleWsdl11Definition` exposing the WSDL) |
+| `CLIENT` | `{Service}Client.java` (`WebServiceGatewaySupport` subclass) + `SoapClientConfig.java` (`Jaxb2Marshaller` + `WebServiceTemplate` reading `${baseUrlProperty}`) + `application.yaml` fragment with the base URL |
+| `BOTH` | All of the above. Endpoints and client share the same JAXB-generated payload classes. |
+
+The wizard never writes the JAXB classes themselves — the JAX-WS Maven plugin generates them from the embedded XSD inside the WSDL during `mvn compile`.
+
+### POST API
+
+**Request body** for `POST /starter-wizard.zip` and `POST /starter-wizard.preview` (SOAP-only shape; add `sqlByDep` / `specByDep` to combine with the other wizards in the same request):
+
+```json
+{
+  "groupId": "com.menora",
+  "artifactId": "demo",
+  "name": "demo",
+  "packageName": "com.menora.demo",
+  "type": "maven-project",
+  "language": "java",
+  "bootVersion": "3.2.1",
+  "packaging": "jar",
+  "javaVersion": "21",
+  "dependencies": ["web-services"],
+  "opts": {},
+  "wsdlByDep": {
+    "web-services": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<wsdl:definitions ..."
+  },
+  "soapOptions": {
+    "web-services": {
+      "endpointSubPackage": "endpoint",
+      "clientSubPackage": "client",
+      "payloadSubPackage": "generated",
+      "mode": "BOTH",
+      "baseUrlProperty": "soap.client.base-url",
+      "contextPath": "/ws"
+    }
+  }
+}
+```
+
+**Example — generate a project from a tiny CountryService WSDL:**
+
+```bash
+curl -o demo.zip -X POST http://localhost:8080/starter-wizard.zip \
+  -H "Content-Type: application/json" \
+  -d @- <<'JSON'
+{
+  "groupId":"com.menora","artifactId":"demo","name":"demo",
+  "packageName":"com.menora.demo","type":"maven-project","language":"java",
+  "bootVersion":"3.2.1","packaging":"jar","javaVersion":"21",
+  "dependencies":["web-services"],
+  "wsdlByDep":{"web-services":"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<wsdl:definitions xmlns:wsdl=\"http://schemas.xmlsoap.org/wsdl/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/wsdl/soap/\" xmlns:tns=\"http://example.com/country\" targetNamespace=\"http://example.com/country\">\n  <wsdl:types><xsd:schema targetNamespace=\"http://example.com/country\" xmlns=\"http://example.com/country\" elementFormDefault=\"qualified\">\n    <xsd:element name=\"getCountryRequest\"><xsd:complexType><xsd:sequence><xsd:element name=\"name\" type=\"xsd:string\"/></xsd:sequence></xsd:complexType></xsd:element>\n    <xsd:element name=\"getCountryResponse\"><xsd:complexType><xsd:sequence><xsd:element name=\"population\" type=\"xsd:int\"/></xsd:sequence></xsd:complexType></xsd:element>\n  </xsd:schema></wsdl:types>\n  <wsdl:message name=\"getCountryRequest\"><wsdl:part name=\"parameters\" element=\"tns:getCountryRequest\"/></wsdl:message>\n  <wsdl:message name=\"getCountryResponse\"><wsdl:part name=\"parameters\" element=\"tns:getCountryResponse\"/></wsdl:message>\n  <wsdl:portType name=\"CountryPort\"><wsdl:operation name=\"getCountry\"><wsdl:input message=\"tns:getCountryRequest\"/><wsdl:output message=\"tns:getCountryResponse\"/></wsdl:operation></wsdl:portType>\n  <wsdl:binding name=\"CountryBinding\" type=\"tns:CountryPort\"><soap:binding style=\"document\" transport=\"http://schemas.xmlsoap.org/soap/http\"/><wsdl:operation name=\"getCountry\"><soap:operation soapAction=\"\"/><wsdl:input><soap:body use=\"literal\"/></wsdl:input><wsdl:output><soap:body use=\"literal\"/></wsdl:output></wsdl:operation></wsdl:binding>\n  <wsdl:service name=\"CountryService\"><wsdl:port name=\"CountryPort\" binding=\"tns:CountryBinding\"><soap:address location=\"http://localhost:8080/ws\"/></wsdl:port></wsdl:service>\n</wsdl:definitions>"},
+  "soapOptions":{"web-services":{"mode":"BOTH"}}
+}
+JSON
+unzip -p demo.zip demo/src/main/java/com/menora/demo/endpoint/CountryServiceEndpoint.java
+unzip -p demo.zip demo/src/main/java/com/menora/demo/client/CountryServiceClient.java
+unzip -l demo.zip | grep -E '(wsdl/|SoapClientConfig|WebServiceConfig|application\.yaml)'
+```
+
+The generated `CountryServiceEndpoint.java` contains:
+
+```java
+@Endpoint
+public class CountryServiceEndpoint {
+
+    @PayloadRoot(namespace = "http://example.com/country", localPart = "getCountryRequest")
+    @ResponsePayload
+    public GetCountryResponse getCountry(@RequestPayload GetCountryRequest request) {
+        throw new UnsupportedOperationException("TODO: implement getCountry");
+    }
+}
+```
+
+And `CountryServiceClient.java`:
+
+```java
+public class CountryServiceClient extends WebServiceGatewaySupport {
+
+    public GetCountryResponse getCountry(GetCountryRequest request) {
+        return (GetCountryResponse) getWebServiceTemplate().marshalSendAndReceive(request);
+    }
+}
+```
+
+The `GetCountryRequest` and `GetCountryResponse` classes are generated by the JAX-WS plugin during `mvn compile` from the embedded XSD; they end up in `target/generated-sources/jaxws/com/menora/demo/generated/`.
+
+**Companion endpoints:**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/metadata/soap-capable-deps` | Dep IDs eligible for the wizard (intersected with deps in the catalog) |
+| `POST` | `/starter-wizard.zip` | Generate ZIP with endpoints/clients (shared with the SQL and OpenAPI wizards) |
+| `POST` | `/starter-wizard.preview` | File tree + contents (same shape as `/starter.preview`) |
+| `POST` | `/starter-wizard.detect-services` | `{ wsdl }` → `["CountryService.CountryPort: getCountry, listCountries"]` for the drawer's live preview |
+
+### Notes & Limitations (v1)
+
+- **JAXB classes are not in the ZIP** — they are generated at build time by the JAX-WS plugin (`com.sun.xml.ws:jaxws-maven-plugin:4.0.2`) from the embedded XSD inside the WSDL. The first `mvn compile` produces them under `target/generated-sources/jaxws/`. IDEs detect this folder automatically.
+- **WSDL 1.1 only.** WSDL 2.0 and standalone XSD-only inputs are out of scope.
+- **Endpoint method bodies** always throw `UnsupportedOperationException`. Client method bodies always delegate to `WebServiceTemplate.marshalSendAndReceive` — the goal is compiling, immediately-usable scaffolding.
+- **Operation grouping is per service.** One `{ServiceName}Endpoint.java` and one `{ServiceName}Client.java` per `<wsdl:service>` — operations are not split by tag (WSDL has no equivalent of OpenAPI tags).
+- **Parse errors** return HTTP 400 with `{ error, messages }` — the drawer shows the WSDL parser messages in a yellow banner.
+- **Composable with the SQL and OpenAPI wizards** — `POST /starter-wizard.zip` accepts `sqlByDep`, `specByDep`, and `wsdlByDep` simultaneously. The UI lets a single project attach a SQL script to a JPA dep, an OpenAPI spec to a `web` dep, and a WSDL to `web-services`, all in one Generate click.
+
+---
+
 ## Project Preview
 
 Before downloading a ZIP you can inspect the full generated file tree and the contents of every file. Click the **Explore** button in the top-right corner of the UI — a full-screen modal opens with:
@@ -623,6 +756,234 @@ Sub-options work exactly as with `/starter.zip` — append `opts-{depId}=opt1,op
 ```bash
 curl "http://localhost:8080/starter.preview?dependencies=kafka&opts-kafka=consumer-example&..."
 ```
+
+---
+
+## Agent Contract (AI Scaffolding)
+
+A small surface designed for AI agents (and any HTTP client that doesn't want to handle ZIPs). Agents call this contract to scaffold a Spring Boot project, then continue editing the generated tree with their own business logic. Three pieces:
+
+1. **`GET /agent/manifest`** — one-shot discovery of every dep, sub-option, template, and wizard.
+2. **`POST /agent/scaffold`** — same wizard pipeline as `/starter-wizard.zip`, but returns a JSON file tree (utf-8 + base64) instead of a binary ZIP.
+3. **`.menora-init.json`** — manifest dropped at the project root with inputs + per-file SHA-256, so future calls (or the agent itself) can tell scaffold-owned files from agent-edited ones.
+
+The contract is unauthed (matching the existing public endpoints). Authentication can be layered later if needed.
+
+### GET /agent/manifest — Discovery
+
+Replaces seven separate `/metadata/*` round-trips. Cacheable.
+
+```bash
+curl http://localhost:8080/agent/manifest | jq '.dependencies | length, .wizards.sql.capableDeps'
+```
+
+Response shape (truncated):
+```json
+{
+  "schemaVersion": 1,
+  "bootVersions": ["3.2.1"],
+  "javaVersions": ["21", "17"],
+  "languages": ["java", "kotlin"],
+  "packagings": ["jar", "war"],
+  "types": ["maven-project"],
+  "dependencies": [
+    {
+      "id": "web",
+      "name": "Spring Web",
+      "groupName": "Web",
+      "compatibilityRange": "[3.2.0,4.0.0)",
+      "subOptions": []
+    },
+    {
+      "id": "postgresql",
+      "name": "PostgreSQL Driver",
+      "groupName": "Data",
+      "compatibilityRange": null,
+      "subOptions": [
+        { "id": "pg-primary", "label": "Primary DataSource", "description": "..." }
+      ]
+    }
+  ],
+  "starterTemplates": [ /* ... */ ],
+  "moduleTemplates": [ /* ... */ ],
+  "compatibilityRules": [ /* ... */ ],
+  "wizards": {
+    "sql":     { "capableDeps": ["postgresql","h2","mssql","oracle","db2"], "dialects": { "postgresql": "POSTGRESQL", "h2": "H2", ... } },
+    "openApi": { "capableDeps": ["web","webflux"], "dialects": {} },
+    "soap":    { "capableDeps": ["web-services"], "dialects": {} }
+  },
+  "defaultGroupId": "com.menora",
+  "defaultArtifactId": "demo",
+  "defaultBootVersion": "3.2.1",
+  "defaultJavaVersion": "21"
+}
+```
+
+### POST /agent/scaffold — Generation
+
+Accepts the same JSON body as `/starter-wizard.zip` plus a `mode` flag:
+
+| Mode | Behavior |
+|------|----------|
+| `wizard` (default) | Single project; SQL/OpenAPI/SOAP wizard fields are honored |
+| `starter` | Single project; equivalent to `wizard` with empty wizard fields |
+| `multimodule` | Returns HTTP 501 — use `GET /starter-multimodule.zip` for now |
+
+```bash
+curl -s -X POST http://localhost:8080/agent/scaffold \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "groupId": "com.acme",
+    "artifactId": "svc",
+    "bootVersion": "3.2.1",
+    "javaVersion": "21",
+    "packaging": "jar",
+    "language": "java",
+    "dependencies": ["web", "data-jpa", "postgresql"],
+    "opts": { "postgresql": ["pg-primary"] }
+  }' | jq '.files | length'
+```
+
+Response shape:
+```json
+{
+  "manifest": { /* parsed .menora-init.json — see below */ },
+  "files": [
+    { "path": "pom.xml",                  "encoding": "utf-8",  "content": "<project>...</project>",        "sha256": "abc..." },
+    { "path": "src/main/java/.../App.java","encoding": "utf-8",  "content": "package ...;",                  "sha256": "def..." },
+    { "path": ".mvn/wrapper/mvn-wrapper.jar","encoding": "base64","content": "UEsDBBQACA...",                "sha256": "789..." },
+    { "path": ".menora-init.json",         "encoding": "utf-8",  "content": "{\n  \"schemaVersion\": 1...", "sha256": "xyz..." }
+  ]
+}
+```
+
+Text files (`.java`, `.xml`, `.yaml`, `.properties`, `Dockerfile`, `mvnw`, `.gitignore`, etc.) are inlined as UTF-8. Anything else falls back to base64. The `sha256` field always reflects the raw bytes — verify with:
+```bash
+echo -n "<utf-8 content>" | sha256sum
+# or for base64: base64 -d <<< "<content>" | sha256sum
+```
+
+Wizard inputs work identically to `/starter-wizard.zip`:
+```bash
+curl -s -X POST http://localhost:8080/agent/scaffold \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "bootVersion": "3.2.1",
+    "dependencies": ["postgresql","data-jpa"],
+    "opts": { "postgresql": ["pg-primary"] },
+    "sqlByDep": {
+      "postgresql": "CREATE TABLE users (id BIGSERIAL PRIMARY KEY, email VARCHAR(200) NOT NULL);"
+    },
+    "sqlOptions": {
+      "postgresql": {
+        "subPackage": "entity",
+        "tables": [{ "name": "users", "generateRepository": true }]
+      }
+    }
+  }' | jq '.files[].path' | grep entity
+```
+
+### .menora-init.json Manifest
+
+Every project generated through `/agent/scaffold` ships with `.menora-init.json` at its root:
+
+```json
+{
+  "schemaVersion": 1,
+  "generator": {
+    "name": "menora-initializr",
+    "version": "1.0.0-SNAPSHOT",
+    "generatedAt": "2026-04-27T12:34:56.789Z"
+  },
+  "inputs": {
+    "mode": "wizard",
+    "groupId": "com.acme",
+    "artifactId": "svc",
+    "bootVersion": "3.2.1",
+    "javaVersion": "21",
+    "packaging": "jar",
+    "language": "java",
+    "dependencies": ["web","data-jpa","postgresql"],
+    "modules": [],
+    "opts": { "postgresql": ["pg-primary"] },
+    "wizards": null
+  },
+  "files": [
+    { "path": "pom.xml", "sha256": "abc..." },
+    { "path": "src/main/java/.../App.java", "sha256": "def..." }
+  ]
+}
+```
+
+The agent-side rule is straightforward:
+
+| Working-tree state | Meaning |
+|--------------------|---------|
+| File path is in manifest **and** sha matches | Scaffold-owned, untouched |
+| File path is in manifest **and** sha differs | Agent edited a scaffold file |
+| File path is **not** in manifest | Agent added a new file |
+| File path is in manifest **and** missing on disk | Agent deleted a scaffold file |
+
+This makes safe re-scaffolding tractable: future iterations can compute a 3-way diff (old scaffold → new scaffold → agent edits) instead of clobbering the agent's work.
+
+### OpenAPI Spec (Swagger)
+
+The agent endpoints are documented through `springdoc-openapi`:
+
+- **JSON spec** — `GET /v3/api-docs`
+- **Swagger UI** — `GET /swagger-ui.html`
+
+The OpenAPI scan is scoped to `com.menora.initializr.agent` only — the existing browser-facing wizard controllers are excluded so the spec stays focused on the agent surface. Wire `openapi-typescript` or any code generator at this URL to keep your client SDK in sync.
+
+### TypeScript SDK
+
+A typed client lives at [`clients/typescript/`](../clients/typescript) (package name `@menora/initializr-client`).
+
+```ts
+import { InitializrClient, anthropicTools, executeAgentTool } from "@menora/initializr-client";
+
+const client = new InitializrClient({ baseUrl: "http://localhost:8080" });
+
+// Discovery
+const cap = await client.manifest();
+
+// Scaffolding
+const project = await client.scaffold({
+  bootVersion: cap.defaultBootVersion!,
+  dependencies: ["web", "actuator"],
+});
+for (const file of project.files) {
+  // write file.content (utf-8 or base64) to disk under your target path
+}
+
+// In Anthropic SDK apps: get tool definitions + a dispatch helper
+const tools = anthropicTools();             // pass to messages.create({ tools })
+const result = await executeAgentTool(name, input, client); // call inside your tool_use handler
+```
+
+The SDK uses `globalThis.fetch`, so it runs unmodified in Node 18+, browsers, Bun, Deno, and Cloudflare Workers. Build with `npm run build`.
+
+### MCP Server (Claude Code)
+
+A Model Context Protocol server lives at [`mcp-server/`](../mcp-server). It exposes the agent contract as MCP tools so Claude Code (and any MCP client) can drive scaffolding natively:
+
+```bash
+cd mcp-server && npm install && npm run build
+claude mcp add menora-initializr -- node /abs/path/to/mcp-server/dist/index.js
+# Then in Claude Code:
+#   "Use menora-initializr to scaffold a Spring Boot 3.2.1 service with web + data-jpa"
+```
+
+Configure the backend URL via `MENORA_INITIALIZR_URL` (defaults to `http://localhost:8080`).
+
+Tools exposed:
+
+| Tool | Backing endpoint | Use |
+|------|------------------|-----|
+| `list_capabilities` | `GET /agent/manifest` | discover deps, sub-options, wizard support |
+| `scaffold_project` | `POST /agent/scaffold` | generate the project (returns JSON file tree + manifest) |
+| `detect_openapi_paths` | `POST /starter-wizard.detect-paths` | validate an OpenAPI spec before passing it via `specByDep` |
+| `detect_wsdl_services` | `POST /starter-wizard.detect-services` | validate a WSDL before passing it via `wsdlByDep` |
 
 ---
 

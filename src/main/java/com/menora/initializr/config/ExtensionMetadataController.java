@@ -123,6 +123,20 @@ public class ExtensionMetadataController {
     }
 
     /**
+     * Dep IDs for which the SOAP → Spring-WS wizard is surfaced, filtered to
+     * those currently in the catalog. Wizard surfaces on the {@code web-services}
+     * starter; empty list → UI hides the trigger button.
+     */
+    @GetMapping("/metadata/soap-capable-deps")
+    public List<String> soapCapableDeps() {
+        Set<String> candidates = Set.of("web-services");
+        return entryRepo.findByDepIdIn(candidates).stream()
+                .map(DependencyEntryEntity::getDepId)
+                .sorted()
+                .toList();
+    }
+
+    /**
      * Dep-id → dialect-enum-name for drivers the SQL wizard can handle AND that
      * currently exist in the dependency catalog. Empty map → UI hides the wizard.
      */

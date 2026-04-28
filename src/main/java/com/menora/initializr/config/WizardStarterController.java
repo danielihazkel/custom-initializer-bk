@@ -2,6 +2,8 @@ package com.menora.initializr.config;
 
 import com.menora.initializr.openapi.OpenApiCodeGenerator;
 import com.menora.initializr.openapi.OpenApiWizardOptions;
+import com.menora.initializr.soap.SoapCodeGenerator;
+import com.menora.initializr.soap.SoapWizardOptions;
 import com.menora.initializr.sql.SqlDepOptions;
 import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
@@ -57,7 +59,9 @@ public class WizardStarterController {
     private final ProjectOptionsContext optionsContext;
     private final SqlScriptsContext sqlContext;
     private final OpenApiSpecContext specContext;
+    private final SoapSpecContext soapContext;
     private final OpenApiCodeGenerator openApiGenerator;
+    private final SoapCodeGenerator soapGenerator;
     private final SqlEntityGenerator sqlGenerator;
 
     public WizardStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
@@ -65,20 +69,25 @@ public class WizardStarterController {
                                    ProjectOptionsContext optionsContext,
                                    SqlScriptsContext sqlContext,
                                    OpenApiSpecContext specContext,
+                                   SoapSpecContext soapContext,
                                    OpenApiCodeGenerator openApiGenerator,
+                                   SoapCodeGenerator soapGenerator,
                                    SqlEntityGenerator sqlGenerator) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
         this.sqlContext = sqlContext;
         this.specContext = specContext;
+        this.soapContext = soapContext;
         this.openApiGenerator = openApiGenerator;
+        this.soapGenerator = soapGenerator;
         this.sqlGenerator = sqlGenerator;
     }
 
     @PostMapping("/starter-wizard.zip")
     public ResponseEntity<byte[]> generate(@RequestBody WizardStarterRequest body) throws IOException {
         validateSpecs(body);
+        validateWsdls(body);
         validateSql(body);
         WebProjectRequest request = toWebRequest(body);
         populateContexts(body);
@@ -100,6 +109,7 @@ public class WizardStarterController {
     @PostMapping("/starter-wizard.preview")
     public ProjectPreviewController.PreviewResponse preview(@RequestBody WizardStarterRequest body) throws IOException {
         validateSpecs(body);
+        validateWsdls(body);
         validateSql(body);
         WebProjectRequest request = toWebRequest(body);
         populateContexts(body);
@@ -131,11 +141,26 @@ public class WizardStarterController {
         return openApiGenerator.detectPaths(body.spec());
     }
 
+    /** Server-side service detection for the SOAP wizard's live preview. */
+    @PostMapping("/starter-wizard.detect-services")
+    public List<String> detectServices(@RequestBody DetectServicesRequest body) {
+        return soapGenerator.detectServices(body.wsdl());
+    }
+
     @ExceptionHandler(OpenApiCodeGenerator.OpenApiParseException.class)
     public ResponseEntity<Map<String, Object>> handleParseException(OpenApiCodeGenerator.OpenApiParseException ex) {
         clearAllContexts();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("error", "Invalid OpenAPI spec");
+        body.put("messages", ex.messages());
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    @ExceptionHandler(SoapCodeGenerator.SoapParseException.class)
+    public ResponseEntity<Map<String, Object>> handleSoapParseException(SoapCodeGenerator.SoapParseException ex) {
+        clearAllContexts();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "Invalid WSDL");
         body.put("messages", ex.messages());
         return ResponseEntity.badRequest().body(body);
     }
@@ -166,6 +191,20 @@ public class WizardStarterController {
             openApiGenerator.detectPaths(spec); // does not throw
             openApiGenerator.generate(spec, "com.menora.demo",
                     body.openApiOptions() == null ? null : toOpenApiOptions(body.openApiOptions().get(e.getKey())));
+        }
+    }
+
+    /**
+     * Same up-front parse for the SOAP wizard — a malformed WSDL becomes a
+     * clean 400 instead of a partial project + 500.
+     */
+    private void validateWsdls(WizardStarterRequest body) {
+        if (body.wsdlByDep() == null) return;
+        for (var e : body.wsdlByDep().entrySet()) {
+            String wsdl = e.getValue();
+            if (wsdl == null || wsdl.isBlank()) continue;
+            soapGenerator.generate(wsdl, "com.menora.demo",
+                    body.soapOptions() == null ? null : toSoapOptions(body.soapOptions().get(e.getKey())));
         }
     }
 
@@ -243,11 +282,21 @@ public class WizardStarterController {
             }
         }
         specContext.populate(body.specByDep() == null ? Map.of() : body.specByDep(), openApiOpts);
+
+        // SOAP side — same treatment.
+        Map<String, SoapWizardOptions> soapOpts = new LinkedHashMap<>();
+        if (body.soapOptions() != null) {
+            for (var e : body.soapOptions().entrySet()) {
+                soapOpts.put(e.getKey(), toSoapOptions(e.getValue()));
+            }
+        }
+        soapContext.populate(body.wsdlByDep() == null ? Map.of() : body.wsdlByDep(), soapOpts);
     }
 
     private void clearAllContexts() {
         sqlContext.clear();
         specContext.clear();
+        soapContext.clear();
         optionsContext.clear();
     }
 
@@ -259,6 +308,17 @@ public class WizardStarterController {
                 dto.clientSubPackage(),
                 OpenApiWizardOptions.GenerationMode.parse(dto.mode()),
                 dto.baseUrlProperty());
+    }
+
+    private static SoapWizardOptions toSoapOptions(SoapOptionsDto dto) {
+        if (dto == null) return new SoapWizardOptions(null, null, null, null, null, null);
+        return new SoapWizardOptions(
+                dto.endpointSubPackage(),
+                dto.clientSubPackage(),
+                dto.payloadSubPackage(),
+                SoapWizardOptions.GenerationMode.parse(dto.mode()),
+                dto.baseUrlProperty(),
+                dto.contextPath());
     }
 
     private static String orDefault(String v, String fallback) {
@@ -335,7 +395,9 @@ public class WizardStarterController {
             Map<String, String> sqlByDep,
             Map<String, SqlDepOptionsDto> sqlOptions,
             Map<String, String> specByDep,
-            Map<String, OpenApiOptionsDto> openApiOptions) {
+            Map<String, OpenApiOptionsDto> openApiOptions,
+            Map<String, String> wsdlByDep,
+            Map<String, SoapOptionsDto> soapOptions) {
     }
 
     public record SqlDepOptionsDto(String subPackage, List<SqlTableOptionsDto> tables) {}
@@ -349,5 +411,15 @@ public class WizardStarterController {
             String mode,
             String baseUrlProperty) {}
 
+    public record SoapOptionsDto(
+            String endpointSubPackage,
+            String clientSubPackage,
+            String payloadSubPackage,
+            String mode,
+            String baseUrlProperty,
+            String contextPath) {}
+
     public record DetectPathsRequest(String spec) {}
+
+    public record DetectServicesRequest(String wsdl) {}
 }

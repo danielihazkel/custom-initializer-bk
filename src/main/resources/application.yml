@@ -4,6 +4,16 @@ server:
 admin:
   password: changeme
 
+# springdoc-openapi: keep the OpenAPI spec focused on the agent contract.
+# The browser-facing wizard controllers introspect spec/wsdl objects whose
+# transitive deps drag in legacy javax.xml.bind types — including them in the
+# scan blows up /v3/api-docs at runtime.
+springdoc:
+  packages-to-scan: com.menora.initializr.agent
+  paths-to-match: /agent/**
+  swagger-ui:
+    path: /swagger-ui.html
+
 spring:
   cache:
     type: jcache
