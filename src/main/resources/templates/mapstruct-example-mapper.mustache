@@ -1,0 +1,30 @@
+package {{packageName}}.mapper;
+
+import org.mapstruct.Mapper;
+
+import {{packageName}}.config.MapstructConfig;
+import {{packageName}}.dto.ExampleDto;
+
+import java.util.List;
+
+/**
+ * Example MapStruct mapper. Replace {@code Object} with your own JPA entity / domain
+ * type, then add field mappings as needed via {@code @Mapping(source = "...", target = "...")}.
+ *
+ * <p>Inject and use from a Spring component:
+ * <pre>
+ *   {@literal @Autowired}
+ *   private ExampleMapper exampleMapper;
+ *
+ *   ExampleDto dto = exampleMapper.toDto(entity);
+ * </pre>
+ */
+@Mapper(config = MapstructConfig.class)
+public interface ExampleMapper {
+
+    ExampleDto toDto(Object entity);
+
+    Object toEntity(ExampleDto dto);
+
+    List<ExampleDto> toDtoList(List<?> entities);
+}

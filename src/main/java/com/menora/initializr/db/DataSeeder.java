@@ -206,6 +206,9 @@ public class DataSeeder implements CommandLineRunner {
                 .filter(e -> "file-handler-utils".equals(e.getDepId()))
                 .findFirst()
                 .ifPresent(e -> { e.setStarter(false); entryRepo.save(e); });
+        entry(utilities, "mapstruct", "MapStruct",
+                "Compile-time DTO/entity mapping via annotation processor",
+                "org.mapstruct", "mapstruct", "1.6.3", null, null, 1);
     }
 
     // ── Common file contributions (every project) ────────────────────────────
@@ -444,6 +447,20 @@ public class DataSeeder implements CommandLineRunner {
                 readClasspath("templates/file-handler-async.mustache"),
                 "src/main/java/{{packagePath}}/util/AsyncFileHandler.java",
                 FileContributionEntity.SubstitutionType.MUSTACHE, null, "async-handler", 1);
+
+        // mapstruct
+        fc("mapstruct", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mapstruct-config.mustache"),
+                "src/main/java/{{packagePath}}/config/MapstructConfig.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 0);
+        fc("mapstruct", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mapstruct-example-dto.mustache"),
+                "src/main/java/{{packagePath}}/dto/ExampleDto.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "example-mapper", 1);
+        fc("mapstruct", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mapstruct-example-mapper.mustache"),
+                "src/main/java/{{packagePath}}/mapper/ExampleMapper.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "example-mapper", 2);
     }
 
     // ── Build customizations ──────────────────────────────────────────────────
@@ -469,6 +486,12 @@ public class DataSeeder implements CommandLineRunner {
         // Mail Sampler: spring-boot-starter-mail
         addDep("mail-sampler",
                 "org.springframework.boot", "spring-boot-starter-mail", null, null, 0);
+
+        // MapStruct: annotation processor + Lombok binding (mapstruct runtime is on the entry)
+        addDep("mapstruct",
+                "org.mapstruct", "mapstruct-processor", "1.6.3", "provided", 0);
+        addDep("mapstruct",
+                "org.projectlombok", "lombok-mapstruct-binding", "0.2.0", "provided", 1);
     }
 
     private void seedSubOptions() {
@@ -517,6 +540,9 @@ public class DataSeeder implements CommandLineRunner {
                 "Add SyncFileHandler.java — blocking read/write helpers", 0);
         subOption("file-handler-utils", "async-handler", "Asynchronous Handler",
                 "Add AsyncFileHandler.java — CompletableFuture-based read/write helpers", 1);
+
+        subOption("mapstruct", "example-mapper", "Example Mapper",
+                "Add ExampleDto.java + ExampleMapper.java demonstrating a MapStruct mapping", 0);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -595,6 +621,8 @@ public class DataSeeder implements CommandLineRunner {
                 "Mail Sampler works best with a web layer for REST endpoints", 5);
         compatibility("data-jpa", "h2", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
                 "JPA requires a database driver — add H2 for development/testing", 9);
+        compatibility("data-jpa", "mapstruct", DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "Use MapStruct to convert between JPA entities and DTOs", 10);
     }
 
     private void compatibility(String source, String target,
