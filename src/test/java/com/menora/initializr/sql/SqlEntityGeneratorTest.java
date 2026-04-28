@@ -194,6 +194,84 @@ class SqlEntityGeneratorTest {
                 .contains("private LocalDateTime whenAdded;");
     }
 
+    @Test
+    void db2_ignoresCommentAndGrantAndIndexStatements() {
+        // Realistic DB2 export — multiple CREATE TABLE blocks interleaved with
+        // COMMENT ON, CREATE INDEX, and GRANT statements that the wizard does
+        // not act on. Parser must skip them silently and still emit every entity.
+        String sql = """
+                CREATE TABLE EMPLOYEES (
+                    EMPLOYEE_ID INTEGER NOT NULL PRIMARY KEY,
+                    FIRST_NAME VARCHAR(50) NOT NULL,
+                    EMAIL VARCHAR(100) NOT NULL UNIQUE,
+                    HIRE_DATE DATE NOT NULL,
+                    STATUS VARCHAR(20) DEFAULT 'ACTIVE',
+                    CREATED_AT TIMESTAMP NOT NULL DEFAULT CURRENT TIMESTAMP
+                );
+
+                COMMENT ON TABLE EMPLOYEES IS 'Employee master data table';
+                COMMENT ON COLUMN EMPLOYEES.EMAIL IS 'Employee email address';
+
+                CREATE INDEX IDX_EMP_EMAIL ON EMPLOYEES(EMAIL);
+                CREATE UNIQUE INDEX IDX_EMP_ID ON EMPLOYEES(EMPLOYEE_ID);
+
+                CREATE TABLE DEPARTMENTS (
+                    DEPARTMENT_ID INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY,
+                    DEPARTMENT_NAME VARCHAR(100) NOT NULL,
+                    PRIMARY KEY (DEPARTMENT_ID)
+                );
+
+                GRANT SELECT ON EMPLOYEES TO PUBLIC;
+                GRANT SELECT, INSERT ON DEPARTMENTS TO USER APP_USER;
+
+                CREATE TABLE EMPLOYEE_PROJECTS (
+                    ASSIGNMENT_ID INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY,
+                    EMPLOYEE_ID INTEGER NOT NULL,
+                    ROLE VARCHAR(50) NOT NULL,
+                    PRIMARY KEY (ASSIGNMENT_ID)
+                );
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.DB2, "p", null);
+        assertThat(files).extracting(GeneratedJavaFile::relativePath)
+                .anyMatch(p -> p.endsWith("entity/Employees.java"))
+                .anyMatch(p -> p.endsWith("entity/Departments.java"))
+                .anyMatch(p -> p.endsWith("entity/EmployeeProjects.java"));
+    }
+
+    @Test
+    void db2_defaultCurrentTimestampParses() {
+        String sql = """
+                CREATE TABLE audit (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT TIMESTAMP,
+                    seen_on DATE DEFAULT CURRENT DATE,
+                    seen_at TIME DEFAULT CURRENT TIME
+                );
+                """;
+        String entity = findFile(generator.generate(sql, SqlDialect.DB2, "p", null),
+                "entity/Audit.java").content();
+        assertThat(entity)
+                .contains("private Integer id;")
+                .contains("private LocalDateTime createdAt;");
+    }
+
+    @Test
+    void db2_malformedTrailingStatementThrowsWithSnippet() {
+        String sql = """
+                CREATE TABLE good (id INTEGER NOT NULL PRIMARY KEY);
+                CREATE TABLE bad (id INTEGER NOT NULL,
+                """ + "GRANT SELECT ON good TO PUBLIC;N foo,OTAL * TAX_RATE)),";
+        try {
+            generator.generate(sql, SqlDialect.DB2, "p", null);
+            throw new AssertionError("expected SqlParseException");
+        } catch (SqlEntityGenerator.SqlParseException ex) {
+            assertThat(ex.statementIndex()).isNotNull();
+            assertThat(ex.statementIndex()).isGreaterThanOrEqualTo(2);
+            assertThat(ex.statementSnippet()).isNotBlank();
+            assertThat(ex.getMessage()).contains("statement #");
+        }
+    }
+
     // ── Options ──────────────────────────────────────────────────────────────
 
     @Test

@@ -3,7 +3,6 @@ package com.menora.initializr.sql;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
-import net.sf.jsqlparser.statement.Statements;
 import net.sf.jsqlparser.statement.create.table.ColumnDefinition;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
 import net.sf.jsqlparser.statement.create.table.ForeignKeyIndex;
@@ -79,18 +78,70 @@ public class SqlEntityGenerator {
             Pattern.compile("\\bNUMBER\\s*\\(\\s*\\*\\s*(,\\s*\\d+\\s*)?\\)",
                     Pattern.CASE_INSENSITIVE);
 
+    /** DB2 lets you write {@code DEFAULT CURRENT TIMESTAMP} (two words), but
+     *  JSqlParser only recognizes the underscored form. Rewrite to the
+     *  underscored variant so the column default parses cleanly. */
+    private static final Pattern DB2_CURRENT_TS_DATE_TIME =
+            Pattern.compile("\\bCURRENT\\s+(TIMESTAMP|DATE|TIME)\\b",
+                    Pattern.CASE_INSENSITIVE);
+
+    /** Statements we safely skip — valid DDL the wizard does not act on.
+     *  Matches the leading keyword(s) of the trimmed statement. */
+    private static final Pattern IGNORABLE_STATEMENT = Pattern.compile(
+            "^\\s*(?:COMMENT\\s+ON|CREATE\\s+(?:UNIQUE\\s+)?INDEX|CREATE\\s+SEQUENCE|"
+                    + "GRANT\\b|REVOKE\\b|ALTER\\b|SET\\b|USE\\b|DROP\\b|ANALYZE\\b)",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern CREATE_TABLE_LEAD = Pattern.compile(
+            "^\\s*CREATE\\s+(?:GLOBAL\\s+TEMPORARY\\s+|TEMPORARY\\s+|TEMP\\s+)?TABLE\\b",
+            Pattern.CASE_INSENSITIVE);
+
     private List<TableModel> parseTables(String sql, SqlDialect dialect) {
-        String prepared = dialect == SqlDialect.ORACLE ? normalizeOracle(sql) : sql;
-        Statements parsed;
-        try {
-            parsed = CCJSqlParserUtil.parseStatements(prepared);
-        } catch (JSQLParserException e) {
-            throw new SqlParseException("Could not parse SQL: " + e.getMessage(), e);
-        }
+        String prepared = sql;
+        if (dialect == SqlDialect.ORACLE) prepared = normalizeOracle(prepared);
+        if (dialect == SqlDialect.DB2)    prepared = normalizeDb2(prepared);
+
         List<TableModel> result = new ArrayList<>();
-        for (Statement s : parsed) {
-            if (s instanceof CreateTable ct) {
+        List<String> statements = splitStatements(prepared);
+        int idx = 0;
+        for (String raw : statements) {
+            idx++;
+            String stmt = stripComments(raw).trim();
+            if (stmt.isEmpty()) continue;
+
+            if (CREATE_TABLE_LEAD.matcher(stmt).find()) {
+                CreateTable ct;
+                try {
+                    Statement parsed = CCJSqlParserUtil.parse(stmt);
+                    if (!(parsed instanceof CreateTable)) {
+                        // Leading keywords matched but parser saw something else — skip.
+                        continue;
+                    }
+                    ct = (CreateTable) parsed;
+                } catch (JSQLParserException e) {
+                    throw new SqlParseException(null, idx, snippet(stmt),
+                            "Could not parse CREATE TABLE statement #" + idx + ": " + e.getMessage(), e);
+                }
                 result.add(toTableModel(ct));
+                continue;
+            }
+
+            if (IGNORABLE_STATEMENT.matcher(stmt).find()) {
+                log.debug("Skipping non-table statement #{}: {}", idx, snippet(stmt));
+                continue;
+            }
+
+            // Unknown leading keyword — try parsing; if it parses to anything
+            // other than CreateTable, ignore. If it fails outright, treat as
+            // a hard error so the user is not silently confused.
+            try {
+                Statement parsed = CCJSqlParserUtil.parse(stmt);
+                if (parsed instanceof CreateTable ct) {
+                    result.add(toTableModel(ct));
+                }
+            } catch (JSQLParserException e) {
+                throw new SqlParseException(null, idx, snippet(stmt),
+                        "Could not parse statement #" + idx + ": " + e.getMessage(), e);
             }
         }
         return result;
@@ -101,20 +152,111 @@ public class SqlEntityGenerator {
                 m.group(1) == null ? "NUMBER(38)" : "NUMBER(38" + m.group(1) + ")");
     }
 
+    private static String normalizeDb2(String sql) {
+        return DB2_CURRENT_TS_DATE_TIME.matcher(sql).replaceAll(m ->
+                "CURRENT_" + m.group(1).toUpperCase(Locale.ROOT));
+    }
+
+    /** Split on {@code ;} while respecting single-quoted string literals (with
+     *  doubled-quote escape) so that semicolons inside a default value or a
+     *  COMMENT ON … IS '…;…' do not break the statement. */
+    static List<String> splitStatements(String sql) {
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inSingle = false;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (inSingle) {
+                cur.append(c);
+                if (c == '\'') {
+                    if (i + 1 < sql.length() && sql.charAt(i + 1) == '\'') {
+                        cur.append('\''); i++;
+                    } else {
+                        inSingle = false;
+                    }
+                }
+            } else if (c == '\'') {
+                cur.append(c);
+                inSingle = true;
+            } else if (c == ';') {
+                out.add(cur.toString());
+                cur.setLength(0);
+            } else {
+                cur.append(c);
+            }
+        }
+        if (cur.length() > 0) out.add(cur.toString());
+        return out;
+    }
+
+    /** Strip {@code --} line comments and {@code /* … *\/} block comments so
+     *  the leading-keyword classifier sees actual SQL. */
+    static String stripComments(String s) {
+        StringBuilder out = new StringBuilder(s.length());
+        int i = 0;
+        boolean inSingle = false;
+        while (i < s.length()) {
+            char c = s.charAt(i);
+            if (inSingle) {
+                out.append(c);
+                if (c == '\'') {
+                    if (i + 1 < s.length() && s.charAt(i + 1) == '\'') {
+                        out.append('\''); i += 2; continue;
+                    }
+                    inSingle = false;
+                }
+                i++;
+                continue;
+            }
+            if (c == '\'') { inSingle = true; out.append(c); i++; continue; }
+            if (c == '-' && i + 1 < s.length() && s.charAt(i + 1) == '-') {
+                int eol = s.indexOf('\n', i);
+                if (eol < 0) break;
+                i = eol + 1;
+                out.append('\n');
+                continue;
+            }
+            if (c == '/' && i + 1 < s.length() && s.charAt(i + 1) == '*') {
+                int end = s.indexOf("*/", i + 2);
+                if (end < 0) break;
+                i = end + 2;
+                continue;
+            }
+            out.append(c);
+            i++;
+        }
+        return out.toString();
+    }
+
+    private static String snippet(String stmt) {
+        String oneLine = stmt.replaceAll("\\s+", " ").trim();
+        return oneLine.length() <= 200 ? oneLine : oneLine.substring(0, 200) + "…";
+    }
+
     /** Thrown when the submitted DDL cannot be parsed. Callers in a request
      *  context should surface this as HTTP 400. {@code depId} is populated by
      *  the controller that knows which dep-keyed script failed; the generator
-     *  itself leaves it null. */
+     *  itself leaves it null. {@code statementIndex} is 1-based. */
     public static class SqlParseException extends RuntimeException {
         private final String depId;
+        private final Integer statementIndex;
+        private final String statementSnippet;
         public SqlParseException(String message, Throwable cause) {
-            this(null, message, cause);
+            this(null, null, null, message, cause);
         }
         public SqlParseException(String depId, String message, Throwable cause) {
+            this(depId, null, null, message, cause);
+        }
+        public SqlParseException(String depId, Integer statementIndex,
+                                 String statementSnippet, String message, Throwable cause) {
             super(message, cause);
             this.depId = depId;
+            this.statementIndex = statementIndex;
+            this.statementSnippet = statementSnippet;
         }
         public String depId() { return depId; }
+        public Integer statementIndex() { return statementIndex; }
+        public String statementSnippet() { return statementSnippet; }
     }
 
     private TableModel toTableModel(CreateTable ct) {

@@ -172,6 +172,8 @@ public class WizardStarterController {
         body.put("error", "Invalid SQL");
         if (ex.depId() != null) body.put("dep", ex.depId());
         body.put("detail", ex.getMessage());
+        if (ex.statementIndex() != null) body.put("statementIndex", ex.statementIndex());
+        if (ex.statementSnippet() != null) body.put("snippet", ex.statementSnippet());
         return ResponseEntity.badRequest().body(body);
     }
 
@@ -225,7 +227,8 @@ public class WizardStarterController {
             try {
                 sqlGenerator.detectTableNames(sql, dialect);
             } catch (SqlEntityGenerator.SqlParseException ex) {
-                throw new SqlEntityGenerator.SqlParseException(depId, ex.getMessage(), ex.getCause());
+                throw new SqlEntityGenerator.SqlParseException(depId, ex.statementIndex(),
+                        ex.statementSnippet(), ex.getMessage(), ex.getCause());
             }
         }
     }
