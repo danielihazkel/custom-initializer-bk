@@ -1,5 +1,8 @@
 package com.menora.initializr.extension.dynamic;
 
+import com.menora.initializr.ai.AiDtos.GeneratedAiFile;
+import com.menora.initializr.ai.SafePath;
+import com.menora.initializr.config.AiFilesContext;
 import com.menora.initializr.config.OpenApiSpecContext;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.config.SoapSpecContext;
@@ -343,6 +346,42 @@ public class DynamicProjectGenerationConfiguration {
                     });
                 });
             });
+        };
+    }
+
+    /**
+     * Writes the AI-generated files the user kept in the AI assistant panel.
+     * Path safety is re-validated here (defense in depth) — the
+     * {@link com.menora.initializr.ai.AiFileGenerationService} already filters
+     * the AI's output, but a hand-crafted request body could send files
+     * straight to {@code /starter-wizard.zip} without going through the AI.
+     *
+     * <p>Order 150 sits after the OpenAPI/SOAP contributors (100) and before
+     * the LOWEST_PRECEDENCE delete contributor, so AI files don't clobber
+     * anything from earlier in the pipeline and can themselves be cleaned up
+     * by a DELETE entry if a future feature wants that.
+     */
+    @Bean
+    @Order(150)
+    ProjectContributor aiFileContributor(AiFilesContext aiFilesContext) {
+        return projectRoot -> {
+            if (aiFilesContext.isEmpty()) return;
+            for (GeneratedAiFile f : aiFilesContext.all()) {
+                String safe;
+                try {
+                    safe = SafePath.validate(f.path());
+                } catch (IllegalArgumentException ex) {
+                    // Defense in depth — AiFileGenerationService already filters,
+                    // so an unsafe path here means a hand-crafted request body.
+                    // Log and skip rather than 500 the whole generation.
+                    log.warn("ai file skipped: '{}' rejected ({})", f.path(), ex.getMessage());
+                    continue;
+                }
+                Path target = projectRoot.resolve(safe);
+                Files.createDirectories(target.getParent());
+                Files.writeString(target, f.content());
+                log.debug("ai file written: {}", safe);
+            }
         };
     }
 

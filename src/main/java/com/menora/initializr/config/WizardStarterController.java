@@ -1,5 +1,6 @@
 package com.menora.initializr.config;
 
+import com.menora.initializr.ai.AiDtos.GeneratedAiFile;
 import com.menora.initializr.openapi.OpenApiCodeGenerator;
 import com.menora.initializr.openapi.OpenApiWizardOptions;
 import com.menora.initializr.soap.SoapCodeGenerator;
@@ -60,6 +61,7 @@ public class WizardStarterController {
     private final SqlScriptsContext sqlContext;
     private final OpenApiSpecContext specContext;
     private final SoapSpecContext soapContext;
+    private final AiFilesContext aiFilesContext;
     private final OpenApiCodeGenerator openApiGenerator;
     private final SoapCodeGenerator soapGenerator;
     private final SqlEntityGenerator sqlGenerator;
@@ -70,6 +72,7 @@ public class WizardStarterController {
                                    SqlScriptsContext sqlContext,
                                    OpenApiSpecContext specContext,
                                    SoapSpecContext soapContext,
+                                   AiFilesContext aiFilesContext,
                                    OpenApiCodeGenerator openApiGenerator,
                                    SoapCodeGenerator soapGenerator,
                                    SqlEntityGenerator sqlGenerator) {
@@ -79,6 +82,7 @@ public class WizardStarterController {
         this.sqlContext = sqlContext;
         this.specContext = specContext;
         this.soapContext = soapContext;
+        this.aiFilesContext = aiFilesContext;
         this.openApiGenerator = openApiGenerator;
         this.soapGenerator = soapGenerator;
         this.sqlGenerator = sqlGenerator;
@@ -294,12 +298,24 @@ public class WizardStarterController {
             }
         }
         soapContext.populate(body.wsdlByDep() == null ? Map.of() : body.wsdlByDep(), soapOpts);
+
+        // AI files — kept files the user reviewed in the AI panel.
+        List<GeneratedAiFile> aiFiles = new ArrayList<>();
+        if (body.aiFiles() != null) {
+            for (AiFileDto dto : body.aiFiles()) {
+                if (dto != null && dto.path() != null && dto.content() != null) {
+                    aiFiles.add(new GeneratedAiFile(dto.path(), dto.content()));
+                }
+            }
+        }
+        aiFilesContext.populate(aiFiles);
     }
 
     private void clearAllContexts() {
         sqlContext.clear();
         specContext.clear();
         soapContext.clear();
+        aiFilesContext.clear();
         optionsContext.clear();
     }
 
@@ -400,8 +416,11 @@ public class WizardStarterController {
             Map<String, String> specByDep,
             Map<String, OpenApiOptionsDto> openApiOptions,
             Map<String, String> wsdlByDep,
-            Map<String, SoapOptionsDto> soapOptions) {
+            Map<String, SoapOptionsDto> soapOptions,
+            List<AiFileDto> aiFiles) {
     }
+
+    public record AiFileDto(String path, String content) {}
 
     public record SqlDepOptionsDto(String subPackage, List<SqlTableOptionsDto> tables) {}
 

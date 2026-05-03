@@ -110,3 +110,15 @@ management:
 menora:
   audit:
     log-remote-addr: true
+
+# AI file-contribution feature. Disabled by default — set ai.enabled=true and
+# ai.endpoint-url=<your endpoint> to turn it on. Endpoint must accept an
+# OpenAI-compatible chat/completions POST body.
+ai:
+  enabled: false
+  endpoint-url: ""
+  auth-header-name: Authorization
+  auth-header-value: ""
+  model: gpt-4o-mini
+  timeout-seconds: 60
+  max-files: 20
