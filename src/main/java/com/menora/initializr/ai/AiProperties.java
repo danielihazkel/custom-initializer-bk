@@ -18,7 +18,17 @@ public class AiProperties {
     /** Master switch. When false, {@code POST /ai/generate-files} returns 503. */
     private boolean enabled = false;
 
-    /** Full URL the {@code POST {model, messages}} body is sent to. */
+    /**
+     * Provider request/response shape. {@code "openai"} (default) sends the
+     * OpenAI {@code chat/completions} JSON body and reads {@code choices[0].message.content}.
+     * {@code "menora"} sends a {@code multipart/form-data} body with {@code input},
+     * {@code modelId}, and {@code labels} fields and reads the response's
+     * {@code message} field. Both providers share the downstream JSON envelope
+     * parser ({@code {"files":[…]}}).
+     */
+    private String provider = "openai";
+
+    /** Full URL the request body is sent to. Shape determined by {@link #provider}. */
     private String endpointUrl = "";
 
     /** Header name carrying credentials (e.g. {@code Authorization}). */
@@ -40,6 +50,13 @@ public class AiProperties {
     private int maxFiles = 20;
 
     /**
+     * Required when {@link #provider} is {@code "menora"}. Sent as the
+     * {@code labels.app_id} field on every request — assigned by the Menora
+     * platform team (e.g. {@code "APM0000001"}).
+     */
+    private String menoraAppId = "";
+
+    /**
      * System message instructing the AI how to shape its response. The default
      * pins the JSON envelope the service parses out of {@code choices[0].message.content}.
      */
@@ -54,6 +71,9 @@ public class AiProperties {
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+    public String getProvider() { return provider; }
+    public void setProvider(String provider) { this.provider = provider; }
 
     public String getEndpointUrl() { return endpointUrl; }
     public void setEndpointUrl(String endpointUrl) { this.endpointUrl = endpointUrl; }
@@ -72,6 +92,9 @@ public class AiProperties {
 
     public int getMaxFiles() { return maxFiles; }
     public void setMaxFiles(int maxFiles) { this.maxFiles = maxFiles; }
+
+    public String getMenoraAppId() { return menoraAppId; }
+    public void setMenoraAppId(String menoraAppId) { this.menoraAppId = menoraAppId; }
 
     public String getSystemPrompt() { return systemPrompt; }
     public void setSystemPrompt(String systemPrompt) { this.systemPrompt = systemPrompt; }

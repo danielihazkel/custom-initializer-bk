@@ -734,13 +734,19 @@ The implementation calls the configured endpoint with a plain `RestClient` (the 
 
 All keys live under `ai.*` in `application.yml`. The feature is disabled by default — every endpoint returns `503 AI feature disabled` until you flip `ai.enabled` and set a URL.
 
+Two provider shapes are supported, selected by `ai.provider`:
+- **`openai`** (default) — OpenAI-compatible `chat/completions` JSON body. Works with OpenAI, Anthropic via proxy, vLLM, Ollama, and most internal LLM proxies.
+- **`menora`** — the Menora platform team's gateway, which uses `multipart/form-data` and a single `input` field. See the dedicated section below.
+
 ```yaml
 ai:
   enabled: false                                         # master switch
+  provider: openai                                       # openai | menora
   endpoint-url: ""                                       # e.g. https://api.openai.com/v1/chat/completions
   auth-header-name: Authorization                        # header carrying credentials
   auth-header-value: ""                                  # e.g. "Bearer sk-..." — blank sends no header
   model: gpt-4o-mini                                     # passed in the request body
+  menora-app-id: ""                                      # required when provider=menora
   timeout-seconds: 60                                    # connect+read timeout for the AI call
   max-files: 20                                          # hard cap on the number of files returned
   system-prompt: |                                       # default pins the JSON envelope shape
@@ -748,6 +754,33 @@ ai:
     Respond with ONLY a JSON object of the shape:
     {"files":[{"path":"src/main/java/...","content":"..."}]}
 ```
+
+### Pointing at the Menora AI Gateway
+
+The Menora gateway (`https://xgwint.menora.co.il:9450/ai-peng/api/v1/chats/completions`) uses `multipart/form-data` and a single `input` field instead of OpenAI's `{model, messages}` body. Set `ai.provider: menora` to activate the second code path:
+
+```yaml
+ai:
+  enabled: true
+  provider: menora
+  endpoint-url: https://xgwint.menora.co.il:9450/ai-peng/api/v1/chats/completions
+  auth-header-name: Authorization
+  auth-header-value: Basic <base64(clientId:clientSecret)>
+  model: eu.anthropic.claude-sonnet-4-20250514-v1:0     # any modelId from /api/v1/chats/models
+  menora-app-id: APM0000001                             # required — assigned by the platform team
+  timeout-seconds: 180                                  # Claude Sonnet 4 can be slow; bump from 60s
+  max-files: 20
+```
+
+Behavioural differences vs. the OpenAI path:
+
+- The `system-prompt` is concatenated into the single `input` field — Menora's API has no role separation. Claude Sonnet 4 follows the inline "respond with ONLY this JSON" instruction reliably.
+- The service reads the assistant's text from the response's `message` field (Menora returns `{"conversationId":"…","message":"…"}`) instead of `choices[0].message.content`.
+- Auth is HTTP Basic. Compute the header value as `Basic ` + base64(`clientId:clientSecret`). The header machinery is identical to OpenAI — only the value differs.
+- `ai.menora-app-id` is sent verbatim as `labels.app_id` on every request; the gateway requires it. A blank value surfaces as a clean 502 with a descriptive message.
+- The downstream JSON-envelope parse (`{"files":[…]}` extraction, fence stripping, `SafePath` validation, `max-files` cap) is identical for both providers.
+
+To enumerate models the gateway supports, hit `GET /api/v1/chats/models` directly with your credentials — it returns a list of `{modelId, friendlyName, providerName}` entries.
 
 ### Wire Format
 

@@ -112,13 +112,21 @@ menora:
     log-remote-addr: true
 
 # AI file-contribution feature. Disabled by default — set ai.enabled=true and
-# ai.endpoint-url=<your endpoint> to turn it on. Endpoint must accept an
-# OpenAI-compatible chat/completions POST body.
+# ai.endpoint-url=<your endpoint> to turn it on.
+#
+#   provider=openai (default) — POSTs an OpenAI-compatible chat/completions
+#                               JSON body and reads choices[0].message.content.
+#   provider=menora           — POSTs a multipart/form-data body (input,
+#                               modelId, labels) and reads the "message" field.
+#                               Set menora-app-id to the value assigned by
+#                               the platform team (e.g. APM0000001).
 ai:
   enabled: false
+  provider: openai
   endpoint-url: ""
   auth-header-name: Authorization
   auth-header-value: ""
   model: gpt-4o-mini
+  menora-app-id: ""
   timeout-seconds: 60
   max-files: 20
