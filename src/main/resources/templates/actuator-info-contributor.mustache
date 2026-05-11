@@ -1,0 +1,25 @@
+package {{packageName}}.config;
+
+import org.springframework.boot.actuate.info.Info;
+import org.springframework.boot.actuate.info.InfoContributor;
+import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+@Component
+public class BuildInfoContributor implements InfoContributor {
+
+    private final Instant startedAt = Instant.now();
+
+    @Override
+    public void contribute(Info.Builder builder) {
+        Map<String, Object> app = new LinkedHashMap<>();
+        app.put("name", "{{artifactId}}");
+        app.put("group", "{{groupId}}");
+        app.put("version", "{{version}}");
+        app.put("startedAt", startedAt.toString());
+        builder.withDetail("application", app);
+    }
+}

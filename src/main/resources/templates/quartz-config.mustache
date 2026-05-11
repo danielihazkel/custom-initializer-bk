@@ -1,0 +1,37 @@
+package {{packageName}}.config;
+
+import org.quartz.spi.JobFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.quartz.SpringBeanJobFactory;
+
+@Configuration
+public class QuartzConfig {
+
+    @Bean
+    public JobFactory jobFactory(ApplicationContext applicationContext) {
+        AutowiringSpringBeanJobFactory jobFactory = new AutowiringSpringBeanJobFactory();
+        jobFactory.setApplicationContext(applicationContext);
+        return jobFactory;
+    }
+
+    public static class AutowiringSpringBeanJobFactory extends SpringBeanJobFactory {
+
+        @Autowired
+        private ApplicationContext applicationContext;
+
+        @Override
+        protected Object createJobInstance(org.quartz.spi.TriggerFiredBundle bundle) throws Exception {
+            Object job = super.createJobInstance(bundle);
+            applicationContext.getAutowireCapableBeanFactory().autowireBean(job);
+            return job;
+        }
+
+        @Override
+        public void setApplicationContext(ApplicationContext context) {
+            this.applicationContext = context;
+        }
+    }
+}

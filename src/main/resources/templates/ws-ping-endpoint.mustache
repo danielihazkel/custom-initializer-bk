@@ -1,0 +1,55 @@
+package {{packageName}}.endpoint;
+
+import org.springframework.ws.server.endpoint.annotation.Endpoint;
+import org.springframework.ws.server.endpoint.annotation.PayloadRoot;
+import org.springframework.ws.server.endpoint.annotation.RequestPayload;
+import org.springframework.ws.server.endpoint.annotation.ResponsePayload;
+import org.w3c.dom.Element;
+
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMResult;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+import java.io.StringWriter;
+import java.time.Instant;
+
+/**
+ * Example Spring-WS endpoint. Replace the JAX-B request/response classes generated from
+ * {@code src/main/resources/xsd/ping.xsd} (via the jaxws-maven-plugin) by uncommenting the
+ * typed signature below once you run the build.
+ */
+@Endpoint
+public class PingEndpoint {
+
+    public static final String NAMESPACE_URI = "http://menora.co.il/ping";
+
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pingRequest")
+    @ResponsePayload
+    public DOMSource handlePing(@RequestPayload DOMSource request) throws Exception {
+        String message = extractMessage(request);
+        return buildResponse(message);
+    }
+
+    private String extractMessage(DOMSource source) throws Exception {
+        Element root = (Element) source.getNode().getFirstChild();
+        return root == null ? "" : root.getTextContent();
+    }
+
+    private DOMSource buildResponse(String message) throws Exception {
+        DOMResult result = new DOMResult();
+        String xml = "<pingResponse xmlns=\"" + NAMESPACE_URI + "\">"
+                + "<echo>" + message + "</echo>"
+                + "<serverTime>" + Instant.now() + "</serverTime>"
+                + "</pingResponse>";
+
+        Transformer transformer = TransformerFactory.newInstance().newTransformer();
+        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+        transformer.transform(
+                new javax.xml.transform.stream.StreamSource(new java.io.StringReader(xml)),
+                result);
+        return new DOMSource(result.getNode());
+    }
+}

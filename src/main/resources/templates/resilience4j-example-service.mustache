@@ -1,0 +1,26 @@
+package {{packageName}}.service;
+
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
+import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.util.concurrent.ThreadLocalRandom;
+
+@Service
+public class ResilientService {
+
+    @CircuitBreaker(name = "default", fallbackMethod = "fallback")
+    @Retry(name = "default")
+    public String callRemote() throws IOException {
+        if (ThreadLocalRandom.current().nextInt(100) < 50) {
+            throw new IOException("simulated downstream failure");
+        }
+        return "downstream-ok";
+    }
+
+    @SuppressWarnings("unused")
+    private String fallback(Throwable ex) {
+        return "downstream-unavailable";
+    }
+}

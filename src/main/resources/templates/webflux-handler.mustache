@@ -1,0 +1,25 @@
+package {{packageName}}.web;
+
+import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.server.ServerRequest;
+import org.springframework.web.reactive.function.server.ServerResponse;
+import reactor.core.publisher.Mono;
+
+import java.time.Instant;
+import java.util.Map;
+
+@Component
+public class HelloHandler {
+
+    public Mono<ServerResponse> hello(ServerRequest request) {
+        return ServerResponse.ok().bodyValue(Map.of(
+                "app", "{{artifactId}}",
+                "timestamp", Instant.now().toString(),
+                "message", "hello from {{artifactId}}"
+        ));
+    }
+
+    public Mono<ServerResponse> health(ServerRequest request) {
+        return ServerResponse.ok().bodyValue(Map.of("status", "UP"));
+    }
+}

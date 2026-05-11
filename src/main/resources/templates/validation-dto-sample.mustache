@@ -1,0 +1,15 @@
+package {{packageName}}.dto;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record SampleRequest(
+        @NotBlank(message = "name must not be blank")
+        @Size(max = 100)
+        String name,
+
+        @NotBlank @Email(message = "must be a valid email")
+        String email
+) {
+}

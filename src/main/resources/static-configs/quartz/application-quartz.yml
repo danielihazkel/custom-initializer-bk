@@ -1,0 +1,15 @@
+spring:
+  quartz:
+    job-store-type: memory
+    auto-startup: true
+    startup-delay: 5s
+    wait-for-jobs-to-complete-on-shutdown: true
+    overwrite-existing-jobs: true
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: ${spring.application.name:app}-scheduler
+            instanceId: AUTO
+          threadPool:
+            threadCount: 8

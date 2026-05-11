@@ -156,6 +156,13 @@ public class DataSeeder implements CommandLineRunner {
         entry(web, "web-services", "Spring Web Services",
                 "Contract-first SOAP services and clients with Spring-WS",
                 "org.springframework.boot", "spring-boot-starter-web-services", null, null, null, 2);
+        entry(web, "validation", "Bean Validation",
+                "Hibernate Validator + @RestControllerAdvice for ConstraintViolation handling",
+                "org.springframework.boot", "spring-boot-starter-validation", null, null, null, 3);
+        entry(web, "openapi", "OpenAPI / Swagger UI",
+                "Springdoc OpenAPI — auto-generated API docs + Swagger UI at /swagger-ui.html",
+                "org.springdoc", "springdoc-openapi-starter-webmvc-ui", "2.6.0", null, null, 4);
+        setRange("openapi", "[3.2.0,4.0.0)");
 
         DependencyGroupEntity data = group("Data", 2);
         entry(data, "data-jpa", "Spring Data JPA", "Persist data with JPA and Hibernate",
@@ -173,6 +180,15 @@ public class DataSeeder implements CommandLineRunner {
                 "com.h2database", "h2", null, "runtime", null, 5);
         entry(data, "mongodb", "MongoDB", "Spring Data MongoDB — document database driver",
                 null, null, null, null, null, 6);
+        entry(data, "flyway", "Flyway Migration",
+                "Database schema migrations with Flyway — drop SQL files under db/migration/",
+                "org.flywaydb", "flyway-core", null, null, null, 7);
+        entry(data, "liquibase", "Liquibase Migration",
+                "Database schema migrations with Liquibase — XML changelogs under db/changelog/",
+                "org.liquibase", "liquibase-core", null, null, null, 8);
+        entry(data, "redis", "Spring Data Redis",
+                "Spring Data Redis — Lettuce client + RedisTemplate for cache and ops",
+                "org.springframework.boot", "spring-boot-starter-data-redis", null, null, null, 9);
 
         DependencyGroupEntity messaging = group("Messaging", 3);
         entry(messaging, "kafka", "Spring for Apache Kafka", "Kafka messaging support",
@@ -209,6 +225,23 @@ public class DataSeeder implements CommandLineRunner {
         entry(utilities, "mapstruct", "MapStruct",
                 "Compile-time DTO/entity mapping via annotation processor",
                 "org.mapstruct", "mapstruct", "1.6.3", null, null, 1);
+        entry(utilities, "cache", "Caching (Caffeine)",
+                "Spring Cache abstraction backed by an in-memory Caffeine cache manager",
+                "org.springframework.boot", "spring-boot-starter-cache", null, null, null, 2);
+        entry(utilities, "resilience4j", "Resilience4j",
+                "Circuit breaker, retry, and time-limiter — fault tolerance toolkit",
+                "io.github.resilience4j", "resilience4j-spring-boot3", "2.2.0", null, null, 3);
+        setRange("resilience4j", "[3.2.0,4.0.0)");
+        entry(utilities, "quartz", "Quartz Scheduler",
+                "Spring Boot Quartz starter — schedule background jobs with JobDetail/Trigger",
+                "org.springframework.boot", "spring-boot-starter-quartz", null, null, null, 4);
+    }
+
+    private void setRange(String depId, String range) {
+        entryRepo.findAll().stream()
+                .filter(e -> depId.equals(e.getDepId()))
+                .findFirst()
+                .ifPresent(e -> { e.setCompatibilityRange(range); entryRepo.save(e); });
     }
 
     // ── Common file contributions (every project) ────────────────────────────
@@ -461,6 +494,192 @@ public class DataSeeder implements CommandLineRunner {
                 readClasspath("templates/mapstruct-example-mapper.mustache"),
                 "src/main/java/{{packagePath}}/mapper/ExampleMapper.java",
                 FileContributionEntity.SubstitutionType.MUSTACHE, null, "example-mapper", 2);
+
+        // validation
+        fc("validation", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/validation/application-validation.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("validation", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/validation-exception-handler.mustache"),
+                "src/main/java/{{packagePath}}/web/ValidationExceptionHandler.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
+        fc("validation", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/validation-dto-sample.mustache"),
+                "src/main/java/{{packagePath}}/dto/SampleRequest.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "dto-sample", 2);
+
+        // openapi
+        fc("openapi", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/openapi/application-openapi.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("openapi", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/openapi-config.mustache"),
+                "src/main/java/{{packagePath}}/config/OpenApiConfig.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
+
+        // flyway
+        fc("flyway", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/flyway/application-flyway.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("flyway", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/flyway/V1__init.sql"),
+                "src/main/resources/db/migration/V1__init.sql",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 1);
+
+        // liquibase
+        fc("liquibase", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/liquibase/application-liquibase.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("liquibase", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/liquibase/db.changelog-master.xml"),
+                "src/main/resources/db/changelog/db.changelog-master.xml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 1);
+        fc("liquibase", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/liquibase/db.changelog-1.0.xml"),
+                "src/main/resources/db/changelog/db.changelog-1.0.xml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 2);
+
+        // redis
+        fc("redis", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/redis/application-redis.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("redis", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/redis-config.mustache"),
+                "src/main/java/{{packagePath}}/config/RedisConfig.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
+
+        // cache (Caffeine)
+        fc("cache", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/cache/application-cache.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("cache", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/cache-config.mustache"),
+                "src/main/java/{{packagePath}}/config/CacheConfig.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
+
+        // resilience4j
+        fc("resilience4j", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/resilience4j/application-resilience4j.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("resilience4j", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/resilience4j-example-service.mustache"),
+                "src/main/java/{{packagePath}}/service/ResilientService.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "circuit-breaker-example", 1);
+
+        // quartz
+        fc("quartz", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/quartz/application-quartz.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, null, 0);
+        fc("quartz", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/quartz-config.mustache"),
+                "src/main/java/{{packagePath}}/config/QuartzConfig.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, null, 1);
+        fc("quartz", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/quartz-job-example.mustache"),
+                "src/main/java/{{packagePath}}/job/HelloJob.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "job-example", 2);
+        fc("quartz", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/quartz-job-config.mustache"),
+                "src/main/java/{{packagePath}}/job/HelloJobConfig.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "job-example", 3);
+
+        // security — JWT + method security sub-options
+        fc("security", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/security-jwt-filter.mustache"),
+                "src/main/java/{{packagePath}}/config/JwtAuthFilter.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "jwt-example", 2);
+        fc("security", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/security-jwt-service.mustache"),
+                "src/main/java/{{packagePath}}/service/JwtService.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "jwt-example", 3);
+        fc("security", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/security-method-config.mustache"),
+                "src/main/java/{{packagePath}}/config/MethodSecurityConfig.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "method-security", 4);
+
+        // data-jpa — auditing + sample entity sub-options
+        fc("data-jpa", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/jpa-auditing-config.mustache"),
+                "src/main/java/{{packagePath}}/config/JpaAuditingConfig.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "auditing-example", 1);
+        fc("data-jpa", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/jpa-sample-entity.mustache"),
+                "src/main/java/{{packagePath}}/domain/User.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "sample-entity", 2);
+        fc("data-jpa", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/jpa-sample-repo.mustache"),
+                "src/main/java/{{packagePath}}/repository/UserRepository.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "sample-entity", 3);
+
+        // web — REST example + global exception handler
+        fc("web", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/web-hello-controller.mustache"),
+                "src/main/java/{{packagePath}}/web/HelloController.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "rest-example", 0);
+        fc("web", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/web-exception-handler.mustache"),
+                "src/main/java/{{packagePath}}/web/GlobalExceptionHandler.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "global-exception-handler", 1);
+
+        // webflux — functional router/handler sample
+        fc("webflux", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/webflux-router.mustache"),
+                "src/main/java/{{packagePath}}/web/HelloRouter.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "handler-function", 0);
+        fc("webflux", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/webflux-handler.mustache"),
+                "src/main/java/{{packagePath}}/web/HelloHandler.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "handler-function", 1);
+
+        // web-services — example @Endpoint + XSD
+        fc("web-services", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/web-services/ping.xsd"),
+                "src/main/resources/xsd/ping.xsd",
+                FileContributionEntity.SubstitutionType.NONE, null, "example-endpoint", 0);
+        fc("web-services", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/ws-ping-endpoint.mustache"),
+                "src/main/java/{{packagePath}}/endpoint/PingEndpoint.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "example-endpoint", 1);
+
+        // actuator — health-groups + info-contributor sub-options
+        fc("actuator", FileContributionEntity.FileType.YAML_MERGE,
+                readClasspath("static-configs/actuator/health-groups.yml"),
+                "src/main/resources/application.yaml",
+                FileContributionEntity.SubstitutionType.NONE, null, "health-groups", 1);
+        fc("actuator", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/actuator-info-contributor.mustache"),
+                "src/main/java/{{packagePath}}/config/BuildInfoContributor.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "info-contributor", 2);
+
+        // prometheus — sample grafana dashboard
+        fc("prometheus", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/prometheus/grafana-dashboard.json"),
+                "k8s/grafana-dashboard.json",
+                FileContributionEntity.SubstitutionType.NONE, null, "grafana-dashboard", 0);
+
+        // kafka — streams example (requires spring-kafka-streams on classpath)
+        fc("kafka", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/kafka-streams-example.mustache"),
+                "src/main/java/{{packagePath}}/config/KafkaStreamsExample.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "streams-example", 4);
+
+        // mongodb — sample document + repository
+        fc("mongodb", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mongo-sample-doc.mustache"),
+                "src/main/java/{{packagePath}}/domain/SampleDoc.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "sample-document", 3);
+        fc("mongodb", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/mongo-sample-repo.mustache"),
+                "src/main/java/{{packagePath}}/repository/SampleDocRepository.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "sample-document", 4);
     }
 
     // ── Build customizations ──────────────────────────────────────────────────
@@ -492,6 +711,10 @@ public class DataSeeder implements CommandLineRunner {
                 "org.mapstruct", "mapstruct-processor", "1.6.3", "provided", 0);
         addDep("mapstruct",
                 "org.projectlombok", "lombok-mapstruct-binding", "0.2.0", "provided", 1);
+
+        // Cache: Caffeine alongside spring-boot-starter-cache (entry provides the starter)
+        addDep("cache",
+                "com.github.ben-manes.caffeine", "caffeine", null, null, 0);
     }
 
     private void seedSubOptions() {
@@ -543,6 +766,52 @@ public class DataSeeder implements CommandLineRunner {
 
         subOption("mapstruct", "example-mapper", "Example Mapper",
                 "Add ExampleDto.java + ExampleMapper.java demonstrating a MapStruct mapping", 0);
+
+        // ── New sub-options on existing deps ────────────────────────────────
+
+        subOption("security", "jwt-example", "JWT Example",
+                "Add JwtAuthFilter.java + JwtService.java — Bearer-token authentication scaffold", 0);
+        subOption("security", "method-security", "Method Security",
+                "Add MethodSecurityConfig.java — enables @PreAuthorize / @PostAuthorize / @Secured", 1);
+
+        subOption("data-jpa", "auditing-example", "JPA Auditing",
+                "Add JpaAuditingConfig.java with AuditorAware<String> — wires @CreatedBy/@LastModifiedBy", 0);
+        subOption("data-jpa", "sample-entity", "Sample Entity & Repository",
+                "Add User.java entity + UserRepository.java with audit fields", 1);
+
+        subOption("web", "rest-example", "REST Controller Example",
+                "Add HelloController.java exposing GET /api/hello", 0);
+        subOption("web", "global-exception-handler", "Global Exception Handler",
+                "Add GlobalExceptionHandler.java — @RestControllerAdvice with consistent error envelope", 1);
+
+        subOption("webflux", "handler-function", "Functional Routes Example",
+                "Add HelloRouter.java + HelloHandler.java — RouterFunction-based endpoints", 0);
+
+        subOption("web-services", "example-endpoint", "Example @Endpoint",
+                "Add PingEndpoint.java + ping.xsd — Spring-WS contract-first sample", 0);
+
+        subOption("actuator", "health-groups", "Health Probes (readiness/liveness)",
+                "Merge management.endpoint.health.group.readiness/liveness blocks for Kubernetes probes", 0);
+        subOption("actuator", "info-contributor", "Build Info Contributor",
+                "Add BuildInfoContributor.java — exposes app name/group/version under /actuator/info", 1);
+
+        subOption("prometheus", "grafana-dashboard", "Grafana Dashboard Starter",
+                "Add k8s/grafana-dashboard.json — basic JVM + HTTP latency panels", 0);
+
+        subOption("kafka", "streams-example", "Streams Example",
+                "Add KafkaStreamsExample.java — sample KStream topology (requires spring-kafka-streams)", 2);
+
+        subOption("mongodb", "sample-document", "Sample Document & Repository",
+                "Add SampleDoc.java + SampleDocRepository.java — MongoRepository example", 2);
+
+        subOption("validation", "dto-sample", "Sample DTO with Constraints",
+                "Add SampleRequest.java with @NotBlank/@Email — demonstrates bean validation", 0);
+
+        subOption("resilience4j", "circuit-breaker-example", "Circuit Breaker Example",
+                "Add ResilientService.java — @CircuitBreaker + @Retry with fallback method", 0);
+
+        subOption("quartz", "job-example", "Job Example",
+                "Add HelloJob.java + HelloJobConfig.java — registers a 1-minute repeating Quartz job", 0);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

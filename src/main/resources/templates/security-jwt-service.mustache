@@ -1,0 +1,46 @@
+package {{packageName}}.service;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.util.Base64;
+import java.util.Optional;
+
+@Service
+public class JwtService {
+
+    @Value("${security.jwt.secret:change-me-please-change-me}")
+    private String secret;
+
+    /**
+     * Stub implementation — replace with a real library (e.g. jjwt or nimbus-jose-jwt).
+     * For now we only decode the payload to extract the "sub" claim, without signature
+     * verification, so the wiring compiles and tests pass.
+     */
+    public Optional<String> parseSubject(String token) {
+        try {
+            String[] parts = token.split("\\.");
+            if (parts.length < 2) {
+                return Optional.empty();
+            }
+            String payload = new String(Base64.getUrlDecoder().decode(parts[1]));
+            int subIdx = payload.indexOf("\"sub\"");
+            if (subIdx < 0) {
+                return Optional.empty();
+            }
+            int colon = payload.indexOf(':', subIdx);
+            int quoteStart = payload.indexOf('"', colon + 1);
+            int quoteEnd = payload.indexOf('"', quoteStart + 1);
+            if (quoteStart < 0 || quoteEnd < 0) {
+                return Optional.empty();
+            }
+            return Optional.of(payload.substring(quoteStart + 1, quoteEnd));
+        } catch (Exception ignored) {
+            return Optional.empty();
+        }
+    }
+
+    public String getSecret() {
+        return secret;
+    }
+}

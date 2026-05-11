@@ -1,0 +1,51 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "schemaVersion": 36,
+  "title": "Spring Boot — Service Overview",
+  "tags": ["spring-boot", "menora"],
+  "timezone": "",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Uptime",
+      "datasource": "Prometheus",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [
+        {"expr": "process_uptime_seconds{application=\"$application\"}", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Requests (rps)",
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 12, "x": 6, "y": 0},
+      "targets": [
+        {"expr": "sum(rate(http_server_requests_seconds_count{application=\"$application\"}[1m])) by (status)", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM Heap Used",
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [
+        {"expr": "sum(jvm_memory_used_bytes{application=\"$application\",area=\"heap\"})", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP p95 Latency (s)",
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{application=\"$application\"}[5m])) by (le, uri))", "refId": "A"}
+      ]
+    }
+  ],
+  "templating": {
+    "list": [
+      {"name": "application", "type": "query", "datasource": "Prometheus", "query": "label_values(jvm_memory_used_bytes, application)"}
+    ]
+  }
+}

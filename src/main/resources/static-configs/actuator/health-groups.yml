@@ -1,0 +1,17 @@
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db,diskSpace
+          show-details: when-authorized
+        liveness:
+          include: livenessState
+          show-details: never
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true

@@ -1,5 +1,6 @@
 package com.menora.initializr;
 
+import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.db.entity.FileContributionEntity;
 import com.menora.initializr.db.repository.FileContributionRepository;
 import io.spring.initializr.generator.test.project.ProjectStructure;
@@ -39,6 +40,9 @@ class ProjectGenerationIntegrationTests {
 
     @Autowired
     private FileContributionRepository fileContribRepo;
+
+    @Autowired
+    private ProjectOptionsContext optionsContext;
 
     @Test
     void metadataEndpointReturnsOk() {
@@ -775,4 +779,283 @@ class ProjectGenerationIntegrationTests {
         return request;
     }
 
+    // ── New dependency coverage ──────────────────────────────────────────────
+
+    @Test
+    void flywayDependencyAddsMigrationFile() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("flyway");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        assertThat(project).filePaths()
+                .contains("src/main/resources/db/migration/V1__init.sql");
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("flyway");
+        assertThat(Files.readString(projectDir.resolve("pom.xml")))
+                .contains("flyway-core");
+    }
+
+    @Test
+    void liquibaseDependencyAddsChangelogFiles() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("liquibase");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        assertThat(project).filePaths()
+                .contains("src/main/resources/db/changelog/db.changelog-master.xml")
+                .contains("src/main/resources/db/changelog/db.changelog-1.0.xml");
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("liquibase");
+        assertThat(Files.readString(projectDir.resolve("pom.xml")))
+                .contains("liquibase-core");
+    }
+
+    @Test
+    void openapiDependencyAddsConfigAndSwaggerSettings() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("web");
+        request.getDependencies().add("openapi");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        assertThat(project).filePaths()
+                .contains("src/main/java/com/menora/demo/config/OpenApiConfig.java");
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("springdoc")
+                .contains("swagger-ui");
+        assertThat(Files.readString(projectDir.resolve("pom.xml")))
+                .contains("springdoc-openapi-starter-webmvc-ui");
+    }
+
+    @Test
+    void redisDependencyAddsConfigAndYaml() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("redis");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        assertThat(project).filePaths()
+                .contains("src/main/java/com/menora/demo/config/RedisConfig.java");
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("redis");
+        assertThat(Files.readString(projectDir.resolve("pom.xml")))
+                .contains("spring-boot-starter-data-redis");
+    }
+
+    @Test
+    void cacheDependencyAddsCaffeineAndCacheConfig() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("cache");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        assertThat(project).filePaths()
+                .contains("src/main/java/com/menora/demo/config/CacheConfig.java");
+        String yaml = Files.readString(projectDir.resolve("src/main/resources/application.yaml"));
+        assertThat(yaml)
+                .contains("cache")
+                .contains("caffeine");
+        String pom = Files.readString(projectDir.resolve("pom.xml"));
+        assertThat(pom)
+                .contains("spring-boot-starter-cache")
+                .contains("caffeine");
+    }
+
+    @Test
+    void resilience4jDependencyAddsConfigYaml() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("resilience4j");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("resilience4j")
+                .contains("circuitbreaker");
+        assertThat(Files.readString(projectDir.resolve("pom.xml")))
+                .contains("resilience4j-spring-boot3");
+    }
+
+    @Test
+    void validationDependencyAddsExceptionHandler() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("web");
+        request.getDependencies().add("validation");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        assertThat(project).filePaths()
+                .contains("src/main/java/com/menora/demo/web/ValidationExceptionHandler.java");
+        assertThat(Files.readString(projectDir.resolve("pom.xml")))
+                .contains("spring-boot-starter-validation");
+    }
+
+    @Test
+    void quartzDependencyAddsConfigAndYaml() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("quartz");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        assertThat(project).filePaths()
+                .contains("src/main/java/com/menora/demo/config/QuartzConfig.java");
+        assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                .contains("quartz");
+        assertThat(Files.readString(projectDir.resolve("pom.xml")))
+                .contains("spring-boot-starter-quartz");
+    }
+
+    // ── New sub-option coverage ──
+    // Sub-options are normally populated by InitializrWebConfiguration filter from
+    // `opts-{depId}=...` query params. For invoker-based tests we populate the
+    // ProjectOptionsContext directly in the test thread.
+
+    @Test
+    void webRestExampleSubOptionAddsController() throws Exception {
+        optionsContext.populate(Map.of("web", List.of("rest-example", "global-exception-handler")));
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("web");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+            ProjectStructure project = new ProjectStructure(projectDir);
+
+            assertThat(project).filePaths()
+                    .contains("src/main/java/com/menora/demo/web/HelloController.java")
+                    .contains("src/main/java/com/menora/demo/web/GlobalExceptionHandler.java");
+            assertThat(Files.readString(projectDir.resolve("src/main/java/com/menora/demo/web/HelloController.java")))
+                    .contains("@RestController")
+                    .contains("@RequestMapping(\"/api\")")
+                    .contains("@GetMapping(\"/hello\")");
+        } finally {
+            optionsContext.clear();
+        }
+    }
+
+    @Test
+    void resilience4jCircuitBreakerSubOptionAddsService() throws Exception {
+        optionsContext.populate(Map.of("resilience4j", List.of("circuit-breaker-example")));
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("resilience4j");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+            ProjectStructure project = new ProjectStructure(projectDir);
+
+            assertThat(project).filePaths()
+                    .contains("src/main/java/com/menora/demo/service/ResilientService.java");
+            assertThat(Files.readString(projectDir.resolve("src/main/java/com/menora/demo/service/ResilientService.java")))
+                    .contains("@CircuitBreaker")
+                    .contains("@Retry")
+                    .contains("fallback");
+        } finally {
+            optionsContext.clear();
+        }
+    }
+
+    @Test
+    void quartzJobExampleSubOptionAddsJobFiles() throws Exception {
+        optionsContext.populate(Map.of("quartz", List.of("job-example")));
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("quartz");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+            ProjectStructure project = new ProjectStructure(projectDir);
+
+            assertThat(project).filePaths()
+                    .contains("src/main/java/com/menora/demo/job/HelloJob.java")
+                    .contains("src/main/java/com/menora/demo/job/HelloJobConfig.java");
+        } finally {
+            optionsContext.clear();
+        }
+    }
+
+    @Test
+    void jpaSampleEntitySubOptionAddsEntityAndRepo() throws Exception {
+        optionsContext.populate(Map.of("data-jpa", List.of("sample-entity", "auditing-example")));
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("data-jpa");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+            ProjectStructure project = new ProjectStructure(projectDir);
+
+            assertThat(project).filePaths()
+                    .contains("src/main/java/com/menora/demo/domain/User.java")
+                    .contains("src/main/java/com/menora/demo/repository/UserRepository.java")
+                    .contains("src/main/java/com/menora/demo/config/JpaAuditingConfig.java");
+            assertThat(Files.readString(projectDir.resolve("src/main/java/com/menora/demo/domain/User.java")))
+                    .contains("@Entity")
+                    .contains("@EntityListeners");
+        } finally {
+            optionsContext.clear();
+        }
+    }
+
+    @Test
+    void prometheusGrafanaDashboardSubOptionAddsJson() throws Exception {
+        optionsContext.populate(Map.of("prometheus", List.of("grafana-dashboard")));
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("prometheus");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+            ProjectStructure project = new ProjectStructure(projectDir);
+
+            assertThat(project).filePaths().contains("k8s/grafana-dashboard.json");
+            assertThat(Files.readString(projectDir.resolve("k8s/grafana-dashboard.json")))
+                    .contains("Spring Boot")
+                    .contains("Prometheus")
+                    .contains("jvm_memory_used_bytes");
+        } finally {
+            optionsContext.clear();
+        }
+    }
+
+    @Test
+    void actuatorHealthGroupsSubOptionMergesYaml() throws Exception {
+        optionsContext.populate(Map.of("actuator", List.of("health-groups", "info-contributor")));
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("actuator");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+            ProjectStructure project = new ProjectStructure(projectDir);
+
+            assertThat(project).filePaths()
+                    .contains("src/main/java/com/menora/demo/config/BuildInfoContributor.java");
+            String yaml = Files.readString(projectDir.resolve("src/main/resources/application.yaml"));
+            assertThat(yaml)
+                    .contains("readiness")
+                    .contains("liveness")
+                    .contains("probes");
+        } finally {
+            optionsContext.clear();
+        }
+    }
+
+    @Test
+    void newDependenciesAppearInMetadata() {
+        ResponseEntity<String> response = restTemplate.getForEntity("/metadata/client", String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String body = response.getBody();
+        assertThat(body)
+                .contains("flyway")
+                .contains("liquibase")
+                .contains("openapi")
+                .contains("redis")
+                .contains("cache")
+                .contains("resilience4j")
+                .contains("validation")
+                .contains("quartz");
+    }
 }

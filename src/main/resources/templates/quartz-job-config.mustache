@@ -1,0 +1,32 @@
+package {{packageName}}.job;
+
+import org.quartz.JobBuilder;
+import org.quartz.JobDetail;
+import org.quartz.SimpleScheduleBuilder;
+import org.quartz.Trigger;
+import org.quartz.TriggerBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class HelloJobConfig {
+
+    @Bean
+    public JobDetail helloJobDetail() {
+        return JobBuilder.newJob(HelloJob.class)
+                .withIdentity("helloJob")
+                .storeDurably()
+                .build();
+    }
+
+    @Bean
+    public Trigger helloJobTrigger(JobDetail helloJobDetail) {
+        return TriggerBuilder.newTrigger()
+                .forJob(helloJobDetail)
+                .withIdentity("helloJobTrigger")
+                .withSchedule(SimpleScheduleBuilder.simpleSchedule()
+                        .withIntervalInMinutes(1)
+                        .repeatForever())
+                .build();
+    }
+}

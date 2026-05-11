@@ -1,0 +1,35 @@
+package {{packageName}}.config;
+
+import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.StreamsBuilder;
+import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.Produced;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.annotation.EnableKafkaStreams;
+
+/**
+ * Sample Kafka Streams topology — reads from `events.in` and forwards uppercased records to `events.out`.
+ *
+ * Requires {@code spring-kafka-streams} on the classpath. Add to your pom if the framework
+ * doesn't pull it in transitively:
+ *
+ * <pre>
+ *   &lt;dependency&gt;
+ *     &lt;groupId&gt;org.springframework.kafka&lt;/groupId&gt;
+ *     &lt;artifactId&gt;spring-kafka-streams&lt;/artifactId&gt;
+ *   &lt;/dependency&gt;
+ * </pre>
+ */
+@Configuration
+@EnableKafkaStreams
+public class KafkaStreamsExample {
+
+    @Bean
+    public KStream<String, String> uppercaseStream(StreamsBuilder builder) {
+        KStream<String, String> input = builder.stream("events.in");
+        KStream<String, String> output = input.mapValues(value -> value == null ? null : value.toUpperCase());
+        output.to("events.out", Produced.with(Serdes.String(), Serdes.String()));
+        return input;
+    }
+}

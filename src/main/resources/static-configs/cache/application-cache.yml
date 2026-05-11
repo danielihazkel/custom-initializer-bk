@@ -1,0 +1,7 @@
+spring:
+  cache:
+    type: caffeine
+    cache-names:
+      - default
+    caffeine:
+      spec: maximumSize=10000,expireAfterWrite=10m,recordStats
