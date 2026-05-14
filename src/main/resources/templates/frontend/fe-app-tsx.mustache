@@ -1,8 +1,9 @@
-{{#hasStateReduxToolkit}}import { Provider as ReduxProvider } from 'react-redux';
+{{#optStateReduxToolkitSampleStore}}import { Provider as ReduxProvider } from 'react-redux';
 import { store } from '@app/store';
-{{/hasStateReduxToolkit}}{{#hasDataTanstackQuery}}import { QueryClientProvider } from '@tanstack/react-query';
+{{/optStateReduxToolkitSampleStore}}{{#hasDataTanstackQuery}}import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@shared/api/queryClient';
-{{/hasDataTanstackQuery}}{{#hasRouterReactRouter}}import { RouterProvider } from 'react-router-dom';
+{{/hasDataTanstackQuery}}{{#optDataTanstackQueryDevtools}}import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+{{/optDataTanstackQueryDevtools}}{{#hasRouterReactRouter}}import { RouterProvider } from 'react-router-dom';
 import { router } from '@app/routes';
 {{/hasRouterReactRouter}}{{#hasDesignMui}}import { ThemeProvider, CssBaseline } from '@mui/material';
 import { theme } from '@shared/theme/theme';
@@ -17,8 +18,8 @@ import { theme } from '@shared/theme/theme';
 
 export function App() {
   return (
-{{#hasStateReduxToolkit}}    <ReduxProvider store={store}>
-{{/hasStateReduxToolkit}}{{#hasDataTanstackQuery}}      <QueryClientProvider client={queryClient}>
+{{#optStateReduxToolkitSampleStore}}    <ReduxProvider store={store}>
+{{/optStateReduxToolkitSampleStore}}{{#hasDataTanstackQuery}}      <QueryClientProvider client={queryClient}>
 {{/hasDataTanstackQuery}}{{#hasDesignMui}}        <ThemeProvider theme={theme}>
           <CssBaseline />
           {{#hasRouterReactRouter}}<RouterProvider router={router} />{{/hasRouterReactRouter}}{{^hasRouterReactRouter}}<HomePage />{{/hasRouterReactRouter}}
@@ -35,7 +36,8 @@ export function App() {
 {{/hasStyleStyled}}{{^hasStyleStyled}}        <div>
           {{#hasRouterReactRouter}}<RouterProvider router={router} />{{/hasRouterReactRouter}}{{^hasRouterReactRouter}}<HomePage />{{/hasRouterReactRouter}}
         </div>
-{{/hasStyleStyled}}{{/hasDesignMantine}}{{/hasDesignChakra}}{{/hasDesignMui}}{{#hasDataTanstackQuery}}      </QueryClientProvider>
-{{/hasDataTanstackQuery}}{{#hasStateReduxToolkit}}    </ReduxProvider>
-{{/hasStateReduxToolkit}}  );
+{{/hasStyleStyled}}{{/hasDesignMantine}}{{/hasDesignChakra}}{{/hasDesignMui}}{{#hasDataTanstackQuery}}{{#optDataTanstackQueryDevtools}}        <ReactQueryDevtools initialIsOpen={false} />
+{{/optDataTanstackQueryDevtools}}      </QueryClientProvider>
+{{/hasDataTanstackQuery}}{{#optStateReduxToolkitSampleStore}}    </ReduxProvider>
+{{/optStateReduxToolkitSampleStore}}  );
 }

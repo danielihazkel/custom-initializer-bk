@@ -332,9 +332,10 @@ class FrontendProjectGenerationIntegrationTests {
     }
 
     @Test
-    void selectingZustandWritesCounterStore() throws Exception {
+    void selectingZustandWithSampleStoreWritesCounterStore() throws Exception {
         FrontendProjectDescription desc = baseDescription("demo");
         desc.getDependencies().add("state-zustand");
+        optionsContext.populate(java.util.Map.of("state-zustand", java.util.List.of("sample-store")));
         Map<String, String> files = generator.generateFileMap(desc);
 
         assertThat(files).containsKey("src/entities/counter/model/store.ts");
@@ -344,9 +345,35 @@ class FrontendProjectGenerationIntegrationTests {
     }
 
     @Test
-    void selectingReduxToolkitWritesStoreSliceAndWiresProvider() throws Exception {
+    void selectingZustandWithoutSampleStoreOmitsCounterStore() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("state-zustand");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        // Zustand npm dep present, but the sample file is gated on sample-store.
+        assertThat(files).doesNotContainKey("src/entities/counter/model/store.ts");
+        assertThat(files.get("package.json")).contains("\"zustand\"");
+    }
+
+    @Test
+    void zustandDevtoolsSubOptionFlipsMiddlewareImport() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("state-zustand");
+        optionsContext.populate(java.util.Map.of(
+                "state-zustand", java.util.List.of("sample-store", "devtools")));
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        String store = files.get("src/entities/counter/model/store.ts");
+        assertThat(store).contains("import { devtools } from 'zustand/middleware'");
+        assertThat(store).contains("devtools(");
+    }
+
+    @Test
+    void selectingReduxToolkitWithSampleStoreWritesStoreAndProvider() throws Exception {
         FrontendProjectDescription desc = baseDescription("demo");
         desc.getDependencies().add("state-redux-toolkit");
+        optionsContext.populate(java.util.Map.of(
+                "state-redux-toolkit", java.util.List.of("sample-store")));
         Map<String, String> files = generator.generateFileMap(desc);
 
         assertThat(files).containsKey("src/app/store.ts");
@@ -357,6 +384,55 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(app).contains("import { Provider as ReduxProvider } from 'react-redux'");
         assertThat(app).contains("import { store } from '@app/store'");
         assertThat(app).contains("<ReduxProvider store={store}>");
+    }
+
+    @Test
+    void selectingReduxToolkitWithoutSampleStoreSkipsStoreFilesAndProvider() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("state-redux-toolkit");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).doesNotContainKey("src/app/store.ts");
+        assertThat(files).doesNotContainKey("src/entities/counter/model/counterSlice.ts");
+        assertThat(files).doesNotContainKey("src/shared/lib/hooks.ts");
+        // App.tsx should not reference a non-existent @app/store.
+        String app = files.get("src/app/App.tsx");
+        assertThat(app).doesNotContain("ReduxProvider");
+        assertThat(app).doesNotContain("@app/store");
+    }
+
+    @Test
+    void tailwindDarkModeSubOptionAddsDarkModeKey() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("style-tailwind");
+        optionsContext.populate(java.util.Map.of(
+                "style-tailwind", java.util.List.of("dark-mode")));
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        String cfg = files.get("tailwind.config.js");
+        assertThat(cfg).contains("darkMode: 'class'");
+    }
+
+    @Test
+    void tailwindWithoutDarkModeOmitsDarkModeKey() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("style-tailwind");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        String cfg = files.get("tailwind.config.js");
+        assertThat(cfg).doesNotContain("darkMode");
+    }
+
+    @Test
+    void vitestCiConfigSubOptionWritesWorkflow() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("test-vitest-rtl");
+        optionsContext.populate(java.util.Map.of(
+                "test-vitest-rtl", java.util.List.of("ci-config")));
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).containsKey(".github/workflows/ci.yml");
+        assertThat(files.get(".github/workflows/ci.yml")).contains("pnpm install");
     }
 
     @Test
@@ -471,6 +547,32 @@ class FrontendProjectGenerationIntegrationTests {
         String pkg = readZipEntry(r.getBody(), "demo/package.json");
         assertThat(pkg).doesNotContain("@chakra-ui/react");
         assertThat(pkg).contains("\"zustand\"");
+    }
+
+    @Test
+    void previewEndpointPropagatesSubOptionFromOptsQueryParam() {
+        // Verifies the full HTTP path: opts-* param → filter → ProjectOptionsContext
+        // → generator gating. Without this end-to-end check we'd only know the
+        // service-layer wiring works, not the route from the UI.
+        String url = "/frontend/starter.preview?dependencies=state-zustand"
+                + "&opts-state-zustand=sample-store,devtools";
+        ResponseEntity<String> r = rest.getForEntity(url, String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String body = r.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body).contains("\"path\":\"src/entities/counter/model/store.ts\"");
+        assertThat(body).contains("zustand/middleware");
+        assertThat(body).contains("devtools(");
+    }
+
+    @Test
+    void previewEndpointWithoutSubOptionOmitsGatedFile() {
+        ResponseEntity<String> r = rest.getForEntity(
+                "/frontend/starter.preview?dependencies=state-zustand", String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String body = r.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body).doesNotContain("\"path\":\"src/entities/counter/model/store.ts\"");
     }
 
     @Test

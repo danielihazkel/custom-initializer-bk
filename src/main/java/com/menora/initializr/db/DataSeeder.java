@@ -1271,9 +1271,9 @@ public class DataSeeder implements CommandLineRunner {
 
         // ── Per-dep file contributions ───────────────────────────────────────
         // Tailwind: config files + base CSS (Vite plugin import handled via ADD_VITE_PLUGIN below).
-        feFc("style-tailwind", FileContributionEntity.FileType.STATIC_COPY,
-                readClasspath("static-configs/frontend/style-tailwind/tailwind.config.js"),
-                "tailwind.config.js", FileContributionEntity.SubstitutionType.NONE, 0);
+        feFc("style-tailwind", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/frontend/style-tailwind/tailwind.config.js.mustache"),
+                "tailwind.config.js", FileContributionEntity.SubstitutionType.MUSTACHE, 0);
         feFc("style-tailwind", FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/frontend/style-tailwind/postcss.config.js"),
                 "postcss.config.js", FileContributionEntity.SubstitutionType.NONE, 1);
@@ -1288,32 +1288,64 @@ public class DataSeeder implements CommandLineRunner {
         feFc("test-vitest-rtl", FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/frontend/test-vitest-rtl/test-setup.ts"),
                 "src/test-setup.ts", FileContributionEntity.SubstitutionType.NONE, 1);
+        feFc("test-vitest-rtl", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/test-vitest-rtl/home-page.test.tsx"),
+                "src/pages/home/ui/HomePage.test.tsx", FileContributionEntity.SubstitutionType.NONE,
+                "sample-tests", 2);
+        feFc("test-vitest-rtl", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/test-vitest-rtl/github-actions-ci.yml"),
+                ".github/workflows/ci.yml", FileContributionEntity.SubstitutionType.NONE,
+                "ci-config", 3);
 
         // Default starter wiring per dep — gives users a runnable demo of the
         // selected library, not just an entry in package.json. App.tsx picks
         // these up via the {{#hasRouterReactRouter}} / {{#hasStateRedux...}}
         // / {{#hasDataTanstackQuery}} / {{#hasStateZustand}} flags.
+        feFc("router-react-router", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/frontend/router-react-router/routes.tsx.mustache"),
+                "src/app/routes.tsx", FileContributionEntity.SubstitutionType.MUSTACHE, 0);
         feFc("router-react-router", FileContributionEntity.FileType.STATIC_COPY,
-                readClasspath("static-configs/frontend/router-react-router/routes.tsx"),
-                "src/app/routes.tsx", FileContributionEntity.SubstitutionType.NONE, 0);
+                readClasspath("static-configs/frontend/router-react-router/error-boundary.tsx"),
+                "src/shared/ui/error-boundary.tsx", FileContributionEntity.SubstitutionType.NONE,
+                "error-boundary", 1);
+        feFc("router-react-router", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/router-react-router/about-index.ts"),
+                "src/pages/about/index.ts", FileContributionEntity.SubstitutionType.NONE,
+                "sample-routes", 2);
+        feFc("router-react-router", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/router-react-router/about-page.tsx"),
+                "src/pages/about/ui/AboutPage.tsx", FileContributionEntity.SubstitutionType.NONE,
+                "sample-routes", 3);
 
-        feFc("state-zustand", FileContributionEntity.FileType.STATIC_COPY,
-                readClasspath("static-configs/frontend/state-zustand/counter-store.ts"),
-                "src/entities/counter/model/store.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+        feFc("state-zustand", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/frontend/state-zustand/counter-store.ts.mustache"),
+                "src/entities/counter/model/store.ts", FileContributionEntity.SubstitutionType.MUSTACHE,
+                "sample-store", 0);
 
         feFc("state-redux-toolkit", FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/frontend/state-redux-toolkit/store.ts"),
-                "src/app/store.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+                "src/app/store.ts", FileContributionEntity.SubstitutionType.NONE,
+                "sample-store", 0);
         feFc("state-redux-toolkit", FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/frontend/state-redux-toolkit/counterSlice.ts"),
-                "src/entities/counter/model/counterSlice.ts", FileContributionEntity.SubstitutionType.NONE, 1);
+                "src/entities/counter/model/counterSlice.ts", FileContributionEntity.SubstitutionType.NONE,
+                "sample-store", 1);
         feFc("state-redux-toolkit", FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/frontend/state-redux-toolkit/hooks.ts"),
-                "src/shared/lib/hooks.ts", FileContributionEntity.SubstitutionType.NONE, 2);
+                "src/shared/lib/hooks.ts", FileContributionEntity.SubstitutionType.NONE,
+                "sample-store", 2);
 
         feFc("data-tanstack-query", FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/frontend/data-tanstack-query/queryClient.ts"),
                 "src/shared/api/queryClient.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+        feFc("data-tanstack-query", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/data-tanstack-query/axios.ts"),
+                "src/shared/api/axios.ts", FileContributionEntity.SubstitutionType.NONE,
+                "axios-base", 1);
+        feFc("data-tanstack-query", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/data-tanstack-query/use-users.ts"),
+                "src/features/users/api/useUsers.ts", FileContributionEntity.SubstitutionType.NONE,
+                "sample-query", 2);
 
         // Design system: theme stubs & shadcn helpers
         feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
@@ -1346,6 +1378,12 @@ public class DataSeeder implements CommandLineRunner {
         feFc("design-mantine", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("static-configs/frontend/design-mantine/theme.ts"),
                 "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.MUSTACHE, 0);
+
+        // form-react-hook-form: sample signup form (TEMPLATE — body switches on rhf-zod-resolver)
+        feFc("form-react-hook-form", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/frontend/form-react-hook-form/signup-form.tsx.mustache"),
+                "src/features/signup/ui/SignupForm.tsx", FileContributionEntity.SubstitutionType.MUSTACHE,
+                "sample-form", 0);
 
         // ── Common npm deps (every FE project) ───────────────────────────────
         // React/React-DOM versions: ranges keyed off reactVersion. For v1 we ship two majors.
@@ -1393,6 +1431,7 @@ public class DataSeeder implements CommandLineRunner {
 
         feNpm("data-tanstack-query", "@tanstack/react-query",           "^5.51.23","",    0);
         feNpm("data-tanstack-query", "@tanstack/react-query-devtools",  "^5.51.23","dev", 1);
+        feNpm("data-tanstack-query", "axios",                           "^1.7.0",  "",    2);
         feNpm("data-swr",            "swr",                             "^2.2.5",  "",    0);
 
         feNpm("style-tailwind",      "tailwindcss",                     "^3.4.10", "dev", 0);
@@ -1417,6 +1456,10 @@ public class DataSeeder implements CommandLineRunner {
         feNpm("design-mantine",      "@mantine/hooks",                  "^7.13.0", "",    1);
 
         feNpm("form-react-hook-form","react-hook-form",                 "^7.53.0", "",    0);
+        // Ship the resolver bridge + zod under RHF too so the rhf-zod-resolver
+        // sub-option produces a valid project even when form-zod isn't selected.
+        feNpm("form-react-hook-form","@hookform/resolvers",             "^3.9.0",  "",    1);
+        feNpm("form-react-hook-form","zod",                             "^3.23.8", "",    2);
         feNpm("form-zod",            "zod",                             "^3.23.8", "",    0);
         feNpm("form-zod",            "@hookform/resolvers",             "^3.9.0",  "",    1);
 
@@ -1542,12 +1585,19 @@ public class DataSeeder implements CommandLineRunner {
 
     private void feFc(String depId, FileContributionEntity.FileType fileType, String content,
                        String targetPath, FileContributionEntity.SubstitutionType subType, int order) {
+        feFc(depId, fileType, content, targetPath, subType, null, order);
+    }
+
+    private void feFc(String depId, FileContributionEntity.FileType fileType, String content,
+                       String targetPath, FileContributionEntity.SubstitutionType subType,
+                       String subOptionId, int order) {
         FileContributionEntity e = new FileContributionEntity();
         e.setDependencyId(depId);
         e.setFileType(fileType);
         e.setContent(content);
         e.setTargetPath(targetPath);
         e.setSubstitutionType(subType);
+        e.setSubOptionId(subOptionId);
         e.setSortOrder(order);
         e.setProjectKind(ProjectKind.FRONTEND);
         fileContribRepo.save(e);
