@@ -294,6 +294,25 @@ class FrontendProjectGenerationIntegrationTests {
     }
 
     @Test
+    void metadataExposesAllSeededPalettes() {
+        ResponseEntity<String> r = rest.getForEntity("/frontend/metadata", String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String body = r.getBody();
+        assertThat(body).isNotNull();
+        // Original three
+        assertThat(body).contains("\"id\":\"menora-default\"");
+        assertThat(body).contains("\"id\":\"forest\"");
+        assertThat(body).contains("\"id\":\"slate\"");
+        // Brand-inspired additions
+        assertThat(body).contains("\"id\":\"stripe-purple\"");
+        assertThat(body).contains("\"id\":\"vercel-mono\"");
+        assertThat(body).contains("\"id\":\"linear-violet\"");
+        assertThat(body).contains("\"id\":\"github-blue\"");
+        assertThat(body).contains("\"id\":\"notion-warm\"");
+        assertThat(body).contains("\"id\":\"tailwind-sky\"");
+    }
+
+    @Test
     void starterPreviewEndpointReturnsFilesAndTree() {
         ResponseEntity<String> r = rest.getForEntity(
                 "/frontend/starter.preview?projectName=demo&dependencies=style-tailwind", String.class);

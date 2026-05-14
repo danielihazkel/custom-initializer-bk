@@ -1052,21 +1052,35 @@ public class DataSeeder implements CommandLineRunner {
     // filtered by ProjectKind.FRONTEND.
 
     private void seedColorPalettes() {
-        // Independent of the main "all tables empty" guard — seed only if
-        // color_palette is empty so admins can wipe & re-seed without resetting
-        // everything else.
-        if (colorPaletteRepo.count() > 0) return;
+        // Idempotent — each helper call is a no-op when its paletteId already
+        // exists, so existing installations pick up newly-added rows on next
+        // startup without touching admin-edited ones.
         colorPalette("menora-default", "Menora Default",
                 "Default Menora blue/violet palette", "#1976d2", "#9c27b0", null, "#d32f2f", true, 0);
         colorPalette("forest", "Forest",
                 "Earthy greens and warm accents", "#2e7d32", "#8d6e63", "#ff8f00", "#c62828", false, 1);
         colorPalette("slate", "Slate",
                 "Neutral cool grays for understated UIs", "#475569", "#0ea5e9", null, "#dc2626", false, 2);
+
+        // Brand-inspired palettes (colors evoke each brand, not pixel-exact)
+        colorPalette("stripe-purple", "Stripe Purple",
+                "Saturated indigo with magenta accent", "#635bff", "#00d4ff", "#ff5996", "#df1b41", false, 3);
+        colorPalette("vercel-mono", "Vercel Mono",
+                "High-contrast monochrome with a single highlight", "#000000", "#666666", "#0070f3", "#ee0000", false, 4);
+        colorPalette("linear-violet", "Linear",
+                "Cool violet/blue product palette", "#5e6ad2", "#26a69a", "#f2c94c", "#eb5757", false, 5);
+        colorPalette("github-blue", "GitHub",
+                "Classic GitHub blue with green CTA", "#0969da", "#1f883d", "#bf3989", "#cf222e", false, 6);
+        colorPalette("notion-warm", "Notion",
+                "Warm neutrals with terracotta accent", "#2f3437", "#787774", "#d9730d", "#e03e3e", false, 7);
+        colorPalette("tailwind-sky", "Tailwind Sky",
+                "Tailwind sky/rose default-ish pairing", "#0ea5e9", "#f43f5e", "#a855f7", "#dc2626", false, 8);
     }
 
     private void colorPalette(String paletteId, String name, String description,
                               String primary, String secondary, String accent, String error,
                               boolean isDefault, int sortOrder) {
+        if (colorPaletteRepo.findByPaletteId(paletteId).isPresent()) return;
         ColorPaletteEntity p = new ColorPaletteEntity();
         p.setPaletteId(paletteId);
         p.setName(name);
