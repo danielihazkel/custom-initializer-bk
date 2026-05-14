@@ -3,8 +3,10 @@ package com.menora.initializr.extension.frontend;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
+import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
 import com.menora.initializr.db.entity.ProjectKind;
+import com.menora.initializr.db.repository.ColorPaletteRepository;
 import com.samskivert.mustache.Mustache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,21 +51,25 @@ public class FrontendProjectGenerator {
     private final ProjectOptionsContext optionsContext;
     private final PackageJsonBuilder packageJsonBuilder;
     private final ViteConfigBuilder viteConfigBuilder;
+    private final ColorPaletteRepository colorPaletteRepo;
 
     public FrontendProjectGenerator(DependencyConfigService configService,
                                     ProjectOptionsContext optionsContext,
                                     PackageJsonBuilder packageJsonBuilder,
-                                    ViteConfigBuilder viteConfigBuilder) {
+                                    ViteConfigBuilder viteConfigBuilder,
+                                    ColorPaletteRepository colorPaletteRepo) {
         this.configService = configService;
         this.optionsContext = optionsContext;
         this.packageJsonBuilder = packageJsonBuilder;
         this.viteConfigBuilder = viteConfigBuilder;
+        this.colorPaletteRepo = colorPaletteRepo;
     }
 
     /** Generates the project, returns the ZIP bytes (containing a top-level {@code projectName/} directory). */
     public byte[] generate(FrontendProjectDescription desc) throws IOException {
         Set<String> depIds = desc.getDependencies();
-        Map<String, Object> ctx = FrontendMustacheContext.build(desc, depIds, optionsContext);
+        ColorPaletteEntity palette = resolvePalette(desc.getColorPaletteId());
+        Map<String, Object> ctx = FrontendMustacheContext.build(desc, depIds, optionsContext, palette);
 
         Path tempDir = Files.createTempDirectory("frontend-");
         try {
@@ -78,7 +84,8 @@ public class FrontendProjectGenerator {
     /** Same as {@link #generate} but returns the file tree (relative path → content) for previews / tests. */
     public Map<String, String> generateFileMap(FrontendProjectDescription desc) throws IOException {
         Set<String> depIds = desc.getDependencies();
-        Map<String, Object> ctx = FrontendMustacheContext.build(desc, depIds, optionsContext);
+        ColorPaletteEntity palette = resolvePalette(desc.getColorPaletteId());
+        Map<String, Object> ctx = FrontendMustacheContext.build(desc, depIds, optionsContext, palette);
 
         Path tempDir = Files.createTempDirectory("frontend-preview-");
         try {
@@ -99,6 +106,32 @@ public class FrontendProjectGenerator {
         } finally {
             FileSystemUtils.deleteRecursively(tempDir);
         }
+    }
+
+    // ── Color palette resolution ─────────────────────────────────────────────
+
+    /**
+     * Resolves the palette to inject into theme templates. Order:
+     * 1. Explicit paletteId from the request, if it exists in the DB
+     * 2. The palette flagged {@code isDefault=true}
+     * 3. A hardcoded sentinel — guarantees generation never crashes when the
+     *    {@code color_palette} table is empty (e.g. fresh install before seeding ran)
+     */
+    private ColorPaletteEntity resolvePalette(String paletteId) {
+        if (paletteId != null && !paletteId.isBlank()) {
+            var hit = colorPaletteRepo.findByPaletteId(paletteId);
+            if (hit.isPresent()) return hit.get();
+            log.warn("Requested colorPalette '{}' not found — falling back to default", paletteId);
+        }
+        var def = colorPaletteRepo.findFirstByIsDefaultTrueOrderBySortOrderAsc();
+        if (def.isPresent()) return def.get();
+        log.warn("No default color palette in DB — using hardcoded sentinel");
+        ColorPaletteEntity sentinel = new ColorPaletteEntity();
+        sentinel.setPaletteId("sentinel");
+        sentinel.setName("Sentinel");
+        sentinel.setPrimary("#1976d2");
+        sentinel.setSecondary("#9c27b0");
+        return sentinel;
     }
 
     // ── File contributions ───────────────────────────────────────────────────

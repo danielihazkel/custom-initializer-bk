@@ -21,6 +21,8 @@ public class FrontendProjectDescription {
     private String typescriptVersion = "5.4.5";
     private String viteVersion = "5.2.0";
     private String basePath = "/";
+    /** Palette id from the {@code color_palette} table; empty string falls back to the default palette. */
+    private String colorPaletteId = "";
     private final Set<String> dependencies = new LinkedHashSet<>();
 
     public String getProjectName() { return projectName; }
@@ -43,6 +45,8 @@ public class FrontendProjectDescription {
     public void setViteVersion(String viteVersion) { this.viteVersion = viteVersion; }
     public String getBasePath() { return basePath; }
     public void setBasePath(String basePath) { this.basePath = (basePath == null || basePath.isBlank()) ? "/" : basePath; }
+    public String getColorPaletteId() { return colorPaletteId; }
+    public void setColorPaletteId(String colorPaletteId) { this.colorPaletteId = colorPaletteId == null ? "" : colorPaletteId; }
     public Set<String> getDependencies() { return dependencies; }
 
     /** {@code "menora"} + {@code "my-app"} → {@code "@menora/my-app"}; empty scope → {@code "my-app"}. */

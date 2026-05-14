@@ -1,10 +1,12 @@
 package com.menora.initializr.config;
 
 import com.menora.initializr.db.DependencyConfigService;
+import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.DependencyGroupEntity;
 import com.menora.initializr.db.entity.DependencySubOptionEntity;
 import com.menora.initializr.db.entity.ProjectKind;
+import com.menora.initializr.db.repository.ColorPaletteRepository;
 import com.menora.initializr.config.ProjectPreviewController.PreviewFile;
 import com.menora.initializr.config.ProjectPreviewController.PreviewResponse;
 import com.menora.initializr.extension.frontend.FrontendProjectDescription;
@@ -40,13 +42,16 @@ public class FrontendStarterController {
     private final FrontendProjectGenerator generator;
     private final FrontendProperties properties;
     private final DependencyConfigService configService;
+    private final ColorPaletteRepository colorPaletteRepo;
 
     public FrontendStarterController(FrontendProjectGenerator generator,
                                      FrontendProperties properties,
-                                     DependencyConfigService configService) {
+                                     DependencyConfigService configService,
+                                     ColorPaletteRepository colorPaletteRepo) {
         this.generator = generator;
         this.properties = properties;
         this.configService = configService;
+        this.colorPaletteRepo = colorPaletteRepo;
     }
 
     @GetMapping("/starter.zip")
@@ -59,12 +64,13 @@ public class FrontendStarterController {
             @RequestParam(required = false) String nodeVersion,
             @RequestParam(required = false) String packageManager,
             @RequestParam(defaultValue = "/") String basePath,
-            @RequestParam(defaultValue = "") String dependencies
+            @RequestParam(defaultValue = "") String dependencies,
+            @RequestParam(defaultValue = "") String colorPalette
     ) throws IOException {
 
         FrontendProjectDescription desc = buildDescription(
                 projectName, description, scope, appTitle,
-                reactVersion, nodeVersion, packageManager, basePath, dependencies);
+                reactVersion, nodeVersion, packageManager, basePath, dependencies, colorPalette);
 
         byte[] zip = generator.generate(desc);
         return ResponseEntity.ok()
@@ -93,12 +99,13 @@ public class FrontendStarterController {
             @RequestParam(required = false) String nodeVersion,
             @RequestParam(required = false) String packageManager,
             @RequestParam(defaultValue = "/") String basePath,
-            @RequestParam(defaultValue = "") String dependencies
+            @RequestParam(defaultValue = "") String dependencies,
+            @RequestParam(defaultValue = "") String colorPalette
     ) throws IOException {
 
         FrontendProjectDescription desc = buildDescription(
                 projectName, description, scope, appTitle,
-                reactVersion, nodeVersion, packageManager, basePath, dependencies);
+                reactVersion, nodeVersion, packageManager, basePath, dependencies, colorPalette);
 
         Map<String, String> fileMap = generator.generateFileMap(desc);
         List<PreviewFile> files = fileMap.entrySet().stream()
@@ -117,7 +124,8 @@ public class FrontendStarterController {
                                                         String nodeVersion,
                                                         String packageManager,
                                                         String basePath,
-                                                        String dependencies) {
+                                                        String dependencies,
+                                                        String colorPalette) {
         FrontendProjectDescription desc = new FrontendProjectDescription();
         desc.setProjectName(projectName);
         desc.setDescription(description);
@@ -130,6 +138,7 @@ public class FrontendStarterController {
         desc.setPackageManager(packageManager == null || packageManager.isBlank()
                 ? properties.defaultPackageManager() : packageManager);
         desc.setBasePath(basePath);
+        desc.setColorPaletteId(colorPalette);
         desc.setTypescriptVersion(properties.getPinned().getTypescript());
         desc.setViteVersion(properties.getPinned().getVite());
 
@@ -197,6 +206,23 @@ public class FrontendStarterController {
             groupsOut.add(gOut);
         }
         root.put("dependencies", groupsOut);
+
+        // Color palettes (admin-managed, frontend-only)
+        List<Map<String, Object>> palettesOut = new ArrayList<>();
+        for (ColorPaletteEntity p : colorPaletteRepo.findAllByOrderBySortOrderAsc()) {
+            Map<String, Object> pOut = new LinkedHashMap<>();
+            pOut.put("id", p.getPaletteId());
+            pOut.put("name", p.getName());
+            pOut.put("description", p.getDescription());
+            pOut.put("primary", p.getPrimary());
+            pOut.put("secondary", p.getSecondary());
+            pOut.put("accent", p.getAccent());
+            pOut.put("error", p.getError());
+            pOut.put("isDefault", p.isDefault());
+            pOut.put("sortOrder", p.getSortOrder());
+            palettesOut.add(pOut);
+        }
+        root.put("colorPalettes", palettesOut);
         return root;
     }
 

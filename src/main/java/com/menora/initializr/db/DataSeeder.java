@@ -32,6 +32,7 @@ public class DataSeeder implements CommandLineRunner {
     private final StarterTemplateDepRepository templateDepRepo;
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
+    private final ColorPaletteRepository colorPaletteRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
@@ -42,7 +43,8 @@ public class DataSeeder implements CommandLineRunner {
                       StarterTemplateRepository templateRepo,
                       StarterTemplateDepRepository templateDepRepo,
                       ModuleTemplateRepository moduleRepo,
-                      ModuleDependencyMappingRepository moduleMappingRepo) {
+                      ModuleDependencyMappingRepository moduleMappingRepo,
+                      ColorPaletteRepository colorPaletteRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
@@ -53,11 +55,17 @@ public class DataSeeder implements CommandLineRunner {
         this.templateDepRepo = templateDepRepo;
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
+        this.colorPaletteRepo = colorPaletteRepo;
     }
 
     @Override
     @Transactional
     public void run(String... args) throws Exception {
+        // Run table-scoped seeds before the main guard so new tables added in
+        // later releases (e.g. color_palette) get populated on existing installations
+        // without forcing a full re-seed.
+        seedColorPalettes();
+
         if (groupRepo.count() > 0) {
             log.info("Database already seeded — skipping DataSeeder");
             normalizeLegacyBlankStrings();
@@ -1043,6 +1051,35 @@ public class DataSeeder implements CommandLineRunner {
     // FrontendProjectGenerator queries them through DependencyConfigService
     // filtered by ProjectKind.FRONTEND.
 
+    private void seedColorPalettes() {
+        // Independent of the main "all tables empty" guard — seed only if
+        // color_palette is empty so admins can wipe & re-seed without resetting
+        // everything else.
+        if (colorPaletteRepo.count() > 0) return;
+        colorPalette("menora-default", "Menora Default",
+                "Default Menora blue/violet palette", "#1976d2", "#9c27b0", null, "#d32f2f", true, 0);
+        colorPalette("forest", "Forest",
+                "Earthy greens and warm accents", "#2e7d32", "#8d6e63", "#ff8f00", "#c62828", false, 1);
+        colorPalette("slate", "Slate",
+                "Neutral cool grays for understated UIs", "#475569", "#0ea5e9", null, "#dc2626", false, 2);
+    }
+
+    private void colorPalette(String paletteId, String name, String description,
+                              String primary, String secondary, String accent, String error,
+                              boolean isDefault, int sortOrder) {
+        ColorPaletteEntity p = new ColorPaletteEntity();
+        p.setPaletteId(paletteId);
+        p.setName(name);
+        p.setDescription(description);
+        p.setPrimary(primary);
+        p.setSecondary(secondary);
+        p.setAccent(accent);
+        p.setError(error);
+        p.setDefault(isDefault);
+        p.setSortOrder(sortOrder);
+        colorPaletteRepo.save(p);
+    }
+
     private void seedFrontendCatalog() throws IOException {
         // Groups
         DependencyGroupEntity routing  = feGroup("Routing", 0);
@@ -1245,15 +1282,15 @@ public class DataSeeder implements CommandLineRunner {
         feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/frontend/design-shadcn/lib-utils.ts"),
                 "src/shared/lib/utils.ts", FileContributionEntity.SubstitutionType.NONE, 1);
-        feFc("design-mui", FileContributionEntity.FileType.STATIC_COPY,
+        feFc("design-mui", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("static-configs/frontend/design-mui/theme.ts"),
-                "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.NONE, 0);
-        feFc("design-chakra", FileContributionEntity.FileType.STATIC_COPY,
+                "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.MUSTACHE, 0);
+        feFc("design-chakra", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("static-configs/frontend/design-chakra/theme.ts"),
-                "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.NONE, 0);
-        feFc("design-mantine", FileContributionEntity.FileType.STATIC_COPY,
+                "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.MUSTACHE, 0);
+        feFc("design-mantine", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("static-configs/frontend/design-mantine/theme.ts"),
-                "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+                "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.MUSTACHE, 0);
 
         // ── Common npm deps (every FE project) ───────────────────────────────
         // React/React-DOM versions: ranges keyed off reactVersion. For v1 we ship two majors.

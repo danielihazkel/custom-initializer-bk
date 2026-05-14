@@ -207,6 +207,93 @@ class FrontendProjectGenerationIntegrationTests {
     }
 
     @Test
+    void muiThemeUsesDefaultPaletteColorsWhenPaletteIdOmitted() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("design-mui");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        String theme = files.get("src/shared/theme/theme.ts");
+        assertThat(theme).isNotNull();
+        // menora-default seed: primary=#1976d2, secondary=#9c27b0
+        assertThat(theme).contains("primary: { main: '#1976d2' }");
+        assertThat(theme).contains("secondary: { main: '#9c27b0' }");
+    }
+
+    @Test
+    void muiThemeUsesSelectedPalette() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("design-mui");
+        desc.setColorPaletteId("forest");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        String theme = files.get("src/shared/theme/theme.ts");
+        assertThat(theme).isNotNull();
+        // forest seed: primary=#2e7d32, secondary=#8d6e63
+        assertThat(theme).contains("primary: { main: '#2e7d32' }");
+        assertThat(theme).contains("secondary: { main: '#8d6e63' }");
+    }
+
+    @Test
+    void chakraThemeReceivesPalettePrimaryAndSecondary() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("design-chakra");
+        desc.setColorPaletteId("slate");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        String theme = files.get("src/shared/theme/theme.ts");
+        assertThat(theme).isNotNull();
+        // slate seed: primary=#475569, secondary=#0ea5e9
+        assertThat(theme).contains("500: '#475569'");
+        assertThat(theme).contains("500: '#0ea5e9'");
+    }
+
+    @Test
+    void mantineThemePopulatesBrandTuple() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("design-mantine");
+        desc.setColorPaletteId("forest");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        String theme = files.get("src/shared/theme/theme.ts");
+        assertThat(theme).isNotNull();
+        assertThat(theme).contains("'#2e7d32'");
+        assertThat(theme).contains("primaryColor: 'brand'");
+    }
+
+    @Test
+    void designNoneIgnoresPalette() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("design-none");
+        desc.setColorPaletteId("forest");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        // No theme file is written for design-none, palette is irrelevant
+        assertThat(files).doesNotContainKey("src/shared/theme/theme.ts");
+    }
+
+    @Test
+    void unknownPaletteIdFallsBackToDefault() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("design-mui");
+        desc.setColorPaletteId("nonexistent-xyz");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        // Falls back to menora-default
+        assertThat(files.get("src/shared/theme/theme.ts")).contains("primary: { main: '#1976d2' }");
+    }
+
+    @Test
+    void metadataExposesColorPalettes() {
+        ResponseEntity<String> r = rest.getForEntity("/frontend/metadata", String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String body = r.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body).contains("colorPalettes");
+        assertThat(body).contains("menora-default");
+        assertThat(body).contains("\"primary\":\"#1976d2\"");
+    }
+
+    @Test
     void starterPreviewEndpointReturnsFilesAndTree() {
         ResponseEntity<String> r = rest.getForEntity(
                 "/frontend/starter.preview?projectName=demo&dependencies=style-tailwind", String.class);
