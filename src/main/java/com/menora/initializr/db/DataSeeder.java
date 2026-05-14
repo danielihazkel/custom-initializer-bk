@@ -1049,11 +1049,12 @@ public class DataSeeder implements CommandLineRunner {
         DependencyGroupEntity state    = feGroup("State Management", 1);
         DependencyGroupEntity data     = feGroup("Data Fetching", 2);
         DependencyGroupEntity styling  = feGroup("Styling", 3);
-        DependencyGroupEntity forms    = feGroup("Forms & Validation", 4);
-        DependencyGroupEntity anim     = feGroup("Animation", 5);
-        DependencyGroupEntity testing  = feGroup("Testing", 6);
-        DependencyGroupEntity quality  = feGroup("Quality (default-on)", 7);
-        DependencyGroupEntity extras   = feGroup("Extras", 8);
+        DependencyGroupEntity design   = feGroup("Design System", 4);
+        DependencyGroupEntity forms    = feGroup("Forms & Validation", 5);
+        DependencyGroupEntity anim     = feGroup("Animation", 6);
+        DependencyGroupEntity testing  = feGroup("Testing", 7);
+        DependencyGroupEntity quality  = feGroup("Quality (default-on)", 8);
+        DependencyGroupEntity extras   = feGroup("Extras", 9);
 
         // Entries
         feEntry(routing,  "router-react-router", "React Router",
@@ -1075,10 +1076,19 @@ public class DataSeeder implements CommandLineRunner {
 
         feEntry(styling,  "style-tailwind",      "Tailwind CSS",
                 "Utility-first CSS framework with PostCSS + Autoprefixer", 0);
-        feEntry(styling,  "style-mui",           "MUI (Material UI)",
-                "Comprehensive React component library implementing Material Design", 1);
         feEntry(styling,  "style-styled",        "styled-components",
-                "Visual primitives for CSS-in-JS", 2);
+                "Visual primitives for CSS-in-JS", 1);
+
+        feEntry(design,   "design-none",         "None / Plain CSS",
+                "No component library — bring your own UI", 0);
+        feEntry(design,   "design-shadcn",       "shadcn/ui",
+                "Tailwind + Radix copy-paste components (requires Tailwind)", 1);
+        feEntry(design,   "design-mui",          "Material UI (MUI)",
+                "Comprehensive React component library implementing Material Design", 2);
+        feEntry(design,   "design-chakra",       "Chakra UI",
+                "Modular, accessible component library powered by Emotion", 3);
+        feEntry(design,   "design-mantine",      "Mantine",
+                "Full-featured components plus a rich React hooks library", 4);
 
         feEntry(forms,    "form-react-hook-form","React Hook Form",
                 "Performant, flexible and extensible forms with easy validation", 0);
@@ -1228,6 +1238,23 @@ public class DataSeeder implements CommandLineRunner {
                 readClasspath("static-configs/frontend/test-vitest-rtl/test-setup.ts"),
                 "src/test-setup.ts", FileContributionEntity.SubstitutionType.NONE, 1);
 
+        // Design system: theme stubs & shadcn helpers
+        feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-shadcn/components.json"),
+                "components.json", FileContributionEntity.SubstitutionType.NONE, 0);
+        feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-shadcn/lib-utils.ts"),
+                "src/shared/lib/utils.ts", FileContributionEntity.SubstitutionType.NONE, 1);
+        feFc("design-mui", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-mui/theme.ts"),
+                "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+        feFc("design-chakra", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-chakra/theme.ts"),
+                "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+        feFc("design-mantine", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-mantine/theme.ts"),
+                "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+
         // ── Common npm deps (every FE project) ───────────────────────────────
         // React/React-DOM versions: ranges keyed off reactVersion. For v1 we ship two majors.
         feNpm("__common__", "react",          "^18.3.1", "",    0);
@@ -1269,11 +1296,23 @@ public class DataSeeder implements CommandLineRunner {
         feNpm("style-tailwind",      "tailwindcss",                     "^3.4.10", "dev", 0);
         feNpm("style-tailwind",      "postcss",                         "^8.4.41", "dev", 1);
         feNpm("style-tailwind",      "autoprefixer",                    "^10.4.20","dev", 2);
-        feNpm("style-mui",           "@mui/material",                   "^5.16.7", "",    0);
-        feNpm("style-mui",           "@emotion/react",                  "^11.13.0","",    1);
-        feNpm("style-mui",           "@emotion/styled",                 "^11.13.0","",    2);
         feNpm("style-styled",        "styled-components",               "^6.1.13", "",    0);
         feNpm("style-styled",        "@types/styled-components",        "^5.1.34", "dev", 1);
+
+        // Design system component libraries
+        feNpm("design-shadcn",       "clsx",                            "^2.1.1",  "",    0);
+        feNpm("design-shadcn",       "tailwind-merge",                  "^2.5.2",  "",    1);
+        feNpm("design-shadcn",       "class-variance-authority",        "^0.7.0",  "",    2);
+        feNpm("design-shadcn",       "@radix-ui/react-slot",            "^1.1.0",  "",    3);
+        feNpm("design-mui",          "@mui/material",                   "^5.16.7", "",    0);
+        feNpm("design-mui",          "@emotion/react",                  "^11.13.0","",    1);
+        feNpm("design-mui",          "@emotion/styled",                 "^11.13.0","",    2);
+        feNpm("design-chakra",       "@chakra-ui/react",                "^2.8.2",  "",    0);
+        feNpm("design-chakra",       "@emotion/react",                  "^11.13.0","",    1);
+        feNpm("design-chakra",       "@emotion/styled",                 "^11.13.0","",    2);
+        feNpm("design-chakra",       "framer-motion",                   "^11.3.31","",    3);
+        feNpm("design-mantine",      "@mantine/core",                   "^7.13.0", "",    0);
+        feNpm("design-mantine",      "@mantine/hooks",                  "^7.13.0", "",    1);
 
         feNpm("form-react-hook-form","react-hook-form",                 "^7.53.0", "",    0);
         feNpm("form-zod",            "zod",                             "^3.23.8", "",    0);
@@ -1350,8 +1389,21 @@ public class DataSeeder implements CommandLineRunner {
                 "Pick one state-management library", 2);
         feCompat("data-tanstack-query", "data-swr",            DependencyCompatibilityEntity.RelationType.CONFLICTS,
                 "Pick one data-fetching library", 0);
-        feCompat("style-tailwind", "style-mui",                DependencyCompatibilityEntity.RelationType.RECOMMENDS,
-                "Tailwind + MUI is supported but unusual; consider sticking with one", 0);
+        feCompat("design-shadcn", "style-tailwind",            DependencyCompatibilityEntity.RelationType.REQUIRES,
+                "shadcn/ui is built on Tailwind CSS", 0);
+        // Design systems are mutually exclusive (UI enforces single-choice; this is a backend safety net)
+        feCompat("design-shadcn",  "design-mui",               DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Pick one design system", 0);
+        feCompat("design-shadcn",  "design-chakra",            DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Pick one design system", 1);
+        feCompat("design-shadcn",  "design-mantine",           DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Pick one design system", 2);
+        feCompat("design-mui",     "design-chakra",            DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Pick one design system", 3);
+        feCompat("design-mui",     "design-mantine",           DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Pick one design system", 4);
+        feCompat("design-chakra",  "design-mantine",           DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Pick one design system", 5);
         feCompat("form-react-hook-form", "form-zod",           DependencyCompatibilityEntity.RelationType.RECOMMENDS,
                 "Pair RHF with Zod via @hookform/resolvers for typed validation", 0);
 

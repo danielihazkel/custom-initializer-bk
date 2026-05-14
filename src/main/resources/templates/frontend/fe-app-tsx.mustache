@@ -1,9 +1,25 @@
-import { HomePage } from '@pages/home';
+{{#hasDesignMui}}import { ThemeProvider, CssBaseline } from '@mui/material';
+import { theme } from '@shared/theme/theme';
+{{/hasDesignMui}}{{#hasDesignChakra}}import { ChakraProvider } from '@chakra-ui/react';
+import { theme } from '@shared/theme/theme';
+{{/hasDesignChakra}}{{#hasDesignMantine}}import { MantineProvider } from '@mantine/core';
+import { theme } from '@shared/theme/theme';
+{{/hasDesignMantine}}import { HomePage } from '@pages/home';
 
 export function App() {
   return (
-    <div>
+{{#hasDesignMui}}    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <HomePage />
+    </ThemeProvider>
+{{/hasDesignMui}}{{#hasDesignChakra}}    <ChakraProvider theme={theme}>
+      <HomePage />
+    </ChakraProvider>
+{{/hasDesignChakra}}{{#hasDesignMantine}}    <MantineProvider theme={theme}>
+      <HomePage />
+    </MantineProvider>
+{{/hasDesignMantine}}{{^hasDesignMui}}{{^hasDesignChakra}}{{^hasDesignMantine}}    <div>
       <HomePage />
     </div>
-  );
+{{/hasDesignMantine}}{{/hasDesignChakra}}{{/hasDesignMui}}  );
 }
