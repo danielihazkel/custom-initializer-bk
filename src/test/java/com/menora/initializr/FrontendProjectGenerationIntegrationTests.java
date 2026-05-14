@@ -206,6 +206,27 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(files.get("index.html")).contains("<title>Menora Cool App</title>");
     }
 
+    @Test
+    void starterPreviewEndpointReturnsFilesAndTree() {
+        ResponseEntity<String> r = rest.getForEntity(
+                "/frontend/starter.preview?projectName=demo&dependencies=style-tailwind", String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String body = r.getBody();
+        assertThat(body).isNotNull();
+        // No top-level project-name prefix on preview paths (unlike the zip)
+        assertThat(body).contains("\"path\":\"package.json\"");
+        assertThat(body).contains("\"path\":\"vite.config.ts\"");
+        assertThat(body).contains("\"path\":\"src/main.tsx\"");
+        // Tailwind dep contribution shows up
+        assertThat(body).contains("\"path\":\"tailwind.config.js\"");
+        // Tree structure present with a src directory node
+        assertThat(body).contains("\"name\":\"src\"");
+        assertThat(body).contains("\"type\":\"directory\"");
+        // Both top-level keys present
+        assertThat(body).contains("\"files\":");
+        assertThat(body).contains("\"tree\":");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private FrontendProjectDescription baseDescription(String projectName) {

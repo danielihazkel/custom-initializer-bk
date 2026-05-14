@@ -5,6 +5,8 @@ import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.DependencyGroupEntity;
 import com.menora.initializr.db.entity.DependencySubOptionEntity;
 import com.menora.initializr.db.entity.ProjectKind;
+import com.menora.initializr.config.ProjectPreviewController.PreviewFile;
+import com.menora.initializr.config.ProjectPreviewController.PreviewResponse;
 import com.menora.initializr.extension.frontend.FrontendProjectDescription;
 import com.menora.initializr.extension.frontend.FrontendProjectGenerator;
 import org.springframework.http.HttpHeaders;
@@ -60,6 +62,62 @@ public class FrontendStarterController {
             @RequestParam(defaultValue = "") String dependencies
     ) throws IOException {
 
+        FrontendProjectDescription desc = buildDescription(
+                projectName, description, scope, appTitle,
+                reactVersion, nodeVersion, packageManager, basePath, dependencies);
+
+        byte[] zip = generator.generate(desc);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + projectName + ".zip\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(zip);
+    }
+
+    /**
+     * GET /frontend/starter.preview — returns the generated project as JSON
+     * (file list + tree) instead of a ZIP. Accepts the same query parameters as
+     * /frontend/starter.zip.
+     *
+     * <p>The {@link InitializrWebConfiguration} filter already populates
+     * {@link ProjectOptionsContext} from {@code opts-*} params, so sub-option
+     * gating works identically to the zip endpoint.
+     */
+    @GetMapping("/starter.preview")
+    public PreviewResponse preview(
+            @RequestParam(defaultValue = "demo") String projectName,
+            @RequestParam(defaultValue = "") String description,
+            @RequestParam(defaultValue = "") String scope,
+            @RequestParam(defaultValue = "") String appTitle,
+            @RequestParam(required = false) String reactVersion,
+            @RequestParam(required = false) String nodeVersion,
+            @RequestParam(required = false) String packageManager,
+            @RequestParam(defaultValue = "/") String basePath,
+            @RequestParam(defaultValue = "") String dependencies
+    ) throws IOException {
+
+        FrontendProjectDescription desc = buildDescription(
+                projectName, description, scope, appTitle,
+                reactVersion, nodeVersion, packageManager, basePath, dependencies);
+
+        Map<String, String> fileMap = generator.generateFileMap(desc);
+        List<PreviewFile> files = fileMap.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(e -> new PreviewFile(e.getKey(), e.getValue()))
+                .collect(Collectors.toList());
+        return new PreviewResponse(files, PreviewTreeBuilder.buildTree(
+                files.stream().map(PreviewFile::path).toList()));
+    }
+
+    private FrontendProjectDescription buildDescription(String projectName,
+                                                        String description,
+                                                        String scope,
+                                                        String appTitle,
+                                                        String reactVersion,
+                                                        String nodeVersion,
+                                                        String packageManager,
+                                                        String basePath,
+                                                        String dependencies) {
         FrontendProjectDescription desc = new FrontendProjectDescription();
         desc.setProjectName(projectName);
         desc.setDescription(description);
@@ -81,13 +139,7 @@ public class FrontendStarterController {
                     .filter(s -> !s.isEmpty())
                     .forEach(desc.getDependencies()::add);
         }
-
-        byte[] zip = generator.generate(desc);
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + projectName + ".zip\"")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .body(zip);
+        return desc;
     }
 
     @GetMapping("/metadata")
