@@ -24,7 +24,11 @@ import java.util.TreeMap;
  *   <li>Apply each {@link BuildCustomizationEntity.CustomizationType#ADD_NPM_DEPENDENCY}
  *       row: {@code mavenArtifactId} = package name, {@code version} = semver range,
  *       {@code scope} = {@code "dev"} → devDependencies, otherwise → dependencies.</li>
- *   <li>Alphabetise keys within dependencies / devDependencies for stable diffs.</li>
+ *   <li>Apply each {@link BuildCustomizationEntity.CustomizationType#ADD_NPM_SCRIPT}
+ *       row: {@code mavenArtifactId} = script name, {@code version} = command. Merged
+ *       into the {@code "scripts"} block; later rows win on name collision so admins
+ *       can override baseline scripts without editing the template.</li>
+ *   <li>Alphabetise keys within dependencies / devDependencies / scripts for stable diffs.</li>
  *   <li>Pretty-print and return.</li>
  * </ol>
  */
@@ -50,21 +54,33 @@ public class PackageJsonBuilder {
         if (devDeps == null) {
             devDeps = root.putObject("devDependencies");
         }
+        ObjectNode scripts = (ObjectNode) root.get("scripts");
+        if (scripts == null) {
+            scripts = root.putObject("scripts");
+        }
 
         for (BuildCustomizationEntity bc : customizations) {
-            if (bc.getCustomizationType() != BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY) {
-                continue;
+            switch (bc.getCustomizationType()) {
+                case ADD_NPM_DEPENDENCY -> {
+                    String pkg = bc.getMavenArtifactId();
+                    String ver = bc.getVersion();
+                    if (pkg == null || pkg.isBlank() || ver == null || ver.isBlank()) continue;
+                    boolean dev = "dev".equalsIgnoreCase(bc.getScope());
+                    (dev ? devDeps : deps).put(pkg, ver);
+                }
+                case ADD_NPM_SCRIPT -> {
+                    String name = bc.getMavenArtifactId();
+                    String cmd = bc.getVersion();
+                    if (name == null || name.isBlank() || cmd == null || cmd.isBlank()) continue;
+                    scripts.put(name, cmd);
+                }
+                default -> { /* other types handled elsewhere (e.g. ViteConfigBuilder) */ }
             }
-            String pkg = bc.getMavenArtifactId();
-            String ver = bc.getVersion();
-            if (pkg == null || pkg.isBlank() || ver == null || ver.isBlank()) continue;
-
-            boolean dev = "dev".equalsIgnoreCase(bc.getScope());
-            (dev ? devDeps : deps).put(pkg, ver);
         }
 
         sortKeys(root, "dependencies");
         sortKeys(root, "devDependencies");
+        sortKeys(root, "scripts");
 
         return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root) + "\n";
     }

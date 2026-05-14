@@ -1289,6 +1289,32 @@ public class DataSeeder implements CommandLineRunner {
                 readClasspath("static-configs/frontend/test-vitest-rtl/test-setup.ts"),
                 "src/test-setup.ts", FileContributionEntity.SubstitutionType.NONE, 1);
 
+        // Default starter wiring per dep — gives users a runnable demo of the
+        // selected library, not just an entry in package.json. App.tsx picks
+        // these up via the {{#hasRouterReactRouter}} / {{#hasStateRedux...}}
+        // / {{#hasDataTanstackQuery}} / {{#hasStateZustand}} flags.
+        feFc("router-react-router", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/router-react-router/routes.tsx"),
+                "src/app/routes.tsx", FileContributionEntity.SubstitutionType.NONE, 0);
+
+        feFc("state-zustand", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/state-zustand/counter-store.ts"),
+                "src/entities/counter/model/store.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+
+        feFc("state-redux-toolkit", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/state-redux-toolkit/store.ts"),
+                "src/app/store.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+        feFc("state-redux-toolkit", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/state-redux-toolkit/counterSlice.ts"),
+                "src/entities/counter/model/counterSlice.ts", FileContributionEntity.SubstitutionType.NONE, 1);
+        feFc("state-redux-toolkit", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/state-redux-toolkit/hooks.ts"),
+                "src/shared/lib/hooks.ts", FileContributionEntity.SubstitutionType.NONE, 2);
+
+        feFc("data-tanstack-query", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/data-tanstack-query/queryClient.ts"),
+                "src/shared/api/queryClient.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+
         // Design system: theme stubs & shadcn helpers
         feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/frontend/design-shadcn/components.json"),
@@ -1296,6 +1322,21 @@ public class DataSeeder implements CommandLineRunner {
         feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/frontend/design-shadcn/lib-utils.ts"),
                 "src/shared/lib/utils.ts", FileContributionEntity.SubstitutionType.NONE, 1);
+        // Overwrites the bare @tailwind index.css written by style-tailwind (sortOrder 2)
+        // with one that also defines shadcn's CSS-variable design tokens, sourced from
+        // the selected color palette via FrontendMustacheContext's HSL helpers.
+        feFc("design-shadcn", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("static-configs/frontend/design-shadcn/index.css"),
+                "src/index.css", FileContributionEntity.SubstitutionType.MUSTACHE, 10);
+
+        // styled-components: themed via DefaultTheme + module augmentation
+        feFc("style-styled", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("static-configs/frontend/style-styled/theme.ts"),
+                "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.MUSTACHE, 0);
+        feFc("style-styled", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/style-styled/styled.d.ts"),
+                "src/shared/theme/styled.d.ts", FileContributionEntity.SubstitutionType.NONE, 1);
+
         feFc("design-mui", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("static-configs/frontend/design-mui/theme.ts"),
                 "src/shared/theme/theme.ts", FileContributionEntity.SubstitutionType.MUSTACHE, 0);
@@ -1329,6 +1370,16 @@ public class DataSeeder implements CommandLineRunner {
 
         // Common Vite plugin: @vitejs/plugin-react
         feVitePlugin("__common__", "@vitejs/plugin-react", "react", "react()", 0);
+
+        // ── npm scripts contributed via ADD_NPM_SCRIPT ───────────────────────
+        // The baseline package.json template hardcodes the obvious scripts
+        // (dev/build/lint/test). These rows extend the baseline without
+        // touching it — admins can add more via /admin/build-customizations.
+        feNpmScript("__common__",        "lint:fix",      "eslint . --fix",                    0);
+        feNpmScript("__common__",        "format:check",  "prettier --check .",                1);
+        feNpmScript("__common__",        "typecheck",     "tsc --noEmit",                      2);
+        feNpmScript("test-playwright",   "e2e:install",   "playwright install --with-deps",    0);
+        feNpmScript("test-playwright",   "e2e:report",    "playwright show-report",            1);
 
         // ── Per-dep npm deps ─────────────────────────────────────────────────
         feNpm("router-react-router", "react-router-dom",                "^6.26.0", "",    0);
@@ -1429,6 +1480,12 @@ public class DataSeeder implements CommandLineRunner {
         feSubOption("test-vitest-rtl", "ci-config",     "CI config",
                 "Generate a GitHub Actions workflow that runs the test suite", 1);
 
+        // ── React-version compatibility ranges ───────────────────────────────
+        // Only set ranges where the constraint is real — leave open by default.
+        // Applied via FrontendVersionRangeFilter at /frontend/metadata time.
+        entryRepo.findByDepId("design-chakra")
+                .ifPresent(e -> { e.setCompatibilityRange("[18.0.0,19.0.0)"); entryRepo.save(e); });
+
         // ── Compatibility rules ──────────────────────────────────────────────
         feCompat("router-react-router", "router-tanstack",     DependencyCompatibilityEntity.RelationType.CONFLICTS,
                 "Only one router can be selected", 0);
@@ -1516,6 +1573,17 @@ public class DataSeeder implements CommandLineRunner {
         e.setMavenGroupId(importPath);
         e.setMavenArtifactId(importBinding);
         e.setVersion(pluginCall);
+        e.setSortOrder(order);
+        e.setProjectKind(ProjectKind.FRONTEND);
+        buildCustomRepo.save(e);
+    }
+
+    private void feNpmScript(String depId, String scriptName, String command, int order) {
+        BuildCustomizationEntity e = new BuildCustomizationEntity();
+        e.setDependencyId(depId);
+        e.setCustomizationType(BuildCustomizationEntity.CustomizationType.ADD_NPM_SCRIPT);
+        e.setMavenArtifactId(scriptName);
+        e.setVersion(command);
         e.setSortOrder(order);
         e.setProjectKind(ProjectKind.FRONTEND);
         buildCustomRepo.save(e);

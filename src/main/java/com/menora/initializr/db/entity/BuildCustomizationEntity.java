@@ -19,6 +19,10 @@ import org.hibernate.annotations.ColumnDefault;
  *   <li>FRONTEND + ADD_VITE_PLUGIN: {@code mavenGroupId} = import module path (e.g. "@vitejs/plugin-react"),
  *       {@code mavenArtifactId} = import binding (e.g. "react"),
  *       {@code version} = plugin call expression (e.g. "react()").</li>
+ *   <li>FRONTEND + ADD_NPM_SCRIPT: {@code mavenArtifactId} = script name (e.g. "test:coverage"),
+ *       {@code version} = command (e.g. "vitest run --coverage"). Merged into the
+ *       {@code "scripts"} block of {@code package.json}; later contributions for the
+ *       same name win, allowing admin overrides without editing the baseline.</li>
  * </ul>
  */
 @Entity
@@ -30,7 +34,8 @@ public class BuildCustomizationEntity {
         ADD_REPOSITORY,
         EXCLUDE_DEPENDENCY,
         ADD_NPM_DEPENDENCY,
-        ADD_VITE_PLUGIN
+        ADD_VITE_PLUGIN,
+        ADD_NPM_SCRIPT
     }
 
     @Id

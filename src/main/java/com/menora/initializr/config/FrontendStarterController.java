@@ -11,6 +11,7 @@ import com.menora.initializr.config.ProjectPreviewController.PreviewFile;
 import com.menora.initializr.config.ProjectPreviewController.PreviewResponse;
 import com.menora.initializr.extension.frontend.FrontendProjectDescription;
 import com.menora.initializr.extension.frontend.FrontendProjectGenerator;
+import com.menora.initializr.extension.frontend.FrontendVersionRangeFilter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -43,15 +45,18 @@ public class FrontendStarterController {
     private final FrontendProperties properties;
     private final DependencyConfigService configService;
     private final ColorPaletteRepository colorPaletteRepo;
+    private final FrontendVersionRangeFilter versionFilter;
 
     public FrontendStarterController(FrontendProjectGenerator generator,
                                      FrontendProperties properties,
                                      DependencyConfigService configService,
-                                     ColorPaletteRepository colorPaletteRepo) {
+                                     ColorPaletteRepository colorPaletteRepo,
+                                     FrontendVersionRangeFilter versionFilter) {
         this.generator = generator;
         this.properties = properties;
         this.configService = configService;
         this.colorPaletteRepo = colorPaletteRepo;
+        this.versionFilter = versionFilter;
     }
 
     @GetMapping("/starter.zip")
@@ -148,11 +153,33 @@ public class FrontendStarterController {
                     .filter(s -> !s.isEmpty())
                     .forEach(desc.getDependencies()::add);
         }
+
+        // Drop deps whose compatibilityRange excludes the requested React version.
+        // Silently filtered (with a warn log) so the generator never fails because
+        // the UI sent a stale selection after the user switched React versions.
+        Map<String, DependencyEntryEntity> entriesById = entriesById();
+        Set<String> filtered = versionFilter.filterCompatibleDepIds(
+                desc.getDependencies(), entriesById, desc.getReactVersion());
+        desc.getDependencies().clear();
+        desc.getDependencies().addAll(filtered);
+
         return desc;
     }
 
+    private Map<String, DependencyEntryEntity> entriesById() {
+        Map<String, DependencyEntryEntity> out = new LinkedHashMap<>();
+        for (DependencyGroupEntity g : configService.getAllGroupsWithEntries(ProjectKind.FRONTEND)) {
+            for (DependencyEntryEntity e : g.getEntries()) {
+                out.put(e.getDepId(), e);
+            }
+        }
+        return out;
+    }
+
     @GetMapping("/metadata")
-    public Map<String, Object> metadata() {
+    public Map<String, Object> metadata(@RequestParam(required = false) String reactVersion) {
+        String resolvedReactVersion = (reactVersion == null || reactVersion.isBlank())
+                ? properties.defaultReactVersion() : reactVersion;
         Map<String, Object> root = new LinkedHashMap<>();
 
         // Form defaults
@@ -184,11 +211,15 @@ public class FrontendStarterController {
             gOut.put("sortOrder", g.getSortOrder());
             List<Map<String, Object>> entriesOut = new ArrayList<>();
             for (DependencyEntryEntity e : g.getEntries()) {
+                if (!versionFilter.matches(e, resolvedReactVersion)) continue;
                 Map<String, Object> eOut = new LinkedHashMap<>();
                 eOut.put("id", e.getDepId());
                 eOut.put("name", e.getName());
                 eOut.put("description", e.getDescription());
                 eOut.put("sortOrder", e.getSortOrder());
+                if (e.getCompatibilityRange() != null && !e.getCompatibilityRange().isBlank()) {
+                    eOut.put("versionRange", e.getCompatibilityRange());
+                }
                 List<Map<String, String>> subOpts = subOptsByDep.getOrDefault(e.getDepId(), List.of())
                         .stream()
                         .map(s -> {
@@ -206,6 +237,7 @@ public class FrontendStarterController {
             groupsOut.add(gOut);
         }
         root.put("dependencies", groupsOut);
+        root.put("reactVersion", resolvedReactVersion);
 
         // Color palettes (admin-managed, frontend-only)
         List<Map<String, Object>> palettesOut = new ArrayList<>();

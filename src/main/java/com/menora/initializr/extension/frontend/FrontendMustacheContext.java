@@ -53,6 +53,11 @@ public final class FrontendMustacheContext {
         paletteMap.put("secondary", palette.getSecondary());
         paletteMap.put("accent", palette.getAccent() == null ? "" : palette.getAccent());
         paletteMap.put("error", palette.getError() == null ? "" : palette.getError());
+        // HSL forms for shadcn/ui CSS variables (format "H S% L%" without commas).
+        paletteMap.put("primaryHsl", hexToHsl(palette.getPrimary()));
+        paletteMap.put("secondaryHsl", hexToHsl(palette.getSecondary()));
+        paletteMap.put("accentHsl", hexToHsl(palette.getAccent()));
+        paletteMap.put("errorHsl", hexToHsl(palette.getError()));
         ctx.put("palette", paletteMap);
         ctx.put("hasPaletteAccent", palette.getAccent() != null && !palette.getAccent().isBlank());
         ctx.put("hasPaletteError", palette.getError() != null && !palette.getError().isBlank());
@@ -64,6 +69,42 @@ public final class FrontendMustacheContext {
             }
         }
         return ctx;
+    }
+
+    /**
+     * Converts a {@code #rrggbb} hex color to the {@code "H S% L%"} string shadcn/ui
+     * (and other CSS-variable theme systems) expect. Returns an empty string for
+     * null/blank/malformed input so the resulting CSS variable simply has no value.
+     */
+    static String hexToHsl(String hex) {
+        if (hex == null || hex.isBlank()) return "";
+        String h = hex.trim();
+        if (h.startsWith("#")) h = h.substring(1);
+        if (h.length() != 6) return "";
+        int r, g, b;
+        try {
+            r = Integer.parseInt(h.substring(0, 2), 16);
+            g = Integer.parseInt(h.substring(2, 4), 16);
+            b = Integer.parseInt(h.substring(4, 6), 16);
+        } catch (NumberFormatException e) {
+            return "";
+        }
+        double rd = r / 255.0, gd = g / 255.0, bd = b / 255.0;
+        double max = Math.max(rd, Math.max(gd, bd));
+        double min = Math.min(rd, Math.min(gd, bd));
+        double l = (max + min) / 2.0;
+        double hue, sat;
+        if (max == min) {
+            hue = 0; sat = 0;
+        } else {
+            double d = max - min;
+            sat = l > 0.5 ? d / (2.0 - max - min) : d / (max + min);
+            if (max == rd) hue = (gd - bd) / d + (gd < bd ? 6 : 0);
+            else if (max == gd) hue = (bd - rd) / d + 2;
+            else hue = (rd - gd) / d + 4;
+            hue *= 60;
+        }
+        return Math.round(hue) + " " + Math.round(sat * 100) + "% " + Math.round(l * 100) + "%";
     }
 
     /** {@code "router-react-router"} → {@code "RouterReactRouter"}. */

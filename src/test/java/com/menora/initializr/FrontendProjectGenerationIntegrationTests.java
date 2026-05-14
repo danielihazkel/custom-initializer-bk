@@ -312,6 +312,167 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(body).contains("\"id\":\"tailwind-sky\"");
     }
 
+    // ── Tier 1.1: starter code for package.json-only deps ──────────────────
+
+    @Test
+    void selectingReactRouterWritesRoutesAndWiresProvider() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("router-react-router");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).containsKey("src/app/routes.tsx");
+        assertThat(files.get("src/app/routes.tsx")).contains("createBrowserRouter");
+
+        String app = files.get("src/app/App.tsx");
+        assertThat(app).contains("import { RouterProvider } from 'react-router-dom'");
+        assertThat(app).contains("import { router } from '@app/routes'");
+        assertThat(app).contains("<RouterProvider router={router} />");
+        // When router is selected the bare HomePage import is no longer needed.
+        assertThat(app).doesNotContain("import { HomePage }");
+    }
+
+    @Test
+    void selectingZustandWritesCounterStore() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("state-zustand");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).containsKey("src/entities/counter/model/store.ts");
+        assertThat(files.get("src/entities/counter/model/store.ts"))
+                .contains("import { create } from 'zustand'")
+                .contains("useCounterStore");
+    }
+
+    @Test
+    void selectingReduxToolkitWritesStoreSliceAndWiresProvider() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("state-redux-toolkit");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).containsKey("src/app/store.ts");
+        assertThat(files).containsKey("src/entities/counter/model/counterSlice.ts");
+        assertThat(files).containsKey("src/shared/lib/hooks.ts");
+
+        String app = files.get("src/app/App.tsx");
+        assertThat(app).contains("import { Provider as ReduxProvider } from 'react-redux'");
+        assertThat(app).contains("import { store } from '@app/store'");
+        assertThat(app).contains("<ReduxProvider store={store}>");
+    }
+
+    @Test
+    void selectingTanstackQueryWritesClientAndWiresProvider() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("data-tanstack-query");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).containsKey("src/shared/api/queryClient.ts");
+        assertThat(files.get("src/shared/api/queryClient.ts"))
+                .contains("new QueryClient");
+
+        String app = files.get("src/app/App.tsx");
+        assertThat(app).contains("import { QueryClientProvider } from '@tanstack/react-query'");
+        assertThat(app).contains("import { queryClient } from '@shared/api/queryClient'");
+        assertThat(app).contains("<QueryClientProvider client={queryClient}>");
+    }
+
+    // ── Tier 1.2: palette injection for shadcn + styled-components ─────────
+
+    @Test
+    void shadcnInjectsPaletteAsHslCssVariables() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("style-tailwind");
+        desc.getDependencies().add("design-shadcn");
+        // menora-default: primary=#1976d2 → 210 80% 46% (rounded)
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        String css = files.get("src/index.css");
+        assertThat(css).isNotNull();
+        // shadcn TEMPLATE overwrites the bare style-tailwind index.css (sortOrder 10 > 2).
+        assertThat(css).contains("@tailwind base;");
+        assertThat(css).contains("--primary:");
+        assertThat(css).contains("--secondary:");
+        assertThat(css).contains("--ring:");
+        // Concrete HSL value derived from #1976d2 — 210 deg hue.
+        assertThat(css).contains("210 ");
+    }
+
+    @Test
+    void styledComponentsWritesThemeAndWrapsApp() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("style-styled");
+        desc.setColorPaletteId("forest");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        String theme = files.get("src/shared/theme/theme.ts");
+        assertThat(theme).isNotNull();
+        assertThat(theme).contains("import type { DefaultTheme } from 'styled-components'");
+        // forest seed: primary=#2e7d32
+        assertThat(theme).contains("primary: '#2e7d32'");
+
+        assertThat(files).containsKey("src/shared/theme/styled.d.ts");
+
+        String app = files.get("src/app/App.tsx");
+        assertThat(app).contains("import { ThemeProvider } from 'styled-components'");
+        assertThat(app).contains("<ThemeProvider theme={theme}>");
+    }
+
+    // ── Tier 1.3: ADD_NPM_SCRIPT customizations ────────────────────────────
+
+    @Test
+    void seededNpmScriptsLandInPackageJson() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        Map<String, String> files = generator.generateFileMap(desc);
+        String pkg = files.get("package.json");
+        // Seeded against __common__ via ADD_NPM_SCRIPT
+        assertThat(pkg).contains("\"lint:fix\"");
+        assertThat(pkg).contains("\"format:check\"");
+        assertThat(pkg).contains("\"typecheck\"");
+    }
+
+    @Test
+    void playwrightAddsItsExtraScripts() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("test-playwright");
+        Map<String, String> files = generator.generateFileMap(desc);
+        String pkg = files.get("package.json");
+        assertThat(pkg).contains("\"e2e:install\"");
+        assertThat(pkg).contains("\"e2e:report\"");
+    }
+
+    // ── Tier 1.4: React-version-keyed compatibility filtering ──────────────
+
+    @Test
+    void chakraIncludedForReact18Default() {
+        ResponseEntity<String> r = rest.getForEntity("/frontend/metadata", String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r.getBody()).contains("\"id\":\"design-chakra\"");
+        // The range is exposed for UI badging when set.
+        assertThat(r.getBody()).contains("\"versionRange\":\"[18.0.0,19.0.0)\"");
+    }
+
+    @Test
+    void chakraFilteredOutForReact19() {
+        ResponseEntity<String> r = rest.getForEntity(
+                "/frontend/metadata?reactVersion=19", String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r.getBody()).doesNotContain("\"id\":\"design-chakra\"");
+        // Other deps without ranges still appear.
+        assertThat(r.getBody()).contains("\"id\":\"state-zustand\"");
+    }
+
+    @Test
+    void incompatibleDepsDroppedFromGeneration() throws Exception {
+        // Using the HTTP endpoint so the controller's filter runs.
+        ResponseEntity<byte[]> r = rest.getForEntity(
+                "/frontend/starter.zip?reactVersion=19&dependencies=design-chakra,state-zustand",
+                byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        // Inspect package.json — chakra deps should not appear.
+        String pkg = readZipEntry(r.getBody(), "demo/package.json");
+        assertThat(pkg).doesNotContain("@chakra-ui/react");
+        assertThat(pkg).contains("\"zustand\"");
+    }
+
     @Test
     void starterPreviewEndpointReturnsFilesAndTree() {
         ResponseEntity<String> r = rest.getForEntity(
@@ -356,5 +517,17 @@ class FrontendProjectGenerationIntegrationTests {
             }
         }
         return names;
+    }
+
+    private static String readZipEntry(byte[] bytes, String entryName) throws Exception {
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+            ZipEntry e;
+            while ((e = zip.getNextEntry()) != null) {
+                if (e.getName().equals(entryName)) {
+                    return new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+            }
+        }
+        return null;
     }
 }
