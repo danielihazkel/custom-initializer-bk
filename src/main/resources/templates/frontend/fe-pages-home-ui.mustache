@@ -1,0 +1,16 @@
+const homeStyles = {
+  fontFamily: 'system-ui, sans-serif',
+  padding: '2rem',
+  maxWidth: 720,
+  margin: '0 auto',
+} as const;
+
+export function HomePage() {
+  return (
+    <main style={homeStyles}>
+      <h1>{{appTitle}}</h1>
+      <p>Welcome to your new React + TypeScript + Vite + Feature-Slice Design project.</p>
+      <p>Edit <code>src/pages/home/ui/HomePage.tsx</code> to get started.</p>
+    </main>
+  );
+}

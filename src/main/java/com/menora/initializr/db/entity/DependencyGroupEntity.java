@@ -2,7 +2,9 @@ package com.menora.initializr.db.entity;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import org.hibernate.annotations.ColumnDefault;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,6 +23,12 @@ public class DependencyGroupEntity {
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @ColumnDefault("'BACKEND'")
+    @Column(name = "project_kind", nullable = false, length = 20)
+    private ProjectKind projectKind = ProjectKind.BACKEND;
+
     @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("sortOrder ASC")
     private List<DependencyEntryEntity> entries = new ArrayList<>();
@@ -31,6 +39,8 @@ public class DependencyGroupEntity {
     public void setName(String name) { this.name = name; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    public ProjectKind getProjectKind() { return projectKind == null ? ProjectKind.BACKEND : projectKind; }
+    public void setProjectKind(ProjectKind projectKind) { this.projectKind = projectKind == null ? ProjectKind.BACKEND : projectKind; }
     public List<DependencyEntryEntity> getEntries() { return entries; }
     public void setEntries(List<DependencyEntryEntity> entries) { this.entries = entries; }
 }

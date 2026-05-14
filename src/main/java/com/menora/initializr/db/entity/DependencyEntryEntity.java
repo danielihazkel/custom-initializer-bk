@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import org.hibernate.annotations.ColumnDefault;
 
 @Entity
 @Table(name = "dependency_entry")
@@ -55,6 +56,12 @@ public class DependencyEntryEntity {
     @Column(name = "is_starter", nullable = false)
     private boolean starter = true;
 
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @ColumnDefault("'BACKEND'")
+    @Column(name = "project_kind", nullable = false, length = 20)
+    private ProjectKind projectKind = ProjectKind.BACKEND;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public DependencyGroupEntity getGroup() { return group; }
@@ -81,6 +88,8 @@ public class DependencyEntryEntity {
     public void setCompatibilityRange(String compatibilityRange) { this.compatibilityRange = blankToNull(compatibilityRange); }
     public boolean isStarter() { return starter; }
     public void setStarter(boolean starter) { this.starter = starter; }
+    public ProjectKind getProjectKind() { return projectKind == null ? ProjectKind.BACKEND : projectKind; }
+    public void setProjectKind(ProjectKind projectKind) { this.projectKind = projectKind == null ? ProjectKind.BACKEND : projectKind; }
 
     private static String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s;

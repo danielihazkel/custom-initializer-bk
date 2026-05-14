@@ -1,0 +1,30 @@
+{
+  "name": "{{packageJsonName}}",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "{{description}}",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "format": "prettier --write ."{{#hasTestVitestRtl}},
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "coverage": "vitest run --coverage"{{/hasTestVitestRtl}}{{#hasTestPlaywright}},
+    "e2e": "playwright test"{{/hasTestPlaywright}}{{#hasStorybook}},
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"{{/hasStorybook}}{{#hasQualityHusky}},
+    "prepare": "husky"{{/hasQualityHusky}}
+  },
+  "engines": {
+    "node": ">={{nodeVersion}}"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": ["eslint --fix", "prettier --write"],
+    "*.{json,md,css}": ["prettier --write"]
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

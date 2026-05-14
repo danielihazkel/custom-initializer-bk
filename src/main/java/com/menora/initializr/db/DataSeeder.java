@@ -72,6 +72,7 @@ public class DataSeeder implements CommandLineRunner {
         seedCompatibilityRules();
         seedStarterTemplates();
         seedModuleTemplates();
+        seedFrontendCatalog();
         log.info("Database seeding complete");
     }
 
@@ -1034,5 +1035,410 @@ public class DataSeeder implements CommandLineRunner {
             throw new IOException("Classpath resource not found: " + path);
         }
         return resource.getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    // ── Frontend (React + TS + Vite + FSD) catalog ──────────────────────────────
+    //
+    // Mirrors the backend seed but produces FRONTEND-kind rows. The
+    // FrontendProjectGenerator queries them through DependencyConfigService
+    // filtered by ProjectKind.FRONTEND.
+
+    private void seedFrontendCatalog() throws IOException {
+        // Groups
+        DependencyGroupEntity routing  = feGroup("Routing", 0);
+        DependencyGroupEntity state    = feGroup("State Management", 1);
+        DependencyGroupEntity data     = feGroup("Data Fetching", 2);
+        DependencyGroupEntity styling  = feGroup("Styling", 3);
+        DependencyGroupEntity forms    = feGroup("Forms & Validation", 4);
+        DependencyGroupEntity anim     = feGroup("Animation", 5);
+        DependencyGroupEntity testing  = feGroup("Testing", 6);
+        DependencyGroupEntity quality  = feGroup("Quality (default-on)", 7);
+        DependencyGroupEntity extras   = feGroup("Extras", 8);
+
+        // Entries
+        feEntry(routing,  "router-react-router", "React Router",
+                "Declarative routing for React (react-router-dom v6)", 0);
+        feEntry(routing,  "router-tanstack",     "TanStack Router",
+                "Type-safe, file-based routing with first-class data loading", 1);
+
+        feEntry(state,    "state-zustand",       "Zustand",
+                "Small, fast, scalable state-management with a tiny API", 0);
+        feEntry(state,    "state-redux-toolkit", "Redux Toolkit",
+                "Standard, opinionated Redux with @reduxjs/toolkit + react-redux", 1);
+        feEntry(state,    "state-jotai",         "Jotai",
+                "Primitive, atomic state management for React", 2);
+
+        feEntry(data,     "data-tanstack-query", "TanStack Query",
+                "Powerful asynchronous state management for server data", 0);
+        feEntry(data,     "data-swr",            "SWR",
+                "React Hooks for data fetching from Vercel", 1);
+
+        feEntry(styling,  "style-tailwind",      "Tailwind CSS",
+                "Utility-first CSS framework with PostCSS + Autoprefixer", 0);
+        feEntry(styling,  "style-mui",           "MUI (Material UI)",
+                "Comprehensive React component library implementing Material Design", 1);
+        feEntry(styling,  "style-styled",        "styled-components",
+                "Visual primitives for CSS-in-JS", 2);
+
+        feEntry(forms,    "form-react-hook-form","React Hook Form",
+                "Performant, flexible and extensible forms with easy validation", 0);
+        feEntry(forms,    "form-zod",            "Zod",
+                "TypeScript-first schema validation with static type inference", 1);
+
+        feEntry(anim,     "anim-framer-motion",  "Framer Motion",
+                "Production-ready animation library for React", 0);
+
+        feEntry(testing,  "test-vitest-rtl",     "Vitest + React Testing Library",
+                "Fast unit test runner + RTL with jsdom and jest-dom matchers", 0);
+        feEntry(testing,  "test-playwright",     "Playwright",
+                "End-to-end testing for modern web apps", 1);
+        feEntry(testing,  "test-msw",            "MSW (Mock Service Worker)",
+                "API mocking library for browsers and Node, network-level interception", 2);
+
+        feEntry(quality,  "quality-eslint",      "ESLint (flat config)",
+                "Linting for TS + React, included by default in every project", 0);
+        feEntry(quality,  "quality-prettier",    "Prettier",
+                "Opinionated code formatter, included by default in every project", 1);
+        feEntry(quality,  "quality-husky",       "Husky + lint-staged",
+                "Git hook runner with pre-commit lint/format checks", 2);
+
+        feEntry(extras,   "i18n-react-i18next",  "react-i18next",
+                "Internationalization framework based on i18next", 0);
+        feEntry(extras,   "storybook",           "Storybook",
+                "Workshop for building UI components and pages in isolation", 1);
+        feEntry(extras,   "auth-msal",           "Microsoft Auth (MSAL React)",
+                "@azure/msal-react — Microsoft Identity Platform integration", 2);
+        feEntry(extras,   "chart-recharts",      "Recharts",
+                "Composable charting library built on React + D3", 3);
+
+        // ── Common file contributions ────────────────────────────────────────
+        int o = 0;
+        // FSD layer barrels (one row each — keeps admin edits granular)
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "export {};\n",
+                "src/app/index.ts", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "export { HomePage } from './home';\n",
+                "src/pages/index.ts", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "export {};\n",
+                "src/widgets/index.ts", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "export {};\n",
+                "src/features/index.ts", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "export {};\n",
+                "src/entities/index.ts", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "export {};\n",
+                "src/shared/index.ts", FileContributionEntity.SubstitutionType.NONE, o++);
+
+        // Layer READMEs
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "# app\n\nApp-level providers, router, and global wiring. Imports from every layer below.\n",
+                "src/app/README.md", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "# pages\n\nRoute-level components. May import from widgets/features/entities/shared.\n",
+                "src/pages/README.md", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "# widgets\n\nComposite UI blocks. May import from features/entities/shared.\n",
+                "src/widgets/README.md", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "# features\n\nBusiness-level interactions. May import from entities/shared.\n",
+                "src/features/README.md", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "# entities\n\nDomain models and their UI. May import from shared only.\n",
+                "src/entities/README.md", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                "# shared\n\nReusable infrastructure: ui-kit, lib helpers, api, config. Imports nothing from above.\n",
+                "src/shared/README.md", FileContributionEntity.SubstitutionType.NONE, o++);
+
+        // Entry files (templated so they pick up project metadata + selected deps)
+        feFc("__common__", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/frontend/fe-index-html.mustache"),
+                "index.html", FileContributionEntity.SubstitutionType.MUSTACHE, o++);
+        feFc("__common__", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/frontend/fe-main-tsx.mustache"),
+                "src/main.tsx", FileContributionEntity.SubstitutionType.MUSTACHE, o++);
+        feFc("__common__", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/frontend/fe-app-tsx.mustache"),
+                "src/app/App.tsx", FileContributionEntity.SubstitutionType.MUSTACHE, o++);
+        feFc("__common__", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/frontend/fe-pages-home-index.mustache"),
+                "src/pages/home/index.ts", FileContributionEntity.SubstitutionType.MUSTACHE, o++);
+        feFc("__common__", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/frontend/fe-pages-home-ui.mustache"),
+                "src/pages/home/ui/HomePage.tsx", FileContributionEntity.SubstitutionType.MUSTACHE, o++);
+        feFc("__common__", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/frontend/fe-readme.mustache"),
+                "README.md", FileContributionEntity.SubstitutionType.MUSTACHE, o++);
+
+        // Common static configs
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/tsconfig.json"),
+                "tsconfig.json", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/tsconfig.node.json"),
+                "tsconfig.node.json", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/.gitignore"),
+                ".gitignore", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/.editorconfig"),
+                ".editorconfig", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/.dockerignore"),
+                ".dockerignore", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/Dockerfile"),
+                "Dockerfile", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/nginx.conf"),
+                "nginx.conf", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/Jenkinsfile"),
+                "Jenkinsfile", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/eslint.config.js"),
+                "eslint.config.js", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/.prettierrc.json"),
+                ".prettierrc.json", FileContributionEntity.SubstitutionType.NONE, o++);
+        feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/common/husky-pre-commit"),
+                ".husky/pre-commit", FileContributionEntity.SubstitutionType.NONE, o++);
+
+        // ── Per-dep file contributions ───────────────────────────────────────
+        // Tailwind: config files + base CSS (Vite plugin import handled via ADD_VITE_PLUGIN below).
+        feFc("style-tailwind", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/style-tailwind/tailwind.config.js"),
+                "tailwind.config.js", FileContributionEntity.SubstitutionType.NONE, 0);
+        feFc("style-tailwind", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/style-tailwind/postcss.config.js"),
+                "postcss.config.js", FileContributionEntity.SubstitutionType.NONE, 1);
+        feFc("style-tailwind", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/style-tailwind/index.css"),
+                "src/index.css", FileContributionEntity.SubstitutionType.NONE, 2);
+
+        // Vitest: config + test setup
+        feFc("test-vitest-rtl", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/test-vitest-rtl/vitest.config.ts"),
+                "vitest.config.ts", FileContributionEntity.SubstitutionType.NONE, 0);
+        feFc("test-vitest-rtl", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/test-vitest-rtl/test-setup.ts"),
+                "src/test-setup.ts", FileContributionEntity.SubstitutionType.NONE, 1);
+
+        // ── Common npm deps (every FE project) ───────────────────────────────
+        // React/React-DOM versions: ranges keyed off reactVersion. For v1 we ship two majors.
+        feNpm("__common__", "react",          "^18.3.1", "",    0);
+        feNpm("__common__", "react-dom",      "^18.3.1", "",    1);
+        feNpm("__common__", "@types/react",         "^18.3.3", "dev", 2);
+        feNpm("__common__", "@types/react-dom",     "^18.3.0", "dev", 3);
+        feNpm("__common__", "@vitejs/plugin-react", "^4.3.1",  "dev", 4);
+        feNpm("__common__", "vite",                 "^5.2.0",  "dev", 5);
+        feNpm("__common__", "typescript",           "^5.4.5",  "dev", 6);
+
+        // Quality baseline (always on, per user preference)
+        feNpm("__common__", "eslint",                              "^9.10.0", "dev", 10);
+        feNpm("__common__", "@eslint/js",                          "^9.10.0", "dev", 11);
+        feNpm("__common__", "typescript-eslint",                   "^8.5.0",  "dev", 12);
+        feNpm("__common__", "eslint-plugin-react-hooks",           "^5.1.0",  "dev", 13);
+        feNpm("__common__", "eslint-plugin-react-refresh",         "^0.4.11", "dev", 14);
+        feNpm("__common__", "globals",                             "^15.9.0", "dev", 15);
+        feNpm("__common__", "prettier",                            "^3.3.3",  "dev", 16);
+        feNpm("__common__", "husky",                               "^9.1.5",  "dev", 17);
+        feNpm("__common__", "lint-staged",                         "^15.2.10","dev", 18);
+
+        // Common Vite plugin: @vitejs/plugin-react
+        feVitePlugin("__common__", "@vitejs/plugin-react", "react", "react()", 0);
+
+        // ── Per-dep npm deps ─────────────────────────────────────────────────
+        feNpm("router-react-router", "react-router-dom",                "^6.26.0", "",    0);
+        feNpm("router-tanstack",     "@tanstack/react-router",          "^1.50.0", "",    0);
+        feNpm("router-tanstack",     "@tanstack/router-devtools",       "^1.50.0", "dev", 1);
+
+        feNpm("state-zustand",       "zustand",                         "^4.5.5",  "",    0);
+        feNpm("state-redux-toolkit", "@reduxjs/toolkit",                "^2.2.7",  "",    0);
+        feNpm("state-redux-toolkit", "react-redux",                     "^9.1.2",  "",    1);
+        feNpm("state-jotai",         "jotai",                           "^2.9.3",  "",    0);
+
+        feNpm("data-tanstack-query", "@tanstack/react-query",           "^5.51.23","",    0);
+        feNpm("data-tanstack-query", "@tanstack/react-query-devtools",  "^5.51.23","dev", 1);
+        feNpm("data-swr",            "swr",                             "^2.2.5",  "",    0);
+
+        feNpm("style-tailwind",      "tailwindcss",                     "^3.4.10", "dev", 0);
+        feNpm("style-tailwind",      "postcss",                         "^8.4.41", "dev", 1);
+        feNpm("style-tailwind",      "autoprefixer",                    "^10.4.20","dev", 2);
+        feNpm("style-mui",           "@mui/material",                   "^5.16.7", "",    0);
+        feNpm("style-mui",           "@emotion/react",                  "^11.13.0","",    1);
+        feNpm("style-mui",           "@emotion/styled",                 "^11.13.0","",    2);
+        feNpm("style-styled",        "styled-components",               "^6.1.13", "",    0);
+        feNpm("style-styled",        "@types/styled-components",        "^5.1.34", "dev", 1);
+
+        feNpm("form-react-hook-form","react-hook-form",                 "^7.53.0", "",    0);
+        feNpm("form-zod",            "zod",                             "^3.23.8", "",    0);
+        feNpm("form-zod",            "@hookform/resolvers",             "^3.9.0",  "",    1);
+
+        feNpm("anim-framer-motion",  "framer-motion",                   "^11.3.31","",    0);
+
+        feNpm("test-vitest-rtl",     "vitest",                          "^2.0.5",  "dev", 0);
+        feNpm("test-vitest-rtl",     "@vitest/ui",                      "^2.0.5",  "dev", 1);
+        feNpm("test-vitest-rtl",     "@testing-library/react",          "^16.0.1", "dev", 2);
+        feNpm("test-vitest-rtl",     "@testing-library/jest-dom",       "^6.5.0",  "dev", 3);
+        feNpm("test-vitest-rtl",     "jsdom",                           "^25.0.0", "dev", 4);
+        feNpm("test-playwright",     "@playwright/test",                "^1.46.1", "dev", 0);
+        feNpm("test-msw",            "msw",                             "^2.4.2",  "dev", 0);
+
+        feNpm("i18n-react-i18next",  "react-i18next",                   "^15.0.1", "",    0);
+        feNpm("i18n-react-i18next",  "i18next",                         "^23.14.0","",    1);
+
+        feNpm("storybook",           "storybook",                       "^8.2.9",  "dev", 0);
+        feNpm("storybook",           "@storybook/react-vite",           "^8.2.9",  "dev", 1);
+        feNpm("storybook",           "@storybook/react",                "^8.2.9",  "dev", 2);
+
+        feNpm("auth-msal",           "@azure/msal-browser",             "^3.21.0", "",    0);
+        feNpm("auth-msal",           "@azure/msal-react",               "^2.0.22", "",    1);
+
+        feNpm("chart-recharts",      "recharts",                        "^2.12.7", "",    0);
+
+        // ── Sub-options (v1: metadata only; file gating can be added per row later) ──
+        feSubOption("router-react-router", "lazy-routes",      "Lazy routes",
+                "Use React.lazy() + Suspense for code-split routes", 0);
+        feSubOption("router-react-router", "error-boundary",   "Error boundary",
+                "Wrap routes in an ErrorBoundary for graceful failures", 1);
+        feSubOption("router-react-router", "sample-routes",    "Sample routes",
+                "Generate a demo router config with /home and /about", 2);
+
+        feSubOption("state-zustand", "devtools",      "Redux DevTools middleware",
+                "Wire zustand to the Redux DevTools browser extension", 0);
+        feSubOption("state-zustand", "persist",       "Persist middleware",
+                "Add zustand/middleware persist for localStorage rehydration", 1);
+        feSubOption("state-zustand", "sample-store",  "Sample store",
+                "Generate a counter store under src/entities/counter", 2);
+
+        feSubOption("state-redux-toolkit", "sample-store", "Sample slice + store",
+                "Generate a counter slice + configured store", 0);
+
+        feSubOption("data-tanstack-query", "devtools",       "Devtools",
+                "Include @tanstack/react-query-devtools setup", 0);
+        feSubOption("data-tanstack-query", "axios-base",     "Axios base client",
+                "Configure an Axios instance under shared/api", 1);
+        feSubOption("data-tanstack-query", "sample-query",   "Sample query hook",
+                "Generate a useUsers() hook example", 2);
+
+        feSubOption("style-tailwind", "dark-mode",   "Dark mode (class strategy)",
+                "Configure Tailwind dark mode via class attribute", 0);
+
+        feSubOption("form-react-hook-form", "rhf-zod-resolver", "Use Zod resolver",
+                "Wire @hookform/resolvers to validate with Zod schemas", 0);
+        feSubOption("form-react-hook-form", "sample-form",      "Sample form",
+                "Generate a demo signup form component", 1);
+
+        feSubOption("test-vitest-rtl", "sample-tests",  "Sample tests",
+                "Generate a sample render test for HomePage", 0);
+        feSubOption("test-vitest-rtl", "ci-config",     "CI config",
+                "Generate a GitHub Actions workflow that runs the test suite", 1);
+
+        // ── Compatibility rules ──────────────────────────────────────────────
+        feCompat("router-react-router", "router-tanstack",     DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Only one router can be selected", 0);
+        feCompat("state-zustand", "state-redux-toolkit",       DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Pick one state-management library", 0);
+        feCompat("state-zustand", "state-jotai",               DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Pick one state-management library", 1);
+        feCompat("state-redux-toolkit", "state-jotai",         DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Pick one state-management library", 2);
+        feCompat("data-tanstack-query", "data-swr",            DependencyCompatibilityEntity.RelationType.CONFLICTS,
+                "Pick one data-fetching library", 0);
+        feCompat("style-tailwind", "style-mui",                DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "Tailwind + MUI is supported but unusual; consider sticking with one", 0);
+        feCompat("form-react-hook-form", "form-zod",           DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "Pair RHF with Zod via @hookform/resolvers for typed validation", 0);
+
+        log.info("Seeded frontend catalog (FRONTEND kind)");
+    }
+
+    // ── Frontend seed helpers ──────────────────────────────────────────────────
+
+    private DependencyGroupEntity feGroup(String name, int order) {
+        DependencyGroupEntity g = new DependencyGroupEntity();
+        g.setName(name);
+        g.setSortOrder(order);
+        g.setProjectKind(ProjectKind.FRONTEND);
+        return groupRepo.save(g);
+    }
+
+    private void feEntry(DependencyGroupEntity group, String depId, String name, String desc, int order) {
+        DependencyEntryEntity e = new DependencyEntryEntity();
+        e.setGroup(group);
+        e.setDepId(depId);
+        e.setName(name);
+        e.setDescription(desc);
+        e.setSortOrder(order);
+        e.setStarter(true);
+        e.setProjectKind(ProjectKind.FRONTEND);
+        entryRepo.save(e);
+    }
+
+    private void feFc(String depId, FileContributionEntity.FileType fileType, String content,
+                       String targetPath, FileContributionEntity.SubstitutionType subType, int order) {
+        FileContributionEntity e = new FileContributionEntity();
+        e.setDependencyId(depId);
+        e.setFileType(fileType);
+        e.setContent(content);
+        e.setTargetPath(targetPath);
+        e.setSubstitutionType(subType);
+        e.setSortOrder(order);
+        e.setProjectKind(ProjectKind.FRONTEND);
+        fileContribRepo.save(e);
+    }
+
+    private void feNpm(String depId, String pkg, String version, String scope, int order) {
+        BuildCustomizationEntity e = new BuildCustomizationEntity();
+        e.setDependencyId(depId);
+        e.setCustomizationType(BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY);
+        e.setMavenArtifactId(pkg);
+        e.setVersion(version);
+        e.setScope(scope);
+        e.setSortOrder(order);
+        e.setProjectKind(ProjectKind.FRONTEND);
+        buildCustomRepo.save(e);
+    }
+
+    private void feVitePlugin(String depId, String importPath, String importBinding,
+                               String pluginCall, int order) {
+        BuildCustomizationEntity e = new BuildCustomizationEntity();
+        e.setDependencyId(depId);
+        e.setCustomizationType(BuildCustomizationEntity.CustomizationType.ADD_VITE_PLUGIN);
+        e.setMavenGroupId(importPath);
+        e.setMavenArtifactId(importBinding);
+        e.setVersion(pluginCall);
+        e.setSortOrder(order);
+        e.setProjectKind(ProjectKind.FRONTEND);
+        buildCustomRepo.save(e);
+    }
+
+    private void feSubOption(String depId, String optionId, String label, String desc, int order) {
+        DependencySubOptionEntity e = new DependencySubOptionEntity();
+        e.setDependencyId(depId);
+        e.setOptionId(optionId);
+        e.setLabel(label);
+        e.setDescription(desc);
+        e.setSortOrder(order);
+        e.setProjectKind(ProjectKind.FRONTEND);
+        subOptionRepo.save(e);
+    }
+
+    private void feCompat(String source, String target,
+                          DependencyCompatibilityEntity.RelationType type,
+                          String desc, int order) {
+        DependencyCompatibilityEntity e = new DependencyCompatibilityEntity();
+        e.setSourceDepId(source);
+        e.setTargetDepId(target);
+        e.setRelationType(type);
+        e.setDescription(desc);
+        e.setSortOrder(order);
+        e.setProjectKind(ProjectKind.FRONTEND);
+        compatibilityRepo.save(e);
     }
 }

@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-ssr
+.git
+.gitignore
+.idea
+.vscode
+*.log
+coverage
+.env
+.env.local
+storybook-static
+.husky

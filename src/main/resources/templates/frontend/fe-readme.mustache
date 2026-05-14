@@ -1,0 +1,36 @@
+# {{appTitle}}
+
+{{description}}
+
+## Stack
+
+- React {{reactVersion}}
+- TypeScript {{typescriptVersion}}
+- Vite {{viteVersion}}
+- Feature-Slice Design layout (`src/app`, `src/pages`, `src/widgets`, `src/features`, `src/entities`, `src/shared`)
+
+## Run
+
+```sh
+{{#isPnpm}}pnpm install
+pnpm dev{{/isPnpm}}{{#isNpm}}npm install
+npm run dev{{/isNpm}}
+```
+
+Then open http://localhost:5173
+
+## Build
+
+```sh
+{{#isPnpm}}pnpm build{{/isPnpm}}{{#isNpm}}npm run build{{/isNpm}}
+```
+
+Output lands in `dist/`.
+
+## Lint & format
+
+```sh
+{{#isPnpm}}pnpm lint
+pnpm format{{/isPnpm}}{{#isNpm}}npm run lint
+npm run format{{/isNpm}}
+```

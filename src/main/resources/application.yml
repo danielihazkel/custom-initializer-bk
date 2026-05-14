@@ -110,3 +110,33 @@ management:
 menora:
   audit:
     log-remote-addr: true
+
+frontend:
+  react-versions:
+    - id: "18"
+      name: React 18
+      default: true
+    - id: "19"
+      name: React 19
+  node-versions:
+    - id: "20"
+      name: Node 20 (LTS)
+      default: true
+    - id: "22"
+      name: Node 22 (Current)
+    - id: "18"
+      name: Node 18 (Maintenance)
+  package-managers:
+    - id: pnpm
+      name: pnpm
+      default: true
+    - id: npm
+      name: npm
+  pinned:
+    typescript: "5.4.5"
+    vite: "5.2.0"
+  defaults:
+    project-name: demo
+    description: Menora React + TS + Vite project
+    app-title: Demo
+    scope: ""
