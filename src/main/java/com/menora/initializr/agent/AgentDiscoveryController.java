@@ -57,7 +57,7 @@ public class AgentDiscoveryController {
                 ids(md.getPackagings().getContent()),
                 typeIds(md.getTypes().getContent()),
                 buildDependencies(md, subOptionsByDep),
-                extensions.starterTemplates(),
+                extensions.starterTemplates(null),
                 extensions.moduleTemplates(),
                 extensions.compatibility(),
                 buildWizards(),

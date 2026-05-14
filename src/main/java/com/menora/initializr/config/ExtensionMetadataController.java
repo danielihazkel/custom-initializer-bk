@@ -4,7 +4,9 @@ import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.DependencySubOptionEntity;
 import com.menora.initializr.db.entity.ModuleDependencyMappingEntity;
+import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.entity.StarterTemplateDepEntity;
+import com.menora.initializr.db.entity.StarterTemplateEntity;
 import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
 import com.menora.initializr.db.repository.DependencyEntryRepository;
 import com.menora.initializr.db.repository.ModuleDependencyMappingRepository;
@@ -13,6 +15,7 @@ import com.menora.initializr.db.repository.StarterTemplateDepRepository;
 import com.menora.initializr.db.repository.StarterTemplateRepository;
 import com.menora.initializr.sql.SqlDialect;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Arrays;
@@ -72,8 +75,12 @@ public class ExtensionMetadataController {
     }
 
     @GetMapping("/metadata/starter-templates")
-    public List<StarterTemplateDto> starterTemplates() {
-        return templateRepo.findAllByOrderBySortOrderAsc().stream()
+    public List<StarterTemplateDto> starterTemplates(
+            @RequestParam(name = "projectKind", required = false) ProjectKind projectKind) {
+        List<StarterTemplateEntity> rows = projectKind == null
+                ? templateRepo.findAllByOrderBySortOrderAsc()
+                : templateRepo.findAllByProjectKindOrderBySortOrderAsc(projectKind);
+        return rows.stream()
                 .map(t -> {
                     List<StarterTemplateDepEntity> deps = templateDepRepo.findAllByTemplateId(t.getId());
                     List<TemplateDepDto> depDtos = deps.stream()
