@@ -22,7 +22,8 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
 9. [WSDL → SOAP Endpoint/Client Wizard](#wsdl--soap-endpointclient-wizard)
 10. [Project Preview](#project-preview)
 11. [Frontend Project Generator (React + TS + Vite + FSD)](#frontend-project-generator-react--ts--vite--fsd)
-12. [Agent Contract (AI Scaffolding)](#agent-contract-ai-scaffolding)
+12. [Paired Generator (Backend + Frontend Monorepo)](#paired-generator-backend--frontend-monorepo)
+13. [Agent Contract (AI Scaffolding)](#agent-contract-ai-scaffolding)
     - [GET /agent/manifest — Discovery](#get-agentmanifest--discovery)
     - [POST /agent/scaffold — Generation](#post-agentscaffold--generation)
     - [.menora-init.json Manifest](#menora-initjson-manifest)
@@ -836,7 +837,7 @@ demo/
 
 ### v1 Dependency Catalog
 
-23 entries across 9 groups, all seeded by `DataSeeder.seedFrontendCatalog()`:
+24+ entries across 10 groups, all seeded by `DataSeeder.seedFrontendCatalog()`:
 
 | Group | Entries | Notable sub-options |
 |---|---|---|
@@ -844,13 +845,15 @@ demo/
 | State Management | `state-zustand`, `state-redux-toolkit`, `state-jotai` | `devtools`, `persist`, `sample-store` |
 | Data Fetching | `data-tanstack-query`, `data-swr` | `devtools`, `axios-base`, `sample-query` |
 | Styling | `style-tailwind`, `style-mui`, `style-styled` | `dark-mode` |
+| Design System | `design-none`, `design-shadcn`, `design-mui`, `design-chakra`, `design-mantine` | — |
 | Forms & Validation | `form-react-hook-form`, `form-zod` | `rhf-zod-resolver`, `sample-form` |
 | Animation | `anim-framer-motion` | — |
 | Testing | `test-vitest-rtl`, `test-playwright`, `test-msw` | `sample-tests`, `ci-config` |
 | Quality (default-on) | `quality-eslint`, `quality-prettier`, `quality-husky` | always-on baseline via `__common__` |
 | Extras | `i18n-react-i18next`, `storybook`, `auth-msal`, `chart-recharts` | — |
+| API Integration | `api-client-openapi` | `react-query-hooks` (emits `orval.config.ts`) |
 
-Compatibility rules (`DependencyCompatibilityEntity` with `projectKind=FRONTEND`) enforce: mutually-exclusive routers, mutually-exclusive state libraries, mutually-exclusive data-fetching libraries, plus a soft `RECOMMENDS` between React Hook Form and Zod.
+Compatibility rules (`DependencyCompatibilityEntity` with `projectKind=FRONTEND`) enforce: mutually-exclusive routers, mutually-exclusive state libraries, mutually-exclusive data-fetching libraries, mutually-exclusive design systems, `design-shadcn REQUIRES style-tailwind`, plus soft `RECOMMENDS` between React Hook Form and Zod, and between `api-client-openapi` and `data-tanstack-query`.
 
 ### Three New Build Customization Types
 
@@ -913,12 +916,134 @@ Two tabs are also **kind-aware in their form**, not just their row filter: **Bui
 
 The Templates and Modules tabs are intentionally backend-only in v1; monorepo / multi-app frontend support is deferred.
 
+### Paired-Backend Wiring
+
+Every FE project description carries optional `apiBaseUrl` and `backendArtifactId` fields. When `apiBaseUrl` is set, the generator drops:
+
+- `.env.development` and `.env.example` with `VITE_API_BASE_URL={{apiBaseUrl}}`
+- A `server.proxy` block in `vite.config.ts` that forwards `/api/*` to the same URL
+- A "Paired backend" section in `README.md` mentioning the linked artifact
+
+`URL` validation in `FrontendProjectDescription.setApiBaseUrl` rejects anything that isn't a plain `http(s)://` URL with a safe character set so the value is safe to splice into config files without further escaping. The `axios.ts` baseline (under the `data-tanstack-query` dep's `axios-base` sub-option) already reads `import.meta.env.VITE_API_BASE_URL` — these wires together so the FE just works when paired with a BE.
+
+`/frontend/starter.zip` accepts `apiBaseUrl` and `backendArtifactId` as query params; the **Paired Backend** section in the FE form's Options panel (UI) feeds the same fields.
+
 ### Out of Scope for v1
 
-- Monorepo / workspace generation (`apps/*` + `packages/*`).
-- Wizards (OpenAPI → typed client, JSON Schema → Zod, design-tokens import).
+- Monorepo / workspace generation inside the FE half (`apps/*` + `packages/*`). (Cross-stack monorepo via the paired endpoint, see below, is supported.)
+- JSON Schema → Zod and design-tokens import wizards.
 - `yarn` support — the package-manager pill exposes `npm` and `pnpm` only.
 - TypeScript / Vite version dropdowns. Both are pinned in `application.yml → frontend.pinned` and stamped into the generated `package.json` via the Mustache context.
+
+---
+
+## Paired Generator (Backend + Frontend Monorepo)
+
+A single JSON request that produces **both halves of a stack** — Spring Boot backend and React/Vite frontend — pre-wired so they can talk to each other immediately. `PairedStarterController` composes the two existing pipelines (`ProjectGenerationInvoker` for BE, `FrontendProjectGenerator` for FE), zips the output into a monorepo layout, and ships root-level `README.md`, `docker-compose.yml`, and `.menora-init.json` files so the project is runnable as-is.
+
+### Endpoints
+
+```http
+POST /starter-paired.zip          # binary monorepo ZIP
+POST /agent/scaffold/paired       # JSON envelope (utf-8 / base64 file tree + paired manifest)
+```
+
+Request body:
+
+```json
+{
+  "backend":  { /* same shape as WizardStarterRequest — groupId, artifactId, bootVersion, dependencies, opts, specByDep, … */ },
+  "frontend": { /* PairedFrontendRequest — projectName, packageManager, dependencies, apiBaseUrl, backendArtifactId, opts, … */ },
+  "layout":   "monorepo"
+}
+```
+
+Either half can be omitted; the absent side is simply skipped. `layout` is reserved for future split-zip / nx-style variants and currently has no effect.
+
+### Output Layout
+
+```
+demo-api.zip
+├── backend/                # full Spring Boot project (pom.xml, src/, mvnw, …)
+├── frontend/               # full React + Vite project (package.json, vite.config.ts, src/, …)
+├── README.md               # paired layout, dev workflow, BE↔FE wiring
+├── docker-compose.yml      # backend (8080) + frontend (5173) services
+└── .menora-init.json       # paired manifest — both halves + apiBaseUrl + SHA-256 per file
+```
+
+### Auto-Wiring Between the Two Halves
+
+The paired pipeline applies a small set of cross-kind defaults so the generated zip "just works":
+
+| Wire | Source → Target | Mechanism |
+|---|---|---|
+| FE knows the BE URL | `backend` half → `frontend/.env.development` | `frontend.apiBaseUrl` defaults to `http://localhost:8080`. Written into `VITE_API_BASE_URL` + a `/api` proxy in `vite.config.ts` |
+| BE accepts the FE origin | `frontend` half present → `backend/.../config/CorsConfig.java` | `paired-cors` sub-option auto-added to the BE `web` dep — emits a `WebMvcConfigurer` allowing `http://localhost:5173` against `/api/**` |
+| Shared OpenAPI contract | `backend.specByDep.openapi` → `frontend/openapi.yaml` | When the FE half has `api-client-openapi` selected, `FrontendProjectGenerator` reads `OpenApiSpecContext` (populated by the BE half's wizard pipeline) and writes the spec at the FE project root |
+| README pairing context | both halves → root `README.md` | Mentions both artifacts and the resolved `apiBaseUrl` |
+
+CORS only ships when `web` is in the BE dep set; FE/BE auto-wiring is no-op when only one half is present.
+
+### OpenAPI-Driven Typed Client
+
+When the FE catalog dep `api-client-openapi` is selected:
+
+- A `gen:api` npm script runs `openapi-typescript openapi.yaml -o src/shared/api/generated/schema.ts`
+- `openapi-typescript` is added to `devDependencies`
+- A `src/shared/api/generated/.gitkeep` placeholder ensures the dir exists pre-generation
+- A short `src/shared/api/README.md` documents the workflow
+- The sub-option `react-query-hooks` additionally writes an `orval.config.ts` (orval must be installed manually via `pnpm add -D orval`)
+- A `RECOMMENDS` rule pairs this dep with `data-tanstack-query` so the FE compatibility banner suggests adding TanStack Query when the user picks the OpenAPI client
+
+The spec itself only lands at `frontend/openapi.yaml` if both:
+1. `api-client-openapi` is in the FE dep set, **and**
+2. A non-blank spec is present in `OpenApiSpecContext` (i.e. the paired request included `backend.specByDep`)
+
+Selecting the dep without a spec is harmless — the scripts and devDep still ship; the user can author `openapi.yaml` themselves and run `gen:api`.
+
+### Manifest Schema Extension
+
+`MenoraInitManifest` gained an optional `paired` block (sibling to the existing `inputs` block) shaped as:
+
+```json
+{
+  "schemaVersion": 1,
+  "generator": { "name": "menora-initializr", "version": "...", "generatedAt": "..." },
+  "paired": {
+    "backend":     { /* same Inputs shape as the single-project manifest */ },
+    "frontend":    { /* FrontendInputs — projectName, packageManager, basePath, dependencies, … */ },
+    "apiBaseUrl":  "http://localhost:8080"
+  },
+  "files": [ { "path": "backend/pom.xml", "sha256": "…" }, { "path": "frontend/package.json", "sha256": "…" }, … ]
+}
+```
+
+Existing single-project manifests are unchanged — `inputs` and `paired` are mutually exclusive (`@JsonInclude(NON_NULL)` omits whichever isn't set).
+
+### UI
+
+The main app gets a third top-level tab — **Paired** — between **Frontend** and **Training**. The `PairedView` is a minimal MVP: two columns (BE / FE) with project naming, framework version, package manager, and a flat dependency picker each; a shared **API Base URL** input; and an **OpenAPI spec** textarea that, when filled, auto-adds the BE `openapi` dep and posts the spec as `backend.specByDep.openapi`. One **Generate Paired Zip** button POSTs the JSON and downloads the blob. The dedicated **Backend** and **Frontend** tabs continue to offer the richer single-project UX (wizards, multi-module, presets, starter templates, color palettes).
+
+### Schema Notes
+
+Phase 2 introduced a `paired-cors` sub-option on the BE `web` dep and a `CorsConfig.java` template (`templates/web-cors-config.mustache`). Phase 3 introduced the `api-client-openapi` FE dep with its npm devDep, `gen:api` script, and gated `orval.config.ts` contribution. Flyway migration `V7__widen_build_customization_version.sql` widens `build_customization.version` from `VARCHAR(50)` to `VARCHAR(2000)` — that column is reinterpreted by `ADD_NPM_SCRIPT` and `ADD_VITE_PLUGIN` customizations as the script command / plugin call expression, where 50 chars is too tight for realistic FE scripts.
+
+### Smoke Test
+
+```bash
+curl -X POST http://localhost:8080/starter-paired.zip \
+  -H "Content-Type: application/json" \
+  -d '{
+        "backend":  { "artifactId": "demo-api", "dependencies": ["web", "openapi"], "specByDep": { "openapi": "openapi: 3.0.0\ninfo: { title: Demo, version: 1.0.0 }\npaths: { /api/hello: { get: { responses: { '\''200'\'': { description: OK } } } } }" } },
+        "frontend": { "projectName": "demo-ui", "dependencies": ["style-tailwind", "data-tanstack-query", "api-client-openapi"] }
+      }' \
+  -o paired.zip
+
+unzip -l paired.zip                                # expect backend/, frontend/, README.md, docker-compose.yml, .menora-init.json
+unzip -p paired.zip frontend/openapi.yaml | head   # the paired backend's spec, verbatim
+unzip -p paired.zip frontend/.env.development      # VITE_API_BASE_URL=http://localhost:8080
+unzip -p paired.zip backend/src/main/java/com/menora/demo/config/CorsConfig.java | head
+```
 
 ---
 

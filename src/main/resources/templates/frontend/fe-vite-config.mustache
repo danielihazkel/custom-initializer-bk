@@ -18,5 +18,13 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+{{#hasBackendPair}}
+    proxy: {
+      '/api': {
+        target: '{{apiBaseUrl}}',
+        changeOrigin: true,
+      },
+    },
+{{/hasBackendPair}}
   },
 });

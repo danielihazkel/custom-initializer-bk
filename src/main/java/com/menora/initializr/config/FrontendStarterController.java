@@ -74,12 +74,15 @@ public class FrontendStarterController {
             @RequestParam(required = false) String packageManager,
             @RequestParam(defaultValue = "/") String basePath,
             @RequestParam(defaultValue = "") String dependencies,
-            @RequestParam(defaultValue = "") String colorPalette
+            @RequestParam(defaultValue = "") String colorPalette,
+            @RequestParam(defaultValue = "") String apiBaseUrl,
+            @RequestParam(defaultValue = "") String backendArtifactId
     ) throws IOException {
 
         FrontendProjectDescription desc = buildDescription(
                 projectName, description, scope, appTitle,
-                reactVersion, nodeVersion, packageManager, basePath, dependencies, colorPalette);
+                reactVersion, nodeVersion, packageManager, basePath, dependencies, colorPalette,
+                apiBaseUrl, backendArtifactId);
 
         byte[] zip = generator.generate(desc);
         return ResponseEntity.ok()
@@ -109,12 +112,15 @@ public class FrontendStarterController {
             @RequestParam(required = false) String packageManager,
             @RequestParam(defaultValue = "/") String basePath,
             @RequestParam(defaultValue = "") String dependencies,
-            @RequestParam(defaultValue = "") String colorPalette
+            @RequestParam(defaultValue = "") String colorPalette,
+            @RequestParam(defaultValue = "") String apiBaseUrl,
+            @RequestParam(defaultValue = "") String backendArtifactId
     ) throws IOException {
 
         FrontendProjectDescription desc = buildDescription(
                 projectName, description, scope, appTitle,
-                reactVersion, nodeVersion, packageManager, basePath, dependencies, colorPalette);
+                reactVersion, nodeVersion, packageManager, basePath, dependencies, colorPalette,
+                apiBaseUrl, backendArtifactId);
 
         Map<String, String> fileMap = generator.generateFileMap(desc);
         List<PreviewFile> files = fileMap.entrySet().stream()
@@ -134,7 +140,9 @@ public class FrontendStarterController {
                                                         String packageManager,
                                                         String basePath,
                                                         String dependencies,
-                                                        String colorPalette) {
+                                                        String colorPalette,
+                                                        String apiBaseUrl,
+                                                        String backendArtifactId) {
         FrontendProjectDescription desc = new FrontendProjectDescription();
         desc.setProjectName(projectName);
         desc.setDescription(description);
@@ -148,6 +156,8 @@ public class FrontendStarterController {
                 ? properties.defaultPackageManager() : packageManager);
         desc.setBasePath(basePath);
         desc.setColorPaletteId(colorPalette);
+        desc.setApiBaseUrl(apiBaseUrl);
+        desc.setBackendArtifactId(backendArtifactId);
         desc.setTypescriptVersion(properties.getPinned().getTypescript());
         desc.setViteVersion(properties.getPinned().getVite());
 

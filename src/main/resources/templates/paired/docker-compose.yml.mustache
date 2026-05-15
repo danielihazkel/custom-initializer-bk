@@ -1,0 +1,20 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    image: {{backendArtifactId}}:dev
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+
+  frontend:
+    build:
+      context: ./frontend
+    image: {{frontendProjectName}}:dev
+    ports:
+      - "5173:80"
+    environment:
+      VITE_API_BASE_URL: {{apiBaseUrl}}
+    depends_on:
+      - backend

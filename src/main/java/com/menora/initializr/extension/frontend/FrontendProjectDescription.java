@@ -23,6 +23,15 @@ public class FrontendProjectDescription {
     private String basePath = "/";
     /** Palette id from the {@code color_palette} table; empty string falls back to the default palette. */
     private String colorPaletteId = "";
+    /**
+     * Optional base URL of a paired backend (e.g. {@code "http://localhost:8080"}).
+     * When set, {@code .env.development}/{@code .env.example} and a Vite {@code /api}
+     * proxy block are emitted so the generated FE can call its BE without CORS in dev.
+     * Empty string means "no paired backend" — env files and proxy are omitted.
+     */
+    private String apiBaseUrl = "";
+    /** Optional human-readable identifier of the paired backend (e.g. {@code "demo-api"}); surfaced in README only. */
+    private String backendArtifactId = "";
     private final Set<String> dependencies = new LinkedHashSet<>();
 
     public String getProjectName() { return projectName; }
@@ -47,6 +56,25 @@ public class FrontendProjectDescription {
     public void setBasePath(String basePath) { this.basePath = (basePath == null || basePath.isBlank()) ? "/" : basePath; }
     public String getColorPaletteId() { return colorPaletteId; }
     public void setColorPaletteId(String colorPaletteId) { this.colorPaletteId = colorPaletteId == null ? "" : colorPaletteId; }
+    public String getApiBaseUrl() { return apiBaseUrl; }
+    public void setApiBaseUrl(String apiBaseUrl) {
+        if (apiBaseUrl == null) { this.apiBaseUrl = ""; return; }
+        String trimmed = apiBaseUrl.trim();
+        if (trimmed.isEmpty()) { this.apiBaseUrl = ""; return; }
+        // Reject anything that isn't a plain http(s) URL — keeps the value safe to
+        // splice into vite.config.ts and .env files without further escaping.
+        if (!trimmed.matches("^https?://[A-Za-z0-9._:\\-/]+$")) {
+            throw new IllegalArgumentException("apiBaseUrl must be an http(s) URL: " + apiBaseUrl);
+        }
+        // Strip trailing slash so concatenated paths don't double up.
+        this.apiBaseUrl = trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+    }
+    public String getBackendArtifactId() { return backendArtifactId; }
+    public void setBackendArtifactId(String backendArtifactId) {
+        this.backendArtifactId = backendArtifactId == null ? "" : backendArtifactId.trim();
+    }
+    /** True when {@link #apiBaseUrl} is set — drives env-file + vite-proxy emission. */
+    public boolean hasBackendPair() { return apiBaseUrl != null && !apiBaseUrl.isEmpty(); }
     public Set<String> getDependencies() { return dependencies; }
 
     /** {@code "menora"} + {@code "my-app"} → {@code "@menora/my-app"}; empty scope → {@code "my-app"}. */

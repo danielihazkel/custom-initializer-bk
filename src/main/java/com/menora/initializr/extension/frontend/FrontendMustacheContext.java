@@ -17,6 +17,7 @@ import java.util.Set;
  * <ul>
  *   <li>{@code projectName, description, scope, appTitle, packageJsonName}</li>
  *   <li>{@code reactVersion, nodeVersion, packageManager, typescriptVersion, viteVersion, basePath}</li>
+ *   <li>{@code apiBaseUrl, backendArtifactId} + {@code hasBackendPair}/{@code hasBackendArtifactId} — paired-BE wiring</li>
  *   <li>{@code has<Dep>} — true for every selected dep (PascalCase, e.g. {@code hasRouterReactRouter})</li>
  *   <li>{@code opt<Dep><Option>} — true for every selected sub-option</li>
  *   <li>{@code isNpm, isPnpm} — package-manager flags for run-script hints</li>
@@ -43,6 +44,10 @@ public final class FrontendMustacheContext {
         ctx.put("typescriptVersion", desc.getTypescriptVersion());
         ctx.put("viteVersion", desc.getViteVersion());
         ctx.put("basePath", desc.getBasePath());
+        ctx.put("apiBaseUrl", desc.getApiBaseUrl());
+        ctx.put("backendArtifactId", desc.getBackendArtifactId());
+        ctx.put("hasBackendPair", desc.hasBackendPair());
+        ctx.put("hasBackendArtifactId", desc.getBackendArtifactId() != null && !desc.getBackendArtifactId().isBlank());
         ctx.put("isNpm", "npm".equalsIgnoreCase(desc.getPackageManager()));
         ctx.put("isPnpm", "pnpm".equalsIgnoreCase(desc.getPackageManager()));
 

@@ -19,8 +19,19 @@ public record MenoraInitManifest(
         int schemaVersion,
         Generator generator,
         Inputs inputs,
+        PairedInputs paired,
         List<FileEntry> files
 ) {
+    /** Single-project constructor (legacy shape — leaves {@link #paired()} null). */
+    public MenoraInitManifest(int schemaVersion, Generator generator, Inputs inputs, List<FileEntry> files) {
+        this(schemaVersion, generator, inputs, null, files);
+    }
+
+    /** Paired-project constructor (leaves {@link #inputs()} null). */
+    public MenoraInitManifest(int schemaVersion, Generator generator, PairedInputs paired, List<FileEntry> files) {
+        this(schemaVersion, generator, null, paired, files);
+    }
+
     public record Generator(String name, String version, String generatedAt) {}
 
     public record Inputs(
@@ -46,6 +57,37 @@ public record MenoraInitManifest(
             Map<String, Object> sql,
             Map<String, Object> openApi,
             Map<String, Object> soap
+    ) {}
+
+    /**
+     * Top-level inputs block for paired generations. {@link #backend()} mirrors
+     * the existing {@link Inputs} shape; {@link #frontend()} carries the FE
+     * description in a parallel form. {@link #apiBaseUrl()} captures the resolved
+     * URL written into FE {@code .env.development} so agents can re-derive the
+     * dev-time link without re-running the wizard.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PairedInputs(
+            Inputs backend,
+            FrontendInputs frontend,
+            String apiBaseUrl
+    ) {}
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record FrontendInputs(
+            String projectName,
+            String description,
+            String scope,
+            String appTitle,
+            String reactVersion,
+            String nodeVersion,
+            String packageManager,
+            String basePath,
+            String colorPalette,
+            String apiBaseUrl,
+            String backendArtifactId,
+            List<String> dependencies,
+            Map<String, List<String>> opts
     ) {}
 
     public record FileEntry(String path, String sha256) {}

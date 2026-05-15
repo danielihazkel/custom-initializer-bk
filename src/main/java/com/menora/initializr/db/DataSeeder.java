@@ -634,6 +634,13 @@ public class DataSeeder implements CommandLineRunner {
                 readClasspath("templates/web-hello-controller.mustache"),
                 "src/main/java/{{packagePath}}/web/HelloController.java",
                 FileContributionEntity.SubstitutionType.MUSTACHE, null, "rest-example", 0);
+        // Paired-FE CORS config — auto-added by PairedStarterController when a paired
+        // generation includes both the `web` BE dep and a non-empty FE half. Users
+        // can still opt in manually by selecting the `paired-cors` sub-option.
+        fc("web", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("templates/web-cors-config.mustache"),
+                "src/main/java/{{packagePath}}/config/CorsConfig.java",
+                FileContributionEntity.SubstitutionType.MUSTACHE, null, "paired-cors", 2);
         fc("web", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/web-exception-handler.mustache"),
                 "src/main/java/{{packagePath}}/web/GlobalExceptionHandler.java",
@@ -793,6 +800,9 @@ public class DataSeeder implements CommandLineRunner {
                 "Add HelloController.java exposing GET /api/hello", 0);
         subOption("web", "global-exception-handler", "Global Exception Handler",
                 "Add GlobalExceptionHandler.java — @RestControllerAdvice with consistent error envelope", 1);
+        subOption("web", "paired-cors", "CORS for paired frontend",
+                "Add CorsConfig.java allowing http://localhost:5173 to call /api/** in dev "
+                        + "(auto-added by /starter-paired.zip when a frontend half is present)", 2);
 
         subOption("webflux", "handler-function", "Functional Routes Example",
                 "Add HelloRouter.java + HelloHandler.java — RouterFunction-based endpoints", 0);
@@ -1155,6 +1165,7 @@ public class DataSeeder implements CommandLineRunner {
         DependencyGroupEntity testing  = feGroup("Testing", 7);
         DependencyGroupEntity quality  = feGroup("Quality (default-on)", 8);
         DependencyGroupEntity extras   = feGroup("Extras", 9);
+        DependencyGroupEntity apiInteg = feGroup("API Integration", 10);
 
         // Entries
         feEntry(routing,  "router-react-router", "React Router",
@@ -1220,6 +1231,9 @@ public class DataSeeder implements CommandLineRunner {
                 "@azure/msal-react — Microsoft Identity Platform integration", 2);
         feEntry(extras,   "chart-recharts",      "Recharts",
                 "Composable charting library built on React + D3", 3);
+
+        feEntry(apiInteg, "api-client-openapi",  "OpenAPI Typed Client",
+                "Generate a typed TypeScript client from the paired backend's OpenAPI spec", 0);
 
         // ── Common file contributions ────────────────────────────────────────
         int o = 0;
@@ -1317,6 +1331,16 @@ public class DataSeeder implements CommandLineRunner {
         feFc("__common__", FileContributionEntity.FileType.STATIC_COPY,
                 readClasspath("static-configs/frontend/common/husky-pre-commit"),
                 ".husky/pre-commit", FileContributionEntity.SubstitutionType.NONE, o++);
+
+        // Paired-backend env files — body is wrapped in {{#hasBackendPair}}…{{/hasBackendPair}}
+        // so it renders blank when no apiBaseUrl is set. FrontendProjectGenerator
+        // skips writes for blank-rendered TEMPLATE contributions.
+        feFc("__common__", FileContributionEntity.FileType.TEMPLATE,
+                "{{#hasBackendPair}}VITE_API_BASE_URL={{apiBaseUrl}}\n{{/hasBackendPair}}",
+                ".env.development", FileContributionEntity.SubstitutionType.MUSTACHE, o++);
+        feFc("__common__", FileContributionEntity.FileType.TEMPLATE,
+                "{{#hasBackendPair}}# Override this per-environment. The dev value comes from .env.development.\nVITE_API_BASE_URL={{apiBaseUrl}}\n{{/hasBackendPair}}",
+                ".env.example", FileContributionEntity.SubstitutionType.MUSTACHE, o++);
 
         // ── Per-dep file contributions ───────────────────────────────────────
         // Tailwind: config files + base CSS (Vite plugin import handled via ADD_VITE_PLUGIN below).
@@ -1434,6 +1458,44 @@ public class DataSeeder implements CommandLineRunner {
                 "src/features/signup/ui/SignupForm.tsx", FileContributionEntity.SubstitutionType.MUSTACHE,
                 "sample-form", 0);
 
+        // api-client-openapi: types-only client wires openapi-typescript; the actual
+        // openapi.yaml is injected at generation time from OpenApiSpecContext (paired
+        // wizard's backend spec). The .gitkeep ensures the output dir exists even
+        // before `gen:api` runs once.
+        feFc("api-client-openapi", FileContributionEntity.FileType.STATIC_COPY,
+                "# Generated TypeScript bindings for the paired backend's OpenAPI spec.\n"
+                        + "# Run `gen:api` after pulling spec changes.\n",
+                "src/shared/api/generated/.gitkeep", FileContributionEntity.SubstitutionType.NONE, 0);
+        // README pointer so users know how the generated dir is meant to be used.
+        feFc("api-client-openapi", FileContributionEntity.FileType.STATIC_COPY,
+                "# api-client-openapi\n\n"
+                        + "This project consumes the paired backend's OpenAPI contract.\n\n"
+                        + "- `openapi.yaml` at the project root carries the spec.\n"
+                        + "- `gen:api` script regenerates `src/shared/api/generated/schema.ts`.\n"
+                        + "- Pair with TanStack Query for typed hooks (recommended).\n",
+                "src/shared/api/README.md", FileContributionEntity.SubstitutionType.NONE, 1);
+        // Orval config — only written when the react-query-hooks sub-option is on.
+        // Orval itself is not auto-installed (current build-customization model has
+        // no sub-option gating); users opt in via `pnpm add -D orval`.
+        feFc("api-client-openapi", FileContributionEntity.FileType.STATIC_COPY,
+                "// Generated config for orval (https://orval.dev).\n"
+                        + "// Install with: pnpm add -D orval (then run `npx orval`).\n"
+                        + "import { defineConfig } from 'orval';\n\n"
+                        + "export default defineConfig({\n"
+                        + "  api: {\n"
+                        + "    input: './openapi.yaml',\n"
+                        + "    output: {\n"
+                        + "      mode: 'tags-split',\n"
+                        + "      target: 'src/shared/api/generated/endpoints.ts',\n"
+                        + "      schemas: 'src/shared/api/generated/model',\n"
+                        + "      client: 'react-query',\n"
+                        + "      override: { mutator: { path: './src/shared/api/axios.ts', name: 'api' } },\n"
+                        + "    },\n"
+                        + "  },\n"
+                        + "});\n",
+                "orval.config.ts", FileContributionEntity.SubstitutionType.NONE,
+                "react-query-hooks", 2);
+
         // ── Common npm deps (every FE project) ───────────────────────────────
         // React/React-DOM versions: ranges keyed off reactVersion. For v1 we ship two majors.
         feNpm("__common__", "react",          "^18.3.1", "",    0);
@@ -1467,6 +1529,13 @@ public class DataSeeder implements CommandLineRunner {
         feNpmScript("__common__",        "typecheck",     "tsc --noEmit",                      2);
         feNpmScript("test-playwright",   "e2e:install",   "playwright install --with-deps",    0);
         feNpmScript("test-playwright",   "e2e:report",    "playwright show-report",            1);
+        // gen:api — by default produces typed bindings via openapi-typescript;
+        // when react-query-hooks is selected, PackageJsonBuilder doesn't override
+        // this (single script row per name wins) so users running with orval
+        // would manually swap to `orval` after generation. Phase 3.5 may add
+        // sub-option-gated script variants.
+        feNpmScript("api-client-openapi", "gen:api",
+                "openapi-typescript openapi.yaml -o src/shared/api/generated/schema.ts", 0);
 
         // ── Per-dep npm deps ─────────────────────────────────────────────────
         feNpm("router-react-router", "react-router-dom",                "^6.26.0", "",    0);
@@ -1521,6 +1590,9 @@ public class DataSeeder implements CommandLineRunner {
         feNpm("test-vitest-rtl",     "jsdom",                           "^25.0.0", "dev", 4);
         feNpm("test-playwright",     "@playwright/test",                "^1.46.1", "dev", 0);
         feNpm("test-msw",            "msw",                             "^2.4.2",  "dev", 0);
+        // api-client-openapi: types-only stack is always shipped; orval is added
+        // when the react-query-hooks sub-option is on (gated via the FE generator).
+        feNpm("api-client-openapi",  "openapi-typescript",              "^7.4.0",  "dev", 0);
 
         feNpm("i18n-react-i18next",  "react-i18next",                   "^15.0.1", "",    0);
         feNpm("i18n-react-i18next",  "i18next",                         "^23.14.0","",    1);
@@ -1572,6 +1644,10 @@ public class DataSeeder implements CommandLineRunner {
         feSubOption("test-vitest-rtl", "ci-config",     "CI config",
                 "Generate a GitHub Actions workflow that runs the test suite", 1);
 
+        feSubOption("api-client-openapi", "react-query-hooks", "React Query hooks (orval)",
+                "Add an orval.config.ts so `npx orval` produces typed React Query hooks "
+                        + "(install orval manually: pnpm add -D orval)", 0);
+
         // ── React-version compatibility ranges ───────────────────────────────
         // Only set ranges where the constraint is real — leave open by default.
         // Applied via FrontendVersionRangeFilter at /frontend/metadata time.
@@ -1606,6 +1682,8 @@ public class DataSeeder implements CommandLineRunner {
                 "Pick one design system", 5);
         feCompat("form-react-hook-form", "form-zod",           DependencyCompatibilityEntity.RelationType.RECOMMENDS,
                 "Pair RHF with Zod via @hookform/resolvers for typed validation", 0);
+        feCompat("api-client-openapi", "data-tanstack-query",  DependencyCompatibilityEntity.RelationType.RECOMMENDS,
+                "Typed OpenAPI hooks are most useful with TanStack Query", 1);
 
         log.info("Seeded frontend catalog (FRONTEND kind)");
     }

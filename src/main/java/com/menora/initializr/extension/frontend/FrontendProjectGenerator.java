@@ -1,5 +1,6 @@
 package com.menora.initializr.extension.frontend;
 
+import com.menora.initializr.config.OpenApiSpecContext;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
@@ -47,22 +48,28 @@ public class FrontendProjectGenerator {
     private static final String PACKAGE_JSON_TEMPLATE = "templates/frontend/fe-package-base.mustache";
     private static final String VITE_CONFIG_TEMPLATE = "templates/frontend/fe-vite-config.mustache";
 
+    /** Dep id that opts a project into OpenAPI-driven typed client generation. */
+    private static final String API_CLIENT_OPENAPI_DEP = "api-client-openapi";
+
     private final DependencyConfigService configService;
     private final ProjectOptionsContext optionsContext;
     private final PackageJsonBuilder packageJsonBuilder;
     private final ViteConfigBuilder viteConfigBuilder;
     private final ColorPaletteRepository colorPaletteRepo;
+    private final OpenApiSpecContext openApiSpecContext;
 
     public FrontendProjectGenerator(DependencyConfigService configService,
                                     ProjectOptionsContext optionsContext,
                                     PackageJsonBuilder packageJsonBuilder,
                                     ViteConfigBuilder viteConfigBuilder,
-                                    ColorPaletteRepository colorPaletteRepo) {
+                                    ColorPaletteRepository colorPaletteRepo,
+                                    OpenApiSpecContext openApiSpecContext) {
         this.configService = configService;
         this.optionsContext = optionsContext;
         this.packageJsonBuilder = packageJsonBuilder;
         this.viteConfigBuilder = viteConfigBuilder;
         this.colorPaletteRepo = colorPaletteRepo;
+        this.openApiSpecContext = openApiSpecContext;
     }
 
     /** Generates the project, returns the ZIP bytes (containing a top-level {@code projectName/} directory). */
@@ -75,6 +82,7 @@ public class FrontendProjectGenerator {
         try {
             applyFileContributions(tempDir, depIds, ctx, desc);
             writeBaselines(tempDir, depIds, ctx);
+            writeOpenApiSpec(tempDir, depIds);
             return zipDirectory(tempDir, desc.getProjectName());
         } finally {
             FileSystemUtils.deleteRecursively(tempDir);
@@ -91,6 +99,7 @@ public class FrontendProjectGenerator {
         try {
             applyFileContributions(tempDir, depIds, ctx, desc);
             writeBaselines(tempDir, depIds, ctx);
+            writeOpenApiSpec(tempDir, depIds);
             Map<String, String> out = new LinkedHashMap<>();
             try (Stream<Path> walk = Files.walk(tempDir)) {
                 walk.filter(Files::isRegularFile).sorted().forEach(p -> {
@@ -187,6 +196,10 @@ public class FrontendProjectGenerator {
         String content = fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.MUSTACHE
                 ? MUSTACHE.compile(fc.getContent() == null ? "" : fc.getContent()).execute(ctx)
                 : (fc.getContent() == null ? "" : fc.getContent());
+        // A TEMPLATE that renders to blank content is a signal it wasn't applicable
+        // to this request (e.g. paired-BE .env files when no apiBaseUrl is set).
+        // Skip the write so we don't drop empty files into the generated project.
+        if (content.isBlank()) return;
         Files.createDirectories(target.getParent());
         Files.writeString(target, content);
     }
@@ -240,6 +253,29 @@ public class FrontendProjectGenerator {
         try (var in = new ClassPathResource(resourcePath).getInputStream()) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
+    }
+
+    // ── OpenAPI spec injection ──────────────────────────────────────────────
+    /**
+     * Writes the paired backend's OpenAPI spec into {@code openapi.yaml} at the
+     * project root when {@code api-client-openapi} is selected and a non-blank
+     * spec sits in {@link OpenApiSpecContext}. Multiple specs in the context
+     * (one per BE dep) are merged-by-takefirst — paired flows typically carry
+     * a single spec keyed under the {@code openapi} dep id.
+     *
+     * <p>No-op when the dep is unselected or the context is empty, so picking
+     * {@code api-client-openapi} without a wizard spec degrades gracefully —
+     * users can write {@code openapi.yaml} themselves and run {@code gen:api}.
+     */
+    private void writeOpenApiSpec(Path projectRoot, Set<String> depIds) throws IOException {
+        if (!depIds.contains(API_CLIENT_OPENAPI_DEP)) return;
+        if (openApiSpecContext.isEmpty()) return;
+        String spec = openApiSpecContext.all().values().stream()
+                .filter(v -> v != null && !v.isBlank())
+                .findFirst()
+                .orElse(null);
+        if (spec == null) return;
+        Files.writeString(projectRoot.resolve("openapi.yaml"), spec);
     }
 
     // ── ZIP ──────────────────────────────────────────────────────────────────

@@ -723,6 +723,79 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(pkg).contains("\"react-hook-form\"");
     }
 
+    // ── Tier 1.7: Paired-backend wiring (apiBaseUrl / backendArtifactId) ────
+
+    @Test
+    void pairedBackendWritesEnvAndProxy() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.setApiBaseUrl("http://localhost:8080");
+        desc.setBackendArtifactId("demo-api");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        // .env.development carries the runtime base URL the axios.ts baseline reads.
+        String envDev = files.get(".env.development");
+        assertThat(envDev).isNotNull();
+        assertThat(envDev).contains("VITE_API_BASE_URL=http://localhost:8080");
+
+        // .env.example documents the override.
+        String envExample = files.get(".env.example");
+        assertThat(envExample).isNotNull();
+        assertThat(envExample).contains("VITE_API_BASE_URL=http://localhost:8080");
+
+        // vite.config.ts gets a /api → backend proxy.
+        String vite = files.get("vite.config.ts");
+        assertThat(vite).contains("proxy: {");
+        assertThat(vite).contains("'/api'");
+        assertThat(vite).contains("target: 'http://localhost:8080'");
+        assertThat(vite).contains("changeOrigin: true");
+
+        // README mentions the paired backend artifact.
+        String readme = files.get("README.md");
+        assertThat(readme).contains("Paired backend");
+        assertThat(readme).contains("demo-api");
+        assertThat(readme).contains("http://localhost:8080");
+    }
+
+    @Test
+    void withoutBackendPairOmitsEnvFiles() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        // No paired-backend hint → no env files dropped into the project.
+        assertThat(files).doesNotContainKey(".env.development");
+        assertThat(files).doesNotContainKey(".env.example");
+
+        // vite.config.ts has no proxy block.
+        String vite = files.get("vite.config.ts");
+        assertThat(vite).doesNotContain("proxy:");
+
+        // README does not mention the pairing section.
+        String readme = files.get("README.md");
+        assertThat(readme).doesNotContain("Paired backend");
+    }
+
+    @Test
+    void pairedBackendWiringFlowsThroughZipEndpoint() throws Exception {
+        ResponseEntity<byte[]> r = rest.getForEntity(
+                "/frontend/starter.zip?projectName=demo&apiBaseUrl=http://localhost:8080&backendArtifactId=demo-api",
+                byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        String envDev = readZipEntry(r.getBody(), "demo/.env.development");
+        assertThat(envDev).contains("VITE_API_BASE_URL=http://localhost:8080");
+
+        String vite = readZipEntry(r.getBody(), "demo/vite.config.ts");
+        assertThat(vite).contains("target: 'http://localhost:8080'");
+    }
+
+    @Test
+    void apiBaseUrlMustBeHttpUrl() {
+        FrontendProjectDescription desc = baseDescription("demo");
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> desc.setApiBaseUrl("javascript:alert(1)"));
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private FrontendProjectDescription baseDescription(String projectName) {

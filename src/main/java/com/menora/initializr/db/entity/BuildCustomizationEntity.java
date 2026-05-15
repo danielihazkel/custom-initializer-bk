@@ -59,7 +59,9 @@ public class BuildCustomizationEntity {
     @Column(name = "maven_artifact_id", length = 200)
     private String mavenArtifactId;
 
-    @Column(length = 50)
+    // Reinterpreted by FE customizations: ADD_NPM_SCRIPT puts the full command
+    // here (often >50 chars), ADD_VITE_PLUGIN puts a plugin call expression.
+    @Column(length = 2000)
     private String version;
 
     // For EXCLUDE_DEPENDENCY — the artifact to exclude FROM
