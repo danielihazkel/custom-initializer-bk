@@ -198,9 +198,26 @@ class PairedStarterIntegrationTests {
         assertThat(pkg).contains("\"gen:api\"");
         assertThat(pkg).contains("openapi.yaml");
 
-        // The generated dir exists (.gitkeep contribution lands).
-        assertThat(entries.keySet().stream())
-                .anyMatch(k -> k.equals("frontend/src/shared/api/generated/.gitkeep"));
+        // Spec is present → pure-Java codegen pre-fills the generated dir, so
+        // the project type-checks out of the box. The seed .gitkeep is replaced
+        // by the real generated files.
+        assertThat(entries).doesNotContainKey("frontend/src/shared/api/generated/.gitkeep");
+        assertThat(entries).containsKey("frontend/src/shared/api/generated/schema.ts");
+        assertThat(entries).containsKey("frontend/src/shared/api/generated/paths.ts");
+        assertThat(entries).containsKey("frontend/src/shared/api/generated/client.ts");
+
+        // The schema export names the spec's component schema.
+        String schemaTs = entries.get("frontend/src/shared/api/generated/schema.ts");
+        assertThat(schemaTs).contains("export type Hello");
+        // The paths export carries the spec's path + method.
+        String pathsTs = entries.get("frontend/src/shared/api/generated/paths.ts");
+        assertThat(pathsTs).contains("'/api/hello': {");
+        assertThat(pathsTs).contains("get: {");
+        assertThat(pathsTs).contains("Schema.Hello");
+        // The client wires path/method typing.
+        String clientTs = entries.get("frontend/src/shared/api/generated/client.ts");
+        assertThat(clientTs).contains("createApiClient");
+        assertThat(clientTs).contains("paths");
     }
 
     @Test

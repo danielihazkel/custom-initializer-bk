@@ -8,6 +8,8 @@ import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
 import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.repository.ColorPaletteRepository;
+import com.menora.initializr.extension.frontend.codegen.OpenApiCodegenException;
+import com.menora.initializr.extension.frontend.codegen.OpenApiTsGenerator;
 import com.samskivert.mustache.Mustache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,19 +59,22 @@ public class FrontendProjectGenerator {
     private final ViteConfigBuilder viteConfigBuilder;
     private final ColorPaletteRepository colorPaletteRepo;
     private final OpenApiSpecContext openApiSpecContext;
+    private final OpenApiTsGenerator openApiTsGenerator;
 
     public FrontendProjectGenerator(DependencyConfigService configService,
                                     ProjectOptionsContext optionsContext,
                                     PackageJsonBuilder packageJsonBuilder,
                                     ViteConfigBuilder viteConfigBuilder,
                                     ColorPaletteRepository colorPaletteRepo,
-                                    OpenApiSpecContext openApiSpecContext) {
+                                    OpenApiSpecContext openApiSpecContext,
+                                    OpenApiTsGenerator openApiTsGenerator) {
         this.configService = configService;
         this.optionsContext = optionsContext;
         this.packageJsonBuilder = packageJsonBuilder;
         this.viteConfigBuilder = viteConfigBuilder;
         this.colorPaletteRepo = colorPaletteRepo;
         this.openApiSpecContext = openApiSpecContext;
+        this.openApiTsGenerator = openApiTsGenerator;
     }
 
     /** Generates the project, returns the ZIP bytes (containing a top-level {@code projectName/} directory). */
@@ -83,6 +88,7 @@ public class FrontendProjectGenerator {
             applyFileContributions(tempDir, depIds, ctx, desc);
             writeBaselines(tempDir, depIds, ctx);
             writeOpenApiSpec(tempDir, depIds);
+            writeGeneratedTs(tempDir, depIds);
             return zipDirectory(tempDir, desc.getProjectName());
         } finally {
             FileSystemUtils.deleteRecursively(tempDir);
@@ -100,6 +106,7 @@ public class FrontendProjectGenerator {
             applyFileContributions(tempDir, depIds, ctx, desc);
             writeBaselines(tempDir, depIds, ctx);
             writeOpenApiSpec(tempDir, depIds);
+            writeGeneratedTs(tempDir, depIds);
             Map<String, String> out = new LinkedHashMap<>();
             try (Stream<Path> walk = Files.walk(tempDir)) {
                 walk.filter(Files::isRegularFile).sorted().forEach(p -> {
@@ -276,6 +283,43 @@ public class FrontendProjectGenerator {
                 .orElse(null);
         if (spec == null) return;
         Files.writeString(projectRoot.resolve("openapi.yaml"), spec);
+    }
+
+    /**
+     * Pre-generates {@code schema.ts}, {@code paths.ts}, {@code client.ts} into
+     * {@code src/shared/api/generated/} from the OpenAPI spec, so the project
+     * type-checks immediately after extraction (no need to run {@code gen:api}
+     * first). Codegen failures degrade to a README — the user can always rerun
+     * {@code pnpm gen:api} via the shipped {@code openapi-typescript} CLI.
+     */
+    private void writeGeneratedTs(Path projectRoot, Set<String> depIds) throws IOException {
+        if (!depIds.contains(API_CLIENT_OPENAPI_DEP)) return;
+        if (openApiSpecContext.isEmpty()) return;
+        String spec = openApiSpecContext.all().values().stream()
+                .filter(v -> v != null && !v.isBlank())
+                .findFirst()
+                .orElse(null);
+        if (spec == null) return;
+
+        Path generatedDir = projectRoot.resolve("src/shared/api/generated");
+        Files.createDirectories(generatedDir);
+        // Drop the seed .gitkeep — generated files take its place.
+        Files.deleteIfExists(generatedDir.resolve(".gitkeep"));
+
+        Map<String, String> files;
+        try {
+            files = openApiTsGenerator.generate(spec);
+        } catch (OpenApiCodegenException e) {
+            log.warn("OpenAPI TS codegen failed: {} — falling back to gen:api script", e.getMessage());
+            Files.writeString(generatedDir.resolve("README.md"),
+                    "# Codegen failed\n\nMenora's pure-Java OpenAPI → TS codegen could not parse the\n"
+                            + "supplied spec:\n\n> " + e.getMessage() + "\n\n"
+                            + "Run `pnpm gen:api` to fall back to the `openapi-typescript` CLI.\n");
+            return;
+        }
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            Files.writeString(generatedDir.resolve(entry.getKey()), entry.getValue());
+        }
     }
 
     // ── ZIP ──────────────────────────────────────────────────────────────────
