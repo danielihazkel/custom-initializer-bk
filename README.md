@@ -852,16 +852,19 @@ demo/
 
 Compatibility rules (`DependencyCompatibilityEntity` with `projectKind=FRONTEND`) enforce: mutually-exclusive routers, mutually-exclusive state libraries, mutually-exclusive data-fetching libraries, plus a soft `RECOMMENDS` between React Hook Form and Zod.
 
-### Two New Build Customization Types
+### Three New Build Customization Types
 
-`BuildCustomizationType` gained two values for the frontend path. The existing fields on `BuildCustomizationEntity` are **reinterpreted** per `projectKind` to avoid schema churn:
+`BuildCustomizationType` gained three values for the frontend path. The existing fields on `BuildCustomizationEntity` are **reinterpreted** per `projectKind` to avoid schema churn:
 
 | Type | Field reinterpretation |
 |---|---|
 | `ADD_NPM_DEPENDENCY` | `mavenArtifactId` = npm package name; `version` = semver range; `scope` = `"dev"` → `devDependencies`, otherwise → `dependencies` |
+| `ADD_NPM_SCRIPT` | `mavenArtifactId` = script name (e.g. `lint:fix`); `version` = command (e.g. `eslint . --fix`). Later rows on the same name win, so admins can override baseline scripts without editing the template |
 | `ADD_VITE_PLUGIN` | `mavenGroupId` = import path (e.g. `@vitejs/plugin-react`); `mavenArtifactId` = import binding (e.g. `react`); `version` = plugin call expression (e.g. `react()`) |
 
-`PackageJsonBuilder` walks all `ADD_NPM_DEPENDENCY` rows for the selected deps, alphabetises within each block, and pretty-prints. `ViteConfigBuilder` walks all `ADD_VITE_PLUGIN` rows, emits one `import` line per unique binding, and joins call expressions into the `plugins: [...]` array.
+`PackageJsonBuilder` walks all `ADD_NPM_DEPENDENCY` and `ADD_NPM_SCRIPT` rows for the selected deps, alphabetises within each block, and pretty-prints. `ViteConfigBuilder` walks all `ADD_VITE_PLUGIN` rows, emits one `import` line per unique binding, and joins call expressions into the `plugins: [...]` array.
+
+The admin form is kind-aware: when the Backend ⇄ Frontend pill is set to **Frontend**, the **Build Customizations** drawer hides the Maven-only types and shows `ADD_NPM_DEPENDENCY` / `ADD_NPM_SCRIPT` / `ADD_VITE_PLUGIN` under domain labels — *Package Name* / *Script Name* / *Import Path* — instead of the underlying `mavenArtifactId` / `mavenGroupId` columns. Same row in the DB, friendlier UI.
 
 ### Mustache Context for FE Templates
 
@@ -906,6 +909,8 @@ unzip demo.zip && cd demo && pnpm install && pnpm dev   # http://localhost:5173
 
 The admin header now has a pill toggle between **Backend** and **Frontend**. It's backed by `AdminKindContext` (persisted to localStorage) and consumed by six admin tabs — Groups, Dependencies, File Contributions, Build Customizations, Sub-Options, Compatibility — which filter their rows and stamp `projectKind` on every new entry. Rows without `projectKind` (legacy data) are treated as `BACKEND`.
 
+Two tabs are also **kind-aware in their form**, not just their row filter: **Build Customizations** swaps its type dropdown and field labels between Maven (BACKEND: `ADD_DEPENDENCY` / `EXCLUDE_DEPENDENCY` / `ADD_REPOSITORY`) and npm/Vite (FRONTEND: `ADD_NPM_DEPENDENCY` / `ADD_NPM_SCRIPT` / `ADD_VITE_PLUGIN`); **Dependencies** rewrites the Compatibility Range hint between "Spring Boot version range" and "React major version range" depending on the pill.
+
 The Templates and Modules tabs are intentionally backend-only in v1; monorepo / multi-app frontend support is deferred.
 
 ### Out of Scope for v1
@@ -913,7 +918,6 @@ The Templates and Modules tabs are intentionally backend-only in v1; monorepo / 
 - Monorepo / workspace generation (`apps/*` + `packages/*`).
 - Wizards (OpenAPI → typed client, JSON Schema → Zod, design-tokens import).
 - `yarn` support — the package-manager pill exposes `npm` and `pnpm` only.
-- React-version-keyed `compatibilityRange` filtering — all FE deps currently target React 18.x; the column exists but is unused.
 - TypeScript / Vite version dropdowns. Both are pinned in `application.yml → frontend.pinned` and stamped into the generated `package.json` via the Mustache context.
 
 ---
@@ -1370,6 +1374,54 @@ curl -X POST http://localhost:8080/admin/build-customizations \
   }'
 ```
 
+**Frontend customization types** (set `projectKind: "FRONTEND"`):
+
+`ADD_NPM_DEPENDENCY` — add a package to `package.json`:
+```bash
+curl -X POST http://localhost:8080/admin/build-customizations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "router-react-router",
+    "customizationType": "ADD_NPM_DEPENDENCY",
+    "mavenArtifactId": "react-router-dom",
+    "version": "^6.26.0",
+    "scope": "",
+    "projectKind": "FRONTEND",
+    "sortOrder": 0
+  }'
+```
+
+`ADD_NPM_SCRIPT` — add (or override) a `scripts` entry:
+```bash
+curl -X POST http://localhost:8080/admin/build-customizations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "__common__",
+    "customizationType": "ADD_NPM_SCRIPT",
+    "mavenArtifactId": "lint:fix",
+    "version": "eslint . --fix",
+    "projectKind": "FRONTEND",
+    "sortOrder": 0
+  }'
+```
+
+`ADD_VITE_PLUGIN` — add an entry to `vite.config.ts`:
+```bash
+curl -X POST http://localhost:8080/admin/build-customizations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "__common__",
+    "customizationType": "ADD_VITE_PLUGIN",
+    "mavenGroupId": "@vitejs/plugin-react",
+    "mavenArtifactId": "react",
+    "version": "react()",
+    "projectKind": "FRONTEND",
+    "sortOrder": 0
+  }'
+```
+
+In the **Admin UI**, switching the Backend ⇄ Frontend pill to **Frontend** restricts the type dropdown to these three FE types and replaces the Maven labels with their npm/Vite equivalents (Package Name, Script Name, Command, Import Path, Import Binding, Plugin Call) — the underlying columns are the same.
+
 ### Sub-Options
 
 Optional extras within a dependency (e.g. "Consumer Example" for Kafka). Displayed as checkboxes in the UI after selecting the parent dependency.
@@ -1468,6 +1520,8 @@ Rules are served to the browser at `GET /metadata/compatibility` (no auth requir
 ### Dependency Version Ranges
 
 Each dependency entry has an optional `compatibilityRange` field. When set, the Spring Initializr framework automatically filters that dependency out of the metadata for any selected Boot version that falls outside the range, and the UI shows a version badge (e.g. **Boot [3.2.0,4.0.0)**) next to the dependency name.
+
+**Kind-aware semantics.** For BACKEND entries the range is matched against the selected Spring Boot version. For FRONTEND entries (`projectKind=FRONTEND`) the same column is matched by `FrontendVersionRangeFilter` against the `reactVersion` query parameter on `/frontend/metadata`, `/frontend/starter.zip`, and `/frontend/starter.preview`. The admin form swaps its hint and placeholder ("Spring Boot…" vs "React major…") based on the Backend ⇄ Frontend pill so the field is unambiguous in both modes. Seeded FE example: `design-chakra` ships with `[18.0.0,19.0.0)`.
 
 **Range syntax** — mathematical interval notation:
 
