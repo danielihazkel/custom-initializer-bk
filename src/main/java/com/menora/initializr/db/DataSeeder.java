@@ -81,6 +81,7 @@ public class DataSeeder implements CommandLineRunner {
         seedStarterTemplates();
         seedModuleTemplates();
         seedFrontendCatalog();
+        seedFrontendStarterTemplates();
         log.info("Database seeding complete");
     }
 
@@ -985,6 +986,54 @@ public class DataSeeder implements CommandLineRunner {
         e.setDepId(depId);
         e.setSubOptions(subOptions);
         templateDepRepo.save(e);
+    }
+
+    private void seedFrontendStarterTemplates() {
+        StarterTemplateEntity dashboard = feStarterTemplate(
+                "fe-dashboard", "Admin Dashboard",
+                "Tailwind + shadcn/ui with router, Zustand, TanStack Query and a sample form",
+                "dashboard", "#7C3AED", 0);
+        templateDep(dashboard, "style-tailwind",        "dark-mode");
+        templateDep(dashboard, "design-shadcn",         null);
+        templateDep(dashboard, "router-react-router",   "sample-routes,lazy-routes");
+        templateDep(dashboard, "state-zustand",         "sample-store,devtools");
+        templateDep(dashboard, "data-tanstack-query",   "sample-query,axios-base,devtools");
+        templateDep(dashboard, "form-react-hook-form",  "rhf-zod-resolver");
+
+        StarterTemplateEntity marketing = feStarterTemplate(
+                "fe-marketing", "Marketing Site",
+                "Lightweight Tailwind + shadcn site with routing and Framer Motion",
+                "campaign", "#EC4899", 1);
+        templateDep(marketing, "style-tailwind",        null);
+        templateDep(marketing, "design-shadcn",         null);
+        templateDep(marketing, "router-react-router",   "sample-routes");
+        templateDep(marketing, "anim-framer-motion",    null);
+
+        StarterTemplateEntity saas = feStarterTemplate(
+                "fe-saas-app", "SaaS App",
+                "Redux Toolkit + TanStack Query + RHF/Zod with MSAL auth and Vitest",
+                "apps", "#10B981", 2);
+        templateDep(saas, "style-tailwind",         null);
+        templateDep(saas, "design-shadcn",          null);
+        templateDep(saas, "router-react-router",    "sample-routes,error-boundary");
+        templateDep(saas, "state-redux-toolkit",    "sample-store");
+        templateDep(saas, "data-tanstack-query",    "axios-base,sample-query");
+        templateDep(saas, "form-react-hook-form",   "rhf-zod-resolver,sample-form");
+        templateDep(saas, "test-vitest-rtl",        "sample-tests");
+        templateDep(saas, "auth-msal",              null);
+    }
+
+    private StarterTemplateEntity feStarterTemplate(String templateId, String name, String description,
+                                                     String icon, String color, int sortOrder) {
+        StarterTemplateEntity e = new StarterTemplateEntity();
+        e.setTemplateId(templateId);
+        e.setName(name);
+        e.setDescription(description);
+        e.setIcon(icon);
+        e.setColor(color);
+        e.setSortOrder(sortOrder);
+        e.setProjectKind(ProjectKind.FRONTEND);
+        return templateRepo.save(e);
     }
 
     // ── Module templates ──────────────────────────────────────────────────

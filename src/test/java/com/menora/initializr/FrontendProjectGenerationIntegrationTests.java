@@ -635,6 +635,94 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(pkg).doesNotContain("@mui/material");
     }
 
+    // ── Tier 1.6: FE starter templates surface and apply end-to-end ────────
+
+    @Test
+    void feStarterTemplatesEndpointReturnsSeededBundles() {
+        ResponseEntity<String> r = rest.getForEntity(
+                "/metadata/starter-templates?projectKind=FRONTEND", String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String body = r.getBody();
+        assertThat(body).isNotNull();
+
+        // All three FE bundles present.
+        assertThat(body).contains("\"id\":\"fe-dashboard\"");
+        assertThat(body).contains("\"id\":\"fe-marketing\"");
+        assertThat(body).contains("\"id\":\"fe-saas-app\"");
+
+        // A representative dep per bundle proves the templateDep rows landed.
+        assertThat(body).contains("\"depId\":\"design-shadcn\"");
+        assertThat(body).contains("\"depId\":\"auth-msal\"");
+        // Sub-options come through as a string array.
+        assertThat(body).contains("\"sample-store\"");
+        assertThat(body).contains("\"rhf-zod-resolver\"");
+
+        // Backend templates must not leak into the FRONTEND-filtered list.
+        assertThat(body).doesNotContain("\"id\":\"rest-api\"");
+        assertThat(body).doesNotContain("\"id\":\"event-driven\"");
+    }
+
+    @Test
+    void feStarterTemplatesAreFilteredOutOfBackendListing() {
+        ResponseEntity<String> r = rest.getForEntity(
+                "/metadata/starter-templates?projectKind=BACKEND", String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String body = r.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body).doesNotContain("\"id\":\"fe-dashboard\"");
+        assertThat(body).doesNotContain("\"id\":\"fe-marketing\"");
+        assertThat(body).doesNotContain("\"id\":\"fe-saas-app\"");
+        // Sanity: BACKEND bundles still show up.
+        assertThat(body).contains("\"id\":\"rest-api\"");
+    }
+
+    @Test
+    void feDashboardTemplateGeneratesExpectedFiles() throws Exception {
+        // Mirrors the dependency + sub-option payload that applying the
+        // fe-dashboard card in the UI would send. Verifies the bundle wires
+        // up Tailwind/shadcn theming, router, sample stores and a sample form.
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("style-tailwind");
+        desc.getDependencies().add("design-shadcn");
+        desc.getDependencies().add("router-react-router");
+        desc.getDependencies().add("state-zustand");
+        desc.getDependencies().add("data-tanstack-query");
+        desc.getDependencies().add("form-react-hook-form");
+        optionsContext.populate(java.util.Map.of(
+                "style-tailwind",       java.util.List.of("dark-mode"),
+                "router-react-router",  java.util.List.of("sample-routes", "lazy-routes"),
+                "state-zustand",        java.util.List.of("sample-store", "devtools"),
+                "data-tanstack-query",  java.util.List.of("sample-query", "axios-base", "devtools"),
+                "form-react-hook-form", java.util.List.of("rhf-zod-resolver")));
+
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        // Tailwind + shadcn theming
+        assertThat(files).containsKey("tailwind.config.js");
+        assertThat(files.get("tailwind.config.js")).contains("darkMode: 'class'");
+        assertThat(files.get("src/index.css")).contains("--primary:");
+
+        // Router + sample routes
+        assertThat(files).containsKey("src/app/routes.tsx");
+        assertThat(files).containsKey("src/pages/about/ui/AboutPage.tsx");
+
+        // Sample stores + query + axios + sample-query hook
+        assertThat(files).containsKey("src/entities/counter/model/store.ts");
+        assertThat(files.get("src/entities/counter/model/store.ts"))
+                .contains("import { devtools } from 'zustand/middleware'");
+        assertThat(files).containsKey("src/shared/api/queryClient.ts");
+        assertThat(files).containsKey("src/shared/api/axios.ts");
+        assertThat(files).containsKey("src/features/users/api/useUsers.ts");
+
+        // package.json carries every selected library
+        String pkg = files.get("package.json");
+        assertThat(pkg).contains("\"tailwindcss\"");
+        assertThat(pkg).contains("\"react-router-dom\"");
+        assertThat(pkg).contains("\"zustand\"");
+        assertThat(pkg).contains("\"@tanstack/react-query\"");
+        assertThat(pkg).contains("\"react-hook-form\"");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private FrontendProjectDescription baseDescription(String projectName) {
