@@ -9,6 +9,7 @@ import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.repository.ColorPaletteRepository;
 import com.menora.initializr.config.ProjectPreviewController.PreviewFile;
 import com.menora.initializr.config.ProjectPreviewController.PreviewResponse;
+import com.menora.initializr.extension.frontend.FrontendCompatibilityResolver;
 import com.menora.initializr.extension.frontend.FrontendProjectDescription;
 import com.menora.initializr.extension.frontend.FrontendProjectGenerator;
 import com.menora.initializr.extension.frontend.FrontendVersionRangeFilter;
@@ -46,17 +47,20 @@ public class FrontendStarterController {
     private final DependencyConfigService configService;
     private final ColorPaletteRepository colorPaletteRepo;
     private final FrontendVersionRangeFilter versionFilter;
+    private final FrontendCompatibilityResolver compatibilityResolver;
 
     public FrontendStarterController(FrontendProjectGenerator generator,
                                      FrontendProperties properties,
                                      DependencyConfigService configService,
                                      ColorPaletteRepository colorPaletteRepo,
-                                     FrontendVersionRangeFilter versionFilter) {
+                                     FrontendVersionRangeFilter versionFilter,
+                                     FrontendCompatibilityResolver compatibilityResolver) {
         this.generator = generator;
         this.properties = properties;
         this.configService = configService;
         this.colorPaletteRepo = colorPaletteRepo;
         this.versionFilter = versionFilter;
+        this.compatibilityResolver = compatibilityResolver;
     }
 
     @GetMapping("/starter.zip")
@@ -160,8 +164,13 @@ public class FrontendStarterController {
         Map<String, DependencyEntryEntity> entriesById = entriesById();
         Set<String> filtered = versionFilter.filterCompatibleDepIds(
                 desc.getDependencies(), entriesById, desc.getReactVersion());
+
+        // Apply REQUIRES/CONFLICTS rules so direct API hits (curl, IntelliJ) get
+        // the same enforcement the UI surfaces via banners.
+        Set<String> resolved = compatibilityResolver.resolve(filtered, entriesById.keySet());
+
         desc.getDependencies().clear();
-        desc.getDependencies().addAll(filtered);
+        desc.getDependencies().addAll(resolved);
 
         return desc;
     }

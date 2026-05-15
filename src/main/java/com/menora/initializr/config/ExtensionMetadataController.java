@@ -64,13 +64,16 @@ public class ExtensionMetadataController {
     }
 
     @GetMapping("/metadata/compatibility")
-    public List<CompatibilityRuleDto> compatibility() {
+    public List<CompatibilityRuleDto> compatibility(
+            @RequestParam(name = "projectKind", required = false) ProjectKind projectKind) {
         return compatibilityRepo.findAllByOrderBySortOrderAsc().stream()
+                .filter(r -> projectKind == null || r.getProjectKind() == projectKind)
                 .map(r -> new CompatibilityRuleDto(
                         r.getSourceDepId(),
                         r.getTargetDepId(),
                         r.getRelationType().name(),
-                        r.getDescription()))
+                        r.getDescription(),
+                        r.getProjectKind().name()))
                 .toList();
     }
 
@@ -165,7 +168,7 @@ public class ExtensionMetadataController {
     }
 
     public record SubOptionDto(String id, String label, String description) {}
-    public record CompatibilityRuleDto(String sourceDepId, String targetDepId, String relationType, String description) {}
+    public record CompatibilityRuleDto(String sourceDepId, String targetDepId, String relationType, String description, String projectKind) {}
     public record TemplateDepDto(String depId, List<String> subOptions) {}
     public record StarterTemplateDto(
             String id, String name, String description,

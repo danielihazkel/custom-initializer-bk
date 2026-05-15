@@ -123,6 +123,12 @@ A blank/null range means the dependency is compatible with all Boot versions (de
 
 Set via the admin UI (Dependencies tab → edit → Compatibility Range field) or directly in `DataSeeder` for fresh-DB seeds. The range is validated by `dep.resolve()` at metadata-build time — a malformed range throws immediately on refresh.
 
+### Frontend Compatibility Rules (REQUIRES / CONFLICTS / RECOMMENDS)
+
+Inter-dependency rules live in `dependency_compatibility` and are tagged by `project_kind`. The endpoint `/metadata/compatibility?projectKind=FRONTEND` returns FE-scoped rules (omit the param to get every row). FE seed rules are in `DataSeeder.feCompat(...)` and cover design-system conflicts, state-mgmt conflicts, and `design-shadcn REQUIRES style-tailwind`.
+
+**Server-side enforcement.** `FrontendCompatibilityResolver` runs inside `FrontendStarterController.buildDescription` after the React-version filter. It auto-adds REQUIRES targets (or drops the source if the target is missing from the catalog) and drops the later-selected dep in a CONFLICTS pair, both with warn logs. This is the safety net for direct API hits (curl, IntelliJ); the UI surfaces the same rules as banners via `useCompatibility('FRONTEND')` so users see the issue before clicking Generate. RECOMMENDS never alter the selection — they only render as suggestions.
+
 ### InitializrWebConfiguration
 
 `src/main/java/com/menora/initializr/config/InitializrWebConfiguration.java`

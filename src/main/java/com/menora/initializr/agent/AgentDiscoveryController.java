@@ -59,7 +59,7 @@ public class AgentDiscoveryController {
                 buildDependencies(md, subOptionsByDep),
                 extensions.starterTemplates(null),
                 extensions.moduleTemplates(),
-                extensions.compatibility(),
+                extensions.compatibility(null),
                 buildWizards(),
                 defaultString(md.getGroupId().getContent()),
                 defaultString(md.getArtifactId().getContent()),

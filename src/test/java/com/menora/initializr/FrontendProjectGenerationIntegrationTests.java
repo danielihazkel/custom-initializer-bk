@@ -596,6 +596,45 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(body).contains("\"tree\":");
     }
 
+    // ── Tier 1.5: REQUIRES/CONFLICTS resolved server-side ──────────────────
+
+    @Test
+    void shadcnAutoAddsTailwindViaRequiresRule() throws Exception {
+        // design-shadcn REQUIRES style-tailwind (seeded). Hitting the endpoint with
+        // only shadcn should produce a project that also includes tailwind, so
+        // direct API hits (curl, IntelliJ) get the same UX the UI surfaces.
+        ResponseEntity<byte[]> r = rest.getForEntity(
+                "/frontend/starter.zip?dependencies=design-shadcn", byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String pkg = readZipEntry(r.getBody(), "demo/package.json");
+        assertThat(pkg).contains("\"tailwindcss\"");
+        // And the shadcn-emitted index.css overwrite still runs.
+        String css = readZipEntry(r.getBody(), "demo/src/index.css");
+        assertThat(css).contains("--primary:");
+    }
+
+    @Test
+    void conflictingDesignSystemsDropTheLaterSelection() throws Exception {
+        // design-mui CONFLICTS design-chakra (seeded). With mui first, chakra is dropped.
+        ResponseEntity<byte[]> r = rest.getForEntity(
+                "/frontend/starter.zip?dependencies=design-mui,design-chakra", byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String pkg = readZipEntry(r.getBody(), "demo/package.json");
+        assertThat(pkg).contains("@mui/material");
+        assertThat(pkg).doesNotContain("@chakra-ui/react");
+    }
+
+    @Test
+    void conflictResolutionRespectsRequestOrder() throws Exception {
+        // Same conflict, opposite selection order — chakra is earlier so MUI is dropped.
+        ResponseEntity<byte[]> r = rest.getForEntity(
+                "/frontend/starter.zip?dependencies=design-chakra,design-mui", byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String pkg = readZipEntry(r.getBody(), "demo/package.json");
+        assertThat(pkg).contains("@chakra-ui/react");
+        assertThat(pkg).doesNotContain("@mui/material");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private FrontendProjectDescription baseDescription(String projectName) {
