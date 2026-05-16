@@ -204,7 +204,10 @@ class PairedStarterIntegrationTests {
         assertThat(entries).doesNotContainKey("frontend/src/shared/api/generated/.gitkeep");
         assertThat(entries).containsKey("frontend/src/shared/api/generated/schema.ts");
         assertThat(entries).containsKey("frontend/src/shared/api/generated/paths.ts");
+        assertThat(entries).containsKey("frontend/src/shared/api/generated/errors.ts");
         assertThat(entries).containsKey("frontend/src/shared/api/generated/client.ts");
+        // data-tanstack-query is selected → hooks.ts is companion-generated.
+        assertThat(entries).containsKey("frontend/src/shared/api/generated/hooks.ts");
 
         // The schema export names the spec's component schema.
         String schemaTs = entries.get("frontend/src/shared/api/generated/schema.ts");
@@ -214,10 +217,56 @@ class PairedStarterIntegrationTests {
         assertThat(pathsTs).contains("'/api/hello': {");
         assertThat(pathsTs).contains("get: {");
         assertThat(pathsTs).contains("Schema.Hello");
-        // The client wires path/method typing.
+        // The client wires path/method typing and exposes the typed requestJson helper.
         String clientTs = entries.get("frontend/src/shared/api/generated/client.ts");
         assertThat(clientTs).contains("createApiClient");
         assertThat(clientTs).contains("paths");
+        assertThat(clientTs).contains("requestJson");
+        // errors.ts exposes the per-op narrowing types.
+        String errorsTs = entries.get("frontend/src/shared/api/generated/errors.ts");
+        assertThat(errorsTs).contains("export type SuccessBody");
+        assertThat(errorsTs).contains("export function isApiError");
+        // hooks.ts emits a useHello hook from the spec's operationId.
+        String hooksTs = entries.get("frontend/src/shared/api/generated/hooks.ts");
+        assertThat(hooksTs).contains("export function useHello");
+        assertThat(hooksTs).contains("@tanstack/react-query");
+    }
+
+    @Test
+    void pairedZipOmitsHooksTsWhenTanstackUnselected() throws Exception {
+        // api-client-openapi selected, data-tanstack-query NOT selected → no hooks.ts.
+        Map<String, Object> backend = backendBody("demo-api", List.of("web", "openapi"));
+        backend.put("specByDep", Map.of("openapi", SAMPLE_OPENAPI_SPEC));
+
+        Map<String, Object> frontend = frontendBody("demo-ui",
+                List.of("api-client-openapi"), null);
+
+        ResponseEntity<byte[]> r = rest.postForEntity("/starter-paired.zip",
+                pairedBody(backend, frontend), byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, String> entries = readZipEntries(r.getBody());
+        assertThat(entries).containsKey("frontend/src/shared/api/generated/client.ts");
+        assertThat(entries).doesNotContainKey("frontend/src/shared/api/generated/hooks.ts");
+    }
+
+    @Test
+    void pairedZipIncludesMswWhenVitestSelected() throws Exception {
+        Map<String, Object> backend = backendBody("demo-api", List.of("web", "openapi"));
+        backend.put("specByDep", Map.of("openapi", SAMPLE_OPENAPI_SPEC));
+
+        Map<String, Object> frontend = frontendBody("demo-ui",
+                List.of("api-client-openapi", "test-vitest-rtl"), null);
+
+        ResponseEntity<byte[]> r = rest.postForEntity("/starter-paired.zip",
+                pairedBody(backend, frontend), byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, String> entries = readZipEntries(r.getBody());
+        String mswTs = entries.get("frontend/src/shared/api/generated/msw.ts");
+        assertThat(mswTs).isNotNull();
+        assertThat(mswTs).contains("import { http, HttpResponse } from 'msw'");
+        assertThat(mswTs).contains("http.get('/api/hello'");
     }
 
     @Test

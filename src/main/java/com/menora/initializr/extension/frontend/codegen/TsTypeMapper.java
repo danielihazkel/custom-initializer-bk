@@ -2,6 +2,7 @@ package com.menora.initializr.extension.frontend.codegen;
 
 import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.ComposedSchema;
+import io.swagger.v3.oas.models.media.Discriminator;
 import io.swagger.v3.oas.models.media.Schema;
 
 import java.util.ArrayList;
@@ -150,6 +151,8 @@ final class TsTypeMapper {
     @SuppressWarnings("rawtypes")
     private static String mapComposition(ComposedSchema cs, String prefix) {
         if (cs.getOneOf() != null && !cs.getOneOf().isEmpty()) {
+            String tagged = mapDiscriminatedUnion(cs, prefix);
+            if (tagged != null) return tagged;
             return joinUnion(cs.getOneOf(), prefix);
         }
         if (cs.getAnyOf() != null && !cs.getAnyOf().isEmpty()) {
@@ -159,6 +162,57 @@ final class TsTypeMapper {
             return joinIntersection(cs.getAllOf(), prefix);
         }
         return null;
+    }
+
+    /**
+     * Renders a {@code oneOf} as a tagged union when the schema declares a
+     * {@link Discriminator}. Each branch becomes {@code ({ <prop>: '<value>' } & <Member>)}
+     * so TS can narrow the union on the discriminator property.
+     *
+     * <p>When {@code discriminator.mapping} is present, the literal comes from the
+     * mapping key whose value matches the branch's {@code $ref}; otherwise the
+     * literal is the ref name. Branches without a $ref fall back to a plain union
+     * member with no tag (so the consumer still gets the type, just no narrowing).
+     */
+    @SuppressWarnings("rawtypes")
+    private static String mapDiscriminatedUnion(ComposedSchema cs, String prefix) {
+        Discriminator d = cs.getDiscriminator();
+        if (d == null || d.getPropertyName() == null || d.getPropertyName().isBlank()) return null;
+        String prop = d.getPropertyName();
+        Map<String, String> mapping = d.getMapping();
+
+        List<String> parts = new ArrayList<>();
+        for (Schema member : cs.getOneOf()) {
+            String memberType = map(member, prefix);
+            String literal = discriminatorLiteralFor(member, mapping);
+            if (literal == null) {
+                parts.add(memberType);
+            } else {
+                parts.add("({ " + safeIdentifier(prop) + ": '" + literal.replace("'", "\\'") + "' } & "
+                        + memberType + ")");
+            }
+        }
+        return parts.isEmpty() ? null : String.join(" | ", parts);
+    }
+
+    /**
+     * Resolves the literal value used to tag a {@code oneOf} branch. Prefers
+     * the mapping key whose value's last segment matches the branch's ref name;
+     * falls back to the ref name itself; returns {@code null} for inline schemas
+     * (no narrowing possible).
+     */
+    @SuppressWarnings("rawtypes")
+    private static String discriminatorLiteralFor(Schema member, Map<String, String> mapping) {
+        String memberRefName = refName(member.get$ref());
+        if (memberRefName == null) return null;
+        if (mapping != null) {
+            for (Map.Entry<String, String> e : mapping.entrySet()) {
+                String mappedName = refName(e.getValue());
+                if (mappedName == null) continue;
+                if (mappedName.equals(memberRefName)) return e.getKey();
+            }
+        }
+        return memberRefName;
     }
 
     @SuppressWarnings("rawtypes")

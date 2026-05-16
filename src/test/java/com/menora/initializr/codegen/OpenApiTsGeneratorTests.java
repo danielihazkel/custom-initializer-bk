@@ -1,5 +1,6 @@
 package com.menora.initializr.codegen;
 
+import com.menora.initializr.extension.frontend.codegen.ErrorsTsRenderer;
 import com.menora.initializr.extension.frontend.codegen.OpenApiCodegenException;
 import com.menora.initializr.extension.frontend.codegen.OpenApiTsGenerator;
 import org.junit.jupiter.api.Test;
@@ -15,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class OpenApiTsGeneratorTests {
 
-    private final OpenApiTsGenerator gen = new OpenApiTsGenerator();
+    private final OpenApiTsGenerator gen = new OpenApiTsGenerator(new ErrorsTsRenderer());
 
     @Test
     void emptySpecThrows() {
@@ -32,9 +33,26 @@ class OpenApiTsGeneratorTests {
     }
 
     @Test
-    void petstoreSpecProducesAllFourFiles() {
+    void petstoreSpecProducesAllCoreFiles() {
         Map<String, String> files = gen.generate(PETSTORE);
-        assertThat(files).containsKeys("schema.ts", "paths.ts", "client.ts", "README.md");
+        assertThat(files).containsKeys("schema.ts", "paths.ts", "errors.ts", "client.ts", "README.md");
+    }
+
+    @Test
+    void errorsTsExposesSuccessBodyAndApiErrorTypes() {
+        String errors = gen.generate(PETSTORE).get("errors.ts");
+        assertThat(errors).contains("export type SuccessBody");
+        assertThat(errors).contains("export type ErrorBody");
+        assertThat(errors).contains("export interface ApiError");
+        assertThat(errors).contains("export function isApiError");
+    }
+
+    @Test
+    void clientTsExposesTypedRequestJson() {
+        String client = gen.generate(PETSTORE).get("client.ts");
+        assertThat(client).contains("import { type ApiError, type SuccessBody } from './errors'");
+        assertThat(client).contains("requestJson");
+        assertThat(client).contains("return { request, requestJson }");
     }
 
     @Test
@@ -61,8 +79,64 @@ class OpenApiTsGeneratorTests {
         assertThat(paths).contains("'limit'?: number");
         // POST /pets requestBody refs the Pet schema
         assertThat(paths).contains("requestBody: Schema.Pet");
-        // GET /pets 200 returns Pets array via Schema namespace
+        // GET /pets 200 returns Pets array via Schema namespace, under the success bucket
+        assertThat(paths).contains("success: {");
         assertThat(paths).contains("'200': Schema.Pets");
+    }
+
+    @Test
+    void responsesAreSplitIntoSuccessAndError() {
+        String spec = """
+                openapi: 3.0.0
+                info: { title: t, version: 1 }
+                paths:
+                  /pets:
+                    get:
+                      responses:
+                        '200':
+                          content:
+                            application/json:
+                              schema: { $ref: '#/components/schemas/Pet' }
+                        '404':
+                          content:
+                            application/json:
+                              schema: { $ref: '#/components/schemas/Problem' }
+                        default:
+                          content:
+                            application/json:
+                              schema: { $ref: '#/components/schemas/Problem' }
+                components:
+                  schemas:
+                    Pet: { type: object, properties: { id: { type: integer } } }
+                    Problem: { type: object, properties: { message: { type: string } } }
+                """;
+        String paths = gen.generate(spec).get("paths.ts");
+        // success bucket has 2xx
+        assertThat(paths).contains("success: {");
+        assertThat(paths).contains("'200': Schema.Pet");
+        // error bucket has non-2xx + default
+        assertThat(paths).contains("error: {");
+        assertThat(paths).contains("'404': Schema.Problem");
+        assertThat(paths).contains("'default': Schema.Problem");
+    }
+
+    @Test
+    void deprecatedOperationGetsJsDoc() {
+        String spec = """
+                openapi: 3.0.0
+                info: { title: t, version: 1 }
+                paths:
+                  /pets:
+                    get:
+                      summary: List pets
+                      deprecated: true
+                      responses:
+                        '200': { description: ok }
+                """;
+        String paths = gen.generate(spec).get("paths.ts");
+        assertThat(paths).contains("/**");
+        assertThat(paths).contains("* List pets");
+        assertThat(paths).contains("* @deprecated");
     }
 
     @Test
@@ -135,6 +209,66 @@ class OpenApiTsGeneratorTests {
         assertThat(schema).contains("Base");
         assertThat(schema).contains("Extra");
         assertThat(schema).contains("&");
+    }
+
+    @Test
+    void discriminatedOneOfBecomesTaggedUnion() {
+        String spec = """
+                openapi: 3.0.0
+                info: { title: t, version: 1 }
+                paths: {}
+                components:
+                  schemas:
+                    Cat:
+                      type: object
+                      required: [kind, meows]
+                      properties:
+                        kind: { type: string }
+                        meows: { type: boolean }
+                    Dog:
+                      type: object
+                      required: [kind, barks]
+                      properties:
+                        kind: { type: string }
+                        barks: { type: boolean }
+                    Pet:
+                      oneOf:
+                        - $ref: '#/components/schemas/Cat'
+                        - $ref: '#/components/schemas/Dog'
+                      discriminator:
+                        propertyName: kind
+                        mapping:
+                          cat: '#/components/schemas/Cat'
+                          dog: '#/components/schemas/Dog'
+                """;
+        String schema = gen.generate(spec).get("schema.ts");
+        assertThat(schema).contains("export type Pet = ({ kind: 'cat' } & Cat) | ({ kind: 'dog' } & Dog)");
+    }
+
+    @Test
+    void discriminatedOneOfWithoutMappingUsesRefName() {
+        String spec = """
+                openapi: 3.0.0
+                info: { title: t, version: 1 }
+                paths: {}
+                components:
+                  schemas:
+                    Cat:
+                      type: object
+                      properties: { kind: { type: string } }
+                    Dog:
+                      type: object
+                      properties: { kind: { type: string } }
+                    Pet:
+                      oneOf:
+                        - $ref: '#/components/schemas/Cat'
+                        - $ref: '#/components/schemas/Dog'
+                      discriminator:
+                        propertyName: kind
+                """;
+        String schema = gen.generate(spec).get("schema.ts");
+        assertThat(schema).contains("({ kind: 'Cat' } & Cat)");
+        assertThat(schema).contains("({ kind: 'Dog' } & Dog)");
     }
 
     @Test

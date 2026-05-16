@@ -8,8 +8,11 @@ import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
 import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.repository.ColorPaletteRepository;
+import com.menora.initializr.extension.frontend.codegen.HooksTsRenderer;
+import com.menora.initializr.extension.frontend.codegen.MswHandlersRenderer;
 import com.menora.initializr.extension.frontend.codegen.OpenApiCodegenException;
 import com.menora.initializr.extension.frontend.codegen.OpenApiTsGenerator;
+import io.swagger.v3.oas.models.OpenAPI;
 import com.samskivert.mustache.Mustache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +55,10 @@ public class FrontendProjectGenerator {
 
     /** Dep id that opts a project into OpenAPI-driven typed client generation. */
     private static final String API_CLIENT_OPENAPI_DEP = "api-client-openapi";
+    /** Companion dep id that adds React-Query hooks ({@code hooks.ts}) to the generated client. */
+    private static final String TANSTACK_QUERY_DEP = "data-tanstack-query";
+    /** Companion dep id that adds MSW handler stubs ({@code msw.ts}) for the test setup. */
+    private static final String VITEST_RTL_DEP = "test-vitest-rtl";
 
     private final DependencyConfigService configService;
     private final ProjectOptionsContext optionsContext;
@@ -60,6 +67,8 @@ public class FrontendProjectGenerator {
     private final ColorPaletteRepository colorPaletteRepo;
     private final OpenApiSpecContext openApiSpecContext;
     private final OpenApiTsGenerator openApiTsGenerator;
+    private final HooksTsRenderer hooksTsRenderer;
+    private final MswHandlersRenderer mswHandlersRenderer;
 
     public FrontendProjectGenerator(DependencyConfigService configService,
                                     ProjectOptionsContext optionsContext,
@@ -67,7 +76,9 @@ public class FrontendProjectGenerator {
                                     ViteConfigBuilder viteConfigBuilder,
                                     ColorPaletteRepository colorPaletteRepo,
                                     OpenApiSpecContext openApiSpecContext,
-                                    OpenApiTsGenerator openApiTsGenerator) {
+                                    OpenApiTsGenerator openApiTsGenerator,
+                                    HooksTsRenderer hooksTsRenderer,
+                                    MswHandlersRenderer mswHandlersRenderer) {
         this.configService = configService;
         this.optionsContext = optionsContext;
         this.packageJsonBuilder = packageJsonBuilder;
@@ -75,6 +86,8 @@ public class FrontendProjectGenerator {
         this.colorPaletteRepo = colorPaletteRepo;
         this.openApiSpecContext = openApiSpecContext;
         this.openApiTsGenerator = openApiTsGenerator;
+        this.hooksTsRenderer = hooksTsRenderer;
+        this.mswHandlersRenderer = mswHandlersRenderer;
     }
 
     /** Generates the project, returns the ZIP bytes (containing a top-level {@code projectName/} directory). */
@@ -306,9 +319,11 @@ public class FrontendProjectGenerator {
         // Drop the seed .gitkeep — generated files take its place.
         Files.deleteIfExists(generatedDir.resolve(".gitkeep"));
 
+        OpenAPI parsedSpec;
         Map<String, String> files;
         try {
-            files = openApiTsGenerator.generate(spec);
+            parsedSpec = openApiTsGenerator.parse(spec);
+            files = new LinkedHashMap<>(openApiTsGenerator.render(parsedSpec));
         } catch (OpenApiCodegenException e) {
             log.warn("OpenAPI TS codegen failed: {} — falling back to gen:api script", e.getMessage());
             Files.writeString(generatedDir.resolve("README.md"),
@@ -316,6 +331,13 @@ public class FrontendProjectGenerator {
                             + "supplied spec:\n\n> " + e.getMessage() + "\n\n"
                             + "Run `pnpm gen:api` to fall back to the `openapi-typescript` CLI.\n");
             return;
+        }
+        // Companion-dep gating: hooks.ts iff React-Query, msw.ts iff Vitest+RTL.
+        if (depIds.contains(TANSTACK_QUERY_DEP)) {
+            files.put("hooks.ts", hooksTsRenderer.render(parsedSpec));
+        }
+        if (depIds.contains(VITEST_RTL_DEP)) {
+            files.put("msw.ts", mswHandlersRenderer.render(parsedSpec));
         }
         for (Map.Entry<String, String> entry : files.entrySet()) {
             Files.writeString(generatedDir.resolve(entry.getKey()), entry.getValue());
