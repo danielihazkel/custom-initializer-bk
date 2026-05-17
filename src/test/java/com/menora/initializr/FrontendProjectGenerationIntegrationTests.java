@@ -1,6 +1,9 @@
 package com.menora.initializr;
 
 import com.menora.initializr.config.ProjectOptionsContext;
+import com.menora.initializr.db.entity.BuildCustomizationEntity;
+import com.menora.initializr.db.entity.ProjectKind;
+import com.menora.initializr.db.repository.BuildCustomizationRepository;
 import com.menora.initializr.extension.frontend.FrontendProjectDescription;
 import com.menora.initializr.extension.frontend.FrontendProjectGenerator;
 import org.junit.jupiter.api.Test;
@@ -38,6 +41,9 @@ class FrontendProjectGenerationIntegrationTests {
 
     @Autowired
     private ProjectOptionsContext optionsContext;
+
+    @Autowired
+    private BuildCustomizationRepository buildCustomRepo;
 
     @Test
     void frontendMetadataEndpointReturnsCatalog() {
@@ -786,6 +792,42 @@ class FrontendProjectGenerationIntegrationTests {
 
         String vite = readZipEntry(r.getBody(), "demo/vite.config.ts");
         assertThat(vite).contains("target: 'http://localhost:8080'");
+    }
+
+    @Test
+    void subOptionGatedNpmDepIsOmittedWhenSubOptionNotPicked() throws Exception {
+        // Gate a fake devDep on test-vitest-rtl + ci-config (a real seeded sub-option),
+        // then verify that without the sub-option the devDep is absent and with the
+        // sub-option it lands in devDependencies.
+        BuildCustomizationEntity gated = new BuildCustomizationEntity();
+        gated.setDependencyId("test-vitest-rtl");
+        gated.setCustomizationType(BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY);
+        gated.setMavenArtifactId("@menora/test-ci-marker");
+        gated.setVersion("^0.0.1");
+        gated.setScope("dev");
+        gated.setSubOptionId("ci-config");
+        gated.setProjectKind(ProjectKind.FRONTEND);
+        gated = buildCustomRepo.save(gated);
+
+        try {
+            // Without the sub-option picked → devDep absent
+            FrontendProjectDescription descNoOpt = baseDescription("demo");
+            descNoOpt.getDependencies().add("test-vitest-rtl");
+            String pkgNoOpt = generator.generateFileMap(descNoOpt).get("package.json");
+            assertThat(pkgNoOpt).doesNotContain("@menora/test-ci-marker");
+
+            // With the sub-option picked → devDep present
+            FrontendProjectDescription descWithOpt = baseDescription("demo");
+            descWithOpt.getDependencies().add("test-vitest-rtl");
+            optionsContext.populate(java.util.Map.of(
+                    "test-vitest-rtl", java.util.List.of("ci-config")));
+            String pkgWithOpt = generator.generateFileMap(descWithOpt).get("package.json");
+            assertThat(pkgWithOpt).contains("\"@menora/test-ci-marker\"");
+            assertThat(pkgWithOpt).contains("\"^0.0.1\"");
+        } finally {
+            buildCustomRepo.deleteById(gated.getId());
+            optionsContext.clear();
+        }
     }
 
     @Test

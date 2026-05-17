@@ -260,13 +260,26 @@ public class FrontendProjectGenerator {
 
     private void writeBaselines(Path projectRoot, Set<String> depIds, Map<String, Object> ctx) throws IOException {
         List<BuildCustomizationEntity> customizations =
-                configService.getBuildCustomizations(depIds, ProjectKind.FRONTEND);
+                configService.getBuildCustomizations(depIds, ProjectKind.FRONTEND).stream()
+                        .filter(this::subOptionAllows)
+                        .toList();
 
         String pkgJson = packageJsonBuilder.build(loadClasspath(PACKAGE_JSON_TEMPLATE), ctx, customizations);
         Files.writeString(projectRoot.resolve("package.json"), pkgJson);
 
         String viteCfg = viteConfigBuilder.build(loadClasspath(VITE_CONFIG_TEMPLATE), ctx, customizations);
         Files.writeString(projectRoot.resolve("vite.config.ts"), viteCfg);
+    }
+
+    /**
+     * Mirrors the sub-option gating used for file contributions (see
+     * {@code applyFileContributions}): a row with a {@code subOptionId} only
+     * applies when the user picked that sub-option for the parent dep. Rows
+     * without a {@code subOptionId} always apply.
+     */
+    private boolean subOptionAllows(BuildCustomizationEntity bc) {
+        return bc.getSubOptionId() == null
+                || optionsContext.hasOption(bc.getDependencyId(), bc.getSubOptionId());
     }
 
     private String loadClasspath(String resourcePath) throws IOException {

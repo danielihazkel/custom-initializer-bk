@@ -24,6 +24,13 @@ import org.hibernate.annotations.ColumnDefault;
  *       {@code "scripts"} block of {@code package.json}; later contributions for the
  *       same name win, allowing admin overrides without editing the baseline.</li>
  * </ul>
+ *
+ * <p>{@code subOptionId} (nullable) gates a FRONTEND customization on the parent
+ * dependency's sub-option, mirroring {@code FileContributionEntity.subOptionId}.
+ * When set, the customization is applied only if the user picked that sub-option
+ * (i.e. {@code ProjectOptionsContext.hasOption(dependencyId, subOptionId)}). NULL
+ * means the customization always applies, which is the default for every row
+ * created before V8.
  */
 @Entity
 @Table(name = "build_customization")
@@ -88,6 +95,10 @@ public class BuildCustomizationEntity {
     @Column(length = 20)
     private String scope;
 
+    /** Optional sub-option gate — see class-level Javadoc. */
+    @Column(name = "sub_option_id", length = 50)
+    private String subOptionId;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
@@ -125,6 +136,10 @@ public class BuildCustomizationEntity {
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     public String getScope() { return scope; }
     public void setScope(String scope) { this.scope = (scope == null || scope.isBlank()) ? null : scope; }
+    public String getSubOptionId() { return subOptionId; }
+    public void setSubOptionId(String subOptionId) {
+        this.subOptionId = (subOptionId == null || subOptionId.isBlank()) ? null : subOptionId;
+    }
     public ProjectKind getProjectKind() { return projectKind == null ? ProjectKind.BACKEND : projectKind; }
     public void setProjectKind(ProjectKind projectKind) { this.projectKind = projectKind == null ? ProjectKind.BACKEND : projectKind; }
 }
