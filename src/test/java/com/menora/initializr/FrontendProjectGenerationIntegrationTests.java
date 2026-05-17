@@ -875,6 +875,183 @@ class FrontendProjectGenerationIntegrationTests {
                 () -> desc.setApiBaseUrl("javascript:alert(1)"));
     }
 
+    // ── Tier 1.8: "Finish what's advertised" — Playwright / Storybook / shadcn / MSAL ──
+
+    @Test
+    void playwrightSubOptionsWriteConfigAndSpecAndCi() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("test-playwright");
+        optionsContext.populate(java.util.Map.of(
+                "test-playwright", java.util.List.of("sample-config", "sample-spec", "ci-config")));
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).containsKey("playwright.config.ts");
+        assertThat(files.get("playwright.config.ts")).contains("defineConfig");
+        assertThat(files.get("playwright.config.ts")).contains("testDir: './e2e'");
+
+        assertThat(files).containsKey("e2e/home.spec.ts");
+        assertThat(files.get("e2e/home.spec.ts")).contains("@playwright/test");
+        assertThat(files.get("e2e/home.spec.ts")).contains("page.goto('/')");
+
+        assertThat(files).containsKey(".github/workflows/e2e.yml");
+        assertThat(files.get(".github/workflows/e2e.yml")).contains("pnpm e2e:install");
+        assertThat(files.get(".github/workflows/e2e.yml")).contains("pnpm e2e");
+    }
+
+    @Test
+    void playwrightWithoutSubOptionsAddsOnlyDepAndScripts() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("test-playwright");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        // Selecting Playwright alone doesn't write any scaffolding files...
+        assertThat(files).doesNotContainKey("playwright.config.ts");
+        assertThat(files).doesNotContainKey("e2e/home.spec.ts");
+        assertThat(files).doesNotContainKey(".github/workflows/e2e.yml");
+        // ...but the npm dep and baseline e2e scripts still land.
+        String pkg = files.get("package.json");
+        assertThat(pkg).contains("\"@playwright/test\"");
+        assertThat(pkg).contains("\"e2e\"");
+        assertThat(pkg).contains("\"e2e:install\"");
+    }
+
+    @Test
+    void storybookInitConfigWritesMainAndPreview() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("storybook");
+        optionsContext.populate(java.util.Map.of(
+                "storybook", java.util.List.of("init-config", "sample-story")));
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).containsKey(".storybook/main.ts");
+        assertThat(files.get(".storybook/main.ts")).contains("@storybook/react-vite");
+        assertThat(files.get(".storybook/main.ts")).contains("addon-essentials");
+
+        assertThat(files).containsKey(".storybook/preview.ts");
+        // Without Tailwind selected, the CSS import block must not render.
+        assertThat(files.get(".storybook/preview.ts")).doesNotContain("../src/index.css");
+
+        assertThat(files).containsKey("src/shared/ui/example.stories.tsx");
+        assertThat(files.get("src/shared/ui/example.stories.tsx"))
+                .contains("@storybook/react")
+                .contains("Storybook is set up");
+
+        // Addons reached package.json
+        String pkg = files.get("package.json");
+        assertThat(pkg).contains("\"@storybook/addon-essentials\"");
+        assertThat(pkg).contains("\"@storybook/addon-interactions\"");
+        assertThat(pkg).contains("\"@storybook/test\"");
+        // Existing script gate already in fe-package-base.mustache
+        assertThat(pkg).contains("\"storybook\"");
+        assertThat(pkg).contains("\"build-storybook\"");
+    }
+
+    @Test
+    void storybookPreviewImportsTailwindCssWhenTailwindSelected() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("storybook");
+        desc.getDependencies().add("style-tailwind");
+        optionsContext.populate(java.util.Map.of(
+                "storybook", java.util.List.of("init-config")));
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files.get(".storybook/preview.ts")).contains("import '../src/index.css'");
+    }
+
+    @Test
+    void shadcnComponentSubOptionsWriteFilesAndGateRadixDeps() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("style-tailwind");
+        desc.getDependencies().add("design-shadcn");
+        optionsContext.populate(java.util.Map.of(
+                "design-shadcn", java.util.List.of(
+                        "comp-button", "comp-card", "comp-input", "comp-dialog", "comp-toast")));
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        // Five component files plus the toast hook
+        assertThat(files).containsKey("src/shared/ui/button.tsx");
+        assertThat(files).containsKey("src/shared/ui/card.tsx");
+        assertThat(files).containsKey("src/shared/ui/input.tsx");
+        assertThat(files).containsKey("src/shared/ui/dialog.tsx");
+        assertThat(files).containsKey("src/shared/ui/toast.tsx");
+        assertThat(files).containsKey("src/shared/lib/use-toast.ts");
+
+        // Components import the seeded cn helper
+        assertThat(files.get("src/shared/ui/button.tsx")).contains("from '@shared/lib/utils'");
+
+        // Radix deps land in package.json only when the matching sub-option is on
+        String pkg = files.get("package.json");
+        assertThat(pkg).contains("\"@radix-ui/react-dialog\"");
+        assertThat(pkg).contains("\"@radix-ui/react-toast\"");
+    }
+
+    @Test
+    void shadcnWithoutDialogSubOptionOmitsRadixDialogDep() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("style-tailwind");
+        desc.getDependencies().add("design-shadcn");
+        // Pick only button — should NOT pull in dialog/toast Radix packages
+        optionsContext.populate(java.util.Map.of(
+                "design-shadcn", java.util.List.of("comp-button")));
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).containsKey("src/shared/ui/button.tsx");
+        assertThat(files).doesNotContainKey("src/shared/ui/dialog.tsx");
+        assertThat(files).doesNotContainKey("src/shared/ui/toast.tsx");
+
+        String pkg = files.get("package.json");
+        // Always-on shadcn deps still present
+        assertThat(pkg).contains("\"@radix-ui/react-slot\"");
+        // Gated deps absent
+        assertThat(pkg).doesNotContain("\"@radix-ui/react-dialog\"");
+        assertThat(pkg).doesNotContain("\"@radix-ui/react-toast\"");
+    }
+
+    @Test
+    void msalInitConfigWritesConfigAndWrapsApp() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("auth-msal");
+        optionsContext.populate(java.util.Map.of(
+                "auth-msal", java.util.List.of("init-config", "sample-login")));
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).containsKey("src/shared/auth/msal-config.ts");
+        assertThat(files.get("src/shared/auth/msal-config.ts"))
+                .contains("PublicClientApplication")
+                .contains("VITE_MSAL_CLIENT_ID");
+
+        assertThat(files).containsKey("src/shared/ui/login-button.tsx");
+        assertThat(files).containsKey("src/shared/lib/use-auth.ts");
+
+        // App.tsx is wrapped with MsalProvider when init-config is on
+        String app = files.get("src/app/App.tsx");
+        assertThat(app).contains("import { MsalProvider } from '@azure/msal-react'");
+        assertThat(app).contains("import { msalInstance } from '@shared/auth/msal-config'");
+        assertThat(app).contains("<MsalProvider instance={msalInstance}>");
+        assertThat(app).contains("</MsalProvider>");
+
+        // .env files document the runtime keys
+        String envDev = files.get(".env.development");
+        assertThat(envDev).contains("VITE_MSAL_CLIENT_ID=");
+        assertThat(envDev).contains("VITE_MSAL_TENANT_ID=");
+        assertThat(envDev).contains("VITE_MSAL_REDIRECT_URI=");
+    }
+
+    @Test
+    void msalWithoutInitConfigOmitsConfigAndProviderWrap() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("auth-msal");
+        // No sub-options picked — just the npm dep
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).doesNotContainKey("src/shared/auth/msal-config.ts");
+        assertThat(files.get("src/app/App.tsx")).doesNotContain("MsalProvider");
+        // No env file written (no backend-pair, no init-config)
+        assertThat(files).doesNotContainKey(".env.development");
+        // The msal-react package still ships so users can wire their own provider
+        assertThat(files.get("package.json")).contains("\"@azure/msal-react\"");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private FrontendProjectDescription baseDescription(String projectName) {

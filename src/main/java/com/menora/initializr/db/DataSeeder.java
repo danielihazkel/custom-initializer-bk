@@ -1332,14 +1332,22 @@ public class DataSeeder implements CommandLineRunner {
                 readClasspath("static-configs/frontend/common/husky-pre-commit"),
                 ".husky/pre-commit", FileContributionEntity.SubstitutionType.NONE, o++);
 
-        // Paired-backend env files — body is wrapped in {{#hasBackendPair}}…{{/hasBackendPair}}
-        // so it renders blank when no apiBaseUrl is set. FrontendProjectGenerator
-        // skips writes for blank-rendered TEMPLATE contributions.
+        // Paired-backend / MSAL env files — body conditionally renders sections
+        // for each opt-in. FrontendProjectGenerator skips writes for blank-rendered
+        // TEMPLATE contributions, so projects with neither feature get no env file.
         feFc("__common__", FileContributionEntity.FileType.TEMPLATE,
-                "{{#hasBackendPair}}VITE_API_BASE_URL={{apiBaseUrl}}\n{{/hasBackendPair}}",
+                "{{#hasBackendPair}}VITE_API_BASE_URL={{apiBaseUrl}}\n{{/hasBackendPair}}"
+                        + "{{#optAuthMsalInitConfig}}VITE_MSAL_CLIENT_ID=\n"
+                        + "VITE_MSAL_TENANT_ID=\n"
+                        + "VITE_MSAL_REDIRECT_URI=\n{{/optAuthMsalInitConfig}}",
                 ".env.development", FileContributionEntity.SubstitutionType.MUSTACHE, o++);
         feFc("__common__", FileContributionEntity.FileType.TEMPLATE,
-                "{{#hasBackendPair}}# Override this per-environment. The dev value comes from .env.development.\nVITE_API_BASE_URL={{apiBaseUrl}}\n{{/hasBackendPair}}",
+                "{{#hasBackendPair}}# Override this per-environment. The dev value comes from .env.development.\n"
+                        + "VITE_API_BASE_URL={{apiBaseUrl}}\n{{/hasBackendPair}}"
+                        + "{{#optAuthMsalInitConfig}}# Azure AD app registration values — fill in per environment.\n"
+                        + "VITE_MSAL_CLIENT_ID=\n"
+                        + "VITE_MSAL_TENANT_ID=\n"
+                        + "VITE_MSAL_REDIRECT_URI=\n{{/optAuthMsalInitConfig}}",
                 ".env.example", FileContributionEntity.SubstitutionType.MUSTACHE, o++);
 
         // ── Per-dep file contributions ───────────────────────────────────────
@@ -1369,6 +1377,36 @@ public class DataSeeder implements CommandLineRunner {
                 readClasspath("static-configs/frontend/test-vitest-rtl/github-actions-ci.yml"),
                 ".github/workflows/ci.yml", FileContributionEntity.SubstitutionType.NONE,
                 "ci-config", 3);
+
+        // Playwright: config + sample spec + CI workflow (each sub-option gated).
+        feFc("test-playwright", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/test-playwright/playwright.config.ts"),
+                "playwright.config.ts", FileContributionEntity.SubstitutionType.NONE,
+                "sample-config", 0);
+        feFc("test-playwright", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/test-playwright/home-spec.ts"),
+                "e2e/home.spec.ts", FileContributionEntity.SubstitutionType.NONE,
+                "sample-spec", 1);
+        feFc("test-playwright", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/test-playwright/github-actions-e2e.yml"),
+                ".github/workflows/e2e.yml", FileContributionEntity.SubstitutionType.NONE,
+                "ci-config", 2);
+
+        // Storybook: .storybook config + sample story (each sub-option gated).
+        // preview.ts is a TEMPLATE because its CSS import is gated on Tailwind —
+        // index.css only exists in projects that selected style-tailwind.
+        feFc("storybook", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/storybook/main.ts"),
+                ".storybook/main.ts", FileContributionEntity.SubstitutionType.NONE,
+                "init-config", 0);
+        feFc("storybook", FileContributionEntity.FileType.TEMPLATE,
+                readClasspath("static-configs/frontend/storybook/preview.ts"),
+                ".storybook/preview.ts", FileContributionEntity.SubstitutionType.MUSTACHE,
+                "init-config", 1);
+        feFc("storybook", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/storybook/example-stories.tsx"),
+                "src/shared/ui/example.stories.tsx", FileContributionEntity.SubstitutionType.NONE,
+                "sample-story", 2);
 
         // Default starter wiring per dep — gives users a runnable demo of the
         // selected library, not just an entry in package.json. App.tsx picks
@@ -1433,6 +1471,49 @@ public class DataSeeder implements CommandLineRunner {
         feFc("design-shadcn", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("static-configs/frontend/design-shadcn/index.css"),
                 "src/index.css", FileContributionEntity.SubstitutionType.MUSTACHE, 10);
+        // Pre-built primitives — each gated by its own sub-option so users only pay for
+        // what they pick. Components import { cn } from '@shared/lib/utils' (already shipped above).
+        feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-shadcn/button.tsx"),
+                "src/shared/ui/button.tsx", FileContributionEntity.SubstitutionType.NONE,
+                "comp-button", 11);
+        feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-shadcn/card.tsx"),
+                "src/shared/ui/card.tsx", FileContributionEntity.SubstitutionType.NONE,
+                "comp-card", 12);
+        feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-shadcn/input.tsx"),
+                "src/shared/ui/input.tsx", FileContributionEntity.SubstitutionType.NONE,
+                "comp-input", 13);
+        feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-shadcn/dialog.tsx"),
+                "src/shared/ui/dialog.tsx", FileContributionEntity.SubstitutionType.NONE,
+                "comp-dialog", 14);
+        feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-shadcn/toast.tsx"),
+                "src/shared/ui/toast.tsx", FileContributionEntity.SubstitutionType.NONE,
+                "comp-toast", 15);
+        feFc("design-shadcn", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/design-shadcn/use-toast.ts"),
+                "src/shared/lib/use-toast.ts", FileContributionEntity.SubstitutionType.NONE,
+                "comp-toast", 16);
+
+        // MSAL: provider config + sample login. init-config also flips an env block
+        // in .env.development/.env.example (see __common__ contributions above) and
+        // a MsalProvider wrap in fe-app-tsx.mustache. Sample-login generates a
+        // LoginButton component plus a useAuth() convenience hook.
+        feFc("auth-msal", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/auth-msal/msal-config.ts"),
+                "src/shared/auth/msal-config.ts", FileContributionEntity.SubstitutionType.NONE,
+                "init-config", 0);
+        feFc("auth-msal", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/auth-msal/login-button.tsx"),
+                "src/shared/ui/login-button.tsx", FileContributionEntity.SubstitutionType.NONE,
+                "sample-login", 1);
+        feFc("auth-msal", FileContributionEntity.FileType.STATIC_COPY,
+                readClasspath("static-configs/frontend/auth-msal/use-auth.ts"),
+                "src/shared/lib/use-auth.ts", FileContributionEntity.SubstitutionType.NONE,
+                "sample-login", 2);
 
         // styled-components: themed via DefaultTheme + module augmentation
         feFc("style-styled", FileContributionEntity.FileType.TEMPLATE,
@@ -1562,6 +1643,9 @@ public class DataSeeder implements CommandLineRunner {
         feNpm("design-shadcn",       "tailwind-merge",                  "^2.5.2",  "",    1);
         feNpm("design-shadcn",       "class-variance-authority",        "^0.7.0",  "",    2);
         feNpm("design-shadcn",       "@radix-ui/react-slot",            "^1.1.0",  "",    3);
+        // Radix primitives ship only when their component is picked.
+        feNpm("design-shadcn",       "@radix-ui/react-dialog",          "^1.1.1",  "",    "comp-dialog", 4);
+        feNpm("design-shadcn",       "@radix-ui/react-toast",           "^1.2.1",  "",    "comp-toast",  5);
         feNpm("design-mui",          "@mui/material",                   "^5.16.7", "",    0);
         feNpm("design-mui",          "@emotion/react",                  "^11.13.0","",    1);
         feNpm("design-mui",          "@emotion/styled",                 "^11.13.0","",    2);
@@ -1599,6 +1683,9 @@ public class DataSeeder implements CommandLineRunner {
         feNpm("storybook",           "storybook",                       "^8.2.9",  "dev", 0);
         feNpm("storybook",           "@storybook/react-vite",           "^8.2.9",  "dev", 1);
         feNpm("storybook",           "@storybook/react",                "^8.2.9",  "dev", 2);
+        feNpm("storybook",           "@storybook/addon-essentials",     "^8.2.9",  "dev", 3);
+        feNpm("storybook",           "@storybook/addon-interactions",   "^8.2.9",  "dev", 4);
+        feNpm("storybook",           "@storybook/test",                 "^8.2.9",  "dev", 5);
 
         feNpm("auth-msal",           "@azure/msal-browser",             "^3.21.0", "",    0);
         feNpm("auth-msal",           "@azure/msal-react",               "^2.0.22", "",    1);
@@ -1642,6 +1729,34 @@ public class DataSeeder implements CommandLineRunner {
                 "Generate a sample render test for HomePage", 0);
         feSubOption("test-vitest-rtl", "ci-config",     "CI config",
                 "Generate a GitHub Actions workflow that runs the test suite", 1);
+
+        feSubOption("test-playwright", "sample-config", "playwright.config.ts",
+                "Generate a baseline config targeting Chromium+Firefox+WebKit", 0);
+        feSubOption("test-playwright", "sample-spec",   "Sample E2E spec",
+                "Generate e2e/home.spec.ts covering the home page", 1);
+        feSubOption("test-playwright", "ci-config",     "GitHub Actions CI",
+                "Generate .github/workflows/e2e.yml that installs browsers and runs pnpm e2e", 2);
+
+        feSubOption("storybook", "init-config",   ".storybook config",
+                "Generate .storybook/main.ts and preview.ts so `pnpm storybook` works out of the box", 0);
+        feSubOption("storybook", "sample-story",  "Sample story",
+                "Generate src/shared/ui/example.stories.tsx as a starting point", 1);
+
+        feSubOption("design-shadcn", "comp-button", "Button",
+                "Generate src/shared/ui/button.tsx (forwardRef + cva variants)", 0);
+        feSubOption("design-shadcn", "comp-card",   "Card",
+                "Generate src/shared/ui/card.tsx (Card / CardHeader / CardContent / CardFooter)", 1);
+        feSubOption("design-shadcn", "comp-input",  "Input",
+                "Generate src/shared/ui/input.tsx", 2);
+        feSubOption("design-shadcn", "comp-dialog", "Dialog",
+                "Generate src/shared/ui/dialog.tsx (adds @radix-ui/react-dialog)", 3);
+        feSubOption("design-shadcn", "comp-toast",  "Toast",
+                "Generate src/shared/ui/toast.tsx + use-toast hook (adds @radix-ui/react-toast)", 4);
+
+        feSubOption("auth-msal", "init-config",  "MSAL config + provider",
+                "Generate msal-config.ts, wrap App in MsalProvider, and add VITE_MSAL_* env keys", 0);
+        feSubOption("auth-msal", "sample-login", "Sample login button + useAuth hook",
+                "Generate LoginButton.tsx and a useAuth() hook in shared/", 1);
 
         feSubOption("api-client-openapi", "react-query-hooks", "React Query hooks (orval)",
                 "Add an orval.config.ts so `npx orval` produces typed React Query hooks "
@@ -1737,12 +1852,19 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private void feNpm(String depId, String pkg, String version, String scope, int order) {
+        feNpm(depId, pkg, version, scope, null, order);
+    }
+
+    /** Variant that gates the npm dep on a sub-option of the parent dep. */
+    private void feNpm(String depId, String pkg, String version, String scope,
+                       String subOptionId, int order) {
         BuildCustomizationEntity e = new BuildCustomizationEntity();
         e.setDependencyId(depId);
         e.setCustomizationType(BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY);
         e.setMavenArtifactId(pkg);
         e.setVersion(version);
         e.setScope(scope);
+        e.setSubOptionId(subOptionId);
         e.setSortOrder(order);
         e.setProjectKind(ProjectKind.FRONTEND);
         buildCustomRepo.save(e);

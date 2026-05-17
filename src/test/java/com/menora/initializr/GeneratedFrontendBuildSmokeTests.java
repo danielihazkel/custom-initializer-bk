@@ -74,6 +74,25 @@ class GeneratedFrontendBuildSmokeTests {
         runPnpm(project, "run", "build");
     }
 
+    @Test
+    void advertisedFeaturesProjectInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Pulls together Playwright + Storybook + shadcn components + MSAL with all
+        // of their sub-options selected — the combo the "finish what's advertised"
+        // work shipped. Catches regressions in any sub-option-gated file
+        // (component imports, MsalProvider wrap, .storybook config) that
+        // type-checking alone misses without the matching npm dep installed.
+        String deps = "style-tailwind,design-shadcn,test-playwright,storybook,auth-msal";
+        String url = "/frontend/starter.zip?projectName=smoke-advertised"
+                + "&dependencies=" + deps
+                + "&opts-test-playwright=sample-config,sample-spec,ci-config"
+                + "&opts-storybook=init-config,sample-story"
+                + "&opts-design-shadcn=comp-button,comp-card,comp-input,comp-dialog,comp-toast"
+                + "&opts-auth-msal=init-config,sample-login";
+        Path project = fetchAndExtract(workDir, url);
+        runPnpm(project, "install", "--prefer-offline");
+        runPnpm(project, "run", "build");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**
