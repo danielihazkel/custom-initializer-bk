@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -46,6 +47,7 @@ class GeneratedFrontendBuildSmokeTests {
     private static final Logger log = LoggerFactory.getLogger(GeneratedFrontendBuildSmokeTests.class);
     private static final boolean IS_WINDOWS = System.getProperty("os.name").toLowerCase().contains("win");
     private static final String PNPM = IS_WINDOWS ? "pnpm.cmd" : "pnpm";
+    private static final File NULL_DEVICE = new File(IS_WINDOWS ? "NUL" : "/dev/null");
 
     @Autowired
     private TestRestTemplate rest;
@@ -60,15 +62,16 @@ class GeneratedFrontendBuildSmokeTests {
     @Test
     void richFrontendProjectInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // Catches version conflicts between the libs people pick together most.
+        // The build script is `tsc --noEmit && vite build` — that's the
+        // signal we want: type-check + bundle both succeed end-to-end. Skipping
+        // `pnpm run test` here because no spec files ship by default, vitest's
+        // own CLI is verified elsewhere, and forwarding flags through `pnpm run`
+        // is brittle across pnpm versions.
         String deps = "style-tailwind,design-shadcn,data-tanstack-query,test-vitest-rtl,router-react-router";
         Path project = fetchAndExtract(workDir,
                 "/frontend/starter.zip?projectName=smoke-rich&dependencies=" + deps);
         runPnpm(project, "install", "--prefer-offline");
         runPnpm(project, "run", "build");
-        // vitest is in the rich combo — run the test suite too (no specs ship,
-        // but `--passWithNoTests` keeps the exit code clean while still
-        // exercising the vitest config wiring).
-        runPnpm(project, "run", "test", "--", "--run", "--passWithNoTests");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -116,7 +119,16 @@ class GeneratedFrontendBuildSmokeTests {
 
         ProcessBuilder pb = new ProcessBuilder(cmd)
                 .directory(cwd.toFile())
-                .redirectErrorStream(true);
+                .redirectErrorStream(true)
+                // Critical: redirect stdin to the OS null device. With the
+                // default PIPE redirect pnpm reads stdin from a pipe we never
+                // write to, so any interactive prompt (pnpm v10's
+                // "approve-builds" follow-up, "modules dir from a different
+                // PM, continue?", etc.) blocks forever.
+                .redirectInput(NULL_DEVICE);
+        // Belt-and-suspenders: pnpm/npm both respect CI=true to disable any
+        // remaining interactive paths.
+        pb.environment().put("CI", "true");
         Process proc = pb.start();
 
         try (BufferedReader reader = new BufferedReader(
