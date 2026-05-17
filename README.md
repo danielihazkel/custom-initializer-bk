@@ -1001,6 +1001,22 @@ The spec itself only lands at `frontend/openapi.yaml` if both:
 
 Selecting the dep without a spec is harmless — the scripts and devDep still ship; the user can author `openapi.yaml` themselves and run `gen:api`.
 
+#### Pre-Generated Typed Client (`src/shared/api/generated/`)
+
+When a spec is supplied, `FrontendProjectGenerator.writeGeneratedTs()` runs the pure-Java `OpenApiTsGenerator` so the project type-checks immediately after extraction — no `npm install && gen:api` round-trip required. The `.gitkeep` is replaced by:
+
+| File | Gating dep(s) | What's in it |
+|---|---|---|
+| `schema.ts` | `api-client-openapi` | One `export type X = …` per `components.schemas` entry. `oneOf` with a `discriminator` becomes a tagged union (`({ kind: 'cat' } & Cat) \| ({ kind: 'dog' } & Dog)`); `allOf` becomes an intersection; `nullable` becomes `T \| null` |
+| `paths.ts` | `api-client-openapi` | Typed path/method map. Responses split into a `success` bucket (2xx) and an `error` bucket (everything else, including `default`). JSDoc emitted above each method when the spec has a `summary` / `description` / `deprecated: true` |
+| `errors.ts` | `api-client-openapi` | Conditional types `SuccessBody<P, M>` / `ErrorBody<P, M>`, an `ApiError<P, M>` envelope, and an `isApiError(x)` runtime guard |
+| `client.ts` | `api-client-openapi` | `createApiClient()` exposing `request()` (raw `Response`) and `requestJson<P, M>()` (returns the narrowed success body; throws `ApiError` on non-2xx) |
+| `hooks.ts` | + `data-tanstack-query` | One React-Query hook per operation — `useXxx` (GET → `useQuery`) and `useXxxMutation` (POST/PUT/PATCH/DELETE → `useMutation`). `operationId` is used when present; otherwise it's derived as `pascalCase(method + path)` (e.g. `useGetPetsByPetIdOrders`) |
+| `msw.ts` | + `test-vitest-rtl` | MSW v2 handlers — one per operation, body resolved from `response.content["application/json"].example` → schema `example` → synthesised stub via `SchemaSampler` |
+| `README.md` | `api-client-openapi` | Points users at the `gen:api` regen escape hatch |
+
+The pure-Java codegen covers the 80% of typical internal specs (primitives, refs, enums, nullable, one/any/allOf, discriminated unions). Edge cases degrade to `unknown` with a comment — `pnpm gen:api` (using the battle-tested `openapi-typescript` CLI) remains the regen escape hatch for full coverage. Codegen failures fall back to a README in `src/shared/api/generated/` explaining the error and pointing at `gen:api`; generation never aborts on a malformed spec.
+
 ### Manifest Schema Extension
 
 `MenoraInitManifest` gained an optional `paired` block (sibling to the existing `inputs` block) shaped as:
