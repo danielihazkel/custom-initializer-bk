@@ -1497,11 +1497,10 @@ public class DataSeeder implements CommandLineRunner {
                 "react-query-hooks", 2);
 
         // ── Common npm deps (every FE project) ───────────────────────────────
-        // React/React-DOM versions: ranges keyed off reactVersion. For v1 we ship two majors.
-        feNpm("__common__", "react",          "^18.3.1", "",    0);
-        feNpm("__common__", "react-dom",      "^18.3.1", "",    1);
-        feNpm("__common__", "@types/react",         "^18.3.3", "dev", 2);
-        feNpm("__common__", "@types/react-dom",     "^18.3.0", "dev", 3);
+        // react / react-dom / @types/react / @types/react-dom are pinned in the
+        // baseline package.json template via {{reactPackageVersion}} so picking
+        // React 19 in the UI actually generates a React 19 project. See
+        // FrontendMustacheContext.reactPackageVersion(...).
         feNpm("__common__", "@vitejs/plugin-react", "^4.3.1",  "dev", 4);
         feNpm("__common__", "vite",                 "^5.2.0",  "dev", 5);
         feNpm("__common__", "typescript",           "^5.4.5",  "dev", 6);
@@ -1651,7 +1650,14 @@ public class DataSeeder implements CommandLineRunner {
         // ── React-version compatibility ranges ───────────────────────────────
         // Only set ranges where the constraint is real — leave open by default.
         // Applied via FrontendVersionRangeFilter at /frontend/metadata time.
+        // MUI v5, Mantine v7, and Chakra v2 all pin react ≥18 <19 via peer deps.
+        // When the upstream majors that support React 19 (MUI v6, Mantine v8,
+        // Chakra v3) get seeded, drop the upper bound here.
         entryRepo.findByDepId("design-chakra")
+                .ifPresent(e -> { e.setCompatibilityRange("[18.0.0,19.0.0)"); entryRepo.save(e); });
+        entryRepo.findByDepId("design-mui")
+                .ifPresent(e -> { e.setCompatibilityRange("[18.0.0,19.0.0)"); entryRepo.save(e); });
+        entryRepo.findByDepId("design-mantine")
                 .ifPresent(e -> { e.setCompatibilityRange("[18.0.0,19.0.0)"); entryRepo.save(e); });
 
         // ── Compatibility rules ──────────────────────────────────────────────

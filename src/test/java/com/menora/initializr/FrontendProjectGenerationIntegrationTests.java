@@ -56,8 +56,11 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(body).contains("router-react-router");
         assertThat(body).contains("state-zustand");
         assertThat(body).contains("style-tailwind");
-        // Versions block exposed
+        // Versions block exposed — both supported React majors are advertised so
+        // the UI can switch and the range filter has something to match against.
         assertThat(body).contains("reactVersions");
+        assertThat(body).contains("\"id\":\"18\"");
+        assertThat(body).contains("\"id\":\"19\"");
         assertThat(body).contains("packageManagers");
         // Should NOT leak backend catalog ids
         assertThat(body).doesNotContain("rqueue");
@@ -538,8 +541,42 @@ class FrontendProjectGenerationIntegrationTests {
                 "/frontend/metadata?reactVersion=19", String.class);
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(r.getBody()).doesNotContain("\"id\":\"design-chakra\"");
+        // MUI v5 and Mantine v7 don't support React 19 either — pinned in DataSeeder.
+        assertThat(r.getBody()).doesNotContain("\"id\":\"design-mui\"");
+        assertThat(r.getBody()).doesNotContain("\"id\":\"design-mantine\"");
         // Other deps without ranges still appear.
         assertThat(r.getBody()).contains("\"id\":\"state-zustand\"");
+    }
+
+    @Test
+    void react19SelectionPinsReact19PackagesInGeneratedProject() throws Exception {
+        // Whole point of supporting React 19: the generated package.json must
+        // actually use React 19 (not the legacy 18.3.1 the baseline used to ship).
+        ResponseEntity<byte[]> r = rest.getForEntity(
+                "/frontend/starter.zip?reactVersion=19", byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        String pkg = readZipEntry(r.getBody(), "demo/package.json");
+        assertThat(pkg).contains("\"react\" : \"^19.0.0\"");
+        assertThat(pkg).contains("\"react-dom\" : \"^19.0.0\"");
+        assertThat(pkg).contains("\"@types/react\" : \"^19.0.0\"");
+        assertThat(pkg).contains("\"@types/react-dom\" : \"^19.0.0\"");
+        // And React 18 must NOT also be pinned — that was the legacy bug.
+        assertThat(pkg).doesNotContain("18.3.1");
+    }
+
+    @Test
+    void react18SelectionStillPinsReact18PackagesInGeneratedProject() throws Exception {
+        // Sanity check that the default (React 18) path didn't regress when we
+        // moved react/react-dom into the baseline template.
+        ResponseEntity<byte[]> r = rest.getForEntity(
+                "/frontend/starter.zip", byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        String pkg = readZipEntry(r.getBody(), "demo/package.json");
+        assertThat(pkg).contains("\"react\" : \"^18.3.1\"");
+        assertThat(pkg).contains("\"react-dom\" : \"^18.3.1\"");
+        assertThat(pkg).contains("\"@types/react\" : \"^18.3.3\"");
     }
 
     @Test

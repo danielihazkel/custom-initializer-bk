@@ -17,6 +17,10 @@ import java.util.Set;
  * <ul>
  *   <li>{@code projectName, description, scope, appTitle, packageJsonName}</li>
  *   <li>{@code reactVersion, nodeVersion, packageManager, typescriptVersion, viteVersion, basePath}</li>
+ *   <li>{@code reactPackageVersion, reactDomPackageVersion, reactTypesVersion, reactDomTypesVersion} —
+ *       the npm semver ranges that match {@code reactVersion}; used by the
+ *       baseline {@code package.json} template so picking React 19 actually
+ *       generates a React 19 project.</li>
  *   <li>{@code apiBaseUrl, backendArtifactId} + {@code hasBackendPair}/{@code hasBackendArtifactId} — paired-BE wiring</li>
  *   <li>{@code has<Dep>} — true for every selected dep (PascalCase, e.g. {@code hasRouterReactRouter})</li>
  *   <li>{@code opt<Dep><Option>} — true for every selected sub-option</li>
@@ -39,6 +43,10 @@ public final class FrontendMustacheContext {
         ctx.put("appTitle", desc.getAppTitle());
         ctx.put("packageJsonName", desc.packageJsonName());
         ctx.put("reactVersion", desc.getReactVersion());
+        ctx.put("reactPackageVersion", reactPackageVersion(desc.getReactVersion()));
+        ctx.put("reactDomPackageVersion", reactPackageVersion(desc.getReactVersion()));
+        ctx.put("reactTypesVersion", reactTypesVersion(desc.getReactVersion()));
+        ctx.put("reactDomTypesVersion", reactTypesVersion(desc.getReactVersion()));
         ctx.put("nodeVersion", desc.getNodeVersion());
         ctx.put("packageManager", desc.getPackageManager());
         ctx.put("typescriptVersion", desc.getTypescriptVersion());
@@ -110,6 +118,38 @@ public final class FrontendMustacheContext {
             hue *= 60;
         }
         return Math.round(hue) + " " + Math.round(sat * 100) + "% " + Math.round(l * 100) + "%";
+    }
+
+    /**
+     * Maps a React major ({@code "18"}, {@code "19"}) to the npm semver range
+     * the baseline {@code package.json} ships for {@code react} / {@code react-dom}.
+     * Unknown majors fall back to React 18 to keep the generator producing a
+     * working project even if the metadata exposes a major we haven't pinned yet.
+     */
+    static String reactPackageVersion(String reactVersion) {
+        if (reactVersion == null) return "^18.3.1";
+        String major = reactVersion.trim();
+        int dot = major.indexOf('.');
+        if (dot > 0) major = major.substring(0, dot);
+        return switch (major) {
+            case "19" -> "^19.0.0";
+            default   -> "^18.3.1";
+        };
+    }
+
+    /**
+     * Maps a React major to the npm semver range for {@code @types/react} /
+     * {@code @types/react-dom}. Types versions track the React major.
+     */
+    static String reactTypesVersion(String reactVersion) {
+        if (reactVersion == null) return "^18.3.3";
+        String major = reactVersion.trim();
+        int dot = major.indexOf('.');
+        if (dot > 0) major = major.substring(0, dot);
+        return switch (major) {
+            case "19" -> "^19.0.0";
+            default   -> "^18.3.3";
+        };
     }
 
     /** {@code "router-react-router"} → {@code "RouterReactRouter"}. */

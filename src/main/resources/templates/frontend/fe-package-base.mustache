@@ -25,6 +25,12 @@
     "*.{ts,tsx,js,jsx}": ["eslint --fix", "prettier --write"],
     "*.{json,md,css}": ["prettier --write"]
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "react": "{{reactPackageVersion}}",
+    "react-dom": "{{reactDomPackageVersion}}"
+  },
+  "devDependencies": {
+    "@types/react": "{{reactTypesVersion}}",
+    "@types/react-dom": "{{reactDomTypesVersion}}"
+  }
 }
