@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit tests for the pure-Java OpenAPI → TypeScript generator. The integration
- * smoke (real spec → zip → tsc) lives in {@code PairedStarterIntegrationTests}.
+ * smoke (real spec → zip → tsc) lives in {@code FrontendProjectGenerationIntegrationTests}.
  */
 class OpenApiTsGeneratorTests {
 

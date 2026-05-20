@@ -20,7 +20,7 @@ import java.util.Map;
  * Generates TypeScript bindings ({@code schema.ts}, {@code paths.ts},
  * {@code client.ts}, {@code README.md}) from an OpenAPI 3 spec.
  *
- * <p>Goal: ship a usable typed client in the paired zip so the user doesn't
+ * <p>Goal: ship a usable typed client in the frontend zip so the user doesn't
  * need to run {@code pnpm gen:api} before {@code tsc --noEmit} passes.
  * Coverage is the 80%: primitives, objects, arrays, refs, enums, nullable,
  * one/any/allOf. Edge cases degrade to {@code unknown} with a comment; the
@@ -316,7 +316,7 @@ public class OpenApiTsGenerator {
         String version = (api.getInfo() != null && api.getInfo().getVersion() != null) ? api.getInfo().getVersion() : "?";
         return "# Generated API client\n\n"
                 + "Pre-generated TypeScript bindings for **" + title + " v" + version + "**, produced by the\n"
-                + "Menora Initializr paired generator at scaffolding time. You can use them immediately:\n\n"
+                + "Menora Initializr at scaffolding time. You can use them immediately:\n\n"
                 + "```ts\n"
                 + "import { createApiClient } from './client'\n"
                 + "const api = createApiClient()\n"

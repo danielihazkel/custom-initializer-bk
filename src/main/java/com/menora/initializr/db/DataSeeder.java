@@ -634,13 +634,6 @@ public class DataSeeder implements CommandLineRunner {
                 readClasspath("templates/web-hello-controller.mustache"),
                 "src/main/java/{{packagePath}}/web/HelloController.java",
                 FileContributionEntity.SubstitutionType.MUSTACHE, null, "rest-example", 0);
-        // Paired-FE CORS config — auto-added by PairedStarterController when a paired
-        // generation includes both the `web` BE dep and a non-empty FE half. Users
-        // can still opt in manually by selecting the `paired-cors` sub-option.
-        fc("web", FileContributionEntity.FileType.TEMPLATE,
-                readClasspath("templates/web-cors-config.mustache"),
-                "src/main/java/{{packagePath}}/config/CorsConfig.java",
-                FileContributionEntity.SubstitutionType.MUSTACHE, null, "paired-cors", 2);
         fc("web", FileContributionEntity.FileType.TEMPLATE,
                 readClasspath("templates/web-exception-handler.mustache"),
                 "src/main/java/{{packagePath}}/web/GlobalExceptionHandler.java",
@@ -800,9 +793,6 @@ public class DataSeeder implements CommandLineRunner {
                 "Add HelloController.java exposing GET /api/hello", 0);
         subOption("web", "global-exception-handler", "Global Exception Handler",
                 "Add GlobalExceptionHandler.java — @RestControllerAdvice with consistent error envelope", 1);
-        subOption("web", "paired-cors", "CORS for paired frontend",
-                "Add CorsConfig.java allowing http://localhost:5173 to call /api/** in dev "
-                        + "(auto-added by /starter-paired.zip when a frontend half is present)", 2);
 
         subOption("webflux", "handler-function", "Functional Routes Example",
                 "Add HelloRouter.java + HelloHandler.java — RouterFunction-based endpoints", 0);
