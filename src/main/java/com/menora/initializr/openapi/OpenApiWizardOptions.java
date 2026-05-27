@@ -1,5 +1,7 @@
 package com.menora.initializr.openapi;
 
+import com.menora.initializr.config.WizardArgumentException;
+
 import java.util.Locale;
 
 /**
@@ -27,7 +29,8 @@ public record OpenApiWizardOptions(
             try {
                 return GenerationMode.valueOf(raw.trim().toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
-                return CONTROLLERS;
+                throw new WizardArgumentException(
+                        "Unknown OpenAPI wizard mode: '" + raw + "'. Valid values: CONTROLLERS, CLIENT, BOTH");
             }
         }
     }

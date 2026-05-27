@@ -177,6 +177,15 @@ public class WizardStarterController {
         return ResponseEntity.badRequest().body(body);
     }
 
+    @ExceptionHandler(WizardArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidArgument(WizardArgumentException ex) {
+        clearAllContexts();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "Invalid request");
+        body.put("detail", ex.getMessage());
+        return ResponseEntity.badRequest().body(body);
+    }
+
     // ── Internals ─────────────────────────────────────────────────────────────
 
     /**

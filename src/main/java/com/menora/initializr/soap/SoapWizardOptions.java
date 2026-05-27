@@ -1,5 +1,7 @@
 package com.menora.initializr.soap;
 
+import com.menora.initializr.config.WizardArgumentException;
+
 import java.util.Locale;
 
 /**
@@ -30,7 +32,8 @@ public record SoapWizardOptions(
             try {
                 return GenerationMode.valueOf(raw.trim().toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
-                return ENDPOINTS;
+                throw new WizardArgumentException(
+                        "Unknown SOAP wizard mode: '" + raw + "'. Valid values: ENDPOINTS, CLIENT, BOTH");
             }
         }
     }

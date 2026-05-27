@@ -169,6 +169,15 @@ public class AgentScaffoldController {
         return ResponseEntity.badRequest().body(body);
     }
 
+    @ExceptionHandler(com.menora.initializr.config.WizardArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidArgument(com.menora.initializr.config.WizardArgumentException ex) {
+        clearAllContexts();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "Invalid request");
+        body.put("detail", ex.getMessage());
+        return ResponseEntity.badRequest().body(body);
+    }
+
     // ── Internals ─────────────────────────────────────────────────────────────
 
     private void validateWizardInputs(ScaffoldRequest body) {
