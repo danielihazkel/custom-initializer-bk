@@ -1,0 +1,9 @@
+{{#fields}}{{#isEnum}}
+export type {{enumTypeName}} = {{#enumValues}}'{{value}}'{{^last}} | {{/last}}{{/enumValues}}
+
+export const {{enumTypeName}}Values: {{enumTypeName}}[] = [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]
+{{/isEnum}}{{/fields}}
+
+export interface {{EntityName}} {
+{{#fields}}  {{name}}{{^isRequired}}?{{/isRequired}}: {{#isEnum}}{{enumTypeName}}{{/isEnum}}{{^isEnum}}{{tsType}}{{/isEnum}} | null
+{{/fields}}}

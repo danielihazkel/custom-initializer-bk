@@ -1,5 +1,7 @@
 package com.menora.initializr.db;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.db.entity.*;
 import com.menora.initializr.db.repository.*;
 import org.slf4j.Logger;
@@ -32,6 +34,8 @@ public class DataSeeder implements CommandLineRunner {
     private final StarterTemplateDepRepository templateDepRepo;
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
+    private final EntityTemplateSetRepository entityTemplateSetRepo;
+    private final EntityTemplateFileRepository entityTemplateFileRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
@@ -42,7 +46,9 @@ public class DataSeeder implements CommandLineRunner {
                       StarterTemplateRepository templateRepo,
                       StarterTemplateDepRepository templateDepRepo,
                       ModuleTemplateRepository moduleRepo,
-                      ModuleDependencyMappingRepository moduleMappingRepo) {
+                      ModuleDependencyMappingRepository moduleMappingRepo,
+                      EntityTemplateSetRepository entityTemplateSetRepo,
+                      EntityTemplateFileRepository entityTemplateFileRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
@@ -53,14 +59,17 @@ public class DataSeeder implements CommandLineRunner {
         this.templateDepRepo = templateDepRepo;
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
+        this.entityTemplateSetRepo = entityTemplateSetRepo;
+        this.entityTemplateFileRepo = entityTemplateFileRepo;
     }
 
     @Override
     @Transactional
     public void run(String... args) throws Exception {
         if (groupRepo.count() > 0) {
-            log.info("Database already seeded — skipping DataSeeder");
+            log.info("Database already seeded — skipping main DataSeeder");
             normalizeLegacyBlankStrings();
+            seedEntityTemplateSetsIfMissing();
             return;
         }
         log.info("Seeding database from classpath resources...");
@@ -72,7 +81,57 @@ public class DataSeeder implements CommandLineRunner {
         seedCompatibilityRules();
         seedStarterTemplates();
         seedModuleTemplates();
+        seedEntityTemplateSetsIfMissing();
         log.info("Database seeding complete");
+    }
+
+    /**
+     * Seeds the fullstack CRUD template sets from {@code templates/fullstack/&lt;set&gt;/manifest.json}.
+     * Independent of the main seeder's all-or-nothing guard so the new tables get populated
+     * on databases that already had the original catalog.
+     */
+    private void seedEntityTemplateSetsIfMissing() throws IOException {
+        if (entityTemplateSetRepo.count() > 0) {
+            log.debug("Entity template sets already present — skipping");
+            return;
+        }
+        log.info("Seeding entity template sets from classpath manifests");
+        seedEntityTemplateSet("templates/fullstack/spring-jpa-crud/");
+        seedEntityTemplateSet("templates/fullstack/react-tailwind-crud/");
+    }
+
+    private void seedEntityTemplateSet(String baseDir) throws IOException {
+        String manifestJson = readClasspath(baseDir + "manifest.json");
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode root = mapper.readTree(manifestJson);
+
+        EntityTemplateSetEntity set = new EntityTemplateSetEntity();
+        set.setSetKey(root.get("setKey").asText());
+        set.setName(root.get("name").asText());
+        if (root.hasNonNull("description")) set.setDescription(root.get("description").asText());
+        set.setKind(EntityTemplateSetEntity.Kind.valueOf(root.get("kind").asText()));
+        set.setEnabled(true);
+        set.setSortOrder(root.hasNonNull("sortOrder") ? root.get("sortOrder").asInt() : 0);
+        set = entityTemplateSetRepo.save(set);
+
+        JsonNode files = root.get("files");
+        if (files == null || !files.isArray()) {
+            log.warn("Template set '{}' has no 'files' array — set seeded with no contents", set.getSetKey());
+            return;
+        }
+        for (JsonNode f : files) {
+            EntityTemplateFileEntity row = new EntityTemplateFileEntity();
+            row.setSetId(set.getId());
+            row.setPathTemplate(f.get("path").asText());
+            row.setContent(readClasspath(baseDir + f.get("source").asText()));
+            row.setSubstitutionType(FileContributionEntity.SubstitutionType.valueOf(
+                    f.get("substitutionType").asText()));
+            row.setFileType(EntityTemplateFileEntity.FileType.valueOf(f.get("fileType").asText()));
+            row.setPerEntity(f.hasNonNull("perEntity") && f.get("perEntity").asBoolean());
+            row.setSortOrder(f.hasNonNull("sortOrder") ? f.get("sortOrder").asInt() : 0);
+            entityTemplateFileRepo.save(row);
+        }
+        log.info("Seeded entity template set '{}' with {} files", set.getSetKey(), files.size());
     }
 
     /**

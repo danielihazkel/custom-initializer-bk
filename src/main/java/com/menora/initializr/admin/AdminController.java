@@ -40,6 +40,8 @@ public class AdminController {
     private final StarterTemplateDepRepository templateDepRepo;
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
+    private final EntityTemplateSetRepository entityTemplateSetRepo;
+    private final EntityTemplateFileRepository entityTemplateFileRepo;
     private final OrphanDetectionService orphanService;
     private final ConfigurationExportImportService exportImportService;
     private final FileContributionContentValidator contentValidator;
@@ -55,6 +57,8 @@ public class AdminController {
                            StarterTemplateDepRepository templateDepRepo,
                            ModuleTemplateRepository moduleRepo,
                            ModuleDependencyMappingRepository moduleMappingRepo,
+                           EntityTemplateSetRepository entityTemplateSetRepo,
+                           EntityTemplateFileRepository entityTemplateFileRepo,
                            OrphanDetectionService orphanService,
                            ConfigurationExportImportService exportImportService,
                            FileContributionContentValidator contentValidator) {
@@ -69,6 +73,8 @@ public class AdminController {
         this.templateDepRepo = templateDepRepo;
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
+        this.entityTemplateSetRepo = entityTemplateSetRepo;
+        this.entityTemplateFileRepo = entityTemplateFileRepo;
         this.orphanService = orphanService;
         this.exportImportService = exportImportService;
         this.contentValidator = contentValidator;
@@ -406,6 +412,59 @@ public class AdminController {
     @DeleteMapping("/module-dep-mappings/{id}")
     public ResponseEntity<Void> deleteModuleMapping(@PathVariable Long id) {
         moduleMappingRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Entity Template Sets (fullstack CRUD) ─────────────────────────────────
+
+    @GetMapping("/entity-template-sets")
+    public List<EntityTemplateSetEntity> listEntityTemplateSets() {
+        return entityTemplateSetRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PostMapping("/entity-template-sets")
+    public EntityTemplateSetEntity createEntityTemplateSet(@Valid @RequestBody EntityTemplateSetEntity set) {
+        set.setId(null);
+        return entityTemplateSetRepo.save(set);
+    }
+
+    @PutMapping("/entity-template-sets/{id}")
+    public EntityTemplateSetEntity updateEntityTemplateSet(@PathVariable Long id,
+                                                           @Valid @RequestBody EntityTemplateSetEntity set) {
+        set.setId(id);
+        return entityTemplateSetRepo.save(set);
+    }
+
+    @DeleteMapping("/entity-template-sets/{id}")
+    @Transactional
+    public ResponseEntity<Void> deleteEntityTemplateSet(@PathVariable Long id) {
+        if (!entityTemplateSetRepo.existsById(id)) return ResponseEntity.noContent().build();
+        entityTemplateFileRepo.deleteBySetId(id);
+        entityTemplateSetRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/entity-template-files")
+    public List<EntityTemplateFileEntity> listEntityTemplateFiles(@RequestParam Long setId) {
+        return entityTemplateFileRepo.findBySetIdOrderBySortOrderAsc(setId);
+    }
+
+    @PostMapping("/entity-template-files")
+    public EntityTemplateFileEntity createEntityTemplateFile(@Valid @RequestBody EntityTemplateFileEntity file) {
+        file.setId(null);
+        return entityTemplateFileRepo.save(file);
+    }
+
+    @PutMapping("/entity-template-files/{id}")
+    public EntityTemplateFileEntity updateEntityTemplateFile(@PathVariable Long id,
+                                                             @Valid @RequestBody EntityTemplateFileEntity file) {
+        file.setId(id);
+        return entityTemplateFileRepo.save(file);
+    }
+
+    @DeleteMapping("/entity-template-files/{id}")
+    public ResponseEntity<Void> deleteEntityTemplateFile(@PathVariable Long id) {
+        entityTemplateFileRepo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
 

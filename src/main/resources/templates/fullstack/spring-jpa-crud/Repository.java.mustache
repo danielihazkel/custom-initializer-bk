@@ -1,0 +1,9 @@
+package {{packageName}};
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+
+public interface {{EntityName}}Repository
+        extends JpaRepository<{{EntityName}}, {{pkField.javaType}}>,
+                JpaSpecificationExecutor<{{EntityName}}> {
+}

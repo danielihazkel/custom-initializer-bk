@@ -1,0 +1,6 @@
+import { useResource, type PageParams } from './useResource'
+import type { {{EntityName}} } from '../types/{{EntityName}}'
+
+export function use{{EntityName}}(params: PageParams) {
+  return useResource<{{EntityName}}>('/api/{{entityNamePluralKebab}}', params)
+}

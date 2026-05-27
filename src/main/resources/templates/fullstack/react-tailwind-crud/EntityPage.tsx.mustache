@@ -1,0 +1,133 @@
+import { useEffect, useState } from 'react'
+import { Plus } from 'lucide-react'
+import { use{{EntityName}} } from '../hooks/use{{EntityName}}'
+import type { {{EntityName}} } from '../types/{{EntityName}}'
+import { Table, type Column, type SortSpec } from '../components/Table'
+import { FormDrawer } from '../components/FormDrawer'
+import { {{EntityName}}Form } from '../components/{{EntityName}}Form'
+
+const columns: Column<{{EntityName}}>[] = [
+{{#fields}}  { label: '{{Name}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
+{{/fields}}]
+
+export default function {{EntityName}}Page() {
+  const [page, setPage] = useState(0)
+  const [size, setSize] = useState(20)
+  const [sort, setSort] = useState<SortSpec | null>(null)
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => {
+    setPage(0)
+  }, [debouncedSearch, sort, size])
+
+  const {
+    items, totalElements, totalPages, pageNumber, pageSize,
+    loading, error, create, update, remove,
+  } = use{{EntityName}}({ page, size, sort, q: debouncedSearch })
+
+  const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
+  const [isNew, setIsNew] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  function openNew() {
+    setEditing({})
+    setIsNew(true)
+    setDrawerOpen(true)
+  }
+  function openEdit(row: {{EntityName}}) {
+    setEditing({ ...row })
+    setIsNew(false)
+    setDrawerOpen(true)
+  }
+  function close() {
+    setDrawerOpen(false)
+    setEditing(null)
+  }
+  async function save() {
+    if (!editing) return
+    setSaving(true)
+    try {
+      if (isNew) await create(editing as Omit<{{EntityName}}, 'id'>)
+      else await update(editing.{{pkField.name}} as number | string, editing as {{EntityName}})
+      close()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+  async function doDelete(row: {{EntityName}}) {
+    if (!confirm('Delete this record?')) return
+    try {
+      await remove(row.{{pkField.name}} as number | string)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const pagination = {
+    pageNumber,
+    pageSize,
+    totalPages,
+    totalElements,
+    onPageChange: setPage,
+    onPageSizeChange: setSize,
+  }
+
+  return (
+    <div className="p-8 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-semibold text-slate-900">{{EntityNamePlural}}</h1>
+        <button
+          onClick={openNew}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          New {{EntityName}}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-4 px-4 py-3 rounded-md bg-red-50 border border-red-200 text-sm text-red-800">
+          {error}
+        </div>
+      )}
+
+      <Table
+        columns={columns}
+        rows={items}
+        loading={loading}
+        onEdit={openEdit}
+        onDelete={doDelete}
+        sort={sort}
+        onSortChange={setSort}
+        search={search}
+        onSearchChange={setSearch}
+        pagination={pagination}
+      />
+
+      <FormDrawer
+        open={drawerOpen}
+        title={isNew ? 'New {{EntityName}}' : 'Edit {{EntityName}}'}
+        onClose={close}
+        onSave={save}
+        saving={saving}
+      >
+        {editing && (
+          <{{EntityName}}Form
+            value={editing}
+            onChange={setEditing}
+            isNew={isNew}
+          />
+        )}
+      </FormDrawer>
+    </div>
+  )
+}

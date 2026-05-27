@@ -1,0 +1,51 @@
+package {{packageName}};
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+{{#hasStringFields}}import org.springframework.data.jpa.domain.Specification;
+{{/hasStringFields}}import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@Transactional
+public class {{EntityName}}Service {
+
+    private final {{EntityName}}Repository repository;
+
+    public {{EntityName}}Service({{EntityName}}Repository repository) {
+        this.repository = repository;
+    }
+
+    @Transactional(readOnly = true)
+    public Page<{{EntityName}}> findAll(String q, Pageable pageable) {
+{{#hasStringFields}}        if (q != null && !q.isBlank()) {
+            String like = "%" + q.toLowerCase() + "%";
+            Specification<{{EntityName}}> spec = (root, query, cb) -> cb.or(
+{{#stringFields}}                    cb.like(cb.lower(root.get("{{name}}")), like){{^lastString}},{{/lastString}}
+{{/stringFields}}            );
+            return repository.findAll(spec, pageable);
+        }
+{{/hasStringFields}}        return repository.findAll(pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public {{EntityName}} findById({{pkField.javaType}} id) {
+        return repository.findById(id).orElseThrow(() ->
+                new java.util.NoSuchElementException("{{EntityName}} " + id + " not found"));
+    }
+
+    public {{EntityName}} create({{EntityName}} entity) {
+{{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
+{{/pkField.isGenerated}}        return repository.save(entity);
+    }
+
+    public {{EntityName}} update({{pkField.javaType}} id, {{EntityName}} updated) {
+        {{EntityName}} existing = findById(id);
+{{#nonPkFields}}        existing.set{{Name}}(updated.get{{Name}}());
+{{/nonPkFields}}        return repository.save(existing);
+    }
+
+    public void delete({{pkField.javaType}} id) {
+        repository.deleteById(id);
+    }
+}

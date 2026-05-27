@@ -1,2 +1,3 @@
 io.spring.initializr.generator.project.ProjectGenerationConfiguration=\
-  com.menora.initializr.extension.dynamic.DynamicProjectGenerationConfiguration
+  com.menora.initializr.extension.dynamic.DynamicProjectGenerationConfiguration,\
+  com.menora.initializr.extension.fullstack.FullstackProjectGenerationConfiguration

@@ -1,0 +1,38 @@
+package {{packageName}};
+
+{{#imports}}
+import {{name}};
+{{/imports}}
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "{{tableName}}")
+public class {{EntityName}} {
+{{#fields}}{{#isEnum}}
+
+    public enum {{enumTypeName}} {
+        {{#enumValues}}{{value}}{{^last}}, {{/last}}{{/enumValues}}
+    }
+{{/isEnum}}{{/fields}}
+
+{{#fields}}
+{{#isPrimaryKey}}    @Id
+{{#isGenerated}}    @GeneratedValue(strategy = GenerationType.IDENTITY)
+{{/isGenerated}}{{/isPrimaryKey}}{{#isEnum}}    @Enumerated(EnumType.STRING)
+{{/isEnum}}    @Column(name = "{{column}}"{{#isRequired}}, nullable = false{{/isRequired}}{{#isUnique}}, unique = true{{/isUnique}}{{#hasLength}}, length = {{length}}{{/hasLength}})
+    private {{javaType}} {{name}};
+
+{{/fields}}
+    public {{EntityName}}() {}
+
+{{#fields}}
+    public {{javaType}} get{{Name}}() {
+        return {{name}};
+    }
+
+    public void set{{Name}}({{javaType}} {{name}}) {
+        this.{{name}} = {{name}};
+    }
+
+{{/fields}}
+}
