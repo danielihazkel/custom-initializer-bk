@@ -37,6 +37,7 @@ public class DataSeeder implements CommandLineRunner {
     private final EntityTemplateSetRepository entityTemplateSetRepo;
     private final EntityTemplateFileRepository entityTemplateFileRepo;
     private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
+    private final ColorPaletteRepository colorPaletteRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
@@ -50,7 +51,8 @@ public class DataSeeder implements CommandLineRunner {
                       ModuleDependencyMappingRepository moduleMappingRepo,
                       EntityTemplateSetRepository entityTemplateSetRepo,
                       EntityTemplateFileRepository entityTemplateFileRepo,
-                      EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo) {
+                      EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
+                      ColorPaletteRepository colorPaletteRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
@@ -64,6 +66,7 @@ public class DataSeeder implements CommandLineRunner {
         this.entityTemplateSetRepo = entityTemplateSetRepo;
         this.entityTemplateFileRepo = entityTemplateFileRepo;
         this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
+        this.colorPaletteRepo = colorPaletteRepo;
     }
 
     @Override
@@ -73,6 +76,7 @@ public class DataSeeder implements CommandLineRunner {
             log.info("Database already seeded — skipping main DataSeeder");
             normalizeLegacyBlankStrings();
             seedEntityTemplateSetsIfMissing();
+            seedColorPalettesIfMissing();
             return;
         }
         log.info("Seeding database from classpath resources...");
@@ -85,7 +89,33 @@ public class DataSeeder implements CommandLineRunner {
         seedStarterTemplates();
         seedModuleTemplates();
         seedEntityTemplateSetsIfMissing();
+        seedColorPalettesIfMissing();
         log.info("Database seeding complete");
+    }
+
+    /**
+     * Seeds a single Menora-default palette so the Frontend wizard has at least one row
+     * to pick. Independent of the main seeder's all-or-nothing guard for the same reason
+     * as {@link #seedEntityTemplateSetsIfMissing()} — installs that already have the
+     * catalog still need the new table populated.
+     */
+    private void seedColorPalettesIfMissing() {
+        if (colorPaletteRepo.count() > 0) {
+            log.debug("Color palettes already present — skipping");
+            return;
+        }
+        log.info("Seeding default color palette");
+        ColorPaletteEntity p = new ColorPaletteEntity();
+        p.setPaletteId("menora-default");
+        p.setName("Menora Default");
+        p.setDescription("Default Menora blue/violet palette");
+        p.setPrimary("#1976d2");
+        p.setSecondary("#9c27b0");
+        p.setAccent("#ff8f00");
+        p.setError("#d32f2f");
+        p.setDefault(true);
+        p.setSortOrder(0);
+        colorPaletteRepo.save(p);
     }
 
     /**
@@ -115,6 +145,11 @@ public class DataSeeder implements CommandLineRunner {
         set.setKind(EntityTemplateSetEntity.Kind.valueOf(root.get("kind").asText()));
         set.setEnabled(true);
         set.setSortOrder(root.hasNonNull("sortOrder") ? root.get("sortOrder").asInt() : 0);
+        if (root.hasNonNull("designSystem")) {
+            set.setDesignSystem(EntityTemplateSetEntity.DesignSystem.valueOf(root.get("designSystem").asText()));
+        }
+        if (root.hasNonNull("bootVersion")) set.setBootVersion(root.get("bootVersion").asText());
+        if (root.hasNonNull("javaVersion")) set.setJavaVersion(root.get("javaVersion").asText());
         set = entityTemplateSetRepo.save(set);
 
         JsonNode files = root.get("files");

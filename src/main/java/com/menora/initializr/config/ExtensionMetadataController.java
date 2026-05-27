@@ -192,13 +192,20 @@ public class ExtensionMetadataController {
                             .map(EntityTemplateSetDefaultDepEntity::getDepId).toList();
                     return new EntityTemplateSetDto(
                             s.getSetKey(), s.getName(), s.getDescription(), s.getKind().name(),
-                            defaults);
+                            defaults,
+                            s.getDesignSystem() == null ? null : s.getDesignSystem().name(),
+                            s.getBootVersion(), s.getJavaVersion(),
+                            s.getDefaultPaletteId());
                 })
                 .toList();
     }
 
     public record EntityTemplateSetDto(String setKey, String name, String description, String kind,
-                                       List<String> defaultDeps) {}
+                                       List<String> defaultDeps,
+                                       String designSystem,
+                                       String bootVersion,
+                                       String javaVersion,
+                                       String defaultPaletteId) {}
 
     /**
      * Parses pasted CREATE TABLE DDL into the wire-format entity list that

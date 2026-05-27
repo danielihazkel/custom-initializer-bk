@@ -3,6 +3,7 @@
   "name": "React + Vite + Tailwind CRUD",
   "description": "React 18 + Vite + Tailwind 4 + Lucide icons. Per-entity page with table, drawer-form, edit/delete.",
   "kind": "FRONTEND_REACT",
+  "designSystem": "TAILWIND",
   "sortOrder": 20,
   "files": [
     { "source": "package.json.mustache", "path": "package.json", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 10 },

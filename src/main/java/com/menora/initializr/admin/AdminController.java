@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,7 @@ public class AdminController {
     private final EntityTemplateSetRepository entityTemplateSetRepo;
     private final EntityTemplateFileRepository entityTemplateFileRepo;
     private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
+    private final ColorPaletteRepository colorPaletteRepo;
     private final OrphanDetectionService orphanService;
     private final ConfigurationExportImportService exportImportService;
     private final FileContributionContentValidator contentValidator;
@@ -61,6 +63,7 @@ public class AdminController {
                            EntityTemplateSetRepository entityTemplateSetRepo,
                            EntityTemplateFileRepository entityTemplateFileRepo,
                            EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
+                           ColorPaletteRepository colorPaletteRepo,
                            OrphanDetectionService orphanService,
                            ConfigurationExportImportService exportImportService,
                            FileContributionContentValidator contentValidator) {
@@ -78,6 +81,7 @@ public class AdminController {
         this.entityTemplateSetRepo = entityTemplateSetRepo;
         this.entityTemplateFileRepo = entityTemplateFileRepo;
         this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
+        this.colorPaletteRepo = colorPaletteRepo;
         this.orphanService = orphanService;
         this.exportImportService = exportImportService;
         this.contentValidator = contentValidator;
@@ -427,6 +431,7 @@ public class AdminController {
 
     @PostMapping("/entity-template-sets")
     public EntityTemplateSetEntity createEntityTemplateSet(@Valid @RequestBody EntityTemplateSetEntity set) {
+        validateEntityTemplateSet(set);
         set.setId(null);
         return entityTemplateSetRepo.save(set);
     }
@@ -434,8 +439,25 @@ public class AdminController {
     @PutMapping("/entity-template-sets/{id}")
     public EntityTemplateSetEntity updateEntityTemplateSet(@PathVariable Long id,
                                                            @Valid @RequestBody EntityTemplateSetEntity set) {
+        validateEntityTemplateSet(set);
         set.setId(id);
         return entityTemplateSetRepo.save(set);
+    }
+
+    /** Cross-field rules that bean validation alone can't express. */
+    private void validateEntityTemplateSet(EntityTemplateSetEntity set) {
+        if (set.getDesignSystem() != null && set.getKind() == EntityTemplateSetEntity.Kind.BACKEND_JAVA) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "designSystem must be null on BACKEND_JAVA sets");
+        }
+        if (set.getDefaultPaletteId() != null && set.getKind() == EntityTemplateSetEntity.Kind.BACKEND_JAVA) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "defaultPaletteId must be null on BACKEND_JAVA sets");
+        }
+        if (set.getDefaultPaletteId() != null && colorPaletteRepo.countByPaletteId(set.getDefaultPaletteId()) == 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "defaultPaletteId references unknown palette: " + set.getDefaultPaletteId());
+        }
     }
 
     @DeleteMapping("/entity-template-sets/{id}")
@@ -500,6 +522,47 @@ public class AdminController {
     public ResponseEntity<Void> deleteEntityTemplateFile(@PathVariable Long id) {
         entityTemplateFileRepo.deleteById(id);
         return ResponseEntity.noContent().build();
+    }
+
+    // ── Color Palettes ────────────────────────────────────────────────────────
+
+    @GetMapping("/color-palettes")
+    public List<ColorPaletteEntity> listColorPalettes() {
+        return colorPaletteRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PostMapping("/color-palettes")
+    @Transactional
+    public ColorPaletteEntity createColorPalette(@Valid @RequestBody ColorPaletteEntity palette) {
+        palette.setId(null);
+        if (palette.isDefault()) clearOtherDefaultPalettes(null);
+        return colorPaletteRepo.save(palette);
+    }
+
+    @PutMapping("/color-palettes/{id}")
+    @Transactional
+    public ColorPaletteEntity updateColorPalette(@PathVariable Long id,
+                                                 @Valid @RequestBody ColorPaletteEntity palette) {
+        palette.setId(id);
+        if (palette.isDefault()) clearOtherDefaultPalettes(id);
+        return colorPaletteRepo.save(palette);
+    }
+
+    @DeleteMapping("/color-palettes/{id}")
+    public ResponseEntity<Void> deleteColorPalette(@PathVariable Long id) {
+        colorPaletteRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Enforces the "at most one default palette" invariant — flips the other rows
+     *  to is_default=false instead of failing the save. */
+    private void clearOtherDefaultPalettes(Long keepId) {
+        for (ColorPaletteEntity p : colorPaletteRepo.findAll()) {
+            if (p.isDefault() && (keepId == null || !p.getId().equals(keepId))) {
+                p.setDefault(false);
+                colorPaletteRepo.save(p);
+            }
+        }
     }
 
     // ── Export / Import ───────────────────────────────────────────────────────
