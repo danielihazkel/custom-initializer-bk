@@ -42,6 +42,7 @@ public class AdminController {
     private final ModuleDependencyMappingRepository moduleMappingRepo;
     private final EntityTemplateSetRepository entityTemplateSetRepo;
     private final EntityTemplateFileRepository entityTemplateFileRepo;
+    private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
     private final OrphanDetectionService orphanService;
     private final ConfigurationExportImportService exportImportService;
     private final FileContributionContentValidator contentValidator;
@@ -59,6 +60,7 @@ public class AdminController {
                            ModuleDependencyMappingRepository moduleMappingRepo,
                            EntityTemplateSetRepository entityTemplateSetRepo,
                            EntityTemplateFileRepository entityTemplateFileRepo,
+                           EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
                            OrphanDetectionService orphanService,
                            ConfigurationExportImportService exportImportService,
                            FileContributionContentValidator contentValidator) {
@@ -75,6 +77,7 @@ public class AdminController {
         this.moduleMappingRepo = moduleMappingRepo;
         this.entityTemplateSetRepo = entityTemplateSetRepo;
         this.entityTemplateFileRepo = entityTemplateFileRepo;
+        this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
         this.orphanService = orphanService;
         this.exportImportService = exportImportService;
         this.contentValidator = contentValidator;
@@ -440,9 +443,40 @@ public class AdminController {
     public ResponseEntity<Void> deleteEntityTemplateSet(@PathVariable Long id) {
         if (!entityTemplateSetRepo.existsById(id)) return ResponseEntity.noContent().build();
         entityTemplateFileRepo.deleteBySetId(id);
+        entityTemplateSetDefaultDepRepo.deleteBySetId(id);
         entityTemplateSetRepo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/entity-template-sets/{id}/default-deps")
+    public List<String> listEntityTemplateSetDefaultDeps(@PathVariable Long id) {
+        return entityTemplateSetDefaultDepRepo.findBySetIdOrderBySortOrderAsc(id).stream()
+                .map(EntityTemplateSetDefaultDepEntity::getDepId).toList();
+    }
+
+    @PutMapping("/entity-template-sets/{id}/default-deps")
+    @Transactional
+    public List<String> replaceEntityTemplateSetDefaultDeps(@PathVariable Long id,
+                                                            @RequestBody DefaultDepsRequest body) {
+        if (!entityTemplateSetRepo.existsById(id)) {
+            return List.of();
+        }
+        entityTemplateSetDefaultDepRepo.deleteBySetId(id);
+        List<String> depIds = body == null || body.depIds() == null ? List.of() : body.depIds();
+        int order = 0;
+        for (String depId : depIds) {
+            if (depId == null || depId.isBlank()) continue;
+            EntityTemplateSetDefaultDepEntity dd = new EntityTemplateSetDefaultDepEntity();
+            dd.setSetId(id);
+            dd.setDepId(depId.trim());
+            dd.setSortOrder(order++);
+            entityTemplateSetDefaultDepRepo.save(dd);
+        }
+        return entityTemplateSetDefaultDepRepo.findBySetIdOrderBySortOrderAsc(id).stream()
+                .map(EntityTemplateSetDefaultDepEntity::getDepId).toList();
+    }
+
+    public record DefaultDepsRequest(List<String> depIds) {}
 
     @GetMapping("/entity-template-files")
     public List<EntityTemplateFileEntity> listEntityTemplateFiles(@RequestParam Long setId) {

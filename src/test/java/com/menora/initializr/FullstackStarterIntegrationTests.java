@@ -64,7 +64,12 @@ class FullstackStarterIntegrationTests {
         // Backend pom + Application
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/backend/pom.xml"));
         String pom = entries.get("shop/backend/pom.xml");
+        // No `dependencies` field in request → set defaults are applied
+        // (data-jpa, web, h2, validation, actuator per spring-jpa-crud manifest).
         assertThat(pom).contains("spring-boot-starter-data-jpa");
+        assertThat(pom).contains("spring-boot-starter-web");
+        assertThat(pom).contains("spring-boot-starter-validation");
+        assertThat(pom).contains("spring-boot-starter-actuator");
 
         // Per-entity backend files for both entities
         assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/User.java"));
@@ -158,6 +163,39 @@ class FullstackStarterIntegrationTests {
         String useResource = entries.get("shop/frontend/src/hooks/useResource.ts");
         assertThat(useResource).contains("PageParams");
         assertThat(useResource).contains("totalElements");
+    }
+
+    @Test
+    void fullstackEndpoint_explicitDependenciesAreRespectedExactly() throws Exception {
+        // When the caller passes a `dependencies` field (even just a list of two),
+        // the controller does NOT merge in the set's defaults — explicit intent wins.
+        // The UI relies on this so a user who unchecks a default actually loses it.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "explicit");
+        body.put("packageName", "com.menora.explicit");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web", "security", "postgresql"));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+        String pom = entries.get("explicit/backend/pom.xml");
+        // Explicitly requested
+        assertThat(pom).contains("spring-boot-starter-data-jpa");
+        assertThat(pom).contains("spring-boot-starter-web");
+        assertThat(pom).contains("spring-boot-starter-security");
+        assertThat(pom).contains("postgresql");
+        // NOT in the explicit list — set defaults must NOT leak in
+        assertThat(pom).doesNotContain("spring-boot-starter-validation");
+        assertThat(pom).doesNotContain("spring-boot-starter-actuator");
+        assertThat(pom).doesNotContain("<artifactId>h2</artifactId>");
     }
 
     @Test

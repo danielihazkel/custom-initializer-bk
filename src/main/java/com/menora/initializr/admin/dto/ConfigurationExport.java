@@ -18,6 +18,7 @@ public class ConfigurationExport {
     private List<ModuleMappingExport> moduleDependencyMappings;
     private List<EntityTemplateSetExport> entityTemplateSets;
     private List<EntityTemplateFileExport> entityTemplateFiles;
+    private List<EntityTemplateSetDefaultDepExport> entityTemplateSetDefaultDeps;
 
     // ── Getters/Setters ──────────────────────────────────────────────────────
 
@@ -49,6 +50,8 @@ public class ConfigurationExport {
     public void setEntityTemplateSets(List<EntityTemplateSetExport> entityTemplateSets) { this.entityTemplateSets = entityTemplateSets; }
     public List<EntityTemplateFileExport> getEntityTemplateFiles() { return entityTemplateFiles; }
     public void setEntityTemplateFiles(List<EntityTemplateFileExport> entityTemplateFiles) { this.entityTemplateFiles = entityTemplateFiles; }
+    public List<EntityTemplateSetDefaultDepExport> getEntityTemplateSetDefaultDeps() { return entityTemplateSetDefaultDeps; }
+    public void setEntityTemplateSetDefaultDeps(List<EntityTemplateSetDefaultDepExport> entityTemplateSetDefaultDeps) { this.entityTemplateSetDefaultDeps = entityTemplateSetDefaultDeps; }
 
     // ── Inner DTOs ───────────────────────────────────────────────────────────
 
@@ -305,6 +308,19 @@ public class ConfigurationExport {
         public void setKind(String kind) { this.kind = kind; }
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public int getSortOrder() { return sortOrder; }
+        public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    }
+
+    public static class EntityTemplateSetDefaultDepExport {
+        private String setKey;
+        private String depId;
+        private int sortOrder;
+
+        public String getSetKey() { return setKey; }
+        public void setSetKey(String setKey) { this.setKey = setKey; }
+        public String getDepId() { return depId; }
+        public void setDepId(String depId) { this.depId = depId; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     }

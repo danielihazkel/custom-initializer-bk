@@ -1,8 +1,10 @@
 package com.menora.initializr.config;
 
 import com.menora.initializr.db.entity.EntityTemplateFileEntity;
+import com.menora.initializr.db.entity.EntityTemplateSetDefaultDepEntity;
 import com.menora.initializr.db.entity.EntityTemplateSetEntity;
 import com.menora.initializr.db.repository.EntityTemplateFileRepository;
+import com.menora.initializr.db.repository.EntityTemplateSetDefaultDepRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetRepository;
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
@@ -69,19 +71,22 @@ public class FullstackStarterController {
     private final EntityDefinitionContext entityContext;
     private final EntityTemplateSetRepository setRepo;
     private final EntityTemplateFileRepository fileRepo;
+    private final EntityTemplateSetDefaultDepRepository defaultDepRepo;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                       InitializrMetadataProvider metadataProvider,
                                       ProjectOptionsContext optionsContext,
                                       EntityDefinitionContext entityContext,
                                       EntityTemplateSetRepository setRepo,
-                                      EntityTemplateFileRepository fileRepo) {
+                                      EntityTemplateFileRepository fileRepo,
+                                      EntityTemplateSetDefaultDepRepository defaultDepRepo) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
         this.entityContext = entityContext;
         this.setRepo = setRepo;
         this.fileRepo = fileRepo;
+        this.defaultDepRepo = defaultDepRepo;
     }
 
     @PostMapping("/starter-fullstack.zip")
@@ -91,7 +96,7 @@ public class FullstackStarterController {
         String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
 
         WebProjectRequest request = toWebRequest(body);
-        ensureRequiredDeps(request);
+        ensureRequiredDeps(request, backendSetKey, body.dependencies() != null);
         optionsContext.populate(body.opts());
         entityContext.populate(entities, backendSetKey, frontendSetKey);
 
@@ -131,7 +136,7 @@ public class FullstackStarterController {
         String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
 
         WebProjectRequest request = toWebRequest(body);
-        ensureRequiredDeps(request);
+        ensureRequiredDeps(request, backendSetKey, body.dependencies() != null);
         optionsContext.populate(body.opts());
         entityContext.populate(entities, backendSetKey, frontendSetKey);
 
@@ -198,23 +203,28 @@ public class FullstackStarterController {
         return r;
     }
 
-    /** v1 requires JPA + an embedded DB so the generated controllers actually persist. */
-    private void ensureRequiredDeps(WebProjectRequest request) {
+    /** If the caller did not specify a {@code dependencies} field at all, fall back
+     *  to the admin-configured default deps for the chosen backend set so API
+     *  consumers who haven't read {@code /metadata/entity-template-sets} still get
+     *  a working project. When a list is supplied (even empty), it is respected
+     *  exactly — nothing is force-added. The UI always sends the user's final
+     *  selection here, so this is the user-respecting path. */
+    private void ensureRequiredDeps(WebProjectRequest request, String backendSetKey,
+                                    boolean callerSpecifiedDeps) {
+        if (callerSpecifiedDeps) {
+            // Respect explicit intent — even an empty list means "I want nothing extra".
+            return;
+        }
+        if (backendSetKey == null) return;
+        EntityTemplateSetEntity set = setRepo.findBySetKey(backendSetKey).orElse(null);
+        if (set == null) return;
         Set<String> deps = new LinkedHashSet<>(
                 request.getDependencies() == null ? List.of() : request.getDependencies());
-        boolean changed = deps.add("data-jpa") | deps.add("web");
-        // Embedded DB: prefer h2 if no DB driver is selected. This list mirrors
-        // the seeded DB drivers in DataSeeder.
-        boolean hasDb = deps.contains("h2") || deps.contains("postgresql")
-                || deps.contains("mysql") || deps.contains("oracle")
-                || deps.contains("db2") || deps.contains("mssql");
-        if (!hasDb) {
-            deps.add("h2");
-            changed = true;
+        for (EntityTemplateSetDefaultDepEntity dd :
+                defaultDepRepo.findBySetIdOrderBySortOrderAsc(set.getId())) {
+            deps.add(dd.getDepId());
         }
-        if (changed) {
-            request.setDependencies(new ArrayList<>(deps));
-        }
+        request.setDependencies(new ArrayList<>(deps));
     }
 
     private void renderFrontend(String setKey, WebProjectRequest request,

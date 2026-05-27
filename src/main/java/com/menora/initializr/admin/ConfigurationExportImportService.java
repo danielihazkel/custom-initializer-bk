@@ -28,6 +28,7 @@ public class ConfigurationExportImportService {
     private final ModuleDependencyMappingRepository moduleMappingRepo;
     private final EntityTemplateSetRepository entityTemplateSetRepo;
     private final EntityTemplateFileRepository entityTemplateFileRepo;
+    private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
 
     public ConfigurationExportImportService(InitializrMetadataProvider metadataProvider,
                                              DependencyGroupRepository groupRepo,
@@ -41,7 +42,8 @@ public class ConfigurationExportImportService {
                                              ModuleTemplateRepository moduleRepo,
                                              ModuleDependencyMappingRepository moduleMappingRepo,
                                              EntityTemplateSetRepository entityTemplateSetRepo,
-                                             EntityTemplateFileRepository entityTemplateFileRepo) {
+                                             EntityTemplateFileRepository entityTemplateFileRepo,
+                                             EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -55,6 +57,7 @@ public class ConfigurationExportImportService {
         this.moduleMappingRepo = moduleMappingRepo;
         this.entityTemplateSetRepo = entityTemplateSetRepo;
         this.entityTemplateFileRepo = entityTemplateFileRepo;
+        this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -216,6 +219,15 @@ public class ConfigurationExportImportService {
                     return efe;
                 }).filter(efe -> efe.getSetKey() != null).toList());
 
+        export_.setEntityTemplateSetDefaultDeps(
+                entityTemplateSetDefaultDepRepo.findAll().stream().map(d -> {
+                    EntityTemplateSetDefaultDepExport dde = new EntityTemplateSetDefaultDepExport();
+                    dde.setSetKey(setIdToKey.get(d.getSetId()));
+                    dde.setDepId(d.getDepId());
+                    dde.setSortOrder(d.getSortOrder());
+                    return dde;
+                }).filter(dde -> dde.getSetKey() != null).toList());
+
         return export_;
     }
 
@@ -227,6 +239,7 @@ public class ConfigurationExportImportService {
 
         // Clear all tables in child-first order
         entityTemplateFileRepo.deleteAllInBatch();
+        entityTemplateSetDefaultDepRepo.deleteAllInBatch();
         entityTemplateSetRepo.deleteAllInBatch();
         moduleMappingRepo.deleteAllInBatch();
         moduleRepo.deleteAllInBatch();
@@ -400,6 +413,20 @@ public class ConfigurationExportImportService {
             entityTemplateFileRepo.save(entity);
         }
 
+        // Insert default deps, resolve set FK by setKey
+        for (EntityTemplateSetDefaultDepExport d : safe(data.getEntityTemplateSetDefaultDeps())) {
+            EntityTemplateSetEntity set = setMap.get(d.getSetKey());
+            if (set == null) {
+                throw new IllegalArgumentException(
+                        "Entity template set default dep references unknown set: " + d.getSetKey());
+            }
+            EntityTemplateSetDefaultDepEntity entity = new EntityTemplateSetDefaultDepEntity();
+            entity.setSetId(set.getId());
+            entity.setDepId(d.getDepId());
+            entity.setSortOrder(d.getSortOrder());
+            entityTemplateSetDefaultDepRepo.save(entity);
+        }
+
         // Refresh metadata cache
         if (metadataProvider instanceof DatabaseInitializrMetadataProvider dbProvider) {
             dbProvider.refresh();
@@ -419,6 +446,7 @@ public class ConfigurationExportImportService {
         counts.put("moduleDependencyMappings", safe(data.getModuleDependencyMappings()).size());
         counts.put("entityTemplateSets", safe(data.getEntityTemplateSets()).size());
         counts.put("entityTemplateFiles", safe(data.getEntityTemplateFiles()).size());
+        counts.put("entityTemplateSetDefaultDeps", safe(data.getEntityTemplateSetDefaultDeps()).size());
         return counts;
     }
 

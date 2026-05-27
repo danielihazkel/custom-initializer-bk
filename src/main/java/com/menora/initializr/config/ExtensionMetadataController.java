@@ -6,8 +6,10 @@ import com.menora.initializr.db.entity.DependencySubOptionEntity;
 import com.menora.initializr.db.entity.EntityTemplateSetEntity;
 import com.menora.initializr.db.entity.ModuleDependencyMappingEntity;
 import com.menora.initializr.db.entity.StarterTemplateDepEntity;
+import com.menora.initializr.db.entity.EntityTemplateSetDefaultDepEntity;
 import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
 import com.menora.initializr.db.repository.DependencyEntryRepository;
+import com.menora.initializr.db.repository.EntityTemplateSetDefaultDepRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetRepository;
 import com.menora.initializr.db.repository.ModuleDependencyMappingRepository;
 import com.menora.initializr.db.repository.ModuleTemplateRepository;
@@ -45,6 +47,7 @@ public class ExtensionMetadataController {
     private final ModuleDependencyMappingRepository moduleMappingRepo;
     private final DependencyEntryRepository entryRepo;
     private final EntityTemplateSetRepository entityTemplateSetRepo;
+    private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
     private final SqlToEntityDefinitionConverter sqlToEntityConverter;
 
     public ExtensionMetadataController(DependencyConfigService configService,
@@ -55,6 +58,7 @@ public class ExtensionMetadataController {
                                        ModuleDependencyMappingRepository moduleMappingRepo,
                                        DependencyEntryRepository entryRepo,
                                        EntityTemplateSetRepository entityTemplateSetRepo,
+                                       EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
                                        SqlToEntityDefinitionConverter sqlToEntityConverter) {
         this.configService = configService;
         this.compatibilityRepo = compatibilityRepo;
@@ -64,6 +68,7 @@ public class ExtensionMetadataController {
         this.moduleMappingRepo = moduleMappingRepo;
         this.entryRepo = entryRepo;
         this.entityTemplateSetRepo = entityTemplateSetRepo;
+        this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
         this.sqlToEntityConverter = sqlToEntityConverter;
     }
 
@@ -175,17 +180,25 @@ public class ExtensionMetadataController {
         return result;
     }
 
-    /** Enabled fullstack CRUD template sets surfaced to the end-user wizard. */
+    /** Enabled fullstack CRUD template sets surfaced to the end-user wizard,
+     *  each carrying its default dep IDs so the UI can pre-check them. */
     @GetMapping("/metadata/entity-template-sets")
     public List<EntityTemplateSetDto> entityTemplateSets() {
         return entityTemplateSetRepo.findAllByOrderBySortOrderAsc().stream()
                 .filter(EntityTemplateSetEntity::isEnabled)
-                .map(s -> new EntityTemplateSetDto(
-                        s.getSetKey(), s.getName(), s.getDescription(), s.getKind().name()))
+                .map(s -> {
+                    List<String> defaults = entityTemplateSetDefaultDepRepo
+                            .findBySetIdOrderBySortOrderAsc(s.getId()).stream()
+                            .map(EntityTemplateSetDefaultDepEntity::getDepId).toList();
+                    return new EntityTemplateSetDto(
+                            s.getSetKey(), s.getName(), s.getDescription(), s.getKind().name(),
+                            defaults);
+                })
                 .toList();
     }
 
-    public record EntityTemplateSetDto(String setKey, String name, String description, String kind) {}
+    public record EntityTemplateSetDto(String setKey, String name, String description, String kind,
+                                       List<String> defaultDeps) {}
 
     /**
      * Parses pasted CREATE TABLE DDL into the wire-format entity list that

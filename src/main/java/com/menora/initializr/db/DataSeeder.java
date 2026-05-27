@@ -36,6 +36,7 @@ public class DataSeeder implements CommandLineRunner {
     private final ModuleDependencyMappingRepository moduleMappingRepo;
     private final EntityTemplateSetRepository entityTemplateSetRepo;
     private final EntityTemplateFileRepository entityTemplateFileRepo;
+    private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
@@ -48,7 +49,8 @@ public class DataSeeder implements CommandLineRunner {
                       ModuleTemplateRepository moduleRepo,
                       ModuleDependencyMappingRepository moduleMappingRepo,
                       EntityTemplateSetRepository entityTemplateSetRepo,
-                      EntityTemplateFileRepository entityTemplateFileRepo) {
+                      EntityTemplateFileRepository entityTemplateFileRepo,
+                      EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
@@ -61,6 +63,7 @@ public class DataSeeder implements CommandLineRunner {
         this.moduleMappingRepo = moduleMappingRepo;
         this.entityTemplateSetRepo = entityTemplateSetRepo;
         this.entityTemplateFileRepo = entityTemplateFileRepo;
+        this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
     }
 
     @Override
@@ -131,7 +134,24 @@ public class DataSeeder implements CommandLineRunner {
             row.setSortOrder(f.hasNonNull("sortOrder") ? f.get("sortOrder").asInt() : 0);
             entityTemplateFileRepo.save(row);
         }
-        log.info("Seeded entity template set '{}' with {} files", set.getSetKey(), files.size());
+
+        JsonNode defaultDeps = root.get("defaultDeps");
+        int defaultDepCount = 0;
+        if (defaultDeps != null && defaultDeps.isArray()) {
+            int order = 0;
+            for (JsonNode d : defaultDeps) {
+                String depId = d.asText();
+                if (depId == null || depId.isBlank()) continue;
+                EntityTemplateSetDefaultDepEntity dd = new EntityTemplateSetDefaultDepEntity();
+                dd.setSetId(set.getId());
+                dd.setDepId(depId.trim());
+                dd.setSortOrder(order++);
+                entityTemplateSetDefaultDepRepo.save(dd);
+                defaultDepCount++;
+            }
+        }
+        log.info("Seeded entity template set '{}' with {} files and {} default deps",
+                set.getSetKey(), files.size(), defaultDepCount);
     }
 
     /**
