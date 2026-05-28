@@ -1,5 +1,6 @@
 package com.menora.initializr.db.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -75,7 +76,9 @@ public class ColorPaletteEntity {
     public void setError(String error) { this.error = blankToNull(error); }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    @JsonProperty("isDefault")
     public boolean isDefault() { return isDefault; }
+    @JsonProperty("isDefault")
     public void setDefault(boolean isDefault) { this.isDefault = isDefault; }
 
     private static String blankToNull(String s) {

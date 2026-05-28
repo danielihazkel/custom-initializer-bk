@@ -24,3 +24,10 @@ logs/
 
 # Spring Boot
 spring-pid
+
+# H2 file-backed datastore
+data/
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

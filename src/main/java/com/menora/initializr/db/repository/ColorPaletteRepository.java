@@ -10,4 +10,5 @@ public interface ColorPaletteRepository extends JpaRepository<ColorPaletteEntity
     List<ColorPaletteEntity> findAllByOrderBySortOrderAsc();
     Optional<ColorPaletteEntity> findByPaletteId(String paletteId);
     Optional<ColorPaletteEntity> findFirstByIsDefaultTrueOrderBySortOrderAsc();
+    long countByPaletteId(String paletteId);
 }

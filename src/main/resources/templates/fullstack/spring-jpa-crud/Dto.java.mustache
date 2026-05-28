@@ -1,0 +1,22 @@
+package {{packageName}};
+
+{{#imports}}
+import {{name}};
+{{/imports}}
+
+public record {{EntityName}}Dto(
+{{#fields}}        {{javaType}} {{name}}{{^last}},{{/last}}
+{{/fields}}) {
+
+    public static {{EntityName}}Dto from({{EntityName}} entity) {
+        return new {{EntityName}}Dto(
+{{#fields}}                entity.get{{Name}}(){{^last}},{{/last}}
+{{/fields}}        );
+    }
+
+    public {{EntityName}} toEntity() {
+        {{EntityName}} entity = new {{EntityName}}();
+{{#fields}}        entity.set{{Name}}(this.{{name}});
+{{/fields}}        return entity;
+    }
+}

@@ -26,6 +26,10 @@ public class ConfigurationExportImportService {
     private final StarterTemplateDepRepository templateDepRepo;
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
+    private final EntityTemplateSetRepository entityTemplateSetRepo;
+    private final EntityTemplateFileRepository entityTemplateFileRepo;
+    private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
+    private final ColorPaletteRepository colorPaletteRepo;
 
     public ConfigurationExportImportService(InitializrMetadataProvider metadataProvider,
                                              DependencyGroupRepository groupRepo,
@@ -37,7 +41,11 @@ public class ConfigurationExportImportService {
                                              StarterTemplateRepository templateRepo,
                                              StarterTemplateDepRepository templateDepRepo,
                                              ModuleTemplateRepository moduleRepo,
-                                             ModuleDependencyMappingRepository moduleMappingRepo) {
+                                             ModuleDependencyMappingRepository moduleMappingRepo,
+                                             EntityTemplateSetRepository entityTemplateSetRepo,
+                                             EntityTemplateFileRepository entityTemplateFileRepo,
+                                             EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
+                                             ColorPaletteRepository colorPaletteRepo) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -49,6 +57,10 @@ public class ConfigurationExportImportService {
         this.templateDepRepo = templateDepRepo;
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
+        this.entityTemplateSetRepo = entityTemplateSetRepo;
+        this.entityTemplateFileRepo = entityTemplateFileRepo;
+        this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
+        this.colorPaletteRepo = colorPaletteRepo;
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -183,6 +195,61 @@ public class ConfigurationExportImportService {
                     return mme;
                 }).toList());
 
+        Map<Long, String> setIdToKey = new LinkedHashMap<>();
+        export_.setEntityTemplateSets(
+                entityTemplateSetRepo.findAllByOrderBySortOrderAsc().stream().map(s -> {
+                    setIdToKey.put(s.getId(), s.getSetKey());
+                    EntityTemplateSetExport ese = new EntityTemplateSetExport();
+                    ese.setSetKey(s.getSetKey());
+                    ese.setName(s.getName());
+                    ese.setDescription(s.getDescription());
+                    ese.setKind(s.getKind().name());
+                    ese.setEnabled(s.isEnabled());
+                    ese.setSortOrder(s.getSortOrder());
+                    ese.setDesignSystem(s.getDesignSystem() == null ? null : s.getDesignSystem().name());
+                    ese.setBootVersion(s.getBootVersion());
+                    ese.setJavaVersion(s.getJavaVersion());
+                    ese.setDefaultPaletteId(s.getDefaultPaletteId());
+                    return ese;
+                }).toList());
+
+        export_.setEntityTemplateFiles(
+                entityTemplateFileRepo.findAll().stream().map(f -> {
+                    EntityTemplateFileExport efe = new EntityTemplateFileExport();
+                    efe.setSetKey(setIdToKey.get(f.getSetId()));
+                    efe.setPathTemplate(f.getPathTemplate());
+                    efe.setContent(f.getContent());
+                    efe.setSubstitutionType(f.getSubstitutionType() != null ? f.getSubstitutionType().name() : null);
+                    efe.setFileType(f.getFileType() != null ? f.getFileType().name() : null);
+                    efe.setPerEntity(f.isPerEntity());
+                    efe.setSortOrder(f.getSortOrder());
+                    return efe;
+                }).filter(efe -> efe.getSetKey() != null).toList());
+
+        export_.setEntityTemplateSetDefaultDeps(
+                entityTemplateSetDefaultDepRepo.findAll().stream().map(d -> {
+                    EntityTemplateSetDefaultDepExport dde = new EntityTemplateSetDefaultDepExport();
+                    dde.setSetKey(setIdToKey.get(d.getSetId()));
+                    dde.setDepId(d.getDepId());
+                    dde.setSortOrder(d.getSortOrder());
+                    return dde;
+                }).filter(dde -> dde.getSetKey() != null).toList());
+
+        export_.setColorPalettes(
+                colorPaletteRepo.findAllByOrderBySortOrderAsc().stream().map(p -> {
+                    ColorPaletteExport cpe = new ColorPaletteExport();
+                    cpe.setPaletteId(p.getPaletteId());
+                    cpe.setName(p.getName());
+                    cpe.setDescription(p.getDescription());
+                    cpe.setPrimary(p.getPrimary());
+                    cpe.setSecondary(p.getSecondary());
+                    cpe.setAccent(p.getAccent());
+                    cpe.setError(p.getError());
+                    cpe.setDefault(p.isDefault());
+                    cpe.setSortOrder(p.getSortOrder());
+                    return cpe;
+                }).toList());
+
         return export_;
     }
 
@@ -193,6 +260,10 @@ public class ConfigurationExportImportService {
         validate(data);
 
         // Clear all tables in child-first order
+        entityTemplateFileRepo.deleteAllInBatch();
+        entityTemplateSetDefaultDepRepo.deleteAllInBatch();
+        entityTemplateSetRepo.deleteAllInBatch();
+        colorPaletteRepo.deleteAllInBatch();
         moduleMappingRepo.deleteAllInBatch();
         moduleRepo.deleteAllInBatch();
         templateDepRepo.deleteAllInBatch();
@@ -333,6 +404,73 @@ public class ConfigurationExportImportService {
             moduleMappingRepo.save(entity);
         }
 
+        // Insert color palettes (referenced by entity template sets via defaultPaletteId)
+        for (ColorPaletteExport p : safe(data.getColorPalettes())) {
+            ColorPaletteEntity entity = new ColorPaletteEntity();
+            entity.setPaletteId(p.getPaletteId());
+            entity.setName(p.getName());
+            entity.setDescription(p.getDescription());
+            entity.setPrimary(p.getPrimary());
+            entity.setSecondary(p.getSecondary());
+            entity.setAccent(p.getAccent());
+            entity.setError(p.getError());
+            entity.setDefault(p.isDefault());
+            entity.setSortOrder(p.getSortOrder());
+            colorPaletteRepo.save(entity);
+        }
+
+        // Insert entity template sets, build setKey→entity map
+        Map<String, EntityTemplateSetEntity> setMap = new LinkedHashMap<>();
+        for (EntityTemplateSetExport s : safe(data.getEntityTemplateSets())) {
+            EntityTemplateSetEntity entity = new EntityTemplateSetEntity();
+            entity.setSetKey(s.getSetKey());
+            entity.setName(s.getName());
+            entity.setDescription(s.getDescription());
+            entity.setKind(EntityTemplateSetEntity.Kind.valueOf(s.getKind()));
+            entity.setEnabled(s.isEnabled());
+            entity.setSortOrder(s.getSortOrder());
+            if (s.getDesignSystem() != null && !s.getDesignSystem().isBlank()) {
+                entity.setDesignSystem(EntityTemplateSetEntity.DesignSystem.valueOf(s.getDesignSystem()));
+            }
+            entity.setBootVersion(s.getBootVersion());
+            entity.setJavaVersion(s.getJavaVersion());
+            entity.setDefaultPaletteId(s.getDefaultPaletteId());
+            setMap.put(s.getSetKey(), entityTemplateSetRepo.save(entity));
+        }
+
+        // Insert entity template files, resolve set FK by setKey
+        for (EntityTemplateFileExport f : safe(data.getEntityTemplateFiles())) {
+            EntityTemplateSetEntity set = setMap.get(f.getSetKey());
+            if (set == null) {
+                throw new IllegalArgumentException("Entity template file references unknown set: " + f.getSetKey());
+            }
+            EntityTemplateFileEntity entity = new EntityTemplateFileEntity();
+            entity.setSetId(set.getId());
+            entity.setPathTemplate(f.getPathTemplate());
+            entity.setContent(f.getContent());
+            entity.setSubstitutionType(f.getSubstitutionType() != null
+                    ? FileContributionEntity.SubstitutionType.valueOf(f.getSubstitutionType()) : null);
+            entity.setFileType(f.getFileType() != null
+                    ? EntityTemplateFileEntity.FileType.valueOf(f.getFileType()) : null);
+            entity.setPerEntity(f.isPerEntity());
+            entity.setSortOrder(f.getSortOrder());
+            entityTemplateFileRepo.save(entity);
+        }
+
+        // Insert default deps, resolve set FK by setKey
+        for (EntityTemplateSetDefaultDepExport d : safe(data.getEntityTemplateSetDefaultDeps())) {
+            EntityTemplateSetEntity set = setMap.get(d.getSetKey());
+            if (set == null) {
+                throw new IllegalArgumentException(
+                        "Entity template set default dep references unknown set: " + d.getSetKey());
+            }
+            EntityTemplateSetDefaultDepEntity entity = new EntityTemplateSetDefaultDepEntity();
+            entity.setSetId(set.getId());
+            entity.setDepId(d.getDepId());
+            entity.setSortOrder(d.getSortOrder());
+            entityTemplateSetDefaultDepRepo.save(entity);
+        }
+
         // Refresh metadata cache
         if (metadataProvider instanceof DatabaseInitializrMetadataProvider dbProvider) {
             dbProvider.refresh();
@@ -350,6 +488,10 @@ public class ConfigurationExportImportService {
         counts.put("starterTemplateDeps", safe(data.getStarterTemplateDeps()).size());
         counts.put("moduleTemplates", safe(data.getModuleTemplates()).size());
         counts.put("moduleDependencyMappings", safe(data.getModuleDependencyMappings()).size());
+        counts.put("entityTemplateSets", safe(data.getEntityTemplateSets()).size());
+        counts.put("entityTemplateFiles", safe(data.getEntityTemplateFiles()).size());
+        counts.put("entityTemplateSetDefaultDeps", safe(data.getEntityTemplateSetDefaultDeps()).size());
+        counts.put("colorPalettes", safe(data.getColorPalettes()).size());
         return counts;
     }
 

@@ -1,0 +1,66 @@
+import { Field, inputClass } from './Field'
+import type { {{EntityName}}{{#fields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/fields}} } from '../types/{{EntityName}}'
+{{#fields}}{{#isEnum}}import { {{enumTypeName}}Values } from '../types/{{EntityName}}'
+{{/isEnum}}{{/fields}}
+
+interface Props {
+  value: Partial<{{EntityName}}>
+  onChange: (next: Partial<{{EntityName}}>) => void
+  errors?: Record<string, string>
+  isNew: boolean
+}
+
+export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
+  const set = (k: keyof {{EntityName}}, v: unknown) => onChange({ ...value, [k]: v })
+
+  return (
+    <>
+{{#fields}}
+{{#isPrimaryKey}}{{#isGenerated}}      {!isNew && (
+        <Field label="{{Name}}">
+          <input className={inputClass} value={String(value.{{name}} ?? '')} disabled />
+        </Field>
+      )}
+{{/isGenerated}}{{^isGenerated}}      <Field label="{{Name}}" error={errors?.{{name}}}>
+        <input
+          className={inputClass}
+          value={value.{{name}} == null ? '' : String(value.{{name}})}
+          onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value{{/isNumeric}})}
+          {{#isNumeric}}type="number"{{/isNumeric}}{{^isNumeric}}type="text"{{/isNumeric}}
+        />
+      </Field>
+{{/isGenerated}}{{/isPrimaryKey}}
+{{^isPrimaryKey}}{{#isBoolean}}      <Field label="{{Name}}" error={errors?.{{name}}}>
+        <select
+          className={inputClass}
+          value={value.{{name}} == null ? '' : String(value.{{name}})}
+          onChange={e => set('{{name}}', e.target.value === '' ? null : e.target.value === 'true')}
+        >
+          <option value="">—</option>
+          <option value="true">True</option>
+          <option value="false">False</option>
+        </select>
+      </Field>
+{{/isBoolean}}{{#isEnum}}      <Field label="{{Name}}" error={errors?.{{name}}}>
+        <select
+          className={inputClass}
+          value={(value.{{name}} as string | null | undefined) ?? ''}
+          onChange={e => set('{{name}}', e.target.value === '' ? null : (e.target.value as {{enumTypeName}}))}
+        >
+          <option value="">—</option>
+          {{enumTypeName}}Values.map(v => <option key={v} value={v}>{v}</option>)
+        </select>
+      </Field>
+{{/isEnum}}{{^isBoolean}}{{^isEnum}}      <Field label="{{Name}}" error={errors?.{{name}}}>
+        <input
+          className={inputClass}
+          {{#isNumeric}}type="number"{{/isNumeric}}{{#isTemporal}}type="datetime-local"{{/isTemporal}}{{^isNumeric}}{{^isTemporal}}type="text"{{/isTemporal}}{{/isNumeric}}
+          value={value.{{name}} == null ? '' : String(value.{{name}})}
+          onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}})}
+        />
+      </Field>
+{{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}
+{{/fields}}
+    </>
+  )
+}

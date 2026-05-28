@@ -1,0 +1,28 @@
+{
+  "setKey": "react-tailwind-crud",
+  "name": "React + Vite + Tailwind CRUD",
+  "description": "React 18 + Vite + Tailwind 4 + Lucide icons. Per-entity page with table, drawer-form, edit/delete.",
+  "kind": "FRONTEND_REACT",
+  "designSystem": "TAILWIND",
+  "sortOrder": 20,
+  "files": [
+    { "source": "package.json.mustache", "path": "package.json", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 10 },
+    { "source": "vite.config.ts", "path": "vite.config.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 20 },
+    { "source": "tsconfig.json", "path": "tsconfig.json", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 30 },
+    { "source": "tsconfig.node.json", "path": "tsconfig.node.json", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 40 },
+    { "source": "index.html.mustache", "path": "index.html", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 50 },
+    { "source": "gitignore", "path": ".gitignore", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 60 },
+    { "source": "main.tsx", "path": "src/main.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 70 },
+    { "source": "App.tsx.mustache", "path": "src/App.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 80 },
+    { "source": "index.css", "path": "src/index.css", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 90 },
+    { "source": "api-client.ts", "path": "src/api/client.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 100 },
+    { "source": "useResource.ts", "path": "src/hooks/useResource.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 110 },
+    { "source": "Table.tsx", "path": "src/components/Table.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 120 },
+    { "source": "FormDrawer.tsx", "path": "src/components/FormDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 130 },
+    { "source": "Field.tsx", "path": "src/components/Field.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 140 },
+    { "source": "EntityType.ts.mustache", "path": "src/types/{{EntityName}}.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 200 },
+    { "source": "useEntity.ts.mustache", "path": "src/hooks/use{{EntityName}}.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 210 },
+    { "source": "EntityForm.tsx.mustache", "path": "src/components/{{EntityName}}Form.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 220 },
+    { "source": "EntityPage.tsx.mustache", "path": "src/pages/{{EntityName}}Page.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 230 }
+  ]
+}

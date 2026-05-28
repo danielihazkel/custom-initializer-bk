@@ -1,0 +1,50 @@
+{
+  "setKey": "spring-jpa-crud",
+  "name": "Spring Boot + JPA CRUD",
+  "description": "Per-entity JPA Entity, Repository, DTO, Service, and Controller with standard REST endpoints",
+  "kind": "BACKEND_JAVA",
+  "sortOrder": 10,
+  "defaultDeps": ["data-jpa", "web", "h2", "validation", "actuator"],
+  "files": [
+    {
+      "source": "Entity.java.mustache",
+      "path": "src/main/java/{{packagePath}}/{{EntityName}}.java",
+      "perEntity": true,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 10
+    },
+    {
+      "source": "Repository.java.mustache",
+      "path": "src/main/java/{{packagePath}}/{{EntityName}}Repository.java",
+      "perEntity": true,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 20
+    },
+    {
+      "source": "Dto.java.mustache",
+      "path": "src/main/java/{{packagePath}}/{{EntityName}}Dto.java",
+      "perEntity": true,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 30
+    },
+    {
+      "source": "Service.java.mustache",
+      "path": "src/main/java/{{packagePath}}/{{EntityName}}Service.java",
+      "perEntity": true,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 40
+    },
+    {
+      "source": "Controller.java.mustache",
+      "path": "src/main/java/{{packagePath}}/{{EntityName}}Controller.java",
+      "perEntity": true,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 50
+    }
+  ]
+}

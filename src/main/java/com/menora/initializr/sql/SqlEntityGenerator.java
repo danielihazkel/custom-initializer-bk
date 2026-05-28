@@ -69,6 +69,13 @@ public class SqlEntityGenerator {
         return parseTables(sql, dialect).stream().map(TableModel::name).toList();
     }
 
+    /** Exposed for callers that need the full parsed schema (e.g. the fullstack
+     *  wizard's "Import from DDL"). Throws {@link SqlParseException} on parse
+     *  failure so the controller can surface HTTP 400. */
+    public List<TableModel> parseTablesForImport(String sql, SqlDialect dialect) {
+        return parseTables(sql, dialect);
+    }
+
     // ── Parsing ───────────────────────────────────────────────────────────────
 
     /** Oracle's {@code NUMBER(*, N)} / {@code NUMBER(*)} syntax means "max

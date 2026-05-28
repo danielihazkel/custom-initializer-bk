@@ -20,6 +20,7 @@ public class OrphanDetectionService {
     private final DependencyCompatibilityRepository compatibilityRepo;
     private final StarterTemplateDepRepository templateDepRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
+    private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
 
     public OrphanDetectionService(DependencyEntryRepository entryRepo,
                                    FileContributionRepository fileContribRepo,
@@ -27,7 +28,8 @@ public class OrphanDetectionService {
                                    DependencySubOptionRepository subOptionRepo,
                                    DependencyCompatibilityRepository compatibilityRepo,
                                    StarterTemplateDepRepository templateDepRepo,
-                                   ModuleDependencyMappingRepository moduleMappingRepo) {
+                                   ModuleDependencyMappingRepository moduleMappingRepo,
+                                   EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo) {
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
         this.buildCustomRepo = buildCustomRepo;
@@ -35,6 +37,7 @@ public class OrphanDetectionService {
         this.compatibilityRepo = compatibilityRepo;
         this.templateDepRepo = templateDepRepo;
         this.moduleMappingRepo = moduleMappingRepo;
+        this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
     }
 
     public OrphanCheckResponse findReferencesForDependency(String depId) {
@@ -44,13 +47,15 @@ public class OrphanDetectionService {
                 subOptionRepo.countByDependencyId(depId),
                 compatibilityRepo.countBySourceDepIdOrTargetDepId(depId, depId),
                 templateDepRepo.countByDepId(depId),
-                moduleMappingRepo.countByDependencyId(depId)
+                moduleMappingRepo.countByDependencyId(depId),
+                entityTemplateSetDefaultDepRepo.countByDepId(depId)
         ));
     }
 
     public OrphanCheckResponse findReferencesForGroup(Long groupId) {
         List<DependencyEntryEntity> entries = entryRepo.findByGroupId(groupId);
-        long totalFiles = 0, totalBuilds = 0, totalSubs = 0, totalCompat = 0, totalTemplateDeps = 0, totalModuleMappings = 0;
+        long totalFiles = 0, totalBuilds = 0, totalSubs = 0, totalCompat = 0,
+                totalTemplateDeps = 0, totalModuleMappings = 0, totalEntitySetDefaults = 0;
         for (DependencyEntryEntity entry : entries) {
             String depId = entry.getDepId();
             totalFiles += fileContribRepo.countByDependencyId(depId);
@@ -59,9 +64,11 @@ public class OrphanDetectionService {
             totalCompat += compatibilityRepo.countBySourceDepIdOrTargetDepId(depId, depId);
             totalTemplateDeps += templateDepRepo.countByDepId(depId);
             totalModuleMappings += moduleMappingRepo.countByDependencyId(depId);
+            totalEntitySetDefaults += entityTemplateSetDefaultDepRepo.countByDepId(depId);
         }
         return new OrphanCheckResponse(OrphanCheckResponse.depRefsMap(
-                totalFiles, totalBuilds, totalSubs, totalCompat, totalTemplateDeps, totalModuleMappings));
+                totalFiles, totalBuilds, totalSubs, totalCompat,
+                totalTemplateDeps, totalModuleMappings, totalEntitySetDefaults));
     }
 
     public OrphanCheckResponse findReferencesForModule(String moduleId) {
@@ -84,6 +91,7 @@ public class OrphanDetectionService {
         compatibilityRepo.deleteBySourceDepIdOrTargetDepId(depId, depId);
         templateDepRepo.deleteByDepId(depId);
         moduleMappingRepo.deleteByDependencyId(depId);
+        entityTemplateSetDefaultDepRepo.deleteByDepId(depId);
     }
 
     @Transactional

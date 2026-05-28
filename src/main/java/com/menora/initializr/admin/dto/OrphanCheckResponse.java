@@ -32,7 +32,8 @@ public class OrphanCheckResponse {
     public Map<String, Long> getReferences() { return references; }
 
     public static Map<String, Long> depRefsMap(long fileContribs, long buildCustoms, long subOptions,
-                                                long compatRules, long templateDeps, long moduleMappings) {
+                                                long compatRules, long templateDeps, long moduleMappings,
+                                                long entityTemplateSetDefaultDeps) {
         Map<String, Long> m = new LinkedHashMap<>();
         m.put("fileContributions", fileContribs);
         m.put("buildCustomizations", buildCustoms);
@@ -40,6 +41,7 @@ public class OrphanCheckResponse {
         m.put("compatibilityRules", compatRules);
         m.put("starterTemplateDeps", templateDeps);
         m.put("moduleDependencyMappings", moduleMappings);
+        m.put("entityTemplateSetDefaultDeps", entityTemplateSetDefaultDeps);
         return m;
     }
 }

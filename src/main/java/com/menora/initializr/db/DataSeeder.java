@@ -1,24 +1,34 @@
 package com.menora.initializr.db;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.db.entity.*;
 import com.menora.initializr.db.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.CommandLineRunner;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
  * Seeds the database from existing classpath resources on first startup.
  * Runs only when all tables are empty.
+ *
+ * <p>Implements {@link SmartInitializingSingleton} (rather than {@code CommandLineRunner})
+ * so the seed completes inside {@code finishBeanFactoryInitialization} — before
+ * {@code ServletWebServerApplicationContext.finishRefresh()} opens the Tomcat connector
+ * and before {@code /actuator/health} starts reporting UP. Otherwise a request that
+ * arrives during the gap would see {@code selectedDepIds=[]} and the metadata cache
+ * would populate empty until someone called {@code POST /admin/refresh}.
  */
 @Component
-public class DataSeeder implements CommandLineRunner {
+public class DataSeeder implements SmartInitializingSingleton {
 
     private static final Logger log = LoggerFactory.getLogger(DataSeeder.class);
 
@@ -32,6 +42,9 @@ public class DataSeeder implements CommandLineRunner {
     private final StarterTemplateDepRepository templateDepRepo;
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
+    private final EntityTemplateSetRepository entityTemplateSetRepo;
+    private final EntityTemplateFileRepository entityTemplateFileRepo;
+    private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
     private final ColorPaletteRepository colorPaletteRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
@@ -44,6 +57,9 @@ public class DataSeeder implements CommandLineRunner {
                       StarterTemplateDepRepository templateDepRepo,
                       ModuleTemplateRepository moduleRepo,
                       ModuleDependencyMappingRepository moduleMappingRepo,
+                      EntityTemplateSetRepository entityTemplateSetRepo,
+                      EntityTemplateFileRepository entityTemplateFileRepo,
+                      EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
                       ColorPaletteRepository colorPaletteRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -55,34 +71,113 @@ public class DataSeeder implements CommandLineRunner {
         this.templateDepRepo = templateDepRepo;
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
+        this.entityTemplateSetRepo = entityTemplateSetRepo;
+        this.entityTemplateFileRepo = entityTemplateFileRepo;
+        this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
         this.colorPaletteRepo = colorPaletteRepo;
     }
 
     @Override
     @Transactional
-    public void run(String... args) throws Exception {
-        // Run table-scoped seeds before the main guard so new tables added in
-        // later releases (e.g. color_palette) get populated on existing installations
-        // without forcing a full re-seed.
-        seedColorPalettes();
+    public void afterSingletonsInstantiated() {
+        try {
+            // Run table-scoped seeds before the main guard so new tables added in
+            // later releases (e.g. color_palette, entity_template_set) get populated
+            // on existing installations without forcing a full re-seed.
+            seedColorPalettes();
+            seedEntityTemplateSetsIfMissing();
 
-        if (groupRepo.count() > 0) {
-            log.info("Database already seeded — skipping DataSeeder");
-            normalizeLegacyBlankStrings();
+            if (groupRepo.count() > 0) {
+                log.info("Database already seeded — skipping main DataSeeder");
+                normalizeLegacyBlankStrings();
+                return;
+            }
+            log.info("Seeding database from classpath resources...");
+            seedDependencyCatalog();
+            seedCommonFileContributions();
+            seedDependencyFileContributions();
+            seedBuildCustomizations();
+            seedSubOptions();
+            seedCompatibilityRules();
+            seedStarterTemplates();
+            seedModuleTemplates();
+            seedFrontendCatalog();
+            seedFrontendStarterTemplates();
+            log.info("Database seeding complete");
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to seed database from classpath", e);
+        }
+    }
+
+    /**
+     * Seeds the fullstack CRUD template sets from {@code templates/fullstack/&lt;set&gt;/manifest.json}.
+     * Independent of the main seeder's all-or-nothing guard so the new tables get populated
+     * on databases that already had the original catalog.
+     */
+    private void seedEntityTemplateSetsIfMissing() throws IOException {
+        if (entityTemplateSetRepo.count() > 0) {
+            log.debug("Entity template sets already present — skipping");
             return;
         }
-        log.info("Seeding database from classpath resources...");
-        seedDependencyCatalog();
-        seedCommonFileContributions();
-        seedDependencyFileContributions();
-        seedBuildCustomizations();
-        seedSubOptions();
-        seedCompatibilityRules();
-        seedStarterTemplates();
-        seedModuleTemplates();
-        seedFrontendCatalog();
-        seedFrontendStarterTemplates();
-        log.info("Database seeding complete");
+        log.info("Seeding entity template sets from classpath manifests");
+        seedEntityTemplateSet("templates/fullstack/spring-jpa-crud/");
+        seedEntityTemplateSet("templates/fullstack/react-tailwind-crud/");
+    }
+
+    private void seedEntityTemplateSet(String baseDir) throws IOException {
+        String manifestJson = readClasspath(baseDir + "manifest.json");
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode root = mapper.readTree(manifestJson);
+
+        EntityTemplateSetEntity set = new EntityTemplateSetEntity();
+        set.setSetKey(root.get("setKey").asText());
+        set.setName(root.get("name").asText());
+        if (root.hasNonNull("description")) set.setDescription(root.get("description").asText());
+        set.setKind(EntityTemplateSetEntity.Kind.valueOf(root.get("kind").asText()));
+        set.setEnabled(true);
+        set.setSortOrder(root.hasNonNull("sortOrder") ? root.get("sortOrder").asInt() : 0);
+        if (root.hasNonNull("designSystem")) {
+            set.setDesignSystem(EntityTemplateSetEntity.DesignSystem.valueOf(root.get("designSystem").asText()));
+        }
+        if (root.hasNonNull("bootVersion")) set.setBootVersion(root.get("bootVersion").asText());
+        if (root.hasNonNull("javaVersion")) set.setJavaVersion(root.get("javaVersion").asText());
+        set = entityTemplateSetRepo.save(set);
+
+        JsonNode files = root.get("files");
+        if (files == null || !files.isArray()) {
+            log.warn("Template set '{}' has no 'files' array — set seeded with no contents", set.getSetKey());
+            return;
+        }
+        for (JsonNode f : files) {
+            EntityTemplateFileEntity row = new EntityTemplateFileEntity();
+            row.setSetId(set.getId());
+            row.setPathTemplate(f.get("path").asText());
+            row.setContent(readClasspath(baseDir + f.get("source").asText()));
+            row.setSubstitutionType(FileContributionEntity.SubstitutionType.valueOf(
+                    f.get("substitutionType").asText()));
+            row.setFileType(EntityTemplateFileEntity.FileType.valueOf(f.get("fileType").asText()));
+            row.setPerEntity(f.hasNonNull("perEntity") && f.get("perEntity").asBoolean());
+            row.setSortOrder(f.hasNonNull("sortOrder") ? f.get("sortOrder").asInt() : 0);
+            entityTemplateFileRepo.save(row);
+        }
+
+        JsonNode defaultDeps = root.get("defaultDeps");
+        int defaultDepCount = 0;
+        if (defaultDeps != null && defaultDeps.isArray()) {
+            int order = 0;
+            for (JsonNode d : defaultDeps) {
+                String depId = d.asText();
+                if (depId == null || depId.isBlank()) continue;
+                EntityTemplateSetDefaultDepEntity dd = new EntityTemplateSetDefaultDepEntity();
+                dd.setSetId(set.getId());
+                dd.setDepId(depId.trim());
+                dd.setSortOrder(order++);
+                entityTemplateSetDefaultDepRepo.save(dd);
+                defaultDepCount++;
+            }
+        }
+        log.info("Seeded entity template set '{}' with {} files and {} default deps",
+                set.getSetKey(), files.size(), defaultDepCount);
     }
 
     /**

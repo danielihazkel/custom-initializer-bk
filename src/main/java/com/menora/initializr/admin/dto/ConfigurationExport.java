@@ -16,6 +16,10 @@ public class ConfigurationExport {
     private List<TemplateDepExport> starterTemplateDeps;
     private List<ModuleExport> moduleTemplates;
     private List<ModuleMappingExport> moduleDependencyMappings;
+    private List<EntityTemplateSetExport> entityTemplateSets;
+    private List<EntityTemplateFileExport> entityTemplateFiles;
+    private List<EntityTemplateSetDefaultDepExport> entityTemplateSetDefaultDeps;
+    private List<ColorPaletteExport> colorPalettes;
 
     // ── Getters/Setters ──────────────────────────────────────────────────────
 
@@ -43,6 +47,14 @@ public class ConfigurationExport {
     public void setModuleTemplates(List<ModuleExport> moduleTemplates) { this.moduleTemplates = moduleTemplates; }
     public List<ModuleMappingExport> getModuleDependencyMappings() { return moduleDependencyMappings; }
     public void setModuleDependencyMappings(List<ModuleMappingExport> moduleDependencyMappings) { this.moduleDependencyMappings = moduleDependencyMappings; }
+    public List<EntityTemplateSetExport> getEntityTemplateSets() { return entityTemplateSets; }
+    public void setEntityTemplateSets(List<EntityTemplateSetExport> entityTemplateSets) { this.entityTemplateSets = entityTemplateSets; }
+    public List<EntityTemplateFileExport> getEntityTemplateFiles() { return entityTemplateFiles; }
+    public void setEntityTemplateFiles(List<EntityTemplateFileExport> entityTemplateFiles) { this.entityTemplateFiles = entityTemplateFiles; }
+    public List<EntityTemplateSetDefaultDepExport> getEntityTemplateSetDefaultDeps() { return entityTemplateSetDefaultDeps; }
+    public void setEntityTemplateSetDefaultDeps(List<EntityTemplateSetDefaultDepExport> entityTemplateSetDefaultDeps) { this.entityTemplateSetDefaultDeps = entityTemplateSetDefaultDeps; }
+    public List<ColorPaletteExport> getColorPalettes() { return colorPalettes; }
+    public void setColorPalettes(List<ColorPaletteExport> colorPalettes) { this.colorPalettes = colorPalettes; }
 
     // ── Inner DTOs ───────────────────────────────────────────────────────────
 
@@ -277,6 +289,109 @@ public class ConfigurationExport {
         public void setDependencyId(String dependencyId) { this.dependencyId = dependencyId; }
         public String getModuleId() { return moduleId; }
         public void setModuleId(String moduleId) { this.moduleId = moduleId; }
+        public int getSortOrder() { return sortOrder; }
+        public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    }
+
+    public static class EntityTemplateSetExport {
+        private String setKey;
+        private String name;
+        private String description;
+        private String kind;
+        private boolean enabled;
+        private int sortOrder;
+        private String designSystem;
+        private String bootVersion;
+        private String javaVersion;
+        private String defaultPaletteId;
+
+        public String getSetKey() { return setKey; }
+        public void setSetKey(String setKey) { this.setKey = setKey; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getDescription() { return description; }
+        public void setDescription(String description) { this.description = description; }
+        public String getKind() { return kind; }
+        public void setKind(String kind) { this.kind = kind; }
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public int getSortOrder() { return sortOrder; }
+        public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+        public String getDesignSystem() { return designSystem; }
+        public void setDesignSystem(String designSystem) { this.designSystem = designSystem; }
+        public String getBootVersion() { return bootVersion; }
+        public void setBootVersion(String bootVersion) { this.bootVersion = bootVersion; }
+        public String getJavaVersion() { return javaVersion; }
+        public void setJavaVersion(String javaVersion) { this.javaVersion = javaVersion; }
+        public String getDefaultPaletteId() { return defaultPaletteId; }
+        public void setDefaultPaletteId(String defaultPaletteId) { this.defaultPaletteId = defaultPaletteId; }
+    }
+
+    public static class ColorPaletteExport {
+        private String paletteId;
+        private String name;
+        private String description;
+        private String primary;
+        private String secondary;
+        private String accent;
+        private String error;
+        private boolean isDefault;
+        private int sortOrder;
+
+        public String getPaletteId() { return paletteId; }
+        public void setPaletteId(String paletteId) { this.paletteId = paletteId; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getDescription() { return description; }
+        public void setDescription(String description) { this.description = description; }
+        public String getPrimary() { return primary; }
+        public void setPrimary(String primary) { this.primary = primary; }
+        public String getSecondary() { return secondary; }
+        public void setSecondary(String secondary) { this.secondary = secondary; }
+        public String getAccent() { return accent; }
+        public void setAccent(String accent) { this.accent = accent; }
+        public String getError() { return error; }
+        public void setError(String error) { this.error = error; }
+        public boolean isDefault() { return isDefault; }
+        public void setDefault(boolean isDefault) { this.isDefault = isDefault; }
+        public int getSortOrder() { return sortOrder; }
+        public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    }
+
+    public static class EntityTemplateSetDefaultDepExport {
+        private String setKey;
+        private String depId;
+        private int sortOrder;
+
+        public String getSetKey() { return setKey; }
+        public void setSetKey(String setKey) { this.setKey = setKey; }
+        public String getDepId() { return depId; }
+        public void setDepId(String depId) { this.depId = depId; }
+        public int getSortOrder() { return sortOrder; }
+        public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    }
+
+    public static class EntityTemplateFileExport {
+        private String setKey;
+        private String pathTemplate;
+        private String content;
+        private String substitutionType;
+        private String fileType;
+        private boolean perEntity;
+        private int sortOrder;
+
+        public String getSetKey() { return setKey; }
+        public void setSetKey(String setKey) { this.setKey = setKey; }
+        public String getPathTemplate() { return pathTemplate; }
+        public void setPathTemplate(String pathTemplate) { this.pathTemplate = pathTemplate; }
+        public String getContent() { return content; }
+        public void setContent(String content) { this.content = content; }
+        public String getSubstitutionType() { return substitutionType; }
+        public void setSubstitutionType(String substitutionType) { this.substitutionType = substitutionType; }
+        public String getFileType() { return fileType; }
+        public void setFileType(String fileType) { this.fileType = fileType; }
+        public boolean isPerEntity() { return perEntity; }
+        public void setPerEntity(boolean perEntity) { this.perEntity = perEntity; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     }
