@@ -1,0 +1,48 @@
+# {{appTitle}}
+
+{{description}}
+
+## Stack
+
+- React {{reactVersion}}
+- TypeScript {{typescriptVersion}}
+- Vite {{viteVersion}}
+- Feature-Slice Design layout (`src/app`, `src/pages`, `src/widgets`, `src/features`, `src/entities`, `src/shared`)
+
+## Run
+
+```sh
+{{#isPnpm}}pnpm install
+pnpm dev{{/isPnpm}}{{#isNpm}}npm install
+npm run dev{{/isNpm}}
+```
+
+Then open http://localhost:5173
+
+{{#hasBackendPair}}
+## Paired backend
+
+This project is wired to talk to **{{#hasBackendArtifactId}}`{{backendArtifactId}}`{{/hasBackendArtifactId}}{{^hasBackendArtifactId}}a backend{{/hasBackendArtifactId}}** at `{{apiBaseUrl}}`.
+
+- `.env.development` sets `VITE_API_BASE_URL={{apiBaseUrl}}` for the dev server.
+- `vite.config.ts` proxies `/api/*` to the same URL so the browser can call relative paths in dev without CORS.
+- `.env.example` documents the override pattern for other environments.
+
+Start the backend first, then run `dev` above.
+
+{{/hasBackendPair}}
+## Build
+
+```sh
+{{#isPnpm}}pnpm build{{/isPnpm}}{{#isNpm}}npm run build{{/isNpm}}
+```
+
+Output lands in `dist/`.
+
+## Lint & format
+
+```sh
+{{#isPnpm}}pnpm lint
+pnpm format{{/isPnpm}}{{#isNpm}}npm run lint
+npm run format{{/isNpm}}
+```

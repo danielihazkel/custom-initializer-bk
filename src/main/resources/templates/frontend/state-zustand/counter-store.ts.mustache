@@ -1,0 +1,23 @@
+import { create } from 'zustand';
+{{#optStateZustandDevtools}}import { devtools } from 'zustand/middleware';
+{{/optStateZustandDevtools}}{{#optStateZustandPersist}}import { persist } from 'zustand/middleware';
+{{/optStateZustandPersist}}
+interface CounterState {
+  count: number;
+  increment: () => void;
+  decrement: () => void;
+  reset: () => void;
+}
+
+/**
+ * Sample zustand store. Delete or replace with real domain state — kept
+ * minimal so the wiring (createRoot → useCounterStore) is obvious.
+ */
+export const useCounterStore = create<CounterState>()(
+  {{#optStateZustandDevtools}}devtools({{/optStateZustandDevtools}}{{#optStateZustandPersist}}persist({{/optStateZustandPersist}}(set) => ({
+    count: 0,
+    increment: () => set((s) => ({ count: s.count + 1 })),
+    decrement: () => set((s) => ({ count: s.count - 1 })),
+    reset: () => set({ count: 0 }),
+  }){{#optStateZustandPersist}}, { name: 'counter' }){{/optStateZustandPersist}}{{#optStateZustandDevtools}}){{/optStateZustandDevtools}}
+);

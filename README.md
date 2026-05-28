@@ -21,14 +21,15 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
 8. [OpenAPI → Controller/DTO Wizard](#openapi--controllerdto-wizard)
 9. [WSDL → SOAP Endpoint/Client Wizard](#wsdl--soap-endpointclient-wizard)
 10. [Project Preview](#project-preview)
-11. [Agent Contract (AI Scaffolding)](#agent-contract-ai-scaffolding)
+11. [Frontend Project Generator (React + TS + Vite + FSD)](#frontend-project-generator-react--ts--vite--fsd)
+12. [Agent Contract (AI Scaffolding)](#agent-contract-ai-scaffolding)
     - [GET /agent/manifest — Discovery](#get-agentmanifest--discovery)
     - [POST /agent/scaffold — Generation](#post-agentscaffold--generation)
     - [.menora-init.json Manifest](#menora-initjson-manifest)
     - [OpenAPI Spec (Swagger)](#openapi-spec-swagger)
     - [TypeScript SDK](#typescript-sdk)
     - [MCP Server (Claude Code)](#mcp-server-claude-code)
-12. [Admin API](#admin-api)
+13. [Admin API](#admin-api)
    - [Hot-Reload Metadata](#hot-reload-metadata)
    - [Dependency Groups](#dependency-groups)
    - [Dependency Entries](#dependency-entries)
@@ -759,6 +760,182 @@ curl "http://localhost:8080/starter.preview?dependencies=kafka&opts-kafka=consum
 
 ---
 
+## Frontend Project Generator (React + TS + Vite + FSD)
+
+A parallel generator that scaffolds **React + TypeScript + Vite** projects following [Feature-Slice Design](https://feature-sliced.design/) — same DB-driven catalog, same admin UI, same Mustache context conventions as the Spring backend path. A new top-level **Frontend** tab in the UI sits next to **Backend / Training / Guide / Config**; a Backend ⇄ Frontend pill in the admin header scopes every catalog tab to one or the other.
+
+### How It Differs From the Backend Pipeline
+
+The frontend path is **not** built on the Spring Initializr framework (which is Maven/Gradle-hardcoded). It is a plain Spring `@RestController` (`FrontendStarterController`) that calls a new `FrontendProjectGenerator` service:
+
+| Backend (`/starter.zip`) | Frontend (`/frontend/starter.zip`) |
+|--------------------------|-------------------------------------|
+| Initializr framework + `DynamicProjectGenerationConfiguration` | `FrontendProjectGenerator` (in-house) |
+| `BuildCustomizer<MavenBuild>` mutates pom.xml | `PackageJsonBuilder` emits `package.json` |
+| Maven repositories block | `ViteConfigBuilder` emits `vite.config.ts` (imports + `plugins[]`) |
+| `application.yaml` merged via SnakeYAML | JSON files merged via Jackson |
+| `templates/*.mustache` + `static-configs/*` | `templates/frontend/*.mustache` + `static-configs/frontend/*` |
+
+Everything else is shared: `DependencyConfigService` (kind-filtered), `FileContributionEntity` (STATIC_COPY / TEMPLATE / YAML_MERGE / DELETE), sub-options via `ProjectOptionsContext`, the `InitializrWebConfiguration` servlet filter, and the `jmustache` engine.
+
+### Endpoints
+
+```http
+GET /frontend/metadata
+GET /frontend/starter.zip
+    ?projectName=demo
+    &description=...
+    &scope=menora                # optional npm @scope (no leading @)
+    &appTitle=My App             # browser <title>
+    &reactVersion=18             # default from application.yml
+    &nodeVersion=20
+    &packageManager=pnpm         # npm | pnpm
+    &basePath=/                  # Vite base for sub-path deploys
+    &dependencies=router-react-router,state-zustand,style-tailwind
+    &opts-router-react-router=lazy-routes,sample-routes
+```
+
+The `/frontend/metadata` payload mirrors `/metadata/client` but only carries FRONTEND-kind rows plus the version dropdowns and package-manager pill values from `application.yml → frontend.*`.
+
+### What Gets Generated
+
+Every project includes — regardless of dependency selection — a working React + TS + Vite + FSD skeleton:
+
+```
+demo/
+├── package.json                  # built by PackageJsonBuilder
+├── vite.config.ts                # built by ViteConfigBuilder
+├── index.html                    # {{appTitle}} substituted
+├── tsconfig.json                 # strict, with @app/@pages/... path aliases
+├── tsconfig.node.json
+├── eslint.config.js              # flat config, TS + React
+├── .prettierrc.json
+├── .editorconfig
+├── .gitignore
+├── .dockerignore
+├── .husky/pre-commit             # runs lint-staged
+├── Dockerfile                    # multi-stage: node → nginx
+├── nginx.conf                    # SPA fallback for /
+├── Jenkinsfile                   # install + lint + build + archive
+├── README.md
+└── src/
+    ├── main.tsx                  # imports @app/App; conditionally imports ./index.css
+    ├── app/                      # providers, router, global wiring
+    │   ├── App.tsx
+    │   └── index.ts
+    ├── pages/
+    │   ├── home/
+    │   │   ├── index.ts
+    │   │   └── ui/HomePage.tsx   # always present so `pnpm dev` shows something
+    │   └── index.ts
+    ├── widgets/index.ts          # all FSD layers seeded with barrel + README
+    ├── features/index.ts
+    ├── entities/index.ts
+    └── shared/index.ts
+```
+
+### v1 Dependency Catalog
+
+24+ entries across 10 groups, all seeded by `DataSeeder.seedFrontendCatalog()`:
+
+| Group | Entries | Notable sub-options |
+|---|---|---|
+| Routing | `router-react-router`, `router-tanstack` | `lazy-routes`, `error-boundary`, `sample-routes` |
+| State Management | `state-zustand`, `state-redux-toolkit`, `state-jotai` | `devtools`, `persist`, `sample-store` |
+| Data Fetching | `data-tanstack-query`, `data-swr` | `devtools`, `axios-base`, `sample-query` |
+| Styling | `style-tailwind`, `style-mui`, `style-styled` | `dark-mode` |
+| Design System | `design-none`, `design-shadcn`, `design-mui`, `design-chakra`, `design-mantine` | — |
+| Forms & Validation | `form-react-hook-form`, `form-zod` | `rhf-zod-resolver`, `sample-form` |
+| Animation | `anim-framer-motion` | — |
+| Testing | `test-vitest-rtl`, `test-playwright`, `test-msw` | `sample-tests`, `ci-config` |
+| Quality (default-on) | `quality-eslint`, `quality-prettier`, `quality-husky` | always-on baseline via `__common__` |
+| Extras | `i18n-react-i18next`, `storybook`, `auth-msal`, `chart-recharts` | — |
+| API Integration | `api-client-openapi` | `react-query-hooks` (emits `orval.config.ts`) |
+
+Compatibility rules (`DependencyCompatibilityEntity` with `projectKind=FRONTEND`) enforce: mutually-exclusive routers, mutually-exclusive state libraries, mutually-exclusive data-fetching libraries, mutually-exclusive design systems, `design-shadcn REQUIRES style-tailwind`, plus soft `RECOMMENDS` between React Hook Form and Zod, and between `api-client-openapi` and `data-tanstack-query`.
+
+### Three New Build Customization Types
+
+`BuildCustomizationType` gained three values for the frontend path. The existing fields on `BuildCustomizationEntity` are **reinterpreted** per `projectKind` to avoid schema churn:
+
+| Type | Field reinterpretation |
+|---|---|
+| `ADD_NPM_DEPENDENCY` | `mavenArtifactId` = npm package name; `version` = semver range; `scope` = `"dev"` → `devDependencies`, otherwise → `dependencies` |
+| `ADD_NPM_SCRIPT` | `mavenArtifactId` = script name (e.g. `lint:fix`); `version` = command (e.g. `eslint . --fix`). Later rows on the same name win, so admins can override baseline scripts without editing the template |
+| `ADD_VITE_PLUGIN` | `mavenGroupId` = import path (e.g. `@vitejs/plugin-react`); `mavenArtifactId` = import binding (e.g. `react`); `version` = plugin call expression (e.g. `react()`) |
+
+`PackageJsonBuilder` walks all `ADD_NPM_DEPENDENCY` and `ADD_NPM_SCRIPT` rows for the selected deps, alphabetises within each block, and pretty-prints. `ViteConfigBuilder` walks all `ADD_VITE_PLUGIN` rows, emits one `import` line per unique binding, and joins call expressions into the `plugins: [...]` array.
+
+The admin form is kind-aware: when the Backend ⇄ Frontend pill is set to **Frontend**, the **Build Customizations** drawer hides the Maven-only types and shows `ADD_NPM_DEPENDENCY` / `ADD_NPM_SCRIPT` / `ADD_VITE_PLUGIN` under domain labels — *Package Name* / *Script Name* / *Import Path* — instead of the underlying `mavenArtifactId` / `mavenGroupId` columns. Same row in the DB, friendlier UI.
+
+### Mustache Context for FE Templates
+
+Same shape as the backend context — admins can author FE templates with the same conventions:
+
+| Key | Meaning |
+|---|---|
+| `projectName`, `description`, `scope`, `appTitle`, `packageJsonName` | Straight from `FrontendProjectDescription` |
+| `reactVersion`, `nodeVersion`, `packageManager`, `typescriptVersion`, `viteVersion`, `basePath` | Stack values |
+| `isNpm`, `isPnpm` | Package-manager flags (great for README run instructions) |
+| `has<Dep>` | `true` for every selected dep — `hasRouterReactRouter`, `hasStyleTailwind`, … |
+| `opt<Dep><Option>` | `true` for every selected sub-option — `optStateZustandSampleStore`, … |
+| `vitePluginImports`, `vitePluginCalls` | Pre-rendered strings injected only into the `vite.config.ts` baseline |
+
+A `{{` in JSX (inline-style objects, dynamic attributes) collides with Mustache's tag opener. Two ways out: lift the object to a top-level `const` (preferred for cleanliness), or rewrite the JSX without inline objects. The seeded `HomePage.tsx` template uses the `const` approach.
+
+### Schema: `ProjectKind` Discriminator
+
+Flyway migration `V4__project_kind_discriminator.sql` adds a `project_kind` column to six catalog tables (`dependency_group`, `dependency_entry`, `file_contribution`, `build_customization`, `dependency_sub_option`, `dependency_compatibility`), all defaulting to `BACKEND`. A new `scope` column on `build_customization` carries the dev/prod flag for FE npm deps. Indexed on every table for query speed.
+
+`DependencyConfigService` gains kind-aware overloads (`getFileContributions(deps, kind)`, etc.); the legacy non-kind methods now delegate with `BACKEND`, so the backend pipeline never sees FE rows and FE never sees backend rows — even though both catalogs share the same H2 database.
+
+### Smoke Test
+
+```bash
+# Metadata
+curl -H "Accept: application/json" http://localhost:8080/frontend/metadata | python -m json.tool | head -40
+
+# Generate a Tailwind + Zustand + Vitest project
+curl -o demo.zip "http://localhost:8080/frontend/starter.zip?\
+projectName=demo&appTitle=Demo&\
+dependencies=router-react-router,state-zustand,style-tailwind,test-vitest-rtl&\
+packageManager=pnpm&reactVersion=18&nodeVersion=20&\
+opts-state-zustand=sample-store"
+
+unzip -l demo.zip
+# Then:
+unzip demo.zip && cd demo && pnpm install && pnpm dev   # http://localhost:5173
+```
+
+### Admin: The Backend ⇄ Frontend Pill
+
+The admin header now has a pill toggle between **Backend** and **Frontend**. It's backed by `AdminKindContext` (persisted to localStorage) and consumed by six admin tabs — Groups, Dependencies, File Contributions, Build Customizations, Sub-Options, Compatibility — which filter their rows and stamp `projectKind` on every new entry. Rows without `projectKind` (legacy data) are treated as `BACKEND`.
+
+Two tabs are also **kind-aware in their form**, not just their row filter: **Build Customizations** swaps its type dropdown and field labels between Maven (BACKEND: `ADD_DEPENDENCY` / `EXCLUDE_DEPENDENCY` / `ADD_REPOSITORY`) and npm/Vite (FRONTEND: `ADD_NPM_DEPENDENCY` / `ADD_NPM_SCRIPT` / `ADD_VITE_PLUGIN`); **Dependencies** rewrites the Compatibility Range hint between "Spring Boot version range" and "React major version range" depending on the pill.
+
+The Templates and Modules tabs are intentionally backend-only in v1; monorepo / multi-app frontend support is deferred.
+
+### Paired-Backend Wiring
+
+Every FE project description carries optional `apiBaseUrl` and `backendArtifactId` fields. When `apiBaseUrl` is set, the generator drops:
+
+- `.env.development` and `.env.example` with `VITE_API_BASE_URL={{apiBaseUrl}}`
+- A `server.proxy` block in `vite.config.ts` that forwards `/api/*` to the same URL
+- A "Paired backend" section in `README.md` mentioning the linked artifact
+
+`URL` validation in `FrontendProjectDescription.setApiBaseUrl` rejects anything that isn't a plain `http(s)://` URL with a safe character set so the value is safe to splice into config files without further escaping. The `axios.ts` baseline (under the `data-tanstack-query` dep's `axios-base` sub-option) already reads `import.meta.env.VITE_API_BASE_URL` — these wires together so the FE just works when paired with a BE.
+
+`/frontend/starter.zip` accepts `apiBaseUrl` and `backendArtifactId` as query params; the **Paired Backend** section in the FE form's Options panel (UI) feeds the same fields.
+
+### Out of Scope for v1
+
+- Monorepo / workspace generation inside the FE half (`apps/*` + `packages/*`).
+- JSON Schema → Zod and design-tokens import wizards.
+- `yarn` support — the package-manager pill exposes `npm` and `pnpm` only.
+- TypeScript / Vite version dropdowns. Both are pinned in `application.yml → frontend.pinned` and stamped into the generated `package.json` via the Mustache context.
+
+---
+
 ## Agent Contract (AI Scaffolding)
 
 A small surface designed for AI agents (and any HTTP client that doesn't want to handle ZIPs). Agents call this contract to scaffold a Spring Boot project, then continue editing the generated tree with their own business logic. Three pieces:
@@ -1211,6 +1388,54 @@ curl -X POST http://localhost:8080/admin/build-customizations \
   }'
 ```
 
+**Frontend customization types** (set `projectKind: "FRONTEND"`):
+
+`ADD_NPM_DEPENDENCY` — add a package to `package.json`:
+```bash
+curl -X POST http://localhost:8080/admin/build-customizations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "router-react-router",
+    "customizationType": "ADD_NPM_DEPENDENCY",
+    "mavenArtifactId": "react-router-dom",
+    "version": "^6.26.0",
+    "scope": "",
+    "projectKind": "FRONTEND",
+    "sortOrder": 0
+  }'
+```
+
+`ADD_NPM_SCRIPT` — add (or override) a `scripts` entry:
+```bash
+curl -X POST http://localhost:8080/admin/build-customizations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "__common__",
+    "customizationType": "ADD_NPM_SCRIPT",
+    "mavenArtifactId": "lint:fix",
+    "version": "eslint . --fix",
+    "projectKind": "FRONTEND",
+    "sortOrder": 0
+  }'
+```
+
+`ADD_VITE_PLUGIN` — add an entry to `vite.config.ts`:
+```bash
+curl -X POST http://localhost:8080/admin/build-customizations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dependencyId": "__common__",
+    "customizationType": "ADD_VITE_PLUGIN",
+    "mavenGroupId": "@vitejs/plugin-react",
+    "mavenArtifactId": "react",
+    "version": "react()",
+    "projectKind": "FRONTEND",
+    "sortOrder": 0
+  }'
+```
+
+In the **Admin UI**, switching the Backend ⇄ Frontend pill to **Frontend** restricts the type dropdown to these three FE types and replaces the Maven labels with their npm/Vite equivalents (Package Name, Script Name, Command, Import Path, Import Binding, Plugin Call) — the underlying columns are the same.
+
 ### Sub-Options
 
 Optional extras within a dependency (e.g. "Consumer Example" for Kafka). Displayed as checkboxes in the UI after selecting the parent dependency.
@@ -1309,6 +1534,8 @@ Rules are served to the browser at `GET /metadata/compatibility` (no auth requir
 ### Dependency Version Ranges
 
 Each dependency entry has an optional `compatibilityRange` field. When set, the Spring Initializr framework automatically filters that dependency out of the metadata for any selected Boot version that falls outside the range, and the UI shows a version badge (e.g. **Boot [3.2.0,4.0.0)**) next to the dependency name.
+
+**Kind-aware semantics.** For BACKEND entries the range is matched against the selected Spring Boot version. For FRONTEND entries (`projectKind=FRONTEND`) the same column is matched by `FrontendVersionRangeFilter` against the `reactVersion` query parameter on `/frontend/metadata`, `/frontend/starter.zip`, and `/frontend/starter.preview`. The admin form swaps its hint and placeholder ("Spring Boot…" vs "React major…") based on the Backend ⇄ Frontend pill so the field is unambiguous in both modes. Seeded FE example: `design-chakra` ships with `[18.0.0,19.0.0)`.
 
 **Range syntax** — mathematical interval notation:
 

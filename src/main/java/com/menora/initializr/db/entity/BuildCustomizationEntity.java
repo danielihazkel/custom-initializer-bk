@@ -4,7 +4,34 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import org.hibernate.annotations.ColumnDefault;
 
+/**
+ * Build-tool customizations applied to a generated project.
+ *
+ * <p>Field reinterpretation by {@link CustomizationType} and {@link ProjectKind}:
+ * <ul>
+ *   <li>BACKEND + ADD_DEPENDENCY: {@code mavenGroupId}, {@code mavenArtifactId}, {@code version}, {@code scope}.</li>
+ *   <li>BACKEND + ADD_REPOSITORY: {@code repoId}, {@code repoName}, {@code repoUrl}, {@code snapshotsEnabled}.</li>
+ *   <li>BACKEND + EXCLUDE_DEPENDENCY: {@code excludeFromGroupId/ArtifactId} + {@code mavenGroupId/ArtifactId}.</li>
+ *   <li>FRONTEND + ADD_NPM_DEPENDENCY: {@code mavenArtifactId} = npm package name,
+ *       {@code version} = semver range, {@code scope} = "dev" (devDependencies) or empty (dependencies).</li>
+ *   <li>FRONTEND + ADD_VITE_PLUGIN: {@code mavenGroupId} = import module path (e.g. "@vitejs/plugin-react"),
+ *       {@code mavenArtifactId} = import binding (e.g. "react"),
+ *       {@code version} = plugin call expression (e.g. "react()").</li>
+ *   <li>FRONTEND + ADD_NPM_SCRIPT: {@code mavenArtifactId} = script name (e.g. "test:coverage"),
+ *       {@code version} = command (e.g. "vitest run --coverage"). Merged into the
+ *       {@code "scripts"} block of {@code package.json}; later contributions for the
+ *       same name win, allowing admin overrides without editing the baseline.</li>
+ * </ul>
+ *
+ * <p>{@code subOptionId} (nullable) gates a FRONTEND customization on the parent
+ * dependency's sub-option, mirroring {@code FileContributionEntity.subOptionId}.
+ * When set, the customization is applied only if the user picked that sub-option
+ * (i.e. {@code ProjectOptionsContext.hasOption(dependencyId, subOptionId)}). NULL
+ * means the customization always applies, which is the default for every row
+ * created before V8.
+ */
 @Entity
 @Table(name = "build_customization")
 public class BuildCustomizationEntity {
@@ -12,7 +39,10 @@ public class BuildCustomizationEntity {
     public enum CustomizationType {
         ADD_DEPENDENCY,
         ADD_REPOSITORY,
-        EXCLUDE_DEPENDENCY
+        EXCLUDE_DEPENDENCY,
+        ADD_NPM_DEPENDENCY,
+        ADD_VITE_PLUGIN,
+        ADD_NPM_SCRIPT
     }
 
     @Id
@@ -36,7 +66,9 @@ public class BuildCustomizationEntity {
     @Column(name = "maven_artifact_id", length = 200)
     private String mavenArtifactId;
 
-    @Column(length = 50)
+    // Reinterpreted by FE customizations: ADD_NPM_SCRIPT puts the full command
+    // here (often >50 chars), ADD_VITE_PLUGIN puts a plugin call expression.
+    @Column(length = 2000)
     private String version;
 
     // For EXCLUDE_DEPENDENCY — the artifact to exclude FROM
@@ -59,8 +91,22 @@ public class BuildCustomizationEntity {
     @Column(name = "snapshots_enabled")
     private boolean snapshotsEnabled = false;
 
+    /** For FRONTEND ADD_NPM_DEPENDENCY: "dev" → devDependencies, otherwise → dependencies. */
+    @Column(length = 20)
+    private String scope;
+
+    /** Optional sub-option gate — see class-level Javadoc. */
+    @Column(name = "sub_option_id", length = 50)
+    private String subOptionId;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
+
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @ColumnDefault("'BACKEND'")
+    @Column(name = "project_kind", nullable = false, length = 20)
+    private ProjectKind projectKind = ProjectKind.BACKEND;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -88,4 +134,12 @@ public class BuildCustomizationEntity {
     public void setSnapshotsEnabled(boolean snapshotsEnabled) { this.snapshotsEnabled = snapshotsEnabled; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    public String getScope() { return scope; }
+    public void setScope(String scope) { this.scope = (scope == null || scope.isBlank()) ? null : scope; }
+    public String getSubOptionId() { return subOptionId; }
+    public void setSubOptionId(String subOptionId) {
+        this.subOptionId = (subOptionId == null || subOptionId.isBlank()) ? null : subOptionId;
+    }
+    public ProjectKind getProjectKind() { return projectKind == null ? ProjectKind.BACKEND : projectKind; }
+    public void setProjectKind(ProjectKind projectKind) { this.projectKind = projectKind == null ? ProjectKind.BACKEND : projectKind; }
 }

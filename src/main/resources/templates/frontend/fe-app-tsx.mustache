@@ -1,0 +1,47 @@
+{{#optAuthMsalInitConfig}}import { MsalProvider } from '@azure/msal-react';
+import { msalInstance } from '@shared/auth/msal-config';
+{{/optAuthMsalInitConfig}}{{#optStateReduxToolkitSampleStore}}import { Provider as ReduxProvider } from 'react-redux';
+import { store } from '@app/store';
+{{/optStateReduxToolkitSampleStore}}{{#hasDataTanstackQuery}}import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@shared/api/queryClient';
+{{/hasDataTanstackQuery}}{{#optDataTanstackQueryDevtools}}import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+{{/optDataTanstackQueryDevtools}}{{#hasRouterReactRouter}}import { RouterProvider } from 'react-router-dom';
+import { router } from '@app/routes';
+{{/hasRouterReactRouter}}{{#hasDesignMui}}import { ThemeProvider, CssBaseline } from '@mui/material';
+import { theme } from '@shared/theme/theme';
+{{/hasDesignMui}}{{#hasDesignChakra}}import { ChakraProvider } from '@chakra-ui/react';
+import { theme } from '@shared/theme/theme';
+{{/hasDesignChakra}}{{#hasDesignMantine}}import { MantineProvider } from '@mantine/core';
+import { theme } from '@shared/theme/theme';
+{{/hasDesignMantine}}{{#hasStyleStyled}}{{^hasDesignMui}}{{^hasDesignChakra}}{{^hasDesignMantine}}import { ThemeProvider } from 'styled-components';
+import { theme } from '@shared/theme/theme';
+{{/hasDesignMantine}}{{/hasDesignChakra}}{{/hasDesignMui}}{{/hasStyleStyled}}{{^hasRouterReactRouter}}import { HomePage } from '@pages/home';
+{{/hasRouterReactRouter}}
+
+export function App() {
+  return (
+{{#optAuthMsalInitConfig}}    <MsalProvider instance={msalInstance}>
+{{/optAuthMsalInitConfig}}{{#optStateReduxToolkitSampleStore}}    <ReduxProvider store={store}>
+{{/optStateReduxToolkitSampleStore}}{{#hasDataTanstackQuery}}      <QueryClientProvider client={queryClient}>
+{{/hasDataTanstackQuery}}{{#hasDesignMui}}        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          {{#hasRouterReactRouter}}<RouterProvider router={router} />{{/hasRouterReactRouter}}{{^hasRouterReactRouter}}<HomePage />{{/hasRouterReactRouter}}
+        </ThemeProvider>
+{{/hasDesignMui}}{{#hasDesignChakra}}        <ChakraProvider theme={theme}>
+          {{#hasRouterReactRouter}}<RouterProvider router={router} />{{/hasRouterReactRouter}}{{^hasRouterReactRouter}}<HomePage />{{/hasRouterReactRouter}}
+        </ChakraProvider>
+{{/hasDesignChakra}}{{#hasDesignMantine}}        <MantineProvider theme={theme}>
+          {{#hasRouterReactRouter}}<RouterProvider router={router} />{{/hasRouterReactRouter}}{{^hasRouterReactRouter}}<HomePage />{{/hasRouterReactRouter}}
+        </MantineProvider>
+{{/hasDesignMantine}}{{^hasDesignMui}}{{^hasDesignChakra}}{{^hasDesignMantine}}{{#hasStyleStyled}}        <ThemeProvider theme={theme}>
+          {{#hasRouterReactRouter}}<RouterProvider router={router} />{{/hasRouterReactRouter}}{{^hasRouterReactRouter}}<HomePage />{{/hasRouterReactRouter}}
+        </ThemeProvider>
+{{/hasStyleStyled}}{{^hasStyleStyled}}        <div>
+          {{#hasRouterReactRouter}}<RouterProvider router={router} />{{/hasRouterReactRouter}}{{^hasRouterReactRouter}}<HomePage />{{/hasRouterReactRouter}}
+        </div>
+{{/hasStyleStyled}}{{/hasDesignMantine}}{{/hasDesignChakra}}{{/hasDesignMui}}{{#hasDataTanstackQuery}}{{#optDataTanstackQueryDevtools}}        <ReactQueryDevtools initialIsOpen={false} />
+{{/optDataTanstackQueryDevtools}}      </QueryClientProvider>
+{{/hasDataTanstackQuery}}{{#optStateReduxToolkitSampleStore}}    </ReduxProvider>
+{{/optStateReduxToolkitSampleStore}}{{#optAuthMsalInitConfig}}    </MsalProvider>
+{{/optAuthMsalInitConfig}}  );
+}

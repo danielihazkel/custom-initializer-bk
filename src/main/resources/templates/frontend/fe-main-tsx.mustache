@@ -1,0 +1,11 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { App } from '@app/App';
+{{#hasStyleTailwind}}import './index.css';
+{{/hasStyleTailwind}}{{#hasDesignMantine}}import '@mantine/core/styles.css';{{/hasDesignMantine}}
+
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);

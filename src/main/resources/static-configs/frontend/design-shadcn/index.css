@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * shadcn/ui design tokens. The H S% L% values come from the selected color
+ * palette (see /admin/color-palettes). Tweak the lightness columns below to
+ * adjust foreground/contrast per slot, or replace any value with a literal
+ * "H S% L%" triple.
+ */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: {{palette.primaryHsl}};
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: {{palette.secondaryHsl}};
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    {{#hasPaletteAccent}}--accent: {{palette.accentHsl}};
+    --accent-foreground: 0 0% 100%;{{/hasPaletteAccent}}{{^hasPaletteAccent}}--accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;{{/hasPaletteAccent}}
+
+    {{#hasPaletteError}}--destructive: {{palette.errorHsl}};{{/hasPaletteError}}{{^hasPaletteError}}--destructive: 0 84% 60%;{{/hasPaletteError}}
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: {{palette.primaryHsl}};
+
+    --radius: 0.5rem;
+  }
+}

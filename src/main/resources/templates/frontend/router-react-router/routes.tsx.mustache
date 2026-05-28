@@ -1,0 +1,24 @@
+{{#optRouterReactRouterLazyRoutes}}import { lazy, Suspense } from 'react';
+{{/optRouterReactRouterLazyRoutes}}import { createBrowserRouter } from 'react-router-dom';
+{{^optRouterReactRouterLazyRoutes}}import { HomePage } from '@pages/home';
+{{#optRouterReactRouterSampleRoutes}}import { AboutPage } from '@pages/about';
+{{/optRouterReactRouterSampleRoutes}}{{/optRouterReactRouterLazyRoutes}}{{#optRouterReactRouterErrorBoundary}}import { ErrorBoundary } from '@shared/ui/error-boundary';
+{{/optRouterReactRouterErrorBoundary}}{{#optRouterReactRouterLazyRoutes}}
+const HomePage = lazy(() => import('@pages/home').then((m) => ({ default: m.HomePage })));
+{{#optRouterReactRouterSampleRoutes}}const AboutPage = lazy(() => import('@pages/about').then((m) => ({ default: m.AboutPage })));
+{{/optRouterReactRouterSampleRoutes}}{{/optRouterReactRouterLazyRoutes}}
+/**
+ * Browser router definition. Add new routes here as you grow the app.
+ */
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    element: {{#optRouterReactRouterLazyRoutes}}<Suspense fallback={<div>Loading…</div>}><HomePage /></Suspense>{{/optRouterReactRouterLazyRoutes}}{{^optRouterReactRouterLazyRoutes}}<HomePage />{{/optRouterReactRouterLazyRoutes}},{{#optRouterReactRouterErrorBoundary}}
+    errorElement: <ErrorBoundary />,{{/optRouterReactRouterErrorBoundary}}
+  },{{#optRouterReactRouterSampleRoutes}}
+  {
+    path: '/about',
+    element: {{#optRouterReactRouterLazyRoutes}}<Suspense fallback={<div>Loading…</div>}><AboutPage /></Suspense>{{/optRouterReactRouterLazyRoutes}}{{^optRouterReactRouterLazyRoutes}}<AboutPage />{{/optRouterReactRouterLazyRoutes}},{{#optRouterReactRouterErrorBoundary}}
+    errorElement: <ErrorBoundary />,{{/optRouterReactRouterErrorBoundary}}
+  },{{/optRouterReactRouterSampleRoutes}}
+]);

@@ -1,0 +1,49 @@
+import { useForm } from 'react-hook-form';
+{{#optFormReactHookFormRhfZodResolver}}import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+const signupSchema = z.object({
+  email: z.string().email('Enter a valid email'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+type SignupValues = z.infer<typeof signupSchema>;
+{{/optFormReactHookFormRhfZodResolver}}{{^optFormReactHookFormRhfZodResolver}}
+interface SignupValues {
+  email: string;
+  password: string;
+}
+{{/optFormReactHookFormRhfZodResolver}}
+
+/**
+ * Sample signup form. Replace fields + submit handler with your own.
+ */
+export function SignupForm() {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<SignupValues>({{#optFormReactHookFormRhfZodResolver}}{
+    resolver: zodResolver(signupSchema),
+  }{{/optFormReactHookFormRhfZodResolver}});
+
+  const onSubmit = (values: SignupValues) => {
+    console.log('signup:', values);
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <label>
+        Email
+        <input type="email" {...register('email')} />
+      </label>
+      {errors.email && <p role="alert">{errors.email.message as string}</p>}
+      <label>
+        Password
+        <input type="password" {...register('password')} />
+      </label>
+      {errors.password && <p role="alert">{errors.password.message as string}</p>}
+      <button type="submit">Sign up</button>
+    </form>
+  );
+}

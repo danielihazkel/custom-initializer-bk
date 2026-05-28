@@ -40,6 +40,7 @@ public class AdminController {
     private final StarterTemplateDepRepository templateDepRepo;
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
+    private final ColorPaletteRepository colorPaletteRepo;
     private final OrphanDetectionService orphanService;
     private final ConfigurationExportImportService exportImportService;
     private final FileContributionContentValidator contentValidator;
@@ -55,6 +56,7 @@ public class AdminController {
                            StarterTemplateDepRepository templateDepRepo,
                            ModuleTemplateRepository moduleRepo,
                            ModuleDependencyMappingRepository moduleMappingRepo,
+                           ColorPaletteRepository colorPaletteRepo,
                            OrphanDetectionService orphanService,
                            ConfigurationExportImportService exportImportService,
                            FileContributionContentValidator contentValidator) {
@@ -69,6 +71,7 @@ public class AdminController {
         this.templateDepRepo = templateDepRepo;
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
+        this.colorPaletteRepo = colorPaletteRepo;
         this.orphanService = orphanService;
         this.exportImportService = exportImportService;
         this.contentValidator = contentValidator;
@@ -406,6 +409,35 @@ public class AdminController {
     @DeleteMapping("/module-dep-mappings/{id}")
     public ResponseEntity<Void> deleteModuleMapping(@PathVariable Long id) {
         moduleMappingRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Color Palettes (frontend-only) ────────────────────────────────────────
+
+    @GetMapping("/color-palettes")
+    public List<ColorPaletteEntity> listColorPalettes() {
+        return colorPaletteRepo.findAllByOrderBySortOrderAsc();
+    }
+
+    @PostMapping("/color-palettes")
+    public ColorPaletteEntity createColorPalette(@Valid @RequestBody ColorPaletteEntity palette) {
+        ColorPaletteEntity saved = colorPaletteRepo.save(palette);
+        refreshMetadata();
+        return saved;
+    }
+
+    @PutMapping("/color-palettes/{id}")
+    public ColorPaletteEntity updateColorPalette(@PathVariable Long id, @Valid @RequestBody ColorPaletteEntity palette) {
+        palette.setId(id);
+        ColorPaletteEntity saved = colorPaletteRepo.save(palette);
+        refreshMetadata();
+        return saved;
+    }
+
+    @DeleteMapping("/color-palettes/{id}")
+    public ResponseEntity<Void> deleteColorPalette(@PathVariable Long id) {
+        colorPaletteRepo.deleteById(id);
+        refreshMetadata();
         return ResponseEntity.noContent().build();
     }
 
