@@ -6,21 +6,29 @@ import com.menora.initializr.db.entity.*;
 import com.menora.initializr.db.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.CommandLineRunner;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
  * Seeds the database from existing classpath resources on first startup.
  * Runs only when all tables are empty.
+ *
+ * <p>Implements {@link SmartInitializingSingleton} (rather than {@code CommandLineRunner})
+ * so the seed completes inside {@code finishBeanFactoryInitialization} — before
+ * {@code ServletWebServerApplicationContext.finishRefresh()} opens the Tomcat connector
+ * and before {@code /actuator/health} starts reporting UP. Otherwise a request that
+ * arrives during the gap would see {@code selectedDepIds=[]} and the metadata cache
+ * would populate empty until someone called {@code POST /admin/refresh}.
  */
 @Component
-public class DataSeeder implements CommandLineRunner {
+public class DataSeeder implements SmartInitializingSingleton {
 
     private static final Logger log = LoggerFactory.getLogger(DataSeeder.class);
 
@@ -71,26 +79,30 @@ public class DataSeeder implements CommandLineRunner {
 
     @Override
     @Transactional
-    public void run(String... args) throws Exception {
-        if (groupRepo.count() > 0) {
-            log.info("Database already seeded — skipping main DataSeeder");
-            normalizeLegacyBlankStrings();
+    public void afterSingletonsInstantiated() {
+        try {
+            if (groupRepo.count() > 0) {
+                log.info("Database already seeded — skipping main DataSeeder");
+                normalizeLegacyBlankStrings();
+                seedEntityTemplateSetsIfMissing();
+                seedColorPalettesIfMissing();
+                return;
+            }
+            log.info("Seeding database from classpath resources...");
+            seedDependencyCatalog();
+            seedCommonFileContributions();
+            seedDependencyFileContributions();
+            seedBuildCustomizations();
+            seedSubOptions();
+            seedCompatibilityRules();
+            seedStarterTemplates();
+            seedModuleTemplates();
             seedEntityTemplateSetsIfMissing();
             seedColorPalettesIfMissing();
-            return;
+            log.info("Database seeding complete");
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to seed database from classpath", e);
         }
-        log.info("Seeding database from classpath resources...");
-        seedDependencyCatalog();
-        seedCommonFileContributions();
-        seedDependencyFileContributions();
-        seedBuildCustomizations();
-        seedSubOptions();
-        seedCompatibilityRules();
-        seedStarterTemplates();
-        seedModuleTemplates();
-        seedEntityTemplateSetsIfMissing();
-        seedColorPalettesIfMissing();
-        log.info("Database seeding complete");
     }
 
     /**
