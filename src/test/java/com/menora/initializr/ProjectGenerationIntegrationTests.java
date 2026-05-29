@@ -1,8 +1,13 @@
 package com.menora.initializr;
 
+import com.menora.initializr.config.DatabaseInitializrMetadataProvider;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.db.entity.FileContributionEntity;
+import com.menora.initializr.db.entity.VersionDefinitionEntity;
+import com.menora.initializr.db.entity.VersionKind;
 import com.menora.initializr.db.repository.FileContributionRepository;
+import com.menora.initializr.db.repository.VersionDefinitionRepository;
+import io.spring.initializr.metadata.InitializrMetadataProvider;
 import io.spring.initializr.generator.test.project.ProjectStructure;
 import io.spring.initializr.web.project.ProjectGenerationInvoker;
 import io.spring.initializr.web.project.ProjectRequest;
@@ -43,6 +48,12 @@ class ProjectGenerationIntegrationTests {
 
     @Autowired
     private ProjectOptionsContext optionsContext;
+
+    @Autowired
+    private VersionDefinitionRepository versionRepo;
+
+    @Autowired
+    private InitializrMetadataProvider metadataProvider;
 
     @Test
     void metadataEndpointReturnsOk() {
@@ -1040,6 +1051,29 @@ class ProjectGenerationIntegrationTests {
                     .contains("probes");
         } finally {
             optionsContext.clear();
+        }
+    }
+
+    @Test
+    void newJavaVersionFromDbAppearsInMetadataAfterRefresh() {
+        // A Java version inserted into version_definition + refresh() should be
+        // visible in /metadata/client.javaVersion.values without restarting the app.
+        // This is the proof that Java versions are DB-managed (not YAML-bound).
+        VersionDefinitionEntity v = new VersionDefinitionEntity();
+        v.setKind(VersionKind.JAVA);
+        v.setVersionId("25");
+        v.setDisplayName("25");
+        v.setDefault(false);
+        v.setSortOrder(99);
+        v.setEnabled(true);
+        VersionDefinitionEntity saved = versionRepo.save(v);
+        try {
+            ((DatabaseInitializrMetadataProvider) metadataProvider).refresh();
+            String body = restTemplate.getForEntity("/metadata/client", String.class).getBody();
+            assertThat(body).contains("\"25\"");
+        } finally {
+            versionRepo.deleteById(saved.getId());
+            ((DatabaseInitializrMetadataProvider) metadataProvider).refresh();
         }
     }
 

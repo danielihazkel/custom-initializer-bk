@@ -3,54 +3,25 @@ package com.menora.initializr.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Binds the {@code frontend:} block of application.yml — versions exposed in the
- * frontend tab's dropdowns + pinned TS/Vite versions + form defaults.
+ * Binds the {@code frontend:} block of application.yml — pinned tooling
+ * versions (TypeScript / Vite) and form defaults.
+ *
+ * <p>Version lists (React / Node / package manager) and per-React semver
+ * mappings are admin-managed and live in the {@code version_definition}
+ * table — see {@link com.menora.initializr.db.VersionService}.
  */
 @Component
 @ConfigurationProperties(prefix = "frontend")
 public class FrontendProperties {
 
-    private List<Option> reactVersions = new ArrayList<>();
-    private List<Option> nodeVersions = new ArrayList<>();
-    private List<Option> packageManagers = new ArrayList<>();
     private Pinned pinned = new Pinned();
     private Defaults defaults = new Defaults();
 
-    public List<Option> getReactVersions() { return reactVersions; }
-    public void setReactVersions(List<Option> reactVersions) { this.reactVersions = reactVersions; }
-    public List<Option> getNodeVersions() { return nodeVersions; }
-    public void setNodeVersions(List<Option> nodeVersions) { this.nodeVersions = nodeVersions; }
-    public List<Option> getPackageManagers() { return packageManagers; }
-    public void setPackageManagers(List<Option> packageManagers) { this.packageManagers = packageManagers; }
     public Pinned getPinned() { return pinned; }
     public void setPinned(Pinned pinned) { this.pinned = pinned; }
     public Defaults getDefaults() { return defaults; }
     public void setDefaults(Defaults defaults) { this.defaults = defaults; }
-
-    public String defaultReactVersion() { return defaultOf(reactVersions, "18"); }
-    public String defaultNodeVersion() { return defaultOf(nodeVersions, "20"); }
-    public String defaultPackageManager() { return defaultOf(packageManagers, "pnpm"); }
-
-    private static String defaultOf(List<Option> opts, String fallback) {
-        return opts.stream().filter(Option::isDefault).map(Option::getId).findFirst()
-                .orElseGet(() -> opts.isEmpty() ? fallback : opts.get(0).getId());
-    }
-
-    public static class Option {
-        private String id;
-        private String name;
-        private boolean isDefault;
-        public String getId() { return id; }
-        public void setId(String id) { this.id = id; }
-        public String getName() { return name; }
-        public void setName(String name) { this.name = name; }
-        public boolean isDefault() { return isDefault; }
-        public void setDefault(boolean aDefault) { isDefault = aDefault; }
-    }
 
     public static class Pinned {
         private String typescript = "5.4.5";

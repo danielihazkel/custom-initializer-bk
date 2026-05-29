@@ -5,6 +5,7 @@ import com.menora.initializr.admin.dto.OrphanCheckResponse;
 import com.menora.initializr.admin.validation.FileContributionContentValidator;
 import com.menora.initializr.config.DatabaseInitializrMetadataProvider;
 import com.menora.initializr.db.entity.*;
+import com.menora.initializr.db.entity.VersionKind;
 import com.menora.initializr.db.repository.*;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
 import jakarta.validation.Valid;
@@ -45,6 +46,7 @@ public class AdminController {
     private final EntityTemplateFileRepository entityTemplateFileRepo;
     private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
     private final ColorPaletteRepository colorPaletteRepo;
+    private final VersionDefinitionRepository versionRepo;
     private final OrphanDetectionService orphanService;
     private final ConfigurationExportImportService exportImportService;
     private final FileContributionContentValidator contentValidator;
@@ -64,6 +66,7 @@ public class AdminController {
                            EntityTemplateFileRepository entityTemplateFileRepo,
                            EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
                            ColorPaletteRepository colorPaletteRepo,
+                           VersionDefinitionRepository versionRepo,
                            OrphanDetectionService orphanService,
                            ConfigurationExportImportService exportImportService,
                            FileContributionContentValidator contentValidator) {
@@ -82,6 +85,7 @@ public class AdminController {
         this.entityTemplateFileRepo = entityTemplateFileRepo;
         this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
         this.colorPaletteRepo = colorPaletteRepo;
+        this.versionRepo = versionRepo;
         this.orphanService = orphanService;
         this.exportImportService = exportImportService;
         this.contentValidator = contentValidator;
@@ -570,6 +574,39 @@ public class AdminController {
         }
     }
 
+
+    // ── Version Definitions ───────────────────────────────────────────────────
+
+    @GetMapping("/versions")
+    public List<VersionDefinitionEntity> listVersions(@RequestParam(required = false) VersionKind kind) {
+        return kind == null
+                ? versionRepo.findAllByOrderByKindAscSortOrderAscIdAsc()
+                : versionRepo.findByKindOrderBySortOrderAscIdAsc(kind);
+    }
+
+    @PostMapping("/versions")
+    public VersionDefinitionEntity createVersion(@Valid @RequestBody VersionDefinitionEntity version) {
+        version.setId(null);
+        VersionDefinitionEntity saved = versionRepo.save(version);
+        refreshMetadata();
+        return saved;
+    }
+
+    @PutMapping("/versions/{id}")
+    public VersionDefinitionEntity updateVersion(@PathVariable Long id,
+                                                 @Valid @RequestBody VersionDefinitionEntity version) {
+        version.setId(id);
+        VersionDefinitionEntity saved = versionRepo.save(version);
+        refreshMetadata();
+        return saved;
+    }
+
+    @DeleteMapping("/versions/{id}")
+    public ResponseEntity<Void> deleteVersion(@PathVariable Long id) {
+        versionRepo.deleteById(id);
+        refreshMetadata();
+        return ResponseEntity.noContent().build();
+    }
 
     // ── Export / Import ───────────────────────────────────────────────────────
 

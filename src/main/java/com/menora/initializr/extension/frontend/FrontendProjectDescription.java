@@ -20,6 +20,10 @@ public class FrontendProjectDescription {
     private String packageManager = "pnpm";
     private String typescriptVersion = "5.4.5";
     private String viteVersion = "5.2.0";
+    /** npm semver range for {@code react} / {@code react-dom} — set by the controller from {@code version_definition}. */
+    private String reactPackageVersion = "^18.3.1";
+    /** npm semver range for {@code @types/react} / {@code @types/react-dom} — set by the controller from {@code version_definition}. */
+    private String reactTypesVersion = "^18.3.3";
     private String basePath = "/";
     /** Palette id from the {@code color_palette} table; empty string falls back to the default palette. */
     private String colorPaletteId = "";
@@ -52,6 +56,10 @@ public class FrontendProjectDescription {
     public void setTypescriptVersion(String typescriptVersion) { this.typescriptVersion = typescriptVersion; }
     public String getViteVersion() { return viteVersion; }
     public void setViteVersion(String viteVersion) { this.viteVersion = viteVersion; }
+    public String getReactPackageVersion() { return reactPackageVersion; }
+    public void setReactPackageVersion(String reactPackageVersion) { this.reactPackageVersion = reactPackageVersion; }
+    public String getReactTypesVersion() { return reactTypesVersion; }
+    public void setReactTypesVersion(String reactTypesVersion) { this.reactTypesVersion = reactTypesVersion; }
     public String getBasePath() { return basePath; }
     public void setBasePath(String basePath) { this.basePath = (basePath == null || basePath.isBlank()) ? "/" : basePath; }
     public String getColorPaletteId() { return colorPaletteId; }

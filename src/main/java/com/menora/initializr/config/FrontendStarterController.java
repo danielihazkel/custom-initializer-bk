@@ -1,11 +1,14 @@
 package com.menora.initializr.config;
 
 import com.menora.initializr.db.DependencyConfigService;
+import com.menora.initializr.db.VersionService;
 import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.DependencyGroupEntity;
 import com.menora.initializr.db.entity.DependencySubOptionEntity;
 import com.menora.initializr.db.entity.ProjectKind;
+import com.menora.initializr.db.entity.VersionDefinitionEntity;
+import com.menora.initializr.db.entity.VersionKind;
 import com.menora.initializr.db.repository.ColorPaletteRepository;
 import com.menora.initializr.config.ProjectPreviewController.PreviewFile;
 import com.menora.initializr.config.ProjectPreviewController.PreviewResponse;
@@ -48,19 +51,22 @@ public class FrontendStarterController {
     private final ColorPaletteRepository colorPaletteRepo;
     private final FrontendVersionRangeFilter versionFilter;
     private final FrontendCompatibilityResolver compatibilityResolver;
+    private final VersionService versionService;
 
     public FrontendStarterController(FrontendProjectGenerator generator,
                                      FrontendProperties properties,
                                      DependencyConfigService configService,
                                      ColorPaletteRepository colorPaletteRepo,
                                      FrontendVersionRangeFilter versionFilter,
-                                     FrontendCompatibilityResolver compatibilityResolver) {
+                                     FrontendCompatibilityResolver compatibilityResolver,
+                                     VersionService versionService) {
         this.generator = generator;
         this.properties = properties;
         this.configService = configService;
         this.colorPaletteRepo = colorPaletteRepo;
         this.versionFilter = versionFilter;
         this.compatibilityResolver = compatibilityResolver;
+        this.versionService = versionService;
     }
 
     @GetMapping("/starter.zip")
@@ -148,18 +154,23 @@ public class FrontendStarterController {
         desc.setDescription(description);
         desc.setScope(scope);
         desc.setAppTitle(appTitle.isBlank() ? toTitleCase(projectName) : appTitle);
-        desc.setReactVersion(reactVersion == null || reactVersion.isBlank()
-                ? properties.defaultReactVersion() : reactVersion);
+        String resolvedReact = (reactVersion == null || reactVersion.isBlank())
+                ? versionService.defaultId(VersionKind.REACT) : reactVersion;
+        desc.setReactVersion(resolvedReact);
         desc.setNodeVersion(nodeVersion == null || nodeVersion.isBlank()
-                ? properties.defaultNodeVersion() : nodeVersion);
+                ? versionService.defaultId(VersionKind.NODE) : nodeVersion);
         desc.setPackageManager(packageManager == null || packageManager.isBlank()
-                ? properties.defaultPackageManager() : packageManager);
+                ? versionService.defaultId(VersionKind.PACKAGE_MANAGER) : packageManager);
         desc.setBasePath(basePath);
         desc.setColorPaletteId(colorPalette);
         desc.setApiBaseUrl(apiBaseUrl);
         desc.setBackendArtifactId(backendArtifactId);
         desc.setTypescriptVersion(properties.getPinned().getTypescript());
         desc.setViteVersion(properties.getPinned().getVite());
+        // Pull the npm semver ranges for the chosen React major out of the DB
+        // (replaces the hardcoded switch that used to live in FrontendMustacheContext).
+        versionService.reactSemver(resolvedReact).ifPresent(desc::setReactPackageVersion);
+        versionService.reactTypesSemver(resolvedReact).ifPresent(desc::setReactTypesVersion);
 
         if (!dependencies.isBlank()) {
             Arrays.stream(dependencies.split(","))
@@ -185,6 +196,19 @@ public class FrontendStarterController {
         return desc;
     }
 
+    /** UI version-dropdown row shape: {@code {id, name, default}}. */
+    private List<Map<String, Object>> versionsForUi(VersionKind kind) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (VersionDefinitionEntity v : versionService.listEnabled(kind)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", v.getVersionId());
+            row.put("name", v.getDisplayName());
+            row.put("default", v.isDefault());
+            out.add(row);
+        }
+        return out;
+    }
+
     private Map<String, DependencyEntryEntity> entriesById() {
         Map<String, DependencyEntryEntity> out = new LinkedHashMap<>();
         for (DependencyGroupEntity g : configService.getAllGroupsWithEntries(ProjectKind.FRONTEND)) {
@@ -198,7 +222,7 @@ public class FrontendStarterController {
     @GetMapping("/metadata")
     public Map<String, Object> metadata(@RequestParam(required = false) String reactVersion) {
         String resolvedReactVersion = (reactVersion == null || reactVersion.isBlank())
-                ? properties.defaultReactVersion() : reactVersion;
+                ? versionService.defaultId(VersionKind.REACT) : reactVersion;
         Map<String, Object> root = new LinkedHashMap<>();
 
         // Form defaults
@@ -207,15 +231,15 @@ public class FrontendStarterController {
                 "description", properties.getDefaults().getDescription(),
                 "appTitle", properties.getDefaults().getAppTitle(),
                 "scope", properties.getDefaults().getScope(),
-                "reactVersion", properties.defaultReactVersion(),
-                "nodeVersion", properties.defaultNodeVersion(),
-                "packageManager", properties.defaultPackageManager()
+                "reactVersion", versionService.defaultId(VersionKind.REACT),
+                "nodeVersion", versionService.defaultId(VersionKind.NODE),
+                "packageManager", versionService.defaultId(VersionKind.PACKAGE_MANAGER)
         ));
 
-        // Version dropdowns + pkg mgr pill
-        root.put("reactVersions", properties.getReactVersions());
-        root.put("nodeVersions", properties.getNodeVersions());
-        root.put("packageManagers", properties.getPackageManagers());
+        // Version dropdowns + pkg mgr pill — DB-backed via VersionService.
+        root.put("reactVersions", versionsForUi(VersionKind.REACT));
+        root.put("nodeVersions", versionsForUi(VersionKind.NODE));
+        root.put("packageManagers", versionsForUi(VersionKind.PACKAGE_MANAGER));
         root.put("pinned", properties.getPinned());
 
         // Dependency catalog: groups → entries → sub-options

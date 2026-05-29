@@ -1,8 +1,11 @@
 package com.menora.initializr.config;
 
 import com.menora.initializr.db.DependencyConfigService;
+import com.menora.initializr.db.VersionService;
 import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.DependencyGroupEntity;
+import com.menora.initializr.db.entity.VersionDefinitionEntity;
+import com.menora.initializr.db.entity.VersionKind;
 import io.spring.initializr.metadata.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,13 +15,15 @@ import java.util.List;
 
 /**
  * Replaces the framework's default metadata provider by loading the dependency
- * catalog from the database instead of application.yml.
+ * catalog and the Java / Boot version lists from the database instead of
+ * application.yml.
  *
- * Non-dependency metadata (Java versions, Boot versions, packaging, types, etc.)
- * is still read from application.yml via InitializrProperties.
+ * Other non-dependency metadata (packagings, types, languages, etc.) is still
+ * read from application.yml via InitializrProperties.
  *
- * Call {@link #refresh()} after DB changes to pick up a new catalog without restart.
- * Registered as @Primary bean via {@link MetadataProviderConfig}.
+ * Call {@link #refresh()} after DB changes to pick up the new catalog and
+ * versions without a restart. Registered as @Primary bean via
+ * {@link MetadataProviderConfig}.
  */
 public class DatabaseInitializrMetadataProvider implements InitializrMetadataProvider {
 
@@ -26,13 +31,16 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
 
     private final InitializrProperties initializrProperties;
     private final DependencyConfigService configService;
+    private final VersionService versionService;
 
     private volatile InitializrMetadata cachedMetadata;
 
     public DatabaseInitializrMetadataProvider(InitializrProperties initializrProperties,
-                                               DependencyConfigService configService) {
+                                               DependencyConfigService configService,
+                                               VersionService versionService) {
         this.initializrProperties = initializrProperties;
         this.configService = configService;
+        this.versionService = versionService;
     }
 
     @Override
@@ -50,24 +58,47 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
     /** Reload the metadata from the database. Call via POST /admin/refresh. */
     public synchronized void refresh() {
         log.info("Refreshing dependency metadata from database");
+        versionService.refresh();
         cachedMetadata = buildMetadata();
     }
 
     private InitializrMetadata buildMetadata() {
-        // Start from the YAML-based properties (Java versions, Boot versions, etc.)
+        // Inject DB-driven java/boot versions into InitializrProperties before
+        // the framework's builder reads them — going through properties (rather
+        // than mutating the built InitializrMetadata) avoids the unmodifiable
+        // capability lists the framework wraps empty version lists in.
+        applyVersionsToProperties(initializrProperties.getJavaVersions(),
+                versionService.listEnabled(VersionKind.JAVA));
+        applyVersionsToProperties(initializrProperties.getBootVersions(),
+                versionService.listEnabled(VersionKind.BOOT));
+
         InitializrMetadata metadata = InitializrMetadataBuilder
                 .fromInitializrProperties(initializrProperties)
                 .build();
 
-        // Replace the dependency catalog with DB data
+        // Replace the dependency catalog with DB data.
         List<DependencyGroup> dbGroups = loadGroupsFromDb();
         metadata.getDependencies().getContent().clear();
         metadata.getDependencies().getContent().addAll(dbGroups);
         metadata.getDependencies().validate();
 
-        log.info("Loaded {} dependency groups from database, {} types from properties",
-                dbGroups.size(), metadata.getTypes().getContent().size());
+        log.info("Loaded {} dependency groups, {} java versions, {} boot versions from database",
+                dbGroups.size(),
+                metadata.getJavaVersions().getContent().size(),
+                metadata.getBootVersions().getContent().size());
         return metadata;
+    }
+
+    private static void applyVersionsToProperties(List<DefaultMetadataElement> target,
+                                                  List<VersionDefinitionEntity> rows) {
+        target.clear();
+        for (VersionDefinitionEntity row : rows) {
+            DefaultMetadataElement el = new DefaultMetadataElement();
+            el.setId(row.getVersionId());
+            el.setName(row.getDisplayName());
+            el.setDefault(row.isDefault());
+            target.add(el);
+        }
     }
 
     private List<DependencyGroup> loadGroupsFromDb() {

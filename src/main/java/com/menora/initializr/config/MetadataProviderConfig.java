@@ -1,6 +1,7 @@
 package com.menora.initializr.config;
 
 import com.menora.initializr.db.DependencyConfigService;
+import com.menora.initializr.db.VersionService;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
 import io.spring.initializr.metadata.InitializrProperties;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -24,7 +25,8 @@ public class MetadataProviderConfig {
     @Primary
     public InitializrMetadataProvider initializrMetadataProvider(
             Environment environment,
-            DependencyConfigService configService) {
+            DependencyConfigService configService,
+            VersionService versionService) {
         var log = org.slf4j.LoggerFactory.getLogger(MetadataProviderConfig.class);
         if (environment instanceof org.springframework.core.env.ConfigurableEnvironment ce) {
             ce.getPropertySources().forEach(ps -> {
@@ -44,6 +46,6 @@ public class MetadataProviderConfig {
                 properties.getTypes().size(),
                 properties.getPackagings().size(),
                 properties.getJavaVersions().size());
-        return new DatabaseInitializrMetadataProvider(properties, configService);
+        return new DatabaseInitializrMetadataProvider(properties, configService, versionService);
     }
 }

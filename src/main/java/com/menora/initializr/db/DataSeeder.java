@@ -46,6 +46,7 @@ public class DataSeeder implements SmartInitializingSingleton {
     private final EntityTemplateFileRepository entityTemplateFileRepo;
     private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
     private final ColorPaletteRepository colorPaletteRepo;
+    private final VersionDefinitionRepository versionRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
@@ -60,7 +61,8 @@ public class DataSeeder implements SmartInitializingSingleton {
                       EntityTemplateSetRepository entityTemplateSetRepo,
                       EntityTemplateFileRepository entityTemplateFileRepo,
                       EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
-                      ColorPaletteRepository colorPaletteRepo) {
+                      ColorPaletteRepository colorPaletteRepo,
+                      VersionDefinitionRepository versionRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
@@ -75,6 +77,7 @@ public class DataSeeder implements SmartInitializingSingleton {
         this.entityTemplateFileRepo = entityTemplateFileRepo;
         this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
         this.colorPaletteRepo = colorPaletteRepo;
+        this.versionRepo = versionRepo;
     }
 
     @Override
@@ -86,6 +89,7 @@ public class DataSeeder implements SmartInitializingSingleton {
             // on existing installations without forcing a full re-seed.
             seedColorPalettes();
             seedEntityTemplateSetsIfMissing();
+            seedVersionsIfMissing();
 
             if (groupRepo.count() > 0) {
                 log.info("Database already seeded — skipping main DataSeeder");
@@ -1236,6 +1240,46 @@ public class DataSeeder implements SmartInitializingSingleton {
         p.setDefault(isDefault);
         p.setSortOrder(sortOrder);
         colorPaletteRepo.save(p);
+    }
+
+    /**
+     * Seeds the Java / Boot / React / Node / package-manager version lists into
+     * {@code version_definition}. Idempotent per row — keeps admin-edited
+     * versions intact while picking up newly-shipped defaults on next startup.
+     * Values mirror the legacy {@code initializr.*-versions} and
+     * {@code frontend.*-versions} YAML blocks so behavior is unchanged after
+     * the YAML lines are removed.
+     */
+    private void seedVersionsIfMissing() {
+        version(VersionKind.JAVA, "21", "21", true,  0, null, null);
+        version(VersionKind.JAVA, "17", "17", false, 1, null, null);
+
+        version(VersionKind.BOOT, "3.2.1", "3.2.1", true, 0, null, null);
+
+        version(VersionKind.REACT, "18", "React 18", true,  0, "^18.3.1", "^18.3.3");
+        version(VersionKind.REACT, "19", "React 19", false, 1, "^19.0.0", "^19.0.0");
+
+        version(VersionKind.NODE, "20", "Node 20 (LTS)",         true,  0, null, null);
+        version(VersionKind.NODE, "22", "Node 22 (Current)",     false, 1, null, null);
+        version(VersionKind.NODE, "18", "Node 18 (Maintenance)", false, 2, null, null);
+
+        version(VersionKind.PACKAGE_MANAGER, "pnpm", "pnpm", true,  0, null, null);
+        version(VersionKind.PACKAGE_MANAGER, "npm",  "npm",  false, 1, null, null);
+    }
+
+    private void version(VersionKind kind, String versionId, String displayName,
+                         boolean isDefault, int sortOrder, String npmSemver, String typesSemver) {
+        if (versionRepo.findByKindAndVersionId(kind, versionId).isPresent()) return;
+        VersionDefinitionEntity v = new VersionDefinitionEntity();
+        v.setKind(kind);
+        v.setVersionId(versionId);
+        v.setDisplayName(displayName);
+        v.setDefault(isDefault);
+        v.setSortOrder(sortOrder);
+        v.setEnabled(true);
+        v.setNpmSemver(npmSemver);
+        v.setTypesSemver(typesSemver);
+        versionRepo.save(v);
     }
 
     private void seedFrontendCatalog() throws IOException {
