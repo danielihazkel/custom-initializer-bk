@@ -1,6 +1,8 @@
-package {{packageName}};
+package {{dtoPackage}};
 
-{{#imports}}
+import {{entityPackage}}.{{EntityName}};
+{{#fields}}{{#isEnum}}import {{entityPackage}}.{{EntityName}}.{{enumTypeName}};
+{{/isEnum}}{{/fields}}{{#imports}}
 import {{name}};
 {{/imports}}
 

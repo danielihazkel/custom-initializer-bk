@@ -63,11 +63,14 @@ public class FullstackProjectGenerationConfiguration {
                 return;
             }
             List<EntityDefinition> entities = entityContext.all();
+            String domainPackage = entityContext.getDomainPackage() != null
+                    ? entityContext.getDomainPackage() : description.getPackageName();
             Map<String, Object> projectCtx = EntityScaffoldContext.buildProjectContext(
                     description.getArtifactId(),
                     description.getGroupId(),
                     description.getVersion(),
                     description.getPackageName(),
+                    domainPackage,
                     description.getLanguage().jvmVersion(),
                     description.getPackaging() != null ? description.getPackaging().id() : null,
                     entities);

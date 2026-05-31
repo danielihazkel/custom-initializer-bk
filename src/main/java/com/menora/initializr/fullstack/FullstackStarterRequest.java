@@ -19,6 +19,7 @@ public record FullstackStarterRequest(
         String name,
         String description,
         String packageName,
+        String domainPackage,
         String type,
         String language,
         String bootVersion,

@@ -31,6 +31,7 @@ public final class EntityScaffoldContext {
             String groupId,
             String version,
             String packageName,
+            String domainPackage,
             String javaVersion,
             String packaging,
             List<EntityDefinition> entities) {
@@ -43,6 +44,17 @@ public final class EntityScaffoldContext {
         ctx.put("javaVersion", javaVersion);
         ctx.put("packaging", packaging);
 
+        // The base package the generated CRUD classes live under (defaults to packageName),
+        // split into one conventional sub-package per layer. Constrained at the controller to be
+        // at or below packageName so default component/entity scanning still finds the beans.
+        String domain = (domainPackage == null || domainPackage.isBlank()) ? packageName : domainPackage;
+        ctx.put("domainPackage", domain);
+        putPackage(ctx, "entityPackage", domain, "entity");
+        putPackage(ctx, "repositoryPackage", domain, "repository");
+        putPackage(ctx, "dtoPackage", domain, "dto");
+        putPackage(ctx, "servicePackage", domain, "service");
+        putPackage(ctx, "controllerPackage", domain, "controller");
+
         List<Map<String, Object>> entityViews = new ArrayList<>(entities.size());
         for (int i = 0; i < entities.size(); i++) {
             Map<String, Object> view = entityViewModel(entities.get(i));
@@ -52,6 +64,13 @@ public final class EntityScaffoldContext {
         }
         ctx.put("entities", entityViews);
         return ctx;
+    }
+
+    /** Puts {@code <name>} = {@code base.layer} and {@code <name>Path} = the slash form. */
+    private static void putPackage(Map<String, Object> ctx, String name, String base, String layer) {
+        String pkg = (base == null || base.isBlank()) ? layer : base + "." + layer;
+        ctx.put(name, pkg);
+        ctx.put(name + "Path", pkg.replace('.', '/'));
     }
 
     public static Map<String, Object> buildEntityContext(

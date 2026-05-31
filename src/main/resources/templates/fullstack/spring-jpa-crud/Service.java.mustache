@@ -1,5 +1,7 @@
-package {{packageName}};
+package {{servicePackage}};
 
+import {{entityPackage}}.{{EntityName}};
+import {{repositoryPackage}}.{{EntityName}}Repository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 {{#hasStringFields}}import org.springframework.data.jpa.domain.Specification;

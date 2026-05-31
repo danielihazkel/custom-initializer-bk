@@ -15,7 +15,7 @@ class EntityScaffoldContextTest {
                 "OrderItem", null,
                 List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, List.of())));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
-                "demo", "com.menora", "0.0.1", "com.menora.demo", "21", "jar", List.of(e));
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
 
         assertThat(ctx).containsEntry("EntityName", "OrderItem");
@@ -37,7 +37,7 @@ class EntityScaffoldContextTest {
                         new FieldDefinition("status", FieldType.ENUM, false, false, false, false, null,
                                 List.of("ACTIVE", "DISABLED"))));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
-                "demo", "com.menora", "0.0.1", "com.menora.demo", "21", "jar", List.of(e));
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
 
         @SuppressWarnings("unchecked")
@@ -73,6 +73,37 @@ class EntityScaffoldContextTest {
     }
 
     @Test
+    void buildProjectContext_exposesPerLayerPackages() {
+        EntityDefinition e = new EntityDefinition(
+                "User", null,
+                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, List.of())));
+        Map<String, Object> ctx = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo.catalog", "21", "jar", List.of(e));
+
+        assertThat(ctx).containsEntry("domainPackage", "com.menora.demo.catalog");
+        assertThat(ctx).containsEntry("entityPackage", "com.menora.demo.catalog.entity");
+        assertThat(ctx).containsEntry("entityPackagePath", "com/menora/demo/catalog/entity");
+        assertThat(ctx).containsEntry("repositoryPackage", "com.menora.demo.catalog.repository");
+        assertThat(ctx).containsEntry("dtoPackage", "com.menora.demo.catalog.dto");
+        assertThat(ctx).containsEntry("servicePackage", "com.menora.demo.catalog.service");
+        assertThat(ctx).containsEntry("controllerPackage", "com.menora.demo.catalog.controller");
+        assertThat(ctx).containsEntry("controllerPackagePath", "com/menora/demo/catalog/controller");
+    }
+
+    @Test
+    void buildProjectContext_domainPackageDefaultsToPackageNameWhenBlank() {
+        EntityDefinition e = new EntityDefinition(
+                "User", null,
+                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, List.of())));
+        Map<String, Object> ctx = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", null, "21", "jar", List.of(e));
+
+        assertThat(ctx).containsEntry("domainPackage", "com.menora.demo");
+        assertThat(ctx).containsEntry("entityPackage", "com.menora.demo.entity");
+        assertThat(ctx).containsEntry("servicePackage", "com.menora.demo.service");
+    }
+
+    @Test
     void buildEntityContext_exposesStringFieldsAndHasStringFields() {
         EntityDefinition e = new EntityDefinition(
                 "Product", null,
@@ -82,7 +113,7 @@ class EntityScaffoldContextTest {
                         new FieldDefinition("name", FieldType.STRING, false, false, true, false, 255, List.of()),
                         new FieldDefinition("price", FieldType.BIG_DECIMAL, false, false, true, false, null, List.of())));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
-                "demo", "com.menora", "0.0.1", "com.menora.demo", "21", "jar", List.of(e));
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
 
         assertThat(ctx).containsEntry("hasStringFields", true);
@@ -103,7 +134,7 @@ class EntityScaffoldContextTest {
                         new FieldDefinition("total", FieldType.BIG_DECIMAL, false, false, true, false, null, List.of()),
                         new FieldDefinition("paid", FieldType.BOOLEAN, false, false, false, false, null, List.of())));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
-                "demo", "com.menora", "0.0.1", "com.menora.demo", "21", "jar", List.of(e));
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
 
         assertThat(ctx).containsEntry("hasStringFields", false);

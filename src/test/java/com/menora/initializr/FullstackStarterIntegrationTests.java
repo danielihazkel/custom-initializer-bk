@@ -171,6 +171,93 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_scaffoldsPerLayerSubPackages() throws Exception {
+        // Default domainPackage (== packageName): classes split into .entity/.repository/.dto/
+        // .service/.controller, wired together by cross-layer imports.
+        Map<String, Object> nameField = Map.of("name", "name", "type", "String", "required", true);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField(), nameField))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        // Files land in per-layer sub-package directories.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/com/menora/shop/entity/User.java"));
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/com/menora/shop/repository/UserRepository.java"));
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/com/menora/shop/dto/UserDto.java"));
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/com/menora/shop/service/UserService.java"));
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/com/menora/shop/controller/UserController.java"));
+
+        // Package declarations + cross-layer imports.
+        assertThat(contentEndingWith(entries, "/entity/User.java"))
+                .contains("package com.menora.shop.entity;");
+        assertThat(contentEndingWith(entries, "/repository/UserRepository.java"))
+                .contains("package com.menora.shop.repository;")
+                .contains("import com.menora.shop.entity.User;");
+        assertThat(contentEndingWith(entries, "/dto/UserDto.java"))
+                .contains("package com.menora.shop.dto;")
+                .contains("import com.menora.shop.entity.User;");
+        assertThat(contentEndingWith(entries, "/service/UserService.java"))
+                .contains("package com.menora.shop.service;")
+                .contains("import com.menora.shop.entity.User;")
+                .contains("import com.menora.shop.repository.UserRepository;");
+        assertThat(contentEndingWith(entries, "/controller/UserController.java"))
+                .contains("package com.menora.shop.controller;")
+                .contains("import com.menora.shop.dto.UserDto;")
+                .contains("import com.menora.shop.service.UserService;");
+    }
+
+    @Test
+    void fullstackEndpoint_customDomainPackageUnderBase() throws Exception {
+        // A domainPackage below the base package nests the layer sub-packages under it.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("domainPackage", "com.menora.shop.catalog");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "Product", "fields", List.of(pkField()))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/com/menora/shop/catalog/entity/Product.java"));
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/com/menora/shop/catalog/controller/ProductController.java"));
+        assertThat(contentEndingWith(entries, "/controller/ProductController.java"))
+                .contains("package com.menora.shop.catalog.controller;")
+                .contains("import com.menora.shop.catalog.service.ProductService;");
+        // The @SpringBootApplication class stays in the base package (so its default scan covers the domain).
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/com/menora/shop/ShopApplication.java"));
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsDomainPackageOutsideBase() {
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "shop");
+            b.put("packageName", "com.menora.shop");
+            b.put("domainPackage", "com.acme.other");
+            b.put("bootVersion", "3.2.1");
+            b.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+        });
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("domainPackage").contains("sub-package");
+    }
+
+    @Test
     void fullstackEndpoint_rendersCompilableEnumAndDateFormControls() throws Exception {
         // Regression: an ENUM field's <option> map must be wrapped in JSX braces (otherwise
         // `tsc -b` fails with "Cannot find name 'v'"), and a LOCAL_DATE field must use a
@@ -211,6 +298,13 @@ class FullstackStarterIntegrationTests {
         // Enum union type is emitted for the field
         String personType = entries.get("people/frontend/src/types/Person.ts");
         assertThat(personType).contains("export type PersonStatusType = 'ACTIVE' | 'INACTIVE'");
+
+        // Backend: the DTO lives in its own .dto sub-package and imports the entity plus its
+        // nested enum, so the bare PersonStatusType reference still resolves across packages.
+        assertThat(contentEndingWith(entries, "/dto/PersonDto.java"))
+                .contains("package com.menora.people.dto;")
+                .contains("import com.menora.people.entity.Person;")
+                .contains("import com.menora.people.entity.Person.PersonStatusType;");
     }
 
     @Test
@@ -404,6 +498,14 @@ class FullstackStarterIntegrationTests {
         m.put("primaryKey", true);
         m.put("generated", true);
         return m;
+    }
+
+    /** Content of the single entry whose path ends with the given suffix. */
+    private static String contentEndingWith(Map<String, String> entries, String suffix) {
+        return entries.entrySet().stream()
+                .filter(e -> e.getKey().endsWith(suffix))
+                .map(Map.Entry::getValue)
+                .findFirst().orElseThrow();
     }
 
     /** Returns paths as keys (string contents) for text files. */

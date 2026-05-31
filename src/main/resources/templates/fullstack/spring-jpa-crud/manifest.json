@@ -8,7 +8,7 @@
   "files": [
     {
       "source": "Entity.java.mustache",
-      "path": "src/main/java/{{packagePath}}/{{EntityName}}.java",
+      "path": "src/main/java/{{entityPackagePath}}/{{EntityName}}.java",
       "perEntity": true,
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
@@ -16,7 +16,7 @@
     },
     {
       "source": "Repository.java.mustache",
-      "path": "src/main/java/{{packagePath}}/{{EntityName}}Repository.java",
+      "path": "src/main/java/{{repositoryPackagePath}}/{{EntityName}}Repository.java",
       "perEntity": true,
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
@@ -24,7 +24,7 @@
     },
     {
       "source": "Dto.java.mustache",
-      "path": "src/main/java/{{packagePath}}/{{EntityName}}Dto.java",
+      "path": "src/main/java/{{dtoPackagePath}}/{{EntityName}}Dto.java",
       "perEntity": true,
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
@@ -32,7 +32,7 @@
     },
     {
       "source": "Service.java.mustache",
-      "path": "src/main/java/{{packagePath}}/{{EntityName}}Service.java",
+      "path": "src/main/java/{{servicePackagePath}}/{{EntityName}}Service.java",
       "perEntity": true,
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
@@ -40,7 +40,7 @@
     },
     {
       "source": "Controller.java.mustache",
-      "path": "src/main/java/{{packagePath}}/{{EntityName}}Controller.java",
+      "path": "src/main/java/{{controllerPackagePath}}/{{EntityName}}Controller.java",
       "perEntity": true,
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",

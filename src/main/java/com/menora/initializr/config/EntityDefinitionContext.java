@@ -20,17 +20,21 @@ public class EntityDefinitionContext {
             ThreadLocal.withInitial(List::of);
     private static final ThreadLocal<String> BACKEND_KEY = new ThreadLocal<>();
     private static final ThreadLocal<String> FRONTEND_KEY = new ThreadLocal<>();
+    private static final ThreadLocal<String> DOMAIN_PACKAGE = new ThreadLocal<>();
 
-    public void populate(List<EntityDefinition> entities, String backendSetKey, String frontendSetKey) {
+    public void populate(List<EntityDefinition> entities, String backendSetKey, String frontendSetKey,
+                         String domainPackage) {
         ENTITIES.set(entities == null ? List.of() : List.copyOf(entities));
         BACKEND_KEY.set(backendSetKey);
         FRONTEND_KEY.set(frontendSetKey);
+        DOMAIN_PACKAGE.set(domainPackage);
     }
 
     public void clear() {
         ENTITIES.remove();
         BACKEND_KEY.remove();
         FRONTEND_KEY.remove();
+        DOMAIN_PACKAGE.remove();
     }
 
     public List<EntityDefinition> all() {
@@ -43,6 +47,10 @@ public class EntityDefinitionContext {
 
     public String getFrontendSetKey() {
         return FRONTEND_KEY.get();
+    }
+
+    public String getDomainPackage() {
+        return DOMAIN_PACKAGE.get();
     }
 
     public boolean isEmpty() {

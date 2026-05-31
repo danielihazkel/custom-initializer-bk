@@ -154,9 +154,10 @@ public class FullstackStarterController {
                 requireSet(frontendSetKey, EntityTemplateSetEntity.Kind.FRONTEND_REACT, "frontendTemplateSet");
 
         WebProjectRequest request = toWebRequest(body);
+        String domainPackage = resolveDomainPackage(body.domainPackage(), request.getPackageName());
         ensureRequiredDeps(request, backendSet, body.dependencies() != null);
         optionsContext.populate(body.opts());
-        entityContext.populate(entities, backendSetKey, frontendSetKey);
+        entityContext.populate(entities, backendSetKey, frontendSetKey, domainPackage);
 
         // Backend — runs through the standard pipeline. The EntityScaffoldContributor
         // (registered in spring.factories) picks up the populated context.
@@ -168,7 +169,7 @@ public class FullstackStarterController {
         }
 
         // Frontend — rendered inline outside the Initializr pipeline.
-        renderFrontend(frontendSet, request, entities, tempDir.resolve("frontend"));
+        renderFrontend(frontendSet, request, entities, domainPackage, tempDir.resolve("frontend"));
 
         // Root files
         Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
@@ -196,6 +197,39 @@ public class FullstackStarterController {
         if (capability.get(value) == null) {
             throw new WizardArgumentException(fieldName + " '" + value + "' is not a known version");
         }
+    }
+
+    /**
+     * Resolves the package the generated CRUD classes are scaffolded under. Defaults to the
+     * project's base {@code packageName}; a caller-supplied value must be a syntactically valid
+     * Java package and live at or below the base package, so Spring's default component/entity
+     * scanning (rooted at the {@code @SpringBootApplication} package) still finds the beans.
+     */
+    private static String resolveDomainPackage(String requested, String basePackage) {
+        if (requested == null || requested.isBlank()) {
+            return basePackage;
+        }
+        String domain = requested.trim();
+        if (!isValidPackageName(domain)) {
+            throw new WizardArgumentException("domainPackage '" + domain + "' is not a valid Java package");
+        }
+        if (!domain.equals(basePackage) && !domain.startsWith(basePackage + ".")) {
+            throw new WizardArgumentException("domainPackage '" + domain
+                    + "' must be the base package '" + basePackage + "' or a sub-package of it");
+        }
+        return domain;
+    }
+
+    /** Dot-separated Java identifiers, each a valid identifier and not empty. */
+    private static boolean isValidPackageName(String pkg) {
+        if (pkg == null || pkg.isBlank()) return false;
+        for (String segment : pkg.split("\\.", -1)) {
+            if (segment.isEmpty() || !Character.isJavaIdentifierStart(segment.charAt(0))) return false;
+            for (int i = 1; i < segment.length(); i++) {
+                if (!Character.isJavaIdentifierPart(segment.charAt(i))) return false;
+            }
+        }
+        return true;
     }
 
     @ExceptionHandler(WizardArgumentException.class)
@@ -258,13 +292,14 @@ public class FullstackStarterController {
     }
 
     private void renderFrontend(EntityTemplateSetEntity set, WebProjectRequest request,
-                                List<EntityDefinition> entities, Path targetDir) throws IOException {
+                                List<EntityDefinition> entities, String domainPackage, Path targetDir) throws IOException {
         List<EntityTemplateFileEntity> files = fileRepo.findBySetIdOrderBySortOrderAsc(set.getId());
         Map<String, Object> projectCtx = EntityScaffoldContext.buildProjectContext(
                 request.getArtifactId(),
                 request.getGroupId(),
                 request.getVersion(),
                 request.getPackageName(),
+                domainPackage,
                 request.getJavaVersion(),
                 request.getPackaging(),
                 entities);
