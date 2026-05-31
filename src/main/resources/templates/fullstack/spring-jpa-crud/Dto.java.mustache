@@ -2,12 +2,14 @@ package {{dtoPackage}};
 
 import {{entityPackage}}.{{EntityName}};
 {{#fields}}{{#isEnum}}import {{entityPackage}}.{{EntityName}}.{{enumTypeName}};
-{{/isEnum}}{{/fields}}{{#imports}}
+{{/isEnum}}{{/fields}}{{#hasValidation}}{{#hasNotNullFields}}import jakarta.validation.constraints.NotNull;
+{{/hasNotNullFields}}{{#hasSizeFields}}import jakarta.validation.constraints.Size;
+{{/hasSizeFields}}{{/hasValidation}}{{#imports}}
 import {{name}};
 {{/imports}}
 
 public record {{EntityName}}Dto(
-{{#fields}}        {{javaType}} {{name}}{{^last}},{{/last}}
+{{#fields}}        {{#hasValidation}}{{#isRequired}}{{^isGenerated}}@NotNull {{/isGenerated}}{{/isRequired}}{{#hasLength}}@Size(max = {{length}}) {{/hasLength}}{{/hasValidation}}{{javaType}} {{name}}{{^last}},{{/last}}
 {{/fields}}) {
 
     public static {{EntityName}}Dto from({{EntityName}} entity) {

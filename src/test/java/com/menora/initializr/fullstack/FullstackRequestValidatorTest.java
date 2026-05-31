@@ -106,4 +106,22 @@ class FullstackRequestValidatorTest {
                 .isInstanceOf(WizardArgumentException.class)
                 .hasMessageContaining("Duplicate field");
     }
+
+    @Test
+    void rejects_generatedOnNonPrimaryKey() {
+        var genNonPk = new FullstackStarterRequest.FieldDefinitionDto("code", "Long", false, true, null, null, null, null);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("User", List.of(pk(), genNonPk))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("'generated' only applies to the primary key");
+    }
+
+    @Test
+    void rejects_generatedOnNonIntegralPrimaryKey() {
+        var stringGenPk = new FullstackStarterRequest.FieldDefinitionDto("id", "String", true, true, null, null, null, null);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("User", List.of(stringGenPk))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("must be of type LONG or INTEGER");
+    }
 }

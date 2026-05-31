@@ -6,10 +6,18 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
+{{#hasValidation}}import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+{{/hasValidation}}import org.springframework.web.bind.annotation.*;
+{{#hasValidation}}
+import jakarta.validation.Valid;
+{{/hasValidation}}
 import java.util.NoSuchElementException;
+{{#hasValidation}}import java.util.HashMap;
+{{/hasValidation}}import java.util.Map;
 
 @RestController
 @RequestMapping("/api/{{entityNamePluralKebab}}")
@@ -39,12 +47,12 @@ public class {{EntityName}}Controller {
     }
 
     @PostMapping
-    public {{EntityName}}Dto create(@RequestBody {{EntityName}}Dto dto) {
+    public {{EntityName}}Dto create(@RequestBody {{#hasValidation}}@Valid {{/hasValidation}}{{EntityName}}Dto dto) {
         return {{EntityName}}Dto.from(service.create(dto.toEntity()));
     }
 
     @PutMapping("/{id}")
-    public {{EntityName}}Dto update(@PathVariable {{pkField.javaType}} id, @RequestBody {{EntityName}}Dto dto) {
+    public {{EntityName}}Dto update(@PathVariable {{pkField.javaType}} id, @RequestBody {{#hasValidation}}@Valid {{/hasValidation}}{{EntityName}}Dto dto) {
         return {{EntityName}}Dto.from(service.update(id, dto.toEntity()));
     }
 
@@ -57,5 +65,20 @@ public class {{EntityName}}Controller {
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Void> handleNotFound(NoSuchElementException ex) {
         return ResponseEntity.notFound().build();
+    }
+{{#hasValidation}}
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new HashMap<>();
+        for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
+            errors.putIfAbsent(fe.getField(), fe.getDefaultMessage());
+        }
+        return ResponseEntity.badRequest().body(errors);
+    }
+{{/hasValidation}}
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, String>> handleConflict(DataIntegrityViolationException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", "A record with these values already exists"));
     }
 }

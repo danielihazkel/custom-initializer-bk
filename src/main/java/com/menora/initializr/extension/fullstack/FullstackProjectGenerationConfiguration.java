@@ -74,6 +74,10 @@ public class FullstackProjectGenerationConfiguration {
                     description.getLanguage().jvmVersion(),
                     description.getPackaging() != null ? description.getPackaging().id() : null,
                     entities);
+            // Gate generated Bean Validation (@Valid, @NotNull, @Size, the 400 handler) on the
+            // validation starter actually being selected — otherwise the imports won't resolve.
+            projectCtx.put("hasValidation",
+                    description.getRequestedDependencies().containsKey("validation"));
             log.info("Rendering backend CRUD scaffolding: set='{}', {} files, {} entities",
                     setKey, files.size(), entities.size());
             FullstackRenderer.render(files, projectCtx, entities, projectRoot);

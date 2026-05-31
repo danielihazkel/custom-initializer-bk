@@ -338,6 +338,65 @@ class FullstackStarterIntegrationTests {
         assertThat(pom).doesNotContain("spring-boot-starter-validation");
         assertThat(pom).doesNotContain("spring-boot-starter-actuator");
         assertThat(pom).doesNotContain("<artifactId>h2</artifactId>");
+
+        // Without the validation starter, the generated controller must not reference Bean
+        // Validation (the import wouldn't resolve) — the @Valid wiring is gated on the dep.
+        String controller = contentEndingWith(entries, "/controller/UserController.java");
+        assertThat(controller).doesNotContain("jakarta.validation.Valid");
+        assertThat(controller).doesNotContain("@Valid");
+        assertThat(contentEndingWith(entries, "/dto/UserDto.java"))
+                .doesNotContain("jakarta.validation.constraints");
+    }
+
+    @Test
+    void fullstackEndpoint_wiresBeanValidationAndScopesSearch() throws Exception {
+        // Account has a required, length-bounded String → DTO gets @NotNull/@Size and a
+        // searchable list; Ledger has no String fields → its list hides the search box.
+        Map<String, Object> email = Map.of("name", "email", "type", "String", "required", true, "length", 200);
+        Map<String, Object> balance = Map.of("name", "balance", "type", "BigDecimal");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "bank");
+        body.put("packageName", "com.menora.bank");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(
+                Map.of("name", "Account", "fields", List.of(pkField(), email)),
+                Map.of("name", "Ledger", "fields", List.of(pkField(), balance))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        // DTO carries the constraints, with only the imports it uses.
+        String accountDto = contentEndingWith(entries, "/dto/AccountDto.java");
+        assertThat(accountDto)
+                .contains("import jakarta.validation.constraints.NotNull;")
+                .contains("import jakarta.validation.constraints.Size;")
+                .contains("@NotNull")
+                .contains("@Size(max = 200)");
+        // id is a generated PK → it must NOT be @NotNull (it is null until persisted).
+        assertThat(accountDto).contains("Long id");
+
+        // Controller validates the body and maps the failure modes to 400 / 409.
+        String accountController = contentEndingWith(entries, "/controller/AccountController.java");
+        assertThat(accountController)
+                .contains("import jakarta.validation.Valid;")
+                .contains("@Valid")
+                .contains("MethodArgumentNotValidException")
+                .contains("DataIntegrityViolationException")
+                .contains("HttpStatus.CONFLICT");
+
+        // Frontend search box is gated on the entity having a string field.
+        assertThat(entries.get("bank/frontend/src/pages/AccountPage.tsx")).contains("searchable={true}");
+        assertThat(entries.get("bank/frontend/src/pages/LedgerPage.tsx")).contains("searchable={false}");
+        assertThat(entries.get("bank/frontend/src/components/Table.tsx"))
+                .contains("searchable")
+                .contains("{searchable &&");
     }
 
     @Test

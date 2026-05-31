@@ -32,6 +32,8 @@ interface Props<T extends { id?: number | string | null }> {
   onSortChange: (next: SortSpec | null) => void
   search: string
   onSearchChange: (next: string) => void
+  /** When false, the search box is hidden (the backend only filters on string fields). */
+  searchable?: boolean
   pagination: PaginationProps
 }
 
@@ -45,7 +47,7 @@ function nextSort(current: SortSpec | null, field: string): SortSpec | null {
 
 export function Table<T extends { id?: number | string | null }>({
   columns, rows, onEdit, onDelete, loading,
-  sort, onSortChange, search, onSearchChange, pagination,
+  sort, onSortChange, search, onSearchChange, pagination, searchable = true,
 }: Props<T>) {
   const { pageNumber, pageSize, totalPages, totalElements, onPageChange, onPageSizeChange } = pagination
   const startRow = totalElements === 0 ? 0 : pageNumber * pageSize + 1
@@ -53,16 +55,18 @@ export function Table<T extends { id?: number | string | null }>({
 
   return (
     <div className="space-y-3">
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={e => onSearchChange(e.target.value)}
-          placeholder="Search…"
-          className="w-full pl-9 pr-3 py-2 text-sm rounded-md border border-slate-300 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-        />
-      </div>
+      {searchable && (
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => onSearchChange(e.target.value)}
+            placeholder="Search…"
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-md border border-slate-300 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+          />
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">

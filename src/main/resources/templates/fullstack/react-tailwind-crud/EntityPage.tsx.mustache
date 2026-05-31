@@ -5,6 +5,7 @@ import type { {{EntityName}} } from '../types/{{EntityName}}'
 import { Table, type Column, type SortSpec } from '../components/Table'
 import { FormDrawer } from '../components/FormDrawer'
 import { {{EntityName}}Form } from '../components/{{EntityName}}Form'
+import { ApiError } from '../api/client'
 
 const columns: Column<{{EntityName}}>[] = [
 {{#fields}}  { label: '{{Name}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
@@ -35,30 +36,40 @@ export default function {{EntityName}}Page() {
   const [isNew, setIsNew] = useState(false)
   const [saving, setSaving] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
   function openNew() {
     setEditing({})
     setIsNew(true)
+    setFormErrors({})
     setDrawerOpen(true)
   }
   function openEdit(row: {{EntityName}}) {
     setEditing({ ...row })
     setIsNew(false)
+    setFormErrors({})
     setDrawerOpen(true)
   }
   function close() {
     setDrawerOpen(false)
     setEditing(null)
+    setFormErrors({})
   }
   async function save() {
     if (!editing) return
     setSaving(true)
+    setFormErrors({})
     try {
       if (isNew) await create(editing as Omit<{{EntityName}}, 'id'>)
       else await update(editing.{{pkField.name}} as number | string, editing as {{EntityName}})
       close()
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e))
+      // A 400 carries per-field messages — show them inline; anything else is a general alert.
+      if (e instanceof ApiError && e.fieldErrors) {
+        setFormErrors(e.fieldErrors)
+      } else {
+        alert(e instanceof Error ? e.message : String(e))
+      }
     } finally {
       setSaving(false)
     }
@@ -110,7 +121,9 @@ export default function {{EntityName}}Page() {
         onSortChange={setSort}
         search={search}
         onSearchChange={setSearch}
-        pagination={pagination}
+{{#hasStringFields}}        searchable={true}
+{{/hasStringFields}}{{^hasStringFields}}        searchable={false}
+{{/hasStringFields}}        pagination={pagination}
       />
 
       <FormDrawer
@@ -124,6 +137,7 @@ export default function {{EntityName}}Page() {
           <{{EntityName}}Form
             value={editing}
             onChange={setEditing}
+            errors={formErrors}
             isNew={isNew}
           />
         )}

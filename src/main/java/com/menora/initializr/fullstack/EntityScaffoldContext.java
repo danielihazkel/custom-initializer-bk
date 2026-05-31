@@ -143,6 +143,13 @@ public final class EntityScaffoldContext {
         view.put("stringFields", stringFieldViews);
         view.put("hasStringFields", !stringFieldViews.isEmpty());
 
+        // Aggregate flags so the DTO template only imports a Bean Validation constraint it
+        // actually uses. @NotNull is skipped on a generated PK (it is null until persisted).
+        view.put("hasNotNullFields", fieldViews.stream().anyMatch(
+                m -> Boolean.TRUE.equals(m.get("isRequired")) && !Boolean.TRUE.equals(m.get("isGenerated"))));
+        view.put("hasSizeFields", fieldViews.stream().anyMatch(
+                m -> Boolean.TRUE.equals(m.get("hasLength"))));
+
         List<Map<String, Object>> importViews = new ArrayList<>(imports.size());
         for (String imp : imports) {
             Map<String, Object> m = new LinkedHashMap<>();

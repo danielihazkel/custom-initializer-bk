@@ -116,11 +116,21 @@ public final class FullstackRequestValidator {
                     throw new WizardArgumentException("length must be positive (field '" + fname + "' on entity '" + name + "')");
                 }
 
+                boolean isGenerated = Boolean.TRUE.equals(f.generated());
+                if (isGenerated) {
+                    if (!isPk) {
+                        throw new WizardArgumentException("'generated' only applies to the primary key (field '" + fname + "' on entity '" + name + "')");
+                    }
+                    if (type != FieldType.LONG && type != FieldType.INTEGER) {
+                        throw new WizardArgumentException("a generated primary key must be of type LONG or INTEGER (field '" + fname + "' on entity '" + name + "')");
+                    }
+                }
+
                 fields.add(new FieldDefinition(
                         fname,
                         type,
                         isPk,
-                        Boolean.TRUE.equals(f.generated()),
+                        isGenerated,
                         Boolean.TRUE.equals(f.required()),
                         Boolean.TRUE.equals(f.unique()),
                         f.length(),
