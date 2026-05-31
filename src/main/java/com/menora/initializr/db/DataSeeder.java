@@ -161,7 +161,20 @@ public class DataSeeder implements SmartInitializingSingleton {
             EntityTemplateFileEntity row = new EntityTemplateFileEntity();
             row.setSetId(set.getId());
             row.setPathTemplate(f.get("path").asText());
-            row.setContent(readClasspath(baseDir + f.get("source").asText()));
+            JsonNode sourceNode = f.get("source");
+            if (sourceNode == null || sourceNode.asText().isBlank()) {
+                throw new IllegalStateException("Template set '" + set.getSetKey()
+                        + "' has a file entry with a missing/blank 'source' (path="
+                        + f.path("path").asText() + ")");
+            }
+            String resourcePath = baseDir + sourceNode.asText();
+            try {
+                row.setContent(readClasspath(resourcePath));
+            } catch (IOException e) {
+                throw new IllegalStateException("Template set '" + set.getSetKey()
+                        + "' references missing content file '" + sourceNode.asText()
+                        + "' (expected at " + resourcePath + ")", e);
+            }
             row.setSubstitutionType(FileContributionEntity.SubstitutionType.valueOf(
                     f.get("substitutionType").asText()));
             row.setFileType(EntityTemplateFileEntity.FileType.valueOf(f.get("fileType").asText()));
