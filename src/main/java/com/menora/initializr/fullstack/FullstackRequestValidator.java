@@ -101,6 +101,9 @@ public final class FullstackRequestValidator {
                         if (v == null || v.isBlank() || !isValidJavaIdentifier(v)) {
                             throw new WizardArgumentException("Invalid enum constant '" + v + "' on field '" + fname + "'");
                         }
+                        if (RESERVED_JAVA_KEYWORDS.contains(v.toLowerCase(Locale.ROOT))) {
+                            throw new WizardArgumentException("Enum constant '" + v + "' is a reserved keyword (field '" + fname + "' on entity '" + name + "')");
+                        }
                     }
                 } else if (f.enumValues() != null && !f.enumValues().isEmpty()) {
                     throw new WizardArgumentException("enumValues only allowed when type=ENUM (field '" + fname + "' on entity '" + name + "')");

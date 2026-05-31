@@ -91,30 +91,9 @@ public class FullstackStarterController {
 
     @PostMapping("/starter-fullstack.zip")
     public ResponseEntity<byte[]> generate(@RequestBody FullstackStarterRequest body) throws IOException {
-        List<EntityDefinition> entities = FullstackRequestValidator.validateAndConvert(body);
-        String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
-        String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
-
-        WebProjectRequest request = toWebRequest(body);
-        ensureRequiredDeps(request, backendSetKey, body.dependencies() != null);
-        optionsContext.populate(body.opts());
-        entityContext.populate(entities, backendSetKey, frontendSetKey);
-
         Path tempDir = Files.createTempDirectory("fullstack-");
-        Path backendDir = null;
         try {
-            // Backend — runs through the standard pipeline. The EntityScaffoldContributor
-            // (registered in spring.factories) picks up the populated context.
-            backendDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
-            copyDirectory(backendDir, tempDir.resolve("backend"));
-
-            // Frontend — rendered inline outside the Initializr pipeline.
-            renderFrontend(frontendSetKey, request, entities, tempDir.resolve("frontend"));
-
-            // Root files
-            Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
-            Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
-
+            WebProjectRequest request = buildArtifacts(body, tempDir);
             byte[] zipBytes = zipDirectory(tempDir, request.getArtifactId());
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -122,7 +101,6 @@ public class FullstackStarterController {
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .body(zipBytes);
         } finally {
-            if (backendDir != null) FileSystemUtils.deleteRecursively(backendDir);
             FileSystemUtils.deleteRecursively(tempDir);
             entityContext.clear();
             optionsContext.clear();
@@ -131,23 +109,9 @@ public class FullstackStarterController {
 
     @PostMapping("/starter-fullstack.preview")
     public ProjectPreviewController.PreviewResponse preview(@RequestBody FullstackStarterRequest body) throws IOException {
-        List<EntityDefinition> entities = FullstackRequestValidator.validateAndConvert(body);
-        String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
-        String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
-
-        WebProjectRequest request = toWebRequest(body);
-        ensureRequiredDeps(request, backendSetKey, body.dependencies() != null);
-        optionsContext.populate(body.opts());
-        entityContext.populate(entities, backendSetKey, frontendSetKey);
-
         Path tempDir = Files.createTempDirectory("fullstack-preview-");
-        Path backendDir = null;
         try {
-            backendDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
-            copyDirectory(backendDir, tempDir.resolve("backend"));
-            renderFrontend(frontendSetKey, request, entities, tempDir.resolve("frontend"));
-            Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
-            Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
+            buildArtifacts(body, tempDir);
 
             List<ProjectPreviewController.PreviewFile> files = new ArrayList<>();
             final Path root = tempDir;
@@ -163,11 +127,63 @@ public class FullstackStarterController {
                     .map(ProjectPreviewController.PreviewFile::path).sorted().toList();
             return new ProjectPreviewController.PreviewResponse(files, buildChildren("", paths));
         } finally {
-            if (backendDir != null) FileSystemUtils.deleteRecursively(backendDir);
             FileSystemUtils.deleteRecursively(tempDir);
             entityContext.clear();
             optionsContext.clear();
         }
+    }
+
+    /**
+     * Shared pipeline for {@link #generate} and {@link #preview}: validates the request,
+     * resolves and kind-checks both template sets (fail-fast 400 on a bad key), then renders
+     * the backend + frontend + root files into {@code tempDir}. Returns the resolved request
+     * (for artifactId / zip naming). The caller owns {@code tempDir} cleanup and clearing the
+     * thread-local contexts in a {@code finally}.
+     */
+    private WebProjectRequest buildArtifacts(FullstackStarterRequest body, Path tempDir) throws IOException {
+        List<EntityDefinition> entities = FullstackRequestValidator.validateAndConvert(body);
+        String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
+        String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
+
+        // Resolve both sets up front so a missing/wrong-kind key fails fast with a clear 400,
+        // instead of silently producing an empty frontend or an un-scaffolded backend.
+        EntityTemplateSetEntity backendSet =
+                requireSet(backendSetKey, EntityTemplateSetEntity.Kind.BACKEND_JAVA, "backendTemplateSet");
+        EntityTemplateSetEntity frontendSet =
+                requireSet(frontendSetKey, EntityTemplateSetEntity.Kind.FRONTEND_REACT, "frontendTemplateSet");
+
+        WebProjectRequest request = toWebRequest(body);
+        ensureRequiredDeps(request, backendSet, body.dependencies() != null);
+        optionsContext.populate(body.opts());
+        entityContext.populate(entities, backendSetKey, frontendSetKey);
+
+        // Backend — runs through the standard pipeline. The EntityScaffoldContributor
+        // (registered in spring.factories) picks up the populated context.
+        Path backendDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        try {
+            copyDirectory(backendDir, tempDir.resolve("backend"));
+        } finally {
+            FileSystemUtils.deleteRecursively(backendDir);
+        }
+
+        // Frontend — rendered inline outside the Initializr pipeline.
+        renderFrontend(frontendSet, request, entities, tempDir.resolve("frontend"));
+
+        // Root files
+        Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
+        Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
+        return request;
+    }
+
+    /** Resolves a template set by key and asserts its kind, throwing HTTP 400 otherwise. */
+    private EntityTemplateSetEntity requireSet(String setKey, EntityTemplateSetEntity.Kind kind, String fieldName) {
+        EntityTemplateSetEntity set = setRepo.findBySetKey(setKey).orElseThrow(() ->
+                new WizardArgumentException(fieldName + " '" + setKey + "' not found"));
+        if (set.getKind() != kind) {
+            throw new WizardArgumentException(fieldName + " '" + setKey
+                    + "' is not a " + kind + " set (kind=" + set.getKind() + ")");
+        }
+        return set;
     }
 
     @ExceptionHandler(WizardArgumentException.class)
@@ -209,36 +225,23 @@ public class FullstackStarterController {
      *  a working project. When a list is supplied (even empty), it is respected
      *  exactly — nothing is force-added. The UI always sends the user's final
      *  selection here, so this is the user-respecting path. */
-    private void ensureRequiredDeps(WebProjectRequest request, String backendSetKey,
+    private void ensureRequiredDeps(WebProjectRequest request, EntityTemplateSetEntity backendSet,
                                     boolean callerSpecifiedDeps) {
         if (callerSpecifiedDeps) {
             // Respect explicit intent — even an empty list means "I want nothing extra".
             return;
         }
-        if (backendSetKey == null) return;
-        EntityTemplateSetEntity set = setRepo.findBySetKey(backendSetKey).orElse(null);
-        if (set == null) return;
         Set<String> deps = new LinkedHashSet<>(
                 request.getDependencies() == null ? List.of() : request.getDependencies());
         for (EntityTemplateSetDefaultDepEntity dd :
-                defaultDepRepo.findBySetIdOrderBySortOrderAsc(set.getId())) {
+                defaultDepRepo.findBySetIdOrderBySortOrderAsc(backendSet.getId())) {
             deps.add(dd.getDepId());
         }
         request.setDependencies(new ArrayList<>(deps));
     }
 
-    private void renderFrontend(String setKey, WebProjectRequest request,
+    private void renderFrontend(EntityTemplateSetEntity set, WebProjectRequest request,
                                 List<EntityDefinition> entities, Path targetDir) throws IOException {
-        EntityTemplateSetEntity set = setRepo.findBySetKey(setKey).orElse(null);
-        if (set == null) {
-            log.warn("frontendTemplateSet '{}' not found — frontend will be empty", setKey);
-            Files.createDirectories(targetDir);
-            return;
-        }
-        if (set.getKind() != EntityTemplateSetEntity.Kind.FRONTEND_REACT) {
-            throw new WizardArgumentException("frontendTemplateSet '" + setKey
-                    + "' is not a FRONTEND_REACT set (kind=" + set.getKind() + ")");
-        }
         List<EntityTemplateFileEntity> files = fileRepo.findBySetIdOrderBySortOrderAsc(set.getId());
         Map<String, Object> projectCtx = EntityScaffoldContext.buildProjectContext(
                 request.getArtifactId(),
@@ -250,7 +253,7 @@ public class FullstackStarterController {
                 entities);
         Files.createDirectories(targetDir);
         log.info("Rendering frontend CRUD scaffolding: set='{}', {} files, {} entities",
-                setKey, files.size(), entities.size());
+                set.getSetKey(), files.size(), entities.size());
         FullstackRenderer.render(files, projectCtx, entities, targetDir);
     }
 

@@ -268,6 +268,74 @@ class FullstackStarterIntegrationTests {
         assertThat(response.getBody()).contains("At least one entity");
     }
 
+    @Test
+    void fullstackEndpoint_rejectsUnknownBackendTemplateSet() {
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "demo");
+            b.put("bootVersion", "3.2.1");
+            b.put("backendTemplateSet", "does-not-exist");
+            b.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+        });
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("backendTemplateSet").contains("not found");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsUnknownFrontendTemplateSet() {
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "demo");
+            b.put("bootVersion", "3.2.1");
+            b.put("frontendTemplateSet", "no-such-frontend");
+            b.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+        });
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("frontendTemplateSet").contains("not found");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsWrongKindTemplateSet() {
+        // Point frontendTemplateSet at a backend set — kind mismatch must 400, not silently swap.
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "demo");
+            b.put("bootVersion", "3.2.1");
+            b.put("frontendTemplateSet", "spring-jpa-crud");
+            b.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+        });
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("frontendTemplateSet").contains("FRONTEND_REACT");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsReservedKeywordEnumConstant() {
+        Map<String, Object> enumField = new LinkedHashMap<>();
+        enumField.put("name", "status");
+        enumField.put("type", "Enum");
+        enumField.put("enumValues", List.of("ACTIVE", "class"));
+
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "demo");
+            b.put("bootVersion", "3.2.1");
+            b.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField(), enumField))));
+        });
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("reserved keyword");
+    }
+
+    /** POSTs a fullstack request built by the given mutator and returns the raw response. */
+    private ResponseEntity<String> postFullstack(java.util.function.Consumer<Map<String, Object>> mutator) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        mutator.accept(body);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+    }
+
     private static Map<String, Object> pkField() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("name", "id");
