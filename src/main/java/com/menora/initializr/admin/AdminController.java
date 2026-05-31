@@ -585,17 +585,21 @@ public class AdminController {
     }
 
     @PostMapping("/versions")
+    @Transactional
     public VersionDefinitionEntity createVersion(@Valid @RequestBody VersionDefinitionEntity version) {
         version.setId(null);
+        if (version.isDefault()) clearOtherDefaultVersions(version.getKind(), null);
         VersionDefinitionEntity saved = versionRepo.save(version);
         refreshMetadata();
         return saved;
     }
 
     @PutMapping("/versions/{id}")
+    @Transactional
     public VersionDefinitionEntity updateVersion(@PathVariable Long id,
                                                  @Valid @RequestBody VersionDefinitionEntity version) {
         version.setId(id);
+        if (version.isDefault()) clearOtherDefaultVersions(version.getKind(), id);
         VersionDefinitionEntity saved = versionRepo.save(version);
         refreshMetadata();
         return saved;
@@ -606,6 +610,19 @@ public class AdminController {
         versionRepo.deleteById(id);
         refreshMetadata();
         return ResponseEntity.noContent().build();
+    }
+
+    /** Enforces the "at most one default per kind" invariant — flips the other rows
+     *  of the same {@link VersionKind} to is_default=false instead of failing the save.
+     *  Without this, {@code VersionService.defaultId()} returns whichever stale default
+     *  sorts first, so admin default changes are silently ignored. */
+    private void clearOtherDefaultVersions(VersionKind kind, Long keepId) {
+        for (VersionDefinitionEntity v : versionRepo.findByKindOrderBySortOrderAscIdAsc(kind)) {
+            if (v.isDefault() && (keepId == null || !v.getId().equals(keepId))) {
+                v.setDefault(false);
+                versionRepo.save(v);
+            }
+        }
     }
 
     // ── Export / Import ───────────────────────────────────────────────────────
