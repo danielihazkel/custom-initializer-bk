@@ -20,6 +20,7 @@ public class ConfigurationExport {
     private List<EntityTemplateFileExport> entityTemplateFiles;
     private List<EntityTemplateSetDefaultDepExport> entityTemplateSetDefaultDeps;
     private List<ColorPaletteExport> colorPalettes;
+    private List<VersionExport> versionDefinitions;
 
     // ── Getters/Setters ──────────────────────────────────────────────────────
 
@@ -55,17 +56,22 @@ public class ConfigurationExport {
     public void setEntityTemplateSetDefaultDeps(List<EntityTemplateSetDefaultDepExport> entityTemplateSetDefaultDeps) { this.entityTemplateSetDefaultDeps = entityTemplateSetDefaultDeps; }
     public List<ColorPaletteExport> getColorPalettes() { return colorPalettes; }
     public void setColorPalettes(List<ColorPaletteExport> colorPalettes) { this.colorPalettes = colorPalettes; }
+    public List<VersionExport> getVersionDefinitions() { return versionDefinitions; }
+    public void setVersionDefinitions(List<VersionExport> versionDefinitions) { this.versionDefinitions = versionDefinitions; }
 
     // ── Inner DTOs ───────────────────────────────────────────────────────────
 
     public static class GroupExport {
         private String name;
         private int sortOrder;
+        private String projectKind;
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+        public String getProjectKind() { return projectKind; }
+        public void setProjectKind(String projectKind) { this.projectKind = projectKind; }
     }
 
     public static class EntryExport {
@@ -80,6 +86,7 @@ public class ConfigurationExport {
         private String repository;
         private int sortOrder;
         private String compatibilityRange;
+        private String projectKind;
 
         public String getGroupName() { return groupName; }
         public void setGroupName(String groupName) { this.groupName = groupName; }
@@ -103,6 +110,8 @@ public class ConfigurationExport {
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
         public String getCompatibilityRange() { return compatibilityRange; }
         public void setCompatibilityRange(String compatibilityRange) { this.compatibilityRange = compatibilityRange; }
+        public String getProjectKind() { return projectKind; }
+        public void setProjectKind(String projectKind) { this.projectKind = projectKind; }
     }
 
     public static class FileContribExport {
@@ -114,6 +123,7 @@ public class ConfigurationExport {
         private String javaVersion;
         private String subOptionId;
         private int sortOrder;
+        private String projectKind;
 
         public String getDependencyId() { return dependencyId; }
         public void setDependencyId(String dependencyId) { this.dependencyId = dependencyId; }
@@ -131,6 +141,8 @@ public class ConfigurationExport {
         public void setSubOptionId(String subOptionId) { this.subOptionId = subOptionId; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+        public String getProjectKind() { return projectKind; }
+        public void setProjectKind(String projectKind) { this.projectKind = projectKind; }
     }
 
     public static class BuildCustomExport {
@@ -146,6 +158,7 @@ public class ConfigurationExport {
         private String repoUrl;
         private boolean snapshotsEnabled;
         private int sortOrder;
+        private String projectKind;
 
         public String getDependencyId() { return dependencyId; }
         public void setDependencyId(String dependencyId) { this.dependencyId = dependencyId; }
@@ -171,6 +184,8 @@ public class ConfigurationExport {
         public void setSnapshotsEnabled(boolean snapshotsEnabled) { this.snapshotsEnabled = snapshotsEnabled; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+        public String getProjectKind() { return projectKind; }
+        public void setProjectKind(String projectKind) { this.projectKind = projectKind; }
     }
 
     public static class SubOptionExport {
@@ -179,6 +194,7 @@ public class ConfigurationExport {
         private String label;
         private String description;
         private int sortOrder;
+        private String projectKind;
 
         public String getDependencyId() { return dependencyId; }
         public void setDependencyId(String dependencyId) { this.dependencyId = dependencyId; }
@@ -190,6 +206,8 @@ public class ConfigurationExport {
         public void setDescription(String description) { this.description = description; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+        public String getProjectKind() { return projectKind; }
+        public void setProjectKind(String projectKind) { this.projectKind = projectKind; }
     }
 
     public static class CompatibilityExport {
@@ -198,6 +216,7 @@ public class ConfigurationExport {
         private String relationType;
         private String description;
         private int sortOrder;
+        private String projectKind;
 
         public String getSourceDepId() { return sourceDepId; }
         public void setSourceDepId(String sourceDepId) { this.sourceDepId = sourceDepId; }
@@ -209,6 +228,8 @@ public class ConfigurationExport {
         public void setDescription(String description) { this.description = description; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+        public String getProjectKind() { return projectKind; }
+        public void setProjectKind(String projectKind) { this.projectKind = projectKind; }
     }
 
     public static class TemplateExport {
@@ -221,6 +242,7 @@ public class ConfigurationExport {
         private String javaVersion;
         private String packaging;
         private int sortOrder;
+        private String projectKind;
 
         public String getTemplateId() { return templateId; }
         public void setTemplateId(String templateId) { this.templateId = templateId; }
@@ -240,6 +262,8 @@ public class ConfigurationExport {
         public void setPackaging(String packaging) { this.packaging = packaging; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+        public String getProjectKind() { return projectKind; }
+        public void setProjectKind(String projectKind) { this.projectKind = projectKind; }
     }
 
     public static class TemplateDepExport {
@@ -394,5 +418,33 @@ public class ConfigurationExport {
         public void setPerEntity(boolean perEntity) { this.perEntity = perEntity; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    }
+
+    public static class VersionExport {
+        private String kind;
+        private String versionId;
+        private String displayName;
+        private boolean isDefault;
+        private int sortOrder;
+        private boolean enabled;
+        private String npmSemver;
+        private String typesSemver;
+
+        public String getKind() { return kind; }
+        public void setKind(String kind) { this.kind = kind; }
+        public String getVersionId() { return versionId; }
+        public void setVersionId(String versionId) { this.versionId = versionId; }
+        public String getDisplayName() { return displayName; }
+        public void setDisplayName(String displayName) { this.displayName = displayName; }
+        public boolean isDefault() { return isDefault; }
+        public void setDefault(boolean isDefault) { this.isDefault = isDefault; }
+        public int getSortOrder() { return sortOrder; }
+        public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getNpmSemver() { return npmSemver; }
+        public void setNpmSemver(String npmSemver) { this.npmSemver = npmSemver; }
+        public String getTypesSemver() { return typesSemver; }
+        public void setTypesSemver(String typesSemver) { this.typesSemver = typesSemver; }
     }
 }

@@ -1,0 +1,11 @@
+[
+  { "depId": "__common__", "type": "ADD_REPOSITORY", "repoId": "menora-release", "repoName": "Menora Artifactory Releases", "repoUrl": "https://repo.menora.co.il/artifactory/libs-release", "snapshotsEnabled": false, "sortOrder": 0 },
+  { "depId": "__common__", "type": "ADD_REPOSITORY", "repoId": "menora-snapshot", "repoName": "Menora Artifactory Snapshots", "repoUrl": "https://repo.menora.co.il/artifactory/libs-snapshot", "snapshotsEnabled": true, "sortOrder": 1 },
+  { "depId": "__common__", "type": "EXCLUDE_DEPENDENCY", "excludeFromGroupId": "org.springframework.boot", "excludeFromArtifactId": "spring-boot-starter", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-logging", "sortOrder": 2 },
+  { "depId": "__common__", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-log4j2", "sortOrder": 3 },
+  { "depId": "__common__", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.projectlombok", "mavenArtifactId": "lombok", "sortOrder": 4 },
+  { "depId": "mail-sampler", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-mail", "sortOrder": 0 },
+  { "depId": "mapstruct", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.mapstruct", "mavenArtifactId": "mapstruct-processor", "version": "1.6.3", "sortOrder": 0 },
+  { "depId": "mapstruct", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.projectlombok", "mavenArtifactId": "lombok-mapstruct-binding", "version": "0.2.0", "sortOrder": 1 },
+  { "depId": "cache", "type": "ADD_DEPENDENCY", "mavenGroupId": "com.github.ben-manes.caffeine", "mavenArtifactId": "caffeine", "sortOrder": 0 }
+]

@@ -1,0 +1,13 @@
+[
+  { "sourceDepId": "web", "targetDepId": "webflux", "relationType": "CONFLICTS", "description": "Spring MVC and WebFlux use incompatible server models — choose one", "sortOrder": 0 },
+  { "sourceDepId": "data-jpa", "targetDepId": "postgresql", "relationType": "RECOMMENDS", "description": "JPA requires a database driver — add the PostgreSQL Driver", "sortOrder": 1 },
+  { "sourceDepId": "mssql", "targetDepId": "data-jpa", "relationType": "RECOMMENDS", "description": "MSSQL driver works best with Spring Data JPA", "sortOrder": 6 },
+  { "sourceDepId": "db2", "targetDepId": "data-jpa", "relationType": "RECOMMENDS", "description": "DB2 driver works best with Spring Data JPA", "sortOrder": 7 },
+  { "sourceDepId": "oracle", "targetDepId": "data-jpa", "relationType": "RECOMMENDS", "description": "Oracle driver works best with Spring Data JPA", "sortOrder": 8 },
+  { "sourceDepId": "actuator", "targetDepId": "prometheus", "relationType": "RECOMMENDS", "description": "Add Micrometer Prometheus to export Actuator metrics to Prometheus", "sortOrder": 2 },
+  { "sourceDepId": "rqueue", "targetDepId": "data-jpa", "relationType": "REQUIRES", "description": "Sonus Rqueue requires a JPA datasource to persist job state", "sortOrder": 3 },
+  { "sourceDepId": "security", "targetDepId": "web", "relationType": "REQUIRES", "description": "Spring Security requires a web layer — add Spring Web", "sortOrder": 4 },
+  { "sourceDepId": "mail-sampler", "targetDepId": "web", "relationType": "RECOMMENDS", "description": "Mail Sampler works best with a web layer for REST endpoints", "sortOrder": 5 },
+  { "sourceDepId": "data-jpa", "targetDepId": "h2", "relationType": "RECOMMENDS", "description": "JPA requires a database driver — add H2 for development/testing", "sortOrder": 9 },
+  { "sourceDepId": "data-jpa", "targetDepId": "mapstruct", "relationType": "RECOMMENDS", "description": "Use MapStruct to convert between JPA entities and DTOs", "sortOrder": 10 }
+]

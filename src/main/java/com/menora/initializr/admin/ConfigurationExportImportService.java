@@ -30,6 +30,7 @@ public class ConfigurationExportImportService {
     private final EntityTemplateFileRepository entityTemplateFileRepo;
     private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
     private final ColorPaletteRepository colorPaletteRepo;
+    private final VersionDefinitionRepository versionRepo;
 
     public ConfigurationExportImportService(InitializrMetadataProvider metadataProvider,
                                              DependencyGroupRepository groupRepo,
@@ -45,7 +46,8 @@ public class ConfigurationExportImportService {
                                              EntityTemplateSetRepository entityTemplateSetRepo,
                                              EntityTemplateFileRepository entityTemplateFileRepo,
                                              EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
-                                             ColorPaletteRepository colorPaletteRepo) {
+                                             ColorPaletteRepository colorPaletteRepo,
+                                             VersionDefinitionRepository versionRepo) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -61,6 +63,7 @@ public class ConfigurationExportImportService {
         this.entityTemplateFileRepo = entityTemplateFileRepo;
         this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
         this.colorPaletteRepo = colorPaletteRepo;
+        this.versionRepo = versionRepo;
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -75,6 +78,7 @@ public class ConfigurationExportImportService {
                     GroupExport ge = new GroupExport();
                     ge.setName(g.getName());
                     ge.setSortOrder(g.getSortOrder());
+                    ge.setProjectKind(g.getProjectKind().name());
                     return ge;
                 }).toList());
 
@@ -92,6 +96,7 @@ public class ConfigurationExportImportService {
                     ee.setRepository(e.getRepository());
                     ee.setSortOrder(e.getSortOrder());
                     ee.setCompatibilityRange(e.getCompatibilityRange());
+                    ee.setProjectKind(e.getProjectKind().name());
                     return ee;
                 }).toList());
 
@@ -106,6 +111,7 @@ public class ConfigurationExportImportService {
                     fe.setJavaVersion(f.getJavaVersion());
                     fe.setSubOptionId(f.getSubOptionId());
                     fe.setSortOrder(f.getSortOrder());
+                    fe.setProjectKind(f.getProjectKind().name());
                     return fe;
                 }).toList());
 
@@ -124,6 +130,7 @@ public class ConfigurationExportImportService {
                     be.setRepoUrl(b.getRepoUrl());
                     be.setSnapshotsEnabled(b.isSnapshotsEnabled());
                     be.setSortOrder(b.getSortOrder());
+                    be.setProjectKind(b.getProjectKind().name());
                     return be;
                 }).toList());
 
@@ -135,6 +142,7 @@ public class ConfigurationExportImportService {
                     se.setLabel(s.getLabel());
                     se.setDescription(s.getDescription());
                     se.setSortOrder(s.getSortOrder());
+                    se.setProjectKind(s.getProjectKind().name());
                     return se;
                 }).toList());
 
@@ -146,6 +154,7 @@ public class ConfigurationExportImportService {
                     ce.setRelationType(c.getRelationType().name());
                     ce.setDescription(c.getDescription());
                     ce.setSortOrder(c.getSortOrder());
+                    ce.setProjectKind(c.getProjectKind().name());
                     return ce;
                 }).toList());
 
@@ -161,6 +170,7 @@ public class ConfigurationExportImportService {
                     te.setJavaVersion(t.getJavaVersion());
                     te.setPackaging(t.getPackaging());
                     te.setSortOrder(t.getSortOrder());
+                    te.setProjectKind(t.getProjectKind().name());
                     return te;
                 }).toList());
 
@@ -250,6 +260,20 @@ public class ConfigurationExportImportService {
                     return cpe;
                 }).toList());
 
+        export_.setVersionDefinitions(
+                versionRepo.findAllByOrderByKindAscSortOrderAscIdAsc().stream().map(v -> {
+                    VersionExport ve = new VersionExport();
+                    ve.setKind(v.getKind().name());
+                    ve.setVersionId(v.getVersionId());
+                    ve.setDisplayName(v.getDisplayName());
+                    ve.setDefault(v.isDefault());
+                    ve.setSortOrder(v.getSortOrder());
+                    ve.setEnabled(v.isEnabled());
+                    ve.setNpmSemver(v.getNpmSemver());
+                    ve.setTypesSemver(v.getTypesSemver());
+                    return ve;
+                }).toList());
+
         return export_;
     }
 
@@ -281,6 +305,7 @@ public class ConfigurationExportImportService {
             DependencyGroupEntity entity = new DependencyGroupEntity();
             entity.setName(g.getName());
             entity.setSortOrder(g.getSortOrder());
+            entity.setProjectKind(parseKind(g.getProjectKind()));
             groupMap.put(g.getName(), groupRepo.save(entity));
         }
 
@@ -300,6 +325,7 @@ public class ConfigurationExportImportService {
             entity.setRepository(e.getRepository());
             entity.setSortOrder(e.getSortOrder());
             entity.setCompatibilityRange(e.getCompatibilityRange());
+            entity.setProjectKind(parseKind(e.getProjectKind()));
             entryRepo.save(entity);
         }
 
@@ -315,6 +341,7 @@ public class ConfigurationExportImportService {
             entity.setJavaVersion(f.getJavaVersion());
             entity.setSubOptionId(f.getSubOptionId());
             entity.setSortOrder(f.getSortOrder());
+            entity.setProjectKind(parseKind(f.getProjectKind()));
             fileContribRepo.save(entity);
         }
 
@@ -332,6 +359,7 @@ public class ConfigurationExportImportService {
             entity.setRepoUrl(b.getRepoUrl());
             entity.setSnapshotsEnabled(b.isSnapshotsEnabled());
             entity.setSortOrder(b.getSortOrder());
+            entity.setProjectKind(parseKind(b.getProjectKind()));
             buildCustomRepo.save(entity);
         }
 
@@ -342,6 +370,7 @@ public class ConfigurationExportImportService {
             entity.setLabel(s.getLabel());
             entity.setDescription(s.getDescription());
             entity.setSortOrder(s.getSortOrder());
+            entity.setProjectKind(parseKind(s.getProjectKind()));
             subOptionRepo.save(entity);
         }
 
@@ -352,6 +381,7 @@ public class ConfigurationExportImportService {
             entity.setRelationType(DependencyCompatibilityEntity.RelationType.valueOf(c.getRelationType()));
             entity.setDescription(c.getDescription());
             entity.setSortOrder(c.getSortOrder());
+            entity.setProjectKind(parseKind(c.getProjectKind()));
             compatibilityRepo.save(entity);
         }
 
@@ -368,6 +398,7 @@ public class ConfigurationExportImportService {
             entity.setJavaVersion(t.getJavaVersion());
             entity.setPackaging(t.getPackaging());
             entity.setSortOrder(t.getSortOrder());
+            entity.setProjectKind(parseKind(t.getProjectKind()));
             templateMap.put(t.getTemplateId(), templateRepo.save(entity));
         }
 
@@ -471,6 +502,24 @@ public class ConfigurationExportImportService {
             entityTemplateSetDefaultDepRepo.save(entity);
         }
 
+        // Version definitions. Backward-compatible: only touch the table when the export
+        // carries them (older exports predate this field — leave existing versions intact).
+        if (data.getVersionDefinitions() != null) {
+            versionRepo.deleteAllInBatch();
+            for (VersionExport v : data.getVersionDefinitions()) {
+                VersionDefinitionEntity entity = new VersionDefinitionEntity();
+                entity.setKind(VersionKind.valueOf(v.getKind()));
+                entity.setVersionId(v.getVersionId());
+                entity.setDisplayName(v.getDisplayName());
+                entity.setDefault(v.isDefault());
+                entity.setSortOrder(v.getSortOrder());
+                entity.setEnabled(v.isEnabled());
+                entity.setNpmSemver(v.getNpmSemver());
+                entity.setTypesSemver(v.getTypesSemver());
+                versionRepo.save(entity);
+            }
+        }
+
         // Refresh metadata cache
         if (metadataProvider instanceof DatabaseInitializrMetadataProvider dbProvider) {
             dbProvider.refresh();
@@ -492,7 +541,13 @@ public class ConfigurationExportImportService {
         counts.put("entityTemplateFiles", safe(data.getEntityTemplateFiles()).size());
         counts.put("entityTemplateSetDefaultDeps", safe(data.getEntityTemplateSetDefaultDeps()).size());
         counts.put("colorPalettes", safe(data.getColorPalettes()).size());
+        counts.put("versionDefinitions", safe(data.getVersionDefinitions()).size());
         return counts;
+    }
+
+    /** Parse a project-kind string; null/blank → null (entity setters coerce to BACKEND). */
+    private static ProjectKind parseKind(String kind) {
+        return (kind == null || kind.isBlank()) ? null : ProjectKind.valueOf(kind);
     }
 
     // ── Validation ───────────────────────────────────────────────────────────

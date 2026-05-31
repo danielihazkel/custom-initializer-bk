@@ -1,0 +1,56 @@
+[
+  { "depId": "kafka", "optionId": "consumer-example", "label": "Consumer Example", "description": "Add a KafkaConsumerExample.java class", "sortOrder": 0 },
+  { "depId": "kafka", "optionId": "producer-example", "label": "Producer Example", "description": "Add a KafkaProducerExample.java class", "sortOrder": 1 },
+  { "depId": "kafka", "optionId": "streams-example", "label": "Streams Example", "description": "Add KafkaStreamsExample.java — sample KStream topology (requires spring-kafka-streams)", "sortOrder": 2 },
+
+  { "depId": "mail-sampler", "optionId": "send-mail", "label": "Send Mail Example", "description": "Add a MailService.java with simple and HTML email sending", "sortOrder": 0 },
+  { "depId": "mail-sampler", "optionId": "inbox-reader", "label": "Inbox Reader Example", "description": "Add an InboxReaderService.java that reads emails via IMAP", "sortOrder": 1 },
+
+  { "depId": "postgresql", "optionId": "pg-primary", "label": "Primary DataSource", "description": "Mark this database as the primary datasource (@Primary)", "sortOrder": 0 },
+  { "depId": "postgresql", "optionId": "pg-secondary", "label": "Secondary DataSource", "description": "Use this database as a secondary datasource", "sortOrder": 1 },
+
+  { "depId": "mssql", "optionId": "mssql-primary", "label": "Primary DataSource", "description": "Mark this database as the primary datasource (@Primary)", "sortOrder": 0 },
+  { "depId": "mssql", "optionId": "mssql-secondary", "label": "Secondary DataSource", "description": "Use this database as a secondary datasource", "sortOrder": 1 },
+
+  { "depId": "db2", "optionId": "db2-primary", "label": "Primary DataSource", "description": "Mark this database as the primary datasource (@Primary)", "sortOrder": 0 },
+  { "depId": "db2", "optionId": "db2-secondary", "label": "Secondary DataSource", "description": "Use this database as a secondary datasource", "sortOrder": 1 },
+
+  { "depId": "oracle", "optionId": "oracle-primary", "label": "Primary DataSource", "description": "Mark this database as the primary datasource (@Primary)", "sortOrder": 0 },
+  { "depId": "oracle", "optionId": "oracle-secondary", "label": "Secondary DataSource", "description": "Use this database as a secondary datasource", "sortOrder": 1 },
+
+  { "depId": "mongodb", "optionId": "mongodb-primary", "label": "Primary DataSource", "description": "Mark this MongoDB connection as the primary datasource (@Primary)", "sortOrder": 0 },
+  { "depId": "mongodb", "optionId": "mongodb-secondary", "label": "Secondary DataSource", "description": "Use this MongoDB connection as a secondary datasource", "sortOrder": 1 },
+  { "depId": "mongodb", "optionId": "sample-document", "label": "Sample Document & Repository", "description": "Add SampleDoc.java + SampleDocRepository.java — MongoRepository example", "sortOrder": 2 },
+
+  { "depId": "h2", "optionId": "h2-primary", "label": "Primary DataSource", "description": "Mark this database as the primary datasource (@Primary)", "sortOrder": 0 },
+  { "depId": "h2", "optionId": "h2-secondary", "label": "Secondary DataSource", "description": "Use this database as a secondary datasource", "sortOrder": 1 },
+
+  { "depId": "file-handler-utils", "optionId": "sync-handler", "label": "Synchronous Handler", "description": "Add SyncFileHandler.java — blocking read/write helpers", "sortOrder": 0 },
+  { "depId": "file-handler-utils", "optionId": "async-handler", "label": "Asynchronous Handler", "description": "Add AsyncFileHandler.java — CompletableFuture-based read/write helpers", "sortOrder": 1 },
+
+  { "depId": "mapstruct", "optionId": "example-mapper", "label": "Example Mapper", "description": "Add ExampleDto.java + ExampleMapper.java demonstrating a MapStruct mapping", "sortOrder": 0 },
+
+  { "depId": "security", "optionId": "jwt-example", "label": "JWT Example", "description": "Add JwtAuthFilter.java + JwtService.java — Bearer-token authentication scaffold", "sortOrder": 0 },
+  { "depId": "security", "optionId": "method-security", "label": "Method Security", "description": "Add MethodSecurityConfig.java — enables @PreAuthorize / @PostAuthorize / @Secured", "sortOrder": 1 },
+
+  { "depId": "data-jpa", "optionId": "auditing-example", "label": "JPA Auditing", "description": "Add JpaAuditingConfig.java with AuditorAware<String> — wires @CreatedBy/@LastModifiedBy", "sortOrder": 0 },
+  { "depId": "data-jpa", "optionId": "sample-entity", "label": "Sample Entity & Repository", "description": "Add User.java entity + UserRepository.java with audit fields", "sortOrder": 1 },
+
+  { "depId": "web", "optionId": "rest-example", "label": "REST Controller Example", "description": "Add HelloController.java exposing GET /api/hello", "sortOrder": 0 },
+  { "depId": "web", "optionId": "global-exception-handler", "label": "Global Exception Handler", "description": "Add GlobalExceptionHandler.java — @RestControllerAdvice with consistent error envelope", "sortOrder": 1 },
+
+  { "depId": "webflux", "optionId": "handler-function", "label": "Functional Routes Example", "description": "Add HelloRouter.java + HelloHandler.java — RouterFunction-based endpoints", "sortOrder": 0 },
+
+  { "depId": "web-services", "optionId": "example-endpoint", "label": "Example @Endpoint", "description": "Add PingEndpoint.java + ping.xsd — Spring-WS contract-first sample", "sortOrder": 0 },
+
+  { "depId": "actuator", "optionId": "health-groups", "label": "Health Probes (readiness/liveness)", "description": "Merge management.endpoint.health.group.readiness/liveness blocks for Kubernetes probes", "sortOrder": 0 },
+  { "depId": "actuator", "optionId": "info-contributor", "label": "Build Info Contributor", "description": "Add BuildInfoContributor.java — exposes app name/group/version under /actuator/info", "sortOrder": 1 },
+
+  { "depId": "prometheus", "optionId": "grafana-dashboard", "label": "Grafana Dashboard Starter", "description": "Add k8s/grafana-dashboard.json — basic JVM + HTTP latency panels", "sortOrder": 0 },
+
+  { "depId": "validation", "optionId": "dto-sample", "label": "Sample DTO with Constraints", "description": "Add SampleRequest.java with @NotBlank/@Email — demonstrates bean validation", "sortOrder": 0 },
+
+  { "depId": "resilience4j", "optionId": "circuit-breaker-example", "label": "Circuit Breaker Example", "description": "Add ResilientService.java — @CircuitBreaker + @Retry with fallback method", "sortOrder": 0 },
+
+  { "depId": "quartz", "optionId": "job-example", "label": "Job Example", "description": "Add HelloJob.java + HelloJobConfig.java — registers a 1-minute repeating Quartz job", "sortOrder": 0 }
+]

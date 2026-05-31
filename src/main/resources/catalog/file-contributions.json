@@ -1,0 +1,116 @@
+[
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/application-base.mustache", "targetPath": "src/main/resources/application.yaml", "substitutionType": "MUSTACHE", "sortOrder": -1 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/common/log4j2-spring.xml", "targetPath": "src/main/resources/log4j2-spring.xml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/common/.editorconfig", "targetPath": ".editorconfig", "substitutionType": "NONE", "sortOrder": 1 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/common/entrypoint.sh", "targetPath": "entrypoint.sh", "substitutionType": "NONE", "sortOrder": 2 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/common/settings.xml", "targetPath": "settings.xml", "substitutionType": "NONE", "sortOrder": 3 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/VERSION.mustache", "targetPath": "VERSION", "substitutionType": "MUSTACHE", "sortOrder": 4 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/Dockerfile-java17.mustache", "targetPath": "Dockerfile", "substitutionType": "MUSTACHE", "javaVersion": "17", "sortOrder": 5 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/Dockerfile-java21.mustache", "targetPath": "Dockerfile", "substitutionType": "MUSTACHE", "javaVersion": "21", "sortOrder": 6 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/Jenkinsfile.mustache", "targetPath": "k8s/Jenkinsfile", "substitutionType": "MUSTACHE", "sortOrder": 7 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/k8s-values.mustache", "targetPath": "k8s/values.yaml", "substitutionType": "MUSTACHE", "sortOrder": 8 },
+  { "depId": "__common__", "fileType": "DELETE", "targetPath": "src/main/resources/application.properties", "substitutionType": "NONE", "sortOrder": 9999 },
+
+  { "depId": "kafka", "fileType": "YAML_MERGE", "contentResource": "static-configs/kafka/application-kafka.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "kafka", "fileType": "TEMPLATE", "contentResource": "templates/kafka-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/KafkaConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },
+  { "depId": "kafka", "fileType": "TEMPLATE", "contentResource": "templates/kafka-consumer-example.mustache", "targetPath": "src/main/java/{{packagePath}}/config/KafkaConsumerExample.java", "substitutionType": "MUSTACHE", "subOptionId": "consumer-example", "sortOrder": 2 },
+  { "depId": "kafka", "fileType": "TEMPLATE", "contentResource": "templates/kafka-producer-example.mustache", "targetPath": "src/main/java/{{packagePath}}/config/KafkaProducerExample.java", "substitutionType": "MUSTACHE", "subOptionId": "producer-example", "sortOrder": 3 },
+  { "depId": "kafka", "fileType": "TEMPLATE", "contentResource": "templates/kafka-streams-example.mustache", "targetPath": "src/main/java/{{packagePath}}/config/KafkaStreamsExample.java", "substitutionType": "MUSTACHE", "subOptionId": "streams-example", "sortOrder": 4 },
+
+  { "depId": "security", "fileType": "YAML_MERGE", "contentResource": "static-configs/security/application-security.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "security", "fileType": "TEMPLATE", "contentResource": "templates/security-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/SecurityConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },
+  { "depId": "security", "fileType": "TEMPLATE", "contentResource": "templates/security-jwt-filter.mustache", "targetPath": "src/main/java/{{packagePath}}/config/JwtAuthFilter.java", "substitutionType": "MUSTACHE", "subOptionId": "jwt-example", "sortOrder": 2 },
+  { "depId": "security", "fileType": "TEMPLATE", "contentResource": "templates/security-jwt-service.mustache", "targetPath": "src/main/java/{{packagePath}}/service/JwtService.java", "substitutionType": "MUSTACHE", "subOptionId": "jwt-example", "sortOrder": 3 },
+  { "depId": "security", "fileType": "TEMPLATE", "contentResource": "templates/security-method-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/MethodSecurityConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "method-security", "sortOrder": 4 },
+
+  { "depId": "data-jpa", "fileType": "YAML_MERGE", "contentResource": "static-configs/jpa/application-jpa.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "data-jpa", "fileType": "TEMPLATE", "contentResource": "templates/jpa-auditing-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/JpaAuditingConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "auditing-example", "sortOrder": 1 },
+  { "depId": "data-jpa", "fileType": "TEMPLATE", "contentResource": "templates/jpa-sample-entity.mustache", "targetPath": "src/main/java/{{packagePath}}/domain/User.java", "substitutionType": "MUSTACHE", "subOptionId": "sample-entity", "sortOrder": 2 },
+  { "depId": "data-jpa", "fileType": "TEMPLATE", "contentResource": "templates/jpa-sample-repo.mustache", "targetPath": "src/main/java/{{packagePath}}/repository/UserRepository.java", "substitutionType": "MUSTACHE", "subOptionId": "sample-entity", "sortOrder": 3 },
+
+  { "depId": "postgresql", "fileType": "YAML_MERGE", "contentResource": "static-configs/postgresql/application-postgresql.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "postgresql", "fileType": "TEMPLATE", "contentResource": "templates/postgresql-config-primary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/PostgresqlConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "pg-primary", "sortOrder": 1 },
+  { "depId": "postgresql", "fileType": "TEMPLATE", "contentResource": "templates/postgresql-config-secondary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/PostgresqlConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "pg-secondary", "sortOrder": 2 },
+
+  { "depId": "mssql", "fileType": "YAML_MERGE", "contentResource": "static-configs/mssql/application-mssql.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "mssql", "fileType": "TEMPLATE", "contentResource": "templates/mssql-config-primary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/MssqlConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "mssql-primary", "sortOrder": 1 },
+  { "depId": "mssql", "fileType": "TEMPLATE", "contentResource": "templates/mssql-config-secondary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/MssqlConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "mssql-secondary", "sortOrder": 2 },
+
+  { "depId": "db2", "fileType": "YAML_MERGE", "contentResource": "static-configs/db2/application-db2.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "db2", "fileType": "TEMPLATE", "contentResource": "templates/db2-config-primary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/Db2Config.java", "substitutionType": "MUSTACHE", "subOptionId": "db2-primary", "sortOrder": 1 },
+  { "depId": "db2", "fileType": "TEMPLATE", "contentResource": "templates/db2-config-secondary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/Db2Config.java", "substitutionType": "MUSTACHE", "subOptionId": "db2-secondary", "sortOrder": 2 },
+
+  { "depId": "oracle", "fileType": "YAML_MERGE", "contentResource": "static-configs/oracle/application-oracle.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "oracle", "fileType": "TEMPLATE", "contentResource": "templates/oracle-config-primary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/OracleConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "oracle-primary", "sortOrder": 1 },
+  { "depId": "oracle", "fileType": "TEMPLATE", "contentResource": "templates/oracle-config-secondary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/OracleConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "oracle-secondary", "sortOrder": 2 },
+
+  { "depId": "h2", "fileType": "YAML_MERGE", "contentResource": "static-configs/h2/application-h2.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "h2", "fileType": "TEMPLATE", "contentResource": "templates/h2-config-primary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/H2Config.java", "substitutionType": "MUSTACHE", "subOptionId": "h2-primary", "sortOrder": 1 },
+  { "depId": "h2", "fileType": "TEMPLATE", "contentResource": "templates/h2-config-secondary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/H2Config.java", "substitutionType": "MUSTACHE", "subOptionId": "h2-secondary", "sortOrder": 2 },
+
+  { "depId": "mongodb", "fileType": "YAML_MERGE", "contentResource": "static-configs/mongodb/application-mongodb.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "mongodb", "fileType": "TEMPLATE", "contentResource": "templates/mongodb-config-primary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/MongoConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "mongodb-primary", "sortOrder": 1 },
+  { "depId": "mongodb", "fileType": "TEMPLATE", "contentResource": "templates/mongodb-config-secondary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/MongoConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "mongodb-secondary", "sortOrder": 2 },
+  { "depId": "mongodb", "fileType": "TEMPLATE", "contentResource": "templates/mongo-sample-doc.mustache", "targetPath": "src/main/java/{{packagePath}}/domain/SampleDoc.java", "substitutionType": "MUSTACHE", "subOptionId": "sample-document", "sortOrder": 3 },
+  { "depId": "mongodb", "fileType": "TEMPLATE", "contentResource": "templates/mongo-sample-repo.mustache", "targetPath": "src/main/java/{{packagePath}}/repository/SampleDocRepository.java", "substitutionType": "MUSTACHE", "subOptionId": "sample-document", "sortOrder": 4 },
+
+  { "depId": "actuator", "fileType": "YAML_MERGE", "contentResource": "static-configs/observability/application-observability.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "actuator", "fileType": "YAML_MERGE", "contentResource": "static-configs/actuator/health-groups.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "subOptionId": "health-groups", "sortOrder": 1 },
+  { "depId": "actuator", "fileType": "TEMPLATE", "contentResource": "templates/actuator-info-contributor.mustache", "targetPath": "src/main/java/{{packagePath}}/config/BuildInfoContributor.java", "substitutionType": "MUSTACHE", "subOptionId": "info-contributor", "sortOrder": 2 },
+
+  { "depId": "rqueue", "fileType": "YAML_MERGE", "contentResource": "static-configs/rqueue/application-rqueue.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "rqueue", "fileType": "TEMPLATE", "contentResource": "templates/rqueue-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/RqueueConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },
+
+  { "depId": "logging", "fileType": "YAML_MERGE", "contentResource": "static-configs/logging/application-logging.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+
+  { "depId": "mail-sampler", "fileType": "YAML_MERGE", "contentResource": "static-configs/mail-sampler/application-mail.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "mail-sampler", "fileType": "TEMPLATE", "contentResource": "templates/mail-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/MailConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },
+  { "depId": "mail-sampler", "fileType": "TEMPLATE", "contentResource": "templates/mail-service.mustache", "targetPath": "src/main/java/{{packagePath}}/service/MailService.java", "substitutionType": "MUSTACHE", "subOptionId": "send-mail", "sortOrder": 2 },
+  { "depId": "mail-sampler", "fileType": "TEMPLATE", "contentResource": "templates/mail-inbox-reader.mustache", "targetPath": "src/main/java/{{packagePath}}/service/InboxReaderService.java", "substitutionType": "MUSTACHE", "subOptionId": "inbox-reader", "sortOrder": 3 },
+
+  { "depId": "file-handler-utils", "fileType": "TEMPLATE", "contentResource": "templates/file-handler-sync.mustache", "targetPath": "src/main/java/{{packagePath}}/util/SyncFileHandler.java", "substitutionType": "MUSTACHE", "subOptionId": "sync-handler", "sortOrder": 0 },
+  { "depId": "file-handler-utils", "fileType": "TEMPLATE", "contentResource": "templates/file-handler-async.mustache", "targetPath": "src/main/java/{{packagePath}}/util/AsyncFileHandler.java", "substitutionType": "MUSTACHE", "subOptionId": "async-handler", "sortOrder": 1 },
+
+  { "depId": "mapstruct", "fileType": "TEMPLATE", "contentResource": "templates/mapstruct-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/MapstructConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 0 },
+  { "depId": "mapstruct", "fileType": "TEMPLATE", "contentResource": "templates/mapstruct-example-dto.mustache", "targetPath": "src/main/java/{{packagePath}}/dto/ExampleDto.java", "substitutionType": "MUSTACHE", "subOptionId": "example-mapper", "sortOrder": 1 },
+  { "depId": "mapstruct", "fileType": "TEMPLATE", "contentResource": "templates/mapstruct-example-mapper.mustache", "targetPath": "src/main/java/{{packagePath}}/mapper/ExampleMapper.java", "substitutionType": "MUSTACHE", "subOptionId": "example-mapper", "sortOrder": 2 },
+
+  { "depId": "validation", "fileType": "YAML_MERGE", "contentResource": "static-configs/validation/application-validation.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "validation", "fileType": "TEMPLATE", "contentResource": "templates/validation-exception-handler.mustache", "targetPath": "src/main/java/{{packagePath}}/web/ValidationExceptionHandler.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },
+  { "depId": "validation", "fileType": "TEMPLATE", "contentResource": "templates/validation-dto-sample.mustache", "targetPath": "src/main/java/{{packagePath}}/dto/SampleRequest.java", "substitutionType": "MUSTACHE", "subOptionId": "dto-sample", "sortOrder": 2 },
+
+  { "depId": "openapi", "fileType": "YAML_MERGE", "contentResource": "static-configs/openapi/application-openapi.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "openapi", "fileType": "TEMPLATE", "contentResource": "templates/openapi-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/OpenApiConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },
+
+  { "depId": "flyway", "fileType": "YAML_MERGE", "contentResource": "static-configs/flyway/application-flyway.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "flyway", "fileType": "STATIC_COPY", "contentResource": "static-configs/flyway/V1__init.sql", "targetPath": "src/main/resources/db/migration/V1__init.sql", "substitutionType": "NONE", "sortOrder": 1 },
+
+  { "depId": "liquibase", "fileType": "YAML_MERGE", "contentResource": "static-configs/liquibase/application-liquibase.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "liquibase", "fileType": "STATIC_COPY", "contentResource": "static-configs/liquibase/db.changelog-master.xml", "targetPath": "src/main/resources/db/changelog/db.changelog-master.xml", "substitutionType": "NONE", "sortOrder": 1 },
+  { "depId": "liquibase", "fileType": "STATIC_COPY", "contentResource": "static-configs/liquibase/db.changelog-1.0.xml", "targetPath": "src/main/resources/db/changelog/db.changelog-1.0.xml", "substitutionType": "NONE", "sortOrder": 2 },
+
+  { "depId": "redis", "fileType": "YAML_MERGE", "contentResource": "static-configs/redis/application-redis.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "redis", "fileType": "TEMPLATE", "contentResource": "templates/redis-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/RedisConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },
+
+  { "depId": "cache", "fileType": "YAML_MERGE", "contentResource": "static-configs/cache/application-cache.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "cache", "fileType": "TEMPLATE", "contentResource": "templates/cache-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/CacheConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },
+
+  { "depId": "resilience4j", "fileType": "YAML_MERGE", "contentResource": "static-configs/resilience4j/application-resilience4j.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "resilience4j", "fileType": "TEMPLATE", "contentResource": "templates/resilience4j-example-service.mustache", "targetPath": "src/main/java/{{packagePath}}/service/ResilientService.java", "substitutionType": "MUSTACHE", "subOptionId": "circuit-breaker-example", "sortOrder": 1 },
+
+  { "depId": "quartz", "fileType": "YAML_MERGE", "contentResource": "static-configs/quartz/application-quartz.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "quartz", "fileType": "TEMPLATE", "contentResource": "templates/quartz-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/QuartzConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },
+  { "depId": "quartz", "fileType": "TEMPLATE", "contentResource": "templates/quartz-job-example.mustache", "targetPath": "src/main/java/{{packagePath}}/job/HelloJob.java", "substitutionType": "MUSTACHE", "subOptionId": "job-example", "sortOrder": 2 },
+  { "depId": "quartz", "fileType": "TEMPLATE", "contentResource": "templates/quartz-job-config.mustache", "targetPath": "src/main/java/{{packagePath}}/job/HelloJobConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "job-example", "sortOrder": 3 },
+
+  { "depId": "web", "fileType": "TEMPLATE", "contentResource": "templates/web-hello-controller.mustache", "targetPath": "src/main/java/{{packagePath}}/web/HelloController.java", "substitutionType": "MUSTACHE", "subOptionId": "rest-example", "sortOrder": 0 },
+  { "depId": "web", "fileType": "TEMPLATE", "contentResource": "templates/web-exception-handler.mustache", "targetPath": "src/main/java/{{packagePath}}/web/GlobalExceptionHandler.java", "substitutionType": "MUSTACHE", "subOptionId": "global-exception-handler", "sortOrder": 1 },
+
+  { "depId": "webflux", "fileType": "TEMPLATE", "contentResource": "templates/webflux-router.mustache", "targetPath": "src/main/java/{{packagePath}}/web/HelloRouter.java", "substitutionType": "MUSTACHE", "subOptionId": "handler-function", "sortOrder": 0 },
+  { "depId": "webflux", "fileType": "TEMPLATE", "contentResource": "templates/webflux-handler.mustache", "targetPath": "src/main/java/{{packagePath}}/web/HelloHandler.java", "substitutionType": "MUSTACHE", "subOptionId": "handler-function", "sortOrder": 1 },
+
+  { "depId": "web-services", "fileType": "STATIC_COPY", "contentResource": "static-configs/web-services/ping.xsd", "targetPath": "src/main/resources/xsd/ping.xsd", "substitutionType": "NONE", "subOptionId": "example-endpoint", "sortOrder": 0 },
+  { "depId": "web-services", "fileType": "TEMPLATE", "contentResource": "templates/ws-ping-endpoint.mustache", "targetPath": "src/main/java/{{packagePath}}/endpoint/PingEndpoint.java", "substitutionType": "MUSTACHE", "subOptionId": "example-endpoint", "sortOrder": 1 },
+
+  { "depId": "prometheus", "fileType": "STATIC_COPY", "contentResource": "static-configs/prometheus/grafana-dashboard.json", "targetPath": "k8s/grafana-dashboard.json", "substitutionType": "NONE", "subOptionId": "grafana-dashboard", "sortOrder": 0 }
+]

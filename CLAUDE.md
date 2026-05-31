@@ -80,18 +80,30 @@ This unlocks conditional file content — e.g. a single template can gate a bloc
 
 `src/main/java/com/menora/initializr/db/DataSeeder.java`
 
-Runs at startup as a `CommandLineRunner`. If all DB tables are empty it reads every classpath resource (`static-configs/*`, `templates/*`) and inserts them as DB records. This bootstraps the system from the existing files. After seeding, records can be modified via the admin API without touching the filesystem.
+Runs at startup as a `SmartInitializingSingleton`. If all DB tables are empty it loads the backend dependency catalog from JSON manifests under `src/main/resources/catalog/` and inserts them as DB records. This bootstraps the system; after seeding, records can be modified via the admin API without touching the filesystem.
+
+**Catalog manifests** (`src/main/resources/catalog/`, DTOs in `db/seed/CatalogManifests.java`):
+
+| Manifest | Replaces | Notes |
+|----------|----------|-------|
+| `dependencies.json` | `seedDependencyCatalog()` | Groups + entries; `compatibilityRange`/`starter` are plain fields |
+| `file-contributions.json` | common + per-dep file contributions | Each row points at its content file via `contentResource` (a classpath path under `static-configs/*` or `templates/*`); the content itself stays in that file. `DELETE` rows have no `contentResource`. `application.yaml` base keeps `sortOrder: -1`, the `application.properties` `DELETE` keeps `sortOrder: 9999` |
+| `build-customizations.json` | `seedBuildCustomizations()` | `type` = `ADD_DEPENDENCY` / `EXCLUDE_DEPENDENCY` / `ADD_REPOSITORY` |
+| `sub-options.json` | `seedSubOptions()` | |
+| `compatibility.json` | `seedCompatibilityRules()` (backend only) | |
+
+The loaders (`loadDependencyCatalog`, `loadFileContributions`, …) are generic — to change the backend catalog, edit the JSON, not Java. The **frontend** catalog (FRONTEND-kind rows), starter/module templates, color palettes, version definitions, and entity template sets are still seeded from Java helpers / `templates/fullstack/*/manifest.json` in `DataSeeder` (same pattern, candidates for the same treatment).
 
 ### Adding or Modifying a Dependency
 
-The DB is the source of truth. Use the admin API or edit the `DataSeeder` for the initial seed:
+The DB is the source of truth. Use the admin API at runtime, or edit the catalog manifests for the initial seed:
 
 1. **New dependency** — POST to `/admin/dependency-groups` + `/admin/dependency-entries`
 2. **New file to inject** — POST to `/admin/file-contributions` with `dependencyId`, `fileType`, `content`, `targetPath`
 3. **New build customization** — POST to `/admin/build-customizations`
 4. **Hot-reload** — POST to `/admin/refresh` (no restart needed)
 
-For a permanent change that survives a fresh DB (e.g. new deployment), also update `DataSeeder.java`.
+For a permanent change that survives a fresh DB (e.g. new deployment), edit the relevant manifest under `src/main/resources/catalog/` (drop any new content file under `static-configs/`/`templates/` and reference it via `contentResource`). See the catalog-manifest table above.
 
 ### Sub-Options (Optional Per-Dependency Files)
 
@@ -121,7 +133,7 @@ Each `DependencyEntryEntity` has an optional `compatibilityRange` field (column:
 
 A blank/null range means the dependency is compatible with all Boot versions (default behavior).
 
-Set via the admin UI (Dependencies tab → edit → Compatibility Range field) or directly in `DataSeeder` for fresh-DB seeds. The range is validated by `dep.resolve()` at metadata-build time — a malformed range throws immediately on refresh.
+Set via the admin UI (Dependencies tab → edit → Compatibility Range field) or in `catalog/dependencies.json` (the `compatibilityRange` field on an entry) for fresh-DB seeds. The range is validated by `dep.resolve()` at metadata-build time — a malformed range throws immediately on refresh.
 
 ### Frontend Compatibility Rules (REQUIRES / CONFLICTS / RECOMMENDS)
 
@@ -141,9 +153,16 @@ A `@Component`, `@Order(Integer.MIN_VALUE)` servlet filter (extends `OncePerRequ
 
 ### Test Infrastructure
 
-Tests use `src/test/resources/application.properties` which configures an in-memory H2 with `ddl-auto: create-drop`. `DataSeeder` runs automatically at test startup and seeds the DB from classpath, so tests exercise the full DB-driven pipeline.
+Tests use `src/test/resources/application.properties` which configures an in-memory H2 (`ddl-auto: validate`, schema managed by Flyway; `admin.password=test`). `DataSeeder` runs automatically at test startup and seeds the DB from the catalog manifests, so tests exercise the full DB-driven pipeline.
 
 `src/test/java/com/menora/initializr/TestInvokerConfiguration.java` — a `@TestConfiguration` that provides a `ProjectGenerationInvoker<ProjectRequest>` bean. Test classes import it via `@Import(TestInvokerConfiguration.class)` to invoke project generation directly without HTTP.
+
+**Coverage:** `jacoco-maven-plugin` runs during `mvn test` (no gate) → report at `target/site/jacoco/index.html`.
+
+**Seeder / admin tests:**
+- `db/DataSeederTest` — characterization test: asserts the observable seeded catalog (group/entry/file-contribution counts, representative content, compatibility/sub-option/template/palette/version counts). The regression oracle for catalog-manifest changes — together with `ProjectGenerationIntegrationTests` (actual generated file bytes) it pins seeding behavior.
+- `admin/AdminApiIntegrationTests` (`MockMvc`) — auth gate (login, 401), validation (400) and orphan-conflict (409) error paths, `/admin/refresh`.
+- `admin/ConfigurationExportImportServiceTest` — export → import round-trip preserves row counts and content (runs `@Transactional` so the destructive import rolls back).
 
 **Test coverage summary (`ProjectGenerationIntegrationTests`):**
 - `metadataEndpointReturnsOk` — HTTP smoke test; checks `kafka` and `rqueue` appear in metadata

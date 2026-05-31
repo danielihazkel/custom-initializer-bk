@@ -1,0 +1,85 @@
+{
+  "groups": [
+    {
+      "name": "Menora Standards",
+      "sortOrder": 0,
+      "entries": [
+        { "depId": "rqueue", "name": "Sonus Rqueue", "description": "Sonus Rqueue messaging library", "mavenGroupId": "com.sonus", "mavenArtifactId": "sonus-rqueue", "version": "1.0.0", "repository": "menora-release", "sortOrder": 0, "compatibilityRange": "[3.2.0,4.0.0)" }
+      ]
+    },
+    {
+      "name": "Web",
+      "sortOrder": 1,
+      "entries": [
+        { "depId": "web", "name": "Spring Web", "description": "Build web applications with Spring MVC", "sortOrder": 0 },
+        { "depId": "webflux", "name": "Spring Reactive Web", "description": "Build reactive web applications with Spring WebFlux", "sortOrder": 1 },
+        { "depId": "web-services", "name": "Spring Web Services", "description": "Contract-first SOAP services and clients with Spring-WS", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-web-services", "sortOrder": 2 },
+        { "depId": "validation", "name": "Bean Validation", "description": "Hibernate Validator + @RestControllerAdvice for ConstraintViolation handling", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-validation", "sortOrder": 3 },
+        { "depId": "openapi", "name": "OpenAPI / Swagger UI", "description": "Springdoc OpenAPI — auto-generated API docs + Swagger UI at /swagger-ui.html", "mavenGroupId": "org.springdoc", "mavenArtifactId": "springdoc-openapi-starter-webmvc-ui", "version": "2.6.0", "sortOrder": 4, "compatibilityRange": "[3.2.0,4.0.0)" }
+      ]
+    },
+    {
+      "name": "Data",
+      "sortOrder": 2,
+      "entries": [
+        { "depId": "data-jpa", "name": "Spring Data JPA", "description": "Persist data with JPA and Hibernate", "sortOrder": 0 },
+        { "depId": "postgresql", "name": "PostgreSQL Driver", "description": "PostgreSQL JDBC driver", "mavenGroupId": "org.postgresql", "mavenArtifactId": "postgresql", "scope": "runtime", "sortOrder": 1 },
+        { "depId": "mssql", "name": "Microsoft SQL Server Driver", "description": "Microsoft SQL Server JDBC driver", "mavenGroupId": "com.microsoft.sqlserver", "mavenArtifactId": "mssql-jdbc", "scope": "runtime", "sortOrder": 2 },
+        { "depId": "db2", "name": "IBM DB2 Driver", "description": "IBM DB2 JDBC driver", "mavenGroupId": "com.ibm.db2", "mavenArtifactId": "jcc", "scope": "runtime", "sortOrder": 3 },
+        { "depId": "oracle", "name": "Oracle Database Driver", "description": "Oracle JDBC driver", "mavenGroupId": "com.oracle.database.jdbc", "mavenArtifactId": "ojdbc11", "scope": "runtime", "sortOrder": 4 },
+        { "depId": "h2", "name": "H2 Database", "description": "Embedded relational database — ideal for development and testing", "mavenGroupId": "com.h2database", "mavenArtifactId": "h2", "scope": "runtime", "sortOrder": 5 },
+        { "depId": "mongodb", "name": "MongoDB", "description": "Spring Data MongoDB — document database driver", "sortOrder": 6 },
+        { "depId": "flyway", "name": "Flyway Migration", "description": "Database schema migrations with Flyway — drop SQL files under db/migration/", "mavenGroupId": "org.flywaydb", "mavenArtifactId": "flyway-core", "sortOrder": 7 },
+        { "depId": "liquibase", "name": "Liquibase Migration", "description": "Database schema migrations with Liquibase — XML changelogs under db/changelog/", "mavenGroupId": "org.liquibase", "mavenArtifactId": "liquibase-core", "sortOrder": 8 },
+        { "depId": "redis", "name": "Spring Data Redis", "description": "Spring Data Redis — Lettuce client + RedisTemplate for cache and ops", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-data-redis", "sortOrder": 9 }
+      ]
+    },
+    {
+      "name": "Messaging",
+      "sortOrder": 3,
+      "entries": [
+        { "depId": "kafka", "name": "Spring for Apache Kafka", "description": "Kafka messaging support", "sortOrder": 0 }
+      ]
+    },
+    {
+      "name": "Security",
+      "sortOrder": 4,
+      "entries": [
+        { "depId": "security", "name": "Spring Security", "description": "Authentication and authorization framework", "sortOrder": 0 }
+      ]
+    },
+    {
+      "name": "Observability",
+      "sortOrder": 5,
+      "entries": [
+        { "depId": "actuator", "name": "Spring Boot Actuator", "description": "Production-ready features", "sortOrder": 0 },
+        { "depId": "prometheus", "name": "Micrometer Prometheus", "mavenGroupId": "io.micrometer", "mavenArtifactId": "micrometer-registry-prometheus", "scope": "runtime", "sortOrder": 1 }
+      ]
+    },
+    {
+      "name": "Logging",
+      "sortOrder": 6,
+      "entries": [
+        { "depId": "logging", "name": "Menora Logging Standards", "description": "Corporate logging configuration and standards", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-log4j2", "sortOrder": 0 }
+      ]
+    },
+    {
+      "name": "Communication",
+      "sortOrder": 7,
+      "entries": [
+        { "depId": "mail-sampler", "name": "Mail Sampler", "description": "Outlook mail integration for internal organization", "sortOrder": 0 }
+      ]
+    },
+    {
+      "name": "Utilities",
+      "sortOrder": 8,
+      "entries": [
+        { "depId": "file-handler-utils", "name": "File Handler Utils", "description": "Drop-in helper classes for reading/writing files — no pom dependency added", "sortOrder": 0, "starter": false },
+        { "depId": "mapstruct", "name": "MapStruct", "description": "Compile-time DTO/entity mapping via annotation processor", "mavenGroupId": "org.mapstruct", "mavenArtifactId": "mapstruct", "version": "1.6.3", "sortOrder": 1 },
+        { "depId": "cache", "name": "Caching (Caffeine)", "description": "Spring Cache abstraction backed by an in-memory Caffeine cache manager", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-cache", "sortOrder": 2 },
+        { "depId": "resilience4j", "name": "Resilience4j", "description": "Circuit breaker, retry, and time-limiter — fault tolerance toolkit", "mavenGroupId": "io.github.resilience4j", "mavenArtifactId": "resilience4j-spring-boot3", "version": "2.2.0", "sortOrder": 3, "compatibilityRange": "[3.2.0,4.0.0)" },
+        { "depId": "quartz", "name": "Quartz Scheduler", "description": "Spring Boot Quartz starter — schedule background jobs with JobDetail/Trigger", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-quartz", "sortOrder": 4 }
+      ]
+    }
+  ]
+}
