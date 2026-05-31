@@ -280,7 +280,15 @@ public class FullstackStarterController {
                 + "## Layout\n\n"
                 + "- `backend/` — Spring Boot app. Run with `cd backend && ./mvnw spring-boot:run` (port 8080).\n"
                 + "- `frontend/` — React + Vite app. Run with `cd frontend && npm install && npm run dev` (port 5173).\n\n"
-                + "Open http://localhost:5173 to use the UI. The frontend talks directly to the backend at :8080.\n";
+                + "Open http://localhost:5173 to use the UI.\n\n"
+                + "## How the frontend reaches the backend\n\n"
+                + "In dev the frontend calls same-origin `/api/...` paths; the Vite dev server\n"
+                + "proxies `/api` to `http://localhost:8080` (see `frontend/vite.config.ts`), so no\n"
+                + "CORS setup is needed when you run `npm run dev`.\n\n"
+                + "For a production build (`npm run build`), `vite preview` and static hosting do\n"
+                + "**not** run that proxy. Either serve the API at the same origin behind a reverse\n"
+                + "proxy / gateway, or set a base URL via the `BASE` constant in\n"
+                + "`frontend/src/api/client.ts` to point at the backend directly.\n";
     }
 
     private static final String ROOT_GITIGNORE =

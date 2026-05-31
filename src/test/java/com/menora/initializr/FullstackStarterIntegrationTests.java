@@ -60,6 +60,9 @@ class FullstackStarterIntegrationTests {
         // Root structure
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/README.md"));
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/.gitignore"));
+        // README documents the dev proxy + prod base-URL story (not "talks directly to :8080")
+        String readme = entries.get("shop/README.md");
+        assertThat(readme).contains("proxy").contains("frontend/src/api/client.ts");
 
         // Backend pom + Application
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/backend/pom.xml"));
@@ -92,6 +95,8 @@ class FullstackStarterIntegrationTests {
         assertThat(userController).contains("@RequestParam(required = false) String q");
         assertThat(userController).contains("Page<UserDto>");
         assertThat(userController).contains("Sort.by(\"id\").ascending()");
+        // CORS is scoped to the dev origin, not wide-open
+        assertThat(userController).contains("@CrossOrigin(origins = \"http://localhost:5173\")");
 
         String userService = entries.entrySet().stream()
                 .filter(e -> e.getKey().endsWith("/UserService.java"))
