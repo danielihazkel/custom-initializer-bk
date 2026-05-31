@@ -1,0 +1,16 @@
+[
+  { "sourceDepId": "router-react-router", "targetDepId": "router-tanstack", "relationType": "CONFLICTS", "description": "Only one router can be selected", "sortOrder": 0 },
+  { "sourceDepId": "state-zustand", "targetDepId": "state-redux-toolkit", "relationType": "CONFLICTS", "description": "Pick one state-management library", "sortOrder": 0 },
+  { "sourceDepId": "state-zustand", "targetDepId": "state-jotai", "relationType": "CONFLICTS", "description": "Pick one state-management library", "sortOrder": 1 },
+  { "sourceDepId": "state-redux-toolkit", "targetDepId": "state-jotai", "relationType": "CONFLICTS", "description": "Pick one state-management library", "sortOrder": 2 },
+  { "sourceDepId": "data-tanstack-query", "targetDepId": "data-swr", "relationType": "CONFLICTS", "description": "Pick one data-fetching library", "sortOrder": 0 },
+  { "sourceDepId": "design-shadcn", "targetDepId": "style-tailwind", "relationType": "REQUIRES", "description": "shadcn/ui is built on Tailwind CSS", "sortOrder": 0 },
+  { "sourceDepId": "design-shadcn", "targetDepId": "design-mui", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 0 },
+  { "sourceDepId": "design-shadcn", "targetDepId": "design-chakra", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 1 },
+  { "sourceDepId": "design-shadcn", "targetDepId": "design-mantine", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 2 },
+  { "sourceDepId": "design-mui", "targetDepId": "design-chakra", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 3 },
+  { "sourceDepId": "design-mui", "targetDepId": "design-mantine", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 4 },
+  { "sourceDepId": "design-chakra", "targetDepId": "design-mantine", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 5 },
+  { "sourceDepId": "form-react-hook-form", "targetDepId": "form-zod", "relationType": "RECOMMENDS", "description": "Pair RHF with Zod via @hookform/resolvers for typed validation", "sortOrder": 0 },
+  { "sourceDepId": "api-client-openapi", "targetDepId": "data-tanstack-query", "relationType": "RECOMMENDS", "description": "Typed OpenAPI hooks are most useful with TanStack Query", "sortOrder": 1 }
+]

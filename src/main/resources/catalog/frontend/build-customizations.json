@@ -1,0 +1,91 @@
+[
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@vitejs/plugin-react", "version": "^4.3.1", "scope": "dev", "sortOrder": 4 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "vite", "version": "^5.2.0", "scope": "dev", "sortOrder": 5 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "typescript", "version": "^5.4.5", "scope": "dev", "sortOrder": 6 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "eslint", "version": "^9.10.0", "scope": "dev", "sortOrder": 10 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@eslint/js", "version": "^9.10.0", "scope": "dev", "sortOrder": 11 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "typescript-eslint", "version": "^8.5.0", "scope": "dev", "sortOrder": 12 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "eslint-plugin-react-hooks", "version": "^5.1.0", "scope": "dev", "sortOrder": 13 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "eslint-plugin-react-refresh", "version": "^0.4.11", "scope": "dev", "sortOrder": 14 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "globals", "version": "^15.9.0", "scope": "dev", "sortOrder": 15 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "prettier", "version": "^3.3.3", "scope": "dev", "sortOrder": 16 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "husky", "version": "^9.1.5", "scope": "dev", "sortOrder": 17 },
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "lint-staged", "version": "^15.2.10", "scope": "dev", "sortOrder": 18 },
+
+  { "depId": "router-react-router", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "react-router-dom", "version": "^6.26.0", "sortOrder": 0 },
+  { "depId": "router-tanstack", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@tanstack/react-router", "version": "^1.50.0", "sortOrder": 0 },
+  { "depId": "router-tanstack", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@tanstack/router-devtools", "version": "^1.50.0", "scope": "dev", "sortOrder": 1 },
+
+  { "depId": "state-zustand", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "zustand", "version": "^4.5.5", "sortOrder": 0 },
+  { "depId": "state-redux-toolkit", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@reduxjs/toolkit", "version": "^2.2.7", "sortOrder": 0 },
+  { "depId": "state-redux-toolkit", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "react-redux", "version": "^9.1.2", "sortOrder": 1 },
+  { "depId": "state-jotai", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "jotai", "version": "^2.9.3", "sortOrder": 0 },
+
+  { "depId": "data-tanstack-query", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@tanstack/react-query", "version": "^5.51.23", "sortOrder": 0 },
+  { "depId": "data-tanstack-query", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@tanstack/react-query-devtools", "version": "^5.51.23", "scope": "dev", "sortOrder": 1 },
+  { "depId": "data-tanstack-query", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "axios", "version": "^1.7.0", "sortOrder": 2 },
+  { "depId": "data-swr", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "swr", "version": "^2.2.5", "sortOrder": 0 },
+
+  { "depId": "style-tailwind", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "tailwindcss", "version": "^3.4.10", "scope": "dev", "sortOrder": 0 },
+  { "depId": "style-tailwind", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "postcss", "version": "^8.4.41", "scope": "dev", "sortOrder": 1 },
+  { "depId": "style-tailwind", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "autoprefixer", "version": "^10.4.20", "scope": "dev", "sortOrder": 2 },
+  { "depId": "style-styled", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "styled-components", "version": "^6.1.13", "sortOrder": 0 },
+  { "depId": "style-styled", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@types/styled-components", "version": "^5.1.34", "scope": "dev", "sortOrder": 1 },
+
+  { "depId": "design-shadcn", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "clsx", "version": "^2.1.1", "sortOrder": 0 },
+  { "depId": "design-shadcn", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "tailwind-merge", "version": "^2.5.2", "sortOrder": 1 },
+  { "depId": "design-shadcn", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "class-variance-authority", "version": "^0.7.0", "sortOrder": 2 },
+  { "depId": "design-shadcn", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@radix-ui/react-slot", "version": "^1.1.0", "sortOrder": 3 },
+  { "depId": "design-shadcn", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@radix-ui/react-dialog", "version": "^1.1.1", "subOptionId": "comp-dialog", "sortOrder": 4 },
+  { "depId": "design-shadcn", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@radix-ui/react-toast", "version": "^1.2.1", "subOptionId": "comp-toast", "sortOrder": 5 },
+  { "depId": "design-mui", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@mui/material", "version": "^5.16.7", "sortOrder": 0 },
+  { "depId": "design-mui", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@emotion/react", "version": "^11.13.0", "sortOrder": 1 },
+  { "depId": "design-mui", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@emotion/styled", "version": "^11.13.0", "sortOrder": 2 },
+  { "depId": "design-chakra", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@chakra-ui/react", "version": "^2.8.2", "sortOrder": 0 },
+  { "depId": "design-chakra", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@emotion/react", "version": "^11.13.0", "sortOrder": 1 },
+  { "depId": "design-chakra", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@emotion/styled", "version": "^11.13.0", "sortOrder": 2 },
+  { "depId": "design-chakra", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "framer-motion", "version": "^11.3.31", "sortOrder": 3 },
+  { "depId": "design-mantine", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@mantine/core", "version": "^7.13.0", "sortOrder": 0 },
+  { "depId": "design-mantine", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@mantine/hooks", "version": "^7.13.0", "sortOrder": 1 },
+
+  { "depId": "form-react-hook-form", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "react-hook-form", "version": "^7.53.0", "sortOrder": 0 },
+  { "depId": "form-react-hook-form", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@hookform/resolvers", "version": "^3.9.0", "sortOrder": 1 },
+  { "depId": "form-react-hook-form", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "zod", "version": "^3.23.8", "sortOrder": 2 },
+  { "depId": "form-zod", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "zod", "version": "^3.23.8", "sortOrder": 0 },
+  { "depId": "form-zod", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@hookform/resolvers", "version": "^3.9.0", "sortOrder": 1 },
+
+  { "depId": "anim-framer-motion", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "framer-motion", "version": "^11.3.31", "sortOrder": 0 },
+
+  { "depId": "test-vitest-rtl", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "vitest", "version": "^2.0.5", "scope": "dev", "sortOrder": 0 },
+  { "depId": "test-vitest-rtl", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@vitest/ui", "version": "^2.0.5", "scope": "dev", "sortOrder": 1 },
+  { "depId": "test-vitest-rtl", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@testing-library/react", "version": "^16.0.1", "scope": "dev", "sortOrder": 2 },
+  { "depId": "test-vitest-rtl", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@testing-library/jest-dom", "version": "^6.5.0", "scope": "dev", "sortOrder": 3 },
+  { "depId": "test-vitest-rtl", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "jsdom", "version": "^25.0.0", "scope": "dev", "sortOrder": 4 },
+  { "depId": "test-playwright", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@playwright/test", "version": "^1.46.1", "scope": "dev", "sortOrder": 0 },
+  { "depId": "test-msw", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "msw", "version": "^2.4.2", "scope": "dev", "sortOrder": 0 },
+  { "depId": "api-client-openapi", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "openapi-typescript", "version": "^7.4.0", "scope": "dev", "sortOrder": 0 },
+
+  { "depId": "i18n-react-i18next", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "react-i18next", "version": "^15.0.1", "sortOrder": 0 },
+  { "depId": "i18n-react-i18next", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "i18next", "version": "^23.14.0", "sortOrder": 1 },
+
+  { "depId": "storybook", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "storybook", "version": "^8.2.9", "scope": "dev", "sortOrder": 0 },
+  { "depId": "storybook", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@storybook/react-vite", "version": "^8.2.9", "scope": "dev", "sortOrder": 1 },
+  { "depId": "storybook", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@storybook/react", "version": "^8.2.9", "scope": "dev", "sortOrder": 2 },
+  { "depId": "storybook", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@storybook/addon-essentials", "version": "^8.2.9", "scope": "dev", "sortOrder": 3 },
+  { "depId": "storybook", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@storybook/addon-interactions", "version": "^8.2.9", "scope": "dev", "sortOrder": 4 },
+  { "depId": "storybook", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@storybook/test", "version": "^8.2.9", "scope": "dev", "sortOrder": 5 },
+
+  { "depId": "auth-msal", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@azure/msal-browser", "version": "^3.21.0", "sortOrder": 0 },
+  { "depId": "auth-msal", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@azure/msal-react", "version": "^2.0.22", "sortOrder": 1 },
+
+  { "depId": "chart-recharts", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "recharts", "version": "^2.12.7", "sortOrder": 0 },
+
+  { "depId": "__common__", "type": "ADD_VITE_PLUGIN", "mavenGroupId": "@vitejs/plugin-react", "mavenArtifactId": "react", "version": "react()", "sortOrder": 0 },
+
+  { "depId": "__common__", "type": "ADD_NPM_SCRIPT", "mavenArtifactId": "lint:fix", "version": "eslint . --fix", "sortOrder": 0 },
+  { "depId": "__common__", "type": "ADD_NPM_SCRIPT", "mavenArtifactId": "format:check", "version": "prettier --check .", "sortOrder": 1 },
+  { "depId": "__common__", "type": "ADD_NPM_SCRIPT", "mavenArtifactId": "typecheck", "version": "tsc --noEmit", "sortOrder": 2 },
+  { "depId": "test-playwright", "type": "ADD_NPM_SCRIPT", "mavenArtifactId": "e2e:install", "version": "playwright install --with-deps", "sortOrder": 0 },
+  { "depId": "test-playwright", "type": "ADD_NPM_SCRIPT", "mavenArtifactId": "e2e:report", "version": "playwright show-report", "sortOrder": 1 },
+  { "depId": "api-client-openapi", "type": "ADD_NPM_SCRIPT", "mavenArtifactId": "gen:api", "version": "openapi-typescript openapi.yaml -o src/shared/api/generated/schema.ts", "sortOrder": 0 }
+]

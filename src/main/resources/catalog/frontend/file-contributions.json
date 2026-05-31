@@ -1,0 +1,92 @@
+[
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "export {};\n", "targetPath": "src/app/index.ts", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "export { HomePage } from './home';\n", "targetPath": "src/pages/index.ts", "substitutionType": "NONE", "sortOrder": 1 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "export {};\n", "targetPath": "src/widgets/index.ts", "substitutionType": "NONE", "sortOrder": 2 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "export {};\n", "targetPath": "src/features/index.ts", "substitutionType": "NONE", "sortOrder": 3 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "export {};\n", "targetPath": "src/entities/index.ts", "substitutionType": "NONE", "sortOrder": 4 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "export {};\n", "targetPath": "src/shared/index.ts", "substitutionType": "NONE", "sortOrder": 5 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "# app\n\nApp-level providers, router, and global wiring. Imports from every layer below.\n", "targetPath": "src/app/README.md", "substitutionType": "NONE", "sortOrder": 6 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "# pages\n\nRoute-level components. May import from widgets/features/entities/shared.\n", "targetPath": "src/pages/README.md", "substitutionType": "NONE", "sortOrder": 7 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "# widgets\n\nComposite UI blocks. May import from features/entities/shared.\n", "targetPath": "src/widgets/README.md", "substitutionType": "NONE", "sortOrder": 8 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "# features\n\nBusiness-level interactions. May import from entities/shared.\n", "targetPath": "src/features/README.md", "substitutionType": "NONE", "sortOrder": 9 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "# entities\n\nDomain models and their UI. May import from shared only.\n", "targetPath": "src/entities/README.md", "substitutionType": "NONE", "sortOrder": 10 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "content": "# shared\n\nReusable infrastructure: ui-kit, lib helpers, api, config. Imports nothing from above.\n", "targetPath": "src/shared/README.md", "substitutionType": "NONE", "sortOrder": 11 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/frontend/fe-index-html.mustache", "targetPath": "index.html", "substitutionType": "MUSTACHE", "sortOrder": 12 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/frontend/fe-main-tsx.mustache", "targetPath": "src/main.tsx", "substitutionType": "MUSTACHE", "sortOrder": 13 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/frontend/fe-app-tsx.mustache", "targetPath": "src/app/App.tsx", "substitutionType": "MUSTACHE", "sortOrder": 14 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/frontend/fe-pages-home-index.mustache", "targetPath": "src/pages/home/index.ts", "substitutionType": "MUSTACHE", "sortOrder": 15 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/frontend/fe-pages-home-ui.mustache", "targetPath": "src/pages/home/ui/HomePage.tsx", "substitutionType": "MUSTACHE", "sortOrder": 16 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/frontend/fe-readme.mustache", "targetPath": "README.md", "substitutionType": "MUSTACHE", "sortOrder": 17 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/tsconfig.json", "targetPath": "tsconfig.json", "substitutionType": "NONE", "sortOrder": 18 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/tsconfig.node.json", "targetPath": "tsconfig.node.json", "substitutionType": "NONE", "sortOrder": 19 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/.gitignore", "targetPath": ".gitignore", "substitutionType": "NONE", "sortOrder": 20 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/.editorconfig", "targetPath": ".editorconfig", "substitutionType": "NONE", "sortOrder": 21 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/.dockerignore", "targetPath": ".dockerignore", "substitutionType": "NONE", "sortOrder": 22 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/Dockerfile", "targetPath": "Dockerfile", "substitutionType": "NONE", "sortOrder": 23 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/nginx.conf", "targetPath": "nginx.conf", "substitutionType": "NONE", "sortOrder": 24 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/Jenkinsfile", "targetPath": "Jenkinsfile", "substitutionType": "NONE", "sortOrder": 25 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/eslint.config.js", "targetPath": "eslint.config.js", "substitutionType": "NONE", "sortOrder": 26 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/.prettierrc.json", "targetPath": ".prettierrc.json", "substitutionType": "NONE", "sortOrder": 27 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/husky-pre-commit", "targetPath": ".husky/pre-commit", "substitutionType": "NONE", "sortOrder": 28 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "content": "{{#hasBackendPair}}VITE_API_BASE_URL={{apiBaseUrl}}\n{{/hasBackendPair}}{{#optAuthMsalInitConfig}}VITE_MSAL_CLIENT_ID=\nVITE_MSAL_TENANT_ID=\nVITE_MSAL_REDIRECT_URI=\n{{/optAuthMsalInitConfig}}", "targetPath": ".env.development", "substitutionType": "MUSTACHE", "sortOrder": 29 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "content": "{{#hasBackendPair}}# Override this per-environment. The dev value comes from .env.development.\nVITE_API_BASE_URL={{apiBaseUrl}}\n{{/hasBackendPair}}{{#optAuthMsalInitConfig}}# Azure AD app registration values — fill in per environment.\nVITE_MSAL_CLIENT_ID=\nVITE_MSAL_TENANT_ID=\nVITE_MSAL_REDIRECT_URI=\n{{/optAuthMsalInitConfig}}", "targetPath": ".env.example", "substitutionType": "MUSTACHE", "sortOrder": 30 },
+
+  { "depId": "style-tailwind", "fileType": "TEMPLATE", "contentResource": "templates/frontend/style-tailwind/tailwind.config.js.mustache", "targetPath": "tailwind.config.js", "substitutionType": "MUSTACHE", "sortOrder": 0 },
+  { "depId": "style-tailwind", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/style-tailwind/postcss.config.js", "targetPath": "postcss.config.js", "substitutionType": "NONE", "sortOrder": 1 },
+  { "depId": "style-tailwind", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/style-tailwind/index.css", "targetPath": "src/index.css", "substitutionType": "NONE", "sortOrder": 2 },
+
+  { "depId": "test-vitest-rtl", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/test-vitest-rtl/vitest.config.ts", "targetPath": "vitest.config.ts", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "test-vitest-rtl", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/test-vitest-rtl/test-setup.ts", "targetPath": "src/test-setup.ts", "substitutionType": "NONE", "sortOrder": 1 },
+  { "depId": "test-vitest-rtl", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/test-vitest-rtl/home-page.test.tsx", "targetPath": "src/pages/home/ui/HomePage.test.tsx", "substitutionType": "NONE", "subOptionId": "sample-tests", "sortOrder": 2 },
+  { "depId": "test-vitest-rtl", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/test-vitest-rtl/github-actions-ci.yml", "targetPath": ".github/workflows/ci.yml", "substitutionType": "NONE", "subOptionId": "ci-config", "sortOrder": 3 },
+
+  { "depId": "test-playwright", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/test-playwright/playwright.config.ts", "targetPath": "playwright.config.ts", "substitutionType": "NONE", "subOptionId": "sample-config", "sortOrder": 0 },
+  { "depId": "test-playwright", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/test-playwright/home-spec.ts", "targetPath": "e2e/home.spec.ts", "substitutionType": "NONE", "subOptionId": "sample-spec", "sortOrder": 1 },
+  { "depId": "test-playwright", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/test-playwright/github-actions-e2e.yml", "targetPath": ".github/workflows/e2e.yml", "substitutionType": "NONE", "subOptionId": "ci-config", "sortOrder": 2 },
+
+  { "depId": "storybook", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/storybook/main.ts", "targetPath": ".storybook/main.ts", "substitutionType": "NONE", "subOptionId": "init-config", "sortOrder": 0 },
+  { "depId": "storybook", "fileType": "TEMPLATE", "contentResource": "static-configs/frontend/storybook/preview.ts", "targetPath": ".storybook/preview.ts", "substitutionType": "MUSTACHE", "subOptionId": "init-config", "sortOrder": 1 },
+  { "depId": "storybook", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/storybook/example-stories.tsx", "targetPath": "src/shared/ui/example.stories.tsx", "substitutionType": "NONE", "subOptionId": "sample-story", "sortOrder": 2 },
+
+  { "depId": "router-react-router", "fileType": "TEMPLATE", "contentResource": "templates/frontend/router-react-router/routes.tsx.mustache", "targetPath": "src/app/routes.tsx", "substitutionType": "MUSTACHE", "sortOrder": 0 },
+  { "depId": "router-react-router", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/router-react-router/error-boundary.tsx", "targetPath": "src/shared/ui/error-boundary.tsx", "substitutionType": "NONE", "subOptionId": "error-boundary", "sortOrder": 1 },
+  { "depId": "router-react-router", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/router-react-router/about-index.ts", "targetPath": "src/pages/about/index.ts", "substitutionType": "NONE", "subOptionId": "sample-routes", "sortOrder": 2 },
+  { "depId": "router-react-router", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/router-react-router/about-page.tsx", "targetPath": "src/pages/about/ui/AboutPage.tsx", "substitutionType": "NONE", "subOptionId": "sample-routes", "sortOrder": 3 },
+
+  { "depId": "state-zustand", "fileType": "TEMPLATE", "contentResource": "templates/frontend/state-zustand/counter-store.ts.mustache", "targetPath": "src/entities/counter/model/store.ts", "substitutionType": "MUSTACHE", "subOptionId": "sample-store", "sortOrder": 0 },
+
+  { "depId": "state-redux-toolkit", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/state-redux-toolkit/store.ts", "targetPath": "src/app/store.ts", "substitutionType": "NONE", "subOptionId": "sample-store", "sortOrder": 0 },
+  { "depId": "state-redux-toolkit", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/state-redux-toolkit/counterSlice.ts", "targetPath": "src/entities/counter/model/counterSlice.ts", "substitutionType": "NONE", "subOptionId": "sample-store", "sortOrder": 1 },
+  { "depId": "state-redux-toolkit", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/state-redux-toolkit/hooks.ts", "targetPath": "src/shared/lib/hooks.ts", "substitutionType": "NONE", "subOptionId": "sample-store", "sortOrder": 2 },
+
+  { "depId": "data-tanstack-query", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/data-tanstack-query/queryClient.ts", "targetPath": "src/shared/api/queryClient.ts", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "data-tanstack-query", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/data-tanstack-query/axios.ts", "targetPath": "src/shared/api/axios.ts", "substitutionType": "NONE", "subOptionId": "axios-base", "sortOrder": 1 },
+  { "depId": "data-tanstack-query", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/data-tanstack-query/use-users.ts", "targetPath": "src/features/users/api/useUsers.ts", "substitutionType": "NONE", "subOptionId": "sample-query", "sortOrder": 2 },
+
+  { "depId": "design-shadcn", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/design-shadcn/components.json", "targetPath": "components.json", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "design-shadcn", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/design-shadcn/lib-utils.ts", "targetPath": "src/shared/lib/utils.ts", "substitutionType": "NONE", "sortOrder": 1 },
+  { "depId": "design-shadcn", "fileType": "TEMPLATE", "contentResource": "static-configs/frontend/design-shadcn/index.css", "targetPath": "src/index.css", "substitutionType": "MUSTACHE", "sortOrder": 10 },
+  { "depId": "design-shadcn", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/design-shadcn/button.tsx", "targetPath": "src/shared/ui/button.tsx", "substitutionType": "NONE", "subOptionId": "comp-button", "sortOrder": 11 },
+  { "depId": "design-shadcn", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/design-shadcn/card.tsx", "targetPath": "src/shared/ui/card.tsx", "substitutionType": "NONE", "subOptionId": "comp-card", "sortOrder": 12 },
+  { "depId": "design-shadcn", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/design-shadcn/input.tsx", "targetPath": "src/shared/ui/input.tsx", "substitutionType": "NONE", "subOptionId": "comp-input", "sortOrder": 13 },
+  { "depId": "design-shadcn", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/design-shadcn/dialog.tsx", "targetPath": "src/shared/ui/dialog.tsx", "substitutionType": "NONE", "subOptionId": "comp-dialog", "sortOrder": 14 },
+  { "depId": "design-shadcn", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/design-shadcn/toast.tsx", "targetPath": "src/shared/ui/toast.tsx", "substitutionType": "NONE", "subOptionId": "comp-toast", "sortOrder": 15 },
+  { "depId": "design-shadcn", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/design-shadcn/use-toast.ts", "targetPath": "src/shared/lib/use-toast.ts", "substitutionType": "NONE", "subOptionId": "comp-toast", "sortOrder": 16 },
+
+  { "depId": "auth-msal", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/auth-msal/msal-config.ts", "targetPath": "src/shared/auth/msal-config.ts", "substitutionType": "NONE", "subOptionId": "init-config", "sortOrder": 0 },
+  { "depId": "auth-msal", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/auth-msal/login-button.tsx", "targetPath": "src/shared/ui/login-button.tsx", "substitutionType": "NONE", "subOptionId": "sample-login", "sortOrder": 1 },
+  { "depId": "auth-msal", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/auth-msal/use-auth.ts", "targetPath": "src/shared/lib/use-auth.ts", "substitutionType": "NONE", "subOptionId": "sample-login", "sortOrder": 2 },
+
+  { "depId": "style-styled", "fileType": "TEMPLATE", "contentResource": "static-configs/frontend/style-styled/theme.ts", "targetPath": "src/shared/theme/theme.ts", "substitutionType": "MUSTACHE", "sortOrder": 0 },
+  { "depId": "style-styled", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/style-styled/styled.d.ts", "targetPath": "src/shared/theme/styled.d.ts", "substitutionType": "NONE", "sortOrder": 1 },
+
+  { "depId": "design-mui", "fileType": "TEMPLATE", "contentResource": "static-configs/frontend/design-mui/theme.ts", "targetPath": "src/shared/theme/theme.ts", "substitutionType": "MUSTACHE", "sortOrder": 0 },
+  { "depId": "design-chakra", "fileType": "TEMPLATE", "contentResource": "static-configs/frontend/design-chakra/theme.ts", "targetPath": "src/shared/theme/theme.ts", "substitutionType": "MUSTACHE", "sortOrder": 0 },
+  { "depId": "design-mantine", "fileType": "TEMPLATE", "contentResource": "static-configs/frontend/design-mantine/theme.ts", "targetPath": "src/shared/theme/theme.ts", "substitutionType": "MUSTACHE", "sortOrder": 0 },
+
+  { "depId": "form-react-hook-form", "fileType": "TEMPLATE", "contentResource": "templates/frontend/form-react-hook-form/signup-form.tsx.mustache", "targetPath": "src/features/signup/ui/SignupForm.tsx", "substitutionType": "MUSTACHE", "subOptionId": "sample-form", "sortOrder": 0 },
+
+  { "depId": "api-client-openapi", "fileType": "STATIC_COPY", "content": "# Generated TypeScript bindings for the paired backend's OpenAPI spec.\n# Run `gen:api` after pulling spec changes.\n", "targetPath": "src/shared/api/generated/.gitkeep", "substitutionType": "NONE", "sortOrder": 0 },
+  { "depId": "api-client-openapi", "fileType": "STATIC_COPY", "content": "# api-client-openapi\n\nThis project consumes the paired backend's OpenAPI contract.\n\n- `openapi.yaml` at the project root carries the spec.\n- `gen:api` script regenerates `src/shared/api/generated/schema.ts`.\n- Pair with TanStack Query for typed hooks (recommended).\n", "targetPath": "src/shared/api/README.md", "substitutionType": "NONE", "sortOrder": 1 },
+  { "depId": "api-client-openapi", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/api-client-openapi/orval.config.ts", "targetPath": "orval.config.ts", "substitutionType": "NONE", "subOptionId": "react-query-hooks", "sortOrder": 2 }
+]

@@ -129,6 +129,8 @@ public class ConfigurationExportImportService {
                     be.setRepoName(b.getRepoName());
                     be.setRepoUrl(b.getRepoUrl());
                     be.setSnapshotsEnabled(b.isSnapshotsEnabled());
+                    be.setScope(b.getScope());
+                    be.setSubOptionId(b.getSubOptionId());
                     be.setSortOrder(b.getSortOrder());
                     be.setProjectKind(b.getProjectKind().name());
                     return be;
@@ -358,6 +360,8 @@ public class ConfigurationExportImportService {
             entity.setRepoName(b.getRepoName());
             entity.setRepoUrl(b.getRepoUrl());
             entity.setSnapshotsEnabled(b.isSnapshotsEnabled());
+            entity.setScope(b.getScope());
+            entity.setSubOptionId(b.getSubOptionId());
             entity.setSortOrder(b.getSortOrder());
             entity.setProjectKind(parseKind(b.getProjectKind()));
             buildCustomRepo.save(entity);

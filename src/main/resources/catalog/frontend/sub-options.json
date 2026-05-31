@@ -1,0 +1,41 @@
+[
+  { "depId": "router-react-router", "optionId": "lazy-routes", "label": "Lazy routes", "description": "Use React.lazy() + Suspense for code-split routes", "sortOrder": 0 },
+  { "depId": "router-react-router", "optionId": "error-boundary", "label": "Error boundary", "description": "Wrap routes in an ErrorBoundary for graceful failures", "sortOrder": 1 },
+  { "depId": "router-react-router", "optionId": "sample-routes", "label": "Sample routes", "description": "Generate a demo router config with /home and /about", "sortOrder": 2 },
+
+  { "depId": "state-zustand", "optionId": "devtools", "label": "Redux DevTools middleware", "description": "Wire zustand to the Redux DevTools browser extension", "sortOrder": 0 },
+  { "depId": "state-zustand", "optionId": "persist", "label": "Persist middleware", "description": "Add zustand/middleware persist for localStorage rehydration", "sortOrder": 1 },
+  { "depId": "state-zustand", "optionId": "sample-store", "label": "Sample store", "description": "Generate a counter store under src/entities/counter", "sortOrder": 2 },
+
+  { "depId": "state-redux-toolkit", "optionId": "sample-store", "label": "Sample slice + store", "description": "Generate a counter slice + configured store", "sortOrder": 0 },
+
+  { "depId": "data-tanstack-query", "optionId": "devtools", "label": "Devtools", "description": "Include @tanstack/react-query-devtools setup", "sortOrder": 0 },
+  { "depId": "data-tanstack-query", "optionId": "axios-base", "label": "Axios base client", "description": "Configure an Axios instance under shared/api", "sortOrder": 1 },
+  { "depId": "data-tanstack-query", "optionId": "sample-query", "label": "Sample query hook", "description": "Generate a useUsers() hook example", "sortOrder": 2 },
+
+  { "depId": "style-tailwind", "optionId": "dark-mode", "label": "Dark mode (class strategy)", "description": "Configure Tailwind dark mode via class attribute", "sortOrder": 0 },
+
+  { "depId": "form-react-hook-form", "optionId": "rhf-zod-resolver", "label": "Use Zod resolver", "description": "Wire @hookform/resolvers to validate with Zod schemas", "sortOrder": 0 },
+  { "depId": "form-react-hook-form", "optionId": "sample-form", "label": "Sample form", "description": "Generate a demo signup form component", "sortOrder": 1 },
+
+  { "depId": "test-vitest-rtl", "optionId": "sample-tests", "label": "Sample tests", "description": "Generate a sample render test for HomePage", "sortOrder": 0 },
+  { "depId": "test-vitest-rtl", "optionId": "ci-config", "label": "CI config", "description": "Generate a GitHub Actions workflow that runs the test suite", "sortOrder": 1 },
+
+  { "depId": "test-playwright", "optionId": "sample-config", "label": "playwright.config.ts", "description": "Generate a baseline config targeting Chromium+Firefox+WebKit", "sortOrder": 0 },
+  { "depId": "test-playwright", "optionId": "sample-spec", "label": "Sample E2E spec", "description": "Generate e2e/home.spec.ts covering the home page", "sortOrder": 1 },
+  { "depId": "test-playwright", "optionId": "ci-config", "label": "GitHub Actions CI", "description": "Generate .github/workflows/e2e.yml that installs browsers and runs pnpm e2e", "sortOrder": 2 },
+
+  { "depId": "storybook", "optionId": "init-config", "label": ".storybook config", "description": "Generate .storybook/main.ts and preview.ts so `pnpm storybook` works out of the box", "sortOrder": 0 },
+  { "depId": "storybook", "optionId": "sample-story", "label": "Sample story", "description": "Generate src/shared/ui/example.stories.tsx as a starting point", "sortOrder": 1 },
+
+  { "depId": "design-shadcn", "optionId": "comp-button", "label": "Button", "description": "Generate src/shared/ui/button.tsx (forwardRef + cva variants)", "sortOrder": 0 },
+  { "depId": "design-shadcn", "optionId": "comp-card", "label": "Card", "description": "Generate src/shared/ui/card.tsx (Card / CardHeader / CardContent / CardFooter)", "sortOrder": 1 },
+  { "depId": "design-shadcn", "optionId": "comp-input", "label": "Input", "description": "Generate src/shared/ui/input.tsx", "sortOrder": 2 },
+  { "depId": "design-shadcn", "optionId": "comp-dialog", "label": "Dialog", "description": "Generate src/shared/ui/dialog.tsx (adds @radix-ui/react-dialog)", "sortOrder": 3 },
+  { "depId": "design-shadcn", "optionId": "comp-toast", "label": "Toast", "description": "Generate src/shared/ui/toast.tsx + use-toast hook (adds @radix-ui/react-toast)", "sortOrder": 4 },
+
+  { "depId": "auth-msal", "optionId": "init-config", "label": "MSAL config + provider", "description": "Generate msal-config.ts, wrap App in MsalProvider, and add VITE_MSAL_* env keys", "sortOrder": 0 },
+  { "depId": "auth-msal", "optionId": "sample-login", "label": "Sample login button + useAuth hook", "description": "Generate LoginButton.tsx and a useAuth() hook in shared/", "sortOrder": 1 },
+
+  { "depId": "api-client-openapi", "optionId": "react-query-hooks", "label": "React Query hooks (orval)", "description": "Add an orval.config.ts so `npx orval` produces typed React Query hooks (install orval manually: pnpm add -D orval)", "sortOrder": 0 }
+]

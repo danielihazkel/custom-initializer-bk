@@ -217,4 +217,110 @@ class DataSeederTest {
     void seedsFrontendDependencyGroups() {
         assertThat(groupRepo.findAllByProjectKindOrderBySortOrderAsc(ProjectKind.FRONTEND)).hasSize(11);
     }
+
+    @Test
+    void seedsAllFrontendDependencyEntries() {
+        assertThat(entryRepo.findAllByProjectKind(ProjectKind.FRONTEND)).hasSize(28);
+    }
+
+    @Test
+    void seedsFrontendFileContributions() {
+        long feFileContribs = fileContribRepo.findAll().stream()
+                .filter(f -> f.getProjectKind() == ProjectKind.FRONTEND)
+                .count();
+        assertThat(feFileContribs).isEqualTo(76);
+
+        // The FSD layer barrels are FRONTEND __common__ rows.
+        assertThat(fileContribRepo.findAll()).anySatisfy(f -> {
+            assertThat(f.getProjectKind()).isEqualTo(ProjectKind.FRONTEND);
+            assertThat(f.getDependencyId()).isEqualTo(DependencyConfigService.COMMON_ID);
+            assertThat(f.getTargetPath()).isEqualTo("src/app/index.ts");
+        });
+    }
+
+    @Test
+    void seedsFrontendBuildCustomizationsByType() {
+        List<BuildCustomizationEntity> fe = buildCustomRepo.findAll().stream()
+                .filter(b -> b.getProjectKind() == ProjectKind.FRONTEND)
+                .toList();
+
+        assertThat(fe).filteredOn(b -> b.getCustomizationType()
+                == BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY).hasSize(68);
+        assertThat(fe).filteredOn(b -> b.getCustomizationType()
+                == BuildCustomizationEntity.CustomizationType.ADD_VITE_PLUGIN).hasSize(1);
+        assertThat(fe).filteredOn(b -> b.getCustomizationType()
+                == BuildCustomizationEntity.CustomizationType.ADD_NPM_SCRIPT).hasSize(6);
+    }
+
+    @Test
+    void zustandNpmDependencySeeded() {
+        BuildCustomizationEntity zustand = buildCustomRepo.findAll().stream()
+                .filter(b -> b.getProjectKind() == ProjectKind.FRONTEND)
+                .filter(b -> b.getCustomizationType()
+                        == BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY)
+                .filter(b -> "state-zustand".equals(b.getDependencyId())
+                        && "zustand".equals(b.getMavenArtifactId()))
+                .findFirst().orElseThrow();
+        assertThat(zustand.getVersion()).isEqualTo("^4.5.5");
+        assertThat(zustand.getScope()).isNull();           // prod dep — blank scope coerced to null
+    }
+
+    @Test
+    void viteReactPluginSeeded() {
+        BuildCustomizationEntity plugin = buildCustomRepo.findAll().stream()
+                .filter(b -> b.getCustomizationType()
+                        == BuildCustomizationEntity.CustomizationType.ADD_VITE_PLUGIN)
+                .findFirst().orElseThrow();
+        assertThat(plugin.getMavenGroupId()).isEqualTo("@vitejs/plugin-react");  // import path
+        assertThat(plugin.getMavenArtifactId()).isEqualTo("react");              // import binding
+        assertThat(plugin.getVersion()).isEqualTo("react()");                    // plugin call
+    }
+
+    @Test
+    void lintFixNpmScriptSeeded() {
+        BuildCustomizationEntity script = buildCustomRepo.findAll().stream()
+                .filter(b -> b.getCustomizationType()
+                        == BuildCustomizationEntity.CustomizationType.ADD_NPM_SCRIPT)
+                .filter(b -> "lint:fix".equals(b.getMavenArtifactId()))
+                .findFirst().orElseThrow();
+        assertThat(script.getVersion()).isEqualTo("eslint . --fix");
+    }
+
+    @Test
+    void seedsFrontendSubOptions() {
+        long feSubOptions = subOptionRepo.findAll().stream()
+                .filter(o -> o.getProjectKind() == ProjectKind.FRONTEND)
+                .count();
+        assertThat(feSubOptions).isEqualTo(28);
+
+        assertThat(subOptionRepo.findAll()).anySatisfy(o -> {
+            assertThat(o.getDependencyId()).isEqualTo("design-shadcn");
+            assertThat(o.getOptionId()).isEqualTo("comp-dialog");
+        });
+    }
+
+    @Test
+    void seedsFrontendCompatibilityRules() {
+        List<DependencyCompatibilityEntity> fe = compatibilityRepo.findAll().stream()
+                .filter(c -> c.getProjectKind() == ProjectKind.FRONTEND)
+                .toList();
+        assertThat(fe).hasSize(14);
+
+        assertThat(fe).anySatisfy(c -> {
+            assertThat(c.getSourceDepId()).isEqualTo("design-shadcn");
+            assertThat(c.getTargetDepId()).isEqualTo("style-tailwind");
+            assertThat(c.getRelationType())
+                    .isEqualTo(DependencyCompatibilityEntity.RelationType.REQUIRES);
+        });
+    }
+
+    @Test
+    void frontendDesignSystemsHaveReactVersionRanges() {
+        assertThat(entryRepo.findByDepId("design-mui").orElseThrow().getCompatibilityRange())
+                .isEqualTo("[18.0.0,19.0.0)");
+        assertThat(entryRepo.findByDepId("design-chakra").orElseThrow().getCompatibilityRange())
+                .isEqualTo("[18.0.0,19.0.0)");
+        assertThat(entryRepo.findByDepId("design-mantine").orElseThrow().getCompatibilityRange())
+                .isEqualTo("[18.0.0,19.0.0)");
+    }
 }

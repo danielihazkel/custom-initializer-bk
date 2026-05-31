@@ -157,6 +157,8 @@ public class ConfigurationExport {
         private String repoName;
         private String repoUrl;
         private boolean snapshotsEnabled;
+        private String scope;
+        private String subOptionId;
         private int sortOrder;
         private String projectKind;
 
@@ -182,6 +184,10 @@ public class ConfigurationExport {
         public void setRepoUrl(String repoUrl) { this.repoUrl = repoUrl; }
         public boolean isSnapshotsEnabled() { return snapshotsEnabled; }
         public void setSnapshotsEnabled(boolean snapshotsEnabled) { this.snapshotsEnabled = snapshotsEnabled; }
+        public String getScope() { return scope; }
+        public void setScope(String scope) { this.scope = scope; }
+        public String getSubOptionId() { return subOptionId; }
+        public void setSubOptionId(String subOptionId) { this.subOptionId = subOptionId; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
         public String getProjectKind() { return projectKind; }

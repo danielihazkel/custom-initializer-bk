@@ -40,7 +40,8 @@ public final class CatalogManifests {
                                  String mavenArtifactId, String version,
                                  String excludeFromGroupId, String excludeFromArtifactId,
                                  String repoId, String repoName, String repoUrl,
-                                 Boolean snapshotsEnabled, int sortOrder) {}
+                                 Boolean snapshotsEnabled, String scope, String subOptionId,
+                                 int sortOrder) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SubOptionDef(String depId, String optionId, String label,

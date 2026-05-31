@@ -80,19 +80,19 @@ This unlocks conditional file content — e.g. a single template can gate a bloc
 
 `src/main/java/com/menora/initializr/db/DataSeeder.java`
 
-Runs at startup as a `SmartInitializingSingleton`. If all DB tables are empty it loads the backend dependency catalog from JSON manifests under `src/main/resources/catalog/` and inserts them as DB records. This bootstraps the system; after seeding, records can be modified via the admin API without touching the filesystem.
+Runs at startup as a `SmartInitializingSingleton`. If all DB tables are empty it loads the dependency catalog from JSON manifests under `src/main/resources/catalog/` (backend) and `src/main/resources/catalog/frontend/` (frontend) and inserts them as DB records. This bootstraps the system; after seeding, records can be modified via the admin API without touching the filesystem.
 
-**Catalog manifests** (`src/main/resources/catalog/`, DTOs in `db/seed/CatalogManifests.java`):
+**Catalog manifests** (DTOs in `db/seed/CatalogManifests.java`). The same five generic loaders read both the backend manifests under `catalog/` (stamped `ProjectKind.BACKEND`) and the frontend manifests under `catalog/frontend/` (stamped `ProjectKind.FRONTEND`) — each `load*(path, kind)` takes the manifest path and the kind to stamp on every row:
 
 | Manifest | Replaces | Notes |
 |----------|----------|-------|
-| `dependencies.json` | `seedDependencyCatalog()` | Groups + entries; `compatibilityRange`/`starter` are plain fields |
-| `file-contributions.json` | common + per-dep file contributions | Each row points at its content file via `contentResource` (a classpath path under `static-configs/*` or `templates/*`); the content itself stays in that file. `DELETE` rows have no `contentResource`. `application.yaml` base keeps `sortOrder: -1`, the `application.properties` `DELETE` keeps `sortOrder: 9999` |
-| `build-customizations.json` | `seedBuildCustomizations()` | `type` = `ADD_DEPENDENCY` / `EXCLUDE_DEPENDENCY` / `ADD_REPOSITORY` |
-| `sub-options.json` | `seedSubOptions()` | |
-| `compatibility.json` | `seedCompatibilityRules()` (backend only) | |
+| `dependencies.json` | `seedDependencyCatalog()` | Groups + entries; `compatibilityRange`/`starter` are plain fields. FE entries carry no Maven coords; the three React-19-sensitive design systems (`design-mui`/`design-chakra`/`design-mantine`) set `compatibilityRange: "[18.0.0,19.0.0)"` |
+| `file-contributions.json` | common + per-dep file contributions | Each row points at its content file via `contentResource` (a classpath path under `static-configs/*` or `templates/*`); the content itself stays in that file. Small inline strings (FSD barrels, layer READMEs, `.env` templates) use the `content` field instead. `DELETE` rows have no `contentResource`. `application.yaml` base keeps `sortOrder: -1`, the `application.properties` `DELETE` keeps `sortOrder: 9999` |
+| `build-customizations.json` | `seedBuildCustomizations()` / FE `feNpm`/`feVitePlugin`/`feNpmScript` | `type` = `ADD_DEPENDENCY` / `EXCLUDE_DEPENDENCY` / `ADD_REPOSITORY` (backend) or `ADD_NPM_DEPENDENCY` / `ADD_VITE_PLUGIN` / `ADD_NPM_SCRIPT` (frontend). FE rows reuse the Maven columns: npm dep = `mavenArtifactId` (package) + `version` (semver) + `scope` (`dev`/blank) + optional `subOptionId` gate; vite plugin = `mavenGroupId` (import path) + `mavenArtifactId` (binding) + `version` (call expr); npm script = `mavenArtifactId` (name) + `version` (command) |
+| `sub-options.json` | `seedSubOptions()` / FE `feSubOption` | |
+| `compatibility.json` | `seedCompatibilityRules()` / FE `feCompat` | one file per kind: `catalog/compatibility.json` (backend) and `catalog/frontend/compatibility.json` (FE) |
 
-The loaders (`loadDependencyCatalog`, `loadFileContributions`, …) are generic — to change the backend catalog, edit the JSON, not Java. The **frontend** catalog (FRONTEND-kind rows), starter/module templates, color palettes, version definitions, and entity template sets are still seeded from Java helpers / `templates/fullstack/*/manifest.json` in `DataSeeder` (same pattern, candidates for the same treatment).
+The loaders (`loadDependencyCatalog`, `loadFileContributions`, …) are generic — to change either catalog, edit the JSON, not Java. **Still seeded from Java helpers** in `DataSeeder`: starter/module templates, color palettes (`seedColorPalettes`), version definitions (`seedVersionsIfMissing`), and entity template sets (`templates/fullstack/*/manifest.json`). Color palettes and versions run in the pre-guard "if missing" path (idempotent per-row), so they are intentionally not folded into the all-or-nothing catalog load.
 
 ### Adding or Modifying a Dependency
 

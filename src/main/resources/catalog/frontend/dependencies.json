@@ -1,0 +1,98 @@
+{
+  "groups": [
+    {
+      "name": "Routing",
+      "sortOrder": 0,
+      "entries": [
+        { "depId": "router-react-router", "name": "React Router", "description": "Declarative routing for React (react-router-dom v6)", "sortOrder": 0 },
+        { "depId": "router-tanstack", "name": "TanStack Router", "description": "Type-safe, file-based routing with first-class data loading", "sortOrder": 1 }
+      ]
+    },
+    {
+      "name": "State Management",
+      "sortOrder": 1,
+      "entries": [
+        { "depId": "state-zustand", "name": "Zustand", "description": "Small, fast, scalable state-management with a tiny API", "sortOrder": 0 },
+        { "depId": "state-redux-toolkit", "name": "Redux Toolkit", "description": "Standard, opinionated Redux with @reduxjs/toolkit + react-redux", "sortOrder": 1 },
+        { "depId": "state-jotai", "name": "Jotai", "description": "Primitive, atomic state management for React", "sortOrder": 2 }
+      ]
+    },
+    {
+      "name": "Data Fetching",
+      "sortOrder": 2,
+      "entries": [
+        { "depId": "data-tanstack-query", "name": "TanStack Query", "description": "Powerful asynchronous state management for server data", "sortOrder": 0 },
+        { "depId": "data-swr", "name": "SWR", "description": "React Hooks for data fetching from Vercel", "sortOrder": 1 }
+      ]
+    },
+    {
+      "name": "Styling",
+      "sortOrder": 3,
+      "entries": [
+        { "depId": "style-tailwind", "name": "Tailwind CSS", "description": "Utility-first CSS framework with PostCSS + Autoprefixer", "sortOrder": 0 },
+        { "depId": "style-styled", "name": "styled-components", "description": "Visual primitives for CSS-in-JS", "sortOrder": 1 }
+      ]
+    },
+    {
+      "name": "Design System",
+      "sortOrder": 4,
+      "entries": [
+        { "depId": "design-none", "name": "None / Plain CSS", "description": "No component library — bring your own UI", "sortOrder": 0 },
+        { "depId": "design-shadcn", "name": "shadcn/ui", "description": "Tailwind + Radix copy-paste components (requires Tailwind)", "sortOrder": 1 },
+        { "depId": "design-mui", "name": "Material UI (MUI)", "description": "Comprehensive React component library implementing Material Design", "sortOrder": 2, "compatibilityRange": "[18.0.0,19.0.0)" },
+        { "depId": "design-chakra", "name": "Chakra UI", "description": "Modular, accessible component library powered by Emotion", "sortOrder": 3, "compatibilityRange": "[18.0.0,19.0.0)" },
+        { "depId": "design-mantine", "name": "Mantine", "description": "Full-featured components plus a rich React hooks library", "sortOrder": 4, "compatibilityRange": "[18.0.0,19.0.0)" }
+      ]
+    },
+    {
+      "name": "Forms & Validation",
+      "sortOrder": 5,
+      "entries": [
+        { "depId": "form-react-hook-form", "name": "React Hook Form", "description": "Performant, flexible and extensible forms with easy validation", "sortOrder": 0 },
+        { "depId": "form-zod", "name": "Zod", "description": "TypeScript-first schema validation with static type inference", "sortOrder": 1 }
+      ]
+    },
+    {
+      "name": "Animation",
+      "sortOrder": 6,
+      "entries": [
+        { "depId": "anim-framer-motion", "name": "Framer Motion", "description": "Production-ready animation library for React", "sortOrder": 0 }
+      ]
+    },
+    {
+      "name": "Testing",
+      "sortOrder": 7,
+      "entries": [
+        { "depId": "test-vitest-rtl", "name": "Vitest + React Testing Library", "description": "Fast unit test runner + RTL with jsdom and jest-dom matchers", "sortOrder": 0 },
+        { "depId": "test-playwright", "name": "Playwright", "description": "End-to-end testing for modern web apps", "sortOrder": 1 },
+        { "depId": "test-msw", "name": "MSW (Mock Service Worker)", "description": "API mocking library for browsers and Node, network-level interception", "sortOrder": 2 }
+      ]
+    },
+    {
+      "name": "Quality (default-on)",
+      "sortOrder": 8,
+      "entries": [
+        { "depId": "quality-eslint", "name": "ESLint (flat config)", "description": "Linting for TS + React, included by default in every project", "sortOrder": 0 },
+        { "depId": "quality-prettier", "name": "Prettier", "description": "Opinionated code formatter, included by default in every project", "sortOrder": 1 },
+        { "depId": "quality-husky", "name": "Husky + lint-staged", "description": "Git hook runner with pre-commit lint/format checks", "sortOrder": 2 }
+      ]
+    },
+    {
+      "name": "Extras",
+      "sortOrder": 9,
+      "entries": [
+        { "depId": "i18n-react-i18next", "name": "react-i18next", "description": "Internationalization framework based on i18next", "sortOrder": 0 },
+        { "depId": "storybook", "name": "Storybook", "description": "Workshop for building UI components and pages in isolation", "sortOrder": 1 },
+        { "depId": "auth-msal", "name": "Microsoft Auth (MSAL React)", "description": "@azure/msal-react — Microsoft Identity Platform integration", "sortOrder": 2 },
+        { "depId": "chart-recharts", "name": "Recharts", "description": "Composable charting library built on React + D3", "sortOrder": 3 }
+      ]
+    },
+    {
+      "name": "API Integration",
+      "sortOrder": 10,
+      "entries": [
+        { "depId": "api-client-openapi", "name": "OpenAPI Typed Client", "description": "Generate a typed TypeScript client from the paired backend's OpenAPI spec", "sortOrder": 0 }
+      ]
+    }
+  ]
+}
