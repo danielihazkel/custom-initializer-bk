@@ -13,6 +13,7 @@ import com.menora.initializr.fullstack.FullstackRequestValidator;
 import com.menora.initializr.fullstack.FullstackStarterRequest;
 import io.spring.initializr.metadata.InitializrMetadata;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
+import io.spring.initializr.metadata.SingleSelectCapability;
 import io.spring.initializr.web.project.ProjectGenerationInvoker;
 import io.spring.initializr.web.project.ProjectRequest;
 import io.spring.initializr.web.project.WebProjectRequest;
@@ -186,6 +187,17 @@ public class FullstackStarterController {
         return set;
     }
 
+    /** Rejects an unknown Boot/Java version with a 400. A null/blank value is left for the
+     *  framework to default. */
+    private static void requireKnownVersion(SingleSelectCapability capability, String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        if (capability.get(value) == null) {
+            throw new WizardArgumentException(fieldName + " '" + value + "' is not a known version");
+        }
+    }
+
     @ExceptionHandler(WizardArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidArgument(WizardArgumentException ex) {
         entityContext.clear();
@@ -200,6 +212,11 @@ public class FullstackStarterController {
 
     private WebProjectRequest toWebRequest(FullstackStarterRequest body) {
         InitializrMetadata metadata = metadataProvider.get();
+        // Fail fast on an unknown Boot/Java version with a clean 400, rather than letting
+        // the framework fail deep in generation with an opaque 500. The UI only ever sends
+        // values from the metadata dropdowns; this guards direct API callers (curl/IntelliJ).
+        requireKnownVersion(metadata.getBootVersions(), body.bootVersion(), "bootVersion");
+        requireKnownVersion(metadata.getJavaVersions(), body.javaVersion(), "javaVersion");
         WebProjectRequest r = new WebProjectRequest();
         r.setType(orDefault(body.type(), "maven-project"));
         r.setLanguage(orDefault(body.language(), "java"));

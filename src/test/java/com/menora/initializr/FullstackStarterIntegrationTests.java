@@ -166,6 +166,49 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_rendersCompilableEnumAndDateFormControls() throws Exception {
+        // Regression: an ENUM field's <option> map must be wrapped in JSX braces (otherwise
+        // `tsc -b` fails with "Cannot find name 'v'"), and a LOCAL_DATE field must use a
+        // `date` input — not `datetime-local`, which sends `...T00:00` and is rejected by
+        // Jackson for java.time.LocalDate. Neither is exercised by the User/Order test above.
+        Map<String, Object> statusField = new LinkedHashMap<>();
+        statusField.put("name", "status");
+        statusField.put("type", "Enum");
+        statusField.put("enumValues", List.of("ACTIVE", "INACTIVE"));
+        Map<String, Object> birthField = Map.of("name", "birthDate", "type", "LocalDate");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "people");
+        body.put("packageName", "com.menora.people");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(
+                Map.of("name", "Person", "fields", List.of(pkField(), statusField, birthField))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        String personForm = entries.get("people/frontend/src/components/PersonForm.tsx");
+        assertThat(personForm).isNotNull();
+        // 1.1 — enum <option> map wrapped in JSX braces
+        assertThat(personForm)
+                .contains("{ PersonStatusTypeValues.map(v => <option key={v} value={v}>{v}</option>) }");
+        // 1.2 — LocalDate uses a plain date input, never datetime-local
+        assertThat(personForm).contains("type=\"date\"");
+        assertThat(personForm).doesNotContain("type=\"datetime-local\"");
+
+        // Enum union type is emitted for the field
+        String personType = entries.get("people/frontend/src/types/Person.ts");
+        assertThat(personType).contains("export type PersonStatusType = 'ACTIVE' | 'INACTIVE'");
+    }
+
+    @Test
     void fullstackEndpoint_explicitDependenciesAreRespectedExactly() throws Exception {
         // When the caller passes a `dependencies` field (even just a list of two),
         // the controller does NOT merge in the set's defaults — explicit intent wins.
@@ -323,6 +366,19 @@ class FullstackStarterIntegrationTests {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).contains("reserved keyword");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsUnknownBootVersion() {
+        // A bogus bootVersion from a direct API caller must 400 cleanly, not 500 deep in generation.
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "demo");
+            b.put("bootVersion", "9.9.9");
+            b.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+        });
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("bootVersion").contains("known version");
     }
 
     /** POSTs a fullstack request built by the given mutator and returns the raw response. */

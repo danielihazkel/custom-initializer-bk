@@ -48,13 +48,13 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           onChange={e => set('{{name}}', e.target.value === '' ? null : (e.target.value as {{enumTypeName}}))}
         >
           <option value="">—</option>
-          {{enumTypeName}}Values.map(v => <option key={v} value={v}>{v}</option>)
+          { {{enumTypeName}}Values.map(v => <option key={v} value={v}>{v}</option>) }
         </select>
       </Field>
 {{/isEnum}}{{^isBoolean}}{{^isEnum}}      <Field label="{{Name}}" error={errors?.{{name}}}>
         <input
           className={inputClass}
-          {{#isNumeric}}type="number"{{/isNumeric}}{{#isTemporal}}type="datetime-local"{{/isTemporal}}{{^isNumeric}}{{^isTemporal}}type="text"{{/isTemporal}}{{/isNumeric}}
+          {{#isNumeric}}type="number"{{/isNumeric}}{{#isDate}}type="date"{{/isDate}}{{#isDateTime}}type="datetime-local"{{/isDateTime}}{{^isNumeric}}{{^isTemporal}}type="text"{{/isTemporal}}{{/isNumeric}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
           onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}})}
         />

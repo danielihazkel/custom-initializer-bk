@@ -160,6 +160,8 @@ public final class EntityScaffoldContext {
         fv.put("isNumeric", f.type().isNumeric());
         fv.put("isBoolean", f.type().isBoolean());
         fv.put("isTemporal", f.type().isTemporal());
+        fv.put("isDate", f.type() == FieldType.LOCAL_DATE);
+        fv.put("isDateTime", f.type() == FieldType.LOCAL_DATE_TIME);
         fv.put("isEnum", f.type().isEnum());
         fv.put("hasLength", f.length() != null);
         fv.put("length", f.length());
