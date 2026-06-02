@@ -95,8 +95,14 @@ class FullstackStarterIntegrationTests {
         assertThat(userController).contains("@RequestParam(required = false) String q");
         assertThat(userController).contains("Page<UserDto>");
         assertThat(userController).contains("Sort.by(\"id\").ascending()");
-        // CORS is scoped to the dev origin, not wide-open
-        assertThat(userController).contains("@CrossOrigin(origins = \"http://localhost:5173\")");
+        // CORS is centralized in a single WebMvcConfigurer, not repeated per controller.
+        assertThat(userController).doesNotContain("@CrossOrigin");
+        assertThat(contentEndingWith(entries, "/config/CorsConfig.java"))
+                .contains("implements WebMvcConfigurer")
+                .contains("addMapping(\"/api/**\")")
+                .contains("allowedOrigins(\"http://localhost:5173\")");
+        // CorsConfig is generated once (non-perEntity), under the base package for component scan.
+        assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/backend/src/main/java/com/menora/shop/config/CorsConfig.java"));
 
         String userService = entries.entrySet().stream()
                 .filter(e -> e.getKey().endsWith("/UserService.java"))
@@ -390,6 +396,10 @@ class FullstackStarterIntegrationTests {
                 .contains("MethodArgumentNotValidException")
                 .contains("DataIntegrityViolationException")
                 .contains("HttpStatus.CONFLICT");
+
+        // Required fields are marked in the generated form (email is required → asterisk).
+        assertThat(entries.get("bank/frontend/src/components/AccountForm.tsx"))
+                .contains("label=\"Email\" required error={errors?.email}");
 
         // Frontend search box is gated on the entity having a string field.
         assertThat(entries.get("bank/frontend/src/pages/AccountPage.tsx")).contains("searchable={true}");

@@ -7,6 +7,14 @@
   "defaultDeps": ["data-jpa", "web", "h2", "validation", "actuator"],
   "files": [
     {
+      "source": "CorsConfig.java.mustache",
+      "path": "src/main/java/{{packagePath}}/config/CorsConfig.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 5
+    },
+    {
       "source": "Entity.java.mustache",
       "path": "src/main/java/{{entityPackagePath}}/{{EntityName}}.java",
       "perEntity": true,

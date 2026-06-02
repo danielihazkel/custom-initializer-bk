@@ -21,7 +21,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           <input className={inputClass} value={String(value.{{name}} ?? '')} disabled />
         </Field>
       )}
-{{/isGenerated}}{{^isGenerated}}      <Field label="{{Name}}" error={errors?.{{name}}}>
+{{/isGenerated}}{{^isGenerated}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <input
           className={inputClass}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -30,7 +30,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
         />
       </Field>
 {{/isGenerated}}{{/isPrimaryKey}}
-{{^isPrimaryKey}}{{#isBoolean}}      <Field label="{{Name}}" error={errors?.{{name}}}>
+{{^isPrimaryKey}}{{#isBoolean}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <select
           className={inputClass}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -41,7 +41,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           <option value="false">False</option>
         </select>
       </Field>
-{{/isBoolean}}{{#isEnum}}      <Field label="{{Name}}" error={errors?.{{name}}}>
+{{/isBoolean}}{{#isEnum}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <select
           className={inputClass}
           value={(value.{{name}} as string | null | undefined) ?? ''}
@@ -51,7 +51,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           { {{enumTypeName}}Values.map(v => <option key={v} value={v}>{v}</option>) }
         </select>
       </Field>
-{{/isEnum}}{{^isBoolean}}{{^isEnum}}      <Field label="{{Name}}" error={errors?.{{name}}}>
+{{/isEnum}}{{^isBoolean}}{{^isEnum}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <input
           className={inputClass}
           {{#isNumeric}}type="number"{{/isNumeric}}{{#isDate}}type="date"{{/isDate}}{{#isDateTime}}type="datetime-local"{{/isDateTime}}{{^isNumeric}}{{^isTemporal}}type="text"{{/isTemporal}}{{/isNumeric}}
