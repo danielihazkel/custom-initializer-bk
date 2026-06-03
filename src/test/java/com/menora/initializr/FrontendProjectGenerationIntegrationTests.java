@@ -223,9 +223,9 @@ class FrontendProjectGenerationIntegrationTests {
 
         String theme = files.get("src/shared/theme/theme.ts");
         assertThat(theme).isNotNull();
-        // menora-default seed: primary=#1976d2, secondary=#9c27b0
-        assertThat(theme).contains("primary: { main: '#1976d2' }");
-        assertThat(theme).contains("secondary: { main: '#9c27b0' }");
+        // menora-default seed: primary=#0a2b6b, secondary=#2d3344
+        assertThat(theme).contains("primary: { main: '#0a2b6b' }");
+        assertThat(theme).contains("secondary: { main: '#2d3344' }");
     }
 
     @Test
@@ -288,7 +288,7 @@ class FrontendProjectGenerationIntegrationTests {
         Map<String, String> files = generator.generateFileMap(desc);
 
         // Falls back to menora-default
-        assertThat(files.get("src/shared/theme/theme.ts")).contains("primary: { main: '#1976d2' }");
+        assertThat(files.get("src/shared/theme/theme.ts")).contains("primary: { main: '#0a2b6b' }");
     }
 
     @Test
@@ -299,7 +299,7 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(body).isNotNull();
         assertThat(body).contains("colorPalettes");
         assertThat(body).contains("menora-default");
-        assertThat(body).contains("\"primary\":\"#1976d2\"");
+        assertThat(body).contains("\"primary\":\"#0a2b6b\"");
     }
 
     @Test
@@ -467,7 +467,7 @@ class FrontendProjectGenerationIntegrationTests {
         FrontendProjectDescription desc = baseDescription("demo");
         desc.getDependencies().add("style-tailwind");
         desc.getDependencies().add("design-shadcn");
-        // menora-default: primary=#1976d2 → 210 80% 46% (rounded)
+        // menora-default: primary=#0a2b6b → 220 83% 23% (rounded)
         Map<String, String> files = generator.generateFileMap(desc);
 
         String css = files.get("src/index.css");
@@ -477,8 +477,8 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(css).contains("--primary:");
         assertThat(css).contains("--secondary:");
         assertThat(css).contains("--ring:");
-        // Concrete HSL value derived from #1976d2 — 210 deg hue.
-        assertThat(css).contains("210 ");
+        // Concrete HSL value derived from #0a2b6b — 220 deg hue.
+        assertThat(css).contains("220 ");
     }
 
     @Test
