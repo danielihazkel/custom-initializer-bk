@@ -11,9 +11,9 @@ export default function App() {
 
   return (
     <div className="flex h-full">
-      <aside className="w-60 bg-slate-900 text-slate-100 flex flex-col">
-        <div className="px-5 py-5 border-b border-slate-700 flex items-center gap-2">
-          <Database className="w-5 h-5 text-emerald-400" />
+      <aside className="w-60 bg-ink text-slate-100 flex flex-col">
+        <div className="px-5 py-5 border-b border-white/10 flex items-center gap-2">
+          <Database className="w-5 h-5 text-gold" />
           <span className="font-semibold tracking-tight">{{artifactId}}</span>
         </div>
         <nav className="flex-1 py-3">
@@ -22,8 +22,8 @@ export default function App() {
             onClick={() => setView('{{entityNameKebab}}')}
             className={`w-full text-left px-5 py-2.5 text-sm transition-colors ${
               view === '{{entityNameKebab}}'
-                ? 'bg-slate-800 text-white border-l-2 border-emerald-400'
-                : 'text-slate-300 hover:bg-slate-800 hover:text-white border-l-2 border-transparent'
+                ? 'bg-ink-soft text-white border-l-2 border-gold'
+                : 'text-slate-300 hover:bg-ink-soft hover:text-white border-l-2 border-transparent'
             }`}
           >
             {{EntityNamePlural}}

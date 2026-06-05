@@ -1,8 +1,10 @@
 package com.menora.initializr.config;
 
+import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.db.entity.EntityTemplateFileEntity;
 import com.menora.initializr.db.entity.EntityTemplateSetDefaultDepEntity;
 import com.menora.initializr.db.entity.EntityTemplateSetEntity;
+import com.menora.initializr.db.repository.ColorPaletteRepository;
 import com.menora.initializr.db.repository.EntityTemplateFileRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetDefaultDepRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetRepository;
@@ -73,6 +75,7 @@ public class FullstackStarterController {
     private final EntityTemplateSetRepository setRepo;
     private final EntityTemplateFileRepository fileRepo;
     private final EntityTemplateSetDefaultDepRepository defaultDepRepo;
+    private final ColorPaletteRepository colorPaletteRepo;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                       InitializrMetadataProvider metadataProvider,
@@ -80,7 +83,8 @@ public class FullstackStarterController {
                                       EntityDefinitionContext entityContext,
                                       EntityTemplateSetRepository setRepo,
                                       EntityTemplateFileRepository fileRepo,
-                                      EntityTemplateSetDefaultDepRepository defaultDepRepo) {
+                                      EntityTemplateSetDefaultDepRepository defaultDepRepo,
+                                      ColorPaletteRepository colorPaletteRepo) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
@@ -88,6 +92,7 @@ public class FullstackStarterController {
         this.setRepo = setRepo;
         this.fileRepo = fileRepo;
         this.defaultDepRepo = defaultDepRepo;
+        this.colorPaletteRepo = colorPaletteRepo;
     }
 
     @PostMapping("/starter-fullstack.zip")
@@ -169,7 +174,8 @@ public class FullstackStarterController {
         }
 
         // Frontend — rendered inline outside the Initializr pipeline.
-        renderFrontend(frontendSet, request, entities, domainPackage, tempDir.resolve("frontend"));
+        renderFrontend(frontendSet, request, entities, domainPackage, body.colorPalette(),
+                tempDir.resolve("frontend"));
 
         // Root files
         Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
@@ -292,7 +298,8 @@ public class FullstackStarterController {
     }
 
     private void renderFrontend(EntityTemplateSetEntity set, WebProjectRequest request,
-                                List<EntityDefinition> entities, String domainPackage, Path targetDir) throws IOException {
+                                List<EntityDefinition> entities, String domainPackage,
+                                String colorPaletteId, Path targetDir) throws IOException {
         List<EntityTemplateFileEntity> files = fileRepo.findBySetIdOrderBySortOrderAsc(set.getId());
         Map<String, Object> projectCtx = EntityScaffoldContext.buildProjectContext(
                 request.getArtifactId(),
@@ -303,10 +310,37 @@ public class FullstackStarterController {
                 request.getJavaVersion(),
                 request.getPackaging(),
                 entities);
+        ColorPaletteEntity palette = resolvePalette(colorPaletteId);
+        EntityScaffoldContext.putPaletteVars(projectCtx, palette);
         Files.createDirectories(targetDir);
-        log.info("Rendering frontend CRUD scaffolding: set='{}', {} files, {} entities",
-                set.getSetKey(), files.size(), entities.size());
+        log.info("Rendering frontend CRUD scaffolding: set='{}', palette='{}', {} files, {} entities",
+                set.getSetKey(), palette.getPaletteId(), files.size(), entities.size());
         FullstackRenderer.render(files, projectCtx, entities, targetDir);
+    }
+
+    /**
+     * Resolves the palette whose colors theme the generated frontend. Order:
+     * explicit id (if present in DB) → the {@code isDefault} palette (Menora) →
+     * a hardcoded sentinel so generation never crashes on an unseeded DB.
+     * Mirrors {@code FrontendProjectGenerator.resolvePalette}.
+     */
+    private ColorPaletteEntity resolvePalette(String paletteId) {
+        if (paletteId != null && !paletteId.isBlank()) {
+            var hit = colorPaletteRepo.findByPaletteId(paletteId);
+            if (hit.isPresent()) return hit.get();
+            log.warn("Requested colorPalette '{}' not found — falling back to default", paletteId);
+        }
+        var def = colorPaletteRepo.findFirstByIsDefaultTrueOrderBySortOrderAsc();
+        if (def.isPresent()) return def.get();
+        log.warn("No default color palette in DB — using hardcoded sentinel");
+        ColorPaletteEntity sentinel = new ColorPaletteEntity();
+        sentinel.setPaletteId("sentinel");
+        sentinel.setName("Sentinel");
+        sentinel.setPrimary("#0a2b6b");
+        sentinel.setSecondary("#2d3344");
+        sentinel.setAccent("#ffc700");
+        sentinel.setError("#d32f2f");
+        return sentinel;
     }
 
     private String buildReadme(String artifactId) {

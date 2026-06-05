@@ -1,5 +1,7 @@
 package com.menora.initializr.fullstack;
 
+import com.menora.initializr.db.entity.ColorPaletteEntity;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -64,6 +66,26 @@ public final class EntityScaffoldContext {
         }
         ctx.put("entities", entityViews);
         return ctx;
+    }
+
+    /**
+     * Adds color-palette variables to a project context so frontend theme templates
+     * (e.g. {@code index.css.mustache}) can resolve brand colors. Exposes a {@code palette}
+     * map ({@code primary}/{@code secondary}/{@code accent}/{@code error}, blanks for nulls)
+     * plus {@code hasPaletteAccent}/{@code hasPaletteError} section flags. Because per-entity
+     * contexts are copied from the project context, per-entity templates inherit these too.
+     */
+    public static void putPaletteVars(Map<String, Object> ctx, ColorPaletteEntity palette) {
+        Map<String, String> p = new LinkedHashMap<>();
+        p.put("id", palette.getPaletteId());
+        p.put("name", palette.getName());
+        p.put("primary", palette.getPrimary());
+        p.put("secondary", palette.getSecondary());
+        p.put("accent", palette.getAccent() == null ? "" : palette.getAccent());
+        p.put("error", palette.getError() == null ? "" : palette.getError());
+        ctx.put("palette", p);
+        ctx.put("hasPaletteAccent", palette.getAccent() != null && !palette.getAccent().isBlank());
+        ctx.put("hasPaletteError", palette.getError() != null && !palette.getError().isBlank());
     }
 
     /** Puts {@code <name>} = {@code base.layer} and {@code <name>Path} = the slash form. */

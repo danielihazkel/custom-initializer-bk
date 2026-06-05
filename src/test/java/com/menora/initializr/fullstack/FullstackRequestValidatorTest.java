@@ -14,7 +14,7 @@ class FullstackRequestValidatorTest {
         return new FullstackStarterRequest(
                 null, "demo", null, null, "com.menora.demo", null,
                 null, null, null, null, null, null, null,
-                null, null, "spring-jpa-crud", "react-tailwind-crud", entities);
+                null, null, "spring-jpa-crud", "react-tailwind-crud", null, entities);
     }
 
     private static FullstackStarterRequest.EntityDefinitionDto entity(String name,

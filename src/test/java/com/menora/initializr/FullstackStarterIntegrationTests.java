@@ -410,6 +410,64 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_themesFrontendWithMenoraPaletteByDefault() throws Exception {
+        // No colorPalette in the request → the isDefault palette (menora-default: navy + gold)
+        // is injected into the Tailwind v4 @theme block, and components reference the brand tokens.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        String css = entries.get("shop/frontend/src/index.css");
+        assertThat(css)
+                .contains("@theme")
+                .contains("--color-brand:")
+                .contains("#0a2b6b")   // Menora navy (palette primary)
+                .contains("#2d3344")   // charcoal sidebar (secondary)
+                .contains("#ffc700");  // gold accent
+
+        // Components reference the brand tokens, not the old emerald defaults.
+        String app = entries.get("shop/frontend/src/App.tsx");
+        assertThat(app).contains("bg-ink").contains("text-gold").contains("border-gold");
+        assertThat(app).doesNotContain("emerald");
+        assertThat(entries.get("shop/frontend/src/pages/UserPage.tsx")).contains("bg-brand");
+        assertThat(entries.get("shop/frontend/src/components/FormDrawer.tsx")).contains("bg-brand");
+    }
+
+    @Test
+    void fullstackEndpoint_appliesSelectedColorPalette() throws Exception {
+        // An explicit colorPalette flows through to the generated theme (forest primary = #2e7d32).
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("colorPalette", "forest");
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+        assertThat(entries.get("shop/frontend/src/index.css"))
+                .contains("#2e7d32")          // forest primary injected
+                .doesNotContain("#0a2b6b");   // not the Menora default
+    }
+
+    @Test
     void importDdlEndpoint_returnsEntitiesInWireFormat() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("dialect", "H2");

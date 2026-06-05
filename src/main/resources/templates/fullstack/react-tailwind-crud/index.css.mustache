@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/*
+ * Menora brand tokens (Tailwind v4 @theme). Values come from the selected color
+ * palette at generation time; hover/active shades are derived with color-mix so
+ * the palette only needs primary/secondary/accent slots. These generate utilities
+ * like bg-brand, text-gold, ring-brand, bg-ink, etc.
+ */
+@theme {
+  --color-brand:      {{palette.primary}};
+  --color-brand-deep: color-mix(in srgb, {{palette.primary}} 85%, black);
+  --color-ink:        {{palette.secondary}};
+  --color-ink-soft:   color-mix(in srgb, {{palette.secondary}} 86%, white);
+  --color-gold:       {{#hasPaletteAccent}}{{palette.accent}}{{/hasPaletteAccent}}{{^hasPaletteAccent}}{{palette.primary}}{{/hasPaletteAccent}};
+  --color-danger:     {{#hasPaletteError}}{{palette.error}}{{/hasPaletteError}}{{^hasPaletteError}}#dc2626{{/hasPaletteError}};
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a;
+  margin: 0;
+}

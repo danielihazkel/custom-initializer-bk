@@ -14,7 +14,7 @@
     { "source": "gitignore", "path": ".gitignore", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 60 },
     { "source": "main.tsx", "path": "src/main.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 70 },
     { "source": "App.tsx.mustache", "path": "src/App.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 80 },
-    { "source": "index.css", "path": "src/index.css", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 90 },
+    { "source": "index.css.mustache", "path": "src/index.css", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 90 },
     { "source": "api-client.ts", "path": "src/api/client.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 100 },
     { "source": "useResource.ts", "path": "src/hooks/useResource.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 110 },
     { "source": "Table.tsx", "path": "src/components/Table.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 120 },

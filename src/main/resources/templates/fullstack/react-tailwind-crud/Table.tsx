@@ -63,7 +63,7 @@ export function Table<T extends { id?: number | string | null }>({
             value={search}
             onChange={e => onSearchChange(e.target.value)}
             placeholder="Search…"
-            className="w-full pl-9 pr-3 py-2 text-sm rounded-md border border-slate-300 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-md border border-slate-300 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand"
           />
         </div>
       )}
@@ -160,7 +160,7 @@ export function Table<T extends { id?: number | string | null }>({
             <select
               value={pageSize}
               onChange={e => onPageSizeChange(Number(e.target.value))}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
             >
               {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>

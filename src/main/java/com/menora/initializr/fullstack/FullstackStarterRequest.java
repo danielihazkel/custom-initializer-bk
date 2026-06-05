@@ -31,6 +31,7 @@ public record FullstackStarterRequest(
         Map<String, List<String>> opts,
         String backendTemplateSet,
         String frontendTemplateSet,
+        String colorPalette,
         List<EntityDefinitionDto> entities) {
 
     public record EntityDefinitionDto(

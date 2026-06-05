@@ -22,4 +22,4 @@ export function Field({ label, hint, error, required, children }: Props) {
 }
 
 export const inputClass =
-  'px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent'
+  'px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent'
