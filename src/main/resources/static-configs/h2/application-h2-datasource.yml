@@ -1,0 +1,14 @@
+# Backs the generated H2Config.java for the multi-datasource pattern: it binds
+# @ConfigurationProperties(prefix = "h2.datasource") and reads h2.hibernate.*
+# directly from the Environment. Merged only when the h2-primary / h2-secondary
+# sub-option is selected; the single-datasource case uses the spring.* block in
+# application-h2.yml instead.
+h2:
+  datasource:
+    url: ${H2_DB_URL:jdbc:h2:mem:appdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false}
+    username: ${H2_DB_USERNAME:sa}
+    password: ${H2_DB_PASSWORD:}
+    driver-class-name: org.h2.Driver
+  hibernate:
+    dialect: org.hibernate.dialect.H2Dialect
+    hbm2ddl-auto: create-drop

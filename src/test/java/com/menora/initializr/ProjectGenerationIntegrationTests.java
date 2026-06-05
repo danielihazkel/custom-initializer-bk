@@ -1055,6 +1055,46 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void h2DefaultDoesNotEmitTopLevelH2DatasourceBlock() throws Exception {
+        // Single-datasource (no sub-option): only the spring.* block should be
+        // merged. The top-level h2.* mirror (sentinel key: hbm2ddl-auto) backs the
+        // generated H2Config.java and must NOT appear when no H2Config is generated.
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("h2");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        String yaml = Files.readString(projectDir.resolve("src/main/resources/application.yaml"));
+        assertThat(yaml)
+                .contains("org.h2.Driver")       // spring.datasource block is present
+                .doesNotContain("hbm2ddl-auto");  // top-level h2.* mirror is absent
+        assertThat(project).filePaths()
+                .doesNotContain("src/main/java/com/menora/demo/config/H2Config.java");
+    }
+
+    @Test
+    void h2PrimarySubOptionEmitsTopLevelH2BlockAndConfig() throws Exception {
+        // Multi-datasource (h2-primary): the gated merge must restore the top-level
+        // h2.* block that H2Config.java binds via @ConfigurationProperties("h2.datasource").
+        optionsContext.populate(Map.of("h2", List.of("h2-primary")));
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("h2");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+            ProjectStructure project = new ProjectStructure(projectDir);
+
+            assertThat(project).filePaths()
+                    .contains("src/main/java/com/menora/demo/config/H2Config.java");
+            assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
+                    .contains("hbm2ddl-auto");  // top-level h2.* mirror restored
+        } finally {
+            optionsContext.clear();
+        }
+    }
+
+    @Test
     void newJavaVersionFromDbAppearsInMetadataAfterRefresh() {
         // A Java version inserted into version_definition + refresh() should be
         // visible in /metadata/client.javaVersion.values without restarting the app.

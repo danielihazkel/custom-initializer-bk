@@ -47,6 +47,8 @@
   { "depId": "h2", "fileType": "YAML_MERGE", "contentResource": "static-configs/h2/application-h2.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
   { "depId": "h2", "fileType": "TEMPLATE", "contentResource": "templates/h2-config-primary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/H2Config.java", "substitutionType": "MUSTACHE", "subOptionId": "h2-primary", "sortOrder": 1 },
   { "depId": "h2", "fileType": "TEMPLATE", "contentResource": "templates/h2-config-secondary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/H2Config.java", "substitutionType": "MUSTACHE", "subOptionId": "h2-secondary", "sortOrder": 2 },
+  { "depId": "h2", "fileType": "YAML_MERGE", "contentResource": "static-configs/h2/application-h2-datasource.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "subOptionId": "h2-primary", "sortOrder": 3 },
+  { "depId": "h2", "fileType": "YAML_MERGE", "contentResource": "static-configs/h2/application-h2-datasource.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "subOptionId": "h2-secondary", "sortOrder": 4 },
 
   { "depId": "mongodb", "fileType": "YAML_MERGE", "contentResource": "static-configs/mongodb/application-mongodb.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
   { "depId": "mongodb", "fileType": "TEMPLATE", "contentResource": "templates/mongodb-config-primary.mustache", "targetPath": "src/main/java/{{packagePath}}/config/MongoConfig.java", "substitutionType": "MUSTACHE", "subOptionId": "mongodb-primary", "sortOrder": 1 },
