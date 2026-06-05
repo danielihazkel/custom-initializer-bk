@@ -1,7 +1,7 @@
 {
   "setKey": "react-tailwind-crud",
   "name": "React + Vite + Tailwind CRUD",
-  "description": "React 18 + Vite + Tailwind 4 + Lucide icons. Per-entity page with table, drawer-form, edit/delete.",
+  "description": "React 18 + Vite + Tailwind 4 + Lucide icons, organized as Feature-Sliced Design (app/pages/features/entities/shared). Per-entity page with table, drawer-form, edit/delete.",
   "kind": "FRONTEND_REACT",
   "designSystem": "TAILWIND",
   "sortOrder": 20,
@@ -13,16 +13,37 @@
     { "source": "index.html.mustache", "path": "index.html", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 50 },
     { "source": "gitignore", "path": ".gitignore", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 60 },
     { "source": "main.tsx", "path": "src/main.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 70 },
-    { "source": "App.tsx.mustache", "path": "src/App.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 80 },
     { "source": "index.css.mustache", "path": "src/index.css", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 90 },
-    { "source": "api-client.ts", "path": "src/api/client.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 100 },
-    { "source": "useResource.ts", "path": "src/hooks/useResource.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 110 },
-    { "source": "Table.tsx", "path": "src/components/Table.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 120 },
-    { "source": "FormDrawer.tsx", "path": "src/components/FormDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 130 },
-    { "source": "Field.tsx", "path": "src/components/Field.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 140 },
-    { "source": "EntityType.ts.mustache", "path": "src/types/{{EntityName}}.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 200 },
-    { "source": "useEntity.ts.mustache", "path": "src/hooks/use{{EntityName}}.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 210 },
-    { "source": "EntityForm.tsx.mustache", "path": "src/components/{{EntityName}}Form.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 220 },
-    { "source": "EntityPage.tsx.mustache", "path": "src/pages/{{EntityName}}Page.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 230 }
+
+    { "source": "App.tsx.mustache", "path": "src/app/App.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 80 },
+    { "source": "empty-barrel.ts", "path": "src/app/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 81 },
+    { "source": "readme-app.md", "path": "src/app/README.md", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 82 },
+
+    { "source": "api-client.ts", "path": "src/shared/api/client.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 100 },
+    { "source": "useResource.ts", "path": "src/shared/api/useResource.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 110 },
+    { "source": "shared-api-barrel.ts", "path": "src/shared/api/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 115 },
+    { "source": "Table.tsx", "path": "src/shared/ui/Table.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 120 },
+    { "source": "FormDrawer.tsx", "path": "src/shared/ui/FormDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 130 },
+    { "source": "Field.tsx", "path": "src/shared/ui/Field.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 140 },
+    { "source": "shared-ui-barrel.ts", "path": "src/shared/ui/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 145 },
+    { "source": "empty-barrel.ts", "path": "src/shared/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
+    { "source": "readme-shared.md", "path": "src/shared/README.md", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147 },
+
+    { "source": "empty-barrel.ts", "path": "src/widgets/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150 },
+    { "source": "readme-widgets.md", "path": "src/widgets/README.md", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 151 },
+    { "source": "empty-barrel.ts", "path": "src/entities/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 152 },
+    { "source": "readme-entities.md", "path": "src/entities/README.md", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 153 },
+    { "source": "empty-barrel.ts", "path": "src/features/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 154 },
+    { "source": "readme-features.md", "path": "src/features/README.md", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 155 },
+    { "source": "pages-barrel.ts.mustache", "path": "src/pages/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 156 },
+    { "source": "readme-pages.md", "path": "src/pages/README.md", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 157 },
+
+    { "source": "EntityType.ts.mustache", "path": "src/entities/{{entityNameKebab}}/model/types.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 200 },
+    { "source": "useEntity.ts.mustache", "path": "src/entities/{{entityNameKebab}}/api/use{{EntityName}}.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 210 },
+    { "source": "entity-barrel.ts.mustache", "path": "src/entities/{{entityNameKebab}}/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 215 },
+    { "source": "EntityForm.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Form.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 220 },
+    { "source": "feature-barrel.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 225 },
+    { "source": "EntityPage.tsx.mustache", "path": "src/pages/{{entityNameKebab}}/ui/{{EntityName}}Page.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 230 },
+    { "source": "page-barrel.ts.mustache", "path": "src/pages/{{entityNameKebab}}/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 235 }
   ]
 }

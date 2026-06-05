@@ -1,5 +1,5 @@
-import { useResource, type PageParams } from './useResource'
-import type { {{EntityName}} } from '../types/{{EntityName}}'
+import { useResource, type PageParams } from '@shared/api'
+import type { {{EntityName}} } from '../model/types'
 
 export function use{{EntityName}}(params: PageParams) {
   return useResource<{{EntityName}}>('/api/{{entityNamePluralKebab}}', params)

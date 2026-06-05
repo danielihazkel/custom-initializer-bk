@@ -1,6 +1,6 @@
-import { Field, inputClass } from './Field'
-import type { {{EntityName}}{{#fields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/fields}} } from '../types/{{EntityName}}'
-{{#fields}}{{#isEnum}}import { {{enumTypeName}}Values } from '../types/{{EntityName}}'
+import { Field, inputClass } from '@shared/ui'
+import type { {{EntityName}}{{#fields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
+{{#fields}}{{#isEnum}}import { {{enumTypeName}}Values } from '@entities/{{entityNameKebab}}'
 {{/isEnum}}{{/fields}}
 
 interface Props {

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Database } from 'lucide-react'
 {{#entities}}
-import {{EntityName}}Page from './pages/{{EntityName}}Page'
+import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
 {{/entities}}
 
 type View = {{#entities}}'{{entityNameKebab}}'{{^last}} | {{/last}}{{/entities}}

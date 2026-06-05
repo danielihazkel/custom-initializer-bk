@@ -62,7 +62,7 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/.gitignore"));
         // README documents the dev proxy + prod base-URL story (not "talks directly to :8080")
         String readme = entries.get("shop/README.md");
-        assertThat(readme).contains("proxy").contains("frontend/src/api/client.ts");
+        assertThat(readme).contains("proxy").contains("frontend/src/shared/api/client.ts");
 
         // Backend pom + Application
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/backend/pom.xml"));
@@ -144,34 +144,34 @@ class FullstackStarterIntegrationTests {
         // Frontend essentials
         assertThat(entries).containsKey("shop/frontend/package.json");
         assertThat(entries.get("shop/frontend/package.json")).contains("\"shop-frontend\"");
-        assertThat(entries).containsKey("shop/frontend/src/App.tsx");
-        String app = entries.get("shop/frontend/src/App.tsx");
+        assertThat(entries).containsKey("shop/frontend/src/app/App.tsx");
+        String app = entries.get("shop/frontend/src/app/App.tsx");
         assertThat(app).contains("UserPage");
         assertThat(app).contains("OrderPage");
 
-        // Per-entity frontend files
-        assertThat(entries).containsKey("shop/frontend/src/pages/UserPage.tsx");
-        assertThat(entries).containsKey("shop/frontend/src/pages/OrderPage.tsx");
-        assertThat(entries).containsKey("shop/frontend/src/hooks/useUser.ts");
-        assertThat(entries).containsKey("shop/frontend/src/hooks/useOrder.ts");
-        assertThat(entries).containsKey("shop/frontend/src/types/User.ts");
-        assertThat(entries).containsKey("shop/frontend/src/components/UserForm.tsx");
+        // Per-entity frontend files (Feature-Sliced Design layout)
+        assertThat(entries).containsKey("shop/frontend/src/pages/user/ui/UserPage.tsx");
+        assertThat(entries).containsKey("shop/frontend/src/pages/order/ui/OrderPage.tsx");
+        assertThat(entries).containsKey("shop/frontend/src/entities/user/api/useUser.ts");
+        assertThat(entries).containsKey("shop/frontend/src/entities/order/api/useOrder.ts");
+        assertThat(entries).containsKey("shop/frontend/src/entities/user/model/types.ts");
+        assertThat(entries).containsKey("shop/frontend/src/features/user-form/ui/UserForm.tsx");
 
-        assertThat(entries.get("shop/frontend/src/hooks/useOrder.ts")).contains("/api/orders");
+        assertThat(entries.get("shop/frontend/src/entities/order/api/useOrder.ts")).contains("/api/orders");
 
         // Pagination + sort + search wiring
-        String table = entries.get("shop/frontend/src/components/Table.tsx");
+        String table = entries.get("shop/frontend/src/shared/ui/Table.tsx");
         assertThat(table).contains("onSortChange");
         assertThat(table).contains("pagination");
         assertThat(table).contains("onSearchChange");
 
-        String userPage = entries.get("shop/frontend/src/pages/UserPage.tsx");
+        String userPage = entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx");
         assertThat(userPage).contains("const [page, setPage]");
         assertThat(userPage).contains("const [size, setSize]");
         assertThat(userPage).contains("q: debouncedSearch");
         assertThat(userPage).contains("sortKey: 'name'");
 
-        String useResource = entries.get("shop/frontend/src/hooks/useResource.ts");
+        String useResource = entries.get("shop/frontend/src/shared/api/useResource.ts");
         assertThat(useResource).contains("PageParams");
         assertThat(useResource).contains("totalElements");
     }
@@ -292,7 +292,7 @@ class FullstackStarterIntegrationTests {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         Map<String, String> entries = unzip(response.getBody());
 
-        String personForm = entries.get("people/frontend/src/components/PersonForm.tsx");
+        String personForm = entries.get("people/frontend/src/features/person-form/ui/PersonForm.tsx");
         assertThat(personForm).isNotNull();
         // 1.1 — enum <option> map wrapped in JSX braces
         assertThat(personForm)
@@ -302,7 +302,7 @@ class FullstackStarterIntegrationTests {
         assertThat(personForm).doesNotContain("type=\"datetime-local\"");
 
         // Enum union type is emitted for the field
-        String personType = entries.get("people/frontend/src/types/Person.ts");
+        String personType = entries.get("people/frontend/src/entities/person/model/types.ts");
         assertThat(personType).contains("export type PersonStatusType = 'ACTIVE' | 'INACTIVE'");
 
         // Backend: the DTO lives in its own .dto sub-package and imports the entity plus its
@@ -398,13 +398,13 @@ class FullstackStarterIntegrationTests {
                 .contains("HttpStatus.CONFLICT");
 
         // Required fields are marked in the generated form (email is required → asterisk).
-        assertThat(entries.get("bank/frontend/src/components/AccountForm.tsx"))
+        assertThat(entries.get("bank/frontend/src/features/account-form/ui/AccountForm.tsx"))
                 .contains("label=\"Email\" required error={errors?.email}");
 
         // Frontend search box is gated on the entity having a string field.
-        assertThat(entries.get("bank/frontend/src/pages/AccountPage.tsx")).contains("searchable={true}");
-        assertThat(entries.get("bank/frontend/src/pages/LedgerPage.tsx")).contains("searchable={false}");
-        assertThat(entries.get("bank/frontend/src/components/Table.tsx"))
+        assertThat(entries.get("bank/frontend/src/pages/account/ui/AccountPage.tsx")).contains("searchable={true}");
+        assertThat(entries.get("bank/frontend/src/pages/ledger/ui/LedgerPage.tsx")).contains("searchable={false}");
+        assertThat(entries.get("bank/frontend/src/shared/ui/Table.tsx"))
                 .contains("searchable")
                 .contains("{searchable &&");
     }
@@ -437,11 +437,11 @@ class FullstackStarterIntegrationTests {
                 .contains("#ffc700");  // gold accent
 
         // Components reference the brand tokens, not the old emerald defaults.
-        String app = entries.get("shop/frontend/src/App.tsx");
+        String app = entries.get("shop/frontend/src/app/App.tsx");
         assertThat(app).contains("bg-ink").contains("text-gold").contains("border-gold");
         assertThat(app).doesNotContain("emerald");
-        assertThat(entries.get("shop/frontend/src/pages/UserPage.tsx")).contains("bg-brand");
-        assertThat(entries.get("shop/frontend/src/components/FormDrawer.tsx")).contains("bg-brand");
+        assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx")).contains("bg-brand");
+        assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("bg-brand");
     }
 
     @Test

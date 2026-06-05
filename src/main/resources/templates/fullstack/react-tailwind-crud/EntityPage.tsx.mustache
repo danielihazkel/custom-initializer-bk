@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
-import { use{{EntityName}} } from '../hooks/use{{EntityName}}'
-import type { {{EntityName}} } from '../types/{{EntityName}}'
-import { Table, type Column, type SortSpec } from '../components/Table'
-import { FormDrawer } from '../components/FormDrawer'
-import { {{EntityName}}Form } from '../components/{{EntityName}}Form'
-import { ApiError } from '../api/client'
+import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+import { Table, type Column, type SortSpec } from '@shared/ui'
+import { FormDrawer } from '@shared/ui'
+import { {{EntityName}}Form } from '@features/{{entityNameKebab}}-form'
+import { ApiError } from '@shared/api'
 
 const columns: Column<{{EntityName}}>[] = [
 {{#fields}}  { label: '{{Name}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
 {{/fields}}]
 
-export default function {{EntityName}}Page() {
+export function {{EntityName}}Page() {
   const [page, setPage] = useState(0)
   const [size, setSize] = useState(20)
   const [sort, setSort] = useState<SortSpec | null>(null)

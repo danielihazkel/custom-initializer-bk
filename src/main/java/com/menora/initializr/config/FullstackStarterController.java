@@ -357,7 +357,7 @@ public class FullstackStarterController {
                 + "For a production build (`npm run build`), `vite preview` and static hosting do\n"
                 + "**not** run that proxy. Either serve the API at the same origin behind a reverse\n"
                 + "proxy / gateway, or set a base URL via the `BASE` constant in\n"
-                + "`frontend/src/api/client.ts` to point at the backend directly.\n";
+                + "`frontend/src/shared/api/client.ts` to point at the backend directly.\n";
     }
 
     private static final String ROOT_GITIGNORE =

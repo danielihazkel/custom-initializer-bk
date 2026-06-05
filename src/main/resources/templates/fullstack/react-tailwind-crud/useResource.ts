@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api } from '../api/client'
+import { api } from './client'
 
 interface HasId {
   id?: number | string | null
