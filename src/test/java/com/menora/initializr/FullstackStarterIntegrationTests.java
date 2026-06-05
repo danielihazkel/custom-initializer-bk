@@ -174,6 +174,23 @@ class FullstackStarterIntegrationTests {
         String useResource = entries.get("shop/frontend/src/shared/api/useResource.ts");
         assertThat(useResource).contains("PageParams");
         assertThat(useResource).contains("totalElements");
+
+        // The frontend is now built on top of the standalone frontend generator: the FSD
+        // tooling substrate (eslint/prettier/husky/Dockerfile/nginx) + layer READMEs + dev
+        // .env/Vite-proxy wiring come for free, instead of being re-hand-rolled per template set.
+        assertThat(entries).containsKey("shop/frontend/.gitignore");
+        assertThat(entries).containsKey("shop/frontend/eslint.config.js");
+        assertThat(entries).containsKey("shop/frontend/.prettierrc.json");
+        assertThat(entries).containsKey("shop/frontend/Dockerfile");
+        assertThat(entries).containsKey("shop/frontend/nginx.conf");
+        assertThat(entries).containsKey("shop/frontend/.husky/pre-commit");
+        assertThat(entries).containsKey("shop/frontend/src/widgets/README.md");
+        // Paired-backend wiring: the dev .env points the FE at the proxied /api, and the Vite
+        // dev-server proxy is emitted by the substrate.
+        assertThat(entries).containsKey("shop/frontend/.env.development");
+        assertThat(entries.get("shop/frontend/vite.config.ts")).contains("/api");
+        // The standalone landing page is replaced by the per-entity pages — its dir is removed.
+        assertThat(entries.keySet()).noneMatch(p -> p.startsWith("shop/frontend/src/pages/home/"));
     }
 
     @Test

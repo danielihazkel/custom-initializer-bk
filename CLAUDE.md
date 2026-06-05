@@ -94,6 +94,15 @@ Runs at startup as a `SmartInitializingSingleton`. If all DB tables are empty it
 
 The loaders (`loadDependencyCatalog`, `loadFileContributions`, …) are generic — to change either catalog, edit the JSON, not Java. **Still seeded from Java helpers** in `DataSeeder`: starter/module templates, color palettes (`seedColorPalettes`), version definitions (`seedVersionsIfMissing`), and entity template sets (`templates/fullstack/*/manifest.json`). Color palettes and versions run in the pre-guard "if missing" path (idempotent per-row), so they are intentionally not folded into the all-or-nothing catalog load.
 
+### Fullstack Generation — Two-Layer Reuse
+
+`POST /starter-fullstack.zip` (`FullstackStarterController`) generates a `backend/` + `frontend/` pair from a list of user-defined entities. Both halves are **built on top of the standalone generators** rather than reimplementing them — entity scaffolding is the only fullstack-specific layer:
+
+- **Backend** — runs through the standard Initializr `ProjectGenerationInvoker`, so `DynamicProjectGenerationConfiguration` applies the dependency catalog as usual; `FullstackProjectGenerationConfiguration` (registered in `spring.factories`, short-circuits when `EntityDefinitionContext.isEmpty()`) adds per-entity Java from the `spring-jpa-crud` entity template set.
+- **Frontend** — `renderFrontend` first calls `FrontendProjectGenerator.renderInto(dir, desc)` to lay down the standalone FSD substrate (tooling configs, layer barrels + READMEs, `index.html`, `.gitignore`, dev `.env`/Vite proxy). It then deletes the substrate's `src/pages/home` and renders the `react-tailwind-crud` template set **as an overlay** — only the per-entity CRUD files + the fullstack-owned shared UI and Tailwind-v4 styling stack (`package.json`/`vite.config`/`index.css`/`tsconfig`/`main.tsx`/`App.tsx`), rendered last so it overwrites the substrate where paths collide. Per-entity templates are rendered with `EntityScaffoldContext` merged with `FrontendMustacheContext` (so they see both entity naming/field view-models and dep/palette/version flags).
+
+So the FE template set is intentionally a thin **overlay**, not a full project — substrate files live in `catalog/frontend/*` and `templates/frontend/*`, edited once. (Known follow-up: the v4 styling stack stays overlay-owned because the standalone `style-tailwind` dep is still v3; unifying it would let the substrate own `package.json`/`vite.config` too. **Upgraded DBs** keep the pre-overlay fat template-set rows until re-seeded, so the overlay benefit applies to fresh DBs.)
+
 ### Adding or Modifying a Dependency
 
 The DB is the source of truth. Use the admin API at runtime, or edit the catalog manifests for the initial seed:

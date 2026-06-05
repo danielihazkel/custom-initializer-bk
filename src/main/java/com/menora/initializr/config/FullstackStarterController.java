@@ -1,13 +1,18 @@
 package com.menora.initializr.config;
 
+import com.menora.initializr.db.VersionService;
 import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.db.entity.EntityTemplateFileEntity;
 import com.menora.initializr.db.entity.EntityTemplateSetDefaultDepEntity;
 import com.menora.initializr.db.entity.EntityTemplateSetEntity;
+import com.menora.initializr.db.entity.VersionKind;
 import com.menora.initializr.db.repository.ColorPaletteRepository;
 import com.menora.initializr.db.repository.EntityTemplateFileRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetDefaultDepRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetRepository;
+import com.menora.initializr.extension.frontend.FrontendMustacheContext;
+import com.menora.initializr.extension.frontend.FrontendProjectDescription;
+import com.menora.initializr.extension.frontend.FrontendProjectGenerator;
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
 import com.menora.initializr.fullstack.FullstackRenderer;
@@ -76,6 +81,9 @@ public class FullstackStarterController {
     private final EntityTemplateFileRepository fileRepo;
     private final EntityTemplateSetDefaultDepRepository defaultDepRepo;
     private final ColorPaletteRepository colorPaletteRepo;
+    private final FrontendProjectGenerator frontendGenerator;
+    private final FrontendProperties frontendProperties;
+    private final VersionService versionService;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                       InitializrMetadataProvider metadataProvider,
@@ -84,7 +92,10 @@ public class FullstackStarterController {
                                       EntityTemplateSetRepository setRepo,
                                       EntityTemplateFileRepository fileRepo,
                                       EntityTemplateSetDefaultDepRepository defaultDepRepo,
-                                      ColorPaletteRepository colorPaletteRepo) {
+                                      ColorPaletteRepository colorPaletteRepo,
+                                      FrontendProjectGenerator frontendGenerator,
+                                      FrontendProperties frontendProperties,
+                                      VersionService versionService) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
@@ -93,6 +104,9 @@ public class FullstackStarterController {
         this.fileRepo = fileRepo;
         this.defaultDepRepo = defaultDepRepo;
         this.colorPaletteRepo = colorPaletteRepo;
+        this.frontendGenerator = frontendGenerator;
+        this.frontendProperties = frontendProperties;
+        this.versionService = versionService;
     }
 
     @PostMapping("/starter-fullstack.zip")
@@ -297,10 +311,31 @@ public class FullstackStarterController {
         request.setDependencies(new ArrayList<>(deps));
     }
 
+    /**
+     * Renders the frontend in two layers, mirroring how the backend reuses the standard
+     * Initializr pipeline and only adds entity scaffolding on top:
+     *
+     * <ol>
+     *   <li><b>Substrate</b> — the standalone {@link FrontendProjectGenerator} lays down the
+     *       FSD skeleton, tooling configs (tsconfig/eslint/prettier/husky/Dockerfile/nginx),
+     *       layer barrels + READMEs, and the dev {@code .env}/Vite proxy wiring.</li>
+     *   <li><b>Overlay</b> — the template set contributes only the per-entity CRUD files and
+     *       the fullstack-owned shared UI + Tailwind-v4 theming, rendered last so it overwrites
+     *       the substrate where paths collide (e.g. {@code App.tsx}, {@code src/pages/index.ts}).</li>
+     * </ol>
+     */
     private void renderFrontend(EntityTemplateSetEntity set, WebProjectRequest request,
                                 List<EntityDefinition> entities, String domainPackage,
                                 String colorPaletteId, Path targetDir) throws IOException {
+        // 1. Substrate — reuse the standalone frontend generator.
+        FrontendProjectDescription desc = buildFrontendDescription(request, colorPaletteId);
+        frontendGenerator.renderInto(targetDir, desc);
+        // The standalone landing page is replaced by the per-entity pages below.
+        FileSystemUtils.deleteRecursively(targetDir.resolve("src/pages/home"));
+
+        // 2. Overlay — per-entity CRUD files + fullstack-owned shared UI / theming.
         List<EntityTemplateFileEntity> files = fileRepo.findBySetIdOrderBySortOrderAsc(set.getId());
+        ColorPaletteEntity palette = resolvePalette(colorPaletteId);
         Map<String, Object> projectCtx = EntityScaffoldContext.buildProjectContext(
                 request.getArtifactId(),
                 request.getGroupId(),
@@ -310,12 +345,38 @@ public class FullstackStarterController {
                 request.getJavaVersion(),
                 request.getPackaging(),
                 entities);
-        ColorPaletteEntity palette = resolvePalette(colorPaletteId);
-        EntityScaffoldContext.putPaletteVars(projectCtx, palette);
-        Files.createDirectories(targetDir);
-        log.info("Rendering frontend CRUD scaffolding: set='{}', palette='{}', {} files, {} entities",
-                set.getSetKey(), palette.getPaletteId(), files.size(), entities.size());
+        // Overlay the frontend view-model (dep flags, versions, palette with HSL forms, backend
+        // pairing) onto the entity-scaffold context so per-entity templates see both shapes. This
+        // replaces the plain palette from EntityScaffoldContext with the HSL-bearing one.
+        projectCtx.putAll(FrontendMustacheContext.build(desc, desc.getDependencies(), optionsContext, palette));
+        log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
+                        + "{} entities (set='{}', palette='{}')",
+                files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());
         FullstackRenderer.render(files, projectCtx, entities, targetDir);
+    }
+
+    /**
+     * Builds the {@link FrontendProjectDescription} that drives substrate generation. The paired
+     * backend is known from the same request, so dev {@code .env}/Vite-proxy wiring is enabled by
+     * default. No frontend deps are defaulted — the fullstack styling/tooling stack ships via the
+     * overlay and the {@code __common__} substrate, not via selectable frontend dependencies.
+     */
+    private FrontendProjectDescription buildFrontendDescription(WebProjectRequest request, String colorPaletteId) {
+        FrontendProjectDescription desc = new FrontendProjectDescription();
+        desc.setProjectName(request.getArtifactId() + "-frontend");
+        desc.setAppTitle(request.getArtifactId());
+        desc.setColorPaletteId(colorPaletteId);
+        desc.setApiBaseUrl("http://localhost:8080");
+        desc.setBackendArtifactId(request.getArtifactId());
+        String react = versionService.defaultId(VersionKind.REACT);
+        desc.setReactVersion(react);
+        desc.setNodeVersion(versionService.defaultId(VersionKind.NODE));
+        desc.setPackageManager(versionService.defaultId(VersionKind.PACKAGE_MANAGER));
+        desc.setTypescriptVersion(frontendProperties.getPinned().getTypescript());
+        desc.setViteVersion(frontendProperties.getPinned().getVite());
+        versionService.reactSemver(react).ifPresent(desc::setReactPackageVersion);
+        versionService.reactTypesSemver(react).ifPresent(desc::setReactTypesVersion);
+        return desc;
     }
 
     /**

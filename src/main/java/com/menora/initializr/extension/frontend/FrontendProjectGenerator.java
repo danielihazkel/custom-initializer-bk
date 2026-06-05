@@ -90,18 +90,31 @@ public class FrontendProjectGenerator {
         this.mswHandlersRenderer = mswHandlersRenderer;
     }
 
-    /** Generates the project, returns the ZIP bytes (containing a top-level {@code projectName/} directory). */
-    public byte[] generate(FrontendProjectDescription desc) throws IOException {
+    /**
+     * Renders the full project skeleton (file contributions + baselines + OpenAPI
+     * codegen) into {@code targetDir}. Creates {@code targetDir} if it is missing
+     * but never deletes it — the caller owns its lifecycle. This is the shared
+     * render body behind {@link #generate} / {@link #generateFileMap} and the
+     * entrypoint the fullstack generator uses to lay down the FSD substrate before
+     * overlaying its per-entity CRUD files.
+     */
+    public void renderInto(Path targetDir, FrontendProjectDescription desc) throws IOException {
         Set<String> depIds = desc.getDependencies();
         ColorPaletteEntity palette = resolvePalette(desc.getColorPaletteId());
         Map<String, Object> ctx = FrontendMustacheContext.build(desc, depIds, optionsContext, palette);
 
+        Files.createDirectories(targetDir);
+        applyFileContributions(targetDir, depIds, ctx, desc);
+        writeBaselines(targetDir, depIds, ctx);
+        writeOpenApiSpec(targetDir, depIds);
+        writeGeneratedTs(targetDir, depIds);
+    }
+
+    /** Generates the project, returns the ZIP bytes (containing a top-level {@code projectName/} directory). */
+    public byte[] generate(FrontendProjectDescription desc) throws IOException {
         Path tempDir = Files.createTempDirectory("frontend-");
         try {
-            applyFileContributions(tempDir, depIds, ctx, desc);
-            writeBaselines(tempDir, depIds, ctx);
-            writeOpenApiSpec(tempDir, depIds);
-            writeGeneratedTs(tempDir, depIds);
+            renderInto(tempDir, desc);
             return zipDirectory(tempDir, desc.getProjectName());
         } finally {
             FileSystemUtils.deleteRecursively(tempDir);
@@ -110,16 +123,9 @@ public class FrontendProjectGenerator {
 
     /** Same as {@link #generate} but returns the file tree (relative path → content) for previews / tests. */
     public Map<String, String> generateFileMap(FrontendProjectDescription desc) throws IOException {
-        Set<String> depIds = desc.getDependencies();
-        ColorPaletteEntity palette = resolvePalette(desc.getColorPaletteId());
-        Map<String, Object> ctx = FrontendMustacheContext.build(desc, depIds, optionsContext, palette);
-
         Path tempDir = Files.createTempDirectory("frontend-preview-");
         try {
-            applyFileContributions(tempDir, depIds, ctx, desc);
-            writeBaselines(tempDir, depIds, ctx);
-            writeOpenApiSpec(tempDir, depIds);
-            writeGeneratedTs(tempDir, depIds);
+            renderInto(tempDir, desc);
             Map<String, String> out = new LinkedHashMap<>();
             try (Stream<Path> walk = Files.walk(tempDir)) {
                 walk.filter(Files::isRegularFile).sorted().forEach(p -> {
