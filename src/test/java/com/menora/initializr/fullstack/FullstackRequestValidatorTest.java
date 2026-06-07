@@ -74,12 +74,36 @@ class FullstackRequestValidatorTest {
     }
 
     @Test
-    void rejects_multiplePrimaryKeys() {
+    void accepts_compositePrimaryKey() {
+        var result = FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("OrderLine", List.of(
+                        new FullstackStarterRequest.FieldDefinitionDto("orderId", "Long", true, false, null, null, null, null, null, null, null, null),
+                        new FullstackStarterRequest.FieldDefinitionDto("lineNo", "Integer", true, false, null, null, null, null, null, null, null, null),
+                        field("qty", "Integer"))))));
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).fields().stream().filter(FieldDefinition::primaryKey)).hasSize(2);
+    }
+
+    @Test
+    void rejects_generatedCompositePrimaryKey() {
+        // pk() is a generated id; adding a second PK makes it a composite key, which cannot be generated.
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("User", List.of(pk(),
                         new FullstackStarterRequest.FieldDefinitionDto("alt", "Long", true, false, null, null, null, null, null, null, null, null)))))))
                 .isInstanceOf(WizardArgumentException.class)
-                .hasMessageContaining("multiple primary key");
+                .hasMessageContaining("generated primary key combined with a composite key");
+    }
+
+    @Test
+    void rejects_manyToOneTargetingCompositePkEntity() {
+        var parent = entity("OrderLine", List.of(
+                new FullstackStarterRequest.FieldDefinitionDto("orderId", "Long", true, false, null, null, null, null, null, null, null, null),
+                new FullstackStarterRequest.FieldDefinitionDto("lineNo", "Integer", true, false, null, null, null, null, null, null, null, null)));
+        var child = new FullstackStarterRequest.EntityDefinitionDto("Shipment", null, List.of(pk()),
+                List.of(new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_ONE", "line", "OrderLine", false)));
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(parent, child))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("composite-PK entity");
     }
 
     @Test

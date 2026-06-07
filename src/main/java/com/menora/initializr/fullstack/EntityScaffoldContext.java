@@ -62,10 +62,12 @@ public final class EntityScaffoldContext {
         // buildEntityContext) can resolve relation targets too.
         Map<String, Map<String, Object>> summaries = buildSummaries(entities);
         ctx.put(ENTITY_SUMMARIES_KEY, summaries);
+        Map<String, List<Map<String, Object>>> inverses = buildInverseRelations(entities);
+        ctx.put(INVERSE_RELATIONS_KEY, inverses);
 
         List<Map<String, Object>> entityViews = new ArrayList<>(entities.size());
         for (int i = 0; i < entities.size(); i++) {
-            Map<String, Object> view = entityViewModel(entities.get(i), summaries);
+            Map<String, Object> view = entityViewModel(entities.get(i), summaries, inverses);
             view.put("first", i == 0);
             view.put("last", i == entities.size() - 1);
             entityViews.add(view);
@@ -78,6 +80,42 @@ public final class EntityScaffoldContext {
      *  Not referenced by any template. */
     private static final String ENTITY_SUMMARIES_KEY = "__entitySummaries";
 
+    /** Internal key under which the inverse-relation lookup (lower(parent) → inverse views) rides
+     *  in the project context, so per-entity contexts can resolve their @OneToMany collections. */
+    private static final String INVERSE_RELATIONS_KEY = "__inverseRelations";
+
+    /**
+     * Derives inverse ({@code @OneToMany}) collections from the owning {@code MANY_TO_ONE} relations:
+     * for each child entity A with a {@code MANY_TO_ONE} to parent B, B gets a read-only collection of
+     * A. Keyed by {@code lower(parentName)}. The collection is named after the pluralized child (e.g.
+     * a {@code Customer} targeted by {@code Order.customer} gets an {@code orders} collection with
+     * {@code mappedBy = "customer"}).
+     */
+    private static Map<String, List<Map<String, Object>>> buildInverseRelations(List<EntityDefinition> entities) {
+        Map<String, List<Map<String, Object>>> byLower = new LinkedHashMap<>();
+        for (EntityDefinition child : entities) {
+            for (RelationDefinition rel : child.relations()) {
+                if (rel.type() != RelationType.MANY_TO_ONE) continue;
+                String parentLower = rel.targetEntity().toLowerCase(Locale.ROOT);
+                String childCamel = Naming.toCamelCase(child.name());
+                String coll = Naming.pluralize(childCamel);
+                Map<String, Object> inv = new LinkedHashMap<>();
+                inv.put("childEntity", Naming.toPascalCase(child.name()));
+                inv.put("childEntityCamel", childCamel);
+                inv.put("mappedBy", Naming.toCamelCase(rel.fieldName()));
+                inv.put("collectionField", coll);
+                inv.put("CollectionField", Naming.toPascalCase(coll));
+                byLower.computeIfAbsent(parentLower, k -> new ArrayList<>()).add(inv);
+            }
+        }
+        for (List<Map<String, Object>> list : byLower.values()) {
+            for (int i = 0; i < list.size(); i++) {
+                list.get(i).put("last", i == list.size() - 1);
+            }
+        }
+        return byLower;
+    }
+
     /** Builds a {@code lower(name) → summary} lookup with each entity's PK type/name and
      *  naming variants, so a relation can resolve its target's FK id type and class name. */
     private static Map<String, Map<String, Object>> buildSummaries(List<EntityDefinition> entities) {
@@ -89,11 +127,16 @@ public final class EntityScaffoldContext {
             s.put("pascal", Naming.toPascalCase(e.name()));
             s.put("camel", Naming.toCamelCase(e.name()));
             s.put("kebab", Naming.toKebabCase(e.name()));
+            s.put("kebabPlural", Naming.pluralize(Naming.toKebabCase(e.name())));
             String pkName = pk == null ? "id" : pk.name();
             s.put("pkName", pkName);
             s.put("PkName", Naming.toPascalCase(pkName));
             s.put("pkJavaType", pk == null ? "Long" : pk.type().javaType());
             s.put("pkTsType", pk == null ? "number" : pk.type().tsType());
+            // First non-PK string field — used as a human-readable label in the frontend FK <select>.
+            FieldDefinition labelField = e.fields().stream()
+                    .filter(f -> f.type().isString() && !f.primaryKey()).findFirst().orElse(null);
+            s.put("labelField", labelField == null ? null : labelField.name());
             summaries.put(e.name().toLowerCase(Locale.ROOT), s);
         }
         return summaries;
@@ -139,12 +182,22 @@ public final class EntityScaffoldContext {
         Map<String, Object> ctx = new LinkedHashMap<>(projectContext);
         Map<String, Map<String, Object>> summaries =
                 (Map<String, Map<String, Object>>) projectContext.get(ENTITY_SUMMARIES_KEY);
-        ctx.putAll(entityViewModel(entity, summaries == null ? Map.of() : summaries));
+        Map<String, List<Map<String, Object>>> inverses =
+                (Map<String, List<Map<String, Object>>>) projectContext.get(INVERSE_RELATIONS_KEY);
+        ctx.putAll(entityViewModel(entity, summaries == null ? Map.of() : summaries,
+                inverses == null ? Map.of() : inverses));
+        // Soft-delete is opt-in (optScaffoldSoftDelete) but its @SQLDelete WHERE clause only handles
+        // a single PK column, so it is skipped for composite-PK entities. Computed per entity once
+        // the project-level opt flag and the entity's hasCompositePk are both in the merged context.
+        ctx.put("softDeleteApplicable",
+                Boolean.TRUE.equals(ctx.get("optScaffoldSoftDelete"))
+                        && !Boolean.TRUE.equals(ctx.get("hasCompositePk")));
         return ctx;
     }
 
     private static Map<String, Object> entityViewModel(
-            EntityDefinition entity, Map<String, Map<String, Object>> summaries) {
+            EntityDefinition entity, Map<String, Map<String, Object>> summaries,
+            Map<String, List<Map<String, Object>>> inverseByLower) {
         Map<String, Object> view = new LinkedHashMap<>();
 
         String pascal = Naming.toPascalCase(entity.name());
@@ -168,6 +221,7 @@ public final class EntityScaffoldContext {
 
         List<Map<String, Object>> fieldViews = new ArrayList<>(entity.fields().size());
         Map<String, Object> pkView = null;
+        List<Map<String, Object>> pkViews = new ArrayList<>();
         List<Map<String, Object>> nonPkViews = new ArrayList<>();
         Set<String> imports = new TreeSet<>();
 
@@ -177,8 +231,20 @@ public final class EntityScaffoldContext {
             fv.put("first", i == 0);
             fv.put("last", i == entity.fields().size() - 1);
             fieldViews.add(fv);
-            if (f.primaryKey()) pkView = fv;
-            else nonPkViews.add(fv);
+            if (f.primaryKey()) {
+                if (pkView == null) pkView = fv;  // first PK drives the single-PK pkField.* back-compat
+                // A lightweight copy with its own first/last so composite-key iteration ({{#pkFields}})
+                // does not corrupt the field's own first/last (used by Dto's comma logic).
+                Map<String, Object> pk = new LinkedHashMap<>();
+                pk.put("name", fv.get("name"));
+                pk.put("Name", fv.get("Name"));
+                pk.put("column", fv.get("column"));
+                pk.put("javaType", fv.get("javaType"));
+                pk.put("tsType", fv.get("tsType"));
+                pkViews.add(pk);
+            } else {
+                nonPkViews.add(fv);
+            }
             if (f.type() != FieldType.ENUM && f.type().javaImport() != null
                     && !f.type().javaImport().startsWith("java.lang.")) {
                 imports.add(f.type().javaImport());
@@ -188,10 +254,30 @@ public final class EntityScaffoldContext {
         for (int i = 0; i < nonPkViews.size(); i++) {
             nonPkViews.get(i).put("lastNonPk", i == nonPkViews.size() - 1);
         }
+        for (int i = 0; i < pkViews.size(); i++) {
+            pkViews.get(i).put("first", i == 0);
+            pkViews.get(i).put("last", i == pkViews.size() - 1);
+        }
 
+        boolean hasCompositePk = pkViews.size() > 1;
+        String keyClassName = pascal + "Id";
+        // Pre-built path-variable segment for composite keys, e.g. "/{orderId}/{lineNo}". Built here
+        // so the controller template emits a plain string and avoids Mustache triple-brace clashes.
+        StringBuilder pkPath = new StringBuilder();
+        for (Map<String, Object> pk : pkViews) {
+            pkPath.append("/{").append(pk.get("name")).append('}');
+        }
+        view.put("pkPath", pkPath.toString());
         view.put("fields", fieldViews);
         view.put("nonPkFields", nonPkViews);
         view.put("pkField", pkView);
+        view.put("pkFields", pkViews);
+        view.put("hasCompositePk", hasCompositePk);
+        view.put("keyClassName", keyClassName);
+        // The repository/service id type and controller path: a single field's Java type, or the
+        // generated @IdClass key class when the entity has a composite primary key.
+        view.put("pkType", hasCompositePk ? keyClassName
+                : (pkView == null ? "Long" : (String) pkView.get("javaType")));
         view.put("hasEnumFields", fieldViews.stream().anyMatch(m -> Boolean.TRUE.equals(m.get("isEnum"))));
 
         List<Map<String, Object>> stringFieldViews = new ArrayList<>();
@@ -223,10 +309,18 @@ public final class EntityScaffoldContext {
             rv.put("targetEntity", target != null ? target.get("pascal") : Naming.toPascalCase(rel.targetEntity()));
             rv.put("targetEntityCamel", target != null ? target.get("camel") : Naming.toCamelCase(rel.targetEntity()));
             rv.put("targetEntityKebab", target != null ? target.get("kebab") : Naming.toKebabCase(rel.targetEntity()));
+            rv.put("targetEntityKebabPlural", target != null ? target.get("kebabPlural")
+                    : Naming.pluralize(Naming.toKebabCase(rel.targetEntity())));
             rv.put("targetPkName", target != null ? target.get("pkName") : "id");
             rv.put("TargetPkName", target != null ? target.get("PkName") : "Id");
             rv.put("targetPkJavaType", target != null ? target.get("pkJavaType") : "Long");
-            rv.put("targetPkTsType", target != null ? target.get("pkTsType") : "number");
+            String targetPkTs = target != null ? (String) target.get("pkTsType") : "number";
+            rv.put("targetPkTsType", targetPkTs);
+            rv.put("isTargetPkNumeric", "number".equals(targetPkTs));
+            // First non-PK string field on the target, shown as the readable option label (else the id).
+            Object labelField = target == null ? null : target.get("labelField");
+            rv.put("targetLabelField", labelField);
+            rv.put("hasTargetLabel", labelField != null);
             rv.put("required", rel.required());
             rv.put("isManyToOne", rel.type() == RelationType.MANY_TO_ONE);
             rv.put("last", i == entity.relations().size() - 1);
@@ -236,6 +330,13 @@ public final class EntityScaffoldContext {
                 .anyMatch(m -> Boolean.TRUE.equals(m.get("required")));
         view.put("relations", relationViews);
         view.put("hasRelations", !relationViews.isEmpty());
+
+        // Inverse @OneToMany collections derived from other entities' MANY_TO_ONE relations (opt-in,
+        // rendered only when optScaffoldInverse). Exposed read-only — the DTO surfaces a count.
+        List<Map<String, Object>> inverseViews = inverseByLower == null ? List.of()
+                : inverseByLower.getOrDefault(entity.name().toLowerCase(Locale.ROOT), List.of());
+        view.put("inverseRelations", inverseViews);
+        view.put("hasInverseRelations", !inverseViews.isEmpty());
 
         // Aggregate flags so the DTO template only imports a Bean Validation constraint it
         // actually uses. @NotNull is skipped on a generated PK (it is null until persisted);

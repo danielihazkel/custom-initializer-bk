@@ -354,6 +354,13 @@ public class FullstackStarterController {
         boolean hasLdapAuth = request.getDependencies() != null
                 && request.getDependencies().contains("ldap-auth");
         projectCtx.put("hasLdapAuth", hasLdapAuth);
+        // Opt-in scaffolding flags must be set on the frontend context too — the per-entity FE
+        // templates gate audit columns / inverse-collection counts on these. The backend config
+        // sets its own copy; the two render paths do not share a context.
+        projectCtx.put("optScaffoldTests", optionsContext.hasOption("scaffold", "tests"));
+        projectCtx.put("optScaffoldAudit", optionsContext.hasOption("scaffold", "audit"));
+        projectCtx.put("optScaffoldSoftDelete", optionsContext.hasOption("scaffold", "softDelete"));
+        projectCtx.put("optScaffoldInverse", optionsContext.hasOption("scaffold", "inverseCollections"));
         log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());

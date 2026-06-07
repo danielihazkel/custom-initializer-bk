@@ -16,6 +16,16 @@
       "sortOrder": 5
     },
     {
+      "source": "JpaAuditingConfig.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/config/JpaAuditingConfig.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "optScaffoldAudit"
+    },
+    {
       "source": "Entity.java.mustache",
       "path": "src/main/java/{{entityPackagePath}}/{{EntityName}}.java",
       "perEntity": true,

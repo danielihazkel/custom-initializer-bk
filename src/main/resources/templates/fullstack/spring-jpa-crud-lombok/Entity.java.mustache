@@ -7,13 +7,26 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+{{#optScaffoldAudit}}import java.time.Instant;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+{{/optScaffoldAudit}}{{#softDeleteApplicable}}import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
+{{/softDeleteApplicable}}{{#hasInverseRelations}}{{#optScaffoldInverse}}import java.util.ArrayList;
+import java.util.List;
+{{/optScaffoldInverse}}{{/hasInverseRelations}}
 
 @Entity
 @Table(name = "{{tableName}}")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class {{EntityName}} {
+{{#optScaffoldAudit}}@EntityListeners(AuditingEntityListener.class)
+{{/optScaffoldAudit}}{{#softDeleteApplicable}}@SQLDelete(sql = "UPDATE {{tableName}} SET deleted = true WHERE {{pkField.column}} = ?")
+@SQLRestriction("deleted = false")
+{{/softDeleteApplicable}}{{#hasCompositePk}}@IdClass({{EntityName}}.{{keyClassName}}.class)
+{{/hasCompositePk}}public class {{EntityName}} {
 {{#fields}}{{#isEnum}}
 
     public enum {{enumTypeName}} {
@@ -32,4 +45,27 @@ public class {{EntityName}} {
     @JoinColumn(name = "{{joinColumn}}"{{#required}}, nullable = false{{/required}})
     private {{targetEntity}} {{fieldName}};
 
-{{/relations}}}
+{{/relations}}{{#optScaffoldAudit}}    @CreatedDate
+    @Column(name = "created_at", updatable = false)
+    private Instant createdAt;
+
+    @LastModifiedDate
+    @Column(name = "updated_at")
+    private Instant updatedAt;
+
+{{/optScaffoldAudit}}{{#softDeleteApplicable}}    @Column(name = "deleted", nullable = false)
+    private boolean deleted = false;
+
+{{/softDeleteApplicable}}{{#optScaffoldInverse}}{{#hasInverseRelations}}{{#inverseRelations}}    @OneToMany(mappedBy = "{{mappedBy}}")
+    @lombok.ToString.Exclude
+    @lombok.EqualsAndHashCode.Exclude
+    private List<{{childEntity}}> {{collectionField}} = new ArrayList<>();
+
+{{/inverseRelations}}{{/hasInverseRelations}}{{/optScaffoldInverse}}{{#hasCompositePk}}
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class {{keyClassName}} implements java.io.Serializable {
+{{#pkFields}}        private {{javaType}} {{name}};
+{{/pkFields}}    }
+{{/hasCompositePk}}}

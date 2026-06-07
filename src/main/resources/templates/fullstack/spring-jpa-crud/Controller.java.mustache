@@ -2,6 +2,8 @@ package {{controllerPackage}};
 
 import {{dtoPackage}}.{{EntityName}}Dto;
 import {{servicePackage}}.{{EntityName}}Service;
+{{#hasCompositePk}}import {{entityPackage}}.{{EntityName}};
+{{/hasCompositePk}}
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -40,17 +42,31 @@ public class {{EntityName}}Controller {
         return service.findAll(q, effective).map({{EntityName}}Dto::from);
     }
 
-    @GetMapping("/{id}")
+{{#hasCompositePk}}    @GetMapping("{{pkPath}}")
+    public {{EntityName}}Dto getOne({{#pkFields}}@PathVariable {{javaType}} {{name}}{{^last}}, {{/last}}{{/pkFields}}) {
+        return {{EntityName}}Dto.from(service.findById(new {{EntityName}}.{{keyClassName}}({{#pkFields}}{{name}}{{^last}}, {{/last}}{{/pkFields}})));
+    }
+{{/hasCompositePk}}{{^hasCompositePk}}    @GetMapping("/{id}")
     public {{EntityName}}Dto getOne(@PathVariable {{pkField.javaType}} id) {
         return {{EntityName}}Dto.from(service.findById(id));
     }
-
+{{/hasCompositePk}}
     @PostMapping
     public {{EntityName}}Dto create(@RequestBody {{#hasValidation}}@Valid {{/hasValidation}}{{EntityName}}Dto dto) {
         return {{EntityName}}Dto.from(service.create(dto.toEntity()));
     }
 
-    @PutMapping("/{id}")
+{{#hasCompositePk}}    @PutMapping("{{pkPath}}")
+    public {{EntityName}}Dto update({{#pkFields}}@PathVariable {{javaType}} {{name}}, {{/pkFields}}@RequestBody {{#hasValidation}}@Valid {{/hasValidation}}{{EntityName}}Dto dto) {
+        return {{EntityName}}Dto.from(service.update(new {{EntityName}}.{{keyClassName}}({{#pkFields}}{{name}}{{^last}}, {{/last}}{{/pkFields}}), dto.toEntity()));
+    }
+
+    @DeleteMapping("{{pkPath}}")
+    public ResponseEntity<Void> delete({{#pkFields}}@PathVariable {{javaType}} {{name}}{{^last}}, {{/last}}{{/pkFields}}) {
+        service.delete(new {{EntityName}}.{{keyClassName}}({{#pkFields}}{{name}}{{^last}}, {{/last}}{{/pkFields}}));
+        return ResponseEntity.noContent().build();
+    }
+{{/hasCompositePk}}{{^hasCompositePk}}    @PutMapping("/{id}")
     public {{EntityName}}Dto update(@PathVariable {{pkField.javaType}} id, @RequestBody {{#hasValidation}}@Valid {{/hasValidation}}{{EntityName}}Dto dto) {
         return {{EntityName}}Dto.from(service.update(id, dto.toEntity()));
     }
@@ -60,6 +76,7 @@ public class {{EntityName}}Controller {
         service.delete(id);
         return ResponseEntity.noContent().build();
     }
+{{/hasCompositePk}}
 
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Void> handleNotFound(NoSuchElementException ex) {

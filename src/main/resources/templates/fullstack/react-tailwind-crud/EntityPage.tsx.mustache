@@ -11,7 +11,10 @@ import { ApiError } from '@shared/api'
 const columns: Column<{{EntityName}}>[] = [
 {{#fields}}  { label: '{{Name}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
 {{/fields}}{{#relations}}  { label: '{{FieldName}} ID', render: r => r.{{fkFieldName}} == null ? '—' : String(r.{{fkFieldName}}) },
-{{/relations}}]
+{{/relations}}{{#optScaffoldAudit}}  { label: 'Created', sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString() },
+  { label: 'Updated', sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString() },
+{{/optScaffoldAudit}}{{#optScaffoldInverse}}{{#inverseRelations}}  { label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
+{{/inverseRelations}}{{/optScaffoldInverse}}]
 
 export function {{EntityName}}Page() {
   const [page, setPage] = useState(0)
@@ -65,7 +68,7 @@ export function {{EntityName}}Page() {
     setFormErrors({})
     try {
       if (isNew) await create(editing as Omit<{{EntityName}}, 'id'>)
-      else await update(editing.{{pkField.name}} as number | string, editing as {{EntityName}})
+      else await update({{#hasCompositePk}}[{{#pkFields}}editing.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}editing.{{pkField.name}} as number | string{{/hasCompositePk}}, editing as {{EntityName}})
       toast.success(isNew ? '{{EntityName}} created' : '{{EntityName}} updated')
       close()
     } catch (e) {
@@ -84,7 +87,7 @@ export function {{EntityName}}Page() {
     if (!pendingDelete) return
     setDeleting(true)
     try {
-      await remove(pendingDelete.{{pkField.name}} as number | string)
+      await remove({{#hasCompositePk}}[{{#pkFields}}pendingDelete.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}pendingDelete.{{pkField.name}} as number | string{{/hasCompositePk}})
       toast.success('{{EntityName}} deleted')
       setPendingDelete(null)
     } catch (e) {

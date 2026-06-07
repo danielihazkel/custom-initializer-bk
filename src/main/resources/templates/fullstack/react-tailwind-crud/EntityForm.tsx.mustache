@@ -1,5 +1,6 @@
 import { Field, inputClass } from '@shared/ui'
-import type { {{EntityName}}{{#fields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
+{{#hasRelations}}import { useOptions } from '@shared/api'
+{{/hasRelations}}import type { {{EntityName}}{{#fields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
 {{#fields}}{{#isEnum}}import { {{enumTypeName}}Values } from '@entities/{{entityNameKebab}}'
 {{/isEnum}}{{/fields}}
 
@@ -12,7 +13,8 @@ interface Props {
 
 export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
   const set = (k: keyof {{EntityName}}, v: unknown) => onChange({ ...value, [k]: v })
-
+{{#relations}}  const {{fieldName}}Options = useOptions<Record<string, unknown>>('/api/{{targetEntityKebabPlural}}')
+{{/relations}}
   return (
     <>
 {{#fields}}
@@ -27,10 +29,11 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
       )}
 {{/isGenerated}}{{^isGenerated}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <input
-          className={inputClass}
+          className={isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
           onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value{{/isNumeric}})}
           {{#isNumeric}}type="number"{{/isNumeric}}{{^isNumeric}}type="text"{{/isNumeric}}
+          disabled={!isNew}
         />
       </Field>
 {{/isGenerated}}{{/isPrimaryKey}}
@@ -66,13 +69,19 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
 {{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}
 {{/fields}}
 {{#relations}}
-      <Field label="{{FieldName}} ID"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>
-        <input
+      <Field label="{{FieldName}}"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>
+        <select
           className={inputClass}
-          type="number"
           value={value.{{fkFieldName}} == null ? '' : String(value.{{fkFieldName}})}
-          onChange={e => set('{{fkFieldName}}', e.target.value === '' ? null : Number(e.target.value))}
-        />
+          onChange={e => set('{{fkFieldName}}', e.target.value === '' ? null : {{#isTargetPkNumeric}}Number(e.target.value){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}e.target.value{{/isTargetPkNumeric}})}
+        >
+          <option value="">{ {{fieldName}}Options.loading ? 'Loading…' : '—' }</option>
+          { {{fieldName}}Options.options.map(o => (
+            <option key={String(o.{{targetPkName}})} value={String(o.{{targetPkName}})}>
+              {{#hasTargetLabel}}{`${String(o.{{targetLabelField}} ?? '')} (#${String(o.{{targetPkName}})})`}{{/hasTargetLabel}}{{^hasTargetLabel}}{String(o.{{targetPkName}})}{{/hasTargetLabel}}
+            </option>
+          )) }
+        </select>
       </Field>
 {{/relations}}
     </>

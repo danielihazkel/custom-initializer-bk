@@ -24,7 +24,7 @@ export interface PaginationProps {
   onPageSizeChange: (size: number) => void
 }
 
-interface Props<T extends { id?: number | string | null }> {
+interface Props<T extends object> {
   columns: Column<T>[]
   rows: T[]
   onEdit: (row: T) => void
@@ -47,7 +47,7 @@ function nextSort(current: SortSpec | null, field: string): SortSpec | null {
   return null
 }
 
-export function Table<T extends { id?: number | string | null }>({
+export function Table<T extends object>({
   columns, rows, onEdit, onDelete, loading,
   sort, onSortChange, search, onSearchChange, pagination, searchable = true,
 }: Props<T>) {
@@ -117,7 +117,7 @@ export function Table<T extends { id?: number | string | null }>({
               ) : (
                 rows.map((row, idx) => (
                   <tr
-                    key={row.id ?? idx}
+                    key={(row as { id?: number | string | null }).id ?? idx}
                     className="border-t border-border transition-colors hover:bg-surface-2/60"
                   >
                     {columns.map((col, i) => (

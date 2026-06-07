@@ -531,8 +531,12 @@ class FullstackStarterIntegrationTests {
         // Frontend: type + form + page carry customerId.
         assertThat(entries.get("shop/frontend/src/entities/order/model/types.ts"))
                 .contains("customerId: number | null");
+        // The FK now renders as a <select> populated from the target's list endpoint via useOptions.
         assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
-                .contains("label=\"Customer ID\" required")
+                .contains("import { useOptions } from '@shared/api'")
+                .contains("useOptions<Record<string, unknown>>('/api/customers')")
+                .contains("label=\"Customer\" required")
+                .contains("<select")
                 .contains("set('customerId'");
         assertThat(entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx"))
                 .contains("label: 'Customer ID'");
@@ -895,6 +899,146 @@ class FullstackStarterIntegrationTests {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).contains("bootVersion").contains("known version");
+    }
+
+    @Test
+    void fullstackEndpoint_rendersCompositePrimaryKey() throws Exception {
+        // OrderLine has a two-field composite PK (orderId + lineNo). It is rendered with @IdClass +
+        // a nested key class; the repository id type, the controller path, and the frontend key-array
+        // addressing all follow.
+        Map<String, Object> orderId = Map.of("name", "orderId", "type", "Long", "primaryKey", true);
+        Map<String, Object> lineNo = Map.of("name", "lineNo", "type", "Integer", "primaryKey", true);
+        Map<String, Object> qty = Map.of("name", "qty", "type", "Integer");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "OrderLine", "fields", List.of(orderId, lineNo, qty))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/entity/OrderLine.java"))
+                .contains("@IdClass(OrderLine.OrderLineId.class)")
+                .contains("public static class OrderLineId implements java.io.Serializable")
+                .contains("private Long orderId;")
+                .contains("private Integer lineNo;")
+                .contains("java.util.Objects.hash(orderId, lineNo)");
+        assertThat(contentEndingWith(entries, "/repository/OrderLineRepository.java"))
+                .contains("JpaRepository<OrderLine, OrderLine.OrderLineId>");
+        assertThat(contentEndingWith(entries, "/controller/OrderLineController.java"))
+                .contains("@GetMapping(\"/{orderId}/{lineNo}\")")
+                .contains("@DeleteMapping(\"/{orderId}/{lineNo}\")")
+                .contains("new OrderLine.OrderLineId(orderId, lineNo)");
+        // The shared resource hook gained ordered-key path joining for composite addressing.
+        assertThat(entries.get("shop/frontend/src/shared/api/useResource.ts"))
+                .contains("Array.isArray(id)");
+    }
+
+    @Test
+    void fullstackEndpoint_auditOptAddsAuditing() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("audit")));
+        body.put("entities", List.of(Map.of("name", "Widget",
+                "fields", List.of(pkField(), Map.of("name", "label", "type", "String")))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/config/JpaAuditingConfig.java"))
+                .contains("@EnableJpaAuditing");
+        assertThat(contentEndingWith(entries, "/entity/Widget.java"))
+                .contains("@EntityListeners(AuditingEntityListener.class)")
+                .contains("@CreatedDate")
+                .contains("private Instant createdAt;")
+                .contains("@LastModifiedDate");
+        assertThat(contentEndingWith(entries, "/dto/WidgetDto.java"))
+                .contains("java.time.Instant createdAt")
+                .contains("entity.getCreatedAt()");
+        assertThat(entries.get("shop/frontend/src/entities/widget/model/types.ts"))
+                .contains("createdAt?: string | null");
+    }
+
+    @Test
+    void fullstackEndpoint_withoutAuditOptOmitsAuditing() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "Widget",
+                "fields", List.of(pkField(), Map.of("name", "label", "type", "String")))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(entries.keySet().stream().anyMatch(k -> k.endsWith("/config/JpaAuditingConfig.java")))
+                .isFalse();
+        assertThat(contentEndingWith(entries, "/entity/Widget.java"))
+                .doesNotContain("@CreatedDate")
+                .doesNotContain("createdAt");
+    }
+
+    @Test
+    void fullstackEndpoint_softDeleteOptAddsHibernateAnnotationsButSkipsCompositePk() throws Exception {
+        Map<String, Object> orderId = Map.of("name", "orderId", "type", "Long", "primaryKey", true);
+        Map<String, Object> lineNo = Map.of("name", "lineNo", "type", "Integer", "primaryKey", true);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("softDelete")));
+        body.put("entities", List.of(
+                Map.of("name", "Widget", "fields", List.of(pkField(), Map.of("name", "label", "type", "String"))),
+                Map.of("name", "OrderLine", "fields", List.of(orderId, lineNo))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/entity/Widget.java"))
+                .contains("@SQLDelete(sql = \"UPDATE widgets SET deleted = true WHERE id = ?\")")
+                .contains("@SQLRestriction(\"deleted = false\")")
+                .contains("private boolean deleted = false;");
+        // Composite-PK entity skips soft-delete (single-column WHERE can't address a composite key).
+        assertThat(contentEndingWith(entries, "/entity/OrderLine.java"))
+                .doesNotContain("@SQLDelete");
+        // The 'deleted' flag is never exposed on the DTO.
+        assertThat(contentEndingWith(entries, "/dto/WidgetDto.java")).doesNotContain("deleted");
+    }
+
+    @Test
+    void fullstackEndpoint_inverseOptAddsOneToManyCollection() throws Exception {
+        Map<String, Object> orderCustomerRel = Map.of(
+                "type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Customer", "required", true);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("inverseCollections")));
+        body.put("entities", List.of(
+                Map.of("name", "Customer", "fields", List.of(pkField(), Map.of("name", "name", "type", "String"))),
+                Map.of("name", "Order",
+                        "fields", List.of(pkField(), Map.of("name", "total", "type", "BigDecimal")),
+                        "relations", List.of(orderCustomerRel))));
+
+        Map<String, String> entries = generateZip(body);
+
+        // The parent (Customer) gets the inverse collection; the DTO surfaces a read-only count.
+        assertThat(contentEndingWith(entries, "/entity/Customer.java"))
+                .contains("@OneToMany(mappedBy = \"customer\")")
+                .contains("private List<Order> orders = new ArrayList<>();");
+        assertThat(contentEndingWith(entries, "/dto/CustomerDto.java"))
+                .contains("int ordersCount")
+                .contains("entity.getOrders() == null ? 0 : entity.getOrders().size()");
+    }
+
+    /** POSTs a fullstack request and returns the unzipped (path → text) generated tree. */
+    private Map<String, String> generateZip(Map<String, Object> body) throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return unzip(response.getBody());
     }
 
     /** POSTs a fullstack request built by the given mutator and returns the raw response. */

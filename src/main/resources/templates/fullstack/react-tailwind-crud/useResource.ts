@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './client'
 
-interface HasId {
-  id?: number | string | null
+/** A resource key: a single value, or — for composite primary keys — the key parts in
+ *  declared order (the backend addresses them as ordered path segments, e.g. /api/x/{a}/{b}). */
+export type ResourceId = number | string | Array<number | string>
+
+function toPath(id: ResourceId): string {
+  return Array.isArray(id) ? id.map(v => encodeURIComponent(String(v))).join('/') : encodeURIComponent(String(id))
 }
 
 export interface SortSpec {
@@ -27,7 +31,7 @@ interface Page<T> {
   last: boolean
 }
 
-export function useResource<T extends HasId>(basePath: string, params: PageParams) {
+export function useResource<T extends object>(basePath: string, params: PageParams) {
   const [items, setItems] = useState<T[]>([])
   const [totalElements, setTotalElements] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
@@ -72,14 +76,14 @@ export function useResource<T extends HasId>(basePath: string, params: PageParam
     return created
   }, [basePath, reload])
 
-  const update = useCallback(async (id: number | string, payload: T) => {
-    const updated = await api.put<T>(`${basePath}/${id}`, payload)
+  const update = useCallback(async (id: ResourceId, payload: T) => {
+    const updated = await api.put<T>(`${basePath}/${toPath(id)}`, payload)
     await reload()
     return updated
   }, [basePath, reload])
 
-  const remove = useCallback(async (id: number | string) => {
-    await api.del(`${basePath}/${id}`)
+  const remove = useCallback(async (id: ResourceId) => {
+    await api.del(`${basePath}/${toPath(id)}`)
     await reload()
   }, [basePath, reload])
 

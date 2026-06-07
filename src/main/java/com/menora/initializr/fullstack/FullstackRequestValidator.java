@@ -47,6 +47,9 @@ public final class FullstackRequestValidator {
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
+        // Primary-key count per entity (lowercased name) — used in pass 2 to reject a MANY_TO_ONE
+        // pointing at a composite-PK entity (a single <field>Id FK can't address a composite key).
+        Map<String, Integer> pkCountByLower = new HashMap<>();
         List<Parsed> parsed = new ArrayList<>(raw.size());
         for (int ei = 0; ei < raw.size(); ei++) {
             FullstackStarterRequest.EntityDefinitionDto e = raw.get(ei);
@@ -73,6 +76,7 @@ public final class FullstackRequestValidator {
             }
 
             int pkCount = 0;
+            boolean anyGenerated = false;
             Set<String> seenFieldNames = new HashSet<>();
             List<FieldDefinition> fields = new ArrayList<>(rawFields.size());
             for (int fi = 0; fi < rawFields.size(); fi++) {
@@ -153,6 +157,7 @@ public final class FullstackRequestValidator {
 
                 boolean isGenerated = Boolean.TRUE.equals(f.generated());
                 if (isGenerated) {
+                    anyGenerated = true;
                     if (!isPk) {
                         throw new WizardArgumentException("'generated' only applies to the primary key (field '" + fname + "' on entity '" + name + "')");
                     }
@@ -180,9 +185,12 @@ public final class FullstackRequestValidator {
             if (pkCount == 0) {
                 throw new WizardArgumentException("Entity '" + name + "' has no primary key field");
             }
-            if (pkCount > 1) {
-                throw new WizardArgumentException("Entity '" + name + "' has multiple primary key fields (only one allowed in v1)");
+            // Composite keys are allowed (rendered via @IdClass), but a generated key requires a
+            // single PK — JPA IDENTITY generation cannot target one column of a composite key.
+            if (pkCount > 1 && anyGenerated) {
+                throw new WizardArgumentException("Entity '" + name + "' has a generated primary key combined with a composite key (a generated key requires a single primary key)");
             }
+            pkCountByLower.put(lower, pkCount);
 
             String tableName = (e.tableName() == null || e.tableName().isBlank())
                     ? null : e.tableName().trim();
@@ -193,7 +201,7 @@ public final class FullstackRequestValidator {
         List<EntityDefinition> result = new ArrayList<>(parsed.size());
         for (Parsed p : parsed) {
             List<RelationDefinition> relations =
-                    parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower);
+                    parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower, pkCountByLower);
             result.add(new EntityDefinition(p.name(), p.tableName(), p.fields(), relations));
         }
         return result;
@@ -208,7 +216,8 @@ public final class FullstackRequestValidator {
             List<FullstackStarterRequest.RelationDefinitionDto> rawRelations,
             String entityName,
             Set<String> memberNames,
-            Map<String, String> canonicalByLower) {
+            Map<String, String> canonicalByLower,
+            Map<String, Integer> pkCountByLower) {
         if (rawRelations == null || rawRelations.isEmpty()) {
             return List.of();
         }
@@ -252,6 +261,13 @@ public final class FullstackRequestValidator {
             if (canonicalTarget == null) {
                 throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
                         + "' targets unknown entity '" + r.targetEntity().trim() + "'");
+            }
+            // A single <field>Id foreign key cannot address a composite primary key, so a relation
+            // may not point at a composite-PK entity in v1.
+            Integer targetPkCount = pkCountByLower.get(targetLower);
+            if (targetPkCount != null && targetPkCount > 1) {
+                throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                        + "' targets composite-PK entity '" + canonicalTarget + "' — not supported");
             }
 
             relations.add(new RelationDefinition(type, fieldName, canonicalTarget,

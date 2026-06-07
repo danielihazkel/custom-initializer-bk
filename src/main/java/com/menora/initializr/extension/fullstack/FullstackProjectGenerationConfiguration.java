@@ -84,6 +84,9 @@ public class FullstackProjectGenerationConfiguration {
             // gatedBy flag on a template file toggles whether it is rendered. Uses spring-boot-
             // starter-test, which the Initializr framework adds to every generated project.
             projectCtx.put("optScaffoldTests", optionsContext.hasOption("scaffold", "tests"));
+            projectCtx.put("optScaffoldAudit", optionsContext.hasOption("scaffold", "audit"));
+            projectCtx.put("optScaffoldSoftDelete", optionsContext.hasOption("scaffold", "softDelete"));
+            projectCtx.put("optScaffoldInverse", optionsContext.hasOption("scaffold", "inverseCollections"));
             log.info("Rendering backend CRUD scaffolding: set='{}', {} files, {} entities",
                     setKey, files.size(), entities.size());
             FullstackRenderer.render(files, projectCtx, entities, projectRoot);
