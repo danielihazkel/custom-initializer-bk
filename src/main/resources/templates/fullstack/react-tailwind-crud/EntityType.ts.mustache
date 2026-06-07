@@ -6,4 +6,5 @@ export const {{enumTypeName}}Values: {{enumTypeName}}[] = [{{#enumValues}}'{{val
 
 export interface {{EntityName}} {
 {{#fields}}  {{name}}{{^isRequired}}?{{/isRequired}}: {{#isEnum}}{{enumTypeName}}{{/isEnum}}{{^isEnum}}{{tsType}}{{/isEnum}} | null
-{{/fields}}}
+{{/fields}}{{#relations}}  {{fkFieldName}}{{^required}}?{{/required}}: {{targetPkTsType}} | null
+{{/relations}}}

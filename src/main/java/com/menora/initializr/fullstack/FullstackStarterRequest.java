@@ -37,7 +37,14 @@ public record FullstackStarterRequest(
     public record EntityDefinitionDto(
             String name,
             String tableName,
-            List<FieldDefinitionDto> fields) {}
+            List<FieldDefinitionDto> fields,
+            List<RelationDefinitionDto> relations) {}
+
+    public record RelationDefinitionDto(
+            String type,
+            String fieldName,
+            String targetEntity,
+            Boolean required) {}
 
     public record FieldDefinitionDto(
             String name,
@@ -47,5 +54,9 @@ public record FullstackStarterRequest(
             Boolean required,
             Boolean unique,
             Integer length,
+            Long min,
+            Long max,
+            String pattern,
+            Boolean email,
             List<String> enumValues) {}
 }

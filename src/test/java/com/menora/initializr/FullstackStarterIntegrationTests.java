@@ -427,6 +427,223 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_rendersFieldConstraints() throws Exception {
+        // email (String, email=true, length-bounded), age (Integer, min/max), and code
+        // (String, regex pattern) exercise @Email/@Min/@Max/@Pattern in the DTO and the
+        // matching HTML input attributes in the form.
+        Map<String, Object> email = Map.of("name", "email", "type", "String", "required", true, "length", 200, "email", true);
+        Map<String, Object> age = Map.of("name", "age", "type", "Integer", "min", 0, "max", 120);
+        Map<String, Object> code = Map.of("name", "code", "type", "String", "pattern", "[A-Z]{3}");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "people");
+        body.put("packageName", "com.menora.people");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(
+                Map.of("name", "Person", "fields", List.of(pkField(), email, age, code))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        String dto = contentEndingWith(entries, "/dto/PersonDto.java");
+        assertThat(dto)
+                .contains("import jakarta.validation.constraints.Email;")
+                .contains("import jakarta.validation.constraints.Pattern;")
+                .contains("import jakarta.validation.constraints.Min;")
+                .contains("import jakarta.validation.constraints.Max;")
+                .contains("@Email")
+                .contains("@Pattern(regexp = \"[A-Z]{3}\")")
+                .contains("@Min(0)")
+                .contains("@Max(120)");
+
+        String form = entries.get("people/frontend/src/features/person-form/ui/PersonForm.tsx");
+        assertThat(form)
+                .contains("type=\"email\"")
+                .contains("min=\"0\"")
+                .contains("max=\"120\"")
+                .contains("pattern={\"[A-Z]{3}\"}");
+    }
+
+    @Test
+    void fullstackEndpoint_rendersManyToOneRelationship() throws Exception {
+        // Order has a required MANY_TO_ONE to Customer. The owning entity gets a @ManyToOne
+        // + @JoinColumn, the DTO exposes the FK as customerId (with @NotNull since required),
+        // the service copies the association on update, and the frontend type/form/page carry
+        // the customerId field.
+        Map<String, Object> customerName = Map.of("name", "name", "type", "String", "required", true);
+        Map<String, Object> orderTotal = Map.of("name", "total", "type", "BigDecimal", "required", true);
+        Map<String, Object> orderCustomerRel = Map.of(
+                "type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Customer", "required", true);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(
+                Map.of("name", "Customer", "fields", List.of(pkField(), customerName)),
+                Map.of("name", "Order",
+                        "fields", List.of(pkField(), orderTotal),
+                        "relations", List.of(orderCustomerRel))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        // Owning entity: JPA association.
+        String orderEntity = contentEndingWith(entries, "/entity/Order.java");
+        assertThat(orderEntity)
+                .contains("@ManyToOne(fetch = FetchType.LAZY, optional = false)")
+                .contains("@JoinColumn(name = \"customer_id\", nullable = false)")
+                .contains("private Customer customer;")
+                .contains("public Customer getCustomer()");
+
+        // DTO: FK exposed as customerId, imports the target entity, @NotNull because required.
+        String orderDto = contentEndingWith(entries, "/dto/OrderDto.java");
+        assertThat(orderDto)
+                .contains("import com.menora.shop.entity.Customer;")
+                .contains("@NotNull Long customerId")
+                .contains("entity.getCustomer() == null ? null : entity.getCustomer().getId()")
+                .contains("Customer customer = new Customer();")
+                .contains("customer.setId(this.customerId);")
+                .contains("entity.setCustomer(customer);")
+                // Comma-correctness: scalar fields keep their commas; the relation FK is the last
+                // record component, so it must NOT be followed by a comma (which would dangle before
+                // the close paren). CRLF-agnostic so it holds regardless of resource line endings.
+                .contains("Long id,")
+                .doesNotContain("customerId,")
+                .doesNotContain(",,");
+
+        // Service copies the association on update.
+        assertThat(contentEndingWith(entries, "/service/OrderService.java"))
+                .contains("existing.setCustomer(updated.getCustomer());");
+
+        // Frontend: type + form + page carry customerId.
+        assertThat(entries.get("shop/frontend/src/entities/order/model/types.ts"))
+                .contains("customerId: number | null");
+        assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
+                .contains("label=\"Customer ID\" required")
+                .contains("set('customerId'");
+        assertThat(entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx"))
+                .contains("label: 'Customer ID'");
+
+        // Customer (the target) is unaffected — no relations of its own.
+        assertThat(contentEndingWith(entries, "/entity/Customer.java")).doesNotContain("@ManyToOne");
+    }
+
+    @Test
+    void fullstackEndpoint_lombokBackendSetUsesLombokEntities() throws Exception {
+        // Selecting the spring-jpa-crud-lombok set swaps only the Entity template (Lombok
+        // @Data/@NoArgsConstructor/@AllArgsConstructor, no hand-written accessors); the DTO,
+        // repository, service, and controller are reused from spring-jpa-crud via sourceSet.
+        Map<String, Object> name = Map.of("name", "name", "type", "String", "required", true);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("backendTemplateSet", "spring-jpa-crud-lombok");
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField(), name))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        String userEntity = contentEndingWith(entries, "/entity/User.java");
+        assertThat(userEntity)
+                .contains("import lombok.Data;")
+                .contains("@Data")
+                .contains("@NoArgsConstructor")
+                .contains("@AllArgsConstructor")
+                .contains("private String name;")
+                // Lombok generates the accessors/ctor — they must NOT be hand-written.
+                .doesNotContain("public Long getId()")
+                .doesNotContain("public User()");
+
+        // Reused-from-spring-jpa-crud files are still present and correct.
+        assertThat(contentEndingWith(entries, "/controller/UserController.java"))
+                .contains("@RequestMapping(\"/api/users\")");
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/dto/UserDto.java"));
+        // Lombok is a __common__ dependency, so it is on every generated pom.
+        assertThat(entries.get("shop/backend/pom.xml")).contains("lombok");
+    }
+
+    @Test
+    void fullstackEndpoint_emitsControllerTestsWhenOptedIn() throws Exception {
+        // opts.scaffold=[tests] flips the optScaffoldTests gate, so the per-entity @WebMvcTest is
+        // rendered under src/test. It mocks the service, so it needs no datasource or extra dep.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("tests")));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        assertThat(entries.keySet()).anyMatch(p ->
+                p.equals("demo/backend/src/test/java/com/menora/demo/controller/UserControllerTest.java"));
+        assertThat(contentEndingWith(entries, "/controller/UserControllerTest.java"))
+                .contains("@WebMvcTest(UserController.class)")
+                .contains("@MockBean")
+                .contains("get(\"/api/users\")");
+    }
+
+    @Test
+    void fullstackEndpoint_omitsControllerTestsByDefault() throws Exception {
+        // No opts → the gated test file is not rendered (the default, lean output).
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+        assertThat(entries.keySet()).noneMatch(p -> p.endsWith("ControllerTest.java"));
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsRelationToUnknownEntity() {
+        Map<String, Object> rel = Map.of("type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Ghost");
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "shop");
+            b.put("bootVersion", "3.2.1");
+            b.put("entities", List.of(
+                    Map.of("name", "Order", "fields", List.of(pkField()), "relations", List.of(rel))));
+        });
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("unknown entity");
+    }
+
+    @Test
     void fullstackEndpoint_themesFrontendWithMenoraPaletteByDefault() throws Exception {
         // No colorPalette in the request → the isDefault palette (menora-default: navy + gold)
         // is injected into the Tailwind v4 @theme block, and components reference the brand tokens.

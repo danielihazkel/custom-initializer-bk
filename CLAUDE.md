@@ -103,6 +103,31 @@ The loaders (`loadDependencyCatalog`, `loadFileContributions`, …) are generic 
 
 So the FE template set is intentionally a thin **overlay**, not a full project — substrate files live in `catalog/frontend/*` and `templates/frontend/*`, edited once. (Known follow-up: the v4 styling stack stays overlay-owned because the standalone `style-tailwind` dep is still v3; unifying it would let the substrate own `package.json`/`vite.config` too. **Upgraded DBs** keep the pre-overlay fat template-set rows until re-seeded, so the overlay benefit applies to fresh DBs.)
 
+#### Entity model — fields, constraints, relations
+
+A request entity (`EntityDefinition`, validated/converted from the wire by `FullstackRequestValidator`) has **fields** and **relations**:
+
+- **Fields** (`FieldDefinition`) — `type` (`FieldType`: STRING/LONG/INTEGER/BOOLEAN/LOCAL_DATE/LOCAL_DATE_TIME/BIG_DECIMAL/ENUM), `primaryKey`/`generated` (exactly one PK; a generated PK must be LONG/INTEGER), `required`, `unique`, `length` (STRING only), and constraints `min`/`max` (numeric only, min ≤ max), `pattern` (STRING regex, validated compilable), `email` (STRING). Constraints render as Bean Validation on the **DTO** (`@Min`/`@Max` on integral, `@DecimalMin`/`@DecimalMax` on `BigDecimal`, `@Pattern`/`@Email` on strings) gated on the `validation` starter via `hasValidation`, and as HTML input attributes (`min`/`max`/`pattern`/`type="email"`) in the form. The regex is escaped once (`patternEscaped`) for both Java and JS string literals.
+- **Relations** (`RelationDefinition`, `RelationType`) — v1 supports **`MANY_TO_ONE`** only (the FK-owning side); `ONE_TO_MANY`/`MANY_TO_MANY` are rejected with a clear message. Each has `fieldName`, `targetEntity` (must be another entity in the same request — validated in a second pass and canonicalized to the declared spelling), and `required`. Rendered as `@ManyToOne`/`@JoinColumn` (entity), a `<field>Id` component + target-entity import + a stub-by-id in `toEntity()` (DTO), a copy-on-update line (service), and a `customerId` field/number-input/table-column (frontend). Deferred: inverse `@OneToMany` collections, the FK `<select>`, and DDL FK import.
+
+The Mustache view-model is built **only** in `EntityScaffoldContext`: `buildProjectContext` (project-wide, includes the `entities` list and a private `__entitySummaries` lookup so relations can resolve their target's PK type/name), `buildEntityContext` (project-wide + one entity), and the per-field/-relation flags. Add new template variables here, nowhere else.
+
+#### Entity template sets (`EntityTemplateSetEntity`)
+
+Each set is a named bundle of `EntityTemplateFileEntity` rows (`perEntity` files render once per entity, others once). Sets are seeded from `templates/fullstack/<set>/manifest.json` by `DataSeeder.seedEntityTemplateSetsIfMissing()` (one explicit `seedEntityTemplateSet(...)` call per set). Current sets:
+
+| Set key | Kind | Notes |
+|---------|------|-------|
+| `spring-jpa-crud` | BACKEND_JAVA | Default backend: Entity/Repository/DTO/Service/Controller + CORS |
+| `spring-jpa-crud-lombok` | BACKEND_JAVA | Same, but Lombok `@Data`/`@NoArgsConstructor`/`@AllArgsConstructor` entities (Lombok is a `__common__` dep, so no extra pom wiring) |
+| `react-tailwind-crud` | FRONTEND_REACT | Default frontend overlay (see above) |
+
+The controller resolves `backendTemplateSet`/`frontendTemplateSet` and **kind-checks** them (400 on unknown/wrong-kind). A manifest file entry may set **`sourceSet`** to borrow its content from another set's directory — `spring-jpa-crud-lombok` authors only its `Entity.java.mustache` and reuses the rest from `spring-jpa-crud`.
+
+#### Opt-in scaffolding (gated template files)
+
+`EntityTemplateFileEntity.gatedBy` (column `gated_by`, migration `V16`) names a context flag; `FullstackRenderer` skips the file unless that flag is truthy. The flags come from the request `opts` map (`{ "scaffold": ["tests"] }`) read in `FullstackProjectGenerationConfiguration` as `optScaffold<Option>`. Shipped gate: `optScaffoldTests` → a per-entity `@WebMvcTest` controller test (mocks the service; needs no datasource — `spring-boot-starter-test` is auto-added). The mechanism is ready for further opt-in artifacts (OpenAPI/Flyway/seed data, each pending a catalog-dependency change). `gatedBy` is carried through the admin export/import round-trip.
+
 ### Adding or Modifying a Dependency
 
 The DB is the source of truth. Use the admin API at runtime, or edit the catalog manifests for the initial seed:

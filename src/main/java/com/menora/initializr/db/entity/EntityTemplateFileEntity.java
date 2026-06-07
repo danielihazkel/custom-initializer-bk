@@ -54,6 +54,15 @@ public class EntityTemplateFileEntity {
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
+    /**
+     * Optional context-flag name gating this file. When non-blank, the file is only rendered
+     * if {@code projectContext.get(gatedBy)} is truthy (e.g. {@code "optScaffoldTests"}).
+     * Null/blank → always rendered.
+     */
+    @Size(max = 80)
+    @Column(name = "gated_by", length = 80)
+    private String gatedBy;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Long getSetId() { return setId; }
@@ -70,4 +79,8 @@ public class EntityTemplateFileEntity {
     public void setPerEntity(boolean perEntity) { this.perEntity = perEntity; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    public String getGatedBy() { return gatedBy; }
+    public void setGatedBy(String gatedBy) {
+        this.gatedBy = (gatedBy == null || gatedBy.isBlank()) ? null : gatedBy;
+    }
 }

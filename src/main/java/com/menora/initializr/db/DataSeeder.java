@@ -130,6 +130,7 @@ public class DataSeeder implements SmartInitializingSingleton {
         }
         log.info("Seeding entity template sets from classpath manifests");
         seedEntityTemplateSet("templates/fullstack/spring-jpa-crud/");
+        seedEntityTemplateSet("templates/fullstack/spring-jpa-crud-lombok/");
         seedEntityTemplateSet("templates/fullstack/react-tailwind-crud/");
     }
 
@@ -167,7 +168,13 @@ public class DataSeeder implements SmartInitializingSingleton {
                         + "' has a file entry with a missing/blank 'source' (path="
                         + f.path("path").asText() + ")");
             }
-            String resourcePath = baseDir + sourceNode.asText();
+            // A file may borrow its content from another set's directory via "sourceSet",
+            // so a variant set (e.g. spring-jpa-crud-lombok) only needs to author the files
+            // that actually differ and reuse the rest.
+            String sourceDir = f.hasNonNull("sourceSet")
+                    ? "templates/fullstack/" + f.get("sourceSet").asText() + "/"
+                    : baseDir;
+            String resourcePath = sourceDir + sourceNode.asText();
             try {
                 row.setContent(readClasspath(resourcePath));
             } catch (IOException e) {
@@ -180,6 +187,7 @@ public class DataSeeder implements SmartInitializingSingleton {
             row.setFileType(EntityTemplateFileEntity.FileType.valueOf(f.get("fileType").asText()));
             row.setPerEntity(f.hasNonNull("perEntity") && f.get("perEntity").asBoolean());
             row.setSortOrder(f.hasNonNull("sortOrder") ? f.get("sortOrder").asInt() : 0);
+            row.setGatedBy(f.hasNonNull("gatedBy") ? f.get("gatedBy").asText() : null);
             entityTemplateFileRepo.save(row);
         }
 

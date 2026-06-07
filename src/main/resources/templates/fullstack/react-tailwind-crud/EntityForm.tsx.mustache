@@ -58,13 +58,23 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
 {{/isEnum}}{{^isBoolean}}{{^isEnum}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <input
           className={inputClass}
-          {{#isNumeric}}type="number"{{/isNumeric}}{{#isDate}}type="date"{{/isDate}}{{#isDateTime}}type="datetime-local"{{/isDateTime}}{{^isNumeric}}{{^isTemporal}}type="text"{{/isTemporal}}{{/isNumeric}}
+          {{#isNumeric}}type="number"{{/isNumeric}}{{#isDate}}type="date"{{/isDate}}{{#isDateTime}}type="datetime-local"{{/isDateTime}}{{^isNumeric}}{{^isTemporal}}{{#isEmail}}type="email"{{/isEmail}}{{^isEmail}}type="text"{{/isEmail}}{{/isTemporal}}{{/isNumeric}}{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{/isNumeric}}{{#hasPattern}} pattern={"{{patternEscaped}}"}{{/hasPattern}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
           onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}})}
         />
       </Field>
 {{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}
 {{/fields}}
+{{#relations}}
+      <Field label="{{FieldName}} ID"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>
+        <input
+          className={inputClass}
+          type="number"
+          value={value.{{fkFieldName}} == null ? '' : String(value.{{fkFieldName}})}
+          onChange={e => set('{{fkFieldName}}', e.target.value === '' ? null : Number(e.target.value))}
+        />
+      </Field>
+{{/relations}}
     </>
   )
 }

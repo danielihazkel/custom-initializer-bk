@@ -8,5 +8,6 @@ public record ColumnModel(
         boolean nullable,
         boolean isPk,
         boolean isAutoIncrement,
-        boolean isForeignKey) {
+        boolean isForeignKey,
+        boolean isUnique) {
 }

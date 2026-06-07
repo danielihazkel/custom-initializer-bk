@@ -1,6 +1,7 @@
 package com.menora.initializr.extension.fullstack;
 
 import com.menora.initializr.config.EntityDefinitionContext;
+import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.db.entity.EntityTemplateFileEntity;
 import com.menora.initializr.db.entity.EntityTemplateSetEntity;
 import com.menora.initializr.db.repository.EntityTemplateFileRepository;
@@ -38,7 +39,8 @@ public class FullstackProjectGenerationConfiguration {
             ProjectDescription description,
             EntityDefinitionContext entityContext,
             EntityTemplateSetRepository setRepo,
-            EntityTemplateFileRepository fileRepo) {
+            EntityTemplateFileRepository fileRepo,
+            ProjectOptionsContext optionsContext) {
         return projectRoot -> {
             if (entityContext.isEmpty()) {
                 return;
@@ -78,6 +80,10 @@ public class FullstackProjectGenerationConfiguration {
             // validation starter actually being selected — otherwise the imports won't resolve.
             projectCtx.put("hasValidation",
                     description.getRequestedDependencies().containsKey("validation"));
+            // Opt-in scaffolding extras (via opts: { "scaffold": ["tests", ...] }). The matching
+            // gatedBy flag on a template file toggles whether it is rendered. Uses spring-boot-
+            // starter-test, which the Initializr framework adds to every generated project.
+            projectCtx.put("optScaffoldTests", optionsContext.hasOption("scaffold", "tests"));
             log.info("Rendering backend CRUD scaffolding: set='{}', {} files, {} entities",
                     setKey, files.size(), entities.size());
             FullstackRenderer.render(files, projectCtx, entities, projectRoot);

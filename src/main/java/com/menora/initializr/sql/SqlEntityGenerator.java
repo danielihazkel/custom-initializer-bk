@@ -311,7 +311,7 @@ public class SqlEntityGenerator {
             for (ColumnModel c : columns) {
                 boolean isPk = c.isPk() || pkSet.contains(c.name());
                 fixed.add(new ColumnModel(c.name(), c.rawType(), c.precision(), c.scale(),
-                        c.nullable(), isPk, c.isAutoIncrement(), c.isForeignKey()));
+                        c.nullable(), isPk, c.isAutoIncrement(), c.isForeignKey(), c.isUnique()));
             }
             columns = fixed;
         }
@@ -345,7 +345,9 @@ public class SqlEntityGenerator {
                 || rawTypeUpper.endsWith("SERIAL");
 
         boolean isFk = fkColumnNames.contains(name);
-        return new ColumnModel(name, rawType, precision, scale, !notNull, isPk, isAutoInc, isFk);
+        // Inline column-level UNIQUE (table-level UNIQUE(...) constraints are not tracked here).
+        boolean isUnique = specStr.contains("UNIQUE");
+        return new ColumnModel(name, rawType, precision, scale, !notNull, isPk, isAutoInc, isFk, isUnique);
     }
 
     private static Integer parseIntOrNull(String s) {

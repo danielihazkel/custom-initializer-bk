@@ -13,7 +13,7 @@ class EntityScaffoldContextTest {
     void buildEntityContext_exposesNamingVariants() {
         EntityDefinition e = new EntityDefinition(
                 "OrderItem", null,
-                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, List.of())));
+                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
@@ -32,9 +32,9 @@ class EntityScaffoldContextTest {
         EntityDefinition e = new EntityDefinition(
                 "User", null,
                 List.of(
-                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, List.of()),
-                        new FieldDefinition("name", FieldType.STRING, false, false, true, true, 64, List.of()),
-                        new FieldDefinition("status", FieldType.ENUM, false, false, false, false, null,
+                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of()),
+                        new FieldDefinition("name", FieldType.STRING, false, false, true, true, 64, null, null, null, false, List.of()),
+                        new FieldDefinition("status", FieldType.ENUM, false, false, false, false, null, null, null, null, false,
                                 List.of("ACTIVE", "DISABLED"))));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
@@ -76,7 +76,7 @@ class EntityScaffoldContextTest {
     void buildProjectContext_exposesPerLayerPackages() {
         EntityDefinition e = new EntityDefinition(
                 "User", null,
-                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, List.of())));
+                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));
         Map<String, Object> ctx = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo.catalog", "21", "jar", List.of(e));
 
@@ -94,7 +94,7 @@ class EntityScaffoldContextTest {
     void buildProjectContext_domainPackageDefaultsToPackageNameWhenBlank() {
         EntityDefinition e = new EntityDefinition(
                 "User", null,
-                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, List.of())));
+                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));
         Map<String, Object> ctx = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", null, "21", "jar", List.of(e));
 
@@ -108,10 +108,10 @@ class EntityScaffoldContextTest {
         EntityDefinition e = new EntityDefinition(
                 "Product", null,
                 List.of(
-                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, List.of()),
-                        new FieldDefinition("sku", FieldType.STRING, false, false, true, true, 64, List.of()),
-                        new FieldDefinition("name", FieldType.STRING, false, false, true, false, 255, List.of()),
-                        new FieldDefinition("price", FieldType.BIG_DECIMAL, false, false, true, false, null, List.of())));
+                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of()),
+                        new FieldDefinition("sku", FieldType.STRING, false, false, true, true, 64, null, null, null, false, List.of()),
+                        new FieldDefinition("name", FieldType.STRING, false, false, true, false, 255, null, null, null, false, List.of()),
+                        new FieldDefinition("price", FieldType.BIG_DECIMAL, false, false, true, false, null, null, null, null, false, List.of())));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
@@ -130,9 +130,9 @@ class EntityScaffoldContextTest {
         EntityDefinition e = new EntityDefinition(
                 "Order", null,
                 List.of(
-                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, List.of()),
-                        new FieldDefinition("total", FieldType.BIG_DECIMAL, false, false, true, false, null, List.of()),
-                        new FieldDefinition("paid", FieldType.BOOLEAN, false, false, false, false, null, List.of())));
+                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of()),
+                        new FieldDefinition("total", FieldType.BIG_DECIMAL, false, false, true, false, null, null, null, null, false, List.of()),
+                        new FieldDefinition("paid", FieldType.BOOLEAN, false, false, false, false, null, null, null, null, false, List.of())));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);

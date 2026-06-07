@@ -235,6 +235,7 @@ public class ConfigurationExportImportService {
                     efe.setFileType(f.getFileType() != null ? f.getFileType().name() : null);
                     efe.setPerEntity(f.isPerEntity());
                     efe.setSortOrder(f.getSortOrder());
+                    efe.setGatedBy(f.getGatedBy());
                     return efe;
                 }).filter(efe -> efe.getSetKey() != null).toList());
 
@@ -489,6 +490,7 @@ public class ConfigurationExportImportService {
                     ? EntityTemplateFileEntity.FileType.valueOf(f.getFileType()) : null);
             entity.setPerEntity(f.isPerEntity());
             entity.setSortOrder(f.getSortOrder());
+            entity.setGatedBy(f.getGatedBy());
             entityTemplateFileRepo.save(entity);
         }
 

@@ -23,8 +23,8 @@ import java.util.Locale;
  * <ul>
  *   <li>Java {@code Short} → {@link FieldType#INTEGER}; {@code Float}/{@code Double} →
  *       {@link FieldType#BIG_DECIMAL}; {@code byte[]} and {@code UUID} → {@link FieldType#STRING}.</li>
- *   <li>Column-level {@code UNIQUE} constraints are not currently in {@link ColumnModel},
- *       so {@code unique} starts as {@code false}.</li>
+ *   <li>Inline column-level {@code UNIQUE} is carried through to {@code unique}; table-level
+ *       {@code UNIQUE(...)} constraints are not tracked.</li>
  *   <li>{@code CHECK col IN ('A','B')} is not parsed — users wanting an enum
  *       switch the type after import.</li>
  * </ul>
@@ -70,8 +70,12 @@ public class SqlToEntityDefinitionConverter {
                 col.isPk(),
                 col.isAutoIncrement(),
                 !col.nullable(),
-                false,
+                col.isUnique(),
                 length,
+                null,
+                null,
+                null,
+                false,
                 List.of());
     }
 

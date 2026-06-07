@@ -2,25 +2,39 @@ package {{dtoPackage}};
 
 import {{entityPackage}}.{{EntityName}};
 {{#fields}}{{#isEnum}}import {{entityPackage}}.{{EntityName}}.{{enumTypeName}};
-{{/isEnum}}{{/fields}}{{#hasValidation}}{{#hasNotNullFields}}import jakarta.validation.constraints.NotNull;
+{{/isEnum}}{{/fields}}{{#relations}}import {{entityPackage}}.{{targetEntity}};
+{{/relations}}{{#hasValidation}}{{#hasNotNullFields}}import jakarta.validation.constraints.NotNull;
 {{/hasNotNullFields}}{{#hasSizeFields}}import jakarta.validation.constraints.Size;
-{{/hasSizeFields}}{{/hasValidation}}{{#imports}}
+{{/hasSizeFields}}{{#hasMinFields}}import jakarta.validation.constraints.Min;
+{{/hasMinFields}}{{#hasMaxFields}}import jakarta.validation.constraints.Max;
+{{/hasMaxFields}}{{#hasDecimalMinFields}}import jakarta.validation.constraints.DecimalMin;
+{{/hasDecimalMinFields}}{{#hasDecimalMaxFields}}import jakarta.validation.constraints.DecimalMax;
+{{/hasDecimalMaxFields}}{{#hasPatternFields}}import jakarta.validation.constraints.Pattern;
+{{/hasPatternFields}}{{#hasEmailFields}}import jakarta.validation.constraints.Email;
+{{/hasEmailFields}}{{/hasValidation}}{{#imports}}
 import {{name}};
 {{/imports}}
 
 public record {{EntityName}}Dto(
-{{#fields}}        {{#hasValidation}}{{#isRequired}}{{^isGenerated}}@NotNull {{/isGenerated}}{{/isRequired}}{{#hasLength}}@Size(max = {{length}}) {{/hasLength}}{{/hasValidation}}{{javaType}} {{name}}{{^last}},{{/last}}
-{{/fields}}) {
+{{#fields}}        {{#hasValidation}}{{#isRequired}}{{^isGenerated}}@NotNull {{/isGenerated}}{{/isRequired}}{{#hasLength}}@Size(max = {{length}}) {{/hasLength}}{{#isIntegral}}{{#hasMin}}@Min({{min}}) {{/hasMin}}{{#hasMax}}@Max({{max}}) {{/hasMax}}{{/isIntegral}}{{#isBigDecimal}}{{#hasMin}}@DecimalMin(value = "{{min}}") {{/hasMin}}{{#hasMax}}@DecimalMax(value = "{{max}}") {{/hasMax}}{{/isBigDecimal}}{{#hasPattern}}@Pattern(regexp = "{{patternEscaped}}") {{/hasPattern}}{{#isEmail}}@Email {{/isEmail}}{{/hasValidation}}{{javaType}} {{name}}{{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
+{{/fields}}{{#relations}}        {{#hasValidation}}{{#required}}@NotNull {{/required}}{{/hasValidation}}{{targetPkJavaType}} {{fkFieldName}}{{^last}},{{/last}}
+{{/relations}}) {
 
     public static {{EntityName}}Dto from({{EntityName}} entity) {
         return new {{EntityName}}Dto(
-{{#fields}}                entity.get{{Name}}(){{^last}},{{/last}}
-{{/fields}}        );
+{{#fields}}                entity.get{{Name}}(){{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
+{{/fields}}{{#relations}}                entity.get{{FieldName}}() == null ? null : entity.get{{FieldName}}().get{{TargetPkName}}(){{^last}},{{/last}}
+{{/relations}}        );
     }
 
     public {{EntityName}} toEntity() {
         {{EntityName}} entity = new {{EntityName}}();
 {{#fields}}        entity.set{{Name}}(this.{{name}});
-{{/fields}}        return entity;
+{{/fields}}{{#relations}}        if (this.{{fkFieldName}} != null) {
+            {{targetEntity}} {{fieldName}} = new {{targetEntity}}();
+            {{fieldName}}.set{{TargetPkName}}(this.{{fkFieldName}});
+            entity.set{{FieldName}}({{fieldName}});
+        }
+{{/relations}}        return entity;
     }
 }

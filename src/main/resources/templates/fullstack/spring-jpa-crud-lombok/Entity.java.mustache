@@ -4,9 +4,15 @@ package {{entityPackage}};
 import {{name}};
 {{/imports}}
 import jakarta.persistence.*;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 @Entity
 @Table(name = "{{tableName}}")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class {{EntityName}} {
 {{#fields}}{{#isEnum}}
 
@@ -25,26 +31,5 @@ public class {{EntityName}} {
 {{/fields}}{{#relations}}    @ManyToOne(fetch = FetchType.LAZY{{#required}}, optional = false{{/required}})
     @JoinColumn(name = "{{joinColumn}}"{{#required}}, nullable = false{{/required}})
     private {{targetEntity}} {{fieldName}};
-
-{{/relations}}
-    public {{EntityName}}() {}
-
-{{#fields}}
-    public {{javaType}} get{{Name}}() {
-        return {{name}};
-    }
-
-    public void set{{Name}}({{javaType}} {{name}}) {
-        this.{{name}} = {{name}};
-    }
-
-{{/fields}}{{#relations}}
-    public {{targetEntity}} get{{FieldName}}() {
-        return {{fieldName}};
-    }
-
-    public void set{{FieldName}}({{targetEntity}} {{fieldName}}) {
-        this.{{fieldName}} = {{fieldName}};
-    }
 
 {{/relations}}}

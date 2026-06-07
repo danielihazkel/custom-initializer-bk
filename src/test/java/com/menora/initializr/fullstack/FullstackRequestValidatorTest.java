@@ -19,15 +19,15 @@ class FullstackRequestValidatorTest {
 
     private static FullstackStarterRequest.EntityDefinitionDto entity(String name,
                                                                        List<FullstackStarterRequest.FieldDefinitionDto> fields) {
-        return new FullstackStarterRequest.EntityDefinitionDto(name, null, fields);
+        return new FullstackStarterRequest.EntityDefinitionDto(name, null, fields, null);
     }
 
     private static FullstackStarterRequest.FieldDefinitionDto field(String name, String type) {
-        return new FullstackStarterRequest.FieldDefinitionDto(name, type, null, null, null, null, null, null);
+        return new FullstackStarterRequest.FieldDefinitionDto(name, type, null, null, null, null, null, null, null, null, null, null);
     }
 
     private static FullstackStarterRequest.FieldDefinitionDto pk() {
-        return new FullstackStarterRequest.FieldDefinitionDto("id", "Long", true, true, null, null, null, null);
+        return new FullstackStarterRequest.FieldDefinitionDto("id", "Long", true, true, null, null, null, null, null, null, null, null);
     }
 
     @Test
@@ -77,7 +77,7 @@ class FullstackRequestValidatorTest {
     void rejects_multiplePrimaryKeys() {
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("User", List.of(pk(),
-                        new FullstackStarterRequest.FieldDefinitionDto("alt", "Long", true, false, null, null, null, null)))))))
+                        new FullstackStarterRequest.FieldDefinitionDto("alt", "Long", true, false, null, null, null, null, null, null, null, null)))))))
                 .isInstanceOf(WizardArgumentException.class)
                 .hasMessageContaining("multiple primary key");
     }
@@ -92,7 +92,7 @@ class FullstackRequestValidatorTest {
 
     @Test
     void rejects_lengthOnNonString() {
-        var f = new FullstackStarterRequest.FieldDefinitionDto("count", "Long", null, null, null, null, 10, null);
+        var f = new FullstackStarterRequest.FieldDefinitionDto("count", "Long", null, null, null, null, 10, null, null, null, null, null);
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("User", List.of(pk(), f))))))
                 .isInstanceOf(WizardArgumentException.class)
@@ -109,7 +109,7 @@ class FullstackRequestValidatorTest {
 
     @Test
     void rejects_generatedOnNonPrimaryKey() {
-        var genNonPk = new FullstackStarterRequest.FieldDefinitionDto("code", "Long", false, true, null, null, null, null);
+        var genNonPk = new FullstackStarterRequest.FieldDefinitionDto("code", "Long", false, true, null, null, null, null, null, null, null, null);
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("User", List.of(pk(), genNonPk))))))
                 .isInstanceOf(WizardArgumentException.class)
@@ -118,10 +118,121 @@ class FullstackRequestValidatorTest {
 
     @Test
     void rejects_generatedOnNonIntegralPrimaryKey() {
-        var stringGenPk = new FullstackStarterRequest.FieldDefinitionDto("id", "String", true, true, null, null, null, null);
+        var stringGenPk = new FullstackStarterRequest.FieldDefinitionDto("id", "String", true, true, null, null, null, null, null, null, null, null);
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("User", List.of(stringGenPk))))))
                 .isInstanceOf(WizardArgumentException.class)
                 .hasMessageContaining("must be of type LONG or INTEGER");
+    }
+
+    @Test
+    void rejects_minMaxOnNonNumeric() {
+        var f = new FullstackStarterRequest.FieldDefinitionDto("name", "String", null, null, null, null, null, 1L, 10L, null, null, null);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("User", List.of(pk(), f))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("min/max only allowed on numeric");
+    }
+
+    @Test
+    void rejects_minGreaterThanMax() {
+        var f = new FullstackStarterRequest.FieldDefinitionDto("age", "Integer", null, null, null, null, null, 10L, 1L, null, null, null);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("User", List.of(pk(), f))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("min must be <= max");
+    }
+
+    @Test
+    void rejects_patternOnNonString() {
+        var f = new FullstackStarterRequest.FieldDefinitionDto("age", "Integer", null, null, null, null, null, null, null, "\\d+", null, null);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("User", List.of(pk(), f))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("pattern only allowed on STRING");
+    }
+
+    @Test
+    void rejects_emailOnNonString() {
+        var f = new FullstackStarterRequest.FieldDefinitionDto("age", "Integer", null, null, null, null, null, null, null, null, true, null);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("User", List.of(pk(), f))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("email only allowed on STRING");
+    }
+
+    @Test
+    void rejects_invalidRegexPattern() {
+        var f = new FullstackStarterRequest.FieldDefinitionDto("name", "String", null, null, null, null, null, null, null, "[unclosed", null, null);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("User", List.of(pk(), f))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("not a valid regex");
+    }
+
+    private static FullstackStarterRequest.EntityDefinitionDto entityWithRelations(
+            String name,
+            List<FullstackStarterRequest.FieldDefinitionDto> fields,
+            List<FullstackStarterRequest.RelationDefinitionDto> relations) {
+        return new FullstackStarterRequest.EntityDefinitionDto(name, null, fields, relations);
+    }
+
+    @Test
+    void resolvesRelationTargetCanonically() {
+        var rel = new FullstackStarterRequest.RelationDefinitionDto("ManyToOne", "customer", "customer", true);
+        var result = FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Customer", List.of(pk())),
+                entityWithRelations("Order", List.of(pk()), List.of(rel)))));
+        EntityDefinition order = result.get(1);
+        assertThat(order.relations()).hasSize(1);
+        RelationDefinition r = order.relations().get(0);
+        assertThat(r.type()).isEqualTo(RelationType.MANY_TO_ONE);
+        assertThat(r.fieldName()).isEqualTo("customer");
+        // Target lowercase "customer" resolves to the declared spelling "Customer".
+        assertThat(r.targetEntity()).isEqualTo("Customer");
+        assertThat(r.required()).isTrue();
+    }
+
+    @Test
+    void rejects_relationToUnknownEntity() {
+        var rel = new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_ONE", "ghost", "Ghost", false);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entityWithRelations("Order", List.of(pk()), List.of(rel))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("unknown entity");
+    }
+
+    @Test
+    void rejects_unsupportedRelationType() {
+        var rel = new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_MANY", "tags", "Tag", false);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Tag", List.of(pk())),
+                entityWithRelations("Order", List.of(pk()), List.of(rel))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("not supported yet");
+    }
+
+    @Test
+    void rejects_relationFieldCollidingWithField() {
+        var rel = new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_ONE", "name", "Customer", false);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Customer", List.of(pk())),
+                entityWithRelations("Order", List.of(pk(), field("name", "String")), List.of(rel))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("collides");
+    }
+
+    @Test
+    void happyPath_carriesConstraintsThrough() {
+        var email = new FullstackStarterRequest.FieldDefinitionDto("email", "String", null, null, true, null, 200, null, null, "^.+@.+$", true, null);
+        var age = new FullstackStarterRequest.FieldDefinitionDto("age", "Integer", null, null, null, null, null, 0L, 120L, null, null, null);
+        var result = FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("User", List.of(pk(), email, age)))));
+        FieldDefinition emailField = result.get(0).fields().get(1);
+        assertThat(emailField.email()).isTrue();
+        assertThat(emailField.pattern()).isEqualTo("^.+@.+$");
+        FieldDefinition ageField = result.get(0).fields().get(2);
+        assertThat(ageField.min()).isEqualTo(0L);
+        assertThat(ageField.max()).isEqualTo(120L);
     }
 }

@@ -100,6 +100,22 @@ class SqlToEntityDefinitionConverterTest {
     }
 
     @Test
+    void inlineUniqueConstraintIsCarriedThrough() {
+        String sql = """
+                CREATE TABLE users (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    email VARCHAR(200) NOT NULL UNIQUE,
+                    nickname VARCHAR(50)
+                );
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);
+        EntityDefinition e = entities.get(0);
+        assertThat(e.fields().get(1).name()).isEqualTo("email");
+        assertThat(e.fields().get(1).unique()).isTrue();
+        assertThat(e.fields().get(2).unique()).isFalse();
+    }
+
+    @Test
     void nullableColumnBecomesNotRequired() {
         String sql = "CREATE TABLE t (id BIGINT PRIMARY KEY, optional_col VARCHAR(10));";
         List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);

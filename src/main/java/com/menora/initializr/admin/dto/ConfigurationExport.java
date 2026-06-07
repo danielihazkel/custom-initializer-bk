@@ -409,6 +409,7 @@ public class ConfigurationExport {
         private String fileType;
         private boolean perEntity;
         private int sortOrder;
+        private String gatedBy;
 
         public String getSetKey() { return setKey; }
         public void setSetKey(String setKey) { this.setKey = setKey; }
@@ -424,6 +425,8 @@ public class ConfigurationExport {
         public void setPerEntity(boolean perEntity) { this.perEntity = perEntity; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+        public String getGatedBy() { return gatedBy; }
+        public void setGatedBy(String gatedBy) { this.gatedBy = gatedBy; }
     }
 
     public static class VersionExport {

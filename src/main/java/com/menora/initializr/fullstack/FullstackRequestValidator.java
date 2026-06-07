@@ -3,10 +3,14 @@ package com.menora.initializr.fullstack;
 import com.menora.initializr.config.WizardArgumentException;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * Validates a {@link FullstackStarterRequest} and converts its DTO field shapes
@@ -36,8 +40,14 @@ public final class FullstackRequestValidator {
             throw new WizardArgumentException("At least one entity is required");
         }
 
+        // Relations reference other entities, so collect everything first (pass 1: names + fields)
+        // and resolve/validate relations once all entity names are known (pass 2).
+        record Parsed(int ei, String name, String tableName, List<FieldDefinition> fields,
+                      Set<String> memberNames, List<FullstackStarterRequest.RelationDefinitionDto> rawRelations) {}
+
         Set<String> seenLowerNames = new HashSet<>();
-        List<EntityDefinition> result = new ArrayList<>(raw.size());
+        Map<String, String> canonicalByLower = new HashMap<>();
+        List<Parsed> parsed = new ArrayList<>(raw.size());
         for (int ei = 0; ei < raw.size(); ei++) {
             FullstackStarterRequest.EntityDefinitionDto e = raw.get(ei);
             if (e == null) throw new WizardArgumentException("entities[" + ei + "] is null");
@@ -55,6 +65,7 @@ public final class FullstackRequestValidator {
             if (!seenLowerNames.add(lower)) {
                 throw new WizardArgumentException("Duplicate entity name (case-insensitive): " + name);
             }
+            canonicalByLower.put(lower, name);
 
             List<FullstackStarterRequest.FieldDefinitionDto> rawFields = e.fields();
             if (rawFields == null || rawFields.isEmpty()) {
@@ -116,6 +127,30 @@ public final class FullstackRequestValidator {
                     throw new WizardArgumentException("length must be positive (field '" + fname + "' on entity '" + name + "')");
                 }
 
+                // Numeric bounds: only on numeric types, and min <= max when both are present.
+                if ((f.min() != null || f.max() != null) && !type.isNumeric()) {
+                    throw new WizardArgumentException("min/max only allowed on numeric fields (field '" + fname + "' on entity '" + name + "')");
+                }
+                if (f.min() != null && f.max() != null && f.min() > f.max()) {
+                    throw new WizardArgumentException("min must be <= max (field '" + fname + "' on entity '" + name + "')");
+                }
+
+                // Regex pattern + email: only on STRING; pattern must be a compilable regex.
+                boolean isEmail = Boolean.TRUE.equals(f.email());
+                if (f.pattern() != null && !f.pattern().isBlank() && type != FieldType.STRING) {
+                    throw new WizardArgumentException("pattern only allowed on STRING fields (field '" + fname + "' on entity '" + name + "')");
+                }
+                if (isEmail && type != FieldType.STRING) {
+                    throw new WizardArgumentException("email only allowed on STRING fields (field '" + fname + "' on entity '" + name + "')");
+                }
+                if (f.pattern() != null && !f.pattern().isBlank()) {
+                    try {
+                        Pattern.compile(f.pattern());
+                    } catch (PatternSyntaxException pse) {
+                        throw new WizardArgumentException("pattern is not a valid regex (field '" + fname + "' on entity '" + name + "'): " + pse.getDescription());
+                    }
+                }
+
                 boolean isGenerated = Boolean.TRUE.equals(f.generated());
                 if (isGenerated) {
                     if (!isPk) {
@@ -126,6 +161,7 @@ public final class FullstackRequestValidator {
                     }
                 }
 
+                String pattern = (f.pattern() == null || f.pattern().isBlank()) ? null : f.pattern();
                 fields.add(new FieldDefinition(
                         fname,
                         type,
@@ -134,6 +170,10 @@ public final class FullstackRequestValidator {
                         Boolean.TRUE.equals(f.required()),
                         Boolean.TRUE.equals(f.unique()),
                         f.length(),
+                        f.min(),
+                        f.max(),
+                        pattern,
+                        isEmail,
                         f.enumValues() == null ? List.of() : List.copyOf(f.enumValues())));
             }
 
@@ -146,9 +186,78 @@ public final class FullstackRequestValidator {
 
             String tableName = (e.tableName() == null || e.tableName().isBlank())
                     ? null : e.tableName().trim();
-            result.add(new EntityDefinition(name, tableName, fields));
+            parsed.add(new Parsed(ei, name, tableName, fields, seenFieldNames, e.relations()));
+        }
+
+        // Pass 2 — resolve and validate relations now that all entity names are known.
+        List<EntityDefinition> result = new ArrayList<>(parsed.size());
+        for (Parsed p : parsed) {
+            List<RelationDefinition> relations =
+                    parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower);
+            result.add(new EntityDefinition(p.name(), p.tableName(), p.fields(), relations));
         }
         return result;
+    }
+
+    /**
+     * Parses and validates one entity's relations. Each relation must be {@code MANY_TO_ONE}
+     * (v1), carry a valid, collision-free {@code fieldName}, and point at another entity
+     * defined in the same request. The target name is canonicalized to its declared spelling.
+     */
+    private static List<RelationDefinition> parseRelations(
+            List<FullstackStarterRequest.RelationDefinitionDto> rawRelations,
+            String entityName,
+            Set<String> memberNames,
+            Map<String, String> canonicalByLower) {
+        if (rawRelations == null || rawRelations.isEmpty()) {
+            return List.of();
+        }
+        List<RelationDefinition> relations = new ArrayList<>(rawRelations.size());
+        for (int ri = 0; ri < rawRelations.size(); ri++) {
+            FullstackStarterRequest.RelationDefinitionDto r = rawRelations.get(ri);
+            if (r == null) {
+                throw new WizardArgumentException("entity '" + entityName + "' relations[" + ri + "] is null");
+            }
+            RelationType type;
+            try {
+                type = RelationType.forWireString(r.type());
+            } catch (IllegalArgumentException iae) {
+                throw new WizardArgumentException("entity '" + entityName + "' relation: " + iae.getMessage());
+            }
+            if (type != RelationType.MANY_TO_ONE) {
+                throw new WizardArgumentException("entity '" + entityName + "' relation type " + type
+                        + " is not supported yet (only MANY_TO_ONE)");
+            }
+
+            if (r.fieldName() == null || r.fieldName().isBlank()) {
+                throw new WizardArgumentException("entity '" + entityName + "' relations[" + ri + "].fieldName is required");
+            }
+            String fieldName = r.fieldName().trim();
+            if (!isValidJavaIdentifier(fieldName)) {
+                throw new WizardArgumentException("Relation field name '" + fieldName + "' is not a valid identifier (entity '" + entityName + "')");
+            }
+            if (RESERVED_JAVA_KEYWORDS.contains(fieldName.toLowerCase(Locale.ROOT))) {
+                throw new WizardArgumentException("Relation field name '" + fieldName + "' is a reserved keyword (entity '" + entityName + "')");
+            }
+            // Collide against scalar fields and earlier relations (memberNames accumulates both).
+            if (!memberNames.add(fieldName)) {
+                throw new WizardArgumentException("Relation field name '" + fieldName + "' collides with another field/relation (entity '" + entityName + "')");
+            }
+
+            if (r.targetEntity() == null || r.targetEntity().isBlank()) {
+                throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName + "' requires a targetEntity");
+            }
+            String targetLower = r.targetEntity().trim().toLowerCase(Locale.ROOT);
+            String canonicalTarget = canonicalByLower.get(targetLower);
+            if (canonicalTarget == null) {
+                throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                        + "' targets unknown entity '" + r.targetEntity().trim() + "'");
+            }
+
+            relations.add(new RelationDefinition(type, fieldName, canonicalTarget,
+                    Boolean.TRUE.equals(r.required())));
+        }
+        return relations;
     }
 
     private static boolean isValidJavaIdentifier(String s) {

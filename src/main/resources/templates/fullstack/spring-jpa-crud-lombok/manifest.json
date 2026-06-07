@@ -1,13 +1,14 @@
 {
-  "setKey": "spring-jpa-crud",
-  "name": "Spring Boot + JPA CRUD",
-  "description": "Per-entity JPA Entity, Repository, DTO, Service, and Controller with standard REST endpoints",
+  "setKey": "spring-jpa-crud-lombok",
+  "name": "Spring Boot + JPA CRUD (Lombok)",
+  "description": "Same per-entity JPA CRUD as spring-jpa-crud, but entities use Lombok @Data/@NoArgsConstructor/@AllArgsConstructor instead of hand-written accessors. Lombok ships with every Menora project.",
   "kind": "BACKEND_JAVA",
-  "sortOrder": 10,
+  "sortOrder": 15,
   "defaultDeps": ["data-jpa", "web", "h2", "validation", "actuator"],
   "files": [
     {
       "source": "CorsConfig.java.mustache",
+      "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{packagePath}}/config/CorsConfig.java",
       "perEntity": false,
       "substitutionType": "MUSTACHE",
@@ -24,6 +25,7 @@
     },
     {
       "source": "Repository.java.mustache",
+      "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{repositoryPackagePath}}/{{EntityName}}Repository.java",
       "perEntity": true,
       "substitutionType": "MUSTACHE",
@@ -32,6 +34,7 @@
     },
     {
       "source": "Dto.java.mustache",
+      "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{dtoPackagePath}}/{{EntityName}}Dto.java",
       "perEntity": true,
       "substitutionType": "MUSTACHE",
@@ -40,6 +43,7 @@
     },
     {
       "source": "Service.java.mustache",
+      "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{servicePackagePath}}/{{EntityName}}Service.java",
       "perEntity": true,
       "substitutionType": "MUSTACHE",
@@ -48,6 +52,7 @@
     },
     {
       "source": "Controller.java.mustache",
+      "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{controllerPackagePath}}/{{EntityName}}Controller.java",
       "perEntity": true,
       "substitutionType": "MUSTACHE",
@@ -56,6 +61,7 @@
     },
     {
       "source": "EntityControllerTest.java.mustache",
+      "sourceSet": "spring-jpa-crud",
       "path": "src/test/java/{{controllerPackagePath}}/{{EntityName}}ControllerTest.java",
       "perEntity": true,
       "substitutionType": "MUSTACHE",

@@ -29,6 +29,9 @@ public final class FullstackRenderer {
             List<EntityDefinition> entities,
             Path targetRoot) throws IOException {
         for (EntityTemplateFileEntity file : files) {
+            if (isGatedOut(file, projectContext)) {
+                continue;
+            }
             if (file.isPerEntity()) {
                 for (EntityDefinition entity : entities) {
                     Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(projectContext, entity);
@@ -38,6 +41,20 @@ public final class FullstackRenderer {
                 writeOne(file, projectContext, targetRoot);
             }
         }
+    }
+
+    /**
+     * A file with a non-blank {@code gatedBy} is rendered only when that flag is truthy in the
+     * project context (e.g. an opt-in {@code optScaffoldTests}). Per-entity files inherit the
+     * project context, so the gate is always evaluated against the shared project-level flags.
+     */
+    private static boolean isGatedOut(EntityTemplateFileEntity file, Map<String, Object> projectContext) {
+        String gate = file.getGatedBy();
+        if (gate == null || gate.isBlank()) {
+            return false;
+        }
+        Object v = projectContext.get(gate);
+        return !(Boolean.TRUE.equals(v) || "true".equalsIgnoreCase(String.valueOf(v)));
     }
 
     private static void writeOne(EntityTemplateFileEntity file, Map<String, Object> ctx, Path targetRoot) throws IOException {

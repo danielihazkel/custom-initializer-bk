@@ -44,7 +44,8 @@ public class {{EntityName}}Service {
     public {{EntityName}} update({{pkField.javaType}} id, {{EntityName}} updated) {
         {{EntityName}} existing = findById(id);
 {{#nonPkFields}}        existing.set{{Name}}(updated.get{{Name}}());
-{{/nonPkFields}}        return repository.save(existing);
+{{/nonPkFields}}{{#relations}}        existing.set{{FieldName}}(updated.get{{FieldName}}());
+{{/relations}}        return repository.save(existing);
     }
 
     public void delete({{pkField.javaType}} id) {

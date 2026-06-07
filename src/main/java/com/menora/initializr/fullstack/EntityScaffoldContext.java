@@ -57,15 +57,46 @@ public final class EntityScaffoldContext {
         putPackage(ctx, "servicePackage", domain, "service");
         putPackage(ctx, "controllerPackage", domain, "controller");
 
+        // Relations reference other entities, so resolve a per-entity summary (PK type/name +
+        // naming variants) up front and stash it so the per-entity context (built later by
+        // buildEntityContext) can resolve relation targets too.
+        Map<String, Map<String, Object>> summaries = buildSummaries(entities);
+        ctx.put(ENTITY_SUMMARIES_KEY, summaries);
+
         List<Map<String, Object>> entityViews = new ArrayList<>(entities.size());
         for (int i = 0; i < entities.size(); i++) {
-            Map<String, Object> view = entityViewModel(entities.get(i));
+            Map<String, Object> view = entityViewModel(entities.get(i), summaries);
             view.put("first", i == 0);
             view.put("last", i == entities.size() - 1);
             entityViews.add(view);
         }
         ctx.put("entities", entityViews);
         return ctx;
+    }
+
+    /** Internal key under which the entity-summary lookup rides in the project context.
+     *  Not referenced by any template. */
+    private static final String ENTITY_SUMMARIES_KEY = "__entitySummaries";
+
+    /** Builds a {@code lower(name) → summary} lookup with each entity's PK type/name and
+     *  naming variants, so a relation can resolve its target's FK id type and class name. */
+    private static Map<String, Map<String, Object>> buildSummaries(List<EntityDefinition> entities) {
+        Map<String, Map<String, Object>> summaries = new LinkedHashMap<>();
+        for (EntityDefinition e : entities) {
+            FieldDefinition pk = e.fields().stream()
+                    .filter(FieldDefinition::primaryKey).findFirst().orElse(null);
+            Map<String, Object> s = new LinkedHashMap<>();
+            s.put("pascal", Naming.toPascalCase(e.name()));
+            s.put("camel", Naming.toCamelCase(e.name()));
+            s.put("kebab", Naming.toKebabCase(e.name()));
+            String pkName = pk == null ? "id" : pk.name();
+            s.put("pkName", pkName);
+            s.put("PkName", Naming.toPascalCase(pkName));
+            s.put("pkJavaType", pk == null ? "Long" : pk.type().javaType());
+            s.put("pkTsType", pk == null ? "number" : pk.type().tsType());
+            summaries.put(e.name().toLowerCase(Locale.ROOT), s);
+        }
+        return summaries;
     }
 
     /**
@@ -88,6 +119,12 @@ public final class EntityScaffoldContext {
         ctx.put("hasPaletteError", palette.getError() != null && !palette.getError().isBlank());
     }
 
+    /** Escapes a string for embedding in a Java or JS double-quoted string literal
+     *  (backslash and double-quote only — both languages share C-style escaping). */
+    private static String escapeStringLiteral(String s) {
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
     /** Puts {@code <name>} = {@code base.layer} and {@code <name>Path} = the slash form. */
     private static void putPackage(Map<String, Object> ctx, String name, String base, String layer) {
         String pkg = (base == null || base.isBlank()) ? layer : base + "." + layer;
@@ -95,15 +132,19 @@ public final class EntityScaffoldContext {
         ctx.put(name + "Path", pkg.replace('.', '/'));
     }
 
+    @SuppressWarnings("unchecked")
     public static Map<String, Object> buildEntityContext(
             Map<String, Object> projectContext,
             EntityDefinition entity) {
         Map<String, Object> ctx = new LinkedHashMap<>(projectContext);
-        ctx.putAll(entityViewModel(entity));
+        Map<String, Map<String, Object>> summaries =
+                (Map<String, Map<String, Object>>) projectContext.get(ENTITY_SUMMARIES_KEY);
+        ctx.putAll(entityViewModel(entity, summaries == null ? Map.of() : summaries));
         return ctx;
     }
 
-    private static Map<String, Object> entityViewModel(EntityDefinition entity) {
+    private static Map<String, Object> entityViewModel(
+            EntityDefinition entity, Map<String, Map<String, Object>> summaries) {
         Map<String, Object> view = new LinkedHashMap<>();
 
         String pascal = Naming.toPascalCase(entity.name());
@@ -165,12 +206,58 @@ public final class EntityScaffoldContext {
         view.put("stringFields", stringFieldViews);
         view.put("hasStringFields", !stringFieldViews.isEmpty());
 
+        // Relations (MANY_TO_ONE foreign keys). Each resolves its target's PK type/name from the
+        // summary lookup so the entity gets a typed @ManyToOne, the DTO exposes the key as
+        // <field>Id, and the service can stub the reference on create/update.
+        List<Map<String, Object>> relationViews = new ArrayList<>(entity.relations().size());
+        for (int i = 0; i < entity.relations().size(); i++) {
+            RelationDefinition rel = entity.relations().get(i);
+            Map<String, Object> target = summaries == null ? null
+                    : summaries.get(rel.targetEntity().toLowerCase(Locale.ROOT));
+            String relField = Naming.toCamelCase(rel.fieldName());
+            Map<String, Object> rv = new LinkedHashMap<>();
+            rv.put("fieldName", relField);
+            rv.put("FieldName", Naming.toPascalCase(rel.fieldName()));
+            rv.put("fkFieldName", relField + "Id");
+            rv.put("joinColumn", Naming.toSnakeCase(rel.fieldName()) + "_id");
+            rv.put("targetEntity", target != null ? target.get("pascal") : Naming.toPascalCase(rel.targetEntity()));
+            rv.put("targetEntityCamel", target != null ? target.get("camel") : Naming.toCamelCase(rel.targetEntity()));
+            rv.put("targetEntityKebab", target != null ? target.get("kebab") : Naming.toKebabCase(rel.targetEntity()));
+            rv.put("targetPkName", target != null ? target.get("pkName") : "id");
+            rv.put("TargetPkName", target != null ? target.get("PkName") : "Id");
+            rv.put("targetPkJavaType", target != null ? target.get("pkJavaType") : "Long");
+            rv.put("targetPkTsType", target != null ? target.get("pkTsType") : "number");
+            rv.put("required", rel.required());
+            rv.put("isManyToOne", rel.type() == RelationType.MANY_TO_ONE);
+            rv.put("last", i == entity.relations().size() - 1);
+            relationViews.add(rv);
+        }
+        boolean hasRequiredRelations = relationViews.stream()
+                .anyMatch(m -> Boolean.TRUE.equals(m.get("required")));
+        view.put("relations", relationViews);
+        view.put("hasRelations", !relationViews.isEmpty());
+
         // Aggregate flags so the DTO template only imports a Bean Validation constraint it
-        // actually uses. @NotNull is skipped on a generated PK (it is null until persisted).
-        view.put("hasNotNullFields", fieldViews.stream().anyMatch(
+        // actually uses. @NotNull is skipped on a generated PK (it is null until persisted);
+        // a required relation's FK id, however, does carry @NotNull.
+        view.put("hasNotNullFields", hasRequiredRelations || fieldViews.stream().anyMatch(
                 m -> Boolean.TRUE.equals(m.get("isRequired")) && !Boolean.TRUE.equals(m.get("isGenerated"))));
         view.put("hasSizeFields", fieldViews.stream().anyMatch(
                 m -> Boolean.TRUE.equals(m.get("hasLength"))));
+        // @Min/@Max apply to integral fields; @DecimalMin/@DecimalMax to BigDecimal; @Pattern/@Email
+        // to strings. Each gates its own DTO import so we never import an unused constraint.
+        view.put("hasMinFields", fieldViews.stream().anyMatch(
+                m -> Boolean.TRUE.equals(m.get("hasMin")) && Boolean.TRUE.equals(m.get("isIntegral"))));
+        view.put("hasMaxFields", fieldViews.stream().anyMatch(
+                m -> Boolean.TRUE.equals(m.get("hasMax")) && Boolean.TRUE.equals(m.get("isIntegral"))));
+        view.put("hasDecimalMinFields", fieldViews.stream().anyMatch(
+                m -> Boolean.TRUE.equals(m.get("hasMin")) && Boolean.TRUE.equals(m.get("isBigDecimal"))));
+        view.put("hasDecimalMaxFields", fieldViews.stream().anyMatch(
+                m -> Boolean.TRUE.equals(m.get("hasMax")) && Boolean.TRUE.equals(m.get("isBigDecimal"))));
+        view.put("hasPatternFields", fieldViews.stream().anyMatch(
+                m -> Boolean.TRUE.equals(m.get("hasPattern"))));
+        view.put("hasEmailFields", fieldViews.stream().anyMatch(
+                m -> Boolean.TRUE.equals(m.get("isEmail"))));
 
         List<Map<String, Object>> importViews = new ArrayList<>(imports.size());
         for (String imp : imports) {
@@ -200,12 +287,16 @@ public final class EntityScaffoldContext {
         fv.put("tsType", f.type().tsType());
         fv.put("enumTypeName", enumTypeName);
 
+        boolean isIntegral = f.type() == FieldType.LONG || f.type() == FieldType.INTEGER;
+        boolean isBigDecimal = f.type() == FieldType.BIG_DECIMAL;
         fv.put("isPrimaryKey", f.primaryKey());
         fv.put("isGenerated", f.generated());
         fv.put("isRequired", f.required());
         fv.put("isUnique", f.unique());
         fv.put("isString", f.type().isString());
         fv.put("isNumeric", f.type().isNumeric());
+        fv.put("isIntegral", isIntegral);
+        fv.put("isBigDecimal", isBigDecimal);
         fv.put("isBoolean", f.type().isBoolean());
         fv.put("isTemporal", f.type().isTemporal());
         fv.put("isDate", f.type() == FieldType.LOCAL_DATE);
@@ -213,6 +304,19 @@ public final class EntityScaffoldContext {
         fv.put("isEnum", f.type().isEnum());
         fv.put("hasLength", f.length() != null);
         fv.put("length", f.length());
+        // Numeric bounds (rendered as @Min/@Max on integral types, @DecimalMin/@DecimalMax on BigDecimal).
+        fv.put("hasMin", f.min() != null);
+        fv.put("min", f.min());
+        fv.put("hasMax", f.max() != null);
+        fv.put("max", f.max());
+        // String constraints. The pattern is injected into Java (@Pattern(regexp="..")) and JS
+        // ("..") string literals, so backslashes and double-quotes are escaped once here — the
+        // C-style escaping is valid in both languages.
+        boolean hasPattern = f.pattern() != null && !f.pattern().isBlank();
+        fv.put("hasPattern", hasPattern);
+        fv.put("pattern", f.pattern());
+        fv.put("patternEscaped", hasPattern ? escapeStringLiteral(f.pattern()) : null);
+        fv.put("isEmail", f.email());
 
         if (f.type() == FieldType.ENUM) {
             List<Map<String, Object>> values = new ArrayList<>();
