@@ -1,0 +1,30 @@
+package {{packageName}}.config;
+
+import {{packageName}}.security.Base64Utils;
+import lombok.Data;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+/**
+ * Binds the {@code ldap.*} block from application.yaml. The {@code user} and
+ * {@code password} are stored Base64-encoded; use the decoded getters when wiring
+ * the LDAP client.
+ */
+@ConfigurationProperties(prefix = "ldap")
+@Data
+public class LdapConfigurationProperties {
+
+    private String user;
+    private String password;
+    private String uri;
+    private String searchBase;
+    private String accessBase;
+    private boolean enabled = true;
+
+    public String getDecodedUsername() {
+        return Base64Utils.decode(user);
+    }
+
+    public String getDecodedPassword() {
+        return Base64Utils.decode(password);
+    }
+}

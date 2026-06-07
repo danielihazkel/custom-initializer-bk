@@ -1,0 +1,54 @@
+package {{packageName}}.security;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * Maps the application's logical roles ({@link Constants}) onto the LDAP group naming
+ * convention and answers whether a user is a member of the matching group.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class PermissionService {
+
+    private final LdapService ldapService;
+
+    @Value("${header.prefix:GRP_LTSMonitoringUi_}")
+    private String GROUP_PREFIX = "GRP_LTSMonitoringUi_";
+
+    public List<String> getUserGroups(String username) throws UnauthorizedException {
+        try {
+            log.debug("Getting groups for user: {}", username);
+            Set<String> userGroups = ldapService.getUserGroups(username);
+            List<String> monitoringGroups = filterMonitoringGroups(userGroups);
+            log.info("User {} has {} groups: {}", username, monitoringGroups.size(), monitoringGroups);
+            return monitoringGroups;
+        } catch (Exception e) {
+            log.error("Error getting groups for user: {}: {}", username, e.getMessage());
+            throw new UnauthorizedException("Unable to verify user permissions", e);
+        }
+    }
+
+    public String mapRoleToGroup(String role) {
+        switch (role) {
+            case Constants.ADMIN: return GROUP_PREFIX + "ALL";
+            case Constants.USER: return GROUP_PREFIX + "RO";
+        }
+        return "UNKNOWN_ROLE";
+    }
+
+    private List<String> filterMonitoringGroups(Set<String> groups) {
+        if (groups == null) {
+            return new ArrayList<>();
+        }
+        return groups.stream()
+                .filter(group -> group != null && group.startsWith(GROUP_PREFIX))
+                .collect(Collectors.toList());
+    }
+}

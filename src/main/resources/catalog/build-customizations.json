@@ -8,5 +8,7 @@
   { "depId": "mapstruct", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.mapstruct", "mavenArtifactId": "mapstruct-processor", "version": "1.6.3", "sortOrder": 0 },
   { "depId": "mapstruct", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.projectlombok", "mavenArtifactId": "lombok-mapstruct-binding", "version": "0.2.0", "sortOrder": 1 },
   { "depId": "cache", "type": "ADD_DEPENDENCY", "mavenGroupId": "com.github.ben-manes.caffeine", "mavenArtifactId": "caffeine", "sortOrder": 0 },
-  { "depId": "redis", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.apache.commons", "mavenArtifactId": "commons-pool2", "sortOrder": 0 }
+  { "depId": "redis", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.apache.commons", "mavenArtifactId": "commons-pool2", "sortOrder": 0 },
+  { "depId": "ldap-auth", "type": "ADD_DEPENDENCY", "mavenGroupId": "com.menora.common", "mavenArtifactId": "lts.ldap.util", "version": "0.1.2", "sortOrder": 0 },
+  { "depId": "ldap-auth", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-aop", "sortOrder": 1 }
 ]

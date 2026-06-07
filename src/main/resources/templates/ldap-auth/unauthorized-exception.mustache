@@ -1,0 +1,15 @@
+package {{packageName}}.security;
+
+/**
+ * Raised when the caller's permissions cannot be verified (e.g. the LDAP lookup failed).
+ */
+public class UnauthorizedException extends Exception {
+
+    public UnauthorizedException(String message) {
+        super(message);
+    }
+
+    public UnauthorizedException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}

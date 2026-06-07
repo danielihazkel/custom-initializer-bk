@@ -1,0 +1,21 @@
+package {{packageName}}.security;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
+/**
+ * Decodes Base64-encoded configuration values (e.g. the LDAP service credentials,
+ * which are stored Base64-encoded so they are not kept in clear text in config files).
+ */
+public final class Base64Utils {
+
+    private Base64Utils() {
+    }
+
+    public static String decode(String encoded) {
+        if (encoded == null || encoded.isEmpty()) {
+            return encoded;
+        }
+        return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
+    }
+}

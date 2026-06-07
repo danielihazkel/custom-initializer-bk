@@ -1,0 +1,21 @@
+package {{packageName}}.security;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * Marks a controller/service method as requiring the caller to hold the given role.
+ * Enforced at runtime by {@link PermissionAspect}.
+ *
+ * <pre>
+ *   {@literal @}RequiresPermission(Constants.ADMIN)
+ *   public ResponseEntity&lt;?&gt; deleteAll() { ... }
+ * </pre>
+ */
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+public @interface RequiresPermission {
+    String value();
+}

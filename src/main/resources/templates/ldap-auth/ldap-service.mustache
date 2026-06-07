@@ -1,0 +1,33 @@
+package {{packageName}}.security;
+
+import com.menora.common.ldap.component.LdapUtil;
+import com.menora.common.ldap.exception.LdapConnectionException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.util.Arrays;
+import java.util.Set;
+
+/**
+ * Thin wrapper over {@link LdapUtil} that resolves the set of LDAP groups a user belongs to.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class LdapService {
+
+    private final LdapUtil ldapUtil;
+
+    public Set<String> getUserGroups(String username) throws LdapConnectionException {
+
+        if (username == null || username.trim().isEmpty()) {
+            throw new IllegalArgumentException("Username cannot be null or empty");
+        }
+
+        log.debug("Retrieving LDAP groups for user: {}", username);
+        Set<String> allGroups = ldapUtil.getLdapRolesByUserName(username);
+        log.info("User {} groups: {}", username, Arrays.toString(allGroups.toArray()));
+        return allGroups;
+    }
+}

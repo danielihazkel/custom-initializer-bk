@@ -173,6 +173,67 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void ldapAuthDependencyInjectsAuthFiles() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("web");
+        request.getDependencies().add("ldap-auth");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        String yaml = Files.readString(projectDir.resolve("src/main/resources/application.yaml"));
+        assertThat(yaml).contains("ldap:");
+        assertThat(yaml).contains("header:");
+
+        assertThat(project).filePaths()
+                .contains("src/main/java/com/menora/demo/config/LdapConfiguration.java")
+                .contains("src/main/java/com/menora/demo/security/PermissionAspect.java")
+                .contains("src/main/java/com/menora/demo/security/RequiresPermission.java")
+                .contains("src/main/java/com/menora/demo/security/Base64Utils.java");
+
+        // Spring Boot 3 uses jakarta, not javax — regression guard against the original example.
+        assertThat(Files.readString(projectDir.resolve(
+                "src/main/java/com/menora/demo/security/PermissionAspect.java")))
+                .contains("jakarta.servlet.http.HttpServletRequest")
+                .doesNotContain("javax.servlet");
+
+        String pom = Files.readString(projectDir.resolve("pom.xml"));
+        assertThat(pom).contains("lts.ldap.util");
+        assertThat(pom).contains("spring-boot-starter-aop");
+    }
+
+    @Test
+    void ldapAuthSampleControllerSubOption() throws Exception {
+        optionsContext.populate(Map.of("ldap-auth", List.of("sample-controller")));
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("web");
+            request.getDependencies().add("ldap-auth");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+            ProjectStructure project = new ProjectStructure(projectDir);
+
+            assertThat(project).filePaths()
+                    .contains("src/main/java/com/menora/demo/web/SampleSecuredController.java");
+        } finally {
+            optionsContext.clear();
+        }
+    }
+
+    @Test
+    void ldapAuthWithoutSampleControllerOptionOmitsController() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("web");
+        request.getDependencies().add("ldap-auth");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        assertThat(project).filePaths()
+                .doesNotContain("src/main/java/com/menora/demo/web/SampleSecuredController.java");
+    }
+
+    @Test
     void jpaDependencyInjectsJpaConfig() throws Exception {
         WebProjectRequest request = createBaseRequest();
         request.getDependencies().add("web");

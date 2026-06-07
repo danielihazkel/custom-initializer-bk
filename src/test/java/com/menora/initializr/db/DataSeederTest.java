@@ -66,7 +66,14 @@ class DataSeederTest {
 
     @Test
     void seedsAllBackendDependencyEntries() {
-        assertThat(entryRepo.findAllByProjectKind(ProjectKind.BACKEND)).hasSize(27);
+        assertThat(entryRepo.findAllByProjectKind(ProjectKind.BACKEND)).hasSize(28);
+    }
+
+    @Test
+    void ldapAuthEntryIsNotAStarterAndHasCompatibilityRange() {
+        DependencyEntryEntity ldap = entryRepo.findByDepId("ldap-auth").orElseThrow();
+        assertThat(ldap.isStarter()).isFalse();
+        assertThat(ldap.getCompatibilityRange()).isEqualTo("[3.2.0,4.0.0)");
     }
 
     @Test
@@ -114,6 +121,14 @@ class DataSeederTest {
     void securityFileContributionsSeeded() {
         // application-security YAML, SecurityConfig, jwt-filter, jwt-service, method-config
         assertThat(fileContribRepo.countByDependencyId("security")).isEqualTo(5);
+    }
+
+    @Test
+    void ldapAuthFileContributionsSeeded() {
+        // application-ldap-auth YAML + LdapConfigurationProperties, LdapConfiguration, Base64Utils,
+        // LdapService, PermissionService, PermissionAspect, Constants, RequiresPermission,
+        // UnauthorizedException + sample-controller
+        assertThat(fileContribRepo.countByDependencyId("ldap-auth")).isEqualTo(11);
     }
 
     @Test

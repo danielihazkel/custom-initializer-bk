@@ -485,6 +485,62 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_injectsDevUserinfoHeaderWhenLdapAuthSelected() throws Exception {
+        // With the ldap-auth backend dep, the generated API client adds the `userinfo` header in
+        // dev (read by the backend's @RequiresPermission aspect) and .env.development carries the
+        // overridable default.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "secured");
+        body.put("packageName", "com.menora.secured");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web", "ldap-auth"));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        String client = entries.get("secured/frontend/src/shared/api/client.ts");
+        assertThat(client)
+                .contains("import.meta.env.DEV")
+                .contains("headers['userinfo']")
+                .contains("VITE_DEV_USERINFO");
+        assertThat(entries.get("secured/frontend/.env.development")).contains("VITE_DEV_USERINFO=dev-user");
+
+        // Backend got the LDAP authorization scaffold + deps.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/security/PermissionAspect.java"));
+        assertThat(entries.get("secured/backend/pom.xml")).contains("lts.ldap.util");
+    }
+
+    @Test
+    void fullstackEndpoint_omitsDevUserinfoHeaderWithoutLdapAuth() throws Exception {
+        // Default deps (no ldap-auth) → the header block is not emitted.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "plain");
+        body.put("packageName", "com.menora.plain");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        assertThat(entries.get("plain/frontend/src/shared/api/client.ts"))
+                .doesNotContain("userinfo");
+        assertThat(entries.get("plain/frontend/.env.development")).doesNotContain("VITE_DEV_USERINFO");
+    }
+
+    @Test
     void importDdlEndpoint_returnsEntitiesInWireFormat() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("dialect", "H2");

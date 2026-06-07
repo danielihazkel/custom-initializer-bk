@@ -1,0 +1,10 @@
+package {{packageName}}.security;
+
+/**
+ * Logical roles understood by {@link RequiresPermission} / {@link PermissionService}.
+ * Each maps onto an LDAP group via {@link PermissionService#mapRoleToGroup(String)}.
+ */
+public class Constants {
+    public static final String ADMIN = "ADMIN";
+    public static final String USER = "USER";
+}

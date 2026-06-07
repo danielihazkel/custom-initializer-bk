@@ -45,7 +45,8 @@
       "name": "Security",
       "sortOrder": 4,
       "entries": [
-        { "depId": "security", "name": "Spring Security", "description": "Authentication and authorization framework", "sortOrder": 0 }
+        { "depId": "security", "name": "Spring Security", "description": "Authentication and authorization framework", "sortOrder": 0 },
+        { "depId": "ldap-auth", "name": "Menora Authorization (LDAP)", "description": "LDAP-group-based authorization — @RequiresPermission AOP guard reading the userinfo header", "sortOrder": 1, "starter": false, "compatibilityRange": "[3.2.0,4.0.0)" }
       ]
     },
     {

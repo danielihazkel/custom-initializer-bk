@@ -12,10 +12,11 @@
     { "source": "tsconfig.node.json", "path": "tsconfig.node.json", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 40 },
     { "source": "main.tsx", "path": "src/main.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 70 },
     { "source": "index.css.mustache", "path": "src/index.css", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 90 },
+    { "source": "env-development.mustache", "path": ".env.development", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 95 },
 
     { "source": "App.tsx.mustache", "path": "src/app/App.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 80 },
 
-    { "source": "api-client.ts", "path": "src/shared/api/client.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 100 },
+    { "source": "api-client.ts.mustache", "path": "src/shared/api/client.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 100 },
     { "source": "useResource.ts", "path": "src/shared/api/useResource.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 110 },
     { "source": "shared-api-barrel.ts", "path": "src/shared/api/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 115 },
     { "source": "Table.tsx", "path": "src/shared/ui/Table.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 120 },

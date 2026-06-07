@@ -1,0 +1,43 @@
+package {{packageName}}.config;
+
+import com.menora.common.ldap.component.LdapUtil;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Wires the {@link LdapUtil} client from {@code com.menora.common:lts.ldap.util} using
+ * the {@code ldap.*} configuration. The username/password are Base64-decoded before use.
+ */
+@Configuration
+@EnableConfigurationProperties(LdapConfigurationProperties.class)
+@Slf4j
+public class LdapConfiguration {
+
+    @Bean
+    public LdapUtil ldapUtil(LdapConfigurationProperties ldapConfig) {
+        log.info("Initializing LDAP connection to: {}", ldapConfig.getUri());
+
+        if (ldapConfig.getUser() == null || ldapConfig.getPassword() == null) {
+            throw new IllegalStateException(
+                    "LDAP authentication (username and password) must be configured");
+        }
+
+        if (ldapConfig.getUri() == null || ldapConfig.getSearchBase() == null
+                || ldapConfig.getAccessBase() == null) {
+            throw new IllegalStateException("LDAP connection settings must be configured");
+        }
+
+        LdapUtil util = new LdapUtil();
+        util.setACCESS_BASE(ldapConfig.getAccessBase());
+        util.setLDAP_ACCESS_URI(ldapConfig.getUri());
+        util.setSEARCH_BASE(ldapConfig.getSearchBase());
+        util.setLdapUserName(ldapConfig.getDecodedUsername());
+        util.setLdapPassword(ldapConfig.getDecodedPassword());
+
+        log.info("LDAP configuration completed successfully");
+        return util;
+    }
+}

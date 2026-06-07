@@ -1,0 +1,12 @@
+ldap:
+  enabled: true
+  uri: ${LDAP_URI:}
+  # user and password are Base64-encoded (see Base64Utils).
+  user: ${LDAP_USER:}
+  password: ${LDAP_PASSWORD:}
+  search-base: ${LDAP_SEARCH_BASE:}
+  access-base: ${LDAP_ACCESS_BASE:}
+
+# Prefix of the LDAP groups that grant access; roles map to "<prefix>ALL" / "<prefix>RO".
+header:
+  prefix: ${PERMISSION_GROUP_PREFIX:GRP_LTSMonitoringUi_}

@@ -52,5 +52,7 @@
 
   { "depId": "resilience4j", "optionId": "circuit-breaker-example", "label": "Circuit Breaker Example", "description": "Add ResilientService.java — @CircuitBreaker + @Retry with fallback method", "sortOrder": 0 },
 
-  { "depId": "quartz", "optionId": "job-example", "label": "Job Example", "description": "Add HelloJob.java + HelloJobConfig.java — registers a 1-minute repeating Quartz job", "sortOrder": 0 }
+  { "depId": "quartz", "optionId": "job-example", "label": "Job Example", "description": "Add HelloJob.java + HelloJobConfig.java — registers a 1-minute repeating Quartz job", "sortOrder": 0 },
+
+  { "depId": "ldap-auth", "optionId": "sample-controller", "label": "Sample Secured Controller", "description": "Add SampleSecuredController.java demonstrating @RequiresPermission(Constants.ADMIN)", "sortOrder": 0 }
 ]

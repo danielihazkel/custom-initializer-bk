@@ -18,9 +18,20 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> =
+    body === undefined ? {} : { 'Content-Type': 'application/json' }
+{{#hasLdapAuth}}
+  // Dev-only: the backend's @RequiresPermission aspect reads the `userinfo` header to
+  // resolve the caller's LDAP groups. In production this header is injected by the SSO
+  // gateway; in `npm run dev` there is no gateway, so we supply it here. Override the
+  // value via VITE_DEV_USERINFO in .env.development.
+  if (import.meta.env.DEV) {
+    headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'
+  }
+{{/hasLdapAuth}}
   const res = await fetch(BASE + path, {
     method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (!res.ok) {

@@ -1,0 +1,55 @@
+package {{packageName}}.security;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.log4j.Log4j2;
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.annotation.Around;
+import org.aspectj.lang.annotation.Aspect;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
+
+/**
+ * Guards methods annotated with {@link RequiresPermission}. Reads the {@code userinfo}
+ * request header (injected by the SSO gateway in production; by the frontend dev proxy
+ * in local development), resolves the caller's LDAP groups, and allows the call only if
+ * the user is a member of the group mapped to the required role.
+ */
+@Log4j2
+@Aspect
+@Component
+@RequiredArgsConstructor
+public class PermissionAspect {
+    public static final String USER_NAME = "userinfo";
+    private final PermissionService permissionService;
+
+    @Around("@annotation(requiresPermission)")
+    public Object checkPermissions(ProceedingJoinPoint joinPoint, RequiresPermission requiresPermission) throws Throwable {
+        log.info("Check permissions " + joinPoint.getSignature().getName());
+        String requiredPermissionValue = requiresPermission.value();
+        String userName = extractHeaderFromRequest(USER_NAME);
+        if (userName == null || userName.isEmpty()) {
+            log.warn("Access denied - user info is missing or empty");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("User authentication required");
+        }
+        List<String> permissions = permissionService.getUserGroups(userName);
+        String grpName = permissionService.mapRoleToGroup(requiredPermissionValue);
+        if (!permissions.stream().anyMatch(permission -> permission.contains(grpName))) {
+            log.warn("For user: " + userName + " Access denied - Required: " + requiredPermissionValue + ", User has: " + permissions);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("You do not have permission to perform this action");
+        }
+        return joinPoint.proceed();
+    }
+
+    private String extractHeaderFromRequest(String header) {
+        HttpServletRequest request = ((ServletRequestAttributes)
+                RequestContextHolder.getRequestAttributes()).getRequest();
+        String response = request.getHeader(header);
+        log.info("Extract header: " + response + " from request");
+        return response;
+    }
+}

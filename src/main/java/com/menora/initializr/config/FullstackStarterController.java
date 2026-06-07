@@ -349,6 +349,11 @@ public class FullstackStarterController {
         // pairing) onto the entity-scaffold context so per-entity templates see both shapes. This
         // replaces the plain palette from EntityScaffoldContext with the HSL-bearing one.
         projectCtx.putAll(FrontendMustacheContext.build(desc, desc.getDependencies(), optionsContext, palette));
+        // Gate the dev-mode `userinfo` header (read by the backend's @RequiresPermission aspect)
+        // on the backend actually including the LDAP authorization dependency.
+        boolean hasLdapAuth = request.getDependencies() != null
+                && request.getDependencies().contains("ldap-auth");
+        projectCtx.put("hasLdapAuth", hasLdapAuth);
         log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());
