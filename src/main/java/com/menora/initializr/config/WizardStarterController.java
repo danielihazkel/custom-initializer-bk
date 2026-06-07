@@ -247,7 +247,7 @@ public class WizardStarterController {
         WebProjectRequest r = new WebProjectRequest();
         r.setType(orDefault(body.type(), "maven-project"));
         r.setLanguage(orDefault(body.language(), "java"));
-        r.setBootVersion(body.bootVersion());
+        r.setBootVersion(BootVersions.normalize(body.bootVersion()));
         r.setGroupId(orDefault(body.groupId(), "com.menora"));
         r.setArtifactId(orDefault(body.artifactId(), "demo"));
         r.setName(orDefault(body.name(), r.getArtifactId()));

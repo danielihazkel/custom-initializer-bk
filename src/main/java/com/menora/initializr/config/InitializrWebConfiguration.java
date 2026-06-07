@@ -111,8 +111,7 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
     }
 
     private static String normalizeBootVersion(String v) {
-        if (v == null) return null;
-        return v.replaceAll("[.\\-]RELEASE$", "");
+        return BootVersions.normalize(v);
     }
 
 }
