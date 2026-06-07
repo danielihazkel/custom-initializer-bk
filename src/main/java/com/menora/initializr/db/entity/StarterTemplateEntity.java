@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 import org.hibernate.annotations.ColumnDefault;
 
 @Entity
-@Table(name = "starter_template")
+@Table(name = "initializer_starter_template")
 public class StarterTemplateEntity {
 
     @Id

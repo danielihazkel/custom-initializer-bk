@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 import org.hibernate.annotations.ColumnDefault;
 
 @Entity
-@Table(name = "dependency_sub_option")
+@Table(name = "initializer_dependency_sub_option")
 public class DependencySubOptionEntity {
 
     @Id

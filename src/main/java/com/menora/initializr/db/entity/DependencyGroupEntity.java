@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "dependency_group")
+@Table(name = "initializer_dependency_group")
 public class DependencyGroupEntity {
 
     @Id

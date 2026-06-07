@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 @Entity
-@Table(name = "module_template")
+@Table(name = "initializer_module_template")
 public class ModuleTemplateEntity {
 
     @Id

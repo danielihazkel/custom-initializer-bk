@@ -3,4 +3,4 @@
 -- the gating that file_contribution.sub_option_id already provides on the file
 -- side. NULL means "always apply" — the existing default behaviour for every
 -- pre-V8 row.
-ALTER TABLE build_customization ADD COLUMN sub_option_id VARCHAR(50);
+ALTER TABLE initializer_build_customization ADD COLUMN sub_option_id VARCHAR(50);

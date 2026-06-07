@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 @Entity
-@Table(name = "starter_template_dep")
+@Table(name = "initializer_starter_template_dep")
 public class StarterTemplateDepEntity {
 
     @Id

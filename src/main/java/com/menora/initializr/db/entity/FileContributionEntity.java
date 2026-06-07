@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 import org.hibernate.annotations.ColumnDefault;
 
 @Entity
-@Table(name = "file_contribution")
+@Table(name = "initializer_file_contribution")
 public class FileContributionEntity {
 
     public enum FileType {

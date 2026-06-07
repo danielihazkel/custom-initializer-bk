@@ -33,7 +33,7 @@ import org.hibernate.annotations.ColumnDefault;
  * created before V8.
  */
 @Entity
-@Table(name = "build_customization")
+@Table(name = "initializer_build_customization")
 public class BuildCustomizationEntity {
 
     public enum CustomizationType {

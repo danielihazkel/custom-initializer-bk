@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 @Entity
-@Table(name = "module_dependency_mapping",
+@Table(name = "initializer_module_dependency_mapping",
        uniqueConstraints = @UniqueConstraint(columnNames = {"dependency_id", "module_id"}))
 public class ModuleDependencyMappingEntity {
 

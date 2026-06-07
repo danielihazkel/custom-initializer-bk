@@ -6,7 +6,7 @@
 -- No data migration needed — V6 columns were nullable, never seeded, and only
 -- briefly shipped.
 
-ALTER TABLE entity_template_set DROP COLUMN boot_version_range;
-ALTER TABLE entity_template_set DROP COLUMN java_version_range;
-ALTER TABLE entity_template_set ADD COLUMN boot_version VARCHAR(50);
-ALTER TABLE entity_template_set ADD COLUMN java_version VARCHAR(10);
+ALTER TABLE initializer_entity_template_set DROP COLUMN boot_version_range;
+ALTER TABLE initializer_entity_template_set DROP COLUMN java_version_range;
+ALTER TABLE initializer_entity_template_set ADD COLUMN boot_version VARCHAR(50);
+ALTER TABLE initializer_entity_template_set ADD COLUMN java_version VARCHAR(10);

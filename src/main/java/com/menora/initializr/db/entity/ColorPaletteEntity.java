@@ -14,7 +14,7 @@ import jakarta.validation.constraints.Size;
  * have no meaning for the backend generator path.
  */
 @Entity
-@Table(name = "color_palette")
+@Table(name = "initializer_color_palette")
 public class ColorPaletteEntity {
 
     private static final String HEX_PATTERN = "^#[0-9a-fA-F]{6}$";

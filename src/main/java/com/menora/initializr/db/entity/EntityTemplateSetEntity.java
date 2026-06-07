@@ -12,7 +12,7 @@ import jakarta.validation.constraints.Size;
  * entity, others once total.
  */
 @Entity
-@Table(name = "entity_template_set")
+@Table(name = "initializer_entity_template_set")
 public class EntityTemplateSetEntity {
 
     public enum Kind {

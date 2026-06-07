@@ -7,7 +7,7 @@
 -- from existing databases so they don't double-pin the version (the rows would
 -- otherwise win over the template's value because PackageJsonBuilder applies
 -- ADD_NPM_DEPENDENCY rows after rendering the template).
-DELETE FROM build_customization
+DELETE FROM initializer_build_customization
 WHERE dependency_id = '__common__'
   AND project_kind = 'FRONTEND'
   AND customization_type = 'ADD_NPM_DEPENDENCY'

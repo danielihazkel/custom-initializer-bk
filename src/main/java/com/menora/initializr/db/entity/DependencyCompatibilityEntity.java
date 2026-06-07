@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 import org.hibernate.annotations.ColumnDefault;
 
 @Entity
-@Table(name = "dependency_compatibility")
+@Table(name = "initializer_dependency_compatibility")
 public class DependencyCompatibilityEntity {
 
     public enum RelationType {

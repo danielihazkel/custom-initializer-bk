@@ -7,4 +7,4 @@
 -- (MUI / Chakra / Mantine). Tailwind / shadcn / none ignore the palette entirely;
 -- the field is still settable to support future design systems.
 
-ALTER TABLE entity_template_set ADD COLUMN default_palette_id VARCHAR(80);
+ALTER TABLE initializer_entity_template_set ADD COLUMN default_palette_id VARCHAR(80);

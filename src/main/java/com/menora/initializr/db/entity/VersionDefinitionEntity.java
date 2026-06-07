@@ -18,7 +18,7 @@ import jakarta.validation.constraints.Size;
  * {@code @types/react}. Null on every other kind.
  */
 @Entity
-@Table(name = "version_definition",
+@Table(name = "initializer_version_definition",
         uniqueConstraints = @UniqueConstraint(name = "uk_version_kind_id",
                 columnNames = {"kind", "version_id"}))
 public class VersionDefinitionEntity {

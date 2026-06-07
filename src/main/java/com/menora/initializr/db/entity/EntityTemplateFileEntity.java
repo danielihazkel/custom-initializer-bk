@@ -14,7 +14,7 @@ import jakarta.validation.constraints.Size;
  * rendered once total (shared infrastructure like {@code package.json} or {@code App.tsx}).
  */
 @Entity
-@Table(name = "entity_template_file")
+@Table(name = "initializer_entity_template_file")
 public class EntityTemplateFileEntity {
 
     public enum FileType {

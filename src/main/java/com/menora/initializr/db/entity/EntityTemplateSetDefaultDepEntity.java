@@ -16,7 +16,7 @@ import jakarta.validation.constraints.Size;
  * {@link FileContributionEntity#getDependencyId()} precedent.
  */
 @Entity
-@Table(name = "entity_template_set_default_dep",
+@Table(name = "initializer_entity_template_set_default_dep",
         uniqueConstraints = @UniqueConstraint(name = "uk_entity_template_set_default_dep_set_dep",
                 columnNames = {"set_id", "dep_id"}))
 public class EntityTemplateSetDefaultDepEntity {

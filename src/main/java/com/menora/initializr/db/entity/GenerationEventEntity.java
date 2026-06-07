@@ -5,7 +5,7 @@ import jakarta.persistence.*;
 import java.time.Instant;
 
 @Entity
-@Table(name = "generation_event")
+@Table(name = "initializer_generation_event")
 public class GenerationEventEntity {
 
     public enum Status { SUCCESS, FAILURE }
