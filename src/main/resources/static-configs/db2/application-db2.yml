@@ -1,6 +1,8 @@
 db2:
   datasource:
-    url: ${DB2_DB_URL:jdbc:db2://localhost:50000/appdb}
+    # DataSourceBuilder builds a HikariDataSource whose URL property is `jdbcUrl`;
+    # a plain `url` key does not bind to it, so it must be `jdbc-url` (see Db2Config).
+    jdbc-url: ${DB2_DB_URL:jdbc:db2://localhost:50000/appdb}
     username: ${DB2_DB_USERNAME:db2inst1}
     password: ${DB2_DB_PASSWORD:password}
     driver-class-name: com.ibm.db2.jcc.DB2Driver

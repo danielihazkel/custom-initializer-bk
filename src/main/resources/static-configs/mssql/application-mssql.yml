@@ -1,6 +1,8 @@
 mssql:
   datasource:
-    url: ${MSSQL_DB_URL:jdbc:sqlserver://localhost:1433;databaseName=appdb}
+    # DataSourceBuilder builds a HikariDataSource whose URL property is `jdbcUrl`;
+    # a plain `url` key does not bind to it, so it must be `jdbc-url` (see MssqlConfig).
+    jdbc-url: ${MSSQL_DB_URL:jdbc:sqlserver://localhost:1433;databaseName=appdb}
     username: ${MSSQL_DB_USERNAME:sa}
     password: ${MSSQL_DB_PASSWORD:password}
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver

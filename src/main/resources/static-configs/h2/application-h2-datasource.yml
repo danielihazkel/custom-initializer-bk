@@ -5,7 +5,9 @@
 # application-h2.yml instead.
 h2:
   datasource:
-    url: ${H2_DB_URL:jdbc:h2:mem:appdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false}
+    # DataSourceBuilder builds a HikariDataSource whose URL property is `jdbcUrl`;
+    # a plain `url` key does not bind to it, so it must be `jdbc-url` (see H2Config).
+    jdbc-url: ${H2_DB_URL:jdbc:h2:mem:appdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false}
     username: ${H2_DB_USERNAME:sa}
     password: ${H2_DB_PASSWORD:}
     driver-class-name: org.h2.Driver
