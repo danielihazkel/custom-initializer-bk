@@ -38,7 +38,7 @@
       "name": "Messaging",
       "sortOrder": 3,
       "entries": [
-        { "depId": "kafka", "name": "Spring for Apache Kafka", "description": "Kafka messaging support", "sortOrder": 0 }
+        { "depId": "kafka", "name": "Spring for Apache Kafka", "description": "Kafka messaging support", "mavenGroupId": "org.springframework.kafka", "mavenArtifactId": "spring-kafka", "sortOrder": 0 }
       ]
     },
     {

@@ -1,6 +1,8 @@
 postgresql:
   datasource:
-    url: ${PG_DB_URL:jdbc:postgresql://localhost:5432/appdb}
+    # DataSourceBuilder builds a HikariDataSource whose URL property is `jdbcUrl`;
+    # a plain `url` key does not bind to it, so it must be `jdbc-url` (see PostgresqlConfig).
+    jdbc-url: ${PG_DB_URL:jdbc:postgresql://localhost:5432/appdb}
     username: ${PG_DB_USERNAME:postgres}
     password: ${PG_DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
