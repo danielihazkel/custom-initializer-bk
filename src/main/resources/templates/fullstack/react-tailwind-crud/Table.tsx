@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
-import { ChevronDown, ChevronUp, ChevronsUpDown, Pencil, Search, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown, Pencil, Search, Trash2 } from 'lucide-react'
+import { EmptyState } from './EmptyState'
+import { TableSkeleton } from './Skeleton'
 
 export interface Column<T> {
   label: string
@@ -52,138 +54,141 @@ export function Table<T extends { id?: number | string | null }>({
   const { pageNumber, pageSize, totalPages, totalElements, onPageChange, onPageSizeChange } = pagination
   const startRow = totalElements === 0 ? 0 : pageNumber * pageSize + 1
   const endRow = Math.min(totalElements, (pageNumber + 1) * pageSize)
+  const empty = !loading && rows.length === 0
 
   return (
     <div className="space-y-3">
       {searchable && (
         <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
             type="text"
             value={search}
             onChange={e => onSearchChange(e.target.value)}
             placeholder="Search…"
-            className="w-full pl-9 pr-3 py-2 text-sm rounded-md border border-slate-300 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand"
+            className="w-full rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm text-fg placeholder:text-muted shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40"
           />
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
-              {columns.map((col, i) => {
-                const sortable = !!col.sortKey
-                const active = sortable && sort?.field === col.sortKey
-                return (
-                  <th
-                    key={i}
-                    className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500"
-                    style={col.width ? { width: col.width } : undefined}
-                  >
-                    {sortable ? (
-                      <button
-                        type="button"
-                        onClick={() => onSortChange(nextSort(sort, col.sortKey!))}
-                        className="inline-flex items-center gap-1 hover:text-slate-900"
-                      >
-                        {col.label}
-                        {active && sort?.direction === 'asc' && <ChevronUp className="w-3 h-3" />}
-                        {active && sort?.direction === 'desc' && <ChevronDown className="w-3 h-3" />}
-                        {!active && <ChevronsUpDown className="w-3 h-3 opacity-40" />}
-                      </button>
-                    ) : col.label}
-                  </th>
-                )
-              })}
-              <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500 w-24">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={columns.length + 1} className="px-5 py-12 text-center text-slate-500">
-                  Loading…
-                </td>
+      <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-border bg-surface-2">
+                {columns.map((col, i) => {
+                  const sortable = !!col.sortKey
+                  const active = sortable && sort?.field === col.sortKey
+                  return (
+                    <th
+                      key={i}
+                      className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted"
+                      style={col.width ? { width: col.width } : undefined}
+                    >
+                      {sortable ? (
+                        <button
+                          type="button"
+                          onClick={() => onSortChange(nextSort(sort, col.sortKey!))}
+                          className={`inline-flex items-center gap-1 transition-colors hover:text-fg ${active ? 'text-fg' : ''}`}
+                        >
+                          {col.label}
+                          {active && sort?.direction === 'asc' && <ChevronUp className="h-3 w-3" />}
+                          {active && sort?.direction === 'desc' && <ChevronDown className="h-3 w-3" />}
+                          {!active && <ChevronsUpDown className="h-3 w-3 opacity-40" />}
+                        </button>
+                      ) : col.label}
+                    </th>
+                  )
+                })}
+                <th className="w-24 px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  Actions
+                </th>
               </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length + 1} className="px-5 py-12 text-center text-slate-500">
-                  No records yet
-                </td>
-              </tr>
-            ) : (
-              rows.map((row, idx) => (
-                <tr
-                  key={row.id ?? idx}
-                  className="border-t border-slate-100 hover:bg-slate-50 transition-colors"
-                >
-                  {columns.map((col, i) => (
-                    <td key={i} className="px-5 py-3 text-slate-900">
-                      {col.render(row)}
-                    </td>
-                  ))}
-                  <td className="px-5 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => onEdit(row)}
-                        className="p-1.5 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-200 transition-colors"
-                        title="Edit"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => onDelete(row)}
-                        className="p-1.5 rounded-md text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+            </thead>
+            <tbody>
+              {loading ? (
+                <TableSkeleton cols={columns.length} />
+              ) : empty ? (
+                <tr>
+                  <td colSpan={columns.length + 1}>
+                    <EmptyState title="No records yet" hint="Create your first record to see it here." />
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                rows.map((row, idx) => (
+                  <tr
+                    key={row.id ?? idx}
+                    className="border-t border-border transition-colors hover:bg-surface-2/60"
+                  >
+                    {columns.map((col, i) => (
+                      <td key={i} className="px-5 py-3 text-fg">
+                        {col.render(row)}
+                      </td>
+                    ))}
+                    <td className="px-5 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => onEdit(row)}
+                          className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+                          title="Edit"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => onDelete(row)}
+                          className="rounded-lg p-1.5 text-muted transition-colors hover:bg-danger/10 hover:text-danger"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between text-sm text-slate-600">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
         <div>
-          Showing {startRow}–{endRow} of {totalElements}
+          {totalElements === 0
+            ? 'No results'
+            : <>Showing <span className="font-medium text-fg">{startRow}–{endRow}</span> of <span className="font-medium text-fg">{totalElements}</span></>}
         </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2">
-            <span>Rows per page</span>
+            <span>Rows</span>
             <select
               value={pageSize}
               onChange={e => onPageSizeChange(Number(e.target.value))}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-ring/40"
             >
               {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => onPageChange(pageNumber - 1)}
               disabled={pageNumber <= 0}
-              className="px-3 py-1 rounded-md border border-slate-300 bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
+              <ChevronLeft className="h-4 w-4" />
               Prev
             </button>
-            <span>
-              Page {totalPages === 0 ? 0 : pageNumber + 1} of {totalPages}
+            <span className="px-2 tabular-nums">
+              {totalPages === 0 ? 0 : pageNumber + 1} / {totalPages}
             </span>
             <button
               type="button"
               onClick={() => onPageChange(pageNumber + 1)}
               disabled={pageNumber + 1 >= totalPages}
-              className="px-3 py-1 rounded-md border border-slate-300 bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>

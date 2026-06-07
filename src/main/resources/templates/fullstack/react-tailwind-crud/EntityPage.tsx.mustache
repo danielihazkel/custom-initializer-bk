@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
+import { toast } from 'sonner'
 import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { Table, type Column, type SortSpec } from '@shared/ui'
-import { FormDrawer } from '@shared/ui'
+import { FormDrawer, Alert, ConfirmDialog } from '@shared/ui'
 import { {{EntityName}}Form } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
 
@@ -37,6 +38,8 @@ export function {{EntityName}}Page() {
   const [saving, setSaving] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [pendingDelete, setPendingDelete] = useState<{{EntityName}} | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   function openNew() {
     setEditing({})
@@ -62,24 +65,31 @@ export function {{EntityName}}Page() {
     try {
       if (isNew) await create(editing as Omit<{{EntityName}}, 'id'>)
       else await update(editing.{{pkField.name}} as number | string, editing as {{EntityName}})
+      toast.success(isNew ? '{{EntityName}} created' : '{{EntityName}} updated')
       close()
     } catch (e) {
-      // A 400 carries per-field messages — show them inline; anything else is a general alert.
+      // A 400 carries per-field messages — show them inline; anything else is a toast.
       if (e instanceof ApiError && e.fieldErrors) {
         setFormErrors(e.fieldErrors)
+        toast.error('Please fix the highlighted fields')
       } else {
-        alert(e instanceof Error ? e.message : String(e))
+        toast.error(e instanceof Error ? e.message : String(e))
       }
     } finally {
       setSaving(false)
     }
   }
-  async function doDelete(row: {{EntityName}}) {
-    if (!confirm('Delete this record?')) return
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    setDeleting(true)
     try {
-      await remove(row.{{pkField.name}} as number | string)
+      await remove(pendingDelete.{{pkField.name}} as number | string)
+      toast.success('{{EntityName}} deleted')
+      setPendingDelete(null)
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e))
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -93,30 +103,31 @@ export function {{EntityName}}Page() {
   }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">{{EntityNamePlural}}</h1>
+    <div className="mx-auto max-w-6xl p-8">
+      <div className="mb-6 flex items-end justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">{{EntityNamePlural}}</h1>
+          <p className="mt-1 text-sm text-muted">
+            {totalElements} {totalElements === 1 ? 'record' : 'records'}
+          </p>
+        </div>
         <button
           onClick={openNew}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-brand hover:bg-brand-deep text-white shadow-sm transition-colors"
+          className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="h-4 w-4" />
           New {{EntityName}}
         </button>
       </div>
 
-      {error && (
-        <div className="mb-4 px-4 py-3 rounded-md bg-red-50 border border-red-200 text-sm text-red-800">
-          {error}
-        </div>
-      )}
+      {error && <Alert>{error}</Alert>}
 
       <Table
         columns={columns}
         rows={items}
         loading={loading}
         onEdit={openEdit}
-        onDelete={doDelete}
+        onDelete={setPendingDelete}
         sort={sort}
         onSortChange={setSort}
         search={search}
@@ -129,6 +140,7 @@ export function {{EntityName}}Page() {
       <FormDrawer
         open={drawerOpen}
         title={isNew ? 'New {{EntityName}}' : 'Edit {{EntityName}}'}
+        subtitle={isNew ? 'Create a new {{EntityName}} record' : 'Update this {{EntityName}} record'}
         onClose={close}
         onSave={save}
         saving={saving}
@@ -142,6 +154,15 @@ export function {{EntityName}}Page() {
           />
         )}
       </FormDrawer>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete {{EntityName}}?"
+        message="This action cannot be undone."
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }

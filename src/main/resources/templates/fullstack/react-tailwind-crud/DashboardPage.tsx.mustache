@@ -1,0 +1,80 @@
+import { useEffect, useState } from 'react'
+import { ArrowRight, LayoutGrid, Table2 } from 'lucide-react'
+import { api } from '@shared/api'
+
+interface CardDef {
+  label: string
+  view: string
+  path: string
+}
+
+const CARDS: CardDef[] = [
+{{#entities}}
+  { label: '{{EntityNamePlural}}', view: '{{entityNameKebab}}', path: '/api/{{entityNamePluralKebab}}' },
+{{/entities}}
+]
+
+/** Reads just the page metadata (size=1) to surface a live record count per entity. */
+function useCount(path: string) {
+  const [count, setCount] = useState<number | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    api.get<{ totalElements: number }>(`${path}?size=1`)
+      .then(p => { if (active) setCount(p.totalElements) })
+      .catch(() => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [path])
+
+  return { count, failed }
+}
+
+function StatCard({ card, onNavigate }: { card: CardDef; onNavigate: (view: string) => void }) {
+  const { count, failed } = useCount(card.path)
+  return (
+    <button
+      onClick={() => onNavigate(card.view)}
+      className="group flex flex-col rounded-2xl border border-border bg-surface p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-md"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10 text-brand">
+          <Table2 className="h-5 w-5" />
+        </div>
+        <ArrowRight className="h-4 w-4 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+      </div>
+      <div className="mt-4 text-3xl font-semibold tabular-nums tracking-tight text-fg">
+        {failed ? '—' : count == null ? <span className="text-muted">…</span> : count}
+      </div>
+      <div className="mt-1 text-sm text-muted">{card.label}</div>
+    </button>
+  )
+}
+
+interface Props {
+  onNavigate: (view: string) => void
+}
+
+export function DashboardPage({ onNavigate }: Props) {
+  return (
+    <div className="mx-auto max-w-6xl p-8">
+      <div className="mb-8 overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-ink to-ink-soft p-8 text-white shadow-sm">
+        <div className="flex items-center gap-2 text-gold">
+          <LayoutGrid className="h-5 w-5" />
+          <span className="text-xs font-semibold uppercase tracking-wider">Overview</span>
+        </div>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">Welcome to {{artifactId}}</h1>
+        <p className="mt-1 max-w-xl text-sm text-slate-300">
+          Manage your data below. Select a collection to browse, search, create, edit and delete records.
+        </p>
+      </div>
+
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Collections</h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {CARDS.map(card => (
+          <StatCard key={card.view} card={card} onNavigate={onNavigate} />
+        ))}
+      </div>
+    </div>
+  )
+}

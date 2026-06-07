@@ -1,10 +1,20 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (toggled by adding `dark` to <html>). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
- * Menora brand tokens (Tailwind v4 @theme). Values come from the selected color
- * palette at generation time; hover/active shades are derived with color-mix so
- * the palette only needs primary/secondary/accent slots. These generate utilities
- * like bg-brand, text-gold, ring-brand, bg-ink, etc.
+ * Menora design tokens (Tailwind v4 @theme).
+ *
+ * Brand/ink/gold/danger come from the selected color palette at generation time; the
+ * hover/active shades are derived with color-mix so the palette only needs primary/
+ * secondary/accent slots. The neutral "surface" tokens drive the light/dark UI chrome
+ * (page background, cards, text, borders) and are re-pointed for dark mode in the `.dark`
+ * block below — so every surface-aware utility flips automatically.
+ *
+ * Generated utilities: bg-brand / bg-brand-deep, bg-ink / bg-ink-soft, text-gold,
+ * bg-danger, plus bg-canvas, bg-surface, bg-surface-2, text-fg, text-muted,
+ * border-border, ring-ring.
  */
 @theme {
   --color-brand:      {{palette.primary}};
@@ -13,6 +23,25 @@
   --color-ink-soft:   color-mix(in srgb, {{palette.secondary}} 86%, white);
   --color-gold:       {{#hasPaletteAccent}}{{palette.accent}}{{/hasPaletteAccent}}{{^hasPaletteAccent}}{{palette.primary}}{{/hasPaletteAccent}};
   --color-danger:     {{#hasPaletteError}}{{palette.error}}{{/hasPaletteError}}{{^hasPaletteError}}#dc2626{{/hasPaletteError}};
+
+  /* Neutral chrome — light defaults (flipped under .dark). */
+  --color-canvas:     #f6f7f9;
+  --color-surface:    #ffffff;
+  --color-surface-2:  #f1f5f9;
+  --color-fg:         #0f172a;
+  --color-muted:      #64748b;
+  --color-border:     #e6e9ee;
+  --color-ring:       {{palette.primary}};
+}
+
+/* Dark chrome: brand/ink/gold stay palette-driven; only the neutrals flip. */
+.dark {
+  --color-canvas:     #0b1120;
+  --color-surface:    #111827;
+  --color-surface-2:  #1b2435;
+  --color-fg:         #e8edf5;
+  --color-muted:      #94a3b8;
+  --color-border:     #243049;
 }
 
 html, body, #root {
@@ -20,8 +49,17 @@ html, body, #root {
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  background-color: #f8fafc;
-  color: #0f172a;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--color-canvas);
+  color: var(--color-fg);
   margin: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Thin, theme-aware scrollbars so the dark mode doesn't show bright gutters. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
 }

@@ -17,8 +17,12 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
     <>
 {{#fields}}
 {{#isPrimaryKey}}{{#isGenerated}}      {!isNew && (
-        <Field label="{{Name}}">
-          <input className={inputClass} value={String(value.{{name}} ?? '')} disabled />
+        <Field label="{{Name}}" hint="System-generated, read-only">
+          <input
+            className={`${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
+            value={String(value.{{name}} ?? '')}
+            disabled
+          />
         </Field>
       )}
 {{/isGenerated}}{{^isGenerated}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>

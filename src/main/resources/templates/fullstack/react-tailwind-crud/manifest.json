@@ -21,7 +21,16 @@
     { "source": "Table.tsx", "path": "src/shared/ui/Table.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 120 },
     { "source": "FormDrawer.tsx", "path": "src/shared/ui/FormDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 130 },
     { "source": "Field.tsx", "path": "src/shared/ui/Field.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 140 },
-    { "source": "shared-ui-barrel.ts", "path": "src/shared/ui/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 145 },
+    { "source": "Badge.tsx", "path": "src/shared/ui/Badge.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 141 },
+    { "source": "Alert.tsx", "path": "src/shared/ui/Alert.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 142 },
+    { "source": "EmptyState.tsx", "path": "src/shared/ui/EmptyState.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 143 },
+    { "source": "Skeleton.tsx", "path": "src/shared/ui/Skeleton.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 144 },
+    { "source": "ConfirmDialog.tsx", "path": "src/shared/ui/ConfirmDialog.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
+    { "source": "useTheme.ts", "path": "src/shared/ui/useTheme.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147 },
+    { "source": "shared-ui-barrel.ts", "path": "src/shared/ui/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 148 },
+
+    { "source": "DashboardPage.tsx.mustache", "path": "src/pages/dashboard/ui/DashboardPage.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 150 },
+    { "source": "dashboard-barrel.ts.mustache", "path": "src/pages/dashboard/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 152 },
 
     { "source": "pages-barrel.ts.mustache", "path": "src/pages/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 156 },
 

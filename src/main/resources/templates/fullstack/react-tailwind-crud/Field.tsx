@@ -11,15 +11,16 @@ interface Props {
 export function Field({ label, hint, error, required, children }: Props) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
-        {label}{required && <span className="text-red-600"> *</span>}
+      <span className="text-xs font-medium uppercase tracking-wider text-muted">
+        {label}{required && <span className="text-danger"> *</span>}
       </span>
       {children}
-      {hint && !error && <span className="text-xs text-slate-500">{hint}</span>}
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {hint && !error && <span className="text-xs text-muted">{hint}</span>}
+      {error && <span className="text-xs text-danger">{error}</span>}
     </label>
   )
 }
 
 export const inputClass =
-  'px-3 py-2 rounded-md border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent'
+  'w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm text-fg placeholder:text-muted ' +
+  'focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition-shadow'
