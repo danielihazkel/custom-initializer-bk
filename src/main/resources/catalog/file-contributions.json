@@ -10,6 +10,9 @@
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/Jenkinsfile.mustache", "targetPath": "k8s/Jenkinsfile", "substitutionType": "MUSTACHE", "sortOrder": 7 },
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/k8s-values.mustache", "targetPath": "k8s/values.yaml", "substitutionType": "MUSTACHE", "sortOrder": 8 },
   { "depId": "__common__", "fileType": "DELETE", "targetPath": "src/main/resources/application.properties", "substitutionType": "NONE", "sortOrder": 9999 },
+  { "depId": "__common__", "fileType": "DELETE", "targetPath": "mvnw", "substitutionType": "NONE", "sortOrder": 9999 },
+  { "depId": "__common__", "fileType": "DELETE", "targetPath": "mvnw.cmd", "substitutionType": "NONE", "sortOrder": 9999 },
+  { "depId": "__common__", "fileType": "DELETE", "targetPath": ".mvn/wrapper/maven-wrapper.properties", "substitutionType": "NONE", "sortOrder": 9999 },
 
   { "depId": "kafka", "fileType": "YAML_MERGE", "contentResource": "static-configs/kafka/application-kafka.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
   { "depId": "kafka", "fileType": "TEMPLATE", "contentResource": "templates/kafka-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/KafkaConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },

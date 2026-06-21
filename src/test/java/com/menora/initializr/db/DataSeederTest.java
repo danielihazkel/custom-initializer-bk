@@ -150,10 +150,11 @@ class DataSeederTest {
     void seedsCommonBackendFileContributions() {
         // application-base, log4j2, .editorconfig, entrypoint.sh, settings.xml, VERSION,
         // Dockerfile-java17, Dockerfile-java21, Jenkinsfile, k8s/values.yaml,
-        // + DELETE application.properties. (countByDependencyId would also count the
-        // FRONTEND __common__ rows, so scope to BACKEND.)
+        // + DELETE application.properties, + DELETE mvnw / mvnw.cmd /
+        // .mvn/wrapper/maven-wrapper.properties (strip the framework's Maven wrapper).
+        // (countByDependencyId would also count the FRONTEND __common__ rows, so scope to BACKEND.)
         assertThat(fileContribRepo.findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
-                java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND)).hasSize(11);
+                java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND)).hasSize(14);
     }
 
     @Test
