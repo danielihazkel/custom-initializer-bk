@@ -218,6 +218,8 @@ public final class EntityScaffoldContext {
         view.put("entityNamePluralKebab", kebabPlural);
         view.put("entity_name_plural", snakePlural);
         view.put("tableName", entity.tableName() != null ? entity.tableName() : snakePlural);
+        view.put("schema", entity.schema());
+        view.put("hasSchema", entity.schema() != null && !entity.schema().isBlank());
 
         List<Map<String, Object>> fieldViews = new ArrayList<>(entity.fields().size());
         Map<String, Object> pkView = null;

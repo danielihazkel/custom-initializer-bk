@@ -75,6 +75,25 @@ class SqlToEntityDefinitionConverterTest {
     }
 
     @Test
+    void schemaQualifiedTablePreservesSchema() {
+        // `CREATE TABLE entv.test` must keep the schema so the generated @Table carries schema="entv",
+        // matching the standalone SQL wizard. A non-qualified table leaves schema null.
+        String sql = "CREATE TABLE entv.test (id BIGINT PRIMARY KEY, name VARCHAR(50));";
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);
+        assertThat(entities).hasSize(1);
+        EntityDefinition e = entities.get(0);
+        assertThat(e.tableName()).isEqualTo("test");
+        assertThat(e.schema()).isEqualTo("entv");
+    }
+
+    @Test
+    void unqualifiedTableHasNullSchema() {
+        String sql = "CREATE TABLE widgets (id BIGINT PRIMARY KEY);";
+        EntityDefinition e = converter.convert(sql, SqlDialect.H2).get(0);
+        assertThat(e.schema()).isNull();
+    }
+
+    @Test
     void pluralYWithIesGetsSingularized() {
         String sql = "CREATE TABLE categories (id BIGINT PRIMARY KEY, name VARCHAR(50));";
         List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);

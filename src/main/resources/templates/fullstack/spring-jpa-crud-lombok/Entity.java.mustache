@@ -18,14 +18,14 @@ import java.util.List;
 {{/optScaffoldInverse}}{{/hasInverseRelations}}
 
 @Entity
-@Table(name = "{{tableName}}")
+@Table(name = "{{tableName}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 {{#optScaffoldAudit}}@EntityListeners(AuditingEntityListener.class)
 {{/optScaffoldAudit}}{{#softDeleteApplicable}}@SQLDelete(sql = "UPDATE {{tableName}} SET deleted = true WHERE {{pkField.column}} = ?")
 @SQLRestriction("deleted = false")
-{{/softDeleteApplicable}}{{#hasCompositePk}}@IdClass({{EntityName}}.{{keyClassName}}.class)
+{{/softDeleteApplicable}}{{#hasCompositePk}}@IdClass({{keyClassName}}.class)
 {{/hasCompositePk}}public class {{EntityName}} {
 {{#fields}}{{#isEnum}}
 
@@ -61,11 +61,4 @@ import java.util.List;
     @lombok.EqualsAndHashCode.Exclude
     private List<{{childEntity}}> {{collectionField}} = new ArrayList<>();
 
-{{/inverseRelations}}{{/hasInverseRelations}}{{/optScaffoldInverse}}{{#hasCompositePk}}
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class {{keyClassName}} implements java.io.Serializable {
-{{#pkFields}}        private {{javaType}} {{name}};
-{{/pkFields}}    }
-{{/hasCompositePk}}}
+{{/inverseRelations}}{{/hasInverseRelations}}{{/optScaffoldInverse}}}

@@ -167,6 +167,31 @@ class EntityScaffoldContextTest {
     }
 
     @Test
+    void buildEntityContext_exposesSchemaWhenSet() {
+        EntityDefinition e = new EntityDefinition("Test", "test", "entv", List.of(
+                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())),
+                List.of());
+        Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
+        Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
+
+        assertThat(ctx).containsEntry("schema", "entv");
+        assertThat(ctx).containsEntry("hasSchema", true);
+        assertThat(ctx).containsEntry("tableName", "test");
+    }
+
+    @Test
+    void buildEntityContext_noSchemaIsNotFlagged() {
+        EntityDefinition e = new EntityDefinition("User", null, List.of(
+                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));
+        Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
+        Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
+
+        assertThat(ctx).containsEntry("hasSchema", false);
+    }
+
+    @Test
     void buildEntityContext_singlePkIsNotComposite() {
         EntityDefinition e = new EntityDefinition("User", null, List.of(
                 new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));

@@ -19,7 +19,7 @@ class FullstackRequestValidatorTest {
 
     private static FullstackStarterRequest.EntityDefinitionDto entity(String name,
                                                                        List<FullstackStarterRequest.FieldDefinitionDto> fields) {
-        return new FullstackStarterRequest.EntityDefinitionDto(name, null, fields, null);
+        return new FullstackStarterRequest.EntityDefinitionDto(name, null, null, fields, null);
     }
 
     private static FullstackStarterRequest.FieldDefinitionDto field(String name, String type) {
@@ -99,7 +99,7 @@ class FullstackRequestValidatorTest {
         var parent = entity("OrderLine", List.of(
                 new FullstackStarterRequest.FieldDefinitionDto("orderId", "Long", true, false, null, null, null, null, null, null, null, null),
                 new FullstackStarterRequest.FieldDefinitionDto("lineNo", "Integer", true, false, null, null, null, null, null, null, null, null)));
-        var child = new FullstackStarterRequest.EntityDefinitionDto("Shipment", null, List.of(pk()),
+        var child = new FullstackStarterRequest.EntityDefinitionDto("Shipment", null, null, List.of(pk()),
                 List.of(new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_ONE", "line", "OrderLine", false)));
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(parent, child))))
                 .isInstanceOf(WizardArgumentException.class)
@@ -198,7 +198,7 @@ class FullstackRequestValidatorTest {
             String name,
             List<FullstackStarterRequest.FieldDefinitionDto> fields,
             List<FullstackStarterRequest.RelationDefinitionDto> relations) {
-        return new FullstackStarterRequest.EntityDefinitionDto(name, null, fields, relations);
+        return new FullstackStarterRequest.EntityDefinitionDto(name, null, null, fields, relations);
     }
 
     @Test

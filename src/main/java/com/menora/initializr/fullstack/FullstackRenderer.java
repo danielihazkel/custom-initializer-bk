@@ -29,15 +29,20 @@ public final class FullstackRenderer {
             List<EntityDefinition> entities,
             Path targetRoot) throws IOException {
         for (EntityTemplateFileEntity file : files) {
-            if (isGatedOut(file, projectContext)) {
-                continue;
-            }
             if (file.isPerEntity()) {
                 for (EntityDefinition entity : entities) {
                     Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(projectContext, entity);
+                    // Per-entity files evaluate their gate against the per-entity context, so a
+                    // per-entity flag (e.g. hasCompositePk) can gate a file for some entities only.
+                    if (isGatedOut(file, ctx)) {
+                        continue;
+                    }
                     writeOne(file, ctx, targetRoot);
                 }
             } else {
+                if (isGatedOut(file, projectContext)) {
+                    continue;
+                }
                 writeOne(file, projectContext, targetRoot);
             }
         }
@@ -45,15 +50,17 @@ public final class FullstackRenderer {
 
     /**
      * A file with a non-blank {@code gatedBy} is rendered only when that flag is truthy in the
-     * project context (e.g. an opt-in {@code optScaffoldTests}). Per-entity files inherit the
-     * project context, so the gate is always evaluated against the shared project-level flags.
+     * supplied context. Project-level files are gated on the project context (e.g. an opt-in
+     * {@code optScaffoldTests}); per-entity files are gated on the per-entity context, which is a
+     * superset of the project context — so a project flag still works, and a per-entity flag
+     * (e.g. {@code hasCompositePk}) becomes available too.
      */
-    private static boolean isGatedOut(EntityTemplateFileEntity file, Map<String, Object> projectContext) {
+    private static boolean isGatedOut(EntityTemplateFileEntity file, Map<String, Object> context) {
         String gate = file.getGatedBy();
         if (gate == null || gate.isBlank()) {
             return false;
         }
-        Object v = projectContext.get(gate);
+        Object v = context.get(gate);
         return !(Boolean.TRUE.equals(v) || "true".equalsIgnoreCase(String.valueOf(v)));
     }
 

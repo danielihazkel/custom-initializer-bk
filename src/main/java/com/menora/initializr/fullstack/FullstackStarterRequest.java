@@ -37,6 +37,7 @@ public record FullstackStarterRequest(
     public record EntityDefinitionDto(
             String name,
             String tableName,
+            String schema,
             List<FieldDefinitionDto> fields,
             List<RelationDefinitionDto> relations) {}
 

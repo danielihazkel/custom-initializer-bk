@@ -1,0 +1,12 @@
+package {{entityPackage}};
+
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class {{keyClassName}} implements java.io.Serializable {
+{{#pkFields}}    private {{javaType}} {{name}};
+{{/pkFields}}}

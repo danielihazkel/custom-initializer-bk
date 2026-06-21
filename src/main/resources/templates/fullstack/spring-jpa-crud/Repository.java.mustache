@@ -1,10 +1,11 @@
 package {{repositoryPackage}};
 
 import {{entityPackage}}.{{EntityName}};
-import org.springframework.data.jpa.repository.JpaRepository;
+{{#hasCompositePk}}import {{entityPackage}}.{{keyClassName}};
+{{/hasCompositePk}}import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 public interface {{EntityName}}Repository
-        extends JpaRepository<{{EntityName}}, {{#hasCompositePk}}{{EntityName}}.{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}}>,
+        extends JpaRepository<{{EntityName}}, {{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}}>,
                 JpaSpecificationExecutor<{{EntityName}}> {
 }

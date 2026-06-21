@@ -34,6 +34,15 @@
       "sortOrder": 10
     },
     {
+      "source": "EntityId.java.mustache",
+      "path": "src/main/java/{{entityPackagePath}}/{{EntityName}}Id.java",
+      "perEntity": true,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 15,
+      "gatedBy": "hasCompositePk"
+    },
+    {
       "source": "Repository.java.mustache",
       "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{repositoryPackagePath}}/{{EntityName}}Repository.java",

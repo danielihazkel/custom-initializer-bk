@@ -1,0 +1,32 @@
+package {{entityPackage}};
+
+public class {{keyClassName}} implements java.io.Serializable {
+{{#pkFields}}    private {{javaType}} {{name}};
+{{/pkFields}}
+    public {{keyClassName}}() {}
+
+    public {{keyClassName}}({{#pkFields}}{{javaType}} {{name}}{{^last}}, {{/last}}{{/pkFields}}) {
+{{#pkFields}}        this.{{name}} = {{name}};
+{{/pkFields}}    }
+
+{{#pkFields}}    public {{javaType}} get{{Name}}() {
+        return {{name}};
+    }
+
+    public void set{{Name}}({{javaType}} {{name}}) {
+        this.{{name}} = {{name}};
+    }
+
+{{/pkFields}}    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        {{keyClassName}} that = ({{keyClassName}}) o;
+        return {{#pkFields}}java.util.Objects.equals({{name}}, that.{{name}}){{^last}} && {{/last}}{{/pkFields}};
+    }
+
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash({{#pkFields}}{{name}}{{^last}}, {{/last}}{{/pkFields}});
+    }
+}

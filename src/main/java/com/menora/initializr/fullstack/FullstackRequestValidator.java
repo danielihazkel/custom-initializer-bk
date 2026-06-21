@@ -42,7 +42,7 @@ public final class FullstackRequestValidator {
 
         // Relations reference other entities, so collect everything first (pass 1: names + fields)
         // and resolve/validate relations once all entity names are known (pass 2).
-        record Parsed(int ei, String name, String tableName, List<FieldDefinition> fields,
+        record Parsed(int ei, String name, String tableName, String schema, List<FieldDefinition> fields,
                       Set<String> memberNames, List<FullstackStarterRequest.RelationDefinitionDto> rawRelations) {}
 
         Set<String> seenLowerNames = new HashSet<>();
@@ -194,7 +194,9 @@ public final class FullstackRequestValidator {
 
             String tableName = (e.tableName() == null || e.tableName().isBlank())
                     ? null : e.tableName().trim();
-            parsed.add(new Parsed(ei, name, tableName, fields, seenFieldNames, e.relations()));
+            String schema = (e.schema() == null || e.schema().isBlank())
+                    ? null : e.schema().trim();
+            parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations()));
         }
 
         // Pass 2 — resolve and validate relations now that all entity names are known.
@@ -202,7 +204,7 @@ public final class FullstackRequestValidator {
         for (Parsed p : parsed) {
             List<RelationDefinition> relations =
                     parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower, pkCountByLower);
-            result.add(new EntityDefinition(p.name(), p.tableName(), p.fields(), relations));
+            result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations));
         }
         return result;
     }

@@ -766,7 +766,7 @@ class FullstackStarterIntegrationTests {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("dialect", "H2");
         body.put("sql", """
-                CREATE TABLE products (
+                CREATE TABLE inv.products (
                     id BIGINT PRIMARY KEY AUTO_INCREMENT,
                     sku VARCHAR(64) NOT NULL,
                     price NUMERIC(10,2)
@@ -788,6 +788,7 @@ class FullstackStarterIntegrationTests {
         Map<String, Object> product = entities.get(0);
         assertThat(product).containsEntry("name", "Product");
         assertThat(product).containsEntry("tableName", "products");
+        assertThat(product).containsEntry("schema", "inv");
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> fields = (List<Map<String, Object>>) product.get("fields");
@@ -904,8 +905,8 @@ class FullstackStarterIntegrationTests {
     @Test
     void fullstackEndpoint_rendersCompositePrimaryKey() throws Exception {
         // OrderLine has a two-field composite PK (orderId + lineNo). It is rendered with @IdClass +
-        // a nested key class; the repository id type, the controller path, and the frontend key-array
-        // addressing all follow.
+        // a separate top-level key class (OrderLineId.java, matching the SQL wizard); the repository
+        // id type, the controller path, and the frontend key-array addressing all follow.
         Map<String, Object> orderId = Map.of("name", "orderId", "type", "Long", "primaryKey", true);
         Map<String, Object> lineNo = Map.of("name", "lineNo", "type", "Integer", "primaryKey", true);
         Map<String, Object> qty = Map.of("name", "qty", "type", "Integer");
@@ -918,20 +919,42 @@ class FullstackStarterIntegrationTests {
         Map<String, String> entries = generateZip(body);
 
         assertThat(contentEndingWith(entries, "/entity/OrderLine.java"))
-                .contains("@IdClass(OrderLine.OrderLineId.class)")
-                .contains("public static class OrderLineId implements java.io.Serializable")
+                .contains("@IdClass(OrderLineId.class)")
+                .doesNotContain("public static class OrderLineId");
+        // The composite key is its own top-level class file, not a nested class.
+        assertThat(contentEndingWith(entries, "/entity/OrderLineId.java"))
+                .contains("public class OrderLineId implements java.io.Serializable")
                 .contains("private Long orderId;")
                 .contains("private Integer lineNo;")
                 .contains("java.util.Objects.hash(orderId, lineNo)");
         assertThat(contentEndingWith(entries, "/repository/OrderLineRepository.java"))
-                .contains("JpaRepository<OrderLine, OrderLine.OrderLineId>");
+                .contains("import com.menora.shop.entity.OrderLineId;")
+                .contains("JpaRepository<OrderLine, OrderLineId>");
         assertThat(contentEndingWith(entries, "/controller/OrderLineController.java"))
                 .contains("@GetMapping(\"/{orderId}/{lineNo}\")")
                 .contains("@DeleteMapping(\"/{orderId}/{lineNo}\")")
-                .contains("new OrderLine.OrderLineId(orderId, lineNo)");
+                .contains("new OrderLineId(orderId, lineNo)");
         // The shared resource hook gained ordered-key path joining for composite addressing.
         assertThat(entries.get("shop/frontend/src/shared/api/useResource.ts"))
                 .contains("Array.isArray(id)");
+    }
+
+    @Test
+    void fullstackEndpoint_rendersTableSchema() throws Exception {
+        // A schema-qualified entity (e.g. imported from `CREATE TABLE entv.test`) must render
+        // @Table(name = "test", schema = "entv"), matching the standalone SQL wizard.
+        Map<String, Object> id = Map.of("name", "id", "type", "Long", "primaryKey", true, "generated", true);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "schemaapp");
+        body.put("packageName", "com.menora.schemaapp");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of(
+                "name", "Test", "tableName", "test", "schema", "entv", "fields", List.of(id))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/entity/Test.java"))
+                .contains("@Table(name = \"test\", schema = \"entv\")");
     }
 
     @Test
