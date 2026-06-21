@@ -1,5 +1,6 @@
 package com.menora.initializr.fullstack;
 
+import com.menora.initializr.gen.Naming;
 import com.menora.initializr.sql.ColumnModel;
 import com.menora.initializr.sql.JavaType;
 import com.menora.initializr.sql.SqlDialect;

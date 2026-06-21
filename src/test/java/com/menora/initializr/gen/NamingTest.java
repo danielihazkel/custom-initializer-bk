@@ -1,4 +1,4 @@
-package com.menora.initializr.fullstack;
+package com.menora.initializr.gen;
 
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +35,24 @@ class NamingTest {
     void toKebabCase_handlesVariousInputs() {
         assertThat(Naming.toKebabCase("OrderItem")).isEqualTo("order-item");
         assertThat(Naming.toKebabCase("orderItem")).isEqualTo("order-item");
+    }
+
+    /** All-caps SQL identifiers (common in DB2-for-i DDL) must stay intact —
+     *  separators and uppercase runs collapse to a single boundary. */
+    @Test
+    void snakeAndKebab_preserveAllCapsSqlIdentifiers() {
+        assertThat(Naming.toSnakeCase("TD_APP_STP")).isEqualTo("td_app_stp");
+        assertThat(Naming.toKebabCase("TD_APP_STP")).isEqualTo("td-app-stp");
+        assertThat(Naming.toKebabCase("line_items")).isEqualTo("line-items");
+        assertThat(Naming.toKebabCase("CUSTOMER")).isEqualTo("customer");
+    }
+
+    @Test
+    void capitalize_decapitalize() {
+        assertThat(Naming.capitalize("order")).isEqualTo("Order");
+        assertThat(Naming.decapitalize("Order")).isEqualTo("order");
+        assertThat(Naming.capitalize("")).isEqualTo("");
+        assertThat(Naming.decapitalize("")).isEqualTo("");
     }
 
     @Test

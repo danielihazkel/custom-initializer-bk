@@ -1,5 +1,6 @@
 package com.menora.initializr.sql;
 
+import com.menora.initializr.gen.Naming;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
@@ -1198,43 +1199,31 @@ public class SqlEntityGenerator {
 
     // ── Name helpers ──────────────────────────────────────────────────────────
 
+    // Case conversion is shared with the fullstack scaffolder via Naming; these thin
+    // wrappers add the wizard's defensive fallbacks for empty/degenerate identifiers.
+
     private static String toPascalCase(String snake) {
-        String[] parts = snake.split("[_\\-\\s]+");
-        StringBuilder sb = new StringBuilder();
-        for (String p : parts) {
-            if (p.isEmpty()) continue;
-            sb.append(Character.toUpperCase(p.charAt(0)));
-            if (p.length() > 1) sb.append(p.substring(1).toLowerCase(Locale.ROOT));
-        }
-        return sb.length() == 0 ? "Entity" : sb.toString();
+        String pascal = Naming.toPascalCase(snake);
+        return pascal.isEmpty() ? "Entity" : pascal;
     }
 
     private static String toCamelCase(String snake) {
-        String pascal = toPascalCase(snake);
-        return Character.toLowerCase(pascal.charAt(0)) + pascal.substring(1);
+        return Naming.decapitalize(toPascalCase(snake));
     }
 
     private static String capitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+        return Naming.capitalize(s);
     }
 
     private static String decapitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
-        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
+        return Naming.decapitalize(s);
     }
 
     /** Lower-kebab a raw table name for use as a REST collection path segment
      *  ({@code TD_APP_STP} → {@code td-app-stp}, {@code line_items} → {@code line-items}). */
     private static String toKebab(String raw) {
-        String[] parts = raw.split("[_\\-\\s]+");
-        StringBuilder sb = new StringBuilder();
-        for (String p : parts) {
-            if (p.isEmpty()) continue;
-            if (sb.length() > 0) sb.append('-');
-            sb.append(p.toLowerCase(Locale.ROOT));
-        }
-        return sb.length() == 0 ? "items" : sb.toString();
+        String kebab = Naming.toKebabCase(raw);
+        return kebab.isEmpty() ? "items" : kebab;
     }
 
     private static boolean isStringType(JavaType jt) {

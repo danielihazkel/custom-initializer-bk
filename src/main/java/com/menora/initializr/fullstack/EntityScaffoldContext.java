@@ -1,6 +1,7 @@
 package com.menora.initializr.fullstack;
 
 import com.menora.initializr.db.entity.ColorPaletteEntity;
+import com.menora.initializr.gen.Naming;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

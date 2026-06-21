@@ -1,10 +1,12 @@
-package com.menora.initializr.fullstack;
+package com.menora.initializr.gen;
 
 import java.util.Locale;
 
 /**
- * String case conversion + naive English pluralization used by the fullstack
- * scaffolding. Pluralization is best-effort — users can override via {@code tableName}.
+ * String case conversion + naive English pluralization shared by the entity
+ * generators — the standalone SQL wizard ({@code com.menora.initializr.sql}) and
+ * the fullstack scaffolder ({@code com.menora.initializr.fullstack}). Pluralization
+ * is best-effort — users can override via {@code tableName}.
  */
 public final class Naming {
 
@@ -41,16 +43,26 @@ public final class Naming {
         return Character.toLowerCase(pascal.charAt(0)) + pascal.substring(1);
     }
 
-    /** {@code OrderItem} → {@code order_item}. {@code orderItem} → {@code order_item}. */
+    /**
+     * {@code OrderItem} → {@code order_item}. {@code orderItem} → {@code order_item}.
+     * Explicit separators ({@code _}/{@code -}/space) and runs of uppercase letters
+     * collapse to a single boundary, so all-caps SQL identifiers survive intact:
+     * {@code TD_APP_STP} → {@code td_app_stp} (not {@code t_d_a_p_p_s_t_p}). A boundary
+     * is only inserted at a camel hump — an uppercase letter following a lowercase
+     * letter or digit.
+     */
     public static String toSnakeCase(String s) {
         if (s == null || s.isEmpty()) return "";
         StringBuilder sb = new StringBuilder(s.length() + 4);
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            if (c == '-' || c == ' ') {
+            if (c == '-' || c == ' ' || c == '_') {
                 sb.append('_');
             } else if (Character.isUpperCase(c)) {
-                if (i > 0 && sb.length() > 0 && sb.charAt(sb.length() - 1) != '_') sb.append('_');
+                char prev = i > 0 ? s.charAt(i - 1) : '\0';
+                if (i > 0 && (Character.isLowerCase(prev) || Character.isDigit(prev))) {
+                    sb.append('_');
+                }
                 sb.append(Character.toLowerCase(c));
             } else {
                 sb.append(c);
@@ -59,9 +71,21 @@ public final class Naming {
         return sb.toString();
     }
 
-    /** {@code OrderItem} → {@code order-item}. {@code order_item} → {@code order-item}. */
+    /** {@code OrderItem} → {@code order-item}. {@code TD_APP_STP} → {@code td-app-stp}. */
     public static String toKebabCase(String s) {
         return toSnakeCase(s).replace('_', '-');
+    }
+
+    /** Upper-case the first character only; the rest is left untouched. */
+    public static String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** Lower-case the first character only; the rest is left untouched. */
+    public static String decapitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
     /**
