@@ -26,6 +26,7 @@
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "static-configs/frontend/common/Dockerfile-node20", "targetPath": "Dockerfile", "substitutionType": "MUSTACHE", "nodeVersion": "20", "sortOrder": 23 },
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "static-configs/frontend/common/Dockerfile-node22", "targetPath": "Dockerfile", "substitutionType": "MUSTACHE", "nodeVersion": "22", "sortOrder": 23 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/nginx.conf", "targetPath": "nginx.conf", "substitutionType": "NONE", "sortOrder": 24 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/entrypoint.sh", "targetPath": "entrypoint.sh", "substitutionType": "NONE", "sortOrder": 24 },
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/frontend/Jenkinsfile.mustache", "targetPath": "k8s/Jenkinsfile", "substitutionType": "MUSTACHE", "sortOrder": 25 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/eslint.config.js", "targetPath": "eslint.config.js", "substitutionType": "NONE", "sortOrder": 26 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/.prettierrc.json", "targetPath": ".prettierrc.json", "substitutionType": "NONE", "sortOrder": 27 },
