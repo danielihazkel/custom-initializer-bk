@@ -186,6 +186,7 @@ public class FrontendProjectGenerator {
                     && !optionsContext.hasOption(fc.getDependencyId(), fc.getSubOptionId())) {
                 continue;
             }
+            if (nodeVersionMismatch(fc, desc)) continue;
             String targetRel = resolveTargetPath(fc.getTargetPath(), desc);
             Path target = projectRoot.resolve(targetRel);
             switch (fc.getFileType()) {
@@ -203,8 +204,18 @@ public class FrontendProjectGenerator {
                     && !optionsContext.hasOption(fc.getDependencyId(), fc.getSubOptionId())) {
                 continue;
             }
+            if (nodeVersionMismatch(fc, desc)) continue;
             Files.deleteIfExists(projectRoot.resolve(resolveTargetPath(fc.getTargetPath(), desc)));
         }
+    }
+
+    /**
+     * A node-version-gated contribution applies only to the matching Node version —
+     * the frontend mirror of the backend's {@code javaVersion} gate. A null gate
+     * (the common case) applies to every Node version.
+     */
+    private boolean nodeVersionMismatch(FileContributionEntity fc, FrontendProjectDescription desc) {
+        return fc.getNodeVersion() != null && !fc.getNodeVersion().equals(desc.getNodeVersion());
     }
 
     private String resolveTargetPath(String targetPath, FrontendProjectDescription desc) {

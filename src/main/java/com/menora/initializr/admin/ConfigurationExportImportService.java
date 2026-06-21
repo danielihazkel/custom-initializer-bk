@@ -110,6 +110,7 @@ public class ConfigurationExportImportService {
                     fe.setTargetPath(f.getTargetPath());
                     fe.setSubstitutionType(f.getSubstitutionType() != null ? f.getSubstitutionType().name() : null);
                     fe.setJavaVersion(f.getJavaVersion());
+                    fe.setNodeVersion(f.getNodeVersion());
                     fe.setSubOptionId(f.getSubOptionId());
                     fe.setSortOrder(f.getSortOrder());
                     fe.setProjectKind(f.getProjectKind().name());
@@ -344,6 +345,7 @@ public class ConfigurationExportImportService {
             entity.setSubstitutionType(f.getSubstitutionType() != null
                     ? FileContributionEntity.SubstitutionType.valueOf(f.getSubstitutionType()) : null);
             entity.setJavaVersion(f.getJavaVersion());
+            entity.setNodeVersion(f.getNodeVersion());
             entity.setSubOptionId(f.getSubOptionId());
             entity.setSortOrder(f.getSortOrder());
             entity.setProjectKind(parseKind(f.getProjectKind()));

@@ -135,6 +135,27 @@ class FrontendProjectGenerationIntegrationTests {
     }
 
     @Test
+    void dockerfileMatchesSelectedNodeVersion() throws Exception {
+        // Each Node version resolves to its own Dockerfile (node_version-gated rows),
+        // mirroring the backend's java_version-gated Dockerfile selection.
+        FrontendProjectDescription desc20 = baseDescription("demo");
+        desc20.setNodeVersion("20");
+        assertThat(generator.generateFileMap(desc20).get("Dockerfile"))
+                .contains("FROM node:20-alpine AS build");
+
+        FrontendProjectDescription desc22 = baseDescription("demo");
+        desc22.setNodeVersion("22");
+        String df22 = generator.generateFileMap(desc22).get("Dockerfile");
+        assertThat(df22).contains("FROM node:22-alpine AS build");
+        assertThat(df22).doesNotContain("node:20-alpine");
+
+        FrontendProjectDescription desc18 = baseDescription("demo");
+        desc18.setNodeVersion("18");
+        assertThat(generator.generateFileMap(desc18).get("Dockerfile"))
+                .contains("FROM node:18-alpine AS build");
+    }
+
+    @Test
     void baselinePackageJsonHasReactAndVite() throws Exception {
         FrontendProjectDescription desc = baseDescription("demo");
         Map<String, String> files = generator.generateFileMap(desc);

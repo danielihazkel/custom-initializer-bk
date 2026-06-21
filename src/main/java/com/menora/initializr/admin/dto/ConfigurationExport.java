@@ -127,6 +127,7 @@ public class ConfigurationExport {
         private String targetPath;
         private String substitutionType;
         private String javaVersion;
+        private String nodeVersion;
         private String subOptionId;
         private int sortOrder;
         private String projectKind;
@@ -143,6 +144,8 @@ public class ConfigurationExport {
         public void setSubstitutionType(String substitutionType) { this.substitutionType = substitutionType; }
         public String getJavaVersion() { return javaVersion; }
         public void setJavaVersion(String javaVersion) { this.javaVersion = javaVersion; }
+        public String getNodeVersion() { return nodeVersion; }
+        public void setNodeVersion(String nodeVersion) { this.nodeVersion = nodeVersion; }
         public String getSubOptionId() { return subOptionId; }
         public void setSubOptionId(String subOptionId) { this.subOptionId = subOptionId; }
         public int getSortOrder() { return sortOrder; }

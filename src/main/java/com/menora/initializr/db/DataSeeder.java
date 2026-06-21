@@ -306,6 +306,7 @@ public class DataSeeder implements SmartInitializingSingleton {
             e.setSubstitutionType(d.substitutionType() != null
                     ? FileContributionEntity.SubstitutionType.valueOf(d.substitutionType()) : null);
             e.setJavaVersion(d.javaVersion());
+            e.setNodeVersion(d.nodeVersion());
             e.setSubOptionId(d.subOptionId());
             e.setSortOrder(d.sortOrder());
             e.setProjectKind(kind);

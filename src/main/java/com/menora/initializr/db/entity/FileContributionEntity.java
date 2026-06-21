@@ -49,6 +49,10 @@ public class FileContributionEntity {
     @Column(name = "java_version", length = 10)
     private String javaVersion;
 
+    /** Frontend mirror of {@link #javaVersion}: null = all Node versions; "18"/"20"/"22" = version-specific */
+    @Column(name = "node_version", length = 10)
+    private String nodeVersion;
+
     /** null = always include; set to an option ID to include only when that sub-option is selected */
     @Column(name = "sub_option_id", length = 50)
     private String subOptionId;
@@ -76,6 +80,8 @@ public class FileContributionEntity {
     public void setSubstitutionType(SubstitutionType substitutionType) { this.substitutionType = substitutionType; }
     public String getJavaVersion() { return javaVersion; }
     public void setJavaVersion(String javaVersion) { this.javaVersion = blankToNull(javaVersion); }
+    public String getNodeVersion() { return nodeVersion; }
+    public void setNodeVersion(String nodeVersion) { this.nodeVersion = blankToNull(nodeVersion); }
     public String getSubOptionId() { return subOptionId; }
     public void setSubOptionId(String subOptionId) { this.subOptionId = blankToNull(subOptionId); }
 

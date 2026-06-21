@@ -33,7 +33,7 @@ public final class CatalogManifests {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record FileContribDef(String depId, String fileType, String contentResource,
                                  String content, String targetPath, String substitutionType,
-                                 String javaVersion, String subOptionId, int sortOrder) {}
+                                 String javaVersion, String nodeVersion, String subOptionId, int sortOrder) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record BuildCustomDef(String depId, String type, String mavenGroupId,
