@@ -4,6 +4,7 @@ import java.util.List;
 
 public record TableModel(
         String name,
+        String schema,
         List<ColumnModel> columns,
         List<String> pkColumns,
         List<ForeignKey> foreignKeys) {

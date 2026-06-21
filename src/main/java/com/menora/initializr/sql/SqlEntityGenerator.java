@@ -53,7 +53,7 @@ public class SqlEntityGenerator {
         for (TableModel table : tables) {
             files.add(renderEntity(table, dialect, packageName, opts, knownTableNames));
             if (table.hasCompositePk()) {
-                files.add(renderIdClass(table, packageName, opts));
+                files.add(renderIdClass(table, dialect, packageName, opts));
             }
             if (opts.generateRepositoryFor(table.name())) {
                 files.add(renderRepository(table, dialect, packageName, opts));
@@ -91,6 +91,27 @@ public class SqlEntityGenerator {
     private static final Pattern DB2_CURRENT_TS_DATE_TIME =
             Pattern.compile("\\bCURRENT\\s+(TIMESTAMP|DATE|TIME)\\b",
                     Pattern.CASE_INSENSITIVE);
+
+    /** DB2-for-i (iSeries) lets a column carry a short system name ahead of its
+     *  type: {@code STATUS_CODE FOR COLUMN STATU00001 NUMERIC(3,0)}. JSqlParser
+     *  hits {@code FOR} where it expects a data type, so strip the clause — the
+     *  real (long) column name is the one we keep. */
+    private static final Pattern DB2_FOR_COLUMN =
+            Pattern.compile("\\bFOR\\s+COLUMN\\s+\\w+", Pattern.CASE_INSENSITIVE);
+
+    /** DB2 column character-set clause ({@code CHAR(24) CCSID 424}); JSqlParser
+     *  does not model it. */
+    private static final Pattern DB2_CCSID =
+            Pattern.compile("\\bCCSID\\s+(?:\\d+|UNICODE)", Pattern.CASE_INSENSITIVE);
+
+    /** DB2 column-data clauses ({@code FOR BIT DATA} etc.) JSqlParser rejects. */
+    private static final Pattern DB2_FOR_DATA =
+            Pattern.compile("\\bFOR\\s+(?:BIT|SBCS|MIXED)\\s+DATA", Pattern.CASE_INSENSITIVE);
+
+    /** Schema-qualified constraint name ({@code CONSTRAINT ENTV.Q_… PRIMARY KEY})
+     *  — JSqlParser's grammar takes a single identifier, so drop the schema. */
+    private static final Pattern DB2_QUALIFIED_CONSTRAINT =
+            Pattern.compile("(\\bCONSTRAINT\\s+)\\w+\\.(\\w+)", Pattern.CASE_INSENSITIVE);
 
     /** Statements we safely skip — valid DDL the wizard does not act on.
      *  Matches the leading keyword(s) of the trimmed statement. */
@@ -160,8 +181,15 @@ public class SqlEntityGenerator {
     }
 
     private static String normalizeDb2(String sql) {
-        return DB2_CURRENT_TS_DATE_TIME.matcher(sql).replaceAll(m ->
+        String out = DB2_CURRENT_TS_DATE_TIME.matcher(sql).replaceAll(m ->
                 "CURRENT_" + m.group(1).toUpperCase(Locale.ROOT));
+        // Strip DB2-for-i column short-names before the broader FOR…DATA rule so
+        // the two patterns do not overlap.
+        out = DB2_FOR_COLUMN.matcher(out).replaceAll("");
+        out = DB2_CCSID.matcher(out).replaceAll("");
+        out = DB2_FOR_DATA.matcher(out).replaceAll("");
+        out = DB2_QUALIFIED_CONSTRAINT.matcher(out).replaceAll("$1$2");
+        return out;
     }
 
     /** Split on {@code ;} while respecting single-quoted string literals (with
@@ -268,6 +296,14 @@ public class SqlEntityGenerator {
 
     private TableModel toTableModel(CreateTable ct) {
         String tableName = unquote(ct.getTable().getName());
+        String schema = unquote(ct.getTable().getSchemaName());
+        // Be robust to JSqlParser variants that leave the schema fused onto the
+        // name (e.g. "ENTV.TD_APP_STP"): split on the last dot ourselves.
+        if (tableName != null && tableName.contains(".")) {
+            int dot = tableName.lastIndexOf('.');
+            if (schema == null || schema.isBlank()) schema = tableName.substring(0, dot);
+            tableName = tableName.substring(dot + 1);
+        }
         List<String> pkColumns = new ArrayList<>();
         List<ForeignKey> fks = new ArrayList<>();
         Set<String> fkColumnNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
@@ -316,7 +352,7 @@ public class SqlEntityGenerator {
             columns = fixed;
         }
 
-        return new TableModel(tableName, columns, pkColumns, fks);
+        return new TableModel(tableName, schema, columns, pkColumns, fks);
     }
 
     private ColumnModel toColumnModel(ColumnDefinition cd, List<String> tablePkCols, Set<String> fkColumnNames) {
@@ -410,7 +446,11 @@ public class SqlEntityGenerator {
         }
         sb.append('\n');
         sb.append("@Entity\n");
-        sb.append("@Table(name = \"").append(table.name()).append("\")\n");
+        sb.append("@Table(name = \"").append(table.name()).append('"');
+        if (table.schema() != null && !table.schema().isBlank()) {
+            sb.append(", schema = \"").append(table.schema()).append('"');
+        }
+        sb.append(")\n");
         sb.append("@Data\n");
         sb.append("@NoArgsConstructor\n");
         sb.append("@AllArgsConstructor\n");
@@ -614,7 +654,8 @@ public class SqlEntityGenerator {
         return column;
     }
 
-    private GeneratedJavaFile renderIdClass(TableModel table, String packageName, SqlDepOptions opts) {
+    private GeneratedJavaFile renderIdClass(TableModel table, SqlDialect dialect,
+                                            String packageName, SqlDepOptions opts) {
         String className = toPascalCase(table.name()) + "Id";
         String fullPkg = packageName + "." + opts.subPackage();
 
@@ -632,8 +673,7 @@ public class SqlEntityGenerator {
                     .filter(c -> c.name().equalsIgnoreCase(pkCol))
                     .findFirst().orElseThrow(() -> new IllegalStateException(
                             "PK column '" + pkCol + "' not found in table " + table.name()));
-            JavaType jt = TypeMappers.map(SqlDialect.POSTGRESQL /*irrelevant for PK id class*/,
-                    col.rawType(), col.precision(), col.scale());
+            JavaType jt = TypeMappers.map(dialect, col.rawType(), col.precision(), col.scale());
             imports.addAll(jt.imports());
             fields.append("    private ").append(jt.simpleName()).append(' ')
                     .append(toCamelCase(col.name())).append(";\n");

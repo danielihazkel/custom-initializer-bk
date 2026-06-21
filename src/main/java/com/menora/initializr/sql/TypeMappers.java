@@ -20,7 +20,7 @@ public final class TypeMappers {
             case H2 -> mapH2(t);
             case MSSQL -> mapMssql(t);
             case ORACLE -> mapOracle(t, precision, scale);
-            case DB2 -> mapDb2(t);
+            case DB2 -> mapDb2(t, precision, scale);
         };
         if (specific != null) {
             return specific;
@@ -100,12 +100,21 @@ public final class TypeMappers {
         };
     }
 
-    private static JavaType mapDb2(String t) {
+    private static JavaType mapDb2(String t, Integer precision, Integer scale) {
         return switch (t) {
             case "TIMESTAMP" -> JavaType.of("LocalDateTime", "java.time.LocalDateTime");
             case "GRAPHIC", "VARGRAPHIC" -> JavaType.langType("String");
             case "CLOB", "DBCLOB" -> JavaType.langType("String");
             case "BLOB" -> JavaType.langType("byte[]");
+            // Scale-0 NUMERIC/DECIMAL are integral codes/flags on DB2-for-i;
+            // size the Java type by precision, like Oracle's NUMBER handling.
+            case "NUMERIC", "DECIMAL", "DEC" -> {
+                if (scale != null && scale > 0) yield JavaType.of("BigDecimal", "java.math.BigDecimal");
+                if (precision == null) yield JavaType.of("BigDecimal", "java.math.BigDecimal");
+                if (precision <= 9) yield JavaType.langType("Integer");
+                if (precision <= 18) yield JavaType.langType("Long");
+                yield JavaType.of("BigDecimal", "java.math.BigDecimal");
+            }
             default -> null;
         };
     }

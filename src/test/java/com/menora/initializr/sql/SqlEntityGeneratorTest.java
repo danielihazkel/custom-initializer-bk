@@ -272,6 +272,46 @@ class SqlEntityGeneratorTest {
         }
     }
 
+    @Test
+    void db2ForI_schemaQualifiedWithForColumnAndCcsidAndCompositePk() {
+        // Real DB2-for-i (iSeries) export: schema-qualified table + constraint,
+        // CCSID column clauses, FOR COLUMN system short-names, NUMERIC(n,0) codes.
+        String sql = """
+                CREATE TABLE ENTV.TD_APP_STP (
+                    REQUEST_ID CHAR(24) CCSID 424 NOT NULL ,
+                    STEP_CODE NUMERIC(2, 0) NOT NULL ,
+                    STATUS_CODE FOR COLUMN STATU00001 NUMERIC(3, 0) NOT NULL ,
+                    ERROR_MESSAGE FOR COLUMN ERROR00001 VARCHAR(100) CCSID 424 NOT NULL ,
+                    TIMESTEMP CHAR(26) CCSID 424 NOT NULL DEFAULT '' ,
+                    CONSTRAINT ENTV.Q_ENTV_TD_APP_STP_REQUEST_ID_00001 PRIMARY KEY( REQUEST_ID , STEP_CODE ) )
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.DB2, "p", null);
+
+        String entity = findFile(files, "entity/TdAppStp.java").content();
+        assertThat(entity)
+                .contains("@Table(name = \"TD_APP_STP\", schema = \"ENTV\")")
+                .contains("@IdClass(TdAppStpId.class)")
+                // NUMERIC(2,0)/(3,0) → integral, not BigDecimal
+                .contains("private Integer stepCode;")
+                .contains("private Integer statusCode;")
+                // CHAR/VARCHAR → String, real (long) column names kept
+                .contains("private String requestId;")
+                .contains("private String errorMessage;")
+                .contains("private String timestemp;")
+                // DB2-for-i clauses must not leak into the generated source
+                .doesNotContain("CCSID")
+                .doesNotContain("FOR COLUMN")
+                .doesNotContain("STATU00001")
+                .doesNotContain("BigDecimal");
+
+        // Composite PK id class is emitted with the two key fields.
+        String idClass = findFile(files, "entity/TdAppStpId.java").content();
+        assertThat(idClass)
+                .contains("class TdAppStpId implements Serializable")
+                .contains("private String requestId;")
+                .contains("private Integer stepCode;");
+    }
+
     // ── Options ──────────────────────────────────────────────────────────────
 
     @Test
