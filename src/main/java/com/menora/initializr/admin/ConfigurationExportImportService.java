@@ -96,6 +96,7 @@ public class ConfigurationExportImportService {
                     ee.setRepository(e.getRepository());
                     ee.setSortOrder(e.getSortOrder());
                     ee.setCompatibilityRange(e.getCompatibilityRange());
+                    ee.setStarter(e.isStarter());
                     ee.setProjectKind(e.getProjectKind().name());
                     return ee;
                 }).toList());
@@ -103,7 +104,7 @@ public class ConfigurationExportImportService {
         export_.setFileContributions(
                 fileContribRepo.findAll().stream().map(f -> {
                     FileContribExport fe = new FileContribExport();
-                    fe.setDependencyId(f.getDependencyId());
+                    fe.setDepId(f.getDependencyId());
                     fe.setFileType(f.getFileType().name());
                     fe.setContent(f.getContent());
                     fe.setTargetPath(f.getTargetPath());
@@ -118,8 +119,8 @@ public class ConfigurationExportImportService {
         export_.setBuildCustomizations(
                 buildCustomRepo.findAll().stream().map(b -> {
                     BuildCustomExport be = new BuildCustomExport();
-                    be.setDependencyId(b.getDependencyId());
-                    be.setCustomizationType(b.getCustomizationType().name());
+                    be.setDepId(b.getDependencyId());
+                    be.setType(b.getCustomizationType().name());
                     be.setMavenGroupId(b.getMavenGroupId());
                     be.setMavenArtifactId(b.getMavenArtifactId());
                     be.setVersion(b.getVersion());
@@ -139,7 +140,7 @@ public class ConfigurationExportImportService {
         export_.setSubOptions(
                 subOptionRepo.findAll().stream().map(s -> {
                     SubOptionExport se = new SubOptionExport();
-                    se.setDependencyId(s.getDependencyId());
+                    se.setDepId(s.getDependencyId());
                     se.setOptionId(s.getOptionId());
                     se.setLabel(s.getLabel());
                     se.setDescription(s.getDescription());
@@ -328,6 +329,7 @@ public class ConfigurationExportImportService {
             entity.setRepository(e.getRepository());
             entity.setSortOrder(e.getSortOrder());
             entity.setCompatibilityRange(e.getCompatibilityRange());
+            entity.setStarter(e.isStarter());
             entity.setProjectKind(parseKind(e.getProjectKind()));
             entryRepo.save(entity);
         }
@@ -335,7 +337,7 @@ public class ConfigurationExportImportService {
         // Insert leaf tables (string-based references, no FK resolution needed)
         for (FileContribExport f : safe(data.getFileContributions())) {
             FileContributionEntity entity = new FileContributionEntity();
-            entity.setDependencyId(f.getDependencyId());
+            entity.setDependencyId(f.getDepId());
             entity.setFileType(FileContributionEntity.FileType.valueOf(f.getFileType()));
             entity.setContent(f.getContent());
             entity.setTargetPath(f.getTargetPath());
@@ -350,8 +352,8 @@ public class ConfigurationExportImportService {
 
         for (BuildCustomExport b : safe(data.getBuildCustomizations())) {
             BuildCustomizationEntity entity = new BuildCustomizationEntity();
-            entity.setDependencyId(b.getDependencyId());
-            entity.setCustomizationType(BuildCustomizationEntity.CustomizationType.valueOf(b.getCustomizationType()));
+            entity.setDependencyId(b.getDepId());
+            entity.setCustomizationType(BuildCustomizationEntity.CustomizationType.valueOf(b.getType()));
             entity.setMavenGroupId(b.getMavenGroupId());
             entity.setMavenArtifactId(b.getMavenArtifactId());
             entity.setVersion(b.getVersion());
@@ -370,7 +372,7 @@ public class ConfigurationExportImportService {
 
         for (SubOptionExport s : safe(data.getSubOptions())) {
             DependencySubOptionEntity entity = new DependencySubOptionEntity();
-            entity.setDependencyId(s.getDependencyId());
+            entity.setDependencyId(s.getDepId());
             entity.setOptionId(s.getOptionId());
             entity.setLabel(s.getLabel());
             entity.setDescription(s.getDescription());

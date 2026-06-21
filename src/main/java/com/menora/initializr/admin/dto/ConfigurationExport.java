@@ -1,5 +1,7 @@
 package com.menora.initializr.admin.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 import java.util.List;
 
 public class ConfigurationExport {
@@ -86,6 +88,7 @@ public class ConfigurationExport {
         private String repository;
         private int sortOrder;
         private String compatibilityRange;
+        private boolean starter = true;
         private String projectKind;
 
         public String getGroupName() { return groupName; }
@@ -110,12 +113,15 @@ public class ConfigurationExport {
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
         public String getCompatibilityRange() { return compatibilityRange; }
         public void setCompatibilityRange(String compatibilityRange) { this.compatibilityRange = compatibilityRange; }
+        public boolean isStarter() { return starter; }
+        public void setStarter(boolean starter) { this.starter = starter; }
         public String getProjectKind() { return projectKind; }
         public void setProjectKind(String projectKind) { this.projectKind = projectKind; }
     }
 
     public static class FileContribExport {
-        private String dependencyId;
+        @JsonAlias("dependencyId")
+        private String depId;
         private String fileType;
         private String content;
         private String targetPath;
@@ -125,8 +131,8 @@ public class ConfigurationExport {
         private int sortOrder;
         private String projectKind;
 
-        public String getDependencyId() { return dependencyId; }
-        public void setDependencyId(String dependencyId) { this.dependencyId = dependencyId; }
+        public String getDepId() { return depId; }
+        public void setDepId(String depId) { this.depId = depId; }
         public String getFileType() { return fileType; }
         public void setFileType(String fileType) { this.fileType = fileType; }
         public String getContent() { return content; }
@@ -146,8 +152,10 @@ public class ConfigurationExport {
     }
 
     public static class BuildCustomExport {
-        private String dependencyId;
-        private String customizationType;
+        @JsonAlias("dependencyId")
+        private String depId;
+        @JsonAlias("customizationType")
+        private String type;
         private String mavenGroupId;
         private String mavenArtifactId;
         private String version;
@@ -162,10 +170,10 @@ public class ConfigurationExport {
         private int sortOrder;
         private String projectKind;
 
-        public String getDependencyId() { return dependencyId; }
-        public void setDependencyId(String dependencyId) { this.dependencyId = dependencyId; }
-        public String getCustomizationType() { return customizationType; }
-        public void setCustomizationType(String customizationType) { this.customizationType = customizationType; }
+        public String getDepId() { return depId; }
+        public void setDepId(String depId) { this.depId = depId; }
+        public String getType() { return type; }
+        public void setType(String type) { this.type = type; }
         public String getMavenGroupId() { return mavenGroupId; }
         public void setMavenGroupId(String mavenGroupId) { this.mavenGroupId = mavenGroupId; }
         public String getMavenArtifactId() { return mavenArtifactId; }
@@ -195,15 +203,16 @@ public class ConfigurationExport {
     }
 
     public static class SubOptionExport {
-        private String dependencyId;
+        @JsonAlias("dependencyId")
+        private String depId;
         private String optionId;
         private String label;
         private String description;
         private int sortOrder;
         private String projectKind;
 
-        public String getDependencyId() { return dependencyId; }
-        public void setDependencyId(String dependencyId) { this.dependencyId = dependencyId; }
+        public String getDepId() { return depId; }
+        public void setDepId(String depId) { this.depId = depId; }
         public String getOptionId() { return optionId; }
         public void setOptionId(String optionId) { this.optionId = optionId; }
         public String getLabel() { return label; }
