@@ -98,6 +98,8 @@ class FrontendProjectGenerationIntegrationTests {
                 "demo/.editorconfig",
                 "demo/.gitignore",
                 "demo/Dockerfile",
+                "demo/settings.xml",
+                "demo/VERSION",
                 "demo/eslint.config.js",
                 "demo/src/main.tsx",
                 "demo/src/app/App.tsx",

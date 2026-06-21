@@ -288,7 +288,7 @@ class DataSeederTest {
         long feFileContribs = fileContribRepo.findAll().stream()
                 .filter(f -> f.getProjectKind() == ProjectKind.FRONTEND)
                 .count();
-        assertThat(feFileContribs).isEqualTo(79);
+        assertThat(feFileContribs).isEqualTo(81);
 
         // The FSD layer barrels are FRONTEND __common__ rows.
         assertThat(fileContribRepo.findAll()).anySatisfy(f -> {
