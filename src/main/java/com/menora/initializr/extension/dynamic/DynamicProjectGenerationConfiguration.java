@@ -244,12 +244,15 @@ public class DynamicProjectGenerationConfiguration {
             OpenApiCodeGenerator generator) {
         return projectRoot -> {
             if (specContext.isEmpty()) return;
+            // Gate generated @Valid on the validation starter — otherwise jakarta.validation
+            // wouldn't resolve and the generated controller fails to compile.
+            boolean hasValidation = selectedDepIds(description).contains("validation");
             for (var entry : specContext.all().entrySet()) {
                 String spec = entry.getValue();
                 if (spec == null || spec.isBlank()) continue;
                 OpenApiWizardOptions opts = specContext.optionsFor(entry.getKey());
                 List<GeneratedOpenApiFile> files = generator.generate(
-                        spec, description.getPackageName(), opts);
+                        spec, description.getPackageName(), opts, hasValidation);
                 String packagePath = description.getPackageName().replace('.', '/');
                 for (GeneratedOpenApiFile f : files) {
                     Path target = projectRoot.resolve(

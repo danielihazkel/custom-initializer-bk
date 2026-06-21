@@ -59,6 +59,18 @@ public class OpenApiCodeGenerator {
     }
 
     public List<GeneratedOpenApiFile> generate(String spec, String packageName, OpenApiWizardOptions options) {
+        // Default: do not emit Bean Validation. The 3-arg path is used by the discard-only
+        // spec parse-check and the agent scaffold, neither of which adds the validation starter.
+        return generate(spec, packageName, options, false);
+    }
+
+    /**
+     * @param hasValidation whether the {@code validation} starter is on the generated project's
+     *                      build — gates {@code @Valid} / {@code jakarta.validation.Valid} emission,
+     *                      which otherwise wouldn't resolve at compile time.
+     */
+    public List<GeneratedOpenApiFile> generate(String spec, String packageName,
+                                               OpenApiWizardOptions options, boolean hasValidation) {
         if (spec == null || spec.isBlank()) return List.of();
         OpenAPI api = parseOrThrow(spec);
         OpenApiWizardOptions opts = options != null ? options
@@ -74,7 +86,7 @@ public class OpenApiCodeGenerator {
         Map<String, List<OperationModel>> byTag = groupByTag(operations);
         if (opts.emitControllers()) {
             for (var group : byTag.entrySet()) {
-                out.add(renderController(group.getKey(), group.getValue(), packageName, opts));
+                out.add(renderController(group.getKey(), group.getValue(), packageName, opts, hasValidation));
             }
         }
         if (opts.emitClient() && !byTag.isEmpty()) {
@@ -297,7 +309,8 @@ public class OpenApiCodeGenerator {
     }
 
     private GeneratedOpenApiFile renderController(String tag, List<OperationModel> ops,
-                                                  String packageName, OpenApiWizardOptions opts) {
+                                                  String packageName, OpenApiWizardOptions opts,
+                                                  boolean hasValidation) {
         String apiPkg = opts.apiPackageOrDefault();
         String dtoPkg = opts.dtoPackageOrDefault();
         String fullPkg = packageName + "." + apiPkg;
@@ -332,7 +345,7 @@ public class OpenApiCodeGenerator {
         imports.addAll(mappings);
         if (hasBody) {
             imports.add("org.springframework.web.bind.annotation.RequestBody");
-            imports.add("jakarta.validation.Valid");
+            if (hasValidation) imports.add("jakarta.validation.Valid");
         }
         if (hasPath) imports.add("org.springframework.web.bind.annotation.PathVariable");
         if (hasQuery) imports.add("org.springframework.web.bind.annotation.RequestParam");
@@ -347,7 +360,7 @@ public class OpenApiCodeGenerator {
         sb.append("@Validated\n");
         sb.append("@RequestMapping\n");
         sb.append("public class ").append(className).append(" {\n\n");
-        for (OperationModel op : ops) appendMethod(sb, op);
+        for (OperationModel op : ops) appendMethod(sb, op, hasValidation);
         sb.append("}\n");
 
         return new GeneratedOpenApiFile(
@@ -355,7 +368,7 @@ public class OpenApiCodeGenerator {
                 sb.toString());
     }
 
-    private void appendMethod(StringBuilder sb, OperationModel op) {
+    private void appendMethod(StringBuilder sb, OperationModel op, boolean hasValidation) {
         if (op.summary() != null && !op.summary().isBlank()) {
             sb.append("    /** ").append(escapeJavadoc(op.summary())).append(" */\n");
         }
@@ -379,7 +392,7 @@ public class OpenApiCodeGenerator {
             args.add(arg.toString());
         }
         if (op.requestBodyType() != null) {
-            args.add("@Valid @RequestBody " + op.requestBodyType() + " body");
+            args.add((hasValidation ? "@Valid " : "") + "@RequestBody " + op.requestBodyType() + " body");
         }
         sb.append(String.join(", ", args));
         sb.append(") {\n");
