@@ -108,8 +108,30 @@ class FrontendProjectGenerationIntegrationTests {
                 "demo/src/widgets/index.ts",
                 "demo/src/features/index.ts",
                 "demo/src/entities/index.ts",
-                "demo/src/shared/index.ts"
+                "demo/src/shared/index.ts",
+                "demo/k8s/Jenkinsfile",
+                "demo/k8s/values.yaml"
         );
+        // Jenkinsfile relocated into k8s/, not at the project root
+        assertThat(entries).doesNotContain("demo/Jenkinsfile");
+    }
+
+    @Test
+    void k8sManifestsRenderWithProjectName() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        String values = files.get("k8s/values.yaml");
+        assertThat(values).isNotNull();
+        assertThat(values).contains("repository: repo.menora.co.il/docker/frontend/demo");
+        assertThat(values).contains("host: demo.menora.co.il");
+
+        String jenkins = files.get("k8s/Jenkinsfile");
+        assertThat(jenkins).isNotNull();
+        assertThat(jenkins).contains("APP_NAME     = 'demo'");
+        assertThat(jenkins).contains("repo.menora.co.il/docker/frontend/demo");
+        // Node-based build, not Maven
+        assertThat(jenkins).doesNotContain("./mvnw");
     }
 
     @Test

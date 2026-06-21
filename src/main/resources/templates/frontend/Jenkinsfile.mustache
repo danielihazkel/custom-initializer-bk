@@ -1,0 +1,64 @@
+pipeline {
+    agent any
+
+    environment {
+        APP_NAME     = '{{projectName}}'
+        IMAGE_REPO   = "repo.menora.co.il/docker/frontend/{{projectName}}"
+        IMAGE_TAG    = sh(script: 'node -p "require(\'./package.json\').version"', returnStdout: true).trim()
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh '{{#isPnpm}}corepack enable && pnpm install --frozen-lockfile && pnpm build{{/isPnpm}}{{^isPnpm}}npm ci && npm run build{{/isPnpm}}'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh '{{#isPnpm}}pnpm test{{/isPnpm}}{{^isPnpm}}npm test{{/isPnpm}}'
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    docker.withRegistry('https://repo.menora.co.il/docker', 'artifactory-credentials') {
+                        def image = docker.build("${IMAGE_REPO}:${IMAGE_TAG}")
+                        image.push()
+                        image.push('latest')
+                    }
+                }
+            }
+        }
+
+        stage('Deploy') {
+            when {
+                branch 'main'
+            }
+            steps {
+                sh """
+                    helm upgrade --install ${APP_NAME} ./k8s \
+                        --set image.tag=${IMAGE_TAG} \
+                        --namespace ${APP_NAME} \
+                        --create-namespace \
+                        --wait
+                """
+            }
+        }
+
+    }
+
+    post {
+        failure {
+            echo "Pipeline failed for ${APP_NAME}:${IMAGE_TAG}"
+        }
+    }
+}
