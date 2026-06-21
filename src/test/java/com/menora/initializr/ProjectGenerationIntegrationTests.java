@@ -132,6 +132,53 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void loggingDependencyWritesJsonTemplateLayoutConfig() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("logging");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        // The logging dep overwrites the __common__ log4j2-spring.xml (higher sortOrder)
+        String log4j2 = Files.readString(projectDir.resolve("src/main/resources/log4j2-spring.xml"));
+        assertThat(log4j2).contains("JsonTemplateLayout");
+        assertThat(log4j2).contains("classpath:logFormat.json");
+        assertThat(log4j2).contains("name=\"com.menora.demo.controller\"");  // templated from packageName
+        assertThat(log4j2).contains("name=\"com.menora.demo\"");
+        assertThat(log4j2).doesNotContain("<Kafka");                          // kafka-logs not selected
+
+        String logFormat = Files.readString(projectDir.resolve("src/main/resources/logFormat.json"));
+        assertThat(logFormat).contains("\"appName\": \"demo\"");              // templated from artifactId
+        assertThat(project).filePaths().contains("src/main/resources/detailedLogFormat.json");
+
+        String pom = Files.readString(projectDir.resolve("pom.xml"));
+        assertThat(pom).contains("log4j-layout-template-json");
+        assertThat(pom).doesNotContain("kafka-clients");                      // gated on kafka-logs
+    }
+
+    @Test
+    void loggingKafkaLogsSubOptionAddsKafkaAppenderAndDependency() throws Exception {
+        optionsContext.populate(Map.of("logging", List.of("kafka-logs")));
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("logging");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+
+            String log4j2 = Files.readString(projectDir.resolve("src/main/resources/log4j2-spring.xml"));
+            assertThat(log4j2).contains("<Kafka name=\"TechnicalKafka\"");
+            assertThat(log4j2).contains("classpath:detailedLogFormat.json");
+            assertThat(log4j2).contains("<AppenderRef ref=\"TechnicalAsyncKafka\" />");
+            assertThat(log4j2).contains("<AppenderRef ref=\"DetailedAsyncKafka\" />");
+
+            String pom = Files.readString(projectDir.resolve("pom.xml"));
+            assertThat(pom).contains("kafka-clients");
+        } finally {
+            optionsContext.clear();
+        }
+    }
+
+    @Test
     void generatedProjectContainsEditorconfig() throws Exception {
         WebProjectRequest request = createBaseRequest();
         request.getDependencies().add("web");

@@ -61,7 +61,7 @@ class DataSeederTest {
 
         assertThat(backendGroupNames).containsExactly(
                 "Menora Standards", "Web", "Data", "Messaging", "Security",
-                "Observability", "Logging", "Communication", "Utilities");
+                "Observability", "Communication", "Utilities");
     }
 
     @Test
@@ -97,6 +97,44 @@ class DataSeederTest {
     @Test
     void fileHandlerUtilsIsNotAStarter() {
         assertThat(entryRepo.findByDepId("file-handler-utils").orElseThrow().isStarter()).isFalse();
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void loggingEntryLivesInMenoraStandardsGroup() {
+        DependencyEntryEntity logging = entryRepo.findByDepId("logging").orElseThrow();
+        assertThat(logging.getGroup().getName()).isEqualTo("Menora Standards");
+    }
+
+    @Test
+    void loggingContributesLog4j2AndJsonFormats() {
+        // logFormat.json, detailedLogFormat.json, log4j2-spring.xml (all TEMPLATE)
+        List<FileContributionEntity> logging = fileContribRepo
+                .findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
+                        java.util.Set.of("logging"), ProjectKind.BACKEND);
+        assertThat(logging).hasSize(3)
+                .allSatisfy(f -> assertThat(f.getFileType())
+                        .isEqualTo(FileContributionEntity.FileType.TEMPLATE));
+        assertThat(logging).extracting(FileContributionEntity::getTargetPath).contains(
+                "src/main/resources/logFormat.json",
+                "src/main/resources/detailedLogFormat.json",
+                "src/main/resources/log4j2-spring.xml");
+    }
+
+    @Test
+    void loggingBuildCustomizationsSeeded() {
+        // log4j-layout-template-json (always) + kafka-clients (gated on kafka-logs)
+        List<BuildCustomizationEntity> logging = buildCustomRepo
+                .findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
+                        java.util.Set.of("logging"), ProjectKind.BACKEND);
+        assertThat(logging).anySatisfy(c -> {
+            assertThat(c.getMavenArtifactId()).isEqualTo("log4j-layout-template-json");
+            assertThat(c.getSubOptionId()).isNull();
+        });
+        assertThat(logging).anySatisfy(c -> {
+            assertThat(c.getMavenArtifactId()).isEqualTo("kafka-clients");
+            assertThat(c.getSubOptionId()).isEqualTo("kafka-logs");
+        });
     }
 
     // ── File contributions ──────────────────────────────────────────────────────

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration>
+
+    <Properties>
+{{#optLoggingKafkaLogs}}
+        <Property name="kafkaUrl"
+                  value="${env:LOG_KAFKA_URL:-172.22.21.27:9092,172.22.21.30:9092,172.22.21.31:9092}" />
+        <Property name="kafkaTopicName"
+                  value="${env:LOG_KAFKA_TOPIC_NAME:-QA_APP_LTS_MNG_SYS}" />
+{{/optLoggingKafkaLogs}}
+    </Properties>
+
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <JsonTemplateLayout eventTemplateUri="classpath:logFormat.json" maxStringLength="20000"/>
+        </Console>
+{{#optLoggingKafkaLogs}}
+        <Kafka name="TechnicalKafka" topic="${kafkaTopicName}" ignoreExceptions="false">
+            <JsonTemplateLayout eventTemplateUri="classpath:logFormat.json" />
+            <Property name="bootstrap.servers">${kafkaUrl}</Property>
+        </Kafka>
+        <Async name="TechnicalAsyncKafka">
+            <AppenderRef ref="TechnicalKafka" />
+        </Async>
+
+        <Kafka name="DetailedKafka" topic="${kafkaTopicName}" ignoreExceptions="false">
+            <JsonTemplateLayout eventTemplateUri="classpath:detailedLogFormat.json" />
+            <Property name="bootstrap.servers">${kafkaUrl}</Property>
+        </Kafka>
+        <Async name="DetailedAsyncKafka">
+            <AppenderRef ref="DetailedKafka" />
+        </Async>
+{{/optLoggingKafkaLogs}}
+    </Appenders>
+
+    <Loggers>
+        <Root level="error">
+            <AppenderRef ref="Console" />
+        </Root>
+        <Logger name="{{packageName}}.controller" level="info" additivity="false">
+            <AppenderRef ref="Console" />
+{{#optLoggingKafkaLogs}}
+            <AppenderRef ref="DetailedAsyncKafka" />
+{{/optLoggingKafkaLogs}}
+        </Logger>
+        <Logger name="{{packageName}}" level="info" additivity="false">
+            <AppenderRef ref="Console" />
+{{#optLoggingKafkaLogs}}
+            <AppenderRef ref="TechnicalAsyncKafka" />
+{{/optLoggingKafkaLogs}}
+        </Logger>
+    </Loggers>
+
+</Configuration>

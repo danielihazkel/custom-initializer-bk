@@ -1,0 +1,39 @@
+{
+  "systemName": "{{artifactId}}",
+  "appName": "{{artifactId}}",
+  "logType": "detailed-info",
+  "labels": {
+    "$resolver": "mdc",
+    "flatten": true,
+    "stringified": true
+  },
+  "eventTimeStamp": {
+    "$resolver": "timestamp",
+    "pattern": {
+      "format": "yyyy-MM-dd'T'HH:mm:ss.SSS"
+    }
+  },
+  "loggerName": {
+    "$resolver": "logger",
+    "field": "name"
+  },
+  "message": {
+    "$resolver": "message",
+    "stringified": true
+  },
+  "error": {
+    "$resolver": "exception",
+    "field": "className"
+  },
+  "errorDescription": {
+    "$resolver": "exception",
+    "field": "message"
+  },
+  "stacktrace": {
+    "$resolver": "exception",
+    "field": "stackTrace",
+    "stackTrace": {
+      "stringified": true
+    }
+  }
+}

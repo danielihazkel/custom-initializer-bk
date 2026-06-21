@@ -45,7 +45,7 @@ When a project is generated, the framework spins up a child Spring application c
 
 - **`dynamicFileContributor`** (`ProjectContributor`) — for each selected dependency (plus the special `__common__` entry), writes/merges all associated `FileContributionEntity` records into the generated project
 - **`dynamicDeleteContributor`** (`ProjectContributor`, `@Order(LOWEST_PRECEDENCE)`) — runs after everything else to delete files registered with `DELETE` type (e.g. `application.properties` written by the framework)
-- **`dynamicBuildCustomizer`** (`BuildCustomizer<MavenBuild>`) — applies all `BuildCustomizationEntity` records (add dependency, exclude dependency, add repository)
+- **`dynamicBuildCustomizer`** (`BuildCustomizer<MavenBuild>`) — applies all `BuildCustomizationEntity` records (add dependency, exclude dependency, add repository). Like the file contributor, it skips a record whose `subOptionId` is set unless that sub-option was selected (`optionsContext.hasOption(depId, subOptionId)`) — e.g. `logging`'s `kafka-clients` is added only with the `kafka-logs` sub-option
 
 ### FileContributionEntity — File Types
 
@@ -55,6 +55,23 @@ When a project is generated, the framework spins up a child Spring application c
 | `YAML_MERGE` | Deep-merges YAML into the target file (creates if absent) |
 | `TEMPLATE` | Applies substitution variables then writes |
 | `DELETE` | Deletes target file (runs at LOWEST_PRECEDENCE, after framework writes) |
+
+### Version Gating — `java_version` / `node_version`
+
+A `FileContributionEntity` may pin itself to a single language-runtime version, so one
+target path resolves to an entirely different file per selected version. Both columns
+default to null (= applies to every version):
+
+- **`java_version`** (backend) — checked in `DynamicProjectGenerationConfiguration`; the row
+  is skipped unless it equals `description.getLanguage().jvmVersion()`. Used for the backend
+  `Dockerfile` (`Dockerfile-java17.mustache` vs `Dockerfile-java21.mustache`, both targeting `Dockerfile`).
+- **`node_version`** (frontend) — the frontend mirror, added in `V17`. Checked in
+  `FrontendProjectGenerator.nodeVersionMismatch`; the row is skipped unless it equals
+  `FrontendProjectDescription.getNodeVersion()`. Used for the frontend `Dockerfile`
+  (`static-configs/frontend/common/Dockerfile-node{18,20,22}`, all targeting `Dockerfile`).
+
+To add a Node version, seed a matching `Dockerfile-node<v>` row in `catalog/frontend/file-contributions.json`
+— a version with no matching row generates no Dockerfile. Both columns round-trip through admin export/import.
 
 ### Template Substitution
 
@@ -87,7 +104,7 @@ Runs at startup as a `SmartInitializingSingleton`. If all DB tables are empty it
 | Manifest | Replaces | Notes |
 |----------|----------|-------|
 | `dependencies.json` | `seedDependencyCatalog()` | Groups + entries; `compatibilityRange`/`starter` are plain fields. FE entries carry no Maven coords; the three React-19-sensitive design systems (`design-mui`/`design-chakra`/`design-mantine`) set `compatibilityRange: "[18.0.0,19.0.0)"` |
-| `file-contributions.json` | common + per-dep file contributions | Each row points at its content file via `contentResource` (a classpath path under `static-configs/*` or `templates/*`); the content itself stays in that file. Small inline strings (FSD barrels, layer READMEs, `.env` templates) use the `content` field instead. `DELETE` rows have no `contentResource`. `application.yaml` base keeps `sortOrder: -1`, the `application.properties` `DELETE` keeps `sortOrder: 9999` |
+| `file-contributions.json` | common + per-dep file contributions | Each row points at its content file via `contentResource` (a classpath path under `static-configs/*` or `templates/*`); the content itself stays in that file. Small inline strings (FSD barrels, layer READMEs, `.env` templates) use the `content` field instead. `DELETE` rows have no `contentResource`. An optional `javaVersion` (backend) or `nodeVersion` (frontend) field pins a row to one runtime version — see *Version Gating* above. `application.yaml` base keeps `sortOrder: -1`, the `application.properties` `DELETE` keeps `sortOrder: 9999` |
 | `build-customizations.json` | `seedBuildCustomizations()` / FE `feNpm`/`feVitePlugin`/`feNpmScript` | `type` = `ADD_DEPENDENCY` / `EXCLUDE_DEPENDENCY` / `ADD_REPOSITORY` (backend) or `ADD_NPM_DEPENDENCY` / `ADD_VITE_PLUGIN` / `ADD_NPM_SCRIPT` (frontend). FE rows reuse the Maven columns: npm dep = `mavenArtifactId` (package) + `version` (semver) + `scope` (`dev`/blank) + optional `subOptionId` gate; vite plugin = `mavenGroupId` (import path) + `mavenArtifactId` (binding) + `version` (call expr); npm script = `mavenArtifactId` (name) + `version` (command) |
 | `sub-options.json` | `seedSubOptions()` / FE `feSubOption` | |
 | `compatibility.json` | `seedCompatibilityRules()` / FE `feCompat` | one file per kind: `catalog/compatibility.json` (backend) and `catalog/frontend/compatibility.json` (FE) |

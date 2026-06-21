@@ -125,7 +125,8 @@ public class DynamicProjectGenerationConfiguration {
     @Bean
     BuildCustomizer<MavenBuild> dynamicBuildCustomizer(
             ProjectDescription description,
-            DependencyConfigService configService) {
+            DependencyConfigService configService,
+            ProjectOptionsContext optionsContext) {
         return build -> {
             build.settings().finalName("${project.artifactId}");
 
@@ -133,6 +134,13 @@ public class DynamicProjectGenerationConfiguration {
             List<BuildCustomizationEntity> customizations = configService.getBuildCustomizations(depIds);
 
             for (BuildCustomizationEntity bc : customizations) {
+                // Skip if gated on a sub-option that wasn't selected
+                if (bc.getSubOptionId() != null
+                        && !optionsContext.hasOption(bc.getDependencyId(), bc.getSubOptionId())) {
+                    log.debug("skip bc id={} dep={} artifact={}: sub-option '{}' not selected",
+                            bc.getId(), bc.getDependencyId(), bc.getMavenArtifactId(), bc.getSubOptionId());
+                    continue;
+                }
                 switch (bc.getCustomizationType()) {
                     case ADD_DEPENDENCY -> build.dependencies().add(
                             bc.getMavenArtifactId(),

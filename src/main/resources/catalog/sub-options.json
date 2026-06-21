@@ -54,5 +54,7 @@
 
   { "depId": "quartz", "optionId": "job-example", "label": "Job Example", "description": "Add HelloJob.java + HelloJobConfig.java — registers a 1-minute repeating Quartz job", "sortOrder": 0 },
 
-  { "depId": "ldap-auth", "optionId": "sample-controller", "label": "Sample Secured Controller", "description": "Add SampleSecuredController.java demonstrating @RequiresPermission(Constants.ADMIN)", "sortOrder": 0 }
+  { "depId": "ldap-auth", "optionId": "sample-controller", "label": "Sample Secured Controller", "description": "Add SampleSecuredController.java demonstrating @RequiresPermission(Constants.ADMIN)", "sortOrder": 0 },
+
+  { "depId": "logging", "optionId": "kafka-logs", "label": "Kafka Logs Appender", "description": "Ship structured logs to Kafka via log4j2 appenders (adds kafka-clients)", "sortOrder": 0 }
 ]

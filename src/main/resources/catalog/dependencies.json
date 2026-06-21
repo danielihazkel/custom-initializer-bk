@@ -4,7 +4,8 @@
       "name": "Menora Standards",
       "sortOrder": 0,
       "entries": [
-        { "depId": "rqueue", "name": "Sonus Rqueue", "description": "Sonus Rqueue messaging library", "mavenGroupId": "com.sonus", "mavenArtifactId": "sonus-rqueue", "version": "1.0.0", "repository": "menora-release", "sortOrder": 0, "compatibilityRange": "[3.2.0,4.0.0)" }
+        { "depId": "rqueue", "name": "Sonus Rqueue", "description": "Sonus Rqueue messaging library", "mavenGroupId": "com.sonus", "mavenArtifactId": "sonus-rqueue", "version": "1.0.0", "repository": "menora-release", "sortOrder": 0, "compatibilityRange": "[3.2.0,4.0.0)" },
+        { "depId": "logging", "name": "Menora Logging Standards", "description": "Structured JSON logging via log4j2 JsonTemplateLayout, with an optional Kafka log-shipping appender", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-log4j2", "sortOrder": 1 }
       ]
     },
     {
@@ -55,13 +56,6 @@
       "entries": [
         { "depId": "actuator", "name": "Spring Boot Actuator", "description": "Production-ready features", "sortOrder": 0 },
         { "depId": "prometheus", "name": "Micrometer Prometheus", "mavenGroupId": "io.micrometer", "mavenArtifactId": "micrometer-registry-prometheus", "scope": "runtime", "sortOrder": 1 }
-      ]
-    },
-    {
-      "name": "Logging",
-      "sortOrder": 6,
-      "entries": [
-        { "depId": "logging", "name": "Menora Logging Standards", "description": "Corporate logging configuration and standards", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-log4j2", "sortOrder": 0 }
       ]
     },
     {
