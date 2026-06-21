@@ -107,6 +107,13 @@ class DataSeederTest {
     }
 
     @Test
+    void loggingIsNotAStarter() {
+        // log4j2 itself comes from __common__; logging only contributes config files +
+        // the log4j-layout-template-json dep, so it must not add its own pom <dependency>.
+        assertThat(entryRepo.findByDepId("logging").orElseThrow().isStarter()).isFalse();
+    }
+
+    @Test
     void loggingContributesLog4j2AndJsonFormats() {
         // logFormat.json, detailedLogFormat.json, log4j2-spring.xml (all TEMPLATE)
         List<FileContributionEntity> logging = fileContribRepo

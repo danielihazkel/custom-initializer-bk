@@ -154,6 +154,17 @@ class ProjectGenerationIntegrationTests {
         String pom = Files.readString(projectDir.resolve("pom.xml"));
         assertThat(pom).contains("log4j-layout-template-json");
         assertThat(pom).doesNotContain("kafka-clients");                      // gated on kafka-logs
+        // log4j2 starter comes from __common__ only — logging is a non-starter marker, so no duplicate
+        assertThat(countOccurrences(pom, "<artifactId>spring-boot-starter-log4j2</artifactId>"))
+                .isEqualTo(1);
+    }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        for (int i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + needle.length())) {
+            count++;
+        }
+        return count;
     }
 
     @Test
