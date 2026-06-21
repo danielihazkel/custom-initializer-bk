@@ -19,6 +19,7 @@ import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
 import com.samskivert.mustache.Mustache;
 import io.spring.initializr.generator.buildsystem.Dependency;
+import io.spring.initializr.generator.version.VersionReference;
 import io.spring.initializr.generator.buildsystem.DependencyScope;
 import io.spring.initializr.generator.buildsystem.MavenRepository;
 import io.spring.initializr.generator.buildsystem.maven.MavenBuild;
@@ -142,10 +143,17 @@ public class DynamicProjectGenerationConfiguration {
                     continue;
                 }
                 switch (bc.getCustomizationType()) {
-                    case ADD_DEPENDENCY -> build.dependencies().add(
-                            bc.getMavenArtifactId(),
-                            Dependency.withCoordinates(bc.getMavenGroupId(), bc.getMavenArtifactId())
-                                    .build());
+                    case ADD_DEPENDENCY -> {
+                        Dependency.Builder<?> dep = Dependency.withCoordinates(
+                                bc.getMavenGroupId(), bc.getMavenArtifactId());
+                        // Artifacts not managed by the Spring Boot BOM (e.g.
+                        // mapstruct-processor, lombok-mapstruct-binding) carry an
+                        // explicit version — without it the generated pom is invalid.
+                        if (bc.getVersion() != null && !bc.getVersion().isBlank()) {
+                            dep.version(VersionReference.ofValue(bc.getVersion()));
+                        }
+                        build.dependencies().add(bc.getMavenArtifactId(), dep.build());
+                    }
                     case EXCLUDE_DEPENDENCY -> build.dependencies().add(
                             bc.getExcludeFromArtifactId(),
                             Dependency.withCoordinates(bc.getExcludeFromGroupId(), bc.getExcludeFromArtifactId())

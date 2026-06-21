@@ -514,6 +514,105 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void sqlWizardMapstructModeAutoAddsDependencyAndGeneratesRestStack() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "demo");
+        body.put("name", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("type", "maven-project");
+        body.put("language", "java");
+        body.put("bootVersion", "3.2.1");
+        body.put("packaging", "jar");
+        body.put("javaVersion", "21");
+        // Note: no "mapstruct" here — the wizard must auto-add it for MAPSTRUCT_DTO.
+        body.put("dependencies", List.of("web", "postgresql", "data-jpa"));
+        body.put("opts", Map.of("postgresql", List.of("pg-primary")));
+        body.put("sqlByDep", Map.of("postgresql", """
+                CREATE TABLE authors (
+                    id BIGSERIAL PRIMARY KEY,
+                    name VARCHAR(200) NOT NULL
+                );
+                CREATE TABLE books (
+                    id BIGSERIAL PRIMARY KEY,
+                    title VARCHAR(200) NOT NULL,
+                    author_id BIGINT NOT NULL,
+                    FOREIGN KEY (author_id) REFERENCES authors(id)
+                );
+                """));
+        body.put("sqlOptions", Map.of("postgresql", Map.of(
+                "subPackage", "entity",
+                "apiMode", "MAPSTRUCT_DTO",
+                "tables", List.of())));
+
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                "/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, String> files = unzip(response.getBody());
+
+        // Auto-added mapstruct dependency brings its annotation-processor wiring.
+        String pom = files.get("demo/pom.xml");
+        assertThat(pom).isNotNull()
+                .contains("<artifactId>mapstruct</artifactId>")
+                .contains("<artifactId>mapstruct-processor</artifactId>")
+                .contains("<artifactId>lombok-mapstruct-binding</artifactId>");
+
+        // Full REST stack per entity + the shared MapstructConfig from the dep.
+        assertThat(files)
+                .containsKey("demo/src/main/java/com/menora/demo/config/MapstructConfig.java")
+                .containsKey("demo/src/main/java/com/menora/demo/service/BooksService.java")
+                .containsKey("demo/src/main/java/com/menora/demo/dto/BooksDto.java")
+                .containsKey("demo/src/main/java/com/menora/demo/controller/BooksController.java");
+
+        String mapper = files.get("demo/src/main/java/com/menora/demo/mapper/BooksMapper.java");
+        assertThat(mapper).isNotNull()
+                .contains("@Mapper(config = MapstructConfig.class)")
+                .contains("@Mapping(target = \"authorId\", source = \"author.id\")")
+                .contains("default Authors authorFromId(Long id)");
+    }
+
+    @Test
+    void sqlWizardAutoAddsJpaAndWebWhenOmitted() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "demo");
+        body.put("name", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("type", "maven-project");
+        body.put("language", "java");
+        body.put("bootVersion", "3.2.1");
+        body.put("packaging", "jar");
+        body.put("javaVersion", "21");
+        // Only the JDBC driver — no data-jpa, no web. The wizard must add both
+        // because the entities/repositories need JPA and the controller needs web.
+        body.put("dependencies", List.of("postgresql"));
+        body.put("opts", Map.of("postgresql", List.of("pg-primary")));
+        body.put("sqlByDep", Map.of("postgresql", """
+                CREATE TABLE widgets (
+                    id BIGSERIAL PRIMARY KEY,
+                    name VARCHAR(120) NOT NULL
+                );
+                """));
+        body.put("sqlOptions", Map.of("postgresql", Map.of(
+                "subPackage", "entity",
+                "apiMode", "ENTITY_DIRECT",
+                "tables", List.of())));
+
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                "/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, String> files = unzip(response.getBody());
+        String pom = files.get("demo/pom.xml");
+        assertThat(pom).isNotNull()
+                .contains("<artifactId>spring-boot-starter-data-jpa</artifactId>")
+                .contains("<artifactId>spring-boot-starter-web</artifactId>");
+        assertThat(files)
+                .containsKey("demo/src/main/java/com/menora/demo/controller/WidgetsController.java");
+    }
+
+    @Test
     void openApiWizardGeneratesController() throws Exception {
         ResponseEntity<byte[]> response = restTemplate.postForEntity(
                 "/starter-wizard.zip", openApiPetstoreBody(), byte[].class);

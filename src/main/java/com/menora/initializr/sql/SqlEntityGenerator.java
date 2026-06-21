@@ -17,9 +17,12 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Parses CREATE TABLE DDL via JSqlParser and emits JPA entity (and optionally
@@ -47,7 +50,11 @@ public class SqlEntityGenerator {
         }
 
         Set<String> knownTableNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        for (TableModel t : tables) knownTableNames.add(t.name());
+        Map<String, TableModel> tablesByName = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (TableModel t : tables) {
+            knownTableNames.add(t.name());
+            tablesByName.put(t.name(), t);
+        }
 
         List<GeneratedJavaFile> files = new ArrayList<>();
         for (TableModel table : tables) {
@@ -55,8 +62,24 @@ public class SqlEntityGenerator {
             if (table.hasCompositePk()) {
                 files.add(renderIdClass(table, dialect, packageName, opts));
             }
-            if (opts.generateRepositoryFor(table.name())) {
+            // A generated REST stack needs a repository even if the per-table
+            // toggle is off — and only makes sense for an addressable (PK) table.
+            boolean apiOn = opts.apiMode().generatesApi() && !table.pkColumns().isEmpty();
+            if (opts.generateRepositoryFor(table.name()) || apiOn) {
                 files.add(renderRepository(table, dialect, packageName, opts));
+            }
+            if (opts.apiMode().generatesApi() && table.pkColumns().isEmpty()) {
+                log.debug("Skipping REST stack for table {} — no primary key to address rows by", table.name());
+            }
+            if (apiOn) {
+                files.add(renderService(table, dialect, packageName, opts, tablesByName, knownTableNames));
+                if (opts.apiMode().generatesDto()) {
+                    files.add(renderDto(table, dialect, packageName, opts, tablesByName, knownTableNames));
+                }
+                if (opts.apiMode() == SqlApiMode.MAPSTRUCT_DTO) {
+                    files.add(renderMapper(table, dialect, packageName, opts, tablesByName, knownTableNames));
+                }
+                files.add(renderController(table, dialect, packageName, opts, tablesByName, knownTableNames));
             }
         }
         return files;
@@ -701,25 +724,13 @@ public class SqlEntityGenerator {
         String entityPkg = packageName + "." + opts.subPackage();
         String repoPkg = packageName + ".repository";
 
-        // Resolve the id type
-        String idType;
+        IdType id = resolveIdType(table, dialect, entityPkg, entityClass);
+        String idType = id.simpleName();
         Set<String> imports = new LinkedHashSet<>();
         imports.add("org.springframework.data.jpa.repository.JpaRepository");
         imports.add("org.springframework.stereotype.Repository");
         imports.add(entityPkg + "." + entityClass);
-
-        if (table.hasCompositePk()) {
-            idType = entityClass + "Id";
-            imports.add(entityPkg + "." + entityClass + "Id");
-        } else if (table.pkColumns().isEmpty()) {
-            idType = "Long";
-        } else {
-            ColumnModel pk = table.columns().stream()
-                    .filter(ColumnModel::isPk).findFirst().orElseThrow();
-            JavaType jt = TypeMappers.map(dialect, pk.rawType(), pk.precision(), pk.scale());
-            idType = jt.simpleName();
-            imports.addAll(jt.imports());
-        }
+        imports.addAll(id.imports());
 
         StringBuilder sb = new StringBuilder();
         sb.append("package ").append(repoPkg).append(";\n\n");
@@ -735,6 +746,454 @@ public class SqlEntityGenerator {
         return new GeneratedJavaFile(
                 "src/main/java/{{packagePath}}/repository/" + entityClass + "Repository.java",
                 sb.toString());
+    }
+
+    // ── REST stack rendering (Service / DTO / Mapper / Controller) ─────────────
+
+    /**
+     * A view-model member of an entity, derived by replaying the exact same
+     * column→field decisions {@link #processColumn} makes for the entity body
+     * (using the same naming helpers), so association field names line up.
+     * A {@code SCALAR} member is a plain column; an {@code assoc} member is a
+     * JPA association, with {@code flatten} set when it can be reduced to a
+     * single foreign-key id field on the DTO.
+     */
+    private record Member(boolean assoc, String fieldName, String pascalName,
+                          String javaType, Set<String> imports, boolean isPk, FlattenInfo flatten) {}
+
+    private record FlattenInfo(String dtoIdField, String idType, Set<String> idImports,
+                               String targetEntity, String targetPkPascal) {}
+
+    private record EntityView(List<Member> members, boolean hasSkippedColumns) {}
+
+    private record IdType(String simpleName, Set<String> imports) {}
+
+    private record PkPart(String name, String javaType, Set<String> imports) {}
+
+    /** Mirror of {@link #processColumn}'s branching, producing view-model members
+     *  instead of entity source. Field names match because both paths share the
+     *  same {@link #pickAssociationFieldName}/{@link #toCamelCase} helpers and
+     *  iterate columns in the same order against a shared used-name set. */
+    private EntityView analyze(TableModel table, SqlDialect dialect,
+                               Map<String, TableModel> tablesByName, Set<String> knownTableNames) {
+        List<Member> members = new ArrayList<>();
+        Set<ForeignKey> emittedFks = new HashSet<>();
+        Set<String> used = new HashSet<>();
+        boolean skipped = false;
+        for (ColumnModel c : table.columns()) {
+            JavaType jt = TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale());
+
+            ForeignKey compositeFk = findCompositeForeignKey(c.name(), table.foreignKeys());
+            if (compositeFk != null) {
+                boolean refKnown = knownTableNames.contains(compositeFk.referencedTable());
+                if (refKnown && !emittedFks.contains(compositeFk)) {
+                    String fieldName = pickAssociationFieldName(null, compositeFk, used, true);
+                    used.add(fieldName);
+                    emittedFks.add(compositeFk);
+                    members.add(new Member(true, fieldName, capitalize(fieldName),
+                            toPascalCase(compositeFk.referencedTable()), Set.of(), false, null));
+                    skipped = true; // composite FK can't flatten to a single id
+                }
+                if (c.isPk()) {
+                    members.add(scalarMember(c, jt, used));
+                } else if (!refKnown) {
+                    members.add(scalarMember(c, jt, used));
+                } else {
+                    skipped = true; // non-PK column absorbed by the association
+                }
+                continue;
+            }
+
+            ForeignKey singleFk = findSingleForeignKey(c.name(), table.foreignKeys());
+            if (singleFk != null && knownTableNames.contains(singleFk.referencedTable())) {
+                String fieldName = pickAssociationFieldName(c, singleFk, used, false);
+                used.add(fieldName);
+                emittedFks.add(singleFk);
+                FlattenInfo flatten = buildFlatten(c, singleFk, dialect, tablesByName);
+                if (flatten == null) skipped = true;
+                members.add(new Member(true, fieldName, capitalize(fieldName),
+                        toPascalCase(singleFk.referencedTable()), Set.of(), false, flatten));
+                continue;
+            }
+
+            members.add(scalarMember(c, jt, used));
+        }
+        return new EntityView(members, skipped);
+    }
+
+    private Member scalarMember(ColumnModel c, JavaType jt, Set<String> used) {
+        String fieldName = toCamelCase(c.name());
+        if (used.contains(fieldName)) {
+            int n = 2;
+            while (used.contains(fieldName + n)) n++;
+            fieldName = fieldName + n;
+        }
+        used.add(fieldName);
+        return new Member(false, fieldName, capitalize(fieldName),
+                jt.simpleName(), jt.imports(), c.isPk(), null);
+    }
+
+    /** Resolve the flattened DTO id field for a single-column FK, or null when
+     *  the target can't be addressed by one id (composite/unknown PK). */
+    private FlattenInfo buildFlatten(ColumnModel fkCol, ForeignKey fk, SqlDialect dialect,
+                                     Map<String, TableModel> tablesByName) {
+        TableModel target = tablesByName.get(fk.referencedTable());
+        if (target == null || target.hasCompositePk() || target.pkColumns().isEmpty()) {
+            return null;
+        }
+        String pkColName = target.pkColumns().get(0);
+        ColumnModel pkCol = target.columns().stream()
+                .filter(c -> c.name().equalsIgnoreCase(pkColName)).findFirst().orElse(null);
+        if (pkCol == null) return null;
+        JavaType pkType = TypeMappers.map(dialect, pkCol.rawType(), pkCol.precision(), pkCol.scale());
+        String targetPkProperty = toCamelCase(pkCol.name());
+        return new FlattenInfo(toCamelCase(fkCol.name()), pkType.simpleName(), pkType.imports(),
+                toPascalCase(fk.referencedTable()), capitalize(targetPkProperty));
+    }
+
+    private IdType resolveIdType(TableModel table, SqlDialect dialect, String entityPkg, String entityClass) {
+        if (table.hasCompositePk()) {
+            return new IdType(entityClass + "Id", Set.of(entityPkg + "." + entityClass + "Id"));
+        }
+        if (table.pkColumns().isEmpty()) {
+            return new IdType("Long", Set.of());
+        }
+        ColumnModel pk = table.columns().stream().filter(ColumnModel::isPk).findFirst().orElseThrow();
+        JavaType jt = TypeMappers.map(dialect, pk.rawType(), pk.precision(), pk.scale());
+        return new IdType(jt.simpleName(), jt.imports());
+    }
+
+    private List<PkPart> pkParts(TableModel table, SqlDialect dialect) {
+        List<PkPart> parts = new ArrayList<>();
+        for (String pkColName : table.pkColumns()) {
+            ColumnModel col = table.columns().stream()
+                    .filter(c -> c.name().equalsIgnoreCase(pkColName)).findFirst().orElse(null);
+            JavaType jt = col == null ? JavaType.langType("Long")
+                    : TypeMappers.map(dialect, col.rawType(), col.precision(), col.scale());
+            parts.add(new PkPart(toCamelCase(pkColName), jt.simpleName(), jt.imports()));
+        }
+        return parts;
+    }
+
+    /** Setter suffix of a lone auto-increment PK (reset to null before insert),
+     *  or null when the entity has no single generated PK. */
+    private String singleGeneratedPkSetter(TableModel table) {
+        if (table.pkColumns().size() != 1) return null;
+        ColumnModel pk = table.columns().stream().filter(ColumnModel::isPk).findFirst().orElse(null);
+        if (pk == null || !pk.isAutoIncrement()) return null;
+        return capitalize(toCamelCase(pk.name()));
+    }
+
+    private GeneratedJavaFile renderService(TableModel table, SqlDialect dialect, String packageName,
+                                            SqlDepOptions opts, Map<String, TableModel> tablesByName,
+                                            Set<String> knownTableNames) {
+        String entityClass = toPascalCase(table.name());
+        String entityPkg = packageName + "." + opts.subPackage();
+        IdType id = resolveIdType(table, dialect, entityPkg, entityClass);
+        EntityView view = analyze(table, dialect, tablesByName, knownTableNames);
+
+        Set<String> imports = new TreeSet<>();
+        imports.add(entityPkg + "." + entityClass);
+        imports.addAll(id.imports());
+        imports.add(packageName + ".repository." + entityClass + "Repository");
+        imports.add("org.springframework.data.domain.Page");
+        imports.add("org.springframework.data.domain.Pageable");
+        imports.add("org.springframework.stereotype.Service");
+        imports.add("org.springframework.transaction.annotation.Transactional");
+
+        String genPkSetter = singleGeneratedPkSetter(table);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("package ").append(packageName).append(".service;\n\n");
+        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
+        sb.append('\n');
+        sb.append("@Service\n@Transactional\n");
+        sb.append("public class ").append(entityClass).append("Service {\n\n");
+        sb.append("    private final ").append(entityClass).append("Repository repository;\n\n");
+        sb.append("    public ").append(entityClass).append("Service(")
+                .append(entityClass).append("Repository repository) {\n");
+        sb.append("        this.repository = repository;\n    }\n\n");
+        sb.append("    @Transactional(readOnly = true)\n");
+        sb.append("    public Page<").append(entityClass).append("> findAll(Pageable pageable) {\n");
+        sb.append("        return repository.findAll(pageable);\n    }\n\n");
+        sb.append("    @Transactional(readOnly = true)\n");
+        sb.append("    public ").append(entityClass).append(" findById(").append(id.simpleName()).append(" id) {\n");
+        sb.append("        return repository.findById(id).orElseThrow(() ->\n");
+        sb.append("                new java.util.NoSuchElementException(\"")
+                .append(entityClass).append(" \" + id + \" not found\"));\n    }\n\n");
+        sb.append("    public ").append(entityClass).append(" create(").append(entityClass).append(" entity) {\n");
+        if (genPkSetter != null) sb.append("        entity.set").append(genPkSetter).append("(null);\n");
+        sb.append("        return repository.save(entity);\n    }\n\n");
+        sb.append("    public ").append(entityClass).append(" update(")
+                .append(id.simpleName()).append(" id, ").append(entityClass).append(" updated) {\n");
+        sb.append("        ").append(entityClass).append(" existing = findById(id);\n");
+        for (Member m : view.members()) {
+            if (m.isPk()) continue; // never overwrite the key
+            sb.append("        existing.set").append(m.pascalName())
+                    .append("(updated.get").append(m.pascalName()).append("());\n");
+        }
+        sb.append("        return repository.save(existing);\n    }\n\n");
+        sb.append("    public void delete(").append(id.simpleName()).append(" id) {\n");
+        sb.append("        repository.deleteById(id);\n    }\n}\n");
+
+        return new GeneratedJavaFile(
+                "src/main/java/{{packagePath}}/service/" + entityClass + "Service.java", sb.toString());
+    }
+
+    private GeneratedJavaFile renderDto(TableModel table, SqlDialect dialect, String packageName,
+                                        SqlDepOptions opts, Map<String, TableModel> tablesByName,
+                                        Set<String> knownTableNames) {
+        String entityClass = toPascalCase(table.name());
+        String entityPkg = packageName + "." + opts.subPackage();
+        EntityView view = analyze(table, dialect, tablesByName, knownTableNames);
+        boolean inline = opts.apiMode() == SqlApiMode.INLINE_DTO;
+
+        List<Member> scalars = view.members().stream().filter(m -> !m.assoc()).toList();
+        List<Member> flat = view.members().stream()
+                .filter(m -> m.assoc() && m.flatten() != null).toList();
+
+        Set<String> imports = new TreeSet<>();
+        for (Member m : scalars) imports.addAll(m.imports());
+        for (Member m : flat) imports.addAll(m.flatten().idImports());
+        if (inline) {
+            imports.add(entityPkg + "." + entityClass);
+            for (Member m : flat) imports.add(entityPkg + "." + m.flatten().targetEntity());
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("package ").append(packageName).append(".dto;\n\n");
+        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
+        if (!imports.isEmpty()) sb.append('\n');
+        if (view.hasSkippedColumns()) {
+            sb.append("// TODO: some columns (composite or unresolved foreign keys) are omitted from this DTO\n");
+        }
+
+        List<String> comps = new ArrayList<>();
+        for (Member m : scalars) comps.add("        " + m.javaType() + " " + m.fieldName());
+        for (Member m : flat) comps.add("        " + m.flatten().idType() + " " + m.flatten().dtoIdField());
+        sb.append("public record ").append(entityClass).append("Dto(\n");
+        sb.append(String.join(",\n", comps)).append("\n)");
+
+        if (!inline) {
+            sb.append(" {\n}\n");
+            return new GeneratedJavaFile(
+                    "src/main/java/{{packagePath}}/dto/" + entityClass + "Dto.java", sb.toString());
+        }
+
+        sb.append(" {\n\n");
+        sb.append("    public static ").append(entityClass).append("Dto from(")
+                .append(entityClass).append(" entity) {\n");
+        sb.append("        return new ").append(entityClass).append("Dto(\n");
+        List<String> args = new ArrayList<>();
+        for (Member m : scalars) args.add("                entity.get" + m.pascalName() + "()");
+        for (Member m : flat) {
+            args.add("                entity.get" + m.pascalName() + "() == null ? null : entity.get"
+                    + m.pascalName() + "().get" + m.flatten().targetPkPascal() + "()");
+        }
+        sb.append(String.join(",\n", args)).append("\n        );\n    }\n\n");
+        sb.append("    public ").append(entityClass).append(" toEntity() {\n");
+        sb.append("        ").append(entityClass).append(" entity = new ").append(entityClass).append("();\n");
+        for (Member m : scalars) {
+            sb.append("        entity.set").append(m.pascalName()).append("(this.").append(m.fieldName()).append(");\n");
+        }
+        for (Member m : flat) {
+            FlattenInfo fi = m.flatten();
+            sb.append("        if (this.").append(fi.dtoIdField()).append(" != null) {\n");
+            sb.append("            ").append(fi.targetEntity()).append(' ').append(m.fieldName())
+                    .append(" = new ").append(fi.targetEntity()).append("();\n");
+            sb.append("            ").append(m.fieldName()).append(".set").append(fi.targetPkPascal())
+                    .append("(this.").append(fi.dtoIdField()).append(");\n");
+            sb.append("            entity.set").append(m.pascalName()).append('(').append(m.fieldName()).append(");\n");
+            sb.append("        }\n");
+        }
+        sb.append("        return entity;\n    }\n}\n");
+
+        return new GeneratedJavaFile(
+                "src/main/java/{{packagePath}}/dto/" + entityClass + "Dto.java", sb.toString());
+    }
+
+    private GeneratedJavaFile renderMapper(TableModel table, SqlDialect dialect, String packageName,
+                                           SqlDepOptions opts, Map<String, TableModel> tablesByName,
+                                           Set<String> knownTableNames) {
+        String entityClass = toPascalCase(table.name());
+        String entityPkg = packageName + "." + opts.subPackage();
+        EntityView view = analyze(table, dialect, tablesByName, knownTableNames);
+        List<Member> flat = view.members().stream()
+                .filter(m -> m.assoc() && m.flatten() != null).toList();
+
+        Set<String> imports = new TreeSet<>();
+        imports.add("org.mapstruct.Mapper");
+        if (!flat.isEmpty()) {
+            imports.add("org.mapstruct.Mapping");
+            imports.add("org.mapstruct.Named");
+        }
+        imports.add(packageName + ".config.MapstructConfig");
+        imports.add(entityPkg + "." + entityClass);
+        for (Member m : flat) {
+            imports.add(entityPkg + "." + m.flatten().targetEntity());
+            imports.addAll(m.flatten().idImports());
+        }
+        imports.add(packageName + ".dto." + entityClass + "Dto");
+        imports.add("java.util.List");
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("package ").append(packageName).append(".mapper;\n\n");
+        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
+        sb.append('\n');
+        sb.append("@Mapper(config = MapstructConfig.class)\n");
+        sb.append("public interface ").append(entityClass).append("Mapper {\n\n");
+        for (Member m : flat) {
+            sb.append("    @Mapping(target = \"").append(m.flatten().dtoIdField())
+                    .append("\", source = \"").append(m.fieldName()).append('.')
+                    .append(decapitalize(m.flatten().targetPkPascal())).append("\")\n");
+        }
+        sb.append("    ").append(entityClass).append("Dto toDto(").append(entityClass).append(" entity);\n\n");
+        for (Member m : flat) {
+            sb.append("    @Mapping(target = \"").append(m.fieldName())
+                    .append("\", source = \"").append(m.flatten().dtoIdField())
+                    .append("\", qualifiedByName = \"").append(m.fieldName()).append("FromId\")\n");
+        }
+        sb.append("    ").append(entityClass).append(" toEntity(").append(entityClass).append("Dto dto);\n\n");
+        sb.append("    List<").append(entityClass).append("Dto> toDtoList(List<")
+                .append(entityClass).append("> entities);\n");
+        for (Member m : flat) {
+            FlattenInfo fi = m.flatten();
+            sb.append('\n');
+            sb.append("    @Named(\"").append(m.fieldName()).append("FromId\")\n");
+            sb.append("    default ").append(fi.targetEntity()).append(' ').append(m.fieldName())
+                    .append("FromId(").append(fi.idType()).append(" id) {\n");
+            sb.append("        if (id == null) return null;\n");
+            sb.append("        ").append(fi.targetEntity()).append(" e = new ").append(fi.targetEntity()).append("();\n");
+            sb.append("        e.set").append(fi.targetPkPascal()).append("(id);\n");
+            sb.append("        return e;\n    }\n");
+        }
+        sb.append("}\n");
+
+        return new GeneratedJavaFile(
+                "src/main/java/{{packagePath}}/mapper/" + entityClass + "Mapper.java", sb.toString());
+    }
+
+    private GeneratedJavaFile renderController(TableModel table, SqlDialect dialect, String packageName,
+                                               SqlDepOptions opts, Map<String, TableModel> tablesByName,
+                                               Set<String> knownTableNames) {
+        String entityClass = toPascalCase(table.name());
+        String entityPkg = packageName + "." + opts.subPackage();
+        SqlApiMode mode = opts.apiMode();
+        boolean dto = mode.generatesDto();
+        boolean mapstruct = mode == SqlApiMode.MAPSTRUCT_DTO;
+        boolean composite = table.hasCompositePk();
+        IdType id = resolveIdType(table, dialect, entityPkg, entityClass);
+        List<PkPart> parts = composite ? pkParts(table, dialect) : List.of();
+        String kebab = toKebab(table.name());
+        String retType = dto ? entityClass + "Dto" : entityClass;
+
+        // Conversion fragments parameterized by mode.
+        String convOpen = dto ? (mapstruct ? "mapper.toDto(" : entityClass + "Dto.from(") : "";
+        String convClose = dto ? ")" : "";
+        String listMap = dto ? (mapstruct ? ".map(mapper::toDto)" : ".map(" + entityClass + "Dto::from)") : "";
+        String bodyToEntity = dto ? (mapstruct ? "mapper.toEntity(body)" : "body.toEntity()") : "body";
+
+        Set<String> imports = new TreeSet<>();
+        imports.add(packageName + ".service." + entityClass + "Service");
+        if (dto) imports.add(packageName + ".dto." + entityClass + "Dto");
+        else imports.add(entityPkg + "." + entityClass);
+        if (mapstruct) imports.add(packageName + ".mapper." + entityClass + "Mapper");
+        if (composite) {
+            imports.add(entityPkg + "." + entityClass + "Id");
+            for (PkPart p : parts) imports.addAll(p.imports());
+        } else {
+            imports.addAll(id.imports());
+        }
+        imports.add("org.springframework.data.domain.Page");
+        imports.add("org.springframework.data.domain.Pageable");
+        imports.add("org.springframework.http.ResponseEntity");
+        imports.add("org.springframework.web.bind.annotation.*");
+
+        String pathVars = parts.stream()
+                .map(p -> "@PathVariable " + p.javaType() + ' ' + p.name())
+                .collect(Collectors.joining(", "));
+        String pkPath = parts.stream().map(p -> "{" + p.name() + "}")
+                .collect(Collectors.joining("/", "/", ""));
+        String newKey = "new " + entityClass + "Id("
+                + parts.stream().map(PkPart::name).collect(Collectors.joining(", ")) + ")";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("package ").append(packageName).append(".controller;\n\n");
+        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
+        sb.append('\n');
+        sb.append("@RestController\n");
+        sb.append("@RequestMapping(\"/api/").append(kebab).append("\")\n");
+        sb.append("public class ").append(entityClass).append("Controller {\n\n");
+        sb.append("    private final ").append(entityClass).append("Service service;\n");
+        if (mapstruct) sb.append("    private final ").append(entityClass).append("Mapper mapper;\n");
+        sb.append('\n');
+        sb.append("    public ").append(entityClass).append("Controller(")
+                .append(entityClass).append("Service service");
+        if (mapstruct) sb.append(", ").append(entityClass).append("Mapper mapper");
+        sb.append(") {\n");
+        sb.append("        this.service = service;\n");
+        if (mapstruct) sb.append("        this.mapper = mapper;\n");
+        sb.append("    }\n\n");
+
+        // list
+        sb.append("    @GetMapping\n");
+        sb.append("    public Page<").append(retType).append("> list(Pageable pageable) {\n");
+        sb.append("        return service.findAll(pageable)").append(listMap).append(";\n    }\n\n");
+
+        // getOne
+        if (composite) {
+            sb.append("    @GetMapping(\"").append(pkPath).append("\")\n");
+            sb.append("    public ").append(retType).append(" getOne(").append(pathVars).append(") {\n");
+            sb.append("        return ").append(convOpen).append("service.findById(").append(newKey).append(")")
+                    .append(convClose).append(";\n    }\n\n");
+        } else {
+            sb.append("    @GetMapping(\"/{id}\")\n");
+            sb.append("    public ").append(retType).append(" getOne(@PathVariable ")
+                    .append(id.simpleName()).append(" id) {\n");
+            sb.append("        return ").append(convOpen).append("service.findById(id)")
+                    .append(convClose).append(";\n    }\n\n");
+        }
+
+        // create
+        sb.append("    @PostMapping\n");
+        sb.append("    public ").append(retType).append(" create(@RequestBody ").append(retType).append(" body) {\n");
+        sb.append("        return ").append(convOpen).append("service.create(").append(bodyToEntity).append(")")
+                .append(convClose).append(";\n    }\n\n");
+
+        // update
+        if (composite) {
+            sb.append("    @PutMapping(\"").append(pkPath).append("\")\n");
+            sb.append("    public ").append(retType).append(" update(").append(pathVars)
+                    .append(", @RequestBody ").append(retType).append(" body) {\n");
+            sb.append("        return ").append(convOpen).append("service.update(").append(newKey).append(", ")
+                    .append(bodyToEntity).append(")").append(convClose).append(";\n    }\n\n");
+        } else {
+            sb.append("    @PutMapping(\"/{id}\")\n");
+            sb.append("    public ").append(retType).append(" update(@PathVariable ")
+                    .append(id.simpleName()).append(" id, @RequestBody ").append(retType).append(" body) {\n");
+            sb.append("        return ").append(convOpen).append("service.update(id, ")
+                    .append(bodyToEntity).append(")").append(convClose).append(";\n    }\n\n");
+        }
+
+        // delete
+        if (composite) {
+            sb.append("    @DeleteMapping(\"").append(pkPath).append("\")\n");
+            sb.append("    public ResponseEntity<Void> delete(").append(pathVars).append(") {\n");
+            sb.append("        service.delete(").append(newKey).append(");\n");
+        } else {
+            sb.append("    @DeleteMapping(\"/{id}\")\n");
+            sb.append("    public ResponseEntity<Void> delete(@PathVariable ")
+                    .append(id.simpleName()).append(" id) {\n");
+            sb.append("        service.delete(id);\n");
+        }
+        sb.append("        return ResponseEntity.noContent().build();\n    }\n\n");
+
+        sb.append("    @ExceptionHandler(java.util.NoSuchElementException.class)\n");
+        sb.append("    public ResponseEntity<Void> handleNotFound(java.util.NoSuchElementException ex) {\n");
+        sb.append("        return ResponseEntity.notFound().build();\n    }\n}\n");
+
+        return new GeneratedJavaFile(
+                "src/main/java/{{packagePath}}/controller/" + entityClass + "Controller.java", sb.toString());
     }
 
     // ── Name helpers ──────────────────────────────────────────────────────────
@@ -753,6 +1212,29 @@ public class SqlEntityGenerator {
     private static String toCamelCase(String snake) {
         String pascal = toPascalCase(snake);
         return Character.toLowerCase(pascal.charAt(0)) + pascal.substring(1);
+    }
+
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    private static String decapitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** Lower-kebab a raw table name for use as a REST collection path segment
+     *  ({@code TD_APP_STP} → {@code td-app-stp}, {@code line_items} → {@code line-items}). */
+    private static String toKebab(String raw) {
+        String[] parts = raw.split("[_\\-\\s]+");
+        StringBuilder sb = new StringBuilder();
+        for (String p : parts) {
+            if (p.isEmpty()) continue;
+            if (sb.length() > 0) sb.append('-');
+            sb.append(p.toLowerCase(Locale.ROOT));
+        }
+        return sb.length() == 0 ? "items" : sb.toString();
     }
 
     private static boolean isStringType(JavaType jt) {

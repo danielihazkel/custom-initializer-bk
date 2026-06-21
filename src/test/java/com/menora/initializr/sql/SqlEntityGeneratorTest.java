@@ -494,6 +494,140 @@ class SqlEntityGeneratorTest {
         assertThat(generator.detectTableNames(sql, SqlDialect.POSTGRESQL)).containsExactly("a", "b");
     }
 
+    // ── REST stack generation (apiMode) ───────────────────────────────────────
+
+    private static final String USERS_AND_ORDERS = """
+            CREATE TABLE users (
+                id BIGINT PRIMARY KEY,
+                email VARCHAR(200)
+            );
+            CREATE TABLE orders (
+                id BIGINT PRIMARY KEY,
+                total NUMERIC(12,2),
+                user_id BIGINT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+            """;
+
+    @Test
+    void apiModeNone_yieldsNoRestStack() {
+        List<GeneratedJavaFile> files = generator.generate(USERS_AND_ORDERS, SqlDialect.POSTGRESQL, "p",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.NONE));
+        assertThat(files).extracting(GeneratedJavaFile::relativePath)
+                .noneMatch(p -> p.contains("/controller/"))
+                .noneMatch(p -> p.contains("/service/"))
+                .noneMatch(p -> p.contains("/dto/"))
+                .noneMatch(p -> p.contains("/mapper/"));
+    }
+
+    @Test
+    void entityDirect_generatesControllerAndServiceButNoDto() {
+        List<GeneratedJavaFile> files = generator.generate(USERS_AND_ORDERS, SqlDialect.POSTGRESQL, "p",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.ENTITY_DIRECT));
+
+        assertThat(files).extracting(GeneratedJavaFile::relativePath)
+                .anyMatch(p -> p.endsWith("service/OrdersService.java"))
+                .anyMatch(p -> p.endsWith("controller/OrdersController.java"))
+                .noneMatch(p -> p.contains("/dto/"))
+                .noneMatch(p -> p.contains("/mapper/"));
+
+        String controller = findFile(files, "controller/OrdersController.java").content();
+        assertThat(controller)
+                .contains("@RequestMapping(\"/api/orders\")")
+                .contains("public Orders getOne(@PathVariable Long id)")
+                .contains("return service.findById(id);")
+                .contains("import p.entity.Orders;")
+                .doesNotContain("Dto");
+    }
+
+    @Test
+    void inlineDto_flattensForeignKeyAndAddsMapping() {
+        List<GeneratedJavaFile> files = generator.generate(USERS_AND_ORDERS, SqlDialect.POSTGRESQL, "p",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.INLINE_DTO));
+
+        String dto = findFile(files, "dto/OrdersDto.java").content();
+        assertThat(dto)
+                .contains("public record OrdersDto(")
+                .contains("Long id")
+                .contains("BigDecimal total")
+                .contains("Long userId")
+                .contains("public static OrdersDto from(Orders entity)")
+                .contains("entity.getUser() == null ? null : entity.getUser().getId()")
+                .contains("public Orders toEntity()")
+                .contains("Users user = new Users();")
+                .contains("user.setId(this.userId);")
+                .contains("entity.setUser(user);");
+
+        String service = findFile(files, "service/OrdersService.java").content();
+        assertThat(service)
+                .contains("public Page<Orders> findAll(Pageable pageable)")
+                .contains("public Orders findById(Long id)")
+                .contains("existing.setTotal(updated.getTotal());")
+                .contains("existing.setUser(updated.getUser());")
+                .doesNotContain("existing.setId(");
+
+        String controller = findFile(files, "controller/OrdersController.java").content();
+        assertThat(controller)
+                .contains("public OrdersDto create(@RequestBody OrdersDto body)")
+                .contains("OrdersDto.from(service.create(body.toEntity()))")
+                .contains(".map(OrdersDto::from)");
+    }
+
+    @Test
+    void mapstructDto_generatesMapperInterface() {
+        List<GeneratedJavaFile> files = generator.generate(USERS_AND_ORDERS, SqlDialect.POSTGRESQL, "p",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.MAPSTRUCT_DTO));
+
+        String mapper = findFile(files, "mapper/OrdersMapper.java").content();
+        assertThat(mapper)
+                .contains("import p.config.MapstructConfig;")
+                .contains("@Mapper(config = MapstructConfig.class)")
+                .contains("public interface OrdersMapper {")
+                .contains("@Mapping(target = \"userId\", source = \"user.id\")")
+                .contains("OrdersDto toDto(Orders entity);")
+                .contains("@Mapping(target = \"user\", source = \"userId\", qualifiedByName = \"userFromId\")")
+                .contains("Orders toEntity(OrdersDto dto);")
+                .contains("@Named(\"userFromId\")")
+                .contains("default Users userFromId(Long id)");
+
+        String controller = findFile(files, "controller/OrdersController.java").content();
+        assertThat(controller)
+                .contains("private final OrdersMapper mapper;")
+                .contains("mapper.toDto(")
+                .contains("mapper.toEntity(body)");
+    }
+
+    @Test
+    void compositePk_controllerUsesOrderedPathSegments() {
+        String sql = """
+                CREATE TABLE enrollment (
+                    student_id BIGINT NOT NULL,
+                    course_id BIGINT NOT NULL,
+                    enrolled_on DATE,
+                    PRIMARY KEY (student_id, course_id)
+                );
+                """;
+        String controller = findFile(generator.generate(sql, SqlDialect.POSTGRESQL, "p",
+                        new SqlDepOptions("entity", List.of(), SqlApiMode.ENTITY_DIRECT)),
+                "controller/EnrollmentController.java").content();
+        assertThat(controller)
+                .contains("import p.entity.EnrollmentId;")
+                .contains("@GetMapping(\"/{studentId}/{courseId}\")")
+                .contains("getOne(@PathVariable Long studentId, @PathVariable Long courseId)")
+                .contains("new EnrollmentId(studentId, courseId)");
+    }
+
+    @Test
+    void apiModeSkippedForTableWithoutPrimaryKey() {
+        String sql = "CREATE TABLE logline (message VARCHAR(500));";
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.POSTGRESQL, "p",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.INLINE_DTO));
+        assertThat(files).extracting(GeneratedJavaFile::relativePath)
+                .anyMatch(p -> p.endsWith("entity/Logline.java"))
+                .noneMatch(p -> p.contains("/controller/"))
+                .noneMatch(p -> p.contains("/dto/"));
+    }
+
     // ── Helper ───────────────────────────────────────────────────────────────
 
     private GeneratedJavaFile findFile(List<GeneratedJavaFile> files, String suffix) {

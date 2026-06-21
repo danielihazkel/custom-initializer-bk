@@ -4,6 +4,7 @@ import com.menora.initializr.openapi.OpenApiCodeGenerator;
 import com.menora.initializr.openapi.OpenApiWizardOptions;
 import com.menora.initializr.soap.SoapCodeGenerator;
 import com.menora.initializr.soap.SoapWizardOptions;
+import com.menora.initializr.sql.SqlApiMode;
 import com.menora.initializr.sql.SqlDepOptions;
 import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
@@ -259,10 +260,43 @@ public class WizardStarterController {
         // The servlet filter (InitializrWebConfiguration) normally injects this
         // default, but it only acts on URL params — not JSON bodies.
         r.setConfigurationFileFormat(orDefault(body.configurationFileFormat(), "properties"));
-        if (body.dependencies() != null) {
-            r.setDependencies(new ArrayList<>(body.dependencies()));
+        List<String> deps = body.dependencies() != null
+                ? new ArrayList<>(body.dependencies()) : new ArrayList<>();
+        // The SQL wizard generates code that needs framework deps the caller may
+        // have omitted — auto-add them so the project compiles (UI mirrors this).
+        // This is the safety net for direct API/IntelliJ/curl callers.
+        if (hasSqlScript(body) && !deps.contains("data-jpa")) {
+            deps.add("data-jpa"); // entities + repositories
         }
+        if (usesSqlRestApi(body) && !deps.contains("web") && !deps.contains("webflux")) {
+            deps.add("web"); // @RestController CRUD
+        }
+        // MapStruct mode also needs the `mapstruct` catalog dependency, which
+        // carries the annotation-processor wiring (mapstruct-processor + the
+        // Lombok binding) and the shared MapstructConfig the mappers extend.
+        if (usesMapstructSql(body) && !deps.contains("mapstruct")) {
+            deps.add("mapstruct");
+        }
+        r.setDependencies(deps);
         return r;
+    }
+
+    private static boolean hasSqlScript(WizardStarterRequest body) {
+        if (body.sqlByDep() == null) return false;
+        return body.sqlByDep().values().stream().anyMatch(s -> s != null && !s.isBlank());
+    }
+
+    private static boolean usesSqlRestApi(WizardStarterRequest body) {
+        if (body.sqlOptions() == null) return false;
+        return body.sqlOptions().values().stream()
+                .anyMatch(dto -> dto != null && SqlApiMode.parse(dto.apiMode()).generatesApi());
+    }
+
+    private static boolean usesMapstructSql(WizardStarterRequest body) {
+        if (body.sqlOptions() == null) return false;
+        return body.sqlOptions().values().stream()
+                .anyMatch(dto -> dto != null
+                        && SqlApiMode.parse(dto.apiMode()) == SqlApiMode.MAPSTRUCT_DTO);
     }
 
     private void populateContexts(WizardStarterRequest body) {
@@ -281,7 +315,8 @@ public class WizardStarterController {
                                 .map(t -> new SqlTableOptions(t.name(),
                                         t.generateRepository() == null || t.generateRepository()))
                                 .toList();
-                sqlOpts.put(e.getKey(), new SqlDepOptions(dto.subPackage(), tables));
+                sqlOpts.put(e.getKey(), new SqlDepOptions(dto.subPackage(), tables,
+                        SqlApiMode.parse(dto.apiMode())));
             }
         }
         sqlContext.populate(body.sqlByDep() == null ? Map.of() : body.sqlByDep(), sqlOpts);
@@ -412,7 +447,7 @@ public class WizardStarterController {
             Map<String, SoapOptionsDto> soapOptions) {
     }
 
-    public record SqlDepOptionsDto(String subPackage, List<SqlTableOptionsDto> tables) {}
+    public record SqlDepOptionsDto(String subPackage, List<SqlTableOptionsDto> tables, String apiMode) {}
 
     public record SqlTableOptionsDto(String name, Boolean generateRepository) {}
 
