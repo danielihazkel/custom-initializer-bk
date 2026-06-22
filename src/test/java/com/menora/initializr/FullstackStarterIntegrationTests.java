@@ -1053,6 +1053,75 @@ class FullstackStarterIntegrationTests {
                 .contains("entity.getOrders() == null ? 0 : entity.getOrders().size()");
     }
 
+    @Test
+    void fullstackEndpoint_dbDependencyEmitsConfigClassWithoutDatasourceOpt() throws Exception {
+        // Regression: the fullstack request never carries a db datasource role sub-option
+        // (db2-primary/db2-secondary). The controller must default to the primary datasource so
+        // the gated Db2Config class is generated — otherwise the backend has no DataSource bean
+        // (the YAML uses the custom `db2.datasource` prefix, not `spring.datasource`) and JPA
+        // autoconfig fails to start.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "db2app");
+        body.put("packageName", "com.menora.db2app");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web", "db2"));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        // The config class is present and binds the custom-prefix datasource as @Primary.
+        assertThat(entries.keySet()).anyMatch(p ->
+                p.equals("db2app/backend/src/main/java/com/menora/db2app/config/Db2Config.java"));
+        assertThat(contentEndingWith(entries, "/config/Db2Config.java"))
+                .contains("@Primary")
+                .contains("@ConfigurationProperties(prefix = \"db2.datasource\")")
+                .contains("public DataSource db2DataSource()");
+        // The YAML datasource block is still written too.
+        assertThat(entries.get("db2app/backend/src/main/resources/application.yaml"))
+                .contains("db2:")
+                .contains("driver-class-name: com.ibm.db2.jcc.DB2Driver");
+    }
+
+    @Test
+    void fullstackEndpoint_explicitSecondaryDatasourceOptIsNotOverridden() throws Exception {
+        // When the caller explicitly picks the secondary datasource role, the default-to-primary
+        // must not fire — the secondary variant (no @Primary) is rendered.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "db2app");
+        body.put("packageName", "com.menora.db2app");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web", "db2"));
+        body.put("opts", Map.of("db2", List.of("db2-secondary")));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/config/Db2Config.java"))
+                .contains("@ConfigurationProperties(prefix = \"db2.datasource\")")
+                .doesNotContain("@Primary");
+    }
+
+    @Test
+    void fullstackEndpoint_h2DefaultOmitsConfigClass() throws Exception {
+        // h2 is excluded from the default-to-primary: its ungated YAML ships a real
+        // spring.datasource block, so it is runnable with no config class. Defaulting it to
+        // primary would wrongly emit H2Config + the gated h2.datasource mirror.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "h2app");
+        body.put("packageName", "com.menora.h2app");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web", "h2"));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(entries.keySet()).noneMatch(p -> p.endsWith("/config/H2Config.java"));
+        String yaml = entries.get("h2app/backend/src/main/resources/application.yaml");
+        assertThat(yaml)
+                .contains("driver-class-name: org.h2.Driver")
+                .doesNotContain("hbm2ddl-auto");   // the gated custom h2.datasource mirror
+    }
+
     /** POSTs a fullstack request and returns the unzipped (path → text) generated tree. */
     private Map<String, String> generateZip(Map<String, Object> body) throws Exception {
         HttpHeaders headers = new HttpHeaders();
