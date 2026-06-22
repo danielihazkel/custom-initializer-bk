@@ -14,4 +14,4 @@ db2:
       max-lifetime: 1200000
   hibernate:
     dialect: org.hibernate.dialect.DB2Dialect
-    hbm2ddl-auto: validate
+    hbm2ddl-auto: none

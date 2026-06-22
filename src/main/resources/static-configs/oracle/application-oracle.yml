@@ -14,4 +14,4 @@ oracle:
       max-lifetime: 1200000
   hibernate:
     dialect: org.hibernate.dialect.OracleDialect
-    hbm2ddl-auto: validate
+    hbm2ddl-auto: none

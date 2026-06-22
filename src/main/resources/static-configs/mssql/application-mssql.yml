@@ -14,4 +14,4 @@ mssql:
       max-lifetime: 1200000
   hibernate:
     dialect: org.hibernate.dialect.SQLServerDialect
-    hbm2ddl-auto: validate
+    hbm2ddl-auto: none
