@@ -93,6 +93,8 @@ The context exposed to every MUSTACHE template is:
 
 This unlocks conditional file content — e.g. a single template can gate a block on a sub-option using `{{#optKafkaConsumerExample}}…{{/optKafkaConsumerExample}}` instead of requiring a separate `FileContributionEntity` row per variation.
 
+The table above is the backend-dependency subset. For the **complete** variable catalog across all three render contexts (backend dependency, fullstack entity, frontend) — every key, where it's derived (with file:line), the path-vs-content substitution rules, and authoring walkthroughs (add a template, conditional/sub-option gating, version gating) — see [`docs/MUSTACHE_GUIDE.md`](docs/MUSTACHE_GUIDE.md).
+
 ### DataSeeder — First-Startup Seeding
 
 `src/main/java/com/menora/initializr/db/DataSeeder.java`
