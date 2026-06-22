@@ -1,5 +1,6 @@
 package com.menora.initializr.config;
 
+import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.openapi.OpenApiCodeGenerator;
 import com.menora.initializr.openapi.OpenApiWizardOptions;
 import com.menora.initializr.soap.SoapCodeGenerator;
@@ -32,8 +33,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -64,6 +67,7 @@ public class WizardStarterController {
     private final OpenApiCodeGenerator openApiGenerator;
     private final SoapCodeGenerator soapGenerator;
     private final SqlEntityGenerator sqlGenerator;
+    private final DependencyConfigService configService;
 
     public WizardStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                    InitializrMetadataProvider metadataProvider,
@@ -73,7 +77,8 @@ public class WizardStarterController {
                                    SoapSpecContext soapContext,
                                    OpenApiCodeGenerator openApiGenerator,
                                    SoapCodeGenerator soapGenerator,
-                                   SqlEntityGenerator sqlGenerator) {
+                                   SqlEntityGenerator sqlGenerator,
+                                   DependencyConfigService configService) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
@@ -83,6 +88,7 @@ public class WizardStarterController {
         this.openApiGenerator = openApiGenerator;
         this.soapGenerator = soapGenerator;
         this.sqlGenerator = sqlGenerator;
+        this.configService = configService;
     }
 
     @PostMapping("/starter-wizard.zip")
@@ -92,6 +98,7 @@ public class WizardStarterController {
         validateSql(body);
         WebProjectRequest request = toWebRequest(body);
         populateContexts(body);
+        defaultDatasourceRolesIfSql(body, request);
         Path projectDir = null;
         try {
             projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
@@ -114,6 +121,7 @@ public class WizardStarterController {
         validateSql(body);
         WebProjectRequest request = toWebRequest(body);
         populateContexts(body);
+        defaultDatasourceRolesIfSql(body, request);
         Path projectDir = null;
         try {
             projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
@@ -338,6 +346,22 @@ public class WizardStarterController {
             }
         }
         soapContext.populate(body.wsdlByDep() == null ? Map.of() : body.wsdlByDep(), soapOpts);
+    }
+
+    /**
+     * When the wizard actually scaffolds entities from SQL, default any selected database dep
+     * to its primary datasource role (mirrors {@code FullstackStarterController}). Otherwise the
+     * per-driver config class — gated on {@code <dep>-primary}/{@code <dep>-secondary} — is
+     * skipped and the generated backend has no DataSource bean for those entities. Gated on
+     * {@code hasSqlScript} so wizard callers that select a driver dep without tables are
+     * unaffected; {@code defaultDatasourceRoles} is itself a no-op for {@code h2} and deps
+     * without a primary/secondary pair.
+     */
+    private void defaultDatasourceRolesIfSql(WizardStarterRequest body, WebProjectRequest request) {
+        if (!hasSqlScript(body)) return;
+        Set<String> depIds = new LinkedHashSet<>(
+                request.getDependencies() == null ? List.of() : request.getDependencies());
+        optionsContext.defaultDatasourceRoles(depIds, configService.getAllSubOptions());
     }
 
     private void clearAllContexts() {

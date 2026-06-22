@@ -22,7 +22,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration
 @EnableJpaRepositories(
-        basePackages = "{{packageName}}.db2.repository",
+        basePackages = "{{#hasScaffoldedEntities}}{{dsRepositoryPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.db2.repository{{/hasScaffoldedEntities}}",
         entityManagerFactoryRef = "db2EntityManagerFactory",
         transactionManagerRef = "db2TransactionManager"
 )
@@ -47,7 +47,7 @@ public class Db2Config {
             @Qualifier("db2DataSource") DataSource dataSource) {
         LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
         em.setDataSource(dataSource);
-        em.setPackagesToScan("{{packageName}}.db2");
+        em.setPackagesToScan("{{#hasScaffoldedEntities}}{{dsEntityPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.db2{{/hasScaffoldedEntities}}");
         em.setPersistenceUnitName("db2");
 
         HibernateJpaVendorAdapter vendorAdapter = new HibernateJpaVendorAdapter();

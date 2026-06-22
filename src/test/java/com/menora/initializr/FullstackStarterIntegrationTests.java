@@ -1075,7 +1075,13 @@ class FullstackStarterIntegrationTests {
         assertThat(contentEndingWith(entries, "/config/Db2Config.java"))
                 .contains("@Primary")
                 .contains("@ConfigurationProperties(prefix = \"db2.datasource\")")
-                .contains("public DataSource db2DataSource()");
+                .contains("public DataSource db2DataSource()")
+                // The config must scan where the scaffolded entities/repos actually land
+                // (com.menora.db2app.entity / .repository), not the legacy .db2 subpackage.
+                .contains("basePackages = \"com.menora.db2app.repository\"")
+                .contains("em.setPackagesToScan(\"com.menora.db2app.entity\")")
+                .doesNotContain(".db2.repository")
+                .doesNotContain("\"com.menora.db2app.db2\"");
         // The YAML datasource block is still written too.
         assertThat(entries.get("db2app/backend/src/main/resources/application.yaml"))
                 .contains("db2:")
@@ -1098,7 +1104,52 @@ class FullstackStarterIntegrationTests {
 
         assertThat(contentEndingWith(entries, "/config/Db2Config.java"))
                 .contains("@ConfigurationProperties(prefix = \"db2.datasource\")")
-                .doesNotContain("@Primary");
+                .doesNotContain("@Primary")
+                // A secondary datasource is not the owner of the scaffolded entities — it keeps
+                // its legacy .db2 subpackage convention (primary owns generated entities).
+                .contains("basePackages = \"com.menora.db2app.db2.repository\"")
+                .contains("em.setPackagesToScan(\"com.menora.db2app.db2\")");
+    }
+
+    @Test
+    void fullstackEndpoint_dbConfigScansCustomDomainPackage() throws Exception {
+        // When the entities live under a custom domainPackage, the datasource config must scan
+        // that package's .entity/.repository — not packageName's.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "db2app");
+        body.put("packageName", "com.menora.db2app");
+        body.put("domainPackage", "com.menora.db2app.catalog");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web", "db2"));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/config/Db2Config.java"))
+                .contains("basePackages = \"com.menora.db2app.catalog.repository\"")
+                .contains("em.setPackagesToScan(\"com.menora.db2app.catalog.entity\")");
+        // And the entity actually lands there.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/catalog/entity/User.java"));
+    }
+
+    @Test
+    void fullstackEndpoint_mongoConfigScansScaffoldedRepositoryPackage() throws Exception {
+        // MongoDB has no setPackagesToScan, but @EnableMongoRepositories must point at the
+        // scaffolded .repository package rather than the legacy .mongodb.repository.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "mongoapp");
+        body.put("packageName", "com.menora.mongoapp");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web", "mongodb"));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/config/MongoConfig.java"))
+                .contains("basePackages = \"com.menora.mongoapp.repository\"")
+                // not the legacy driver subpackage (the Spring import naturally contains
+                // ".mongodb.repository", so assert on the full legacy basePackages literal).
+                .doesNotContain("\"com.menora.mongoapp.mongodb.repository\"");
     }
 
     @Test

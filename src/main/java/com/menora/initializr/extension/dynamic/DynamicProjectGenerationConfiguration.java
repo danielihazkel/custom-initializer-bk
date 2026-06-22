@@ -1,5 +1,6 @@
 package com.menora.initializr.extension.dynamic;
 
+import com.menora.initializr.config.EntityDefinitionContext;
 import com.menora.initializr.config.OpenApiSpecContext;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.config.SoapSpecContext;
@@ -63,13 +64,16 @@ public class DynamicProjectGenerationConfiguration {
     ProjectContributor dynamicFileContributor(
             ProjectDescription description,
             DependencyConfigService configService,
-            ProjectOptionsContext optionsContext) {
+            ProjectOptionsContext optionsContext,
+            EntityDefinitionContext entityContext,
+            SqlScriptsContext sqlContext) {
         return projectRoot -> {
             Set<String> depIds = selectedDepIds(description);
             log.info("generation: selectedDepIds={}", depIds);
             List<FileContributionEntity> contributions = configService.getFileContributions(depIds);
 
-            Map<String, Object> baseContext = buildBaseContext(description, depIds, optionsContext);
+            Map<String, Object> baseContext =
+                    buildBaseContext(description, depIds, optionsContext, entityContext, sqlContext);
 
             for (FileContributionEntity fc : contributions) {
                 // Skip if gated on a sub-option that wasn't selected
@@ -414,10 +418,18 @@ public class DynamicProjectGenerationConfiguration {
      * {@code packaging}, plus boolean flags for each selected dependency
      * ({@code hasKafka}, {@code hasSpringBootStarter}, …) and sub-option
      * ({@code optKafkaConsumerExample}, …).
+     *
+     * <p>When entities are auto-generated (fullstack or SQL wizard), it also exposes the
+     * actual entity/repository packages the generated classes land in, so a per-driver
+     * datasource config class scans where the entities really are rather than its legacy
+     * {@code <packageName>.<driver>} convention: {@code hasScaffoldedEntities},
+     * {@code dsEntityPackage}, {@code dsRepositoryPackage}.
      */
     private Map<String, Object> buildBaseContext(ProjectDescription description,
                                                  Set<String> depIds,
-                                                 ProjectOptionsContext optionsContext) {
+                                                 ProjectOptionsContext optionsContext,
+                                                 EntityDefinitionContext entityContext,
+                                                 SqlScriptsContext sqlContext) {
         Map<String, Object> ctx = new HashMap<>();
         ctx.put("artifactId", description.getArtifactId());
         ctx.put("groupId", description.getGroupId());
@@ -433,6 +445,40 @@ public class DynamicProjectGenerationConfiguration {
                 ctx.put("opt" + toPascalCase(depId) + toPascalCase(optId), Boolean.TRUE);
             }
         }
+
+        // Where the datasource config class should scan when entities are scaffolded. The
+        // fullstack generator files entities under <domainPackage>.entity / .repository; the
+        // SQL wizard under <packageName>.<subPackage> / .repository (see SqlEntityGenerator).
+        String dsEntityPackage = null;
+        String dsRepositoryPackage = null;
+        boolean hasScaffold = false;
+        if (!entityContext.isEmpty()) {                       // fullstack
+            String domain = entityContext.getDomainPackage();
+            if (domain == null || domain.isBlank()) {
+                domain = description.getPackageName();
+            }
+            dsEntityPackage = domain + ".entity";
+            dsRepositoryPackage = domain + ".repository";
+            hasScaffold = true;
+        } else if (!sqlContext.isEmpty()) {                   // SQL wizard
+            String subPkg = "entity";
+            for (Map.Entry<String, String> e : sqlContext.all().entrySet()) {
+                if (e.getValue() == null || e.getValue().isBlank()) {
+                    continue;
+                }
+                SqlDepOptions opts = sqlContext.optionsFor(e.getKey());
+                if (opts != null && opts.subPackage() != null && !opts.subPackage().isBlank()) {
+                    subPkg = opts.subPackage();
+                }
+                break;                                        // first non-blank SQL dep wins
+            }
+            dsEntityPackage = description.getPackageName() + "." + subPkg;
+            dsRepositoryPackage = description.getPackageName() + ".repository";
+            hasScaffold = true;
+        }
+        ctx.put("hasScaffoldedEntities", hasScaffold);
+        ctx.put("dsEntityPackage", dsEntityPackage);
+        ctx.put("dsRepositoryPackage", dsRepositoryPackage);
         return ctx;
     }
 

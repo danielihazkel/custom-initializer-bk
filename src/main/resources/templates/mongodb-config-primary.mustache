@@ -15,7 +15,7 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
 
 @Configuration
 @EnableMongoRepositories(
-        basePackages = "{{packageName}}.mongodb.repository",
+        basePackages = "{{#hasScaffoldedEntities}}{{dsRepositoryPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.mongodb.repository{{/hasScaffoldedEntities}}",
         mongoTemplateRef = "mongoTemplate"
 )
 public class MongoConfig {
