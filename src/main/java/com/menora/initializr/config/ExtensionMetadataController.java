@@ -229,7 +229,26 @@ public class ExtensionMetadataController {
     public ImportDdlResponse importDdl(@RequestBody ImportDdlRequest req) {
         SqlDialect dialect = parseDialect(req == null ? null : req.dialect());
         String sql = req == null ? null : req.sql();
-        List<EntityDefinition> defs = sqlToEntityConverter.convert(sql, dialect);
+        return new ImportDdlResponse(toWire(sqlToEntityConverter.convert(sql, dialect)), null);
+    }
+
+    /**
+     * Parses a pasted SELECT into a single read-only view entity. A SELECT carries
+     * no column types, so every field comes back as {@code STRING} for the user to
+     * refine in the editor; the raw query is preserved in {@code viewQuery} so the
+     * generated entity can map to a Hibernate {@code @Immutable}/{@code @Subselect}
+     * view. Same body shape as {@link #importDdl}: {@code {sql, dialect?}}.
+     */
+    @PostMapping("/metadata/fullstack/import-select")
+    public ImportDdlResponse importSelect(@RequestBody ImportDdlRequest req) {
+        SqlDialect dialect = parseDialect(req == null ? null : req.dialect());
+        String sql = req == null ? null : req.sql();
+        SqlToEntityDefinitionConverter.SelectImportResult result =
+                sqlToEntityConverter.convertSelect(sql, dialect);
+        return new ImportDdlResponse(toWire(result.entities()), result.note());
+    }
+
+    private static List<EntityWire> toWire(List<EntityDefinition> defs) {
         List<EntityWire> wire = new ArrayList<>(defs.size());
         for (EntityDefinition d : defs) {
             List<FieldWire> fields = new ArrayList<>(d.fields().size());
@@ -239,9 +258,10 @@ public class ExtensionMetadataController {
                         f.primaryKey(), f.generated(), f.required(), f.unique(),
                         f.length(), f.enumValues()));
             }
-            wire.add(new EntityWire(d.name(), d.tableName(), d.schema(), fields));
+            wire.add(new EntityWire(d.name(), d.tableName(), d.schema(), fields,
+                    d.readOnly(), d.viewQuery()));
         }
-        return new ImportDdlResponse(wire);
+        return wire;
     }
 
     @ExceptionHandler(SqlEntityGenerator.SqlParseException.class)
@@ -267,8 +287,9 @@ public class ExtensionMetadataController {
     }
 
     public record ImportDdlRequest(String sql, String dialect) {}
-    public record ImportDdlResponse(List<EntityWire> entities) {}
-    public record EntityWire(String name, String tableName, String schema, List<FieldWire> fields) {}
+    public record ImportDdlResponse(List<EntityWire> entities, String note) {}
+    public record EntityWire(String name, String tableName, String schema, List<FieldWire> fields,
+                             boolean readOnly, String viewQuery) {}
     public record FieldWire(
             String name, String type,
             boolean primaryKey, boolean generated, boolean required, boolean unique,

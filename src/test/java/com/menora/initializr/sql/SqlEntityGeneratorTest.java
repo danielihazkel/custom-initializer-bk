@@ -628,6 +628,91 @@ class SqlEntityGeneratorTest {
                 .noneMatch(p -> p.contains("/dto/"));
     }
 
+    // ── SELECT import (read-only view) ─────────────────────────────────────────
+
+    @Test
+    void parseSelect_usesAliasesElseColumnNames() {
+        SqlEntityGenerator.SelectProjection p = generator.parseSelectForImport(
+                "SELECT u.id, u.full_name AS fullName FROM users u", SqlDialect.H2);
+        assertThat(p.columns()).containsExactly("id", "fullName");
+        assertThat(p.fromTable()).isEqualTo("users");
+        assertThat(p.rawSql()).contains("FROM users");
+    }
+
+    @Test
+    void parseSelect_rejectsSelectStar() {
+        assertThatThrownBy(() -> generator.parseSelectForImport("SELECT * FROM users", SqlDialect.H2))
+                .isInstanceOf(SqlEntityGenerator.SqlParseException.class)
+                .hasMessageContaining("*");
+    }
+
+    @Test
+    void parseSelect_rejectsUnaliasedExpression() {
+        assertThatThrownBy(() -> generator.parseSelectForImport("SELECT count(*) FROM users", SqlDialect.H2))
+                .isInstanceOf(SqlEntityGenerator.SqlParseException.class)
+                .hasMessageContaining("alias");
+    }
+
+    @Test
+    void parseSelect_rejectsNonSelect() {
+        assertThatThrownBy(() -> generator.parseSelectForImport("UPDATE users SET x = 1", SqlDialect.H2))
+                .isInstanceOf(SqlEntityGenerator.SqlParseException.class);
+    }
+
+    // ── Heuristic column extraction (native SQL JSqlParser can't parse) ─────────
+
+    @Test
+    void extractColumns_aliasesAndDottedAndFunctions() {
+        assertThat(SqlEntityGenerator.extractProjectedColumns(
+                "SELECT a AS x, b AS y FROM t")).containsExactly("x", "y");
+        assertThat(SqlEntityGenerator.extractProjectedColumns(
+                "SELECT u.id, u.full_name FROM users u")).containsExactly("id", "full_name");
+        assertThat(SqlEntityGenerator.extractProjectedColumns(
+                "SELECT count(*) AS n, max(p) AS hi FROM t")).containsExactly("n", "hi");
+    }
+
+    @Test
+    void extractColumns_skipsStarAndUnaliasedExpressions() {
+        // bare * and an unaliased function can't name a field; a plain column survives.
+        assertThat(SqlEntityGenerator.extractProjectedColumns(
+                "SELECT *, count(*), id FROM t")).containsExactly("id");
+        assertThat(SqlEntityGenerator.extractProjectedColumns(
+                "SELECT t.* FROM t")).isEmpty();
+    }
+
+    @Test
+    void extractColumns_doesNotSplitInsideFunctionArgs() {
+        assertThat(SqlEntityGenerator.extractProjectedColumns(
+                "SELECT coalesce(a, b) AS c, d FROM t")).containsExactly("c", "d");
+    }
+
+    @Test
+    void extractColumns_handlesDistinctAndDistinctOn() {
+        assertThat(SqlEntityGenerator.extractProjectedColumns(
+                "SELECT DISTINCT a, b FROM t")).containsExactly("a", "b");
+        assertThat(SqlEntityGenerator.extractProjectedColumns(
+                "SELECT DISTINCT ON (region) region AS region, amount AS amount FROM sales"))
+                .containsExactly("region", "amount");
+    }
+
+    @Test
+    void extractColumns_resolvesCteOuterProjection() {
+        assertThat(SqlEntityGenerator.extractProjectedColumns(
+                "WITH recent AS (SELECT id FROM orders) SELECT a, b FROM recent"))
+                .containsExactly("a", "b");
+    }
+
+    @Test
+    void parseSelect_fallsBackForNativeSql() {
+        // Oracle MODEL clause — valid native SQL JSqlParser 4.9 can't parse → heuristic path.
+        SqlEntityGenerator.SelectProjection p = generator.parseSelectForImport(
+                "SELECT id AS id, name AS name FROM t MODEL DIMENSION BY (id) MEASURES (name) RULES ()",
+                SqlDialect.ORACLE);
+        assertThat(p.heuristic()).isTrue();
+        assertThat(p.columns()).containsExactly("id", "name");
+        assertThat(p.rawSql()).contains("MODEL");
+    }
+
     // ── Helper ───────────────────────────────────────────────────────────────
 
     private GeneratedJavaFile findFile(List<GeneratedJavaFile> files, String suffix) {

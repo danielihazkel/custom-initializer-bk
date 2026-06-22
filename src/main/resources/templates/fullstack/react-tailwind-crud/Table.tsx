@@ -27,8 +27,9 @@ export interface PaginationProps {
 interface Props<T extends object> {
   columns: Column<T>[]
   rows: T[]
-  onEdit: (row: T) => void
-  onDelete: (row: T) => void
+  /** Omit both handlers for a read-only table — the Actions column is then hidden. */
+  onEdit?: (row: T) => void
+  onDelete?: (row: T) => void
   loading: boolean
   sort: SortSpec | null
   onSortChange: (next: SortSpec | null) => void
@@ -55,6 +56,7 @@ export function Table<T extends object>({
   const startRow = totalElements === 0 ? 0 : pageNumber * pageSize + 1
   const endRow = Math.min(totalElements, (pageNumber + 1) * pageSize)
   const empty = !loading && rows.length === 0
+  const hasActions = !!onEdit || !!onDelete
 
   return (
     <div className="space-y-3">
@@ -100,9 +102,11 @@ export function Table<T extends object>({
                     </th>
                   )
                 })}
-                <th className="w-24 px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted">
-                  Actions
-                </th>
+                {hasActions && (
+                  <th className="w-24 px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted">
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -110,7 +114,7 @@ export function Table<T extends object>({
                 <TableSkeleton cols={columns.length} />
               ) : empty ? (
                 <tr>
-                  <td colSpan={columns.length + 1}>
+                  <td colSpan={columns.length + (hasActions ? 1 : 0)}>
                     <EmptyState title="No records yet" hint="Create your first record to see it here." />
                   </td>
                 </tr>
@@ -125,24 +129,30 @@ export function Table<T extends object>({
                         {col.render(row)}
                       </td>
                     ))}
-                    <td className="px-5 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => onEdit(row)}
-                          className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
-                          title="Edit"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => onDelete(row)}
-                          className="rounded-lg p-1.5 text-muted transition-colors hover:bg-danger/10 hover:text-danger"
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
+                    {hasActions && (
+                      <td className="px-5 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {onEdit && (
+                            <button
+                              onClick={() => onEdit(row)}
+                              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+                              title="Edit"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          )}
+                          {onDelete && (
+                            <button
+                              onClick={() => onDelete(row)}
+                              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-danger/10 hover:text-danger"
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}

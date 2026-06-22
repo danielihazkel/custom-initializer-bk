@@ -37,7 +37,7 @@ public class {{EntityName}}Service {
                 new java.util.NoSuchElementException("{{EntityName}} " + id + " not found"));
     }
 
-    public {{EntityName}} create({{EntityName}} entity) {
+{{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
 {{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}        return repository.save(entity);
     }
@@ -52,4 +52,4 @@ public class {{EntityName}}Service {
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
         repository.deleteById(id);
     }
-}
+{{/mutable}}}

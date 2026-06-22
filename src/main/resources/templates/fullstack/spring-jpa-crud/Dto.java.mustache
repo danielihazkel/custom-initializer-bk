@@ -18,18 +18,18 @@ import {{name}};
 public record {{EntityName}}Dto(
 {{#fields}}        {{#hasValidation}}{{#isRequired}}{{^isGenerated}}@NotNull {{/isGenerated}}{{/isRequired}}{{#hasLength}}@Size(max = {{length}}) {{/hasLength}}{{#isIntegral}}{{#hasMin}}@Min({{min}}) {{/hasMin}}{{#hasMax}}@Max({{max}}) {{/hasMax}}{{/isIntegral}}{{#isBigDecimal}}{{#hasMin}}@DecimalMin(value = "{{min}}") {{/hasMin}}{{#hasMax}}@DecimalMax(value = "{{max}}") {{/hasMax}}{{/isBigDecimal}}{{#hasPattern}}@Pattern(regexp = "{{patternEscaped}}") {{/hasPattern}}{{#isEmail}}@Email {{/isEmail}}{{/hasValidation}}{{javaType}} {{name}}{{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
 {{/fields}}{{#relations}}        {{#hasValidation}}{{#required}}@NotNull {{/required}}{{/hasValidation}}{{targetPkJavaType}} {{fkFieldName}}{{^last}},{{/last}}
-{{/relations}}{{#optScaffoldAudit}},
+{{/relations}}{{#auditApplicable}},
         java.time.Instant createdAt,
-        java.time.Instant updatedAt{{/optScaffoldAudit}}{{#optScaffoldInverse}}{{#inverseRelations}},
+        java.time.Instant updatedAt{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
         int {{collectionField}}Count{{/inverseRelations}}{{/optScaffoldInverse}}) {
 
     public static {{EntityName}}Dto from({{EntityName}} entity) {
         return new {{EntityName}}Dto(
 {{#fields}}                entity.get{{Name}}(){{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
 {{/fields}}{{#relations}}                entity.get{{FieldName}}() == null ? null : entity.get{{FieldName}}().get{{TargetPkName}}(){{^last}},{{/last}}
-{{/relations}}{{#optScaffoldAudit}},
+{{/relations}}{{#auditApplicable}},
                 entity.getCreatedAt(),
-                entity.getUpdatedAt(){{/optScaffoldAudit}}{{#optScaffoldInverse}}{{#inverseRelations}},
+                entity.getUpdatedAt(){{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
                 entity.get{{CollectionField}}() == null ? 0 : entity.get{{CollectionField}}().size(){{/inverseRelations}}{{/optScaffoldInverse}}
         );
     }

@@ -4,20 +4,26 @@ package {{entityPackage}};
 import {{name}};
 {{/imports}}
 import jakarta.persistence.*;
-{{#optScaffoldAudit}}import java.time.Instant;
+{{#isView}}import org.hibernate.annotations.Immutable;
+import org.hibernate.annotations.Subselect;
+{{/isView}}{{#auditApplicable}}import java.time.Instant;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-{{/optScaffoldAudit}}{{#softDeleteApplicable}}import org.hibernate.annotations.SQLDelete;
+{{/auditApplicable}}{{#softDeleteApplicable}}import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 {{/softDeleteApplicable}}{{#hasInverseRelations}}{{#optScaffoldInverse}}import java.util.ArrayList;
 import java.util.List;
 {{/optScaffoldInverse}}{{/hasInverseRelations}}
 
 @Entity
-@Table(name = "{{tableName}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}})
-{{#optScaffoldAudit}}@EntityListeners(AuditingEntityListener.class)
-{{/optScaffoldAudit}}{{#softDeleteApplicable}}@SQLDelete(sql = "UPDATE {{tableName}} SET deleted = true WHERE {{pkField.column}} = ?")
+{{#isView}}@Immutable
+@Subselect("""
+{{{viewQuery}}}
+""")
+{{/isView}}{{^isView}}@Table(name = "{{tableName}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}})
+{{/isView}}{{#auditApplicable}}@EntityListeners(AuditingEntityListener.class)
+{{/auditApplicable}}{{#softDeleteApplicable}}@SQLDelete(sql = "UPDATE {{tableName}} SET deleted = true WHERE {{pkField.column}} = ?")
 @SQLRestriction("deleted = false")
 {{/softDeleteApplicable}}{{#hasCompositePk}}@IdClass({{keyClassName}}.class)
 {{/hasCompositePk}}public class {{EntityName}} {
@@ -32,14 +38,14 @@ import java.util.List;
 {{#isPrimaryKey}}    @Id
 {{#isGenerated}}    @GeneratedValue(strategy = GenerationType.IDENTITY)
 {{/isGenerated}}{{/isPrimaryKey}}{{#isEnum}}    @Enumerated(EnumType.STRING)
-{{/isEnum}}    @Column(name = "{{column}}"{{#isRequired}}, nullable = false{{/isRequired}}{{#isUnique}}, unique = true{{/isUnique}}{{#hasLength}}, length = {{length}}{{/hasLength}})
+{{/isEnum}}    @Column(name = "{{#isView}}{{name}}{{/isView}}{{^isView}}{{column}}{{/isView}}"{{#isRequired}}, nullable = false{{/isRequired}}{{#isUnique}}, unique = true{{/isUnique}}{{#hasLength}}, length = {{length}}{{/hasLength}})
     private {{javaType}} {{name}};
 
 {{/fields}}{{#relations}}    @ManyToOne(fetch = FetchType.LAZY{{#required}}, optional = false{{/required}})
     @JoinColumn(name = "{{joinColumn}}"{{#required}}, nullable = false{{/required}})
     private {{targetEntity}} {{fieldName}};
 
-{{/relations}}{{#optScaffoldAudit}}    @CreatedDate
+{{/relations}}{{#auditApplicable}}    @CreatedDate
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
 
@@ -47,7 +53,7 @@ import java.util.List;
     @Column(name = "updated_at")
     private Instant updatedAt;
 
-{{/optScaffoldAudit}}{{#softDeleteApplicable}}    @Column(name = "deleted", nullable = false)
+{{/auditApplicable}}{{#softDeleteApplicable}}    @Column(name = "deleted", nullable = false)
     private boolean deleted = false;
 
 {{/softDeleteApplicable}}{{#optScaffoldInverse}}{{#hasInverseRelations}}{{#inverseRelations}}    @OneToMany(mappedBy = "{{mappedBy}}")
@@ -74,7 +80,7 @@ import java.util.List;
         this.{{fieldName}} = {{fieldName}};
     }
 
-{{/relations}}{{#optScaffoldAudit}}    public Instant getCreatedAt() {
+{{/relations}}{{#auditApplicable}}    public Instant getCreatedAt() {
         return createdAt;
     }
 
@@ -82,7 +88,7 @@ import java.util.List;
         return updatedAt;
     }
 
-{{/optScaffoldAudit}}{{#softDeleteApplicable}}    public boolean isDeleted() {
+{{/auditApplicable}}{{#softDeleteApplicable}}    public boolean isDeleted() {
         return deleted;
     }
 

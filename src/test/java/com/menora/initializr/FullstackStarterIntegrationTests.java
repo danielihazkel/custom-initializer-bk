@@ -816,6 +816,142 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void importSelectEndpoint_returnsReadOnlyViewEntity() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("sql", "SELECT u.id AS id, u.full_name AS fullName FROM users u");
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                "/metadata/fullstack/import-select", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                new org.springframework.core.ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) response.getBody().get("entities");
+        assertThat(entities).hasSize(1);
+        Map<String, Object> view = entities.get(0);
+        assertThat(view).containsEntry("name", "User");       // singularized FROM table
+        assertThat(view).containsEntry("readOnly", true);
+        assertThat(view.get("viewQuery").toString()).contains("SELECT").contains("users");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) view.get("fields");
+        assertThat(fields).hasSize(2);
+        // No types in a SELECT → everything defaults to STRING, first column is the PK.
+        assertThat(fields.get(0)).containsEntry("name", "id").containsEntry("type", "STRING").containsEntry("primaryKey", true);
+        assertThat(fields.get(1)).containsEntry("name", "fullName").containsEntry("type", "STRING").containsEntry("primaryKey", false);
+    }
+
+    @Test
+    void importSelectEndpoint_fallsBackForNativeSqlWithNote() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        // Oracle MODEL clause: valid native SQL JSqlParser can't parse — should still import.
+        body.put("sql", "SELECT id AS id, name AS name FROM t MODEL DIMENSION BY (id) MEASURES (name) RULES ()");
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                "/metadata/fullstack/import-select", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                new org.springframework.core.ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) response.getBody().get("entities");
+        assertThat(entities).hasSize(1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) entities.get(0).get("fields");
+        assertThat(fields).extracting(f -> f.get("name")).containsExactly("id", "name");
+        // A heuristic detection carries an advisory note.
+        assertThat(response.getBody().get("note").toString()).contains("heuristically");
+    }
+
+    @Test
+    void importSelectEndpoint_returns400OnSelectStar() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("sql", "SELECT * FROM users");
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                "/metadata/fullstack/import-select", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                new org.springframework.core.ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).containsEntry("error", "Invalid SQL");
+        assertThat(response.getBody().get("detail").toString()).contains("*");
+    }
+
+    @Test
+    void fullstackEndpoint_generatesReadOnlyViewScaffolding() throws Exception {
+        // A SELECT-backed read-only view alongside a normal CRUD entity in one request.
+        Map<String, Object> viewId = Map.of("name", "id", "type", "Long", "primaryKey", true);
+        Map<String, Object> viewName = Map.of("name", "name", "type", "String");
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("name", "UserSummary");
+        view.put("readOnly", true);
+        view.put("viewQuery", "select id, name from users");
+        view.put("fields", List.of(viewId, viewName));
+
+        Map<String, Object> order = Map.of(
+                "name", "Order",
+                "fields", List.of(pkField(), Map.of("name", "total", "type", "BigDecimal")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(view, order));
+
+        Map<String, String> entries = generateZip(body);
+
+        // View entity maps to a @Subselect view, not a @Table.
+        String entity = contentEndingWith(entries, "/UserSummary.java");
+        assertThat(entity).contains("@Immutable").contains("@Subselect(").contains("select id, name from users");
+        assertThat(entity).doesNotContain("@Table(");
+
+        // View service/controller are GET-only.
+        String service = contentEndingWith(entries, "/UserSummaryService.java");
+        assertThat(service).contains("findAll").contains("findById");
+        assertThat(service).doesNotContain("repository.save").doesNotContain("deleteById");
+
+        String controller = contentEndingWith(entries, "/UserSummaryController.java");
+        assertThat(controller).contains("@GetMapping");
+        assertThat(controller).doesNotContain("@PostMapping").doesNotContain("@PutMapping").doesNotContain("@DeleteMapping");
+
+        // The normal entity still gets full CRUD.
+        String orderController = contentEndingWith(entries, "/OrderController.java");
+        assertThat(orderController).contains("@PostMapping").contains("@DeleteMapping");
+
+        // Read-only view frontend page has no New/Edit/Delete surface.
+        String viewPage = contentEndingWith(entries, "/UserSummaryPage.tsx");
+        assertThat(viewPage).doesNotContain("New UserSummary").doesNotContain("onDelete=");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsGeneratedPkOnView() {
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "demo");
+            b.put("bootVersion", "3.2.1");
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("name", "UserSummary");
+            view.put("viewQuery", "select id from users");
+            view.put("fields", List.of(pkField()));   // pkField() is generated=true
+            b.put("entities", List.of(view));
+        });
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("view").contains("generated");
+    }
+
+    @Test
     void fullstackEndpoint_rejectsEmptyEntities() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("artifactId", "demo");

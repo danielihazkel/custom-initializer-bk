@@ -51,7 +51,7 @@ public class {{EntityName}}Controller {
         return {{EntityName}}Dto.from(service.findById(id));
     }
 {{/hasCompositePk}}
-    @PostMapping
+{{#mutable}}    @PostMapping
     public {{EntityName}}Dto create(@RequestBody {{#hasValidation}}@Valid {{/hasValidation}}{{EntityName}}Dto dto) {
         return {{EntityName}}Dto.from(service.create(dto.toEntity()));
     }
@@ -76,7 +76,7 @@ public class {{EntityName}}Controller {
         service.delete(id);
         return ResponseEntity.noContent().build();
     }
-{{/hasCompositePk}}
+{{/hasCompositePk}}{{/mutable}}
 
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Void> handleNotFound(NoSuchElementException ex) {

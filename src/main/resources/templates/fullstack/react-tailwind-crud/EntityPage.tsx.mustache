@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+{{#mutable}}import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { Table, type Column, type SortSpec } from '@shared/ui'
-import { FormDrawer, Alert, ConfirmDialog } from '@shared/ui'
-import { {{EntityName}}Form } from '@features/{{entityNameKebab}}-form'
+import { Alert{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
+{{#mutable}}import { {{EntityName}}Form } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
-
+{{/mutable}}
 const columns: Column<{{EntityName}}>[] = [
 {{#fields}}  { label: '{{Name}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
 {{/fields}}{{#relations}}  { label: '{{FieldName}} ID', render: r => r.{{fkFieldName}} == null ? '—' : String(r.{{fkFieldName}}) },
-{{/relations}}{{#optScaffoldAudit}}  { label: 'Created', sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString() },
+{{/relations}}{{#auditApplicable}}  { label: 'Created', sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString() },
   { label: 'Updated', sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString() },
-{{/optScaffoldAudit}}{{#optScaffoldInverse}}{{#inverseRelations}}  { label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
+{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
 {{/inverseRelations}}{{/optScaffoldInverse}}]
 
 export function {{EntityName}}Page() {
@@ -34,9 +34,9 @@ export function {{EntityName}}Page() {
 
   const {
     items, totalElements, totalPages, pageNumber, pageSize,
-    loading, error, create, update, remove,
+    loading, error,{{#mutable}} create, update, remove,{{/mutable}}
   } = use{{EntityName}}({ page, size, sort, q: debouncedSearch })
-
+{{#mutable}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -96,7 +96,7 @@ export function {{EntityName}}Page() {
       setDeleting(false)
     }
   }
-
+{{/mutable}}
   const pagination = {
     pageNumber,
     pageSize,
@@ -112,17 +112,17 @@ export function {{EntityName}}Page() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-fg">{{EntityNamePlural}}</h1>
           <p className="mt-1 text-sm text-muted">
-            {totalElements} {totalElements === 1 ? 'record' : 'records'}
+            {totalElements} {totalElements === 1 ? 'record' : 'records'}{{#isView}} · read-only view{{/isView}}
           </p>
         </div>
-        <button
+{{#mutable}}        <button
           onClick={openNew}
           className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
         >
           <Plus className="h-4 w-4" />
           New {{EntityName}}
         </button>
-      </div>
+{{/mutable}}      </div>
 
       {error && <Alert>{error}</Alert>}
 
@@ -130,9 +130,9 @@ export function {{EntityName}}Page() {
         columns={columns}
         rows={items}
         loading={loading}
-        onEdit={openEdit}
+{{#mutable}}        onEdit={openEdit}
         onDelete={setPendingDelete}
-        sort={sort}
+{{/mutable}}        sort={sort}
         onSortChange={setSort}
         search={search}
         onSearchChange={setSearch}
@@ -140,7 +140,7 @@ export function {{EntityName}}Page() {
 {{/hasStringFields}}{{^hasStringFields}}        searchable={false}
 {{/hasStringFields}}        pagination={pagination}
       />
-
+{{#mutable}}
       <FormDrawer
         open={drawerOpen}
         title={isNew ? 'New {{EntityName}}' : 'Edit {{EntityName}}'}
@@ -167,6 +167,6 @@ export function {{EntityName}}Page() {
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}
       />
-    </div>
+{{/mutable}}    </div>
   )
 }

@@ -43,13 +43,17 @@ public final class FullstackRequestValidator {
         // Relations reference other entities, so collect everything first (pass 1: names + fields)
         // and resolve/validate relations once all entity names are known (pass 2).
         record Parsed(int ei, String name, String tableName, String schema, List<FieldDefinition> fields,
-                      Set<String> memberNames, List<FullstackStarterRequest.RelationDefinitionDto> rawRelations) {}
+                      Set<String> memberNames, List<FullstackStarterRequest.RelationDefinitionDto> rawRelations,
+                      boolean readOnly, String viewQuery) {}
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
         // Primary-key count per entity (lowercased name) — used in pass 2 to reject a MANY_TO_ONE
         // pointing at a composite-PK entity (a single <field>Id FK can't address a composite key).
         Map<String, Integer> pkCountByLower = new HashMap<>();
+        // Lowercased names of @Subselect-view entities — a MANY_TO_ONE may not target one
+        // (it would force a broken inverse @OneToMany on an immutable view).
+        Set<String> viewLowerNames = new HashSet<>();
         List<Parsed> parsed = new ArrayList<>(raw.size());
         for (int ei = 0; ei < raw.size(); ei++) {
             FullstackStarterRequest.EntityDefinitionDto e = raw.get(ei);
@@ -69,6 +73,12 @@ public final class FullstackRequestValidator {
                 throw new WizardArgumentException("Duplicate entity name (case-insensitive): " + name);
             }
             canonicalByLower.put(lower, name);
+
+            // A SELECT-backed view maps to @Subselect and is inherently read-only.
+            String viewQuery = (e.viewQuery() == null || e.viewQuery().isBlank())
+                    ? null : e.viewQuery().trim();
+            boolean readOnly = viewQuery != null || Boolean.TRUE.equals(e.readOnly());
+            if (viewQuery != null) viewLowerNames.add(lower);
 
             List<FullstackStarterRequest.FieldDefinitionDto> rawFields = e.fields();
             if (rawFields == null || rawFields.isEmpty()) {
@@ -190,21 +200,33 @@ public final class FullstackRequestValidator {
             if (pkCount > 1 && anyGenerated) {
                 throw new WizardArgumentException("Entity '" + name + "' has a generated primary key combined with a composite key (a generated key requires a single primary key)");
             }
+            // A @Subselect view has no underlying table column to auto-generate.
+            if (viewQuery != null && anyGenerated) {
+                throw new WizardArgumentException("Entity '" + name + "' is a SELECT-backed view and cannot have a generated primary key");
+            }
             pkCountByLower.put(lower, pkCount);
 
             String tableName = (e.tableName() == null || e.tableName().isBlank())
                     ? null : e.tableName().trim();
             String schema = (e.schema() == null || e.schema().isBlank())
                     ? null : e.schema().trim();
-            parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations()));
+            parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
+                    readOnly, viewQuery));
         }
 
         // Pass 2 — resolve and validate relations now that all entity names are known.
         List<EntityDefinition> result = new ArrayList<>(parsed.size());
         for (Parsed p : parsed) {
+            // A @Subselect view can't own a foreign-key join column (v1 — no relations on views).
+            if (p.viewQuery() != null && p.rawRelations() != null && !p.rawRelations().isEmpty()) {
+                throw new WizardArgumentException("Entity '" + p.name()
+                        + "' is a SELECT-backed view and cannot declare relations");
+            }
             List<RelationDefinition> relations =
-                    parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower, pkCountByLower);
-            result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations));
+                    parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
+                            pkCountByLower, viewLowerNames);
+            result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
+                    p.readOnly(), p.viewQuery()));
         }
         return result;
     }
@@ -219,7 +241,8 @@ public final class FullstackRequestValidator {
             String entityName,
             Set<String> memberNames,
             Map<String, String> canonicalByLower,
-            Map<String, Integer> pkCountByLower) {
+            Map<String, Integer> pkCountByLower,
+            Set<String> viewLowerNames) {
         if (rawRelations == null || rawRelations.isEmpty()) {
             return List.of();
         }
@@ -270,6 +293,10 @@ public final class FullstackRequestValidator {
             if (targetPkCount != null && targetPkCount > 1) {
                 throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
                         + "' targets composite-PK entity '" + canonicalTarget + "' — not supported");
+            }
+            if (viewLowerNames.contains(targetLower)) {
+                throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                        + "' targets SELECT-backed view '" + canonicalTarget + "' — not supported");
             }
 
             relations.add(new RelationDefinition(type, fieldName, canonicalTarget,

@@ -160,6 +160,16 @@ Shipped opts:
 
 Audit/soft-delete/inverse modify *existing* templates via `{{#optScaffold…}}` sections (not whole-file gates); they are mirrored in both `spring-jpa-crud` and `spring-jpa-crud-lombok` `Entity.java.mustache`. Remaining opt-in candidates (OpenAPI/Flyway/seed data) still pend a catalog-dependency change.
 
+Audit & soft-delete only apply to **writable, table-backed** entities, so their per-entity flags both require `mutable` (see read-only views below): `auditApplicable = optScaffoldAudit && mutable`, `softDeleteApplicable = optScaffoldSoftDelete && !hasCompositePk && mutable`. Templates gate on `auditApplicable`/`softDeleteApplicable`, **not** the raw `optScaffold*` opt (the project-level `JpaAuditingConfig` whole-file gate still keys off `optScaffoldAudit`).
+
+#### Read-only entities & SELECT-backed views (per-entity)
+
+Unlike the project-wide `opts.scaffold` flags, **read-only** is a **per-entity** property on `EntityDefinition` (`readOnly`, `viewQuery`; wire `EntityDefinitionDto.readOnly`/`viewQuery`). A read-only entity generates GET-only scaffolding — `EntityScaffoldContext` exposes `readOnly`, `mutable` (`!readOnly`), `isView` (`viewQuery` present), and `viewQuery`; `Service`/`Controller` wrap create/update/delete in `{{#mutable}}`, and the frontend `EntityPage` gates its New/Edit/Delete surface (the shared `Table` hides its Actions column when `onEdit`/`onDelete` are omitted).
+
+When `viewQuery` is set the entity maps to a **Hibernate `@Immutable` + `@Subselect("…")`** view instead of a `@Table` (both `Entity.java.mustache` swap on `{{#isView}}`); the field `@Column(name=…)` uses the **verbatim** field name (not snake_case) so it matches the SELECT's projected column label — so import keeps the projected alias as the field name and users control naming via `SELECT … AS alias`. A view requires ≥1 PK (the `@Id`), forbids a `generated` PK and relations, and may not be targeted by a `MANY_TO_ONE` (all enforced in `FullstackRequestValidator`, mirrored in the UI `validation.ts`).
+
+Two import endpoints feed the editor (both `{sql, dialect?}` → wire entities): `POST /metadata/fullstack/import-ddl` (CREATE TABLE → table-backed entities) and `POST /metadata/fullstack/import-select` (a single SELECT → one read-only view; fields default to `STRING` for the user to type). The SELECT parser is `SqlEntityGenerator.parseSelectForImport`, bridged via `SqlToEntityDefinitionConverter.convertSelect` (which returns a `SelectImportResult(entities, note)`; the `note` rides back on `ImportDdlResponse`). `@Subselect` runs **native SQL**, so when JSqlParser can't parse the query, the parser falls back to a regex column extractor (`extractProjectedColumns` — finds the outer `SELECT … FROM` projection, splits on top-level commas, names each item by `AS` alias or trailing identifier) and flags `SelectProjection.heuristic`; if even that finds nothing the view comes back with zero fields for manual entry. Only a deliberate `SELECT *` / unaliased expression is a hard 400 (those parse fine — they just can't be auto-named). The standalone backend SQL wizard (`/starter-wizard.zip`) does **not** support SELECT — fullstack only for v1.
+
 ### Adding or Modifying a Dependency
 
 The DB is the source of truth. Use the admin API at runtime, or edit the catalog manifests for the initial seed:

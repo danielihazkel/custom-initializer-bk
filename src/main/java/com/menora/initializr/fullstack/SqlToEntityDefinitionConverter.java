@@ -52,6 +52,57 @@ public class SqlToEntityDefinitionConverter {
         return result;
     }
 
+    /** The single read-only view entity parsed from a SELECT, plus an optional
+     *  user-facing note when columns were detected heuristically or not at all. */
+    public record SelectImportResult(List<EntityDefinition> entities, String note) {}
+
+    /**
+     * Parses a single SELECT and converts it into one read-only view
+     * {@link EntityDefinition}. A SELECT has no column types, so every field is
+     * {@code STRING} (the user refines types in the editor) and the first column
+     * is marked the primary key (needed for {@code @Id}). The raw query is kept in
+     * {@code viewQuery} so the generated entity maps to a {@code @Subselect} view.
+     *
+     * <p>For native SQL JSqlParser can't parse, columns are extracted heuristically
+     * (see {@link SqlEntityGenerator#parseSelectForImport}); if none can be derived,
+     * the entity comes back with no fields for the user to add manually. Either case
+     * carries a {@code note} so the UI can prompt the user to review.
+     */
+    public SelectImportResult convertSelect(String sql, SqlDialect dialect) {
+        if (sql == null || sql.isBlank()) return new SelectImportResult(List.of(), null);
+        SqlDialect effective = dialect != null ? dialect : SqlDialect.H2;
+        SqlEntityGenerator.SelectProjection p = generator.parseSelectForImport(sql, effective);
+
+        String entityName = p.fromTable() != null && !p.fromTable().isBlank()
+                ? singularize(toPascalFromSnake(p.fromTable()))
+                : "View";
+        List<FieldDefinition> fields = new ArrayList<>(p.columns().size());
+        for (int i = 0; i < p.columns().size(); i++) {
+            // Keep the projected label verbatim as the field name: for a @Subselect view the
+            // entity's @Column(name=…) must match the column the SELECT actually produces, so we
+            // must not snake_case/camelCase it away. Users control naming via SELECT aliases.
+            String col = p.columns().get(i);
+            fields.add(new FieldDefinition(
+                    col,
+                    FieldType.STRING,
+                    i == 0,   // first column → primary key (user adjusts)
+                    false,    // never generated on a view
+                    false, false, null, null, null, null, false, List.of()));
+        }
+        String note;
+        if (fields.isEmpty()) {
+            note = "Couldn't auto-detect columns for this query — add the view's fields manually.";
+        } else if (p.heuristic()) {
+            note = "Columns were detected heuristically (the query isn't standard SQL) — "
+                    + "double-check the field names and types.";
+        } else {
+            note = null;
+        }
+        EntityDefinition view = new EntityDefinition(
+                entityName, null, null, fields, List.of(), true, p.rawSql());
+        return new SelectImportResult(List.of(view), note);
+    }
+
     private EntityDefinition toEntity(TableModel table, SqlDialect dialect) {
         String entityName = singularize(toPascalFromSnake(table.name()));
         List<FieldDefinition> fields = new ArrayList<>(table.columns().size());

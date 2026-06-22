@@ -39,7 +39,16 @@ public record FullstackStarterRequest(
             String tableName,
             String schema,
             List<FieldDefinitionDto> fields,
-            List<RelationDefinitionDto> relations) {}
+            List<RelationDefinitionDto> relations,
+            Boolean readOnly,
+            String viewQuery) {
+
+        /** Back-compat overload for table-backed entities (no readOnly/viewQuery). */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations) {
+            this(name, tableName, schema, fields, relations, null, null);
+        }
+    }
 
     public record RelationDefinitionDto(
             String type,

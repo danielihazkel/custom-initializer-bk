@@ -190,9 +190,17 @@ public final class EntityScaffoldContext {
         // Soft-delete is opt-in (optScaffoldSoftDelete) but its @SQLDelete WHERE clause only handles
         // a single PK column, so it is skipped for composite-PK entities. Computed per entity once
         // the project-level opt flag and the entity's hasCompositePk are both in the merged context.
+        // Read-only / @Subselect view entities never delete and have no real table column to mark,
+        // so soft-delete is skipped for them too (mutable == false).
+        boolean mutable = !Boolean.TRUE.equals(ctx.get("readOnly"));
         ctx.put("softDeleteApplicable",
                 Boolean.TRUE.equals(ctx.get("optScaffoldSoftDelete"))
-                        && !Boolean.TRUE.equals(ctx.get("hasCompositePk")));
+                        && !Boolean.TRUE.equals(ctx.get("hasCompositePk"))
+                        && mutable);
+        // Audit timestamps (created/updated) only make sense for writable, table-backed entities —
+        // a @Subselect view would have to project created_at/updated_at columns that may not exist.
+        ctx.put("auditApplicable",
+                Boolean.TRUE.equals(ctx.get("optScaffoldAudit")) && mutable);
         return ctx;
     }
 
@@ -221,6 +229,12 @@ public final class EntityScaffoldContext {
         view.put("tableName", entity.tableName() != null ? entity.tableName() : snakePlural);
         view.put("schema", entity.schema());
         view.put("hasSchema", entity.schema() != null && !entity.schema().isBlank());
+        // Read-only / view flags — gate CRUD in the backend & frontend templates.
+        // `isView` swaps @Table for @Immutable/@Subselect; `mutable` gates create/update/delete.
+        view.put("readOnly", entity.readOnly());
+        view.put("mutable", !entity.readOnly());
+        view.put("isView", entity.isView());
+        view.put("viewQuery", entity.viewQuery());
 
         List<Map<String, Object>> fieldViews = new ArrayList<>(entity.fields().size());
         Map<String, Object> pkView = null;

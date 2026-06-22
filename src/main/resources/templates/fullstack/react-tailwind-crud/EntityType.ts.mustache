@@ -7,7 +7,7 @@ export const {{enumTypeName}}Values: {{enumTypeName}}[] = [{{#enumValues}}'{{val
 export interface {{EntityName}} {
 {{#fields}}  {{name}}{{^isRequired}}?{{/isRequired}}: {{#isEnum}}{{enumTypeName}}{{/isEnum}}{{^isEnum}}{{tsType}}{{/isEnum}} | null
 {{/fields}}{{#relations}}  {{fkFieldName}}{{^required}}?{{/required}}: {{targetPkTsType}} | null
-{{/relations}}{{#optScaffoldAudit}}  createdAt?: string | null
+{{/relations}}{{#auditApplicable}}  createdAt?: string | null
   updatedAt?: string | null
-{{/optScaffoldAudit}}{{#optScaffoldInverse}}{{#inverseRelations}}  {{collectionField}}Count?: number | null
+{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  {{collectionField}}Count?: number | null
 {{/inverseRelations}}{{/optScaffoldInverse}}}
