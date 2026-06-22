@@ -1,5 +1,6 @@
 package com.menora.initializr.config;
 
+import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.VersionService;
 import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.db.entity.EntityTemplateFileEntity;
@@ -84,6 +85,7 @@ public class FullstackStarterController {
     private final FrontendProjectGenerator frontendGenerator;
     private final FrontendProperties frontendProperties;
     private final VersionService versionService;
+    private final DependencyConfigService configService;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                       InitializrMetadataProvider metadataProvider,
@@ -95,7 +97,8 @@ public class FullstackStarterController {
                                       ColorPaletteRepository colorPaletteRepo,
                                       FrontendProjectGenerator frontendGenerator,
                                       FrontendProperties frontendProperties,
-                                      VersionService versionService) {
+                                      VersionService versionService,
+                                      DependencyConfigService configService) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
@@ -107,6 +110,7 @@ public class FullstackStarterController {
         this.frontendGenerator = frontendGenerator;
         this.frontendProperties = frontendProperties;
         this.versionService = versionService;
+        this.configService = configService;
     }
 
     @PostMapping("/starter-fullstack.zip")
@@ -176,6 +180,12 @@ public class FullstackStarterController {
         String domainPackage = resolveDomainPackage(body.domainPackage(), request.getPackageName());
         ensureRequiredDeps(request, backendSet, body.dependencies() != null);
         optionsContext.populate(body.opts());
+        // The fullstack request never carries a datasource role sub-option, so default any
+        // selected database dep to its primary datasource — otherwise its config class (gated
+        // on <dep>-primary/<dep>-secondary) is skipped and the backend has no DataSource bean.
+        Set<String> depIds = new LinkedHashSet<>(
+                request.getDependencies() == null ? List.of() : request.getDependencies());
+        optionsContext.defaultDatasourceRoles(depIds, configService.getAllSubOptions());
         entityContext.populate(entities, backendSetKey, frontendSetKey, domainPackage);
 
         // Backend — runs through the standard pipeline. The EntityScaffoldContributor
