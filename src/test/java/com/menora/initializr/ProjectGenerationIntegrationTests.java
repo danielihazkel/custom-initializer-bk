@@ -514,6 +514,49 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void sqlWizardDatasourceConfigScansScaffoldedEntityPackage() throws Exception {
+        // SQL wizard with a db driver but NO explicit datasource role opt: the controller must
+        // default db2 to its primary role so Db2Config renders, and the config must scan the
+        // wizard's actual entity/repository packages (custom subPackage "model" / .repository),
+        // not the legacy .db2 subpackage.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "demo");
+        body.put("name", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("type", "maven-project");
+        body.put("language", "java");
+        body.put("bootVersion", "3.2.1");
+        body.put("packaging", "jar");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("data-jpa", "web", "db2"));
+        body.put("sqlByDep", Map.of("db2", """
+                CREATE TABLE users (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    email VARCHAR(200) NOT NULL
+                );
+                """));
+        body.put("sqlOptions", Map.of("db2", Map.of(
+                "subPackage", "model",
+                "tables", List.of())));
+
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(
+                "/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, String> files = unzip(response.getBody());
+        assertThat(files.get("demo/src/main/java/com/menora/demo/config/Db2Config.java"))
+                .as("Db2Config")
+                .isNotNull()
+                .contains("basePackages = \"com.menora.demo.repository\"")
+                .contains("em.setPackagesToScan(\"com.menora.demo.model\")")
+                .doesNotContain(".db2.repository");
+        // The entity and repository actually land in those packages.
+        assertThat(files).containsKey("demo/src/main/java/com/menora/demo/model/Users.java");
+        assertThat(files.keySet()).anyMatch(p -> p.endsWith("/repository/UsersRepository.java"));
+    }
+
+    @Test
     void sqlWizardMapstructModeAutoAddsDependencyAndGeneratesRestStack() throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("groupId", "com.menora");
@@ -1307,6 +1350,28 @@ class ProjectGenerationIntegrationTests {
                     .contains("src/main/java/com/menora/demo/config/H2Config.java");
             assertThat(Files.readString(projectDir.resolve("src/main/resources/application.yaml")))
                     .contains("hbm2ddl-auto");  // top-level h2.* mirror restored
+        } finally {
+            optionsContext.clear();
+        }
+    }
+
+    @Test
+    void standaloneDatasourceConfigKeepsLegacyDriverSubpackageWithoutScaffoldedEntities() throws Exception {
+        // No entity scaffolding (plain /starter.zip with db2-primary): the datasource config must
+        // retain its legacy per-driver subpackage convention (.db2 / .db2.repository) so the
+        // multi-datasource user files their own entities there. Guards the Mustache inverted
+        // section default added for the fullstack/SQL-wizard fix.
+        optionsContext.populate(Map.of("db2", List.of("db2-primary")));
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("db2");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+
+            assertThat(Files.readString(projectDir.resolve(
+                    "src/main/java/com/menora/demo/config/Db2Config.java")))
+                    .contains("basePackages = \"com.menora.demo.db2.repository\"")
+                    .contains("em.setPackagesToScan(\"com.menora.demo.db2\")");
         } finally {
             optionsContext.clear();
         }

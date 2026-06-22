@@ -22,7 +22,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration
 @EnableJpaRepositories(
-        basePackages = "{{packageName}}.oracle.repository",
+        basePackages = "{{#hasScaffoldedEntities}}{{dsRepositoryPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.oracle.repository{{/hasScaffoldedEntities}}",
         entityManagerFactoryRef = "oracleEntityManagerFactory",
         transactionManagerRef = "oracleTransactionManager"
 )
@@ -47,7 +47,7 @@ public class OracleConfig {
             @Qualifier("oracleDataSource") DataSource dataSource) {
         LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
         em.setDataSource(dataSource);
-        em.setPackagesToScan("{{packageName}}.oracle");
+        em.setPackagesToScan("{{#hasScaffoldedEntities}}{{dsEntityPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.oracle{{/hasScaffoldedEntities}}");
         em.setPersistenceUnitName("oracle");
 
         HibernateJpaVendorAdapter vendorAdapter = new HibernateJpaVendorAdapter();

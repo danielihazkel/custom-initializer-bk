@@ -22,7 +22,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration
 @EnableJpaRepositories(
-        basePackages = "{{packageName}}.mssql.repository",
+        basePackages = "{{#hasScaffoldedEntities}}{{dsRepositoryPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.mssql.repository{{/hasScaffoldedEntities}}",
         entityManagerFactoryRef = "mssqlEntityManagerFactory",
         transactionManagerRef = "mssqlTransactionManager"
 )
@@ -47,7 +47,7 @@ public class MssqlConfig {
             @Qualifier("mssqlDataSource") DataSource dataSource) {
         LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
         em.setDataSource(dataSource);
-        em.setPackagesToScan("{{packageName}}.mssql");
+        em.setPackagesToScan("{{#hasScaffoldedEntities}}{{dsEntityPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.mssql{{/hasScaffoldedEntities}}");
         em.setPersistenceUnitName("mssql");
 
         HibernateJpaVendorAdapter vendorAdapter = new HibernateJpaVendorAdapter();
