@@ -439,6 +439,9 @@ public class SqlEntityGenerator {
         if (dialect == SqlDialect.DB2)    prepared = normalizeDb2(prepared);
 
         List<TableModel> result = new ArrayList<>();
+        // PascalCase class names already used (lower-cased), so a SELECT-derived view name
+        // can be deduped against table entities and other views.
+        Set<String> usedClassNames = new HashSet<>();
         List<String> statements = splitStatements(prepared);
         int idx = 0;
         for (String raw : statements) {
@@ -459,12 +462,20 @@ public class SqlEntityGenerator {
                     throw new SqlParseException(null, idx, snippet(stmt),
                             "Could not parse CREATE TABLE statement #" + idx + ": " + e.getMessage(), e);
                 }
-                result.add(toTableModel(ct));
+                TableModel tm = toTableModel(ct);
+                usedClassNames.add(toPascalCase(tm.name()).toLowerCase(Locale.ROOT));
+                result.add(tm);
                 continue;
             }
 
             if (IGNORABLE_STATEMENT.matcher(stmt).find()) {
                 log.debug("Skipping non-table statement #{}: {}", idx, snippet(stmt));
+                continue;
+            }
+
+            // A SELECT becomes a read-only @Immutable/@Subselect view entity.
+            if (SELECT_LEAD.matcher(stmt).find()) {
+                result.add(toViewTableModel(stmt, dialect, usedClassNames));
                 continue;
             }
 
@@ -664,6 +675,46 @@ public class SqlEntityGenerator {
         return new TableModel(tableName, schema, columns, pkColumns, fks);
     }
 
+    /**
+     * Builds a read-only view {@link TableModel} from a single SELECT statement: reuses
+     * {@link #parseSelectForImport} for the projected column labels (incl. the native-SQL
+     * heuristic fallback), defaults every field to {@code String} (a SELECT has no column
+     * types, and the wizard has no editing step), and makes the first column the PK.
+     *
+     * <p>Unlike the fullstack import flow, the wizard has no editor to add fields manually,
+     * so a query whose columns can't be auto-named is a hard error rather than an empty view.
+     */
+    private TableModel toViewTableModel(String stmt, SqlDialect dialect, Set<String> usedClassNames) {
+        SelectProjection p = parseSelectForImport(stmt, dialect);
+        if (p.columns().isEmpty()) {
+            throw new SqlParseException(null, null, snippet(stmt),
+                    "Couldn't detect columns for this SELECT — alias each projected column with "
+                            + "AS <name> so it maps to a field", null);
+        }
+        String base = (p.fromTable() != null && !p.fromTable().isBlank())
+                ? toPascalCase(p.fromTable()) : "View";
+        String className = base;
+        if (usedClassNames.contains(className.toLowerCase(Locale.ROOT))) {
+            int n = 2;
+            while (usedClassNames.contains((base + n).toLowerCase(Locale.ROOT))) n++;
+            className = base + n;
+        }
+        usedClassNames.add(className.toLowerCase(Locale.ROOT));
+
+        List<ColumnModel> columns = new ArrayList<>();
+        List<String> pkColumns = new ArrayList<>();
+        List<String> cols = p.columns();
+        for (int i = 0; i < cols.size(); i++) {
+            String col = cols.get(i);
+            boolean isPk = i == 0;
+            // rawType "VARCHAR" → String everywhere via TypeMappers, so the repository/service/
+            // controller id-type derivation needs no view special-casing.
+            columns.add(new ColumnModel(col, "VARCHAR", null, null, true, isPk, false, false, false));
+            if (isPk) pkColumns.add(col);
+        }
+        return new TableModel(className, null, columns, pkColumns, List.of(), stmt);
+    }
+
     private ColumnModel toColumnModel(ColumnDefinition cd, List<String> tablePkCols, Set<String> fkColumnNames) {
         String name = unquote(cd.getColumnName());
         String rawType = cd.getColDataType().getDataType();
@@ -716,6 +767,9 @@ public class SqlEntityGenerator {
     private GeneratedJavaFile renderEntity(TableModel table, SqlDialect dialect,
                                            String packageName, SqlDepOptions opts,
                                            Set<String> knownTableNames) {
+        if (table.isView()) {
+            return renderViewEntity(table, packageName, opts);
+        }
         String className = toPascalCase(table.name());
         String subPkg = opts.subPackage();
         String fullPkg = packageName + "." + subPkg;
@@ -768,6 +822,60 @@ public class SqlEntityGenerator {
         }
         sb.append("public class ").append(className).append(" {\n\n");
         sb.append(body);
+        sb.append("}\n");
+
+        String path = "src/main/java/{{packagePath}}/" + subPkg + "/" + className + ".java";
+        return new GeneratedJavaFile(path, sb.toString());
+    }
+
+    /**
+     * Renders a read-only {@code @Immutable}/{@code @Subselect} view entity from a SELECT.
+     * A SELECT carries no column types, so every field is a {@code String} with a TODO for
+     * the user to fix in source; the {@code @Column(name=…)} uses the projected label
+     * <em>verbatim</em> so it matches the column the query actually returns. The first
+     * projected column is the {@code @Id}. The raw query goes into a Java text block.
+     */
+    private GeneratedJavaFile renderViewEntity(TableModel table, String packageName, SqlDepOptions opts) {
+        String className = toPascalCase(table.name());
+        String subPkg = opts.subPackage();
+        String fullPkg = packageName + "." + subPkg;
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("package ").append(fullPkg).append(";\n\n");
+        sb.append("import jakarta.persistence.Column;\n");
+        sb.append("import jakarta.persistence.Entity;\n");
+        sb.append("import jakarta.persistence.Id;\n");
+        sb.append("import lombok.AllArgsConstructor;\n");
+        sb.append("import lombok.Data;\n");
+        sb.append("import lombok.NoArgsConstructor;\n");
+        sb.append("import org.hibernate.annotations.Immutable;\n");
+        sb.append("import org.hibernate.annotations.Subselect;\n\n");
+        sb.append("@Entity\n");
+        sb.append("@Immutable\n");
+        sb.append("@Subselect(\"\"\"\n");
+        sb.append(table.viewQuery()).append('\n');
+        sb.append("\"\"\")\n");
+        sb.append("@Data\n");
+        sb.append("@NoArgsConstructor\n");
+        sb.append("@AllArgsConstructor\n");
+        sb.append("public class ").append(className).append(" {\n\n");
+
+        Set<String> usedFieldNames = new HashSet<>();
+        for (ColumnModel c : table.columns()) {
+            String fieldName = toCamelCase(c.name());
+            if (usedFieldNames.contains(fieldName)) {
+                int n = 2;
+                while (usedFieldNames.contains(fieldName + n)) n++;
+                fieldName = fieldName + n;
+            }
+            usedFieldNames.add(fieldName);
+            if (c.isPk()) sb.append("    @Id\n");
+            // Match the SELECT's projected column label verbatim — that's the name Hibernate
+            // reads back from the @Subselect result set.
+            sb.append("    @Column(name = \"").append(c.name()).append("\")\n");
+            sb.append("    // TODO: SELECT has no column types — set the real type\n");
+            sb.append("    private String ").append(fieldName).append(";\n\n");
+        }
         sb.append("}\n");
 
         String path = "src/main/java/{{packagePath}}/" + subPkg + "/" + className + ".java";
@@ -1207,20 +1315,24 @@ public class SqlEntityGenerator {
         sb.append("        return repository.findById(id).orElseThrow(() ->\n");
         sb.append("                new java.util.NoSuchElementException(\"")
                 .append(entityClass).append(" \" + id + \" not found\"));\n    }\n\n");
-        sb.append("    public ").append(entityClass).append(" create(").append(entityClass).append(" entity) {\n");
-        if (genPkSetter != null) sb.append("        entity.set").append(genPkSetter).append("(null);\n");
-        sb.append("        return repository.save(entity);\n    }\n\n");
-        sb.append("    public ").append(entityClass).append(" update(")
-                .append(id.simpleName()).append(" id, ").append(entityClass).append(" updated) {\n");
-        sb.append("        ").append(entityClass).append(" existing = findById(id);\n");
-        for (Member m : view.members()) {
-            if (m.isPk()) continue; // never overwrite the key
-            sb.append("        existing.set").append(m.pascalName())
-                    .append("(updated.get").append(m.pascalName()).append("());\n");
+        // A read-only @Subselect view exposes GET-only scaffolding — no create/update/delete.
+        if (!table.isView()) {
+            sb.append("    public ").append(entityClass).append(" create(").append(entityClass).append(" entity) {\n");
+            if (genPkSetter != null) sb.append("        entity.set").append(genPkSetter).append("(null);\n");
+            sb.append("        return repository.save(entity);\n    }\n\n");
+            sb.append("    public ").append(entityClass).append(" update(")
+                    .append(id.simpleName()).append(" id, ").append(entityClass).append(" updated) {\n");
+            sb.append("        ").append(entityClass).append(" existing = findById(id);\n");
+            for (Member m : view.members()) {
+                if (m.isPk()) continue; // never overwrite the key
+                sb.append("        existing.set").append(m.pascalName())
+                        .append("(updated.get").append(m.pascalName()).append("());\n");
+            }
+            sb.append("        return repository.save(existing);\n    }\n\n");
+            sb.append("    public void delete(").append(id.simpleName()).append(" id) {\n");
+            sb.append("        repository.deleteById(id);\n    }\n");
         }
-        sb.append("        return repository.save(existing);\n    }\n\n");
-        sb.append("    public void delete(").append(id.simpleName()).append(" id) {\n");
-        sb.append("        repository.deleteById(id);\n    }\n}\n");
+        sb.append("}\n");
 
         return new GeneratedJavaFile(
                 "src/main/java/{{packagePath}}/service/" + entityClass + "Service.java", sb.toString());
@@ -1440,39 +1552,42 @@ public class SqlEntityGenerator {
                     .append(convClose).append(";\n    }\n\n");
         }
 
-        // create
-        sb.append("    @PostMapping\n");
-        sb.append("    public ").append(retType).append(" create(@RequestBody ").append(retType).append(" body) {\n");
-        sb.append("        return ").append(convOpen).append("service.create(").append(bodyToEntity).append(")")
-                .append(convClose).append(";\n    }\n\n");
+        // create / update / delete — omitted for read-only @Subselect views (GET-only).
+        if (!table.isView()) {
+            // create
+            sb.append("    @PostMapping\n");
+            sb.append("    public ").append(retType).append(" create(@RequestBody ").append(retType).append(" body) {\n");
+            sb.append("        return ").append(convOpen).append("service.create(").append(bodyToEntity).append(")")
+                    .append(convClose).append(";\n    }\n\n");
 
-        // update
-        if (composite) {
-            sb.append("    @PutMapping(\"").append(pkPath).append("\")\n");
-            sb.append("    public ").append(retType).append(" update(").append(pathVars)
-                    .append(", @RequestBody ").append(retType).append(" body) {\n");
-            sb.append("        return ").append(convOpen).append("service.update(").append(newKey).append(", ")
-                    .append(bodyToEntity).append(")").append(convClose).append(";\n    }\n\n");
-        } else {
-            sb.append("    @PutMapping(\"/{id}\")\n");
-            sb.append("    public ").append(retType).append(" update(@PathVariable ")
-                    .append(id.simpleName()).append(" id, @RequestBody ").append(retType).append(" body) {\n");
-            sb.append("        return ").append(convOpen).append("service.update(id, ")
-                    .append(bodyToEntity).append(")").append(convClose).append(";\n    }\n\n");
-        }
+            // update
+            if (composite) {
+                sb.append("    @PutMapping(\"").append(pkPath).append("\")\n");
+                sb.append("    public ").append(retType).append(" update(").append(pathVars)
+                        .append(", @RequestBody ").append(retType).append(" body) {\n");
+                sb.append("        return ").append(convOpen).append("service.update(").append(newKey).append(", ")
+                        .append(bodyToEntity).append(")").append(convClose).append(";\n    }\n\n");
+            } else {
+                sb.append("    @PutMapping(\"/{id}\")\n");
+                sb.append("    public ").append(retType).append(" update(@PathVariable ")
+                        .append(id.simpleName()).append(" id, @RequestBody ").append(retType).append(" body) {\n");
+                sb.append("        return ").append(convOpen).append("service.update(id, ")
+                        .append(bodyToEntity).append(")").append(convClose).append(";\n    }\n\n");
+            }
 
-        // delete
-        if (composite) {
-            sb.append("    @DeleteMapping(\"").append(pkPath).append("\")\n");
-            sb.append("    public ResponseEntity<Void> delete(").append(pathVars).append(") {\n");
-            sb.append("        service.delete(").append(newKey).append(");\n");
-        } else {
-            sb.append("    @DeleteMapping(\"/{id}\")\n");
-            sb.append("    public ResponseEntity<Void> delete(@PathVariable ")
-                    .append(id.simpleName()).append(" id) {\n");
-            sb.append("        service.delete(id);\n");
+            // delete
+            if (composite) {
+                sb.append("    @DeleteMapping(\"").append(pkPath).append("\")\n");
+                sb.append("    public ResponseEntity<Void> delete(").append(pathVars).append(") {\n");
+                sb.append("        service.delete(").append(newKey).append(");\n");
+            } else {
+                sb.append("    @DeleteMapping(\"/{id}\")\n");
+                sb.append("    public ResponseEntity<Void> delete(@PathVariable ")
+                        .append(id.simpleName()).append(" id) {\n");
+                sb.append("        service.delete(id);\n");
+            }
+            sb.append("        return ResponseEntity.noContent().build();\n    }\n\n");
         }
-        sb.append("        return ResponseEntity.noContent().build();\n    }\n\n");
 
         sb.append("    @ExceptionHandler(java.util.NoSuchElementException.class)\n");
         sb.append("    public ResponseEntity<Void> handleNotFound(java.util.NoSuchElementException ex) {\n");

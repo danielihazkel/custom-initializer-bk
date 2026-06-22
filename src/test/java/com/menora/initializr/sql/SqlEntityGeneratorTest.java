@@ -659,6 +659,96 @@ class SqlEntityGeneratorTest {
                 .isInstanceOf(SqlEntityGenerator.SqlParseException.class);
     }
 
+    // ── generate(): read-only @Subselect view from a SELECT ───────────────────
+
+    @Test
+    void generate_selectProducesReadOnlyViewEntity() {
+        List<GeneratedJavaFile> files = generator.generate(
+                "SELECT u.id AS id, u.full_name AS fullName FROM users u",
+                SqlDialect.POSTGRESQL, "p",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.ENTITY_DIRECT));
+
+        String entity = findFile(files, "entity/Users.java").content();
+        assertThat(entity)
+                .contains("@Entity")
+                .contains("@Immutable")
+                .contains("@Subselect(\"\"\"")
+                .contains("SELECT u.id AS id, u.full_name AS fullName FROM users u")
+                .contains("@Id")
+                .contains("@Column(name = \"id\")")
+                .contains("@Column(name = \"fullName\")")
+                .contains("private String id;")
+                .contains("private String fullName;")
+                .contains("// TODO")
+                .doesNotContain("@Table")
+                .doesNotContain("@GeneratedValue");
+
+        String service = findFile(files, "service/UsersService.java").content();
+        assertThat(service)
+                .contains("public Users findById(String id)")
+                .contains("public Page<Users> findAll(Pageable pageable)")
+                .doesNotContain("public Users create(")
+                .doesNotContain("public Users update(")
+                .doesNotContain("public void delete(");
+
+        String controller = findFile(files, "controller/UsersController.java").content();
+        assertThat(controller)
+                .contains("@GetMapping")
+                .doesNotContain("@PostMapping")
+                .doesNotContain("@PutMapping")
+                .doesNotContain("@DeleteMapping");
+    }
+
+    @Test
+    void generate_mixedDdlAndSelect() {
+        String sql = """
+                CREATE TABLE products (
+                    id BIGINT PRIMARY KEY,
+                    sku VARCHAR(64) NOT NULL
+                );
+                SELECT u.id AS id, u.email AS email FROM users u;
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.POSTGRESQL, "p",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.ENTITY_DIRECT));
+
+        // The table entity keeps full CRUD …
+        assertThat(findFile(files, "entity/Products.java").content())
+                .contains("@Table(name = \"products\")")
+                .doesNotContain("@Subselect");
+        assertThat(findFile(files, "controller/ProductsController.java").content())
+                .contains("@PostMapping")
+                .contains("@DeleteMapping");
+
+        // … while the view entity is read-only.
+        assertThat(findFile(files, "entity/Users.java").content())
+                .contains("@Subselect(\"\"\"");
+        assertThat(findFile(files, "controller/UsersController.java").content())
+                .contains("@GetMapping")
+                .doesNotContain("@PostMapping");
+    }
+
+    @Test
+    void generate_selectStarThrows() {
+        assertThatThrownBy(() -> generator.generate("SELECT * FROM users", SqlDialect.H2, "p", null))
+                .isInstanceOf(SqlEntityGenerator.SqlParseException.class)
+                .hasMessageContaining("*");
+    }
+
+    @Test
+    void generate_viewNameDedupedAgainstTable() {
+        String sql = """
+                CREATE TABLE users (id BIGINT PRIMARY KEY, name VARCHAR(50));
+                SELECT u.id AS id FROM users u;
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.POSTGRESQL, "p", null);
+
+        assertThat(files).extracting(GeneratedJavaFile::relativePath)
+                .anyMatch(p -> p.endsWith("entity/Users.java"))
+                .anyMatch(p -> p.endsWith("entity/Users2.java"));
+        assertThat(findFile(files, "entity/Users.java").content()).contains("@Table");
+        assertThat(findFile(files, "entity/Users2.java").content()).contains("@Subselect");
+    }
+
     // ── Heuristic column extraction (native SQL JSqlParser can't parse) ─────────
 
     @Test
