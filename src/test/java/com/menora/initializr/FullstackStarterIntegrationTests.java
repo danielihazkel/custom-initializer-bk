@@ -1314,6 +1314,34 @@ class FullstackStarterIntegrationTests {
                 .doesNotContain("hbm2ddl-auto");   // the gated custom h2.datasource mirror
     }
 
+    @Test
+    void fullstackEndpoint_schemaQualifiedEntityBootsOnH2() throws Exception {
+        // A schema-qualified entity (e.g. imported from `CREATE TABLE entv.td_app_stp`) emits
+        // @Table(schema="ENTV"), which crashes the bundled H2 ("Schema ENTV not found") unless
+        // Hibernate is told to create namespaces first. The H2 dev config must carry the flag.
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("name", "TdAppStp");
+        entity.put("tableName", "TD_APP_STP");
+        entity.put("schema", "ENTV");
+        entity.put("fields", List.of(pkField()));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "h2app");
+        body.put("packageName", "com.menora.h2app");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web", "h2"));
+        body.put("entities", List.of(entity));
+
+        Map<String, String> entries = generateZip(body);
+
+        // The entity keeps its schema (real-DB fidelity)…
+        assertThat(contentEndingWith(entries, "/entity/TdAppStp.java"))
+                .contains("schema = \"ENTV\"");
+        // …and the H2 dev config auto-creates it so the app boots.
+        assertThat(entries.get("h2app/backend/src/main/resources/application.yaml"))
+                .contains("create_namespaces: true");
+    }
+
     /** POSTs a fullstack request and returns the unzipped (path → text) generated tree. */
     private Map<String, String> generateZip(Map<String, Object> body) throws Exception {
         HttpHeaders headers = new HttpHeaders();
