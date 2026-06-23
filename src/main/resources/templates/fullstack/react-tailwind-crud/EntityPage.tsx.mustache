@@ -38,6 +38,7 @@ export function {{EntityName}}Page() {
   } = use{{EntityName}}({ page, size, sort, q: debouncedSearch })
 {{#mutable}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
+  const [initial, setInitial] = useState<Partial<{{EntityName}}>>({})
   const [isNew, setIsNew] = useState(false)
   const [saving, setSaving] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -45,14 +46,19 @@ export function {{EntityName}}Page() {
   const [pendingDelete, setPendingDelete] = useState<{{EntityName}} | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Has the user changed anything since the drawer opened? Drives the discard guard.
+  const dirty = editing != null && JSON.stringify(editing) !== JSON.stringify(initial)
+
   function openNew() {
     setEditing({})
+    setInitial({})
     setIsNew(true)
     setFormErrors({})
     setDrawerOpen(true)
   }
   function openEdit(row: {{EntityName}}) {
     setEditing({ ...row })
+    setInitial({ ...row })
     setIsNew(false)
     setFormErrors({})
     setDrawerOpen(true)
@@ -76,6 +82,10 @@ export function {{EntityName}}Page() {
       if (e instanceof ApiError && e.fieldErrors) {
         setFormErrors(e.fieldErrors)
         toast.error('Please fix the highlighted fields')
+        // Move focus to the first field flagged invalid by <Field>.
+        requestAnimationFrame(() => {
+          document.querySelector<HTMLElement>('[role="dialog"] [aria-invalid="true"]')?.focus()
+        })
       } else {
         toast.error(e instanceof Error ? e.message : String(e))
       }
@@ -85,11 +95,22 @@ export function {{EntityName}}Page() {
   }
   async function confirmDelete() {
     if (!pendingDelete) return
+    const removed = pendingDelete
     setDeleting(true)
     try {
-      await remove({{#hasCompositePk}}[{{#pkFields}}pendingDelete.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}pendingDelete.{{pkField.name}} as number | string{{/hasCompositePk}})
-      toast.success('{{EntityName}} deleted')
+      await remove({{#hasCompositePk}}[{{#pkFields}}removed.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}removed.{{pkField.name}} as number | string{{/hasCompositePk}})
       setPendingDelete(null)
+      // Offer a best-effort undo by re-creating the just-removed record.
+      toast.success('{{EntityName}} deleted', {
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            create(removed as Omit<{{EntityName}}, 'id'>)
+              .then(() => toast.success('{{EntityName}} restored'))
+              .catch(err => toast.error(err instanceof Error ? err.message : String(err)))
+          },
+        },
+      })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
@@ -107,7 +128,7 @@ export function {{EntityName}}Page() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl p-8">
+    <div className="mx-auto max-w-6xl p-4 md:p-8">
       <div className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-fg">{{EntityNamePlural}}</h1>
@@ -148,6 +169,7 @@ export function {{EntityName}}Page() {
         onClose={close}
         onSave={save}
         saving={saving}
+        dirty={dirty}
       >
         {editing && (
           <{{EntityName}}Form
@@ -162,7 +184,7 @@ export function {{EntityName}}Page() {
       <ConfirmDialog
         open={pendingDelete !== null}
         title="Delete {{EntityName}}?"
-        message="This action cannot be undone."
+        message="You can undo this right after, from the notification."
         busy={deleting}
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}

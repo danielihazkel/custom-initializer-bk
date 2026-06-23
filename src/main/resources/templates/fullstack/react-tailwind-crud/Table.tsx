@@ -137,6 +137,7 @@ export function Table<T extends object>({
                               onClick={() => onEdit(row)}
                               className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
                               title="Edit"
+                              aria-label="Edit"
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
@@ -146,6 +147,7 @@ export function Table<T extends object>({
                               onClick={() => onDelete(row)}
                               className="rounded-lg p-1.5 text-muted transition-colors hover:bg-danger/10 hover:text-danger"
                               title="Delete"
+                              aria-label="Delete"
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
