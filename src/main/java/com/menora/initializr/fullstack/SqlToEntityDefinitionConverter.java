@@ -109,7 +109,8 @@ public class SqlToEntityDefinitionConverter {
         for (ColumnModel col : table.columns()) {
             fields.add(toField(col, dialect));
         }
-        return new EntityDefinition(entityName, table.name(), table.schema(), fields, List.of());
+        return new EntityDefinition(entityName, table.name(), table.schema(), fields, List.of(),
+                false, null, table.sourceSql());
     }
 
     private FieldDefinition toField(ColumnModel col, SqlDialect dialect) {

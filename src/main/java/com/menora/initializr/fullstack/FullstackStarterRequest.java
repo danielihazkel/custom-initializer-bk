@@ -41,12 +41,23 @@ public record FullstackStarterRequest(
             List<FieldDefinitionDto> fields,
             List<RelationDefinitionDto> relations,
             Boolean readOnly,
-            String viewQuery) {
+            String viewQuery,
+            // Informational provenance the UI round-trips (the originating CREATE TABLE an
+            // entity was imported from). Accepted so deserialization doesn't fail, but the
+            // validator/generator deliberately ignores it — it never affects generated output.
+            String sourceSql) {
 
-        /** Back-compat overload for table-backed entities (no readOnly/viewQuery). */
+        /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql). */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations) {
-            this(name, tableName, schema, fields, relations, null, null);
+            this(name, tableName, schema, fields, relations, null, null, null);
+        }
+
+        /** Back-compat overload without {@code sourceSql}. */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, null);
         }
     }
 

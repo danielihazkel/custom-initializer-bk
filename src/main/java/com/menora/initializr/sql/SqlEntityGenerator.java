@@ -462,7 +462,7 @@ public class SqlEntityGenerator {
                     throw new SqlParseException(null, idx, snippet(stmt),
                             "Could not parse CREATE TABLE statement #" + idx + ": " + e.getMessage(), e);
                 }
-                TableModel tm = toTableModel(ct);
+                TableModel tm = toTableModel(ct, stmt);
                 usedClassNames.add(toPascalCase(tm.name()).toLowerCase(Locale.ROOT));
                 result.add(tm);
                 continue;
@@ -485,7 +485,7 @@ public class SqlEntityGenerator {
             try {
                 Statement parsed = CCJSqlParserUtil.parse(stmt);
                 if (parsed instanceof CreateTable ct) {
-                    result.add(toTableModel(ct));
+                    result.add(toTableModel(ct, stmt));
                 }
             } catch (JSQLParserException e) {
                 throw new SqlParseException(null, idx, snippet(stmt),
@@ -614,7 +614,7 @@ public class SqlEntityGenerator {
         public String statementSnippet() { return statementSnippet; }
     }
 
-    private TableModel toTableModel(CreateTable ct) {
+    private TableModel toTableModel(CreateTable ct, String sourceSql) {
         String tableName = unquote(ct.getTable().getName());
         String schema = unquote(ct.getTable().getSchemaName());
         // Be robust to JSqlParser variants that leave the schema fused onto the
@@ -672,7 +672,7 @@ public class SqlEntityGenerator {
             columns = fixed;
         }
 
-        return new TableModel(tableName, schema, columns, pkColumns, fks);
+        return new TableModel(tableName, schema, columns, pkColumns, fks, null, sourceSql);
     }
 
     /**

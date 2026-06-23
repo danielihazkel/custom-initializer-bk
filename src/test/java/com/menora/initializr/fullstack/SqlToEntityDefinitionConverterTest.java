@@ -155,6 +155,39 @@ class SqlToEntityDefinitionConverterTest {
     }
 
     @Test
+    void convertCapturesSourceDdlPerEntity() {
+        String sql = """
+                CREATE TABLE orders (id BIGINT PRIMARY KEY, total DECIMAL(12,2));
+                CREATE TABLE order_items (id BIGINT PRIMARY KEY, qty INT);
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);
+        assertThat(entities).hasSize(2);
+
+        // Each entity remembers its own originating CREATE TABLE statement.
+        assertThat(entities.get(0).sourceSql())
+                .startsWith("CREATE TABLE orders")
+                .contains("total DECIMAL(12,2)")
+                .doesNotContain("order_items");
+        assertThat(entities.get(1).sourceSql())
+                .startsWith("CREATE TABLE order_items")
+                .contains("qty INT")
+                .doesNotContain("orders (");
+    }
+
+    @Test
+    void convertSelectKeepsViewQueryAndLeavesSourceSqlNull() {
+        // A SELECT-backed view carries its source in viewQuery, not sourceSql.
+        String sql = "SELECT id AS id, name AS name FROM customers";
+        SqlToEntityDefinitionConverter.SelectImportResult result =
+                converter.convertSelect(sql, SqlDialect.H2);
+        assertThat(result.entities()).hasSize(1);
+        EntityDefinition view = result.entities().get(0);
+        assertThat(view.viewQuery()).isEqualTo(sql);
+        assertThat(view.sourceSql()).isNull();
+        assertThat(view.readOnly()).isTrue();
+    }
+
+    @Test
     void mapTypeFallbacks() {
         assertThat(SqlToEntityDefinitionConverter.mapType(
                 com.menora.initializr.sql.JavaType.langType("Short"))).isEqualTo(FieldType.INTEGER);

@@ -8,12 +8,19 @@ public record TableModel(
         List<ColumnModel> columns,
         List<String> pkColumns,
         List<ForeignKey> foreignKeys,
-        String viewQuery) {
+        String viewQuery,
+        String sourceSql) {
 
     /** Back-compat constructor for table-backed entities (no {@code @Subselect} view). */
     public TableModel(String name, String schema, List<ColumnModel> columns,
                       List<String> pkColumns, List<ForeignKey> foreignKeys) {
-        this(name, schema, columns, pkColumns, foreignKeys, null);
+        this(name, schema, columns, pkColumns, foreignKeys, null, null);
+    }
+
+    /** Constructor for {@code @Subselect} views (carries {@code viewQuery}). */
+    public TableModel(String name, String schema, List<ColumnModel> columns,
+                      List<String> pkColumns, List<ForeignKey> foreignKeys, String viewQuery) {
+        this(name, schema, columns, pkColumns, foreignKeys, viewQuery, null);
     }
 
     public boolean hasCompositePk() {

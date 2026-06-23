@@ -259,7 +259,7 @@ public class ExtensionMetadataController {
                         f.length(), f.enumValues()));
             }
             wire.add(new EntityWire(d.name(), d.tableName(), d.schema(), fields,
-                    d.readOnly(), d.viewQuery()));
+                    d.readOnly(), d.viewQuery(), d.sourceSql()));
         }
         return wire;
     }
@@ -289,7 +289,7 @@ public class ExtensionMetadataController {
     public record ImportDdlRequest(String sql, String dialect) {}
     public record ImportDdlResponse(List<EntityWire> entities, String note) {}
     public record EntityWire(String name, String tableName, String schema, List<FieldWire> fields,
-                             boolean readOnly, String viewQuery) {}
+                             boolean readOnly, String viewQuery, String sourceSql) {}
     public record FieldWire(
             String name, String type,
             boolean primaryKey, boolean generated, boolean required, boolean unique,
