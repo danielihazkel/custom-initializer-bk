@@ -119,6 +119,17 @@ class FrontendProjectGenerationIntegrationTests {
     }
 
     @Test
+    void everyFrontendShipsLogoAssetAndFavicon() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        // Binary brand asset copied into public/ (served at site root as /logo.png).
+        assertThat(files).containsKey("public/logo.png");
+        // index.html wires the favicon to it.
+        assertThat(files.get("index.html")).contains("rel=\"icon\"").contains("/logo.png");
+    }
+
+    @Test
     void k8sManifestsRenderWithProjectName() throws Exception {
         FrontendProjectDescription desc = baseDescription("demo");
         Map<String, String> files = generator.generateFileMap(desc);
@@ -268,9 +279,9 @@ class FrontendProjectGenerationIntegrationTests {
 
         String theme = files.get("src/shared/theme/theme.ts");
         assertThat(theme).isNotNull();
-        // menora-default seed: primary=#0a2b6b, secondary=#2d3344
-        assertThat(theme).contains("primary: { main: '#0a2b6b' }");
-        assertThat(theme).contains("secondary: { main: '#2d3344' }");
+        // menora-default seed: primary=#9A83F7, secondary=#FEDB41
+        assertThat(theme).contains("primary: { main: '#9A83F7' }");
+        assertThat(theme).contains("secondary: { main: '#FEDB41' }");
     }
 
     @Test
@@ -333,7 +344,7 @@ class FrontendProjectGenerationIntegrationTests {
         Map<String, String> files = generator.generateFileMap(desc);
 
         // Falls back to menora-default
-        assertThat(files.get("src/shared/theme/theme.ts")).contains("primary: { main: '#0a2b6b' }");
+        assertThat(files.get("src/shared/theme/theme.ts")).contains("primary: { main: '#9A83F7' }");
     }
 
     @Test
@@ -344,7 +355,7 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(body).isNotNull();
         assertThat(body).contains("colorPalettes");
         assertThat(body).contains("menora-default");
-        assertThat(body).contains("\"primary\":\"#0a2b6b\"");
+        assertThat(body).contains("\"primary\":\"#9A83F7\"");
     }
 
     @Test
@@ -512,7 +523,7 @@ class FrontendProjectGenerationIntegrationTests {
         FrontendProjectDescription desc = baseDescription("demo");
         desc.getDependencies().add("style-tailwind");
         desc.getDependencies().add("design-shadcn");
-        // menora-default: primary=#0a2b6b → 220 83% 23% (rounded)
+        // menora-default: primary=#9A83F7 → 252 88% 74% (rounded)
         Map<String, String> files = generator.generateFileMap(desc);
 
         String css = files.get("src/index.css");
@@ -522,8 +533,8 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(css).contains("--primary:");
         assertThat(css).contains("--secondary:");
         assertThat(css).contains("--ring:");
-        // Concrete HSL value derived from #0a2b6b — 220 deg hue.
-        assertThat(css).contains("220 ");
+        // Concrete HSL value derived from #9A83F7 — 252 deg hue.
+        assertThat(css).contains("252 ");
     }
 
     @Test

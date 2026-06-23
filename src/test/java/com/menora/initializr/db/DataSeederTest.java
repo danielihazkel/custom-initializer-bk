@@ -289,7 +289,7 @@ class DataSeederTest {
         long feFileContribs = fileContribRepo.findAll().stream()
                 .filter(f -> f.getProjectKind() == ProjectKind.FRONTEND)
                 .count();
-        assertThat(feFileContribs).isEqualTo(82);
+        assertThat(feFileContribs).isEqualTo(83);
 
         // The FSD layer barrels are FRONTEND __common__ rows.
         assertThat(fileContribRepo.findAll()).anySatisfy(f -> {
@@ -306,7 +306,7 @@ class DataSeederTest {
                 .toList();
 
         assertThat(fe).filteredOn(b -> b.getCustomizationType()
-                == BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY).hasSize(68);
+                == BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY).hasSize(69);
         assertThat(fe).filteredOn(b -> b.getCustomizationType()
                 == BuildCustomizationEntity.CustomizationType.ADD_VITE_PLUGIN).hasSize(1);
         assertThat(fe).filteredOn(b -> b.getCustomizationType()

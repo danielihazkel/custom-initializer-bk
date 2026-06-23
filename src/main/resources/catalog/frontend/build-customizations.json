@@ -1,4 +1,5 @@
 [
+  { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@fontsource/inter", "version": "^5.0.18", "sortOrder": 3 },
   { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@vitejs/plugin-react", "version": "^4.3.1", "scope": "dev", "sortOrder": 4 },
   { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "vite", "version": "^5.2.0", "scope": "dev", "sortOrder": 5 },
   { "depId": "__common__", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "typescript", "version": "^5.4.5", "scope": "dev", "sortOrder": 6 },

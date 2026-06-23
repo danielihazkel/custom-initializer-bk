@@ -670,16 +670,21 @@ class FullstackStarterIntegrationTests {
         assertThat(css)
                 .contains("@theme")
                 .contains("--color-brand:")
-                .contains("#0a2b6b")   // Menora navy (palette primary)
-                .contains("#2d3344")   // charcoal sidebar (secondary)
-                .contains("#ffc700");  // gold accent
+                .contains("#9A83F7")   // Menora purple (palette primary → brand)
+                .contains("#2B2F4C")   // fixed navy shell (ink)
+                .contains("#FEDB41");  // gold highlight (palette secondary)
 
         // Components reference the brand tokens, not the old emerald defaults.
         String app = entries.get("shop/frontend/src/app/App.tsx");
-        assertThat(app).contains("bg-ink").contains("text-gold").contains("border-gold");
+        assertThat(app).contains("bg-app-shell").contains("text-gold").contains("border-gold");
         assertThat(app).doesNotContain("emerald");
         assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx")).contains("bg-brand");
         assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("bg-brand");
+
+        // Brand logo asset shipped and referenced in the sidebar + favicon.
+        assertThat(entries).containsKey("shop/frontend/public/logo.png");
+        assertThat(app).contains("/logo.png").doesNotContain("Database");
+        assertThat(entries.get("shop/frontend/index.html")).contains("/logo.png");
     }
 
     @Test
@@ -702,7 +707,7 @@ class FullstackStarterIntegrationTests {
         Map<String, String> entries = unzip(response.getBody());
         assertThat(entries.get("shop/frontend/src/index.css"))
                 .contains("#2e7d32")          // forest primary injected
-                .doesNotContain("#0a2b6b");   // not the Menora default
+                .doesNotContain("#9A83F7");   // not the Menora default purple
     }
 
     @Test

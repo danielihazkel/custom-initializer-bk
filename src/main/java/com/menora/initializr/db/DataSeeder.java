@@ -541,7 +541,7 @@ public class DataSeeder implements SmartInitializingSingleton {
         // exists, so existing installations pick up newly-added rows on next
         // startup without touching admin-edited ones.
         colorPalette("menora-default", "Menora Default",
-                "Menora brand navy with gold accent", "#0a2b6b", "#2d3344", "#ffc700", "#d32f2f", true, 0);
+                "Menora brand purple with gold accent", "#9A83F7", "#FEDB41", "#8AEF1E", "#FF6339", true, 0);
         colorPalette("forest", "Forest",
                 "Earthy greens and warm accents", "#2e7d32", "#8d6e63", "#ff8f00", "#c62828", false, 1);
         colorPalette("slate", "Slate",

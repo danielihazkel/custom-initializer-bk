@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Database, LayoutDashboard, Moon, Sun, Table2 } from 'lucide-react'
+import { LayoutDashboard, Moon, Sun, Table2 } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { useTheme } from '@shared/ui'
 import { DashboardPage } from '@pages/dashboard'
@@ -24,10 +24,10 @@ export default function App() {
 
   return (
     <div className="flex h-full bg-canvas text-fg">
-      <aside className="flex w-64 flex-col bg-ink text-slate-100">
+      <aside className="flex w-64 flex-col bg-app-shell text-slate-100">
         <div className="flex items-center gap-2.5 border-b border-white/10 px-5 py-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-gold">
-            <Database className="h-5 w-5" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white p-1.5 shadow-sm">
+            <img src="/logo.png" alt="{{artifactId}}" className="h-full w-auto" />
           </div>
           <div className="leading-tight">
             <div className="font-semibold tracking-tight">{{artifactId}}</div>
@@ -54,7 +54,7 @@ export default function App() {
             )
           })}
         </nav>
-        <div className="border-t border-white/10 px-5 py-3 text-[11px] text-slate-500">
+        <div className="border-t border-white/10 px-5 py-3 text-[11px] text-white/70">
           v0.0.1
         </div>
       </aside>

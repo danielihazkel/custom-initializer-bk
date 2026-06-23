@@ -24,10 +24,13 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -108,6 +111,23 @@ public class FrontendProjectGenerator {
         writeBaselines(targetDir, depIds, ctx);
         writeOpenApiSpec(targetDir, depIds);
         writeGeneratedTs(targetDir, depIds);
+        copyStaticAssets(targetDir);
+    }
+
+    /**
+     * Copies fixed brand binary assets (the Menora logo) into the generated project's
+     * Vite {@code public/} dir, where they are served at the site root (so templates
+     * reference {@code /logo.png} with no import or alias). Runs for both the standalone
+     * generator and — since the fullstack generator builds on {@link #renderInto} — the
+     * fullstack frontend. Binary assets cannot ride the DB-driven file-contribution
+     * pipeline (CLOB / UTF-8 text only), so they are streamed straight from the classpath.
+     */
+    private void copyStaticAssets(Path targetDir) throws IOException {
+        Path publicDir = targetDir.resolve("public");
+        Files.createDirectories(publicDir);
+        try (InputStream in = new ClassPathResource("static-configs/frontend/common/logo.png").getInputStream()) {
+            Files.copy(in, publicDir.resolve("logo.png"), StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     /** Generates the project, returns the ZIP bytes (containing a top-level {@code projectName/} directory). */
@@ -132,6 +152,10 @@ public class FrontendProjectGenerator {
                     String rel = tempDir.relativize(p).toString().replace('\\', '/');
                     try {
                         out.put(rel, Files.readString(p, StandardCharsets.UTF_8));
+                    } catch (MalformedInputException e) {
+                        // Binary asset (e.g. public/logo.png) — not decodable as UTF-8.
+                        // The map is for text previews/tests; record presence with a marker.
+                        out.put(rel, "[binary]");
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }

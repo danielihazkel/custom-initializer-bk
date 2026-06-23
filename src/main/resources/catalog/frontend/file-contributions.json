@@ -1,4 +1,5 @@
 [
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/frontend/fe-index-css-base.mustache", "targetPath": "src/index.css", "substitutionType": "MUSTACHE", "sortOrder": 1 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "content": "export {};\n", "targetPath": "src/app/index.ts", "substitutionType": "NONE", "sortOrder": 0 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "content": "export { HomePage } from './home';\n", "targetPath": "src/pages/index.ts", "substitutionType": "NONE", "sortOrder": 1 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "content": "export {};\n", "targetPath": "src/widgets/index.ts", "substitutionType": "NONE", "sortOrder": 2 },

@@ -18,7 +18,33 @@ import { theme } from '@shared/theme/theme';
 {{/hasDesignMantine}}{{/hasDesignChakra}}{{/hasDesignMui}}{{/hasStyleStyled}}{{^hasRouterReactRouter}}import { HomePage } from '@pages/home';
 {{/hasRouterReactRouter}}
 
-export function App() {
+{{^hasDesignMui}}{{^hasDesignChakra}}{{^hasDesignMantine}}{{^hasStyleStyled}}const shellStyle = { minHeight: '100vh', backgroundColor: '#f6f7f9' } as const;
+
+const shellHeaderStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.75rem',
+  background: 'linear-gradient(135deg, {{palette.primary}} 0%, {{palette.primary}} 70%, {{palette.secondary}} 100%)',
+  color: '#ffffff',
+  padding: '1rem 1.5rem',
+  fontWeight: 600,
+  letterSpacing: '-0.01em',
+} as const;
+
+const shellLogoStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  height: 34,
+  width: 34,
+  borderRadius: 8,
+  background: '#ffffff',
+  padding: 6,
+} as const;
+
+const shellLogoImgStyle = { height: '100%', width: 'auto' } as const;
+
+{{/hasStyleStyled}}{{/hasDesignMantine}}{{/hasDesignChakra}}{{/hasDesignMui}}export function App() {
   return (
 {{#optAuthMsalInitConfig}}    <MsalProvider instance={msalInstance}>
 {{/optAuthMsalInitConfig}}{{#optStateReduxToolkitSampleStore}}    <ReduxProvider store={store}>
@@ -36,7 +62,11 @@ export function App() {
 {{/hasDesignMantine}}{{^hasDesignMui}}{{^hasDesignChakra}}{{^hasDesignMantine}}{{#hasStyleStyled}}        <ThemeProvider theme={theme}>
           {{#hasRouterReactRouter}}<RouterProvider router={router} />{{/hasRouterReactRouter}}{{^hasRouterReactRouter}}<HomePage />{{/hasRouterReactRouter}}
         </ThemeProvider>
-{{/hasStyleStyled}}{{^hasStyleStyled}}        <div>
+{{/hasStyleStyled}}{{^hasStyleStyled}}        <div style={shellStyle}>
+          <header style={shellHeaderStyle}>
+            <span style={shellLogoStyle}><img src="/logo.png" alt="{{appTitle}}" style={shellLogoImgStyle} /></span>
+            <span>{{appTitle}}</span>
+          </header>
           {{#hasRouterReactRouter}}<RouterProvider router={router} />{{/hasRouterReactRouter}}{{^hasRouterReactRouter}}<HomePage />{{/hasRouterReactRouter}}
         </div>
 {{/hasStyleStyled}}{{/hasDesignMantine}}{{/hasDesignChakra}}{{/hasDesignMui}}{{#hasDataTanstackQuery}}{{#optDataTanstackQueryDevtools}}        <ReactQueryDevtools initialIsOpen={false} />

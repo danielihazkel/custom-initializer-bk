@@ -6,22 +6,28 @@
 /*
  * Menora design tokens (Tailwind v4 @theme).
  *
- * Brand/ink/gold/danger come from the selected color palette at generation time; the
- * hover/active shades are derived with color-mix so the palette only needs primary/
- * secondary/accent slots. The neutral "surface" tokens drive the light/dark UI chrome
- * (page background, cards, text, borders) and are re-pointed for dark mode in the `.dark`
- * block below — so every surface-aware utility flips automatically.
+ * Brand/gold/success/danger come from the selected color palette at generation time
+ * (primary → brand, secondary → gold highlight, accent → success, error → danger); the
+ * hover/active shades are derived with color-mix. The dark "ink" shell (sidebar/header)
+ * is a FIXED Menora navy for every palette — the brand colour supplies the accent on top
+ * of it, which keeps the chrome readable no matter how bright the palette's secondary is.
+ * The neutral "surface" tokens drive the light/dark UI chrome (page background, cards,
+ * text, borders) and are re-pointed for dark mode in the `.dark` block below — so every
+ * surface-aware utility flips automatically.
  *
  * Generated utilities: bg-brand / bg-brand-deep, bg-ink / bg-ink-soft, text-gold,
- * bg-danger, plus bg-canvas, bg-surface, bg-surface-2, text-fg, text-muted,
- * border-border, ring-ring.
+ * text-success / bg-success, bg-danger, plus bg-canvas, bg-surface, bg-surface-2,
+ * text-fg, text-muted, border-border, ring-ring. The signature Menora purple→gold
+ * gradient is exposed as the plain utilities `.bg-app-shell` (vertical) and `.bg-app-bar`
+ * (horizontal), defined outside `@theme` below.
  */
 @theme {
   --color-brand:      {{palette.primary}};
   --color-brand-deep: color-mix(in srgb, {{palette.primary}} 85%, black);
-  --color-ink:        {{palette.secondary}};
-  --color-ink-soft:   color-mix(in srgb, {{palette.secondary}} 86%, white);
-  --color-gold:       {{#hasPaletteAccent}}{{palette.accent}}{{/hasPaletteAccent}}{{^hasPaletteAccent}}{{palette.primary}}{{/hasPaletteAccent}};
+  --color-ink:        #2B2F4C;
+  --color-ink-soft:   color-mix(in srgb, #2B2F4C 86%, white);
+  --color-gold:       {{palette.secondary}};
+  --color-success:    {{#hasPaletteAccent}}{{palette.accent}}{{/hasPaletteAccent}}{{^hasPaletteAccent}}#16a34a{{/hasPaletteAccent}};
   --color-danger:     {{#hasPaletteError}}{{palette.error}}{{/hasPaletteError}}{{^hasPaletteError}}#dc2626{{/hasPaletteError}};
 
   /* Neutral chrome — light defaults (flipped under .dark). */
@@ -32,9 +38,11 @@
   --color-muted:      #64748b;
   --color-border:     #e6e9ee;
   --color-ring:       {{palette.primary}};
+
+  --font-sans:        'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
-/* Dark chrome: brand/ink/gold stay palette-driven; only the neutrals flip. */
+/* Dark chrome: brand/ink/gold stay constant; only the neutral surfaces flip. */
 .dark {
   --color-canvas:     #0b1120;
   --color-surface:    #111827;
@@ -44,12 +52,24 @@
   --color-border:     #243049;
 }
 
+/*
+ * Menora signature gradient (purple → purple → gold), mirroring colors.ts
+ * appBarGradient / sideBarGradient. Defined as plain utilities (not @theme tokens)
+ * because Tailwind v4 only generates colour utilities from @theme colours.
+ */
+.bg-app-shell {
+  background-image: linear-gradient(to bottom, var(--color-brand) 0%, var(--color-brand) 75%, var(--color-gold) 100%);
+}
+.bg-app-bar {
+  background-image: linear-gradient(to right, var(--color-brand) 0%, var(--color-brand) 75%, var(--color-gold) 100%);
+}
+
 html, body, #root {
   height: 100%;
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans);
   background-color: var(--color-canvas);
   color: var(--color-fg);
   margin: 0;
