@@ -2,7 +2,6 @@ package {{packageName}}.web;
 
 import {{packageName}}.security.Constants;
 import {{packageName}}.security.RequiresPermission;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -12,8 +11,9 @@ import java.util.Map;
 /**
  * Demonstrates the {@link RequiresPermission} authorization guard. The {@code PermissionAspect}
  * intercepts the annotated method, reads the {@code userinfo} header, and resolves the caller's
- * LDAP groups before the body runs. Methods must return {@link ResponseEntity} so the aspect can
- * short-circuit with 401/403 when access is denied.
+ * LDAP groups before the body runs. When access is denied the aspect throws a 401/403, so the
+ * guarded method may return any type — these handlers return a plain object, just like the
+ * generated CRUD controllers return their DTOs.
  */
 @RestController
 @RequestMapping("/api/secured")
@@ -21,13 +21,13 @@ public class SampleSecuredController {
 
     @GetMapping("/admin")
     @RequiresPermission(Constants.ADMIN)
-    public ResponseEntity<?> adminOnly() {
-        return ResponseEntity.ok(Map.of("message", "Hello, admin — you are authorized."));
+    public Map<String, String> adminOnly() {
+        return Map.of("message", "Hello, admin — you are authorized.");
     }
 
     @GetMapping("/user")
     @RequiresPermission(Constants.USER)
-    public ResponseEntity<?> userOnly() {
-        return ResponseEntity.ok(Map.of("message", "Hello — you have read access."));
+    public Map<String, String> userOnly() {
+        return Map.of("message", "Hello — you have read access.");
     }
 }

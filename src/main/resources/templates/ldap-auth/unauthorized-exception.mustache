@@ -1,8 +1,13 @@
 package {{packageName}}.security;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
+
 /**
  * Raised when the caller's permissions cannot be verified (e.g. the LDAP lookup failed).
+ * Mapped to HTTP 401 so a verification failure surfaces as Unauthorized rather than a 500.
  */
+@ResponseStatus(HttpStatus.UNAUTHORIZED)
 public class UnauthorizedException extends Exception {
 
     public UnauthorizedException(String message) {

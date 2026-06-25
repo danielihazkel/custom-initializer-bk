@@ -7,11 +7,12 @@ import java.lang.annotation.Target;
 
 /**
  * Marks a controller/service method as requiring the caller to hold the given role.
- * Enforced at runtime by {@link PermissionAspect}.
+ * Enforced at runtime by {@link PermissionAspect}, which throws a 401/403 on denial — so the
+ * guarded method may declare any return type (a DTO, a collection, {@code ResponseEntity}, …).
  *
  * <pre>
  *   {@literal @}RequiresPermission(Constants.ADMIN)
- *   public ResponseEntity&lt;?&gt; deleteAll() { ... }
+ *   public List&lt;Foo&gt; findAll() { ... }
  * </pre>
  */
 @Retention(RetentionPolicy.RUNTIME)
