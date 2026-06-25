@@ -11,6 +11,8 @@ import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
 import com.menora.initializr.db.repository.DependencyEntryRepository;
 import com.menora.initializr.db.repository.DependencyGroupRepository;
 import com.menora.initializr.db.repository.DependencySubOptionRepository;
+import com.menora.initializr.db.repository.EntityTemplateSetDefaultDepRepository;
+import com.menora.initializr.db.repository.EntityTemplateSetRepository;
 import com.menora.initializr.db.repository.FileContributionRepository;
 import com.menora.initializr.db.repository.ModuleDependencyMappingRepository;
 import com.menora.initializr.db.repository.ModuleTemplateRepository;
@@ -50,6 +52,8 @@ class DataSeederTest {
     @Autowired private ModuleDependencyMappingRepository moduleMappingRepo;
     @Autowired private ColorPaletteRepository colorPaletteRepo;
     @Autowired private VersionDefinitionRepository versionRepo;
+    @Autowired private EntityTemplateSetRepository templateSetRepo;
+    @Autowired private EntityTemplateSetDefaultDepRepository defaultDepRepo;
 
     // ── Dependency catalog (backend) ───────────────────────────────────────────
 
@@ -383,5 +387,19 @@ class DataSeederTest {
                 .isEqualTo("[18.0.0,19.0.0)");
         assertThat(entryRepo.findByDepId("design-mantine").orElseThrow().getCompatibilityRange())
                 .isEqualTo("[18.0.0,19.0.0)");
+    }
+
+    // ── Fullstack template-set default deps ─────────────────────────────────────
+
+    @Test
+    void backendFullstackSetsDefaultToLdapAuth() {
+        for (String setKey : List.of("spring-jpa-crud", "spring-jpa-crud-lombok")) {
+            Long setId = templateSetRepo.findBySetKey(setKey).orElseThrow().getId();
+            List<String> deps = defaultDepRepo.findBySetIdOrderBySortOrderAsc(setId).stream()
+                    .map(d -> d.getDepId()).toList();
+            assertThat(deps)
+                    .as("default deps for %s", setKey)
+                    .containsExactly("data-jpa", "web", "h2", "validation", "actuator", "ldap-auth");
+        }
     }
 }

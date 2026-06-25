@@ -68,11 +68,14 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/backend/pom.xml"));
         String pom = entries.get("shop/backend/pom.xml");
         // No `dependencies` field in request → set defaults are applied
-        // (data-jpa, web, h2, validation, actuator per spring-jpa-crud manifest).
+        // (data-jpa, web, h2, validation, actuator, ldap-auth per spring-jpa-crud manifest).
         assertThat(pom).contains("spring-boot-starter-data-jpa");
         assertThat(pom).contains("spring-boot-starter-web");
         assertThat(pom).contains("spring-boot-starter-validation");
         assertThat(pom).contains("spring-boot-starter-actuator");
+        // ldap-auth is a fullstack default → its Maven coords + AOP starter are wired in.
+        assertThat(pom).contains("lts.ldap.util");
+        assertThat(pom).contains("spring-boot-starter-aop");
 
         // Per-entity backend files for both entities
         assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/User.java"));
@@ -745,11 +748,13 @@ class FullstackStarterIntegrationTests {
 
     @Test
     void fullstackEndpoint_omitsDevUserinfoHeaderWithoutLdapAuth() throws Exception {
-        // Default deps (no ldap-auth) → the header block is not emitted.
+        // Deps without ldap-auth (explicit, since ldap-auth is now a set default) → the header
+        // block is not emitted.
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("artifactId", "plain");
         body.put("packageName", "com.menora.plain");
         body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
         body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
 
         HttpHeaders headers = new HttpHeaders();

@@ -4,7 +4,7 @@
   "description": "Per-entity JPA Entity, Repository, DTO, Service, and Controller with standard REST endpoints",
   "kind": "BACKEND_JAVA",
   "sortOrder": 10,
-  "defaultDeps": ["data-jpa", "web", "h2", "validation", "actuator"],
+  "defaultDeps": ["data-jpa", "web", "h2", "validation", "actuator", "ldap-auth"],
   "files": [
     {
       "source": "CorsConfig.java.mustache",
