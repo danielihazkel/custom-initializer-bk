@@ -1,0 +1,31 @@
+import type { ReactNode } from 'react'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+
+interface Props {
+  value: {{EntityName}}
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="border-b border-border py-3 last:border-0">
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</dt>
+      <dd className="mt-1 text-sm text-fg">{children}</dd>
+    </div>
+  )
+}
+
+const empty = <span className="text-muted">—</span>
+
+/** Read-only, stacked view of one {{EntityName}} — every field, relation FK, and (when enabled)
+ *  audit timestamps and child counts. Long TEXT fields wrap rather than truncate. */
+export function {{EntityName}}Detail({ value }: Props) {
+  return (
+    <dl>
+{{#fields}}      <Row label="{{Name}}">{value.{{name}} == null ? empty : {{#isText}}<span className="whitespace-pre-wrap break-words">{String(value.{{name}})}</span>{{/isText}}{{^isText}}String(value.{{name}}){{/isText}}}</Row>
+{{/fields}}{{#relations}}      <Row label="{{FieldName}}">{value.{{fkFieldName}} == null ? empty : String(value.{{fkFieldName}})}</Row>
+{{/relations}}{{#auditApplicable}}      <Row label="Created">{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString()}</Row>
+      <Row label="Updated">{value.updatedAt == null ? empty : new Date(value.updatedAt).toLocaleString()}</Row>
+{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}      <Row label="{{CollectionField}}">{value.{{collectionField}}Count == null ? empty : String(value.{{collectionField}}Count)}</Row>
+{{/inverseRelations}}{{/optScaffoldInverse}}    </dl>
+  )
+}

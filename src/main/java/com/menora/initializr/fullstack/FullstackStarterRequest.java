@@ -45,19 +45,29 @@ public record FullstackStarterRequest(
             // Informational provenance the UI round-trips (the originating CREATE TABLE an
             // entity was imported from). Accepted so deserialization doesn't fail, but the
             // validator/generator deliberately ignores it — it never affects generated output.
-            String sourceSql) {
+            String sourceSql,
+            // List display for the generated entity page: "table" (default) or "cards". Sets the
+            // initial view mode; the generated page always ships a runtime Table/Cards toggle.
+            String listView) {
 
-        /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql). */
+        /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql/listView). */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations) {
-            this(name, tableName, schema, fields, relations, null, null, null);
+            this(name, tableName, schema, fields, relations, null, null, null, null);
         }
 
-        /** Back-compat overload without {@code sourceSql}. */
+        /** Back-compat overload without {@code sourceSql}/{@code listView}. */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
                                    Boolean readOnly, String viewQuery) {
-            this(name, tableName, schema, fields, relations, readOnly, viewQuery, null);
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, null);
+        }
+
+        /** Back-compat overload without {@code listView}. */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, null);
         }
     }
 

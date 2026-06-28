@@ -146,7 +146,7 @@ class FullstackRequestValidatorTest {
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("User", List.of(stringGenPk))))))
                 .isInstanceOf(WizardArgumentException.class)
-                .hasMessageContaining("must be of type LONG or INTEGER");
+                .hasMessageContaining("must be of type LONG, INTEGER, or UUID");
     }
 
     @Test

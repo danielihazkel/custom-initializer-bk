@@ -246,6 +246,8 @@ Per-entity derived flag (set in `buildEntityContext`):
 | Variable | Type | Notes |
 |---|---|---|
 | `softDeleteApplicable` | boolean | `optScaffoldSoftDelete && !hasCompositePk` — soft delete only fires for single-PK entities |
+| `defaultCardsView` | boolean | `listView == "cards"` — the generated `EntityPage`'s initial Table/Cards mode (the page always ships a runtime toggle) |
+| `hasBreakdown`, `breakdownField`, `breakdownLabel` | boolean / String | the first ENUM (else BOOLEAN) field, surfaced as a grouped bar chart on the dashboard; null when the entity has neither |
 
 ### 4c. Per-field variables (inside `{{#fields}}`, `{{#pkFields}}`, …)
 
@@ -260,7 +262,7 @@ From `fieldViewModel` (`:376`):
 | `tsType` | String | TypeScript type: `string`, `number`, `boolean`, `Date` |
 | `enumTypeName` | String | generated enum type name for ENUM fields, else null |
 | `isPrimaryKey`, `isGenerated`, `isRequired`, `isUnique` | boolean | column flags |
-| `isString`, `isNumeric`, `isIntegral`, `isBigDecimal`, `isBoolean`, `isTemporal`, `isDate`, `isDateTime`, `isEnum` | boolean | type predicates |
+| `isString`, `isText`, `isUuid`, `isNumeric`, `isIntegral`, `isBigDecimal`, `isBoolean`, `isTemporal`, `isDate`, `isDateTime`, `isEnum` | boolean | type predicates. `isText` → SQL `TEXT` column + `<textarea>`; `isUuid` → `java.util.UUID` (`@UuidGenerator` when also generated). Both report `isString=false` but join `stringFields` only for `isText` (so TEXT is searchable) |
 | `hasLength`, `length` | boolean / Integer | string length constraint |
 | `hasMin`, `min`, `hasMax`, `max` | boolean / Long | numeric bounds |
 | `hasPattern`, `pattern`, `patternEscaped` | boolean / String | regex; `patternEscaped` is escaped for Java/JS string literals |

@@ -44,7 +44,7 @@ public final class FullstackRequestValidator {
         // and resolve/validate relations once all entity names are known (pass 2).
         record Parsed(int ei, String name, String tableName, String schema, List<FieldDefinition> fields,
                       Set<String> memberNames, List<FullstackStarterRequest.RelationDefinitionDto> rawRelations,
-                      boolean readOnly, String viewQuery) {}
+                      boolean readOnly, String viewQuery, String listView) {}
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
@@ -171,8 +171,8 @@ public final class FullstackRequestValidator {
                     if (!isPk) {
                         throw new WizardArgumentException("'generated' only applies to the primary key (field '" + fname + "' on entity '" + name + "')");
                     }
-                    if (type != FieldType.LONG && type != FieldType.INTEGER) {
-                        throw new WizardArgumentException("a generated primary key must be of type LONG or INTEGER (field '" + fname + "' on entity '" + name + "')");
+                    if (type != FieldType.LONG && type != FieldType.INTEGER && type != FieldType.UUID) {
+                        throw new WizardArgumentException("a generated primary key must be of type LONG, INTEGER, or UUID (field '" + fname + "' on entity '" + name + "')");
                     }
                 }
 
@@ -211,7 +211,7 @@ public final class FullstackRequestValidator {
             String schema = (e.schema() == null || e.schema().isBlank())
                     ? null : e.schema().trim();
             parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
-                    readOnly, viewQuery));
+                    readOnly, viewQuery, e.listView()));
         }
 
         // Pass 2 — resolve and validate relations now that all entity names are known.
@@ -226,7 +226,7 @@ public final class FullstackRequestValidator {
                     parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
                             pkCountByLower, viewLowerNames);
             result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
-                    p.readOnly(), p.viewQuery()));
+                    p.readOnly(), p.viewQuery(), null, p.listView()));
         }
         return result;
     }

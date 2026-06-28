@@ -1435,6 +1435,93 @@ class FullstackStarterIntegrationTests {
                 .contains("create_namespaces: true");
     }
 
+    @Test
+    void fullstackEndpoint_rendersTextAndUuidFieldTypes() throws Exception {
+        // A UUID generated PK maps to @UuidGenerator + a java.util.UUID column (no import threading),
+        // and a TEXT field maps to a SQL TEXT column rendered as a <textarea> in the form.
+        Map<String, Object> uuidPk = new LinkedHashMap<>();
+        uuidPk.put("name", "id");
+        uuidPk.put("type", "UUID");
+        uuidPk.put("primaryKey", true);
+        uuidPk.put("generated", true);
+        Map<String, Object> details = Map.of("name", "details", "type", "TEXT");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "notes");
+        body.put("packageName", "com.menora.notes");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "Note", "fields", List.of(uuidPk, details))));
+
+        Map<String, String> entries = generateZip(body);
+
+        String entity = contentEndingWith(entries, "/entity/Note.java");
+        assertThat(entity)
+                .contains("@org.hibernate.annotations.UuidGenerator")
+                .doesNotContain("@GeneratedValue")          // UUID uses the Hibernate generator, not IDENTITY
+                .contains("private java.util.UUID id;")
+                .contains("columnDefinition = \"TEXT\"")
+                .contains("private String details;");
+        // Repository/Service address the row by the FQN UUID type (no missing import).
+        assertThat(contentEndingWith(entries, "/repository/NoteRepository.java"))
+                .contains("JpaRepository<Note, java.util.UUID>");
+        // TEXT renders as a textarea; the TS type is string-backed.
+        assertThat(entries.get("notes/frontend/src/features/note-form/ui/NoteForm.tsx"))
+                .contains("<textarea");
+        assertThat(entries.get("notes/frontend/src/entities/note/model/types.ts"))
+                .contains("id?: string | null")
+                .contains("details?: string | null");
+    }
+
+    @Test
+    void fullstackEndpoint_cardsViewDetailDrawerAndDashboardChart() throws Exception {
+        // listView=cards seeds the page's initial view mode (it always ships a Table/Cards toggle);
+        // every entity gets a read-only DetailDrawer (onView); an enum field yields a dashboard chart.
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("name", "status");
+        status.put("type", "Enum");
+        status.put("enumValues", List.of("AVAILABLE", "SOLD"));
+
+        Map<String, Object> product = new LinkedHashMap<>();
+        product.put("name", "Product");
+        product.put("listView", "cards");
+        product.put("fields", List.of(pkField(), Map.of("name", "name", "type", "String"), status));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(product,
+                Map.of("name", "Plain", "fields", List.of(pkField(), Map.of("name", "label", "type", "String")))));
+
+        Map<String, String> entries = generateZip(body);
+
+        // Shared view components shipped once.
+        assertThat(entries).containsKey("shop/frontend/src/shared/ui/CardGrid.tsx");
+        assertThat(entries).containsKey("shop/frontend/src/shared/ui/DetailDrawer.tsx");
+        // vite/client types so import.meta.env typechecks under `tsc -b`.
+        assertThat(entries.get("shop/frontend/src/vite-env.d.ts")).contains("vite/client");
+
+        // Cards entity starts in card mode and wires the detail drawer.
+        String productPage = entries.get("shop/frontend/src/pages/product/ui/ProductPage.tsx");
+        assertThat(productPage)
+                .contains("useState<'table' | 'cards'>('cards')")
+                .contains("import { Table, CardGrid")
+                .contains("onView={setDetailRow}")
+                .contains("<ProductDetail value={detailRow} />");
+        assertThat(entries).containsKey("shop/frontend/src/features/product-form/ui/ProductDetail.tsx");
+        // An entity with no listView defaults to table mode.
+        assertThat(entries.get("shop/frontend/src/pages/plain/ui/PlainPage.tsx"))
+                .contains("useState<'table' | 'cards'>('table')");
+
+        // The enum field drives a dashboard breakdown chart; Plain (no enum/boolean) gets none.
+        String dashboard = entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx");
+        assertThat(dashboard)
+                .contains("function BarChart")
+                .contains("Products by Status")
+                .contains("field: 'status'");
+        assertThat(dashboard).doesNotContain("Plains by");
+    }
+
     /** POSTs a fullstack request and returns the unzipped (path → text) generated tree. */
     private Map<String, String> generateZip(Map<String, Object> body) throws Exception {
         HttpHeaders headers = new HttpHeaders();

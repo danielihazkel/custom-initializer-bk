@@ -235,6 +235,8 @@ public final class EntityScaffoldContext {
         view.put("mutable", !entity.readOnly());
         view.put("isView", entity.isView());
         view.put("viewQuery", entity.viewQuery());
+        // Initial list view mode for the generated entity page (the page also ships a runtime toggle).
+        view.put("defaultCardsView", "cards".equals(entity.listView()));
 
         List<Map<String, Object>> fieldViews = new ArrayList<>(entity.fields().size());
         Map<String, Object> pkView = null;
@@ -297,9 +299,11 @@ public final class EntityScaffoldContext {
                 : (pkView == null ? "Long" : (String) pkView.get("javaType")));
         view.put("hasEnumFields", fieldViews.stream().anyMatch(m -> Boolean.TRUE.equals(m.get("isEnum"))));
 
+        // Text-backed fields drive the generated search Specification (lower()/LIKE) — both STRING
+        // and TEXT columns qualify, so the search box appears whenever either is present.
         List<Map<String, Object>> stringFieldViews = new ArrayList<>();
         for (Map<String, Object> fv : fieldViews) {
-            if (Boolean.TRUE.equals(fv.get("isString"))) {
+            if (Boolean.TRUE.equals(fv.get("isString")) || Boolean.TRUE.equals(fv.get("isText"))) {
                 stringFieldViews.add(fv);
             }
         }
@@ -308,6 +312,22 @@ public final class EntityScaffoldContext {
         }
         view.put("stringFields", stringFieldViews);
         view.put("hasStringFields", !stringFieldViews.isEmpty());
+
+        // Dashboard breakdown: the first ENUM field (else the first BOOLEAN) becomes a grouped
+        // bar chart on the generated home page. Low-cardinality columns chart well; free-text and
+        // numeric columns don't, so only enum/boolean qualify.
+        Map<String, Object> breakdown = null;
+        for (Map<String, Object> fv : fieldViews) {
+            if (Boolean.TRUE.equals(fv.get("isEnum"))) { breakdown = fv; break; }
+        }
+        if (breakdown == null) {
+            for (Map<String, Object> fv : fieldViews) {
+                if (Boolean.TRUE.equals(fv.get("isBoolean"))) { breakdown = fv; break; }
+            }
+        }
+        view.put("hasBreakdown", breakdown != null);
+        view.put("breakdownField", breakdown == null ? null : breakdown.get("name"));
+        view.put("breakdownLabel", breakdown == null ? null : breakdown.get("Name"));
 
         // Relations (MANY_TO_ONE foreign keys). Each resolves its target's PK type/name from the
         // summary lookup so the entity gets a typed @ManyToOne, the DTO exposes the key as
@@ -412,6 +432,8 @@ public final class EntityScaffoldContext {
         fv.put("isRequired", f.required());
         fv.put("isUnique", f.unique());
         fv.put("isString", f.type().isString());
+        fv.put("isText", f.type().isText());
+        fv.put("isUuid", f.type().isUuid());
         fv.put("isNumeric", f.type().isNumeric());
         fv.put("isIntegral", isIntegral);
         fv.put("isBigDecimal", isBigDecimal);

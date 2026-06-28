@@ -14,6 +14,17 @@ const CARDS: CardDef[] = [
 {{/entities}}
 ]
 
+interface ChartDef {
+  label: string
+  path: string
+  field: string
+}
+
+// One breakdown per entity that has a low-cardinality (enum/boolean) field — derived server-side.
+const CHARTS: ChartDef[] = [
+{{#entities}}{{#hasBreakdown}}  { label: '{{EntityNamePlural}} by {{breakdownLabel}}', path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}' },
+{{/hasBreakdown}}{{/entities}}]
+
 /** Reads just the page metadata (size=1) to surface a live record count per entity. */
 function useCount(path: string) {
   const [count, setCount] = useState<number | null>(null)
@@ -28,6 +39,65 @@ function useCount(path: string) {
   }, [path])
 
   return { count, failed }
+}
+
+/** Fetches a page and groups it by `field` to chart value distribution — client-side, no extra API. */
+function useBreakdown(path: string, field: string) {
+  const [data, setData] = useState<{ label: string; count: number }[] | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    api.get<{ content: Record<string, unknown>[] }>(`${path}?size=200`)
+      .then(p => {
+        if (!active) return
+        const counts = new Map<string, number>()
+        for (const row of p.content ?? []) {
+          const key = row[field] == null ? '—' : String(row[field])
+          counts.set(key, (counts.get(key) ?? 0) + 1)
+        }
+        setData(Array.from(counts, ([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count))
+      })
+      .catch(() => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [path, field])
+
+  return { data, failed }
+}
+
+function BarChart({ data }: { data: { label: string; count: number }[] }) {
+  const max = data.reduce((m, d) => Math.max(m, d.count), 0) || 1
+  return (
+    <div className="space-y-2">
+      {data.map(d => (
+        <div key={d.label} className="flex items-center gap-3 text-sm">
+          <div className="w-28 shrink-0 truncate text-muted" title={d.label}>{d.label}</div>
+          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+            <div className="h-full rounded-full bg-brand" style={{ width: `${(d.count / max) * 100}%` }} />
+          </div>
+          <div className="w-8 shrink-0 text-right tabular-nums text-fg">{d.count}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ChartCard({ chart }: { chart: ChartDef }) {
+  const { data, failed } = useBreakdown(chart.path, chart.field)
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+      <div className="mb-4 text-sm font-semibold text-fg">{chart.label}</div>
+      {failed ? (
+        <div className="text-sm text-muted">Couldn’t load data.</div>
+      ) : data == null ? (
+        <div className="text-sm text-muted">…</div>
+      ) : data.length === 0 ? (
+        <div className="text-sm text-muted">No records yet.</div>
+      ) : (
+        <BarChart data={data} />
+      )}
+    </div>
+  )
 }
 
 function StatCard({ card, onNavigate }: { card: CardDef; onNavigate: (view: string) => void }) {
@@ -75,6 +145,15 @@ export function DashboardPage({ onNavigate }: Props) {
           <StatCard key={card.view} card={card} onNavigate={onNavigate} />
         ))}
       </div>
+
+      {CHARTS.length > 0 && (
+        <>
+          <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-muted">Breakdowns</h2>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {CHARTS.map(chart => <ChartCard key={chart.label} chart={chart} />)}
+          </div>
+        </>
+      )}
     </div>
   )
 }

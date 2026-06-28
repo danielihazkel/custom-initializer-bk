@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-{{#mutable}}import { Plus } from 'lucide-react'
-import { toast } from 'sonner'
+import { LayoutGrid, Table2{{#mutable}}, Plus{{/mutable}} } from 'lucide-react'
+{{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
-import { Table, type Column, type SortSpec } from '@shared/ui'
-import { Alert{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
+import { Table, CardGrid, type Column, type SortSpec } from '@shared/ui'
+import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
+import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
 {{#mutable}}import { {{EntityName}}Form } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
 {{/mutable}}
@@ -22,6 +23,8 @@ export function {{EntityName}}Page() {
   const [sort, setSort] = useState<SortSpec | null>(null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>({{#defaultCardsView}}'cards'{{/defaultCardsView}}{{^defaultCardsView}}'table'{{/defaultCardsView}})
+  const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
@@ -136,31 +139,70 @@ export function {{EntityName}}Page() {
             {totalElements} {totalElements === 1 ? 'record' : 'records'}{{#isView}} · read-only view{{/isView}}
           </p>
         </div>
-{{#mutable}}        <button
-          onClick={openNew}
-          className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
-        >
-          <Plus className="h-4 w-4" />
-          New {{EntityName}}
-        </button>
-{{/mutable}}      </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+            <button
+              onClick={() => setViewMode('table')}
+              aria-pressed={viewMode === 'table'}
+              className={`rounded-md p-1.5 transition-colors ${viewMode === 'table' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
+              title="Table view"
+              aria-label="Table view"
+            >
+              <Table2 className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              aria-pressed={viewMode === 'cards'}
+              className={`rounded-md p-1.5 transition-colors ${viewMode === 'cards' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
+              title="Card view"
+              aria-label="Card view"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+          </div>
+{{#mutable}}          <button
+            onClick={openNew}
+            className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
+          >
+            <Plus className="h-4 w-4" />
+            New {{EntityName}}
+          </button>
+{{/mutable}}        </div>
+      </div>
 
       {error && <Alert>{error}</Alert>}
 
-      <Table
-        columns={columns}
-        rows={items}
-        loading={loading}
-{{#mutable}}        onEdit={openEdit}
-        onDelete={setPendingDelete}
-{{/mutable}}        sort={sort}
-        onSortChange={setSort}
-        search={search}
-        onSearchChange={setSearch}
-{{#hasStringFields}}        searchable={true}
-{{/hasStringFields}}{{^hasStringFields}}        searchable={false}
-{{/hasStringFields}}        pagination={pagination}
-      />
+      {viewMode === 'cards' ? (
+        <CardGrid
+          columns={columns}
+          rows={items}
+          loading={loading}
+          onView={setDetailRow}
+{{#mutable}}          onEdit={openEdit}
+          onDelete={setPendingDelete}
+{{/mutable}}          search={search}
+          onSearchChange={setSearch}
+{{#hasStringFields}}          searchable={true}
+{{/hasStringFields}}{{^hasStringFields}}          searchable={false}
+{{/hasStringFields}}          pagination={pagination}
+        />
+      ) : (
+        <Table
+          columns={columns}
+          rows={items}
+          loading={loading}
+          onView={setDetailRow}
+{{#mutable}}          onEdit={openEdit}
+          onDelete={setPendingDelete}
+{{/mutable}}          sort={sort}
+          onSortChange={setSort}
+          search={search}
+          onSearchChange={setSearch}
+{{#hasStringFields}}          searchable={true}
+{{/hasStringFields}}{{^hasStringFields}}          searchable={false}
+{{/hasStringFields}}          pagination={pagination}
+        />
+      )}
 {{#mutable}}
       <FormDrawer
         open={drawerOpen}
@@ -189,6 +231,15 @@ export function {{EntityName}}Page() {
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}
       />
-{{/mutable}}    </div>
+{{/mutable}}
+      <DetailDrawer
+        open={detailRow !== null}
+        title="{{EntityName}} details"
+        onClose={() => setDetailRow(null)}
+{{#mutable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
+{{/mutable}}      >
+        {detailRow && <{{EntityName}}Detail value={detailRow} />}
+      </DetailDrawer>
+    </div>
   )
 }

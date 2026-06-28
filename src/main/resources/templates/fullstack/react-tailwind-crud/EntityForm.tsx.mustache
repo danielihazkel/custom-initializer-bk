@@ -59,13 +59,18 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
         </select>
       </Field>
 {{/isEnum}}{{^isBoolean}}{{^isEnum}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
-        <input
+{{#isText}}        <textarea
+          className={`${inputClass} min-h-[96px] resize-y`}
+          value={value.{{name}} == null ? '' : String(value.{{name}})}
+          onChange={e => set('{{name}}', e.target.value === '' ? null : e.target.value)}
+        />
+{{/isText}}{{^isText}}        <input
           className={inputClass}
           {{#isNumeric}}type="number"{{/isNumeric}}{{#isDate}}type="date"{{/isDate}}{{#isDateTime}}type="datetime-local"{{/isDateTime}}{{^isNumeric}}{{^isTemporal}}{{#isEmail}}type="email"{{/isEmail}}{{^isEmail}}type="text"{{/isEmail}}{{/isTemporal}}{{/isNumeric}}{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{/isNumeric}}{{#hasPattern}} pattern={"{{patternEscaped}}"}{{/hasPattern}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
           onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}})}
         />
-      </Field>
+{{/isText}}      </Field>
 {{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}
 {{/fields}}
 {{#relations}}

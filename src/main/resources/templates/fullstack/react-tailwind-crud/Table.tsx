@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown, Pencil, Search, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown, Eye, Pencil, Search, Trash2 } from 'lucide-react'
 import { EmptyState } from './EmptyState'
 import { TableSkeleton } from './Skeleton'
 
@@ -27,7 +27,8 @@ export interface PaginationProps {
 interface Props<T extends object> {
   columns: Column<T>[]
   rows: T[]
-  /** Omit both handlers for a read-only table — the Actions column is then hidden. */
+  /** Omit all handlers for a read-only table — the Actions column is then hidden. */
+  onView?: (row: T) => void
   onEdit?: (row: T) => void
   onDelete?: (row: T) => void
   loading: boolean
@@ -49,14 +50,14 @@ function nextSort(current: SortSpec | null, field: string): SortSpec | null {
 }
 
 export function Table<T extends object>({
-  columns, rows, onEdit, onDelete, loading,
+  columns, rows, onView, onEdit, onDelete, loading,
   sort, onSortChange, search, onSearchChange, pagination, searchable = true,
 }: Props<T>) {
   const { pageNumber, pageSize, totalPages, totalElements, onPageChange, onPageSizeChange } = pagination
   const startRow = totalElements === 0 ? 0 : pageNumber * pageSize + 1
   const endRow = Math.min(totalElements, (pageNumber + 1) * pageSize)
   const empty = !loading && rows.length === 0
-  const hasActions = !!onEdit || !!onDelete
+  const hasActions = !!onView || !!onEdit || !!onDelete
 
   return (
     <div className="space-y-3">
@@ -132,6 +133,16 @@ export function Table<T extends object>({
                     {hasActions && (
                       <td className="px-5 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {onView && (
+                            <button
+                              onClick={() => onView(row)}
+                              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+                              title="View"
+                              aria-label="View"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          )}
                           {onEdit && (
                             <button
                               onClick={() => onEdit(row)}

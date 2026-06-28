@@ -10,6 +10,7 @@
     { "source": "vite.config.ts", "path": "vite.config.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 20 },
     { "source": "tsconfig.json", "path": "tsconfig.json", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 30 },
     { "source": "tsconfig.node.json", "path": "tsconfig.node.json", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 40 },
+    { "source": "vite-env.d.ts", "path": "src/vite-env.d.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 45 },
     { "source": "main.tsx", "path": "src/main.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 70 },
     { "source": "index.css.mustache", "path": "src/index.css", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 90 },
     { "source": "env-development.mustache", "path": ".env.development", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 95 },
@@ -21,6 +22,7 @@
     { "source": "useOptions.ts", "path": "src/shared/api/useOptions.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 112 },
     { "source": "shared-api-barrel.ts", "path": "src/shared/api/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 115 },
     { "source": "Table.tsx", "path": "src/shared/ui/Table.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 120 },
+    { "source": "CardGrid.tsx", "path": "src/shared/ui/CardGrid.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 121 },
     { "source": "FormDrawer.tsx", "path": "src/shared/ui/FormDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 130 },
     { "source": "Field.tsx", "path": "src/shared/ui/Field.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 140 },
     { "source": "Badge.tsx", "path": "src/shared/ui/Badge.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 141 },
@@ -28,6 +30,7 @@
     { "source": "EmptyState.tsx", "path": "src/shared/ui/EmptyState.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 143 },
     { "source": "Skeleton.tsx", "path": "src/shared/ui/Skeleton.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 144 },
     { "source": "ConfirmDialog.tsx", "path": "src/shared/ui/ConfirmDialog.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
+    { "source": "DetailDrawer.tsx", "path": "src/shared/ui/DetailDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 145 },
     { "source": "useTheme.ts", "path": "src/shared/ui/useTheme.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147 },
     { "source": "shared-ui-barrel.ts", "path": "src/shared/ui/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 148 },
 
@@ -40,6 +43,7 @@
     { "source": "useEntity.ts.mustache", "path": "src/entities/{{entityNameKebab}}/api/use{{EntityName}}.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 210 },
     { "source": "entity-barrel.ts.mustache", "path": "src/entities/{{entityNameKebab}}/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 215 },
     { "source": "EntityForm.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Form.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 220 },
+    { "source": "EntityDetail.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Detail.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 222 },
     { "source": "feature-barrel.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 225 },
     { "source": "EntityPage.tsx.mustache", "path": "src/pages/{{entityNameKebab}}/ui/{{EntityName}}Page.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 230 },
     { "source": "page-barrel.ts.mustache", "path": "src/pages/{{entityNameKebab}}/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 235 }

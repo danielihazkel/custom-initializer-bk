@@ -26,26 +26,37 @@ public record EntityDefinition(
         List<RelationDefinition> relations,
         boolean readOnly,
         String viewQuery,
-        String sourceSql) {
+        String sourceSql,
+        String listView) {
 
     public EntityDefinition {
         relations = relations == null ? List.of() : List.copyOf(relations);
         viewQuery = (viewQuery == null || viewQuery.isBlank()) ? null : viewQuery;
         sourceSql = (sourceSql == null || sourceSql.isBlank()) ? null : sourceSql;
         if (viewQuery != null) readOnly = true;
+        // List display for the generated entity page — "cards" or "table" (default). Sets the
+        // page's initial view mode; the page always ships a runtime Table/Cards toggle.
+        listView = "cards".equalsIgnoreCase(listView == null ? null : listView.trim()) ? "cards" : "table";
     }
 
-    /** Overload without {@code sourceSql} (defaults to null) — keeps existing call sites terse. */
+    /** Overload without {@code listView} (defaults to "table"). */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, "table");
+    }
+
+    /** Overload without {@code sourceSql}/{@code listView} — keeps existing call sites terse. */
     public EntityDefinition(String name, String tableName, String schema,
                             List<FieldDefinition> fields, List<RelationDefinition> relations,
                             boolean readOnly, String viewQuery) {
-        this(name, tableName, schema, fields, relations, readOnly, viewQuery, null);
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, "table");
     }
 
     /** Convenience for a table-backed, read-write entity (the common case). */
     public EntityDefinition(String name, String tableName, String schema,
                             List<FieldDefinition> fields, List<RelationDefinition> relations) {
-        this(name, tableName, schema, fields, relations, false, null, null);
+        this(name, tableName, schema, fields, relations, false, null, null, "table");
     }
 
     /** Back-compat overload for schemaless entities (keeps existing call sites terse). */
