@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { LayoutGrid, Table2{{#mutable}}, Plus{{/mutable}} } from 'lucide-react'
+import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
 {{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
-import { Table, CardGrid, type Column, type SortSpec } from '@shared/ui'
+import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
 {{#mutable}}import { {{EntityName}}Form } from '@features/{{entityNameKebab}}-form'
@@ -16,16 +16,21 @@ const columns: Column<{{EntityName}}>[] = [
   { label: 'Updated', sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString() },
 {{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
 {{/inverseRelations}}{{/optScaffoldInverse}}]
-
+{{#hasFilters}}
+const filterDescriptors: FilterDescriptor[] = [
+{{#filterFields}}  { name: '{{name}}', label: '{{Name}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}} },
+{{/filterFields}}]
+{{/hasFilters}}
 export function {{EntityName}}Page() {
   const [page, setPage] = useState(0)
   const [size, setSize] = useState(20)
   const [sort, setSort] = useState<SortSpec | null>(null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>({{#defaultCardsView}}'cards'{{/defaultCardsView}}{{^defaultCardsView}}'table'{{/defaultCardsView}})
+  const [viewMode, setViewMode] = useState<{{viewModeType}}>('{{initialView}}')
   const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
-
+{{#hasFilters}}  const [filters, setFilters] = useState<FilterValues>({})
+{{/hasFilters}}
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(t)
@@ -33,12 +38,12 @@ export function {{EntityName}}Page() {
 
   useEffect(() => {
     setPage(0)
-  }, [debouncedSearch, sort, size])
+  }, [debouncedSearch, sort, size{{#hasFilters}}, filters{{/hasFilters}}])
 
   const {
     items, totalElements, totalPages, pageNumber, pageSize,
-    loading, error,{{#mutable}} create, update, remove,{{/mutable}}
-  } = use{{EntityName}}({ page, size, sort, q: debouncedSearch })
+    loading, error,{{#mutable}} create, update, remove,{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
+  } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{/hasFilters}} })
 {{#mutable}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
   const [initial, setInitial] = useState<Partial<{{EntityName}}>>({})
@@ -120,7 +125,37 @@ export function {{EntityName}}Page() {
       setDeleting(false)
     }
   }
-{{/mutable}}
+{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}}
+  // Bulk selection (table view only). Selected rows are tracked by primary-key value.
+  const [selected, setSelected] = useState<Array<number | string>>([])
+  const [bulkConfirm, setBulkConfirm] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const pkOf = (row: {{EntityName}}) => row.{{pkField.name}} as number | string
+  const isRowSelected = (row: {{EntityName}}) => selected.includes(pkOf(row))
+  function toggleRow(row: {{EntityName}}) {
+    const id = pkOf(row)
+    setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
+  }
+  const allOnPageSelected = items.length > 0 && items.every(r => selected.includes(pkOf(r)))
+  function toggleAllOnPage() {
+    setSelected(s => (allOnPageSelected
+      ? s.filter(id => !items.some(r => pkOf(r) === id))
+      : Array.from(new Set([...s, ...items.map(pkOf)]))))
+  }
+  async function runBulkDelete() {
+    setBulkBusy(true)
+    try {
+      await removeMany(selected)
+      toast.success(`${selected.length} {{EntityName}} ${selected.length === 1 ? 'record' : 'records'} deleted`)
+      setSelected([])
+      setBulkConfirm(false)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+{{/viewTable}}{{/bulkDeleteApplicable}}
   const pagination = {
     pageNumber,
     pageSize,
@@ -140,8 +175,8 @@ export function {{EntityName}}Page() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
-            <button
+{{#hasViewToggle}}          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+{{#viewTable}}            <button
               onClick={() => setViewMode('table')}
               aria-pressed={viewMode === 'table'}
               className={`rounded-md p-1.5 transition-colors ${viewMode === 'table' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
@@ -150,7 +185,7 @@ export function {{EntityName}}Page() {
             >
               <Table2 className="h-4 w-4" />
             </button>
-            <button
+{{/viewTable}}{{#viewCards}}            <button
               onClick={() => setViewMode('cards')}
               aria-pressed={viewMode === 'cards'}
               className={`rounded-md p-1.5 transition-colors ${viewMode === 'cards' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
@@ -159,8 +194,34 @@ export function {{EntityName}}Page() {
             >
               <LayoutGrid className="h-4 w-4" />
             </button>
-          </div>
-{{#mutable}}          <button
+{{/viewCards}}{{#viewKanban}}            <button
+              onClick={() => setViewMode('kanban')}
+              aria-pressed={viewMode === 'kanban'}
+              className={`rounded-md p-1.5 transition-colors ${viewMode === 'kanban' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
+              title="Board view"
+              aria-label="Board view"
+            >
+              <Columns3 className="h-4 w-4" />
+            </button>
+{{/viewKanban}}{{#viewCalendar}}            <button
+              onClick={() => setViewMode('calendar')}
+              aria-pressed={viewMode === 'calendar'}
+              className={`rounded-md p-1.5 transition-colors ${viewMode === 'calendar' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
+              title="Calendar view"
+              aria-label="Calendar view"
+            >
+              <Calendar className="h-4 w-4" />
+            </button>
+{{/viewCalendar}}          </div>
+{{/hasViewToggle}}{{#optScaffoldCsvExport}}          <button
+            onClick={() => exportCsv('{{entityNamePluralKebab}}.csv')}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
+            title="Export CSV"
+          >
+            <Download className="h-4 w-4" />
+            Export
+          </button>
+{{/optScaffoldCsvExport}}{{#mutable}}          <button
             onClick={openNew}
             className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
           >
@@ -171,8 +232,28 @@ export function {{EntityName}}Page() {
       </div>
 
       {error && <Alert>{error}</Alert>}
-
-      {viewMode === 'cards' ? (
+{{#hasFilters}}
+      <div className="mb-4">
+        <FilterBar filters={filterDescriptors} values={filters} onChange={setFilters} />
+      </div>
+{{/hasFilters}}{{#bulkDeleteApplicable}}{{#viewTable}}      {selected.length > 0 && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-brand/40 bg-brand/5 px-4 py-2.5">
+          <span className="text-sm font-medium text-fg">{selected.length} selected</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSelected([])} className="rounded-lg px-3 py-1.5 text-sm text-muted transition-colors hover:text-fg">Clear</button>
+            <button
+              onClick={() => setBulkConfirm(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-white transition-colors hover:opacity-90"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+{{/viewTable}}{{/bulkDeleteApplicable}}
+      {
+{{#viewCards}}      viewMode === 'cards' ? (
         <CardGrid
           columns={columns}
           rows={items}
@@ -186,7 +267,27 @@ export function {{EntityName}}Page() {
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
 {{/hasStringFields}}          pagination={pagination}
         />
-      ) : (
+      ) : {{/viewCards}}{{#viewKanban}}viewMode === 'kanban' ? (
+        <KanbanBoard
+          columns={columns}
+          rows={items}
+          loading={loading}
+          groupField="{{kanbanField}}"
+          groupValues={[{{#kanbanColumns}}{ value: '{{value}}', label: '{{label}}' }{{^last}}, {{/last}}{{/kanbanColumns}}]}
+          onView={setDetailRow}
+          onEdit={openEdit}
+          onDelete={setPendingDelete}
+          onMove={(row, value) => update({{#hasCompositePk}}[{{#pkFields}}row.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...row, {{kanbanField}}: {{#kanbanIsEnum}}value{{/kanbanIsEnum}}{{^kanbanIsEnum}}value === 'true'{{/kanbanIsEnum}} } as {{EntityName}})}
+        />
+      ) : {{/viewKanban}}{{#viewCalendar}}viewMode === 'calendar' ? (
+        <CalendarView
+          columns={columns}
+          rows={items}
+          loading={loading}
+          dateField="{{calendarField}}"
+          onView={setDetailRow}
+        />
+      ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
         <Table
           columns={columns}
           rows={items}
@@ -200,9 +301,14 @@ export function {{EntityName}}Page() {
           onSearchChange={setSearch}
 {{#hasStringFields}}          searchable={true}
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
-{{/hasStringFields}}          pagination={pagination}
+{{/hasStringFields}}{{#bulkDeleteApplicable}}          selectable={true}
+          isRowSelected={isRowSelected}
+          onToggleRow={toggleRow}
+          allOnPageSelected={allOnPageSelected}
+          onToggleAllOnPage={toggleAllOnPage}
+{{/bulkDeleteApplicable}}          pagination={pagination}
         />
-      )}
+      ) : {{/viewTable}}null}
 {{#mutable}}
       <FormDrawer
         open={drawerOpen}
@@ -231,7 +337,16 @@ export function {{EntityName}}Page() {
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}
       />
-{{/mutable}}
+{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}}
+      <ConfirmDialog
+        open={bulkConfirm}
+        title={`Delete ${selected.length} {{EntityName}} ${selected.length === 1 ? 'record' : 'records'}?`}
+        message="This action cannot be undone."
+        busy={bulkBusy}
+        onConfirm={runBulkDelete}
+        onCancel={() => setBulkConfirm(false)}
+      />
+{{/viewTable}}{{/bulkDeleteApplicable}}
       <DetailDrawer
         open={detailRow !== null}
         title="{{EntityName}} details"

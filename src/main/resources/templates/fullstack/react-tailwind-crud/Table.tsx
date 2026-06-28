@@ -39,6 +39,14 @@ interface Props<T extends object> {
   /** When false, the search box is hidden (the backend only filters on string fields). */
   searchable?: boolean
   pagination: PaginationProps
+  /** Bulk-selection (opt-in). When true, a leading checkbox column is rendered and the caller owns
+   *  the selected set via the predicates/handlers below. */
+  selectable?: boolean
+  isRowSelected?: (row: T) => boolean
+  onToggleRow?: (row: T) => void
+  /** Header checkbox state + handler for "select all rows on this page". */
+  allOnPageSelected?: boolean
+  onToggleAllOnPage?: () => void
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
@@ -52,12 +60,14 @@ function nextSort(current: SortSpec | null, field: string): SortSpec | null {
 export function Table<T extends object>({
   columns, rows, onView, onEdit, onDelete, loading,
   sort, onSortChange, search, onSearchChange, pagination, searchable = true,
+  selectable = false, isRowSelected, onToggleRow, allOnPageSelected, onToggleAllOnPage,
 }: Props<T>) {
   const { pageNumber, pageSize, totalPages, totalElements, onPageChange, onPageSizeChange } = pagination
   const startRow = totalElements === 0 ? 0 : pageNumber * pageSize + 1
   const endRow = Math.min(totalElements, (pageNumber + 1) * pageSize)
   const empty = !loading && rows.length === 0
   const hasActions = !!onView || !!onEdit || !!onDelete
+  const leadCols = selectable ? 1 : 0
 
   return (
     <div className="space-y-3">
@@ -79,6 +89,17 @@ export function Table<T extends object>({
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="border-b border-border bg-surface-2">
+                {selectable && (
+                  <th className="w-10 px-5 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={!!allOnPageSelected}
+                      onChange={onToggleAllOnPage}
+                      aria-label="Select all rows on this page"
+                      className="h-4 w-4 rounded border-border accent-brand"
+                    />
+                  </th>
+                )}
                 {columns.map((col, i) => {
                   const sortable = !!col.sortKey
                   const active = sortable && sort?.field === col.sortKey
@@ -112,10 +133,10 @@ export function Table<T extends object>({
             </thead>
             <tbody>
               {loading ? (
-                <TableSkeleton cols={columns.length} />
+                <TableSkeleton cols={columns.length + leadCols} />
               ) : empty ? (
                 <tr>
-                  <td colSpan={columns.length + (hasActions ? 1 : 0)}>
+                  <td colSpan={columns.length + leadCols + (hasActions ? 1 : 0)}>
                     <EmptyState title="No records yet" hint="Create your first record to see it here." />
                   </td>
                 </tr>
@@ -125,6 +146,17 @@ export function Table<T extends object>({
                     key={(row as { id?: number | string | null }).id ?? idx}
                     className="border-t border-border transition-colors hover:bg-surface-2/60"
                   >
+                    {selectable && (
+                      <td className="px-5 py-3">
+                        <input
+                          type="checkbox"
+                          checked={isRowSelected ? isRowSelected(row) : false}
+                          onChange={() => onToggleRow?.(row)}
+                          aria-label="Select row"
+                          className="h-4 w-4 rounded border-border accent-brand"
+                        />
+                      </td>
+                    )}
                     {columns.map((col, i) => (
                       <td key={i} className="px-5 py-3 text-fg">
                         {col.render(row)}

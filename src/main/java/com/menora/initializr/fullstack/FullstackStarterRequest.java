@@ -46,28 +46,39 @@ public record FullstackStarterRequest(
             // entity was imported from). Accepted so deserialization doesn't fail, but the
             // validator/generator deliberately ignores it — it never affects generated output.
             String sourceSql,
-            // List display for the generated entity page: "table" (default) or "cards". Sets the
-            // initial view mode; the generated page always ships a runtime Table/Cards toggle.
-            String listView) {
+            // Deprecated single-view field — the initial list view ("table"/"cards"/…). Still accepted
+            // for back-compat (treated as a one-element listViews); prefer listViews below.
+            String listView,
+            // The list-view modes the generated entity page generates (subset of table/cards/kanban/
+            // calendar, ordered; first = initial). A toggle is emitted only when 2+ are enabled.
+            // Null/empty falls back to [listView] if present, else [table].
+            List<String> listViews) {
 
-        /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql/listView). */
+        /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql/listView(s)). */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations) {
-            this(name, tableName, schema, fields, relations, null, null, null, null);
+            this(name, tableName, schema, fields, relations, null, null, null, null, null);
         }
 
-        /** Back-compat overload without {@code sourceSql}/{@code listView}. */
+        /** Back-compat overload without {@code sourceSql}/{@code listView(s)}. */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
                                    Boolean readOnly, String viewQuery) {
-            this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, null);
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, null, null);
         }
 
-        /** Back-compat overload without {@code listView}. */
+        /** Back-compat overload without {@code listView(s)}. */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
                                    Boolean readOnly, String viewQuery, String sourceSql) {
-            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, null);
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, null, null);
+        }
+
+        /** Back-compat overload with the legacy single {@code listView} but no {@code listViews}. */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql, String listView) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, null);
         }
     }
 

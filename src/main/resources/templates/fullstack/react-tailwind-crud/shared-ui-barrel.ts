@@ -1,5 +1,8 @@
 export { Table, type Column, type SortSpec, type PaginationProps } from './Table'
 export { CardGrid } from './CardGrid'
+export { KanbanBoard, type KanbanColumnDef } from './KanbanBoard'
+export { CalendarView } from './CalendarView'
+export { FilterBar, type FilterDescriptor, type FilterValues, type FilterKind } from './FilterBar'
 export { FormDrawer } from './FormDrawer'
 export { Field, inputClass } from './Field'
 export { Badge } from './Badge'

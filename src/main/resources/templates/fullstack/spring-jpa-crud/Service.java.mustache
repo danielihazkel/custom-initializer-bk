@@ -5,8 +5,12 @@ import {{entityPackage}}.{{EntityName}};
 {{/hasCompositePk}}import {{repositoryPackage}}.{{EntityName}}Repository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-{{#hasStringFields}}import org.springframework.data.jpa.domain.Specification;
-{{/hasStringFields}}import org.springframework.stereotype.Service;
+{{#needsSpecification}}import org.springframework.data.jpa.domain.Specification;
+{{/needsSpecification}}{{#hasFilters}}import java.util.ArrayList;
+import java.util.List;
+{{#imports}}import {{name}};
+{{/imports}}{{#fields}}{{#isEnum}}import {{entityPackage}}.{{EntityName}}.{{enumTypeName}};
+{{/isEnum}}{{/fields}}{{/hasFilters}}import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -18,7 +22,33 @@ public class {{EntityName}}Service {
     public {{EntityName}}Service({{EntityName}}Repository repository) {
         this.repository = repository;
     }
+{{#hasFilters}}
+    /** Type-aware filter parameters bound from the request query string. Null fields are ignored. */
+    public record Filters(
+{{#filterFields}}            {{#isEnumFilter}}{{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{javaType}} {{name}}Min, {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{javaType}} {{name}}From, {{javaType}} {{name}}To{{/isTemporalFilter}}{{^last}},{{/last}}
+{{/filterFields}}    ) {}
 
+    @Transactional(readOnly = true)
+    public Page<{{EntityName}}> findAll(String q, Filters filters, Pageable pageable) {
+        List<Specification<{{EntityName}}>> specs = new ArrayList<>();
+{{#hasStringFields}}        if (q != null && !q.isBlank()) {
+            String like = "%" + q.toLowerCase() + "%";
+            specs.add((root, query, cb) -> cb.or(
+{{#stringFields}}                    cb.like(cb.lower(root.get("{{name}}")), like){{^lastString}},{{/lastString}}
+{{/stringFields}}            ));
+        }
+{{/hasStringFields}}{{#filterFields}}{{#isEnumFilter}}        if (filters.{{name}}() != null) specs.add((root, query, cb) -> cb.equal(root.get("{{name}}"), filters.{{name}}()));
+{{/isEnumFilter}}{{#isBooleanFilter}}        if (filters.{{name}}() != null) specs.add((root, query, cb) -> cb.equal(root.get("{{name}}"), filters.{{name}}()));
+{{/isBooleanFilter}}{{#isNumericFilter}}        if (filters.{{name}}Min() != null) specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}Min()));
+        if (filters.{{name}}Max() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}Max()));
+{{/isNumericFilter}}{{#isTemporalFilter}}        if (filters.{{name}}From() != null) specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}From()));
+        if (filters.{{name}}To() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}To()));
+{{/isTemporalFilter}}{{/filterFields}}        if (specs.isEmpty()) return repository.findAll(pageable);
+        Specification<{{EntityName}}> combined = specs.get(0);
+        for (int i = 1; i < specs.size(); i++) combined = combined.and(specs.get(i));
+        return repository.findAll(combined, pageable);
+    }
+{{/hasFilters}}{{^hasFilters}}
     @Transactional(readOnly = true)
     public Page<{{EntityName}}> findAll(String q, Pageable pageable) {
 {{#hasStringFields}}        if (q != null && !q.isBlank()) {
@@ -30,7 +60,7 @@ public class {{EntityName}}Service {
         }
 {{/hasStringFields}}        return repository.findAll(pageable);
     }
-
+{{/hasFilters}}
     @Transactional(readOnly = true)
     public {{EntityName}} findById({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
         return repository.findById(id).orElseThrow(() ->
@@ -52,4 +82,8 @@ public class {{EntityName}}Service {
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
         repository.deleteById(id);
     }
-{{/mutable}}}
+{{#bulkDeleteApplicable}}
+    public void deleteAll(java.util.List<{{pkField.javaType}}> ids) {
+        repository.deleteAllById(ids);
+    }
+{{/bulkDeleteApplicable}}{{/mutable}}}

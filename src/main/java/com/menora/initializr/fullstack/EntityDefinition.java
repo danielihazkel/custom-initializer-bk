@@ -1,6 +1,9 @@
 package com.menora.initializr.fullstack;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * One user-defined entity. The {@code tableName} is optional — when null,
@@ -27,36 +30,56 @@ public record EntityDefinition(
         boolean readOnly,
         String viewQuery,
         String sourceSql,
-        String listView) {
+        List<String> listViews) {
+
+    /** The list-view modes the generated entity page may render. */
+    private static final Set<String> KNOWN_VIEWS = Set.of("table", "cards", "kanban", "calendar");
 
     public EntityDefinition {
         relations = relations == null ? List.of() : List.copyOf(relations);
         viewQuery = (viewQuery == null || viewQuery.isBlank()) ? null : viewQuery;
         sourceSql = (sourceSql == null || sourceSql.isBlank()) ? null : sourceSql;
         if (viewQuery != null) readOnly = true;
-        // List display for the generated entity page — "cards" or "table" (default). Sets the
-        // page's initial view mode; the page always ships a runtime Table/Cards toggle.
-        listView = "cards".equalsIgnoreCase(listView == null ? null : listView.trim()) ? "cards" : "table";
+        // The list-view modes the generated entity page generates — an ordered, deduped subset of
+        // {table, cards, kanban, calendar}; the first is the page's initial mode. A toggle is emitted
+        // only when more than one is enabled. Unknown values are dropped; an empty/null set defaults
+        // to [table]. "kanban"/"calendar" are further down-graded at render time when the entity lacks
+        // the field each needs (see EntityScaffoldContext: viewKanban / viewCalendar).
+        LinkedHashSet<String> norm = new LinkedHashSet<>();
+        if (listViews != null) {
+            for (String v : listViews) {
+                if (v == null) continue;
+                String lv = v.trim().toLowerCase(Locale.ROOT);
+                if (KNOWN_VIEWS.contains(lv)) norm.add(lv);
+            }
+        }
+        if (norm.isEmpty()) norm.add("table");
+        listViews = List.copyOf(norm);
     }
 
-    /** Overload without {@code listView} (defaults to "table"). */
+    /** First enabled view — the generated page's initial mode. Back-compat for single-view readers. */
+    public String listView() {
+        return listViews.get(0);
+    }
+
+    /** Overload without {@code listViews} (defaults to [table]). */
     public EntityDefinition(String name, String tableName, String schema,
                             List<FieldDefinition> fields, List<RelationDefinition> relations,
                             boolean readOnly, String viewQuery, String sourceSql) {
-        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, "table");
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, List.of("table"));
     }
 
-    /** Overload without {@code sourceSql}/{@code listView} — keeps existing call sites terse. */
+    /** Overload without {@code sourceSql}/{@code listViews} — keeps existing call sites terse. */
     public EntityDefinition(String name, String tableName, String schema,
                             List<FieldDefinition> fields, List<RelationDefinition> relations,
                             boolean readOnly, String viewQuery) {
-        this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, "table");
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, List.of("table"));
     }
 
     /** Convenience for a table-backed, read-write entity (the common case). */
     public EntityDefinition(String name, String tableName, String schema,
                             List<FieldDefinition> fields, List<RelationDefinition> relations) {
-        this(name, tableName, schema, fields, relations, false, null, null, "table");
+        this(name, tableName, schema, fields, relations, false, null, null, List.of("table"));
     }
 
     /** Back-compat overload for schemaless entities (keeps existing call sites terse). */

@@ -11,7 +11,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-{{#hasValidation}}import org.springframework.validation.FieldError;
+{{#optScaffoldCsvExport}}import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+{{/optScaffoldCsvExport}}{{#hasValidation}}import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 {{/hasValidation}}import org.springframework.web.bind.annotation.*;
 {{#hasValidation}}
@@ -20,7 +22,9 @@ import jakarta.validation.Valid;
 import java.util.NoSuchElementException;
 {{#hasValidation}}import java.util.HashMap;
 {{/hasValidation}}import java.util.Map;
-{{#optScaffoldOpenApi}}import io.swagger.v3.oas.annotations.Operation;
+{{#hasFilters}}{{#imports}}import {{name}};
+{{/imports}}{{#fields}}{{#isEnum}}import {{entityPackage}}.{{EntityName}}.{{enumTypeName}};
+{{/isEnum}}{{/fields}}{{/hasFilters}}{{#optScaffoldOpenApi}}import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 {{/optScaffoldOpenApi}}{{#optScaffoldSecured}}// Authorization scaffold: uncomment these imports and the @RequiresPermission lines below to
 // enforce LDAP authorization (reads -> USER, writes -> ADMIN). Needs the ldap-auth dependency
@@ -44,13 +48,63 @@ public class {{EntityName}}Controller {
 {{/optScaffoldSecured}}    @GetMapping
     public Page<{{EntityName}}Dto> list(
             @RequestParam(required = false) String q,
-            Pageable pageable) {
+{{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}},
+{{/filterFields}}            Pageable pageable) {
         Pageable effective = pageable.getSort().isSorted()
                 ? pageable
                 : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
                         Sort.by("{{pkField.name}}").ascending());
-        return service.findAll(q, effective).map({{EntityName}}Dto::from);
+{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{^last}}, {{/last}}{{/filterFields}});
+        return service.findAll(q, filters, effective).map({{EntityName}}Dto::from);
+{{/hasFilters}}{{^hasFilters}}        return service.findAll(q, effective).map({{EntityName}}Dto::from);
+{{/hasFilters}}    }
+{{#optScaffoldCsvExport}}
+{{#optScaffoldOpenApi}}    @Operation(summary = "Export {{EntityName}} records as CSV (honors `q`, filters, and sort)")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
+{{/optScaffoldSecured}}    @GetMapping("/export.csv")
+    public ResponseEntity<byte[]> exportCsv(
+            @RequestParam(required = false) String q,
+{{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}},
+{{/filterFields}}            Pageable pageable) {
+{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{^last}}, {{/last}}{{/filterFields}});
+{{/hasFilters}}        Pageable all = PageRequest.of(0, Integer.MAX_VALUE,
+                pageable.getSort().isSorted() ? pageable.getSort() : Sort.by("{{pkField.name}}").ascending());
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.join(",", CSV_HEADERS)).append("\r\n");
+        for ({{EntityName}}Dto dto : service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}all).map({{EntityName}}Dto::from)) {
+            String[] cells = {
+{{#fields}}                    csv(dto.{{name}}()),
+{{/fields}}{{#relations}}                    csv(dto.{{fkFieldName}}()),
+{{/relations}}{{#auditApplicable}}                    csv(dto.createdAt()),
+                    csv(dto.updatedAt()),
+{{/auditApplicable}}            };
+            sb.append(String.join(",", cells)).append("\r\n");
+        }
+        byte[] body = sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"{{entityNamePluralKebab}}.csv\"")
+                .contentType(MediaType.parseMediaType("text/csv"))
+                .body(body);
     }
+
+    private static final String[] CSV_HEADERS = {
+{{#fields}}            "{{name}}",
+{{/fields}}{{#relations}}            "{{fkFieldName}}",
+{{/relations}}{{#auditApplicable}}            "createdAt",
+            "updatedAt",
+{{/auditApplicable}}    };
+
+    /** Minimal RFC-4180 CSV cell: null → empty, and quote when the value contains a comma, quote,
+     *  or newline (doubling any embedded quote). */
+    private static String csv(Object value) {
+        if (value == null) return "";
+        String s = String.valueOf(value);
+        if (s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r")) {
+            return "\"" + s.replace("\"", "\"\"") + "\"";
+        }
+        return s;
+    }
+{{/optScaffoldCsvExport}}
 
 {{#hasCompositePk}}{{#optScaffoldOpenApi}}    @Operation(summary = "Get a {{EntityName}} by id")
 {{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
@@ -100,7 +154,15 @@ public class {{EntityName}}Controller {
         service.delete(id);
         return ResponseEntity.noContent().build();
     }
-{{/hasCompositePk}}{{/mutable}}
+{{/hasCompositePk}}{{#bulkDeleteApplicable}}
+{{#optScaffoldOpenApi}}    @Operation(summary = "Bulk delete {{EntityName}} records by id")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
+{{/optScaffoldSecured}}    @DeleteMapping("/bulk")
+    public ResponseEntity<Void> deleteAll(@RequestBody java.util.List<{{pkField.javaType}}> ids) {
+        service.deleteAll(ids);
+        return ResponseEntity.noContent().build();
+    }
+{{/bulkDeleteApplicable}}{{/mutable}}
 
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Void> handleNotFound(NoSuchElementException ex) {

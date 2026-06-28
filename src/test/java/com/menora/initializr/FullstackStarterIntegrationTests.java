@@ -132,9 +132,10 @@ class FullstackStarterIntegrationTests {
                 .filter(e -> e.getKey().endsWith("/OrderService.java"))
                 .map(Map.Entry::getValue)
                 .findFirst().orElseThrow();
-        assertThat(orderService).contains("findAll(String q, Pageable pageable)");
-        // Order has no STRING fields, so no Specification block should render
-        assertThat(orderService).doesNotContain("Specification<Order>");
+        // Order has a numeric (BigDecimal) field → it gets a type-aware filter carrier and a
+        // Specification, even though it has no STRING search field.
+        assertThat(orderService).contains("findAll(String q, Filters filters, Pageable pageable)");
+        assertThat(orderService).contains("Specification<Order>");
 
         String orderEntity = entries.entrySet().stream()
                 .filter(e -> e.getKey().endsWith("/Order.java"))
@@ -1474,7 +1475,7 @@ class FullstackStarterIntegrationTests {
 
     @Test
     void fullstackEndpoint_cardsViewDetailDrawerAndDashboardChart() throws Exception {
-        // listView=cards seeds the page's initial view mode (it always ships a Table/Cards toggle);
+        // The legacy single listView="cards" maps to a cards-only page (no Table, no toggle bar);
         // every entity gets a read-only DetailDrawer (onView); an enum field yields a dashboard chart.
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("name", "status");
@@ -1501,17 +1502,20 @@ class FullstackStarterIntegrationTests {
         // vite/client types so import.meta.env typechecks under `tsc -b`.
         assertThat(entries.get("shop/frontend/src/vite-env.d.ts")).contains("vite/client");
 
-        // Cards entity starts in card mode and wires the detail drawer.
+        // Cards-only: the page generates the CardGrid and nothing else — no Table, no toggle bar.
         String productPage = entries.get("shop/frontend/src/pages/product/ui/ProductPage.tsx");
         assertThat(productPage)
-                .contains("useState<'table' | 'cards'>('cards')")
-                .contains("import { Table, CardGrid")
+                .contains("useState<'cards'>('cards')")
+                .contains("<CardGrid")
+                .doesNotContain("<Table")
+                .doesNotContain("aria-pressed={viewMode === 'cards'}")   // no toggle button
                 .contains("onView={setDetailRow}")
                 .contains("<ProductDetail value={detailRow} />");
         assertThat(entries).containsKey("shop/frontend/src/features/product-form/ui/ProductDetail.tsx");
-        // An entity with no listView defaults to table mode.
+        // An entity with no listViews defaults to table-only (no Cards, no toggle).
         assertThat(entries.get("shop/frontend/src/pages/plain/ui/PlainPage.tsx"))
-                .contains("useState<'table' | 'cards'>('table')");
+                .contains("useState<'table'>('table')")
+                .doesNotContain("<CardGrid");
 
         // The enum field drives a dashboard breakdown chart; Plain (no enum/boolean) gets none.
         String dashboard = entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx");
@@ -1520,6 +1524,112 @@ class FullstackStarterIntegrationTests {
                 .contains("Products by Status")
                 .contains("field: 'status'");
         assertThat(dashboard).doesNotContain("Plains by");
+    }
+
+    @Test
+    void fullstackEndpoint_kanbanCalendarFiltersExportAndBulkDelete() throws Exception {
+        // Task: enum status → kanban-applicable; enum/numeric/temporal/boolean fields → filter bar.
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("name", "status");
+        status.put("type", "Enum");
+        status.put("enumValues", List.of("OPEN", "DONE"));
+        Map<String, Object> task = new LinkedHashMap<>();
+        task.put("name", "Task");
+        // Multi-select: Table + Kanban only (no Cards/Calendar even though dueDate is calendar-capable).
+        task.put("listViews", List.of("table", "kanban"));
+        task.put("fields", List.of(pkField(),
+                Map.of("name", "title", "type", "String"),
+                status,
+                Map.of("name", "priority", "type", "Integer"),
+                Map.of("name", "dueDate", "type", "LocalDate"),
+                Map.of("name", "done", "type", "Boolean")));
+
+        // Event: calendar-only via listViews; a LocalDateTime field makes calendar applicable.
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("name", "Event");
+        event.put("listViews", List.of("calendar"));
+        event.put("fields", List.of(pkField(),
+                Map.of("name", "name", "type", "String"),
+                Map.of("name", "startsAt", "type", "LocalDateTime")));
+
+        // Plain: legacy single listView="kanban" but no enum/boolean → back-compat + down-grade to table.
+        Map<String, Object> plain = new LinkedHashMap<>();
+        plain.put("name", "Plain");
+        plain.put("listView", "kanban");
+        plain.put("fields", List.of(pkField(), Map.of("name", "label", "type", "String")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "ops");
+        body.put("packageName", "com.menora.ops");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(task, event, plain));
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "bulkDelete")));
+
+        Map<String, String> entries = generateZip(body);
+
+        // New shared FE components shipped once.
+        assertThat(entries).containsKey("ops/frontend/src/shared/ui/KanbanBoard.tsx");
+        assertThat(entries).containsKey("ops/frontend/src/shared/ui/CalendarView.tsx");
+        assertThat(entries).containsKey("ops/frontend/src/shared/ui/FilterBar.tsx");
+
+        // Task page: only the selected Table + Kanban views, a toggle across just those, plus the
+        // (view-independent) filter bar, CSV export, and bulk-select table. No Cards/Calendar code.
+        String taskPage = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+        assertThat(taskPage)
+                .contains("useState<'table' | 'kanban'>('table')")  // initial = first selected (canonical order)
+                .contains("KanbanBoard, FilterBar")
+                .contains("<KanbanBoard")
+                .contains("groupField=\"status\"")
+                .contains("aria-label=\"Table view\"")              // toggle bar present (2 views)
+                .contains("aria-label=\"Board view\"")
+                .doesNotContain("aria-label=\"Card view\"")         // cards not selected
+                .doesNotContain("<CardGrid")
+                .doesNotContain("<CalendarView")
+                .contains("<FilterBar filters={filterDescriptors}")
+                .contains("options: ['OPEN', 'DONE']")
+                .contains("exportCsv('tasks.csv')")
+                .contains("selectable={true}")
+                .contains("isRowSelected={isRowSelected}");
+
+        // Event page: calendar-only — no toggle bar, no Table/CardGrid/KanbanBoard.
+        String eventPage = entries.get("ops/frontend/src/pages/event/ui/EventPage.tsx");
+        assertThat(eventPage)
+                .contains("useState<'calendar'>('calendar')")
+                .contains("<CalendarView")
+                .contains("dateField=\"startsAt\"")
+                .doesNotContain("<Table")
+                .doesNotContain("aria-label=\"Calendar view\"");     // single view → no toggle
+
+        // Plain page: legacy listView="kanban" down-grades to table-only, no filter bar.
+        String plainPage = entries.get("ops/frontend/src/pages/plain/ui/PlainPage.tsx");
+        assertThat(plainPage)
+                .contains("useState<'table'>('table')")
+                .doesNotContain("KanbanBoard")
+                .doesNotContain("FilterBar");
+
+        // Backend Task service: a Filters carrier + composed Specification + bulk delete.
+        String taskService = contentEndingWith(entries, "/service/TaskService.java");
+        assertThat(taskService)
+                .contains("public record Filters(")
+                .contains("TaskStatusType status")
+                .contains("Integer priorityMin, Integer priorityMax")
+                .contains("LocalDate dueDateFrom, LocalDate dueDateTo")
+                .contains("findAll(String q, Filters filters, Pageable pageable)")
+                .contains("public void deleteAll(java.util.List<Long> ids)");
+
+        // Backend Task controller: filter params, CSV export, bulk-delete endpoint.
+        String taskController = contentEndingWith(entries, "/controller/TaskController.java");
+        assertThat(taskController)
+                .contains("@RequestParam(required = false) TaskStatusType status")
+                .contains("DateTimeFormat.ISO.DATE")
+                .contains("@GetMapping(\"/export.csv\")")
+                .contains("@DeleteMapping(\"/bulk\")")
+                .contains("new TaskService.Filters(");
+
+        // Plain (no filters) keeps the simple two-arg findAll and no Filters record.
+        assertThat(contentEndingWith(entries, "/service/PlainService.java"))
+                .contains("findAll(String q, Pageable pageable)")
+                .doesNotContain("record Filters");
     }
 
     /** POSTs a fullstack request and returns the unzipped (path → text) generated tree. */

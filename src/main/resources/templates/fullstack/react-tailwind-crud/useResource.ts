@@ -19,6 +19,9 @@ export interface PageParams {
   size: number
   sort: SortSpec | null
   q: string
+  /** Extra type-aware filter params, keyed exactly as the backend reads them
+   *  (e.g. `status`, `priceMin`, `createdAtFrom`). Empty values are skipped. */
+  filters?: Record<string, string>
 }
 
 interface Page<T> {
@@ -40,14 +43,18 @@ export function useResource<T extends object>(basePath: string, params: PagePara
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const filterKey = JSON.stringify(params.filters ?? {})
   const query = useMemo(() => {
     const sp = new URLSearchParams()
     sp.set('page', String(params.page))
     sp.set('size', String(params.size))
     if (params.sort) sp.set('sort', `${params.sort.field},${params.sort.direction}`)
     if (params.q && params.q.trim() !== '') sp.set('q', params.q.trim())
+    for (const [k, v] of Object.entries(params.filters ?? {})) {
+      if (v !== '' && v != null) sp.set(k, v)
+    }
     return sp.toString()
-  }, [params.page, params.size, params.sort, params.q])
+  }, [params.page, params.size, params.sort, params.q, filterKey])
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -87,6 +94,18 @@ export function useResource<T extends object>(basePath: string, params: PagePara
     await reload()
   }, [basePath, reload])
 
+  // Bulk delete by a list of (single-column) primary keys.
+  const removeMany = useCallback(async (ids: Array<number | string>) => {
+    await api.del(`${basePath}/bulk`, ids)
+    await reload()
+  }, [basePath, reload])
+
+  // Download the current result set (honoring search/filters/sort) as a CSV file. The backend
+  // export endpoint ignores page/size and streams every matching row.
+  const exportCsv = useCallback((filename = 'export.csv') => {
+    return api.download(`${basePath}/export.csv?${query}`, filename)
+  }, [basePath, query])
+
   return {
     items,
     totalElements,
@@ -99,5 +118,7 @@ export function useResource<T extends object>(basePath: string, params: PagePara
     create,
     update,
     remove,
+    removeMany,
+    exportCsv,
   }
 }

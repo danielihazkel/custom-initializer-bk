@@ -51,9 +51,32 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return res.json() as Promise<T>
 }
 
+/** Fetches a path and saves the response body as a file via a transient object URL. Used for
+ *  CSV export — the browser handles the download without a navigation. */
+async function download(path: string, filename: string): Promise<void> {
+  const headers: Record<string, string> = {}
+{{#hasLdapAuth}}
+  if (import.meta.env.DEV) {
+    headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'
+  }
+{{/hasLdapAuth}}
+  const res = await fetch(BASE + path, { headers: Object.keys(headers).length > 0 ? headers : undefined })
+  if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status} on GET ${path}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
-  del: (path: string) => request<void>('DELETE', path),
+  del: (path: string, body?: unknown) => request<void>('DELETE', path, body),
+  download,
 }

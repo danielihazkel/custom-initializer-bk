@@ -95,6 +95,11 @@ public class FullstackProjectGenerationConfiguration {
             projectCtx.put("optScaffoldSecured",
                     optionsContext.hasOption("scaffold", "secured")
                             && description.getRequestedDependencies().containsKey("ldap-auth"));
+            // CSV export endpoint + per-entity bulk-delete endpoint. Neither needs an extra
+            // dependency (plain Spring Web + Spring Data). bulkDelete is further narrowed per entity
+            // to writable, single-PK entities in EntityScaffoldContext (bulkDeleteApplicable).
+            projectCtx.put("optScaffoldCsvExport", optionsContext.hasOption("scaffold", "csvExport"));
+            projectCtx.put("optScaffoldBulkDelete", optionsContext.hasOption("scaffold", "bulkDelete"));
             log.info("Rendering backend CRUD scaffolding: set='{}', {} files, {} entities",
                     setKey, files.size(), entities.size());
             FullstackRenderer.render(files, projectCtx, entities, projectRoot);

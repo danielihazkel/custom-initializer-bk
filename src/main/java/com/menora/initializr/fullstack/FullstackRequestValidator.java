@@ -44,7 +44,7 @@ public final class FullstackRequestValidator {
         // and resolve/validate relations once all entity names are known (pass 2).
         record Parsed(int ei, String name, String tableName, String schema, List<FieldDefinition> fields,
                       Set<String> memberNames, List<FullstackStarterRequest.RelationDefinitionDto> rawRelations,
-                      boolean readOnly, String viewQuery, String listView) {}
+                      boolean readOnly, String viewQuery, List<String> listViews) {}
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
@@ -211,7 +211,7 @@ public final class FullstackRequestValidator {
             String schema = (e.schema() == null || e.schema().isBlank())
                     ? null : e.schema().trim();
             parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
-                    readOnly, viewQuery, e.listView()));
+                    readOnly, viewQuery, resolveListViews(e)));
         }
 
         // Pass 2 — resolve and validate relations now that all entity names are known.
@@ -226,9 +226,18 @@ public final class FullstackRequestValidator {
                     parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
                             pkCountByLower, viewLowerNames);
             result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
-                    p.readOnly(), p.viewQuery(), null, p.listView()));
+                    p.readOnly(), p.viewQuery(), null, p.listViews()));
         }
         return result;
+    }
+
+    /** Resolves the enabled list-view modes from the wire DTO: the new {@code listViews} when present,
+     *  else the legacy single {@code listView} as a one-element list, else null (→ defaults to [table]
+     *  in {@link EntityDefinition}). Normalization/validation of the values happens there. */
+    private static List<String> resolveListViews(FullstackStarterRequest.EntityDefinitionDto e) {
+        if (e.listViews() != null && !e.listViews().isEmpty()) return e.listViews();
+        if (e.listView() != null && !e.listView().isBlank()) return List.of(e.listView());
+        return null;
     }
 
     /**

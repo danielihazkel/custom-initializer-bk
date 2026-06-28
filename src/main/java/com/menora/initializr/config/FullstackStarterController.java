@@ -381,6 +381,11 @@ public class FullstackStarterController {
         projectCtx.put("optScaffoldAudit", optionsContext.hasOption("scaffold", "audit"));
         projectCtx.put("optScaffoldSoftDelete", optionsContext.hasOption("scaffold", "softDelete"));
         projectCtx.put("optScaffoldInverse", optionsContext.hasOption("scaffold", "inverseCollections"));
+        // CSV export button + bulk-delete selection UI. Mirrors the backend config — the FE per-entity
+        // page gates the Export button on optScaffoldCsvExport and the row checkboxes on the per-entity
+        // bulkDeleteApplicable (derived in EntityScaffoldContext from optScaffoldBulkDelete).
+        projectCtx.put("optScaffoldCsvExport", optionsContext.hasOption("scaffold", "csvExport"));
+        projectCtx.put("optScaffoldBulkDelete", optionsContext.hasOption("scaffold", "bulkDelete"));
         log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());

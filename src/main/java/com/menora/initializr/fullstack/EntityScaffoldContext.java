@@ -163,6 +163,15 @@ public final class EntityScaffoldContext {
         ctx.put("hasPaletteError", palette.getError() != null && !palette.getError().isBlank());
     }
 
+    /** A single kanban lane: {@code value} is matched against the grouping field's stringified
+     *  value, {@code label} is the column heading. */
+    private static Map<String, Object> kanbanColumn(String value, String label) {
+        Map<String, Object> col = new LinkedHashMap<>();
+        col.put("value", value);
+        col.put("label", label);
+        return col;
+    }
+
     /** Escapes a string for embedding in a Java or JS double-quoted string literal
      *  (backslash and double-quote only — both languages share C-style escaping). */
     private static String escapeStringLiteral(String s) {
@@ -201,6 +210,12 @@ public final class EntityScaffoldContext {
         // a @Subselect view would have to project created_at/updated_at columns that may not exist.
         ctx.put("auditApplicable",
                 Boolean.TRUE.equals(ctx.get("optScaffoldAudit")) && mutable);
+        // Bulk delete (opt-in) deletes by a list of single-column ids, so it is offered only for
+        // writable, single-PK entities — a composite key can't be addressed by one id list.
+        ctx.put("bulkDeleteApplicable",
+                Boolean.TRUE.equals(ctx.get("optScaffoldBulkDelete"))
+                        && !Boolean.TRUE.equals(ctx.get("hasCompositePk"))
+                        && mutable);
         return ctx;
     }
 
@@ -235,8 +250,6 @@ public final class EntityScaffoldContext {
         view.put("mutable", !entity.readOnly());
         view.put("isView", entity.isView());
         view.put("viewQuery", entity.viewQuery());
-        // Initial list view mode for the generated entity page (the page also ships a runtime toggle).
-        view.put("defaultCardsView", "cards".equals(entity.listView()));
 
         List<Map<String, Object>> fieldViews = new ArrayList<>(entity.fields().size());
         Map<String, Object> pkView = null;
@@ -328,6 +341,101 @@ public final class EntityScaffoldContext {
         view.put("hasBreakdown", breakdown != null);
         view.put("breakdownField", breakdown == null ? null : breakdown.get("name"));
         view.put("breakdownLabel", breakdown == null ? null : breakdown.get("Name"));
+
+        // Kanban board view (listView == "kanban"): reuse the breakdown field as the grouping
+        // column and turn its distinct values into lanes. Dragging a card writes the new lane value
+        // back via the entity's update endpoint, so kanban needs a writable entity — a read-only
+        // entity that asked for kanban falls back to the table view below.
+        boolean mutableEntity = !entity.readOnly();
+        boolean kanbanIsEnum = breakdown != null && Boolean.TRUE.equals(breakdown.get("isEnum"));
+        boolean kanbanApplicable = breakdown != null && mutableEntity;
+        view.put("kanbanField", breakdown == null ? null : breakdown.get("name"));
+        view.put("kanbanLabel", breakdown == null ? null : breakdown.get("Name"));
+        view.put("kanbanIsEnum", kanbanIsEnum);
+        List<Map<String, Object>> kanbanColumns = new ArrayList<>();
+        if (breakdown != null) {
+            if (kanbanIsEnum) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> evs = (List<Map<String, Object>>) breakdown.get("enumValues");
+                for (Map<String, Object> ev : evs) {
+                    kanbanColumns.add(kanbanColumn(String.valueOf(ev.get("value")), String.valueOf(ev.get("value"))));
+                }
+            } else { // boolean breakdown — two fixed lanes
+                kanbanColumns.add(kanbanColumn("true", "True"));
+                kanbanColumns.add(kanbanColumn("false", "False"));
+            }
+        }
+        view.put("kanbanColumns", kanbanColumns);
+
+        // Calendar view (listView == "calendar"): bucket records onto a month grid by their first
+        // temporal (LOCAL_DATE / LOCAL_DATE_TIME) field. No writable requirement — it only reads.
+        Map<String, Object> calendarFieldView = null;
+        for (Map<String, Object> fv : fieldViews) {
+            if (Boolean.TRUE.equals(fv.get("isTemporal"))) { calendarFieldView = fv; break; }
+        }
+        boolean calendarApplicable = calendarFieldView != null;
+        view.put("calendarField", calendarFieldView == null ? null : calendarFieldView.get("name"));
+        view.put("calendarLabel", calendarFieldView == null ? null : calendarFieldView.get("Name"));
+
+        // Type-aware filter bar: every non-PK enum / boolean / temporal / numeric field becomes a
+        // filter control. The view-model carries one entry per filterable field with a kind flag the
+        // FilterBar switches on; the backend Specification reads the matching query params.
+        List<Map<String, Object>> filterFieldViews = new ArrayList<>();
+        for (Map<String, Object> fv : fieldViews) {
+            if (Boolean.TRUE.equals(fv.get("isPrimaryKey"))) continue;
+            boolean isEnumF = Boolean.TRUE.equals(fv.get("isEnum"));
+            boolean isBoolF = Boolean.TRUE.equals(fv.get("isBoolean"));
+            boolean isTemporalF = Boolean.TRUE.equals(fv.get("isTemporal"));
+            boolean isNumericF = Boolean.TRUE.equals(fv.get("isNumeric"));
+            if (!(isEnumF || isBoolF || isTemporalF || isNumericF)) continue;
+            Map<String, Object> ff = new LinkedHashMap<>();
+            ff.put("name", fv.get("name"));
+            ff.put("Name", fv.get("Name"));
+            // The Java type the backend Filters carrier / @RequestParam uses for this field. For an
+            // enum this is the per-entity enum type (Spring binds the request String to it by name).
+            ff.put("javaType", fv.get("javaType"));
+            ff.put("isEnumFilter", isEnumF);
+            ff.put("isBooleanFilter", isBoolF);
+            ff.put("isTemporalFilter", isTemporalF);
+            ff.put("isNumericFilter", isNumericF);
+            ff.put("isDate", fv.get("isDate"));
+            ff.put("isDateTime", fv.get("isDateTime"));
+            ff.put("enumValues", fv.get("enumValues"));
+            filterFieldViews.add(ff);
+        }
+        for (int i = 0; i < filterFieldViews.size(); i++) {
+            filterFieldViews.get(i).put("last", i == filterFieldViews.size() - 1);
+        }
+        view.put("filterFields", filterFieldViews);
+        view.put("hasFilters", !filterFieldViews.isEmpty());
+        // The generated Service builds a JPA Specification when it has either text search or
+        // type-aware filters — gates the Specification import / machinery in the template.
+        view.put("needsSpecification", !stringFieldViews.isEmpty() || !filterFieldViews.isEmpty());
+
+        // The set of views the page actually generates: the user-requested listViews, intersected
+        // with what this entity's fields support (table/cards always; kanban needs a breakdown field
+        // + a writable entity; calendar needs a temporal field), order preserved. Falls back to
+        // [table] if nothing requested is supported. A runtime toggle is emitted only for 2+ views;
+        // initialView is the first. viewModeType is the TS union the template seeds useState with.
+        Set<String> requested = new LinkedHashSet<>(entity.listViews());
+        List<String> emitted = new ArrayList<>();
+        if (requested.contains("table")) emitted.add("table");
+        if (requested.contains("cards")) emitted.add("cards");
+        if (requested.contains("kanban") && kanbanApplicable) emitted.add("kanban");
+        if (requested.contains("calendar") && calendarApplicable) emitted.add("calendar");
+        if (emitted.isEmpty()) emitted.add("table");
+        view.put("viewTable", emitted.contains("table"));
+        view.put("viewCards", emitted.contains("cards"));
+        view.put("viewKanban", emitted.contains("kanban"));
+        view.put("viewCalendar", emitted.contains("calendar"));
+        view.put("hasViewToggle", emitted.size() > 1);
+        view.put("initialView", emitted.get(0));
+        StringBuilder union = new StringBuilder();
+        for (int i = 0; i < emitted.size(); i++) {
+            if (i > 0) union.append(" | ");
+            union.append('\'').append(emitted.get(i)).append('\'');
+        }
+        view.put("viewModeType", union.toString());
 
         // Relations (MANY_TO_ONE foreign keys). Each resolves its target's PK type/name from the
         // summary lookup so the entity gets a typed @ManyToOne, the DTO exposes the key as

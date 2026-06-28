@@ -246,8 +246,16 @@ Per-entity derived flag (set in `buildEntityContext`):
 | Variable | Type | Notes |
 |---|---|---|
 | `softDeleteApplicable` | boolean | `optScaffoldSoftDelete && !hasCompositePk` — soft delete only fires for single-PK entities |
-| `defaultCardsView` | boolean | `listView == "cards"` — the generated `EntityPage`'s initial Table/Cards mode (the page always ships a runtime toggle) |
+| `bulkDeleteApplicable` | boolean | `optScaffoldBulkDelete && !hasCompositePk && mutable` — bulk delete (row checkboxes + `/bulk` endpoint) only for writable single-PK entities |
+| `viewTable` / `viewCards` / `viewKanban` / `viewCalendar` | boolean | which list views the page generates — the entity's `listViews` ∩ what its fields support (table/cards always; kanban needs a breakdown field + `mutable`; calendar needs a temporal field). Gate the per-view imports, toggle buttons, and render branches |
+| `hasViewToggle` | boolean | more than one view enabled — the page renders the view-switch button group only then |
+| `initialView` | String | the first enabled view — the `useState` seed for `viewMode` |
+| `viewModeType` | String | the TS union of enabled views the template seeds `useState` with, e.g. `'table' \| 'kanban'` |
 | `hasBreakdown`, `breakdownField`, `breakdownLabel` | boolean / String | the first ENUM (else BOOLEAN) field, surfaced as a grouped bar chart on the dashboard; null when the entity has neither |
+| `kanbanField`, `kanbanLabel`, `kanbanIsEnum`, `kanbanColumns` | String / boolean / List | board-view grouping (used when `viewKanban`): the breakdown field is the grouping column; `kanbanColumns` is `{ value, label }` per lane (enum constants, or `true`/`false` for a boolean) |
+| `calendarField`, `calendarLabel` | String | calendar-view date field (used when `viewCalendar`): the first LOCAL_DATE / LOCAL_DATE_TIME field records are placed by |
+| `filterFields`, `hasFilters` | List / boolean | one entry per non-PK enum/boolean/temporal/numeric field, each with `name`, `Name`, `javaType`, kind flags (`isEnumFilter`/`isBooleanFilter`/`isTemporalFilter`/`isNumericFilter`), `isDate`/`isDateTime`, `enumValues`, `last` — drives the FE `FilterBar` and the BE filter `Specification` |
+| `needsSpecification` | boolean | `hasStringFields || hasFilters` — gates the JPA `Specification` import/machinery in the Service template |
 
 ### 4c. Per-field variables (inside `{{#fields}}`, `{{#pkFields}}`, …)
 
