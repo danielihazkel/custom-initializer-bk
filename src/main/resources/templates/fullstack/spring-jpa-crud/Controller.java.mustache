@@ -20,8 +20,16 @@ import jakarta.validation.Valid;
 import java.util.NoSuchElementException;
 {{#hasValidation}}import java.util.HashMap;
 {{/hasValidation}}import java.util.Map;
-
-@RestController
+{{#optScaffoldOpenApi}}import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}// Authorization scaffold: uncomment these imports and the @RequiresPermission lines below to
+// enforce LDAP authorization (reads -> USER, writes -> ADMIN). Needs the ldap-auth dependency
+// (already on this project).
+// import {{packageName}}.security.Constants;
+// import {{packageName}}.security.RequiresPermission;
+{{/optScaffoldSecured}}
+{{#optScaffoldOpenApi}}@Tag(name = "{{EntityName}}", description = "{{EntityName}} CRUD endpoints")
+{{/optScaffoldOpenApi}}@RestController
 @RequestMapping("/api/{{entityNamePluralKebab}}")
 public class {{EntityName}}Controller {
 
@@ -31,7 +39,9 @@ public class {{EntityName}}Controller {
         this.service = service;
     }
 
-    @GetMapping
+{{#optScaffoldOpenApi}}    @Operation(summary = "List {{EntityName}} records (paged, optional `q` filter)")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
+{{/optScaffoldSecured}}    @GetMapping
     public Page<{{EntityName}}Dto> list(
             @RequestParam(required = false) String q,
             Pageable pageable) {
@@ -42,36 +52,50 @@ public class {{EntityName}}Controller {
         return service.findAll(q, effective).map({{EntityName}}Dto::from);
     }
 
-{{#hasCompositePk}}    @GetMapping("{{pkPath}}")
+{{#hasCompositePk}}{{#optScaffoldOpenApi}}    @Operation(summary = "Get a {{EntityName}} by id")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
+{{/optScaffoldSecured}}    @GetMapping("{{pkPath}}")
     public {{EntityName}}Dto getOne({{#pkFields}}@PathVariable {{javaType}} {{name}}{{^last}}, {{/last}}{{/pkFields}}) {
         return {{EntityName}}Dto.from(service.findById(new {{keyClassName}}({{#pkFields}}{{name}}{{^last}}, {{/last}}{{/pkFields}})));
     }
-{{/hasCompositePk}}{{^hasCompositePk}}    @GetMapping("/{id}")
+{{/hasCompositePk}}{{^hasCompositePk}}{{#optScaffoldOpenApi}}    @Operation(summary = "Get a {{EntityName}} by id")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
+{{/optScaffoldSecured}}    @GetMapping("/{id}")
     public {{EntityName}}Dto getOne(@PathVariable {{pkField.javaType}} id) {
         return {{EntityName}}Dto.from(service.findById(id));
     }
 {{/hasCompositePk}}
-{{#mutable}}    @PostMapping
+{{#mutable}}{{#optScaffoldOpenApi}}    @Operation(summary = "Create a {{EntityName}}")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
+{{/optScaffoldSecured}}    @PostMapping
     public {{EntityName}}Dto create(@RequestBody {{#hasValidation}}@Valid {{/hasValidation}}{{EntityName}}Dto dto) {
         return {{EntityName}}Dto.from(service.create(dto.toEntity()));
     }
 
-{{#hasCompositePk}}    @PutMapping("{{pkPath}}")
+{{#hasCompositePk}}{{#optScaffoldOpenApi}}    @Operation(summary = "Update a {{EntityName}}")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
+{{/optScaffoldSecured}}    @PutMapping("{{pkPath}}")
     public {{EntityName}}Dto update({{#pkFields}}@PathVariable {{javaType}} {{name}}, {{/pkFields}}@RequestBody {{#hasValidation}}@Valid {{/hasValidation}}{{EntityName}}Dto dto) {
         return {{EntityName}}Dto.from(service.update(new {{keyClassName}}({{#pkFields}}{{name}}{{^last}}, {{/last}}{{/pkFields}}), dto.toEntity()));
     }
 
-    @DeleteMapping("{{pkPath}}")
+{{#optScaffoldOpenApi}}    @Operation(summary = "Delete a {{EntityName}}")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
+{{/optScaffoldSecured}}    @DeleteMapping("{{pkPath}}")
     public ResponseEntity<Void> delete({{#pkFields}}@PathVariable {{javaType}} {{name}}{{^last}}, {{/last}}{{/pkFields}}) {
         service.delete(new {{keyClassName}}({{#pkFields}}{{name}}{{^last}}, {{/last}}{{/pkFields}}));
         return ResponseEntity.noContent().build();
     }
-{{/hasCompositePk}}{{^hasCompositePk}}    @PutMapping("/{id}")
+{{/hasCompositePk}}{{^hasCompositePk}}{{#optScaffoldOpenApi}}    @Operation(summary = "Update a {{EntityName}}")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
+{{/optScaffoldSecured}}    @PutMapping("/{id}")
     public {{EntityName}}Dto update(@PathVariable {{pkField.javaType}} id, @RequestBody {{#hasValidation}}@Valid {{/hasValidation}}{{EntityName}}Dto dto) {
         return {{EntityName}}Dto.from(service.update(id, dto.toEntity()));
     }
 
-    @DeleteMapping("/{id}")
+{{#optScaffoldOpenApi}}    @Operation(summary = "Delete a {{EntityName}}")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
+{{/optScaffoldSecured}}    @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable {{pkField.javaType}} id) {
         service.delete(id);
         return ResponseEntity.noContent().build();

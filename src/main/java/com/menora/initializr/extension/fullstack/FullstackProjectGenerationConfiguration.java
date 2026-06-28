@@ -87,6 +87,14 @@ public class FullstackProjectGenerationConfiguration {
             projectCtx.put("optScaffoldAudit", optionsContext.hasOption("scaffold", "audit"));
             projectCtx.put("optScaffoldSoftDelete", optionsContext.hasOption("scaffold", "softDelete"));
             projectCtx.put("optScaffoldInverse", optionsContext.hasOption("scaffold", "inverseCollections"));
+            // Springdoc annotations (@Tag/@Operation). The `openapi` dep is force-added in
+            // FullstackStarterController when this opt is set, so the swagger imports resolve.
+            projectCtx.put("optScaffoldOpenApi", optionsContext.hasOption("scaffold", "openapi"));
+            // Per-endpoint @RequiresPermission. The security.* classes only exist when ldap-auth
+            // is on the build, so the flag requires it — otherwise the imports wouldn't resolve.
+            projectCtx.put("optScaffoldSecured",
+                    optionsContext.hasOption("scaffold", "secured")
+                            && description.getRequestedDependencies().containsKey("ldap-auth"));
             log.info("Rendering backend CRUD scaffolding: set='{}', {} files, {} entities",
                     setKey, files.size(), entities.size());
             FullstackRenderer.render(files, projectCtx, entities, projectRoot);

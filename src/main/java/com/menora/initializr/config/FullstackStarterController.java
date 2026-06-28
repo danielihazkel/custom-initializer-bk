@@ -180,6 +180,16 @@ public class FullstackStarterController {
         String domainPackage = resolveDomainPackage(body.domainPackage(), request.getPackageName());
         ensureRequiredDeps(request, backendSet, body.dependencies() != null);
         optionsContext.populate(body.opts());
+        // The `openapi` scaffold opt enriches generated controllers with springdoc @Tag/@Operation
+        // annotations, which need the springdoc starter on the classpath. Force-add it here (before
+        // generation) so the dep lands in the pom — analogous to how the `tests` opt relies on
+        // spring-boot-starter-test always being present.
+        if (optionsContext.hasOption("scaffold", "openapi")) {
+            Set<String> deps = new LinkedHashSet<>(
+                    request.getDependencies() == null ? List.of() : request.getDependencies());
+            deps.add("openapi");
+            request.setDependencies(new ArrayList<>(deps));
+        }
         // The fullstack request never carries a datasource role sub-option, so default any
         // selected database dep to its primary datasource — otherwise its config class (gated
         // on <dep>-primary/<dep>-secondary) is skipped and the backend has no DataSource bean.

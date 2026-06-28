@@ -772,6 +772,94 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_addsOpenApiDocsWhenOptedIn() throws Exception {
+        // opts.scaffold=[openapi] force-adds the springdoc starter (not a set default) and gates
+        // @Tag/@Operation onto the generated controller so Swagger UI documents the CRUD endpoints.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("openapi")));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        // Springdoc starter wired into the pom even though it is not a spring-jpa-crud default.
+        assertThat(entries.get("demo/backend/pom.xml")).contains("springdoc-openapi-starter-webmvc-ui");
+
+        String controller = contentEndingWith(entries, "/controller/UserController.java");
+        assertThat(controller)
+                .contains("import io.swagger.v3.oas.annotations.Operation;")
+                .contains("import io.swagger.v3.oas.annotations.tags.Tag;")
+                .contains("@Tag(name = \"User\"")
+                .contains("@Operation(summary =");
+    }
+
+    @Test
+    void fullstackEndpoint_omitsOpenApiDocsByDefault() throws Exception {
+        // No opts → no springdoc dep and no swagger annotations (lean default output).
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(entries.get("demo/backend/pom.xml")).doesNotContain("springdoc");
+        assertThat(contentEndingWith(entries, "/controller/UserController.java"))
+                .doesNotContain("io.swagger.v3.oas.annotations")
+                .doesNotContain("@Tag")
+                .doesNotContain("@Operation");
+    }
+
+    @Test
+    void fullstackEndpoint_securesEndpointsWhenOptedIn() throws Exception {
+        // opts.scaffold=[secured] scaffolds @RequiresPermission on CRUD methods (reads → USER,
+        // writes → ADMIN) but COMMENTED OUT, so the user opts in per-endpoint later. ldap-auth is
+        // a set default, so the security.* classes referenced by the commented hints exist.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("secured")));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        String controller = contentEndingWith(entries, "/controller/UserController.java");
+        // Imports + annotations are present but commented out (no enforcement by default).
+        assertThat(controller)
+                .contains("// import com.menora.demo.security.Constants;")
+                .contains("// import com.menora.demo.security.RequiresPermission;")
+                .contains("// @RequiresPermission(Constants.USER)")    // reads
+                .contains("// @RequiresPermission(Constants.ADMIN)");  // writes
+        // Nothing is active: no uncommented annotation or import leaks through.
+        assertThat(controller)
+                .doesNotContain("    @RequiresPermission")
+                .doesNotContain("\nimport com.menora.demo.security.");
+    }
+
+    @Test
+    void fullstackEndpoint_securedOptIsNoOpWithoutLdapAuth() throws Exception {
+        // secured requested but ldap-auth deselected → the flag short-circuits, so no
+        // @RequiresPermission and no broken security.* import (the classes wouldn't exist).
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("opts", Map.of("scaffold", List.of("secured")));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/controller/UserController.java"))
+                .doesNotContain("@RequiresPermission")
+                .doesNotContain(".security.RequiresPermission");
+    }
+
+    @Test
     void importDdlEndpoint_returnsEntitiesInWireFormat() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("dialect", "H2");
