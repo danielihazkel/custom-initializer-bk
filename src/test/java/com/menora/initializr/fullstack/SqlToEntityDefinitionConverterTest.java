@@ -94,6 +94,33 @@ class SqlToEntityDefinitionConverterTest {
     }
 
     @Test
+    void importsSqlServerBracketQuotedDdl() {
+        // SSMS "Script Table As CREATE" output — the fullstack Import-from-DDL regression.
+        String sql = """
+                CREATE TABLE [dbo].[clearing_request_status_history](
+                    [id] [nvarchar](36) NOT NULL,
+                    [status_code] [int] NULL,
+                    [created_date] [datetime2](7) NOT NULL,
+                PRIMARY KEY CLUSTERED ([id] ASC) WITH (PAD_INDEX = OFF) ON [PRIMARY]
+                ) ON [PRIMARY]
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.MSSQL);
+        assertThat(entities).hasSize(1);
+        EntityDefinition e = entities.get(0);
+        assertThat(e.name()).isEqualTo("ClearingRequestStatusHistory");
+        assertThat(e.tableName()).isEqualTo("clearing_request_status_history");
+        assertThat(e.schema()).isEqualTo("dbo");
+
+        FieldDefinition id = e.fields().get(0);
+        assertThat(id.name()).isEqualTo("id");
+        assertThat(id.primaryKey()).isTrue();
+        assertThat(id.required()).isTrue();
+        assertThat(e.fields().get(1).name()).isEqualTo("statusCode");
+        assertThat(e.fields().get(1).type()).isEqualTo(FieldType.INTEGER);
+        assertThat(e.fields().get(2).type()).isEqualTo(FieldType.LOCAL_DATE_TIME);
+    }
+
+    @Test
     void pluralYWithIesGetsSingularized() {
         String sql = "CREATE TABLE categories (id BIGINT PRIMARY KEY, name VARCHAR(50));";
         List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);

@@ -92,6 +92,59 @@ class SqlEntityGeneratorTest {
                 .contains("private LocalDateTime lastLogin;");
     }
 
+    /** Real SQL Server Management Studio "Script Table As CREATE" output: bracket-quoted
+     *  schema/column/type names, CLUSTERED PK, WITH (…) index options, ON [PRIMARY]
+     *  filegroups — none of which JSqlParser parses without normalizeMssql. */
+    @Test
+    void mssql_bracketQuotedTSqlScript() {
+        String sql = """
+                CREATE TABLE [dbo].[clearing_request_status_history](
+                    [id] [nvarchar](36) NOT NULL,
+                    [request_id] [nvarchar](36) NOT NULL,
+                    [status_code] [int] NULL,
+                    [status_description] [nvarchar](255) NULL,
+                    [created_date] [datetime2](7) NOT NULL,
+                    [archive_doc_id] [varchar](15) NULL,
+                PRIMARY KEY CLUSTERED
+                (
+                    [id] ASC
+                )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+                ) ON [PRIMARY]
+                """;
+        List<TableModel> tables = generator.parseTablesForImport(sql, SqlDialect.MSSQL);
+        assertThat(tables).hasSize(1);
+        TableModel t = tables.get(0);
+        assertThat(t.name()).isEqualTo("clearing_request_status_history");
+        assertThat(t.schema()).isEqualTo("dbo");
+        assertThat(t.pkColumns()).containsExactly("id");
+
+        String entity = findFile(generator.generate(sql, SqlDialect.MSSQL, "p", null),
+                "entity/ClearingRequestStatusHistory.java").content();
+        assertThat(entity)
+                .contains("@Id")
+                .contains("private String id;")
+                .contains("private Integer statusCode;")
+                .contains("private LocalDateTime createdDate;")
+                .contains("private String archiveDocId;");
+    }
+
+    /** The same T-SQL with no explicit dialect (H2 default) still parses, auto-routed by
+     *  the bracket-quoting detector. Types degrade to String off the MSSQL branch — fine. */
+    @Test
+    void mssql_bracketQuotedTSqlAutoDetectedAtDefaultDialect() {
+        String sql = """
+                CREATE TABLE [dbo].[widgets](
+                    [id] [nvarchar](36) NOT NULL,
+                    [name] [nvarchar](255) NULL,
+                PRIMARY KEY CLUSTERED ([id] ASC) WITH (PAD_INDEX = OFF) ON [PRIMARY]
+                ) ON [PRIMARY]
+                """;
+        List<TableModel> tables = generator.parseTablesForImport(sql, SqlDialect.H2);
+        assertThat(tables).hasSize(1);
+        assertThat(tables.get(0).name()).isEqualTo("widgets");
+        assertThat(tables.get(0).pkColumns()).containsExactly("id");
+    }
+
     // ── Dialect: Oracle ───────────────────────────────────────────────────────
 
     @Test

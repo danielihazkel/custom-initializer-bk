@@ -422,6 +422,29 @@ public class SqlEntityGenerator {
     private static final Pattern DB2_QUALIFIED_CONSTRAINT =
             Pattern.compile("(\\bCONSTRAINT\\s+)\\w+\\.(\\w+)", Pattern.CASE_INSENSITIVE);
 
+    /** SQL Server index / storage option clause ({@code WITH (PAD_INDEX = OFF, …)})
+     *  hung off a PRIMARY KEY / index; JSqlParser has no grammar for it. T-SQL
+     *  index options do not nest parentheses, so a flat {@code (…)} match is safe. */
+    private static final Pattern MSSQL_WITH_OPTIONS =
+            Pattern.compile("\\bWITH\\s*\\([^)]*\\)", Pattern.CASE_INSENSITIVE);
+
+    /** SQL Server filegroup placement ({@code ON [PRIMARY]}, {@code TEXTIMAGE_ON [..]},
+     *  {@code FILESTREAM_ON [..]}). Bracket-anchored so it never swallows an FK's
+     *  {@code ON DELETE}/{@code ON UPDATE} action (those are not bracketed). */
+    private static final Pattern MSSQL_FILEGROUP =
+            Pattern.compile("\\b(?:TEXTIMAGE_ON|FILESTREAM_ON|ON)\\s+\\[[^\\]]+\\]",
+                    Pattern.CASE_INSENSITIVE);
+
+    /** SQL Server index clustering keyword on a PRIMARY KEY / UNIQUE / index clause. */
+    private static final Pattern MSSQL_CLUSTERED =
+            Pattern.compile("\\b(?:NON)?CLUSTERED\\b", Pattern.CASE_INSENSITIVE);
+
+    /** A bracket-quoted identifier ({@code [dbo]}, {@code [id]}, {@code [nvarchar]}).
+     *  Requires a real identifier inside, so a Postgres array type {@code int[]}
+     *  (empty {@code []}) is not mistaken for T-SQL. */
+    private static final Pattern MSSQL_BRACKET_IDENT =
+            Pattern.compile("\\[([A-Za-z_]\\w*)\\]");
+
     /** Statements we safely skip — valid DDL the wizard does not act on.
      *  Matches the leading keyword(s) of the trimmed statement. */
     private static final Pattern IGNORABLE_STATEMENT = Pattern.compile(
@@ -435,8 +458,12 @@ public class SqlEntityGenerator {
 
     private List<TableModel> parseTables(String sql, SqlDialect dialect) {
         String prepared = sql;
-        if (dialect == SqlDialect.ORACLE) prepared = normalizeOracle(prepared);
-        if (dialect == SqlDialect.DB2)    prepared = normalizeDb2(prepared);
+        if (dialect == SqlDialect.ORACLE)   prepared = normalizeOracle(prepared);
+        else if (dialect == SqlDialect.DB2) prepared = normalizeDb2(prepared);
+        // MSSQL when explicitly selected, or auto-detected by its bracket-quoting
+        // ([dbo].[t], [col]) under any other dialect (incl. the H2 default) so a
+        // pasted T-SQL script parses even if the user didn't pick "SQL Server".
+        else if (dialect == SqlDialect.MSSQL || looksLikeTSql(prepared)) prepared = normalizeMssql(prepared);
 
         List<TableModel> result = new ArrayList<>();
         // PascalCase class names already used (lower-cased), so a SELECT-derived view name
@@ -509,6 +536,28 @@ public class SqlEntityGenerator {
         out = DB2_CCSID.matcher(out).replaceAll("");
         out = DB2_FOR_DATA.matcher(out).replaceAll("");
         out = DB2_QUALIFIED_CONSTRAINT.matcher(out).replaceAll("$1$2");
+        return out;
+    }
+
+    /** True when the script uses SQL Server bracket-quoting ({@code [ident]}) — a
+     *  reliable T-SQL signal, used to auto-route normalization when the caller
+     *  didn't explicitly pick the MSSQL dialect. */
+    private static boolean looksLikeTSql(String sql) {
+        return MSSQL_BRACKET_IDENT.matcher(sql).find();
+    }
+
+    /**
+     * Rewrites SQL Server T-SQL into the JSqlParser-digestible subset. JSqlParser 4.9
+     * can't parse bracket-quoted identifiers/type names ({@code [dbo].[t]},
+     * {@code [nvarchar](36)}), {@code CLUSTERED} key clauses, {@code WITH (…)} index
+     * options, or {@code ON [PRIMARY]} filegroups, so strip them. Order matters: the
+     * bracket-identifier strip runs last because the filegroup rule keys off brackets.
+     */
+    private static String normalizeMssql(String sql) {
+        String out = MSSQL_WITH_OPTIONS.matcher(sql).replaceAll("");
+        out = MSSQL_FILEGROUP.matcher(out).replaceAll("");
+        out = MSSQL_CLUSTERED.matcher(out).replaceAll("");
+        out = MSSQL_BRACKET_IDENT.matcher(out).replaceAll("$1");
         return out;
     }
 
