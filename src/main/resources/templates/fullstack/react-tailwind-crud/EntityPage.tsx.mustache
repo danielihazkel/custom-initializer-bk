@@ -8,7 +8,8 @@ import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} 
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
 {{#mutable}}import { {{EntityName}}Form } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
-{{/mutable}}
+{{#optScaffoldSecured}}import { useAuth } from '@shared/auth'
+{{/optScaffoldSecured}}{{/mutable}}
 const columns: Column<{{EntityName}}>[] = [
 {{#fields}}  { label: '{{Name}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
 {{/fields}}{{#relations}}  { label: '{{FieldName}} ID', render: r => r.{{fkFieldName}} == null ? '—' : String(r.{{fkFieldName}}) },
@@ -53,6 +54,12 @@ export function {{EntityName}}Page() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [pendingDelete, setPendingDelete] = useState<{{EntityName}} | null>(null)
   const [deleting, setDeleting] = useState(false)
+{{#optScaffoldSecured}}
+  // Writes require the ADMIN role; reads require USER (already enforced by the login gate). This
+  // is frontend-only until the backend's commented @RequiresPermission guards are enabled.
+  const { isAdmin } = useAuth()
+  const canWrite = isAdmin
+{{/optScaffoldSecured}}
 
   // Has the user changed anything since the drawer opened? Drives the discard guard.
   const dirty = editing != null && JSON.stringify(editing) !== JSON.stringify(initial)
@@ -221,14 +228,23 @@ export function {{EntityName}}Page() {
             <Download className="h-4 w-4" />
             Export
           </button>
-{{/optScaffoldCsvExport}}{{#mutable}}          <button
+{{/optScaffoldCsvExport}}{{#mutable}}{{^optScaffoldSecured}}          <button
             onClick={openNew}
             className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
           >
             <Plus className="h-4 w-4" />
             New {{EntityName}}
           </button>
-{{/mutable}}        </div>
+{{/optScaffoldSecured}}{{#optScaffoldSecured}}          {canWrite && (
+            <button
+              onClick={openNew}
+              className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
+            >
+              <Plus className="h-4 w-4" />
+              New {{EntityName}}
+            </button>
+          )}
+{{/optScaffoldSecured}}{{/mutable}}        </div>
       </div>
 
       {error && <Alert>{error}</Alert>}
@@ -259,9 +275,11 @@ export function {{EntityName}}Page() {
           rows={items}
           loading={loading}
           onView={setDetailRow}
-{{#mutable}}          onEdit={openEdit}
+{{#mutable}}{{^optScaffoldSecured}}          onEdit={openEdit}
           onDelete={setPendingDelete}
-{{/mutable}}          search={search}
+{{/optScaffoldSecured}}{{#optScaffoldSecured}}          onEdit={canWrite ? openEdit : undefined}
+          onDelete={canWrite ? setPendingDelete : undefined}
+{{/optScaffoldSecured}}{{/mutable}}          search={search}
           onSearchChange={setSearch}
 {{#hasStringFields}}          searchable={true}
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
@@ -275,10 +293,13 @@ export function {{EntityName}}Page() {
           groupField="{{kanbanField}}"
           groupValues={[{{#kanbanColumns}}{ value: '{{value}}', label: '{{label}}' }{{^last}}, {{/last}}{{/kanbanColumns}}]}
           onView={setDetailRow}
-          onEdit={openEdit}
+{{^optScaffoldSecured}}          onEdit={openEdit}
           onDelete={setPendingDelete}
           onMove={(row, value) => update({{#hasCompositePk}}[{{#pkFields}}row.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...row, {{kanbanField}}: {{#kanbanIsEnum}}value{{/kanbanIsEnum}}{{^kanbanIsEnum}}value === 'true'{{/kanbanIsEnum}} } as {{EntityName}})}
-        />
+{{/optScaffoldSecured}}{{#optScaffoldSecured}}          onEdit={canWrite ? openEdit : undefined}
+          onDelete={canWrite ? setPendingDelete : undefined}
+          onMove={(row, value) => { if (!canWrite) return; update({{#hasCompositePk}}[{{#pkFields}}row.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...row, {{kanbanField}}: {{#kanbanIsEnum}}value{{/kanbanIsEnum}}{{^kanbanIsEnum}}value === 'true'{{/kanbanIsEnum}} } as {{EntityName}}) }}
+{{/optScaffoldSecured}}        />
       ) : {{/viewKanban}}{{#viewCalendar}}viewMode === 'calendar' ? (
         <CalendarView
           columns={columns}
@@ -293,16 +314,19 @@ export function {{EntityName}}Page() {
           rows={items}
           loading={loading}
           onView={setDetailRow}
-{{#mutable}}          onEdit={openEdit}
+{{#mutable}}{{^optScaffoldSecured}}          onEdit={openEdit}
           onDelete={setPendingDelete}
-{{/mutable}}          sort={sort}
+{{/optScaffoldSecured}}{{#optScaffoldSecured}}          onEdit={canWrite ? openEdit : undefined}
+          onDelete={canWrite ? setPendingDelete : undefined}
+{{/optScaffoldSecured}}{{/mutable}}          sort={sort}
           onSortChange={setSort}
           search={search}
           onSearchChange={setSearch}
 {{#hasStringFields}}          searchable={true}
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
-{{/hasStringFields}}{{#bulkDeleteApplicable}}          selectable={true}
-          isRowSelected={isRowSelected}
+{{/hasStringFields}}{{#bulkDeleteApplicable}}{{^optScaffoldSecured}}          selectable={true}
+{{/optScaffoldSecured}}{{#optScaffoldSecured}}          selectable={canWrite}
+{{/optScaffoldSecured}}          isRowSelected={isRowSelected}
           onToggleRow={toggleRow}
           allOnPageSelected={allOnPageSelected}
           onToggleAllOnPage={toggleAllOnPage}
@@ -351,8 +375,9 @@ export function {{EntityName}}Page() {
         open={detailRow !== null}
         title="{{EntityName}} details"
         onClose={() => setDetailRow(null)}
-{{#mutable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
-{{/mutable}}      >
+{{#mutable}}{{^optScaffoldSecured}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
+{{/optScaffoldSecured}}{{#optScaffoldSecured}}        onEdit={canWrite ? () => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } } : undefined}
+{{/optScaffoldSecured}}{{/mutable}}      >
         {detailRow && <{{EntityName}}Detail value={detailRow} />}
       </DetailDrawer>
     </div>

@@ -381,6 +381,12 @@ public class FullstackStarterController {
         projectCtx.put("optScaffoldAudit", optionsContext.hasOption("scaffold", "audit"));
         projectCtx.put("optScaffoldSoftDelete", optionsContext.hasOption("scaffold", "softDelete"));
         projectCtx.put("optScaffoldInverse", optionsContext.hasOption("scaffold", "inverseCollections"));
+        // The `secured` opt adds a frontend identity/auth layer (login gate, user menu, role-gated
+        // write controls) that pairs with the backend's @RequiresPermission hints. Like the backend
+        // copy of this flag, it short-circuits without ldap-auth — there is no identity source
+        // (the `/api/me` endpoint and `userinfo` header) to gate on otherwise.
+        projectCtx.put("optScaffoldSecured",
+                optionsContext.hasOption("scaffold", "secured") && hasLdapAuth);
         // CSV export button + bulk-delete selection UI. Mirrors the backend config — the FE per-entity
         // page gates the Export button on optScaffoldCsvExport and the row checkboxes on the per-entity
         // bulkDeleteApplicable (derived in EntityScaffoldContext from optScaffoldBulkDelete).

@@ -7,6 +7,11 @@ import { DashboardPage } from '@pages/dashboard'
 {{#entities}}
 import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
 {{/entities}}
+{{#optScaffoldSecured}}
+import { LogOut } from 'lucide-react'
+import { AuthProvider, useAuth } from '@shared/auth'
+import { LoginPage } from '@pages/login'
+{{/optScaffoldSecured}}
 
 type View = 'dashboard'{{#entities}} | '{{entityNameKebab}}'{{/entities}}
 
@@ -17,7 +22,11 @@ const NAV: { id: View; label: string; icon: LucideIcon }[] = [
 {{/entities}}
 ]
 
+{{#optScaffoldSecured}}
+function AppShell() {
+{{/optScaffoldSecured}}{{^optScaffoldSecured}}
 export default function App() {
+{{/optScaffoldSecured}}
   const [view, setView] = useState<View>('dashboard')
   const [navOpen, setNavOpen] = useState(false)
   const { isDark, toggle } = useTheme()
@@ -105,7 +114,9 @@ export default function App() {
               <h1 className="text-sm font-semibold text-fg">{current?.label ?? 'Dashboard'}</h1>
             </div>
           </div>
-          <button
+{{#optScaffoldSecured}}          <div className="flex items-center gap-3">
+            <UserMenu />
+{{/optScaffoldSecured}}          <button
             onClick={toggle}
             className="rounded-lg border border-border p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
             title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -113,7 +124,8 @@ export default function App() {
           >
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
-        </header>
+{{#optScaffoldSecured}}          </div>
+{{/optScaffoldSecured}}        </header>
 
         <main className="flex-1 overflow-auto bg-canvas">
           {view === 'dashboard' && <DashboardPage onNavigate={v => go(v as View)} />}
@@ -127,3 +139,49 @@ export default function App() {
     </div>
   )
 }
+{{#optScaffoldSecured}}
+/** Header identity chip + sign-out. Roles come from the backend `GET /api/me`. */
+function UserMenu() {
+  const { user, logout } = useAuth()
+  if (!user) return null
+  const role = user.roles.includes('ADMIN') ? 'Admin' : 'User'
+  return (
+    <div className="flex items-center gap-3">
+      <div className="hidden text-right sm:block">
+        <div className="text-sm font-medium leading-tight text-fg">{user.username}</div>
+        <div className="text-[11px] uppercase tracking-wider text-muted">{role}</div>
+      </div>
+      <button
+        onClick={logout}
+        className="rounded-lg border border-border p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+        title="Sign out"
+        aria-label="Sign out"
+      >
+        <LogOut className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+/** Holds the app behind the identity gate: shows the login screen until a recognized role resolves. */
+function AuthGate() {
+  const { loading, isAuthenticated } = useAuth()
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center bg-canvas text-sm text-muted">
+        Loading…
+      </div>
+    )
+  }
+  if (!isAuthenticated) return <LoginPage />
+  return <AppShell />
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
+  )
+}
+{{/optScaffoldSecured}}

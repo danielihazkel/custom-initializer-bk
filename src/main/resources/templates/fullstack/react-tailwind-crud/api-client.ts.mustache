@@ -1,5 +1,7 @@
 const BASE = ''
-
+{{#optScaffoldSecured}}
+import { getDevIdentity } from '../auth/devIdentity'
+{{/optScaffoldSecured}}
 /**
  * Error thrown for non-2xx responses. A 400 from the API carries a `{ field: message }`
  * map (the controller's bean-validation handler) which is exposed as `fieldErrors` so
@@ -20,7 +22,14 @@ export class ApiError extends Error {
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> =
     body === undefined ? {} : { 'Content-Type': 'application/json' }
-{{#hasLdapAuth}}
+{{#optScaffoldSecured}}
+  // Dev-only: send the identity chosen on the login screen as the `userinfo` header. The backend
+  // resolves it to roles (GET /api/me) and enforces it on @RequiresPermission endpoints. In
+  // production the SSO gateway injects this header instead.
+  if (import.meta.env.DEV) {
+    headers['userinfo'] = getDevIdentity()
+  }
+{{/optScaffoldSecured}}{{^optScaffoldSecured}}{{#hasLdapAuth}}
   // Dev-only: the backend's @RequiresPermission aspect reads the `userinfo` header to
   // resolve the caller's LDAP groups. In production this header is injected by the SSO
   // gateway; in `npm run dev` there is no gateway, so we supply it here. Override the
@@ -28,13 +37,19 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (import.meta.env.DEV) {
     headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'
   }
-{{/hasLdapAuth}}
+{{/hasLdapAuth}}{{/optScaffoldSecured}}
   const res = await fetch(BASE + path, {
     method,
     headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (!res.ok) {
+{{#optScaffoldSecured}}
+    // A 401 mid-session means the identity is gone/invalid — drop back to the login gate.
+    if (res.status === 401 && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('auth:unauthorized'))
+    }
+{{/optScaffoldSecured}}
     const text = await res.text().catch(() => '')
     let parsed: unknown = null
     try { parsed = text ? JSON.parse(text) : null } catch { /* not JSON */ }
@@ -55,11 +70,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
  *  CSV export — the browser handles the download without a navigation. */
 async function download(path: string, filename: string): Promise<void> {
   const headers: Record<string, string> = {}
-{{#hasLdapAuth}}
+{{#optScaffoldSecured}}
+  if (import.meta.env.DEV) {
+    headers['userinfo'] = getDevIdentity()
+  }
+{{/optScaffoldSecured}}{{^optScaffoldSecured}}{{#hasLdapAuth}}
   if (import.meta.env.DEV) {
     headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'
   }
-{{/hasLdapAuth}}
+{{/hasLdapAuth}}{{/optScaffoldSecured}}
   const res = await fetch(BASE + path, { headers: Object.keys(headers).length > 0 ? headers : undefined })
   if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status} on GET ${path}`)
   const blob = await res.blob()

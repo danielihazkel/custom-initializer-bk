@@ -37,6 +37,12 @@
     { "source": "useTheme.ts", "path": "src/shared/ui/useTheme.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147 },
     { "source": "shared-ui-barrel.ts", "path": "src/shared/ui/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 148 },
 
+    { "source": "auth-devIdentity.ts", "path": "src/shared/auth/devIdentity.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 160, "gatedBy": "optScaffoldSecured" },
+    { "source": "auth-AuthContext.tsx", "path": "src/shared/auth/AuthContext.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 161, "gatedBy": "optScaffoldSecured" },
+    { "source": "auth-barrel.ts", "path": "src/shared/auth/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 162, "gatedBy": "optScaffoldSecured" },
+    { "source": "LoginPage.tsx", "path": "src/pages/login/ui/LoginPage.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 163, "gatedBy": "optScaffoldSecured" },
+    { "source": "login-barrel.ts", "path": "src/pages/login/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 164, "gatedBy": "optScaffoldSecured" },
+
     { "source": "DashboardPage.tsx.mustache", "path": "src/pages/dashboard/ui/DashboardPage.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 150 },
     { "source": "dashboard-barrel.ts.mustache", "path": "src/pages/dashboard/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 152 },
 

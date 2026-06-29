@@ -1,3 +1,9 @@
 VITE_API_BASE_URL={{apiBaseUrl}}
-{{#hasLdapAuth}}VITE_DEV_USERINFO=dev-user
-{{/hasLdapAuth}}
+{{#hasLdapAuth}}# Default identity for the dev login screen (override per-session there). Sent as the
+# `userinfo` header so the backend can resolve roles via /api/me + @RequiresPermission.
+VITE_DEV_USERINFO=dev-user
+{{/hasLdapAuth}}{{#optScaffoldSecured}}# Production SSO hand-off URLs used by the login screen / sign-out (the gateway normally
+# injects identity automatically; these only matter for a built, gateway-fronted deploy).
+# VITE_LOGIN_URL=
+# VITE_LOGOUT_URL=
+{{/optScaffoldSecured}}

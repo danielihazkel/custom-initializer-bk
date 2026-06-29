@@ -861,6 +861,99 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_addsFrontendAuthLayerWhenSecured() throws Exception {
+        // opts.scaffold=[secured] (with ldap-auth, a set default) now also scaffolds the frontend
+        // identity layer: a /api/me backend endpoint, the shared auth module + login gate, and
+        // role-gated write controls — all keyed off the same `userinfo`/ldap-auth contract.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("secured")));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        // Backend identity endpoint, reusing the ldap-auth PermissionService.
+        String me = contentEndingWith(entries, "/security/MeController.java");
+        assertThat(me)
+                .contains("@RequestMapping(\"/api/me\")")
+                .contains("permissionService.getUserGroups")
+                .contains("Constants.ADMIN")
+                .contains("Constants.USER");
+
+        // Frontend auth module + login page exist.
+        assertThat(entries).containsKeys(
+                "demo/frontend/src/shared/auth/AuthContext.tsx",
+                "demo/frontend/src/shared/auth/devIdentity.ts",
+                "demo/frontend/src/shared/auth/index.ts",
+                "demo/frontend/src/pages/login/ui/LoginPage.tsx",
+                "demo/frontend/src/pages/login/index.ts");
+
+        // App shell is wrapped in the provider + login gate.
+        assertThat(entries.get("demo/frontend/src/app/App.tsx"))
+                .contains("AuthProvider")
+                .contains("useAuth")
+                .contains("LoginPage")
+                .contains("<AppShell />");
+
+        // The api client sources the dev identity from the store and reacts to 401s.
+        assertThat(entries.get("demo/frontend/src/shared/api/client.ts"))
+                .contains("getDevIdentity()")
+                .contains("auth:unauthorized");
+
+        // The entity page gates its write surface on the ADMIN role.
+        assertThat(contentEndingWith(entries, "/pages/user/ui/UserPage.tsx"))
+                .contains("useAuth")
+                .contains("const canWrite = isAdmin");
+
+        // SSO hand-off knobs documented in the dev env file.
+        assertThat(entries.get("demo/frontend/.env.development")).contains("VITE_LOGIN_URL");
+    }
+
+    @Test
+    void fullstackEndpoint_frontendAuthLayerIsNoOpWithoutLdapAuth() throws Exception {
+        // secured requested but ldap-auth deselected → the flag short-circuits in BOTH render
+        // contexts, so no /api/me, no auth module, no login gate (nothing to gate on).
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "plain");
+        body.put("packageName", "com.menora.plain");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("opts", Map.of("scaffold", List.of("secured")));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(entries.keySet()).noneMatch(p -> p.endsWith("/security/MeController.java"));
+        assertThat(entries.keySet()).noneMatch(p -> p.contains("/frontend/src/shared/auth/"));
+        assertThat(entries.keySet()).noneMatch(p -> p.contains("/frontend/src/pages/login/"));
+        assertThat(entries.get("plain/frontend/src/app/App.tsx")).doesNotContain("useAuth");
+    }
+
+    @Test
+    void fullstackEndpoint_noFrontendAuthLayerByDefault() throws Exception {
+        // No secured opt → the frontend is the lean default: no auth module, no /api/me, and the
+        // App shell is unchanged (no AuthProvider/useAuth).
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "demo");
+        body.put("packageName", "com.menora.demo");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(entries.keySet()).noneMatch(p -> p.endsWith("/security/MeController.java"));
+        assertThat(entries.keySet()).noneMatch(p -> p.contains("/frontend/src/shared/auth/"));
+        assertThat(entries.get("demo/frontend/src/app/App.tsx"))
+                .doesNotContain("useAuth")
+                .doesNotContain("AuthProvider");
+        assertThat(contentEndingWith(entries, "/pages/user/ui/UserPage.tsx"))
+                .doesNotContain("useAuth")
+                .doesNotContain("canWrite");
+    }
+
+    @Test
     void importDdlEndpoint_returnsEntitiesInWireFormat() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("dialect", "H2");

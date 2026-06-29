@@ -1,0 +1,60 @@
+package {{packageName}}.security;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Identity endpoint for the frontend's auth layer. Echoes the authenticated caller and the
+ * application roles ({@link Constants}) they hold, derived from their LDAP groups via
+ * {@link PermissionService}.
+ *
+ * <p>The {@code userinfo} header is the same identity source the {@link PermissionAspect} reads:
+ * injected by the SSO gateway in production, by the frontend dev proxy in local development.
+ * This endpoint is deliberately <em>not</em> {@code @RequiresPermission}-guarded — any
+ * authenticated caller may ask who they are; it only requires the header to be present.
+ */
+@RestController
+@RequestMapping("/api/me")
+public class MeController {
+
+    private final PermissionService permissionService;
+
+    public MeController(PermissionService permissionService) {
+        this.permissionService = permissionService;
+    }
+
+    @GetMapping
+    public Map<String, Object> me(@RequestHeader(name = "userinfo", required = false) String userinfo)
+            throws UnauthorizedException {
+        if (userinfo == null || userinfo.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User authentication required");
+        }
+        List<String> groups = permissionService.getUserGroups(userinfo);
+        List<String> roles = new ArrayList<>();
+        // Mirror the aspect's membership test (group name contains the mapped group).
+        if (hasGroup(groups, permissionService.mapRoleToGroup(Constants.ADMIN))) {
+            roles.add(Constants.ADMIN);
+        }
+        if (hasGroup(groups, permissionService.mapRoleToGroup(Constants.USER))) {
+            roles.add(Constants.USER);
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("username", userinfo);
+        body.put("roles", roles);
+        body.put("groups", groups);
+        return body;
+    }
+
+    private static boolean hasGroup(List<String> groups, String mappedGroup) {
+        return groups.stream().anyMatch(g -> g != null && g.contains(mappedGroup));
+    }
+}

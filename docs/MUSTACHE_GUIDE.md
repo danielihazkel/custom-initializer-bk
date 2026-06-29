@@ -317,12 +317,17 @@ silently never fires.
 | `optScaffoldSoftDelete` | `softDelete` |
 | `optScaffoldInverse` | `inverseCollections` |
 | `optScaffoldOpenApi` | `openapi` (backend-only) |
-| `optScaffoldSecured` | `secured` (backend-only) |
+| `optScaffoldSecured` | `secured` (fullstack) |
 
-`optScaffoldOpenApi` and `optScaffoldSecured` affect only the backend `Controller.java.mustache`, so —
-unlike the audit/inverse flags — they are set **only** in `FullstackProjectGenerationConfiguration`, not
-in `renderFrontend`. `optScaffoldSecured` is additionally ANDed with `ldap-auth` being on the build
-(its `security.*` imports come from that library), so it no-ops cleanly when ldap-auth is deselected.
+`optScaffoldOpenApi` affects only the backend `Controller.java.mustache`, so — unlike the audit/inverse
+flags — it is set **only** in `FullstackProjectGenerationConfiguration`, not in `renderFrontend`.
+
+`optScaffoldSecured` is **fullstack**: it gates the backend `MeController` + commented `@RequiresPermission`
+hints **and** the frontend identity layer (`src/shared/auth`, `src/pages/login`, the App user-menu, and
+role-gated write controls in `EntityPage.tsx.mustache`). It is therefore set in **both** render contexts —
+`FullstackProjectGenerationConfiguration` (backend) and `renderFrontend` (frontend). In both it is ANDed
+with `ldap-auth` being on the build (the identity source — the `userinfo` header and `/api/me` — comes from
+that library), so it no-ops cleanly when ldap-auth is deselected.
 
 Also on the backend fullstack path: `hasValidation` (true when the `validation` starter is selected) —
 gate generated Bean Validation annotations on it so imports resolve.

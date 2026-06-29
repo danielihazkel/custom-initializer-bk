@@ -24,6 +24,15 @@
       "gatedBy": "optScaffoldAudit"
     },
     {
+      "source": "MeController.java.mustache",
+      "path": "src/main/java/{{packagePath}}/security/MeController.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "optScaffoldSecured"
+    },
+    {
       "source": "Entity.java.mustache",
       "path": "src/main/java/{{entityPackagePath}}/{{EntityName}}.java",
       "perEntity": true,
