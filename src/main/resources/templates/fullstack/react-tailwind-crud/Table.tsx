@@ -125,7 +125,7 @@ export function Table<T extends object>({
                   )
                 })}
                 {hasActions && (
-                  <th className="w-24 px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  <th className="sticky right-0 z-20 w-24 border-l border-border bg-surface-2 px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted">
                     Actions
                   </th>
                 )}
@@ -144,7 +144,7 @@ export function Table<T extends object>({
                 rows.map((row, idx) => (
                   <tr
                     key={(row as { id?: number | string | null }).id ?? idx}
-                    className="border-t border-border transition-colors hover:bg-surface-2/60"
+                    className="group border-t border-border transition-colors hover:bg-surface-2/60"
                   >
                     {selectable && (
                       <td className="px-5 py-3">
@@ -163,7 +163,7 @@ export function Table<T extends object>({
                       </td>
                     ))}
                     {hasActions && (
-                      <td className="px-5 py-3 text-right">
+                      <td className="sticky right-0 z-10 border-l border-border bg-surface px-5 py-3 text-right transition-colors group-hover:bg-surface-2">
                         <div className="flex items-center justify-end gap-1">
                           {onView && (
                             <button
