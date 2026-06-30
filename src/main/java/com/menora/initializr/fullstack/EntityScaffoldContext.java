@@ -316,7 +316,8 @@ public final class EntityScaffoldContext {
         // and TEXT columns qualify, so the search box appears whenever either is present.
         List<Map<String, Object>> stringFieldViews = new ArrayList<>();
         for (Map<String, Object> fv : fieldViews) {
-            if (Boolean.TRUE.equals(fv.get("isString")) || Boolean.TRUE.equals(fv.get("isText"))) {
+            if ((Boolean.TRUE.equals(fv.get("isString")) || Boolean.TRUE.equals(fv.get("isText")))
+                    && Boolean.TRUE.equals(fv.get("isSearchable"))) {
                 stringFieldViews.add(fv);
             }
         }
@@ -383,6 +384,7 @@ public final class EntityScaffoldContext {
         List<Map<String, Object>> filterFieldViews = new ArrayList<>();
         for (Map<String, Object> fv : fieldViews) {
             if (Boolean.TRUE.equals(fv.get("isPrimaryKey"))) continue;
+            if (!Boolean.TRUE.equals(fv.get("isFilterable"))) continue;
             boolean isEnumF = Boolean.TRUE.equals(fv.get("isEnum"));
             boolean isBoolF = Boolean.TRUE.equals(fv.get("isBoolean"));
             boolean isTemporalF = Boolean.TRUE.equals(fv.get("isTemporal"));
@@ -565,6 +567,10 @@ public final class EntityScaffoldContext {
         fv.put("pattern", f.pattern());
         fv.put("patternEscaped", hasPattern ? escapeStringLiteral(f.pattern()) : null);
         fv.put("isEmail", f.email());
+        // Per-field search/filter opt-out. Consulted by the stringFields / filterFields collection
+        // loops, which gate on field type first — so these flags are inert on ineligible types.
+        fv.put("isSearchable", f.searchable());
+        fv.put("isFilterable", f.filterable());
 
         if (f.type() == FieldType.ENUM) {
             List<Map<String, Object>> values = new ArrayList<>();

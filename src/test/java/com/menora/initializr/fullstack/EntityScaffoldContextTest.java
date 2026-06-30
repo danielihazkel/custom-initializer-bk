@@ -13,7 +13,7 @@ class EntityScaffoldContextTest {
     void buildEntityContext_exposesNamingVariants() {
         EntityDefinition e = new EntityDefinition(
                 "OrderItem", null,
-                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));
+                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true)));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
@@ -32,10 +32,10 @@ class EntityScaffoldContextTest {
         EntityDefinition e = new EntityDefinition(
                 "User", null,
                 List.of(
-                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of()),
-                        new FieldDefinition("name", FieldType.STRING, false, false, true, true, 64, null, null, null, false, List.of()),
+                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true),
+                        new FieldDefinition("name", FieldType.STRING, false, false, true, true, 64, null, null, null, false, List.of(), true, true),
                         new FieldDefinition("status", FieldType.ENUM, false, false, false, false, null, null, null, null, false,
-                                List.of("ACTIVE", "DISABLED"))));
+                                List.of("ACTIVE", "DISABLED"), true, true)));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
@@ -76,7 +76,7 @@ class EntityScaffoldContextTest {
     void buildProjectContext_exposesPerLayerPackages() {
         EntityDefinition e = new EntityDefinition(
                 "User", null,
-                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));
+                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true)));
         Map<String, Object> ctx = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo.catalog", "21", "jar", List.of(e));
 
@@ -94,7 +94,7 @@ class EntityScaffoldContextTest {
     void buildProjectContext_domainPackageDefaultsToPackageNameWhenBlank() {
         EntityDefinition e = new EntityDefinition(
                 "User", null,
-                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));
+                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true)));
         Map<String, Object> ctx = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", null, "21", "jar", List.of(e));
 
@@ -108,10 +108,10 @@ class EntityScaffoldContextTest {
         EntityDefinition e = new EntityDefinition(
                 "Product", null,
                 List.of(
-                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of()),
-                        new FieldDefinition("sku", FieldType.STRING, false, false, true, true, 64, null, null, null, false, List.of()),
-                        new FieldDefinition("name", FieldType.STRING, false, false, true, false, 255, null, null, null, false, List.of()),
-                        new FieldDefinition("price", FieldType.BIG_DECIMAL, false, false, true, false, null, null, null, null, false, List.of())));
+                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true),
+                        new FieldDefinition("sku", FieldType.STRING, false, false, true, true, 64, null, null, null, false, List.of(), true, true),
+                        new FieldDefinition("name", FieldType.STRING, false, false, true, false, 255, null, null, null, false, List.of(), true, true),
+                        new FieldDefinition("price", FieldType.BIG_DECIMAL, false, false, true, false, null, null, null, null, false, List.of(), true, true)));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
@@ -130,9 +130,9 @@ class EntityScaffoldContextTest {
         EntityDefinition e = new EntityDefinition(
                 "Order", null,
                 List.of(
-                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of()),
-                        new FieldDefinition("total", FieldType.BIG_DECIMAL, false, false, true, false, null, null, null, null, false, List.of()),
-                        new FieldDefinition("paid", FieldType.BOOLEAN, false, false, false, false, null, null, null, null, false, List.of())));
+                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true),
+                        new FieldDefinition("total", FieldType.BIG_DECIMAL, false, false, true, false, null, null, null, null, false, List.of(), true, true),
+                        new FieldDefinition("paid", FieldType.BOOLEAN, false, false, false, false, null, null, null, null, false, List.of(), true, true)));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
@@ -145,11 +145,59 @@ class EntityScaffoldContextTest {
     }
 
     @Test
+    void buildEntityContext_perFieldSearchableFilterableOptOut() {
+        // sku: searchable=false → excluded from text search; status: filterable=false → excluded
+        // from the filter bar. name (default true) stays searchable; priority (default true) stays a filter.
+        EntityDefinition e = new EntityDefinition(
+                "Product", null,
+                List.of(
+                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true),
+                        new FieldDefinition("sku", FieldType.STRING, false, false, true, true, 64, null, null, null, false, List.of(), false, true),
+                        new FieldDefinition("name", FieldType.STRING, false, false, true, false, 255, null, null, null, false, List.of(), true, true),
+                        new FieldDefinition("status", FieldType.ENUM, false, false, false, false, null, null, null, null, false, List.of("NEW", "OLD"), true, false),
+                        new FieldDefinition("priority", FieldType.INTEGER, false, false, false, false, null, null, null, null, false, List.of(), true, true)));
+        Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
+        Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
+
+        // Search: only "name" survives (sku opted out).
+        assertThat(ctx).containsEntry("hasStringFields", true);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> stringFields = (List<Map<String, Object>>) ctx.get("stringFields");
+        assertThat(stringFields).extracting(m -> m.get("name")).containsExactly("name");
+
+        // Filters: only "priority" survives (status opted out).
+        assertThat(ctx).containsEntry("hasFilters", true);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> filterFields = (List<Map<String, Object>>) ctx.get("filterFields");
+        assertThat(filterFields).extracting(m -> m.get("name")).containsExactly("priority");
+    }
+
+    @Test
+    void buildEntityContext_optingOutLastFieldDropsSearchAndFilterMachinery() {
+        EntityDefinition e = new EntityDefinition(
+                "Note", null,
+                List.of(
+                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true),
+                        new FieldDefinition("body", FieldType.TEXT, false, false, false, false, null, null, null, null, false, List.of(), false, true),
+                        new FieldDefinition("level", FieldType.INTEGER, false, false, false, false, null, null, null, null, false, List.of(), true, false)));
+        Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
+        Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
+
+        // The only string field and the only filter field were both opted out, so the search box,
+        // the filter bar, and the JPA Specification machinery all drop out.
+        assertThat(ctx).containsEntry("hasStringFields", false);
+        assertThat(ctx).containsEntry("hasFilters", false);
+        assertThat(ctx).containsEntry("needsSpecification", false);
+    }
+
+    @Test
     void buildEntityContext_compositePrimaryKey() {
         EntityDefinition e = new EntityDefinition("OrderLine", null, List.of(
-                new FieldDefinition("orderId", FieldType.LONG, true, false, false, false, null, null, null, null, false, List.of()),
-                new FieldDefinition("lineNo", FieldType.INTEGER, true, false, false, false, null, null, null, null, false, List.of()),
-                new FieldDefinition("qty", FieldType.INTEGER, false, false, false, false, null, null, null, null, false, List.of())));
+                new FieldDefinition("orderId", FieldType.LONG, true, false, false, false, null, null, null, null, false, List.of(), true, true),
+                new FieldDefinition("lineNo", FieldType.INTEGER, true, false, false, false, null, null, null, null, false, List.of(), true, true),
+                new FieldDefinition("qty", FieldType.INTEGER, false, false, false, false, null, null, null, null, false, List.of(), true, true)));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
@@ -169,7 +217,7 @@ class EntityScaffoldContextTest {
     @Test
     void buildEntityContext_exposesSchemaWhenSet() {
         EntityDefinition e = new EntityDefinition("Test", "test", "entv", List.of(
-                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())),
+                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true)),
                 List.of());
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
@@ -183,7 +231,7 @@ class EntityScaffoldContextTest {
     @Test
     void buildEntityContext_noSchemaIsNotFlagged() {
         EntityDefinition e = new EntityDefinition("User", null, List.of(
-                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));
+                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true)));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
@@ -194,7 +242,7 @@ class EntityScaffoldContextTest {
     @Test
     void buildEntityContext_singlePkIsNotComposite() {
         EntityDefinition e = new EntityDefinition("User", null, List.of(
-                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));
+                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true)));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
         Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
@@ -206,9 +254,9 @@ class EntityScaffoldContextTest {
     @Test
     void buildEntityContext_derivesInverseRelations() {
         EntityDefinition customer = new EntityDefinition("Customer", null, List.of(
-                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())));
+                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true)));
         EntityDefinition order = new EntityDefinition("Order", null,
-                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())),
+                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true)),
                 List.of(new RelationDefinition(RelationType.MANY_TO_ONE, "customer", "Customer", true)));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(customer, order));
@@ -232,10 +280,10 @@ class EntityScaffoldContextTest {
     @Test
     void buildEntityContext_relationExposesFkSelectKeys() {
         EntityDefinition customer = new EntityDefinition("Customer", null, List.of(
-                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of()),
-                new FieldDefinition("name", FieldType.STRING, false, false, true, false, null, null, null, null, false, List.of())));
+                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true),
+                new FieldDefinition("name", FieldType.STRING, false, false, true, false, null, null, null, null, false, List.of(), true, true)));
         EntityDefinition order = new EntityDefinition("Order", null,
-                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of())),
+                List.of(new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true)),
                 List.of(new RelationDefinition(RelationType.MANY_TO_ONE, "customer", "Customer", true)));
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(customer, order));

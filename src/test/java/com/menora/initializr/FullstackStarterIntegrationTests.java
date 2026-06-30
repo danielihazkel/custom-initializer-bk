@@ -431,6 +431,45 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_perFieldSearchAndFilterOptOut() throws Exception {
+        // Widget opts its only String field out of search (searchable=false) and its only numeric
+        // field out of the filter bar (filterable=false) → no search box, no Filters carrier.
+        // Gadget keeps the defaults as a control, so it still gets both.
+        Map<String, Object> widgetTitle = Map.of("name", "title", "type", "String", "required", true, "searchable", false);
+        Map<String, Object> widgetPriority = Map.of("name", "priority", "type", "Integer", "filterable", false);
+        Map<String, Object> gadgetTitle = Map.of("name", "title", "type", "String", "required", true);
+        Map<String, Object> gadgetPriority = Map.of("name", "priority", "type", "Integer");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "tools");
+        body.put("packageName", "com.menora.tools");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(
+                Map.of("name", "Widget", "fields", List.of(pkField(), widgetTitle, widgetPriority)),
+                Map.of("name", "Gadget", "fields", List.of(pkField(), gadgetTitle, gadgetPriority))));
+
+        Map<String, String> entries = generateZip(body);
+
+        // Widget: both opted out → plain findAll (no Filters arg / record), search box hidden.
+        String widgetService = contentEndingWith(entries, "/service/WidgetService.java");
+        assertThat(widgetService)
+                .contains("findAll(String q, Pageable pageable)")
+                .doesNotContain("record Filters(")
+                .doesNotContain("priorityMin");
+        String widgetPage = entries.get("tools/frontend/src/pages/widget/ui/WidgetPage.tsx");
+        assertThat(widgetPage).contains("searchable={false}").doesNotContain("filterDescriptors");
+
+        // Gadget: defaults preserved → Filters carrier with the numeric bounds, search box shown.
+        String gadgetService = contentEndingWith(entries, "/service/GadgetService.java");
+        assertThat(gadgetService)
+                .contains("findAll(String q, Filters filters, Pageable pageable)")
+                .contains("record Filters(")
+                .contains("priorityMin");
+        String gadgetPage = entries.get("tools/frontend/src/pages/gadget/ui/GadgetPage.tsx");
+        assertThat(gadgetPage).contains("searchable={true}").contains("filterDescriptors");
+    }
+
+    @Test
     void fullstackEndpoint_rendersFieldConstraints() throws Exception {
         // email (String, email=true, length-bounded), age (Integer, min/max), and code
         // (String, regex pattern) exercise @Email/@Min/@Max/@Pattern in the DTO and the

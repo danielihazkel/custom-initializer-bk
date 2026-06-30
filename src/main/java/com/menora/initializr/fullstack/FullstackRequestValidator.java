@@ -189,7 +189,11 @@ public final class FullstackRequestValidator {
                         f.max(),
                         pattern,
                         isEmail,
-                        f.enumValues() == null ? List.of() : List.copyOf(f.enumValues())));
+                        f.enumValues() == null ? List.of() : List.copyOf(f.enumValues()),
+                        // Per-field search/filter opt-out: default true (current behavior) when the
+                        // wire omits the flag, unlike the default-false required/unique above.
+                        f.searchable() == null || f.searchable(),
+                        f.filterable() == null || f.filterable()));
             }
 
             if (pkCount == 0) {

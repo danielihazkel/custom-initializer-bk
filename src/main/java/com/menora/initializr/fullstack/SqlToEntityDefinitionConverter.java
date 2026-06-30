@@ -87,7 +87,8 @@ public class SqlToEntityDefinitionConverter {
                     FieldType.STRING,
                     i == 0,   // first column → primary key (user adjusts)
                     false,    // never generated on a view
-                    false, false, null, null, null, null, false, List.of()));
+                    false, false, null, null, null, null, false, List.of(),
+                    true, true)); // imported fields default to searchable/filterable
         }
         String note;
         if (fields.isEmpty()) {
@@ -129,7 +130,8 @@ public class SqlToEntityDefinitionConverter {
                 null,
                 null,
                 false,
-                List.of());
+                List.of(),
+                true, true); // imported fields default to searchable/filterable
     }
 
     /** Maps a resolved Java type back onto the fullstack {@link FieldType} enum.

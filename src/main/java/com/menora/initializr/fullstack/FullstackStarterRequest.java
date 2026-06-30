@@ -100,5 +100,16 @@ public record FullstackStarterRequest(
             Long max,
             String pattern,
             Boolean email,
-            List<String> enumValues) {}
+            List<String> enumValues,
+            Boolean searchable,
+            Boolean filterable) {
+
+        /** Back-compat constructor without the {@code searchable}/{@code filterable} opt-out flags (both default). */
+        public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
+                                  Boolean required, Boolean unique, Integer length, Long min, Long max,
+                                  String pattern, Boolean email, List<String> enumValues) {
+            this(name, type, primaryKey, generated, required, unique, length, min, max,
+                    pattern, email, enumValues, null, null);
+        }
+    }
 }

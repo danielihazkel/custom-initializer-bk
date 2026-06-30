@@ -10,6 +10,12 @@ import java.util.List;
  * {@code @Min}/{@code @Max} on integral types or {@code @DecimalMin}/{@code @DecimalMax}
  * on {@code BigDecimal}). {@code pattern} is a regex and {@code email} a convenience flag,
  * both for {@code STRING} fields ({@code @Pattern} / {@code @Email}).
+ *
+ * <p>{@code searchable}/{@code filterable} are per-field opt-out flags, both defaulting to
+ * {@code true} (resolved at the wire boundary in {@link FullstackRequestValidator}).
+ * {@code searchable} only matters for STRING/TEXT fields (the text-search box); {@code filterable}
+ * only for non-PK enum/boolean/temporal/numeric fields (the filter bar). Flags set on a field
+ * whose type can't carry them are harmlessly ignored — the collection loops gate on type first.
  */
 public record FieldDefinition(
         String name,
@@ -23,5 +29,7 @@ public record FieldDefinition(
         Long max,
         String pattern,
         boolean email,
-        List<String> enumValues) {
+        List<String> enumValues,
+        boolean searchable,
+        boolean filterable) {
 }
