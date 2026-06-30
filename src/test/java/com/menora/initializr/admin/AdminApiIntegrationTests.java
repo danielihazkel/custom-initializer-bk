@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -123,5 +124,62 @@ class AdminApiIntegrationTests {
 
         mvc.perform(delete("/admin/dependency-groups/" + groupId).header("Authorization", auth))
                 .andExpect(status().isConflict());
+    }
+
+    // ── Entity-template default-deps replace (regression: #8) ────────────────
+
+    /**
+     * Replacing a set's default dependencies with an overlapping list must succeed.
+     * The PUT deletes-then-reinserts within one transaction; before the
+     * {@code @Modifying} bulk-delete fix the IDENTITY INSERTs ran before the deferred
+     * derived-delete, so re-inserting an existing {@code (set_id, dep_id)} pair hit the
+     * unique constraint → {@code DataIntegrityViolationException} → 409. Both PUTs here
+     * must return 200. Restores the original list so the shared DB is left unchanged.
+     */
+    @Test
+    void replacingDefaultDepsWithOverlappingListSucceeds() throws Exception {
+        String auth = bearer();
+        long setId = firstBackendJavaSetId(auth);
+
+        // Capture the original default-deps for restore.
+        MvcResult before = mvc.perform(get("/admin/entity-template-sets/" + setId + "/default-deps")
+                        .header("Authorization", auth))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode original = json.readTree(before.getResponse().getContentAsString());
+
+        try {
+            putDefaultDeps(auth, setId, "[\"web\"]").andExpect(status().isOk());
+
+            // Second PUT re-inserts the existing "web" row alongside a new one — the
+            // delete/insert ordering hazard. Must be 200, not 409.
+            putDefaultDeps(auth, setId, "[\"web\",\"kafka\"]")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0]").value("web"))
+                    .andExpect(jsonPath("$[1]").value("kafka"));
+        } finally {
+            putDefaultDeps(auth, setId, json.writeValueAsString(original))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    private long firstBackendJavaSetId(String auth) throws Exception {
+        MvcResult result = mvc.perform(get("/admin/entity-template-sets").header("Authorization", auth))
+                .andExpect(status().isOk())
+                .andReturn();
+        for (JsonNode set : json.readTree(result.getResponse().getContentAsString())) {
+            if ("BACKEND_JAVA".equals(set.path("kind").asText())) {
+                return set.get("id").asLong();
+            }
+        }
+        throw new AssertionError("expected a seeded BACKEND_JAVA entity-template set");
+    }
+
+    private org.springframework.test.web.servlet.ResultActions putDefaultDeps(
+            String auth, long setId, String depIdsJson) throws Exception {
+        return mvc.perform(put("/admin/entity-template-sets/" + setId + "/default-deps")
+                .header("Authorization", auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"depIds\":" + depIdsJson + "}"));
     }
 }
