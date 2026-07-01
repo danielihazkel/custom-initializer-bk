@@ -65,6 +65,30 @@ class FullstackRequestValidatorTest {
     }
 
     @Test
+    void entityLabels_normalizeAndConvertThrough() {
+        // explicit singular + plural labels (trimmed) via the full DTO:
+        // (name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews, label, labelPlural)
+        var withLabels = new FullstackStarterRequest.EntityDefinitionDto(
+                "User", null, null, List.of(pk()), null,
+                null, null, null, null, null, "  משתמש  ", "  משתמשים  ");
+        // blank plural normalizes to null; singular preserved
+        var blankPlural = new FullstackStarterRequest.EntityDefinitionDto(
+                "Order", null, null, List.of(pk()), null,
+                null, null, null, null, null, "Order label", "   ");
+        var result = FullstackRequestValidator.validateAndConvert(req(List.of(withLabels, blankPlural)));
+
+        assertThat(result.get(0).label()).isEqualTo("משתמש");
+        assertThat(result.get(0).labelPlural()).isEqualTo("משתמשים");
+        assertThat(result.get(1).label()).isEqualTo("Order label");
+        assertThat(result.get(1).labelPlural()).isNull();
+
+        // default (no labels supplied) → both null (templates fall back to the name)
+        var plain = FullstackRequestValidator.validateAndConvert(req(List.of(entity("Item", List.of(pk())))));
+        assertThat(plain.get(0).label()).isNull();
+        assertThat(plain.get(0).labelPlural()).isNull();
+    }
+
+    @Test
     void rejects_missingEntities() {
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of())))
                 .isInstanceOf(WizardArgumentException.class)

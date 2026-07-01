@@ -44,7 +44,8 @@ public final class FullstackRequestValidator {
         // and resolve/validate relations once all entity names are known (pass 2).
         record Parsed(int ei, String name, String tableName, String schema, List<FieldDefinition> fields,
                       Set<String> memberNames, List<FullstackStarterRequest.RelationDefinitionDto> rawRelations,
-                      boolean readOnly, String viewQuery, List<String> listViews) {}
+                      boolean readOnly, String viewQuery, List<String> listViews,
+                      String label, String labelPlural) {}
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
@@ -219,8 +220,12 @@ public final class FullstackRequestValidator {
                     ? null : e.tableName().trim();
             String schema = (e.schema() == null || e.schema().isBlank())
                     ? null : e.schema().trim();
+            // Optional entity display labels — blank → null (templates fall back to the name).
+            String label = (e.label() == null || e.label().isBlank()) ? null : e.label().trim();
+            String labelPlural = (e.labelPlural() == null || e.labelPlural().isBlank())
+                    ? null : e.labelPlural().trim();
             parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
-                    readOnly, viewQuery, resolveListViews(e)));
+                    readOnly, viewQuery, resolveListViews(e), label, labelPlural));
         }
 
         // Pass 2 — resolve and validate relations now that all entity names are known.
@@ -235,7 +240,7 @@ public final class FullstackRequestValidator {
                     parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
                             pkCountByLower, viewLowerNames);
             result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
-                    p.readOnly(), p.viewQuery(), null, p.listViews()));
+                    p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural()));
         }
         return result;
     }

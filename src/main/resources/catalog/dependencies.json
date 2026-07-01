@@ -5,7 +5,7 @@
       "sortOrder": 0,
       "entries": [
         { "depId": "rqueue", "name": "Sonus Rqueue", "description": "Sonus Rqueue messaging library", "mavenGroupId": "com.sonus", "mavenArtifactId": "sonus-rqueue", "version": "1.0.0", "repository": "menora-release", "sortOrder": 0, "compatibilityRange": "[3.2.0,4.0.0)" },
-        { "depId": "logging", "name": "Menora Logging Standards", "description": "Structured JSON logging via log4j2 JsonTemplateLayout, with an optional Kafka log-shipping appender", "sortOrder": 1, "starter": false }
+        { "depId": "logging", "name": "Kafka Log Shipping", "description": "Ship structured logs to the Menora Kafka logging pipeline (JSON console logging is on by default)", "sortOrder": 1, "starter": false }
       ]
     },
     {

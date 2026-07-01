@@ -241,6 +241,16 @@ public final class EntityScaffoldContext {
         view.put("entityNamePlural", camelPlural);
         view.put("entityNamePluralKebab", kebabPlural);
         view.put("entity_name_plural", snakePlural);
+        // Human-facing display labels for the generated frontend (nav, page titles, dashboard,
+        // dialogs). Optional — fall back to the PascalCase name and its derived plural, mirroring
+        // the per-field `label`. `entityLabelPlural` prefers an explicit plural label, then the
+        // singular label, then the derived plural (auto-pluralizing a localized label is unsafe).
+        String label = (entity.label() != null && !entity.label().isBlank()) ? entity.label() : pascal;
+        String labelPlural = (entity.labelPlural() != null && !entity.labelPlural().isBlank())
+                ? entity.labelPlural()
+                : (entity.label() != null && !entity.label().isBlank()) ? entity.label() : pascalPlural;
+        view.put("entityLabel", label);
+        view.put("entityLabelPlural", labelPlural);
         view.put("tableName", entity.tableName() != null ? entity.tableName() : snakePlural);
         view.put("schema", entity.schema());
         view.put("hasSchema", entity.schema() != null && !entity.schema().isBlank());

@@ -112,39 +112,47 @@ class DataSeederTest {
 
     @Test
     void loggingIsNotAStarter() {
-        // log4j2 itself comes from __common__; logging only contributes config files +
-        // the log4j-layout-template-json dep, so it must not add its own pom <dependency>.
+        // Base JSON logging (log4j2 + JSON layout) now ships via __common__; the `logging`
+        // dep is the opt-in Kafka log-shipping appender and adds only kafka-clients, so it
+        // must not be a starter that pulls its own pom <dependency> marker.
         assertThat(entryRepo.findByDepId("logging").orElseThrow().isStarter()).isFalse();
     }
 
     @Test
-    void loggingContributesLog4j2AndJsonFormats() {
-        // logFormat.json, detailedLogFormat.json, log4j2-spring.xml (all TEMPLATE)
-        List<FileContributionEntity> logging = fileContribRepo
+    void baseJsonLoggingContributedByCommon() {
+        // Menora JSON logging is a default: logFormat.json, detailedLogFormat.json, and
+        // log4j2-spring.xml (all TEMPLATE) live under __common__, not the `logging` dep.
+        List<FileContributionEntity> common = fileContribRepo
                 .findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
-                        java.util.Set.of("logging"), ProjectKind.BACKEND);
-        assertThat(logging).hasSize(3)
-                .allSatisfy(f -> assertThat(f.getFileType())
-                        .isEqualTo(FileContributionEntity.FileType.TEMPLATE));
-        assertThat(logging).extracting(FileContributionEntity::getTargetPath).contains(
+                        java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND);
+        assertThat(common).extracting(FileContributionEntity::getTargetPath).contains(
                 "src/main/resources/logFormat.json",
                 "src/main/resources/detailedLogFormat.json",
                 "src/main/resources/log4j2-spring.xml");
+
+        // The `logging` dep itself no longer contributes any files.
+        assertThat(fileContribRepo.findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
+                java.util.Set.of("logging"), ProjectKind.BACKEND)).isEmpty();
     }
 
     @Test
     void loggingBuildCustomizationsSeeded() {
-        // log4j-layout-template-json (always) + kafka-clients (gated on kafka-logs)
-        List<BuildCustomizationEntity> logging = buildCustomRepo
+        // log4j-layout-template-json is a __common__ default (JSON layout ships by default);
+        // the `logging` dep adds only kafka-clients, unconditionally (no sub-option gate).
+        List<BuildCustomizationEntity> common = buildCustomRepo
                 .findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
-                        java.util.Set.of("logging"), ProjectKind.BACKEND);
-        assertThat(logging).anySatisfy(c -> {
+                        java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND);
+        assertThat(common).anySatisfy(c -> {
             assertThat(c.getMavenArtifactId()).isEqualTo("log4j-layout-template-json");
             assertThat(c.getSubOptionId()).isNull();
         });
-        assertThat(logging).anySatisfy(c -> {
+
+        List<BuildCustomizationEntity> logging = buildCustomRepo
+                .findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
+                        java.util.Set.of("logging"), ProjectKind.BACKEND);
+        assertThat(logging).singleElement().satisfies(c -> {
             assertThat(c.getMavenArtifactId()).isEqualTo("kafka-clients");
-            assertThat(c.getSubOptionId()).isEqualTo("kafka-logs");
+            assertThat(c.getSubOptionId()).isNull();
         });
     }
 
@@ -152,13 +160,14 @@ class DataSeederTest {
 
     @Test
     void seedsCommonBackendFileContributions() {
-        // application-base, log4j2, .editorconfig, entrypoint.sh, settings.xml, VERSION,
+        // application-base, .editorconfig, entrypoint.sh, settings.xml, VERSION,
         // Dockerfile-java17, Dockerfile-java21, Jenkinsfile, k8s/values.yaml,
+        // + Menora JSON logging defaults: logFormat.json, detailedLogFormat.json, log4j2-spring.xml,
         // + DELETE application.properties, + DELETE mvnw / mvnw.cmd /
         // .mvn/wrapper/maven-wrapper.properties (strip the framework's Maven wrapper).
         // (countByDependencyId would also count the FRONTEND __common__ rows, so scope to BACKEND.)
         assertThat(fileContribRepo.findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
-                java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND)).hasSize(14);
+                java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND)).hasSize(16);
     }
 
     @Test
@@ -205,11 +214,12 @@ class DataSeederTest {
 
     @Test
     void commonBuildCustomizationsSeeded() {
-        // menora-release repo, menora-snapshot repo, exclude logging, add log4j2, add lombok
+        // menora-release repo, menora-snapshot repo, exclude logging, add log4j2, add lombok,
+        // add log4j-layout-template-json (JSON logging is now a default)
         List<BuildCustomizationEntity> common = buildCustomRepo
                 .findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
                         java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND);
-        assertThat(common).hasSize(5);
+        assertThat(common).hasSize(6);
 
         assertThat(common).anySatisfy(c -> {
             assertThat(c.getCustomizationType())

@@ -13,7 +13,7 @@ type View = 'dashboard'{{#entities}} | '{{entityNameKebab}}'{{/entities}}
 const NAV: { id: View; label: string; icon: LucideIcon }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
 {{#entities}}
-  { id: '{{entityNameKebab}}', label: '{{EntityNamePlural}}', icon: Table2 },
+  { id: '{{entityNameKebab}}', label: '{{entityLabelPlural}}', icon: Table2 },
 {{/entities}}
 ]
 

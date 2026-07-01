@@ -30,7 +30,9 @@ public record EntityDefinition(
         boolean readOnly,
         String viewQuery,
         String sourceSql,
-        List<String> listViews) {
+        List<String> listViews,
+        String label,
+        String labelPlural) {
 
     /** The list-view modes the generated entity page may render. */
     private static final Set<String> KNOWN_VIEWS = Set.of("table", "cards", "kanban", "calendar");
@@ -39,6 +41,8 @@ public record EntityDefinition(
         relations = relations == null ? List.of() : List.copyOf(relations);
         viewQuery = (viewQuery == null || viewQuery.isBlank()) ? null : viewQuery;
         sourceSql = (sourceSql == null || sourceSql.isBlank()) ? null : sourceSql;
+        label = (label == null || label.isBlank()) ? null : label.trim();
+        labelPlural = (labelPlural == null || labelPlural.isBlank()) ? null : labelPlural.trim();
         if (viewQuery != null) readOnly = true;
         // The list-view modes the generated entity page generates — an ordered, deduped subset of
         // {table, cards, kanban, calendar}; the first is the page's initial mode. A toggle is emitted
@@ -62,24 +66,31 @@ public record EntityDefinition(
         return listViews.get(0);
     }
 
+    /** Overload without the entity display {@code label}/{@code labelPlural} (both default to null). */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews, null, null);
+    }
+
     /** Overload without {@code listViews} (defaults to [table]). */
     public EntityDefinition(String name, String tableName, String schema,
                             List<FieldDefinition> fields, List<RelationDefinition> relations,
                             boolean readOnly, String viewQuery, String sourceSql) {
-        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, List.of("table"));
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, List.of("table"), null, null);
     }
 
     /** Overload without {@code sourceSql}/{@code listViews} — keeps existing call sites terse. */
     public EntityDefinition(String name, String tableName, String schema,
                             List<FieldDefinition> fields, List<RelationDefinition> relations,
                             boolean readOnly, String viewQuery) {
-        this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, List.of("table"));
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, List.of("table"), null, null);
     }
 
     /** Convenience for a table-backed, read-write entity (the common case). */
     public EntityDefinition(String name, String tableName, String schema,
                             List<FieldDefinition> fields, List<RelationDefinition> relations) {
-        this(name, tableName, schema, fields, relations, false, null, null, List.of("table"));
+        this(name, tableName, schema, fields, relations, false, null, null, List.of("table"), null, null);
     }
 
     /** Back-compat overload for schemaless entities (keeps existing call sites terse). */

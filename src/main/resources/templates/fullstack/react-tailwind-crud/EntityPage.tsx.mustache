@@ -83,7 +83,7 @@ export function {{EntityName}}Page() {
     try {
       if (isNew) await create(editing as Omit<{{EntityName}}, 'id'>)
       else await update({{#hasCompositePk}}[{{#pkFields}}editing.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}editing.{{pkField.name}} as number | string{{/hasCompositePk}}, editing as {{EntityName}})
-      toast.success(isNew ? '{{EntityName}} created' : '{{EntityName}} updated')
+      toast.success(isNew ? '{{entityLabel}} created' : '{{entityLabel}} updated')
       close()
     } catch (e) {
       // A 400 carries per-field messages — show them inline; anything else is a toast.
@@ -109,12 +109,12 @@ export function {{EntityName}}Page() {
       await remove({{#hasCompositePk}}[{{#pkFields}}removed.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}removed.{{pkField.name}} as number | string{{/hasCompositePk}})
       setPendingDelete(null)
       // Offer a best-effort undo by re-creating the just-removed record.
-      toast.success('{{EntityName}} deleted', {
+      toast.success('{{entityLabel}} deleted', {
         action: {
           label: 'Undo',
           onClick: () => {
             create(removed as Omit<{{EntityName}}, 'id'>)
-              .then(() => toast.success('{{EntityName}} restored'))
+              .then(() => toast.success('{{entityLabel}} restored'))
               .catch(err => toast.error(err instanceof Error ? err.message : String(err)))
           },
         },
@@ -146,7 +146,7 @@ export function {{EntityName}}Page() {
     setBulkBusy(true)
     try {
       await removeMany(selected)
-      toast.success(`${selected.length} {{EntityName}} ${selected.length === 1 ? 'record' : 'records'} deleted`)
+      toast.success(`${selected.length} {{entityLabel}} ${selected.length === 1 ? 'record' : 'records'} deleted`)
       setSelected([])
       setBulkConfirm(false)
     } catch (e) {
@@ -169,7 +169,7 @@ export function {{EntityName}}Page() {
     <div className="mx-auto max-w-6xl p-4 md:p-8">
       <div className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-fg">{{EntityNamePlural}}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">{{entityLabelPlural}}</h1>
           <p className="mt-1 text-sm text-muted">
             {totalElements} {totalElements === 1 ? 'record' : 'records'}{{#isView}} · read-only view{{/isView}}
           </p>
@@ -226,7 +226,7 @@ export function {{EntityName}}Page() {
             className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
           >
             <Plus className="h-4 w-4" />
-            New {{EntityName}}
+            New {{entityLabel}}
           </button>
 {{/mutable}}        </div>
       </div>
@@ -312,8 +312,8 @@ export function {{EntityName}}Page() {
 {{#mutable}}
       <FormDrawer
         open={drawerOpen}
-        title={isNew ? 'New {{EntityName}}' : 'Edit {{EntityName}}'}
-        subtitle={isNew ? 'Create a new {{EntityName}} record' : 'Update this {{EntityName}} record'}
+        title={isNew ? 'New {{entityLabel}}' : 'Edit {{entityLabel}}'}
+        subtitle={isNew ? 'Create a new {{entityLabel}} record' : 'Update this {{entityLabel}} record'}
         onClose={close}
         onSave={save}
         saving={saving}
@@ -331,7 +331,7 @@ export function {{EntityName}}Page() {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title="Delete {{EntityName}}?"
+        title="Delete {{entityLabel}}?"
         message="You can undo this right after, from the notification."
         busy={deleting}
         onConfirm={confirmDelete}
@@ -340,7 +340,7 @@ export function {{EntityName}}Page() {
 {{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}}
       <ConfirmDialog
         open={bulkConfirm}
-        title={`Delete ${selected.length} {{EntityName}} ${selected.length === 1 ? 'record' : 'records'}?`}
+        title={`Delete ${selected.length} {{entityLabel}} ${selected.length === 1 ? 'record' : 'records'}?`}
         message="This action cannot be undone."
         busy={bulkBusy}
         onConfirm={runBulkDelete}
@@ -349,7 +349,7 @@ export function {{EntityName}}Page() {
 {{/viewTable}}{{/bulkDeleteApplicable}}
       <DetailDrawer
         open={detailRow !== null}
-        title="{{EntityName}} details"
+        title="{{entityLabel}} details"
         onClose={() => setDetailRow(null)}
 {{#mutable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
 {{/mutable}}      >

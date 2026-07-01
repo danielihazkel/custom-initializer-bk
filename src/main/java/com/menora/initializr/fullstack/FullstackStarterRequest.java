@@ -52,33 +52,48 @@ public record FullstackStarterRequest(
             // The list-view modes the generated entity page generates (subset of table/cards/kanban/
             // calendar, ordered; first = initial). A toggle is emitted only when 2+ are enabled.
             // Null/empty falls back to [listView] if present, else [table].
-            List<String> listViews) {
+            List<String> listViews,
+            // Optional entity-level display labels. Null/blank falls back to the PascalCase name
+            // (and derived plural) — mirrors the per-field {@code label}. {@code labelPlural} is used
+            // for plural surfaces (nav, list H1, dashboard); auto-pluralizing a localized/Hebrew
+            // {@code label} is meaningless, so the plural is supplied explicitly.
+            String label,
+            String labelPlural) {
 
         /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql/listView(s)). */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations) {
-            this(name, tableName, schema, fields, relations, null, null, null, null, null);
+            this(name, tableName, schema, fields, relations, null, null, null, null, null, null, null);
         }
 
         /** Back-compat overload without {@code sourceSql}/{@code listView(s)}. */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
                                    Boolean readOnly, String viewQuery) {
-            this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, null, null);
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, null, null, null, null);
         }
 
         /** Back-compat overload without {@code listView(s)}. */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
                                    Boolean readOnly, String viewQuery, String sourceSql) {
-            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, null, null);
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, null, null, null, null);
         }
 
         /** Back-compat overload with the legacy single {@code listView} but no {@code listViews}. */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
                                    Boolean readOnly, String viewQuery, String sourceSql, String listView) {
-            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, null);
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, null, null, null);
+        }
+
+        /** Back-compat overload without the entity display {@code label}/{@code labelPlural}. */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql, String listView,
+                                   List<String> listViews) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
+                    null, null);
         }
     }
 

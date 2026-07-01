@@ -203,6 +203,13 @@ Set in `entityViewModel` (`:199`). Naming comes in four cases plus plural forms 
 | `entityNamePluralKebab` | `order-items` |
 | `entity_name_plural` | `order_items` |
 
+Display labels (human-facing text in the generated frontend — nav, list H1, dashboard, dialogs). Optional; fall back to the PascalCase name and its derived plural, mirroring the per-field `label`. Use these for user-visible strings; keep `EntityName`/`EntityNamePlural` for code identifiers (types, `use<Entity>`, imports, routes):
+
+| Variable | Source |
+|---|---|
+| `entityLabel` | `entity.label()` if non-blank, else `EntityName` |
+| `entityLabelPlural` | `entity.labelPlural()` if non-blank, else `entity.label()` if non-blank, else `EntityNamePlural` (auto-pluralizing a localized label is unsafe, so the plural is supplied explicitly) |
+
 Table / key metadata:
 
 | Variable | Type | Source |

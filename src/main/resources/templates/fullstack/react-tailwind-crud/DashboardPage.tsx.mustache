@@ -10,7 +10,7 @@ interface CardDef {
 
 const CARDS: CardDef[] = [
 {{#entities}}
-  { label: '{{EntityNamePlural}}', view: '{{entityNameKebab}}', path: '/api/{{entityNamePluralKebab}}' },
+  { label: '{{entityLabelPlural}}', view: '{{entityNameKebab}}', path: '/api/{{entityNamePluralKebab}}' },
 {{/entities}}
 ]
 
@@ -22,7 +22,7 @@ interface ChartDef {
 
 // One breakdown per entity that has a low-cardinality (enum/boolean) field — derived server-side.
 const CHARTS: ChartDef[] = [
-{{#entities}}{{#hasBreakdown}}  { label: '{{EntityNamePlural}} by {{breakdownLabel}}', path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}' },
+{{#entities}}{{#hasBreakdown}}  { label: '{{entityLabelPlural}} by {{breakdownLabel}}', path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}' },
 {{/hasBreakdown}}{{/entities}}]
 
 /** Reads just the page metadata (size=1) to surface a live record count per entity. */

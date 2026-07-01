@@ -1,6 +1,5 @@
 [
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/application-base.mustache", "targetPath": "src/main/resources/application.yaml", "substitutionType": "MUSTACHE", "sortOrder": -1 },
-  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/common/log4j2-spring.xml", "targetPath": "src/main/resources/log4j2-spring.xml", "substitutionType": "NONE", "sortOrder": 0 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/common/.editorconfig", "targetPath": ".editorconfig", "substitutionType": "NONE", "sortOrder": 1 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/common/entrypoint.sh", "targetPath": "entrypoint.sh", "substitutionType": "NONE", "sortOrder": 2 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/common/settings.xml", "targetPath": "settings.xml", "substitutionType": "NONE", "sortOrder": 3 },
@@ -86,9 +85,9 @@
   { "depId": "rqueue", "fileType": "YAML_MERGE", "contentResource": "static-configs/rqueue/application-rqueue.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
   { "depId": "rqueue", "fileType": "TEMPLATE", "contentResource": "templates/rqueue-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/RqueueConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },
 
-  { "depId": "logging", "fileType": "TEMPLATE", "contentResource": "templates/logging/logFormat.json.mustache", "targetPath": "src/main/resources/logFormat.json", "substitutionType": "MUSTACHE", "sortOrder": 1 },
-  { "depId": "logging", "fileType": "TEMPLATE", "contentResource": "templates/logging/detailedLogFormat.json.mustache", "targetPath": "src/main/resources/detailedLogFormat.json", "substitutionType": "MUSTACHE", "sortOrder": 2 },
-  { "depId": "logging", "fileType": "TEMPLATE", "contentResource": "templates/logging/log4j2-spring.xml.mustache", "targetPath": "src/main/resources/log4j2-spring.xml", "substitutionType": "MUSTACHE", "sortOrder": 50 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/logging/logFormat.json.mustache", "targetPath": "src/main/resources/logFormat.json", "substitutionType": "MUSTACHE", "sortOrder": 1 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/logging/detailedLogFormat.json.mustache", "targetPath": "src/main/resources/detailedLogFormat.json", "substitutionType": "MUSTACHE", "sortOrder": 2 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/logging/log4j2-spring.xml.mustache", "targetPath": "src/main/resources/log4j2-spring.xml", "substitutionType": "MUSTACHE", "sortOrder": 50 },
 
   { "depId": "mail-sampler", "fileType": "YAML_MERGE", "contentResource": "static-configs/mail-sampler/application-mail.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
   { "depId": "mail-sampler", "fileType": "TEMPLATE", "contentResource": "templates/mail-config.mustache", "targetPath": "src/main/java/{{packagePath}}/config/MailConfig.java", "substitutionType": "MUSTACHE", "sortOrder": 1 },

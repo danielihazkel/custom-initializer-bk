@@ -116,7 +116,8 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
-    void generatedProjectContainsLog4j2() throws Exception {
+    void generatedProjectContainsLog4j2ByDefault() throws Exception {
+        // Menora JSON logging is now a __common__ default — no `logging` dep needed.
         WebProjectRequest request = createBaseRequest();
         request.getDependencies().add("web");
 
@@ -126,34 +127,41 @@ class ProjectGenerationIntegrationTests {
         assertThat(project).filePaths().contains("src/main/resources/log4j2-spring.xml");
         assertThat(project).filePaths().doesNotContain("src/main/resources/logback-spring.xml");
 
-        String pomContent = Files.readString(projectDir.resolve("pom.xml"));
-        assertThat(pomContent).contains("spring-boot-starter-log4j2");
-        assertThat(pomContent).contains("spring-boot-starter-logging");  // present as exclusion
-    }
-
-    @Test
-    void loggingDependencyWritesJsonTemplateLayoutConfig() throws Exception {
-        WebProjectRequest request = createBaseRequest();
-        request.getDependencies().add("logging");
-
-        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
-        ProjectStructure project = new ProjectStructure(projectDir);
-
-        // The logging dep overwrites the __common__ log4j2-spring.xml (higher sortOrder)
+        // Base JSON console logging (JsonTemplateLayout) ships by default, no Kafka appender.
         String log4j2 = Files.readString(projectDir.resolve("src/main/resources/log4j2-spring.xml"));
         assertThat(log4j2).contains("JsonTemplateLayout");
         assertThat(log4j2).contains("classpath:logFormat.json");
         assertThat(log4j2).contains("name=\"com.menora.demo.controller\"");  // templated from packageName
         assertThat(log4j2).contains("name=\"com.menora.demo\"");
-        assertThat(log4j2).doesNotContain("<Kafka");                          // kafka-logs not selected
+        assertThat(log4j2).doesNotContain("<Kafka");                         // logging dep not selected
 
         String logFormat = Files.readString(projectDir.resolve("src/main/resources/logFormat.json"));
-        assertThat(logFormat).contains("\"appName\": \"demo\"");              // templated from artifactId
+        assertThat(logFormat).contains("\"appName\": \"demo\"");             // templated from artifactId
         assertThat(project).filePaths().contains("src/main/resources/detailedLogFormat.json");
 
+        String pomContent = Files.readString(projectDir.resolve("pom.xml"));
+        assertThat(pomContent).contains("spring-boot-starter-log4j2");
+        assertThat(pomContent).contains("spring-boot-starter-logging");      // present as exclusion
+        assertThat(pomContent).contains("log4j-layout-template-json");       // JSON layout, now __common__
+        assertThat(pomContent).doesNotContain("kafka-clients");              // no Kafka shipping by default
+    }
+
+    @Test
+    void loggingDependencyAddsKafkaLogShippingAppender() throws Exception {
+        // The `logging` dep is now the opt-in Kafka log-shipping appender (base JSON logging is default).
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("logging");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+
+        String log4j2 = Files.readString(projectDir.resolve("src/main/resources/log4j2-spring.xml"));
+        assertThat(log4j2).contains("<Kafka name=\"TechnicalKafka\"");
+        assertThat(log4j2).contains("classpath:detailedLogFormat.json");
+        assertThat(log4j2).contains("<AppenderRef ref=\"TechnicalAsyncKafka\" />");
+        assertThat(log4j2).contains("<AppenderRef ref=\"DetailedAsyncKafka\" />");
+
         String pom = Files.readString(projectDir.resolve("pom.xml"));
-        assertThat(pom).contains("log4j-layout-template-json");
-        assertThat(pom).doesNotContain("kafka-clients");                      // gated on kafka-logs
+        assertThat(pom).contains("kafka-clients");
         // log4j2 starter comes from __common__ only — logging is a non-starter marker, so no duplicate
         assertThat(countOccurrences(pom, "<artifactId>spring-boot-starter-log4j2</artifactId>"))
                 .isEqualTo(1);
@@ -165,28 +173,6 @@ class ProjectGenerationIntegrationTests {
             count++;
         }
         return count;
-    }
-
-    @Test
-    void loggingKafkaLogsSubOptionAddsKafkaAppenderAndDependency() throws Exception {
-        optionsContext.populate(Map.of("logging", List.of("kafka-logs")));
-        try {
-            WebProjectRequest request = createBaseRequest();
-            request.getDependencies().add("logging");
-
-            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
-
-            String log4j2 = Files.readString(projectDir.resolve("src/main/resources/log4j2-spring.xml"));
-            assertThat(log4j2).contains("<Kafka name=\"TechnicalKafka\"");
-            assertThat(log4j2).contains("classpath:detailedLogFormat.json");
-            assertThat(log4j2).contains("<AppenderRef ref=\"TechnicalAsyncKafka\" />");
-            assertThat(log4j2).contains("<AppenderRef ref=\"DetailedAsyncKafka\" />");
-
-            String pom = Files.readString(projectDir.resolve("pom.xml"));
-            assertThat(pom).contains("kafka-clients");
-        } finally {
-            optionsContext.clear();
-        }
     }
 
     @Test

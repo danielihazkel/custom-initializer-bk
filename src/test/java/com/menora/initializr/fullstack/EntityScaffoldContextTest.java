@@ -106,6 +106,41 @@ class EntityScaffoldContextTest {
     }
 
     @Test
+    void buildEntityContext_emitsEntityDisplayLabels() {
+        FieldDefinition id = new FieldDefinition("id", FieldType.LONG, true, true, false, false,
+                null, null, null, null, false, List.of(), true, true);
+
+        // Explicit singular + plural labels (e.g. Hebrew) → used verbatim.
+        EntityDefinition both = new EntityDefinition("OrderItem", null, null, List.of(id), List.of(),
+                false, null, null, List.of("table"), "פריט", "פריטים");
+        Map<String, Object> cBoth = EntityScaffoldContext.buildEntityContext(
+                EntityScaffoldContext.buildProjectContext(
+                        "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(both)),
+                both);
+        assertThat(cBoth).containsEntry("entityLabel", "פריט");
+        assertThat(cBoth).containsEntry("entityLabelPlural", "פריטים");
+
+        // Singular label only (blank plural → trimmed to null) → plural falls back to the label.
+        EntityDefinition singular = new EntityDefinition("OrderItem", null, null, List.of(id), List.of(),
+                false, null, null, List.of("table"), "Item", "   ");
+        Map<String, Object> cSing = EntityScaffoldContext.buildEntityContext(
+                EntityScaffoldContext.buildProjectContext(
+                        "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(singular)),
+                singular);
+        assertThat(cSing).containsEntry("entityLabel", "Item");
+        assertThat(cSing).containsEntry("entityLabelPlural", "Item");
+
+        // No labels → fall back to the PascalCase name and its derived plural.
+        EntityDefinition none = new EntityDefinition("OrderItem", null, List.of(id));
+        Map<String, Object> cNone = EntityScaffoldContext.buildEntityContext(
+                EntityScaffoldContext.buildProjectContext(
+                        "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(none)),
+                none);
+        assertThat(cNone).containsEntry("entityLabel", "OrderItem");
+        assertThat(cNone).containsEntry("entityLabelPlural", "OrderItems");
+    }
+
+    @Test
     void buildProjectContext_exposesPerLayerPackages() {
         EntityDefinition e = new EntityDefinition(
                 "User", null,

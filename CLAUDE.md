@@ -45,7 +45,7 @@ When a project is generated, the framework spins up a child Spring application c
 
 - **`dynamicFileContributor`** (`ProjectContributor`) — for each selected dependency (plus the special `__common__` entry), writes/merges all associated `FileContributionEntity` records into the generated project
 - **`dynamicDeleteContributor`** (`ProjectContributor`, `@Order(LOWEST_PRECEDENCE)`) — runs after everything else to delete files registered with `DELETE` type (e.g. `application.properties` written by the framework)
-- **`dynamicBuildCustomizer`** (`BuildCustomizer<MavenBuild>`) — applies all `BuildCustomizationEntity` records (add dependency, exclude dependency, add repository). Like the file contributor, it skips a record whose `subOptionId` is set unless that sub-option was selected (`optionsContext.hasOption(depId, subOptionId)`) — e.g. `logging`'s `kafka-clients` is added only with the `kafka-logs` sub-option
+- **`dynamicBuildCustomizer`** (`BuildCustomizer<MavenBuild>`) — applies all `BuildCustomizationEntity` records (add dependency, exclude dependency, add repository). Like the file contributor, it skips a record whose `subOptionId` is set unless that sub-option was selected (`optionsContext.hasOption(depId, subOptionId)`) — e.g. `mapstruct`'s processor deps, or a database dep's secondary-datasource config, are added only with the matching sub-option
 
 ### FileContributionEntity — File Types
 
