@@ -90,11 +90,13 @@ public class FullstackProjectGenerationConfiguration {
             // Springdoc annotations (@Tag/@Operation). The `openapi` dep is force-added in
             // FullstackStarterController when this opt is set, so the swagger imports resolve.
             projectCtx.put("optScaffoldOpenApi", optionsContext.hasOption("scaffold", "openapi"));
-            // Per-endpoint @RequiresPermission. The security.* classes only exist when ldap-auth
-            // is on the build, so the flag requires it — otherwise the imports wouldn't resolve.
+            // Per-endpoint @RequiresPermission. The security.* classes only exist when an
+            // ldap-auth variant (direct bind or REST) is on the build, so the flag requires one —
+            // otherwise the imports wouldn't resolve.
             projectCtx.put("optScaffoldSecured",
                     optionsContext.hasOption("scaffold", "secured")
-                            && description.getRequestedDependencies().containsKey("ldap-auth"));
+                            && (description.getRequestedDependencies().containsKey("ldap-auth")
+                                    || description.getRequestedDependencies().containsKey("ldap-auth-rest")));
             // CSV export endpoint + per-entity bulk-delete endpoint. Neither needs an extra
             // dependency (plain Spring Web + Spring Data). bulkDelete is further narrowed per entity
             // to writable, single-PK entities in EntityScaffoldContext (bulkDeleteApplicable).

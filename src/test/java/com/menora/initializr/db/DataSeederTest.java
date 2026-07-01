@@ -70,7 +70,7 @@ class DataSeederTest {
 
     @Test
     void seedsAllBackendDependencyEntries() {
-        assertThat(entryRepo.findAllByProjectKind(ProjectKind.BACKEND)).hasSize(28);
+        assertThat(entryRepo.findAllByProjectKind(ProjectKind.BACKEND)).hasSize(29);
     }
 
     @Test
@@ -182,6 +182,14 @@ class DataSeederTest {
     }
 
     @Test
+    void ldapAuthRestFileContributionsSeeded() {
+        // application-ldap-auth-rest YAML + REST LdapService, PermissionService, PermissionAspect,
+        // Constants, RequiresPermission, UnauthorizedException + sample-controller (no direct-LDAP
+        // config/properties/Base64Utils — resolved over REST instead).
+        assertThat(fileContribRepo.countByDependencyId("ldap-auth-rest")).isEqualTo(8);
+    }
+
+    @Test
     void applicationPropertiesIsDeletedAtLowestPrecedence() {
         FileContributionEntity delete = fileContribRepo
                 .findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
@@ -231,7 +239,7 @@ class DataSeederTest {
         long backendRules = compatibilityRepo.findAll().stream()
                 .filter(c -> c.getProjectKind() == ProjectKind.BACKEND)
                 .count();
-        assertThat(backendRules).isEqualTo(11);
+        assertThat(backendRules).isEqualTo(13);
     }
 
     @Test

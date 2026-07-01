@@ -11,6 +11,7 @@
   { "depId": "redis", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.apache.commons", "mavenArtifactId": "commons-pool2", "sortOrder": 0 },
   { "depId": "ldap-auth", "type": "ADD_DEPENDENCY", "mavenGroupId": "com.menora.common", "mavenArtifactId": "lts.ldap.util", "version": "0.1.2", "sortOrder": 0 },
   { "depId": "ldap-auth", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-aop", "sortOrder": 1 },
+  { "depId": "ldap-auth-rest", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-aop", "sortOrder": 0 },
   { "depId": "logging", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.apache.logging.log4j", "mavenArtifactId": "log4j-layout-template-json", "sortOrder": 0 },
   { "depId": "logging", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.apache.kafka", "mavenArtifactId": "kafka-clients", "subOptionId": "kafka-logs", "sortOrder": 1 }
 ]

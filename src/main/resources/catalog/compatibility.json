@@ -9,5 +9,7 @@
   { "sourceDepId": "security", "targetDepId": "web", "relationType": "REQUIRES", "description": "Spring Security requires a web layer — add Spring Web", "sortOrder": 4 },
   { "sourceDepId": "mail-sampler", "targetDepId": "web", "relationType": "RECOMMENDS", "description": "Mail Sampler works best with a web layer for REST endpoints", "sortOrder": 5 },
   { "sourceDepId": "data-jpa", "targetDepId": "h2", "relationType": "RECOMMENDS", "description": "JPA requires a database driver — add H2 for development/testing", "sortOrder": 9 },
-  { "sourceDepId": "data-jpa", "targetDepId": "mapstruct", "relationType": "RECOMMENDS", "description": "Use MapStruct to convert between JPA entities and DTOs", "sortOrder": 10 }
+  { "sourceDepId": "data-jpa", "targetDepId": "mapstruct", "relationType": "RECOMMENDS", "description": "Use MapStruct to convert between JPA entities and DTOs", "sortOrder": 10 },
+  { "sourceDepId": "ldap-auth-rest", "targetDepId": "ldap-auth", "relationType": "CONFLICTS", "description": "Choose one Menora authorization variant — direct LDAP bind or LDAP via REST", "sortOrder": 11 },
+  { "sourceDepId": "ldap-auth-rest", "targetDepId": "web", "relationType": "REQUIRES", "description": "LDAP-via-REST authorization needs a web layer (servlet request + RestClient) — add Spring Web", "sortOrder": 12 }
 ]

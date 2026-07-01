@@ -372,7 +372,8 @@ public class FullstackStarterController {
         // Gate the dev-mode `userinfo` header (read by the backend's @RequiresPermission aspect)
         // on the backend actually including the LDAP authorization dependency.
         boolean hasLdapAuth = request.getDependencies() != null
-                && request.getDependencies().contains("ldap-auth");
+                && (request.getDependencies().contains("ldap-auth")
+                        || request.getDependencies().contains("ldap-auth-rest"));
         projectCtx.put("hasLdapAuth", hasLdapAuth);
         // Opt-in scaffolding flags must be set on the frontend context too — the per-entity FE
         // templates gate audit columns / inverse-collection counts on these. The backend config

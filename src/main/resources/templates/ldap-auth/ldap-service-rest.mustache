@@ -1,0 +1,46 @@
+package {{packageName}}.security;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Resolves the set of LDAP groups a user belongs to via the Menora LDAP REST service
+ * ({@code GET {base-url}/employee/findGroupsByCn/{username}}) instead of a direct LDAP bind.
+ *
+ * <p>Exposes the same {@code getUserGroups} signature the direct-bind variant did, so
+ * {@code PermissionService} is unchanged.
+ */
+@Service
+@Slf4j
+public class LdapService {
+
+    private final RestClient restClient;
+
+    public LdapService(@Value("${menora.ldap-rest.base-url}") String baseUrl) {
+        this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+    }
+
+    public Set<String> getUserGroups(String username) {
+
+        if (username == null || username.trim().isEmpty()) {
+            throw new IllegalArgumentException("Username cannot be null or empty");
+        }
+
+        log.debug("Retrieving LDAP groups for user via REST: {}", username);
+        List<String> groups = restClient.get()
+                .uri("/employee/findGroupsByCn/{username}", username)
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<String>>() {});
+
+        Set<String> allGroups = (groups == null) ? new HashSet<>() : new HashSet<>(groups);
+        log.info("User {} groups: {}", username, allGroups);
+        return allGroups;
+    }
+}

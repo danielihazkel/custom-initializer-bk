@@ -261,6 +261,43 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void ldapAuthRestDependencyInjectsRestVariant() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("web");
+        request.getDependencies().add("ldap-auth-rest");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        ProjectStructure project = new ProjectStructure(projectDir);
+
+        String yaml = Files.readString(projectDir.resolve("src/main/resources/application.yaml"));
+        assertThat(yaml).contains("ldap-rest:");
+        assertThat(yaml).contains("base-url:");
+        assertThat(yaml).contains("header:");
+        // The REST variant carries no direct-LDAP connection block.
+        assertThat(yaml).doesNotContain("search-base");
+
+        // Shared security classes are present; the direct-LDAP-only files are not.
+        assertThat(project).filePaths()
+                .contains("src/main/java/com/menora/demo/security/LdapService.java")
+                .contains("src/main/java/com/menora/demo/security/PermissionAspect.java")
+                .contains("src/main/java/com/menora/demo/security/RequiresPermission.java")
+                .doesNotContain("src/main/java/com/menora/demo/config/LdapConfiguration.java")
+                .doesNotContain("src/main/java/com/menora/demo/security/Base64Utils.java");
+
+        // LdapService resolves groups over REST, not via LdapUtil.
+        String ldapService = Files.readString(projectDir.resolve(
+                "src/main/java/com/menora/demo/security/LdapService.java"));
+        assertThat(ldapService)
+                .contains("findGroupsByCn")
+                .contains("RestClient")
+                .doesNotContain("LdapUtil");
+
+        String pom = Files.readString(projectDir.resolve("pom.xml"));
+        assertThat(pom).contains("spring-boot-starter-aop");
+        assertThat(pom).doesNotContain("lts.ldap.util");
+    }
+
+    @Test
     void ldapAuthSampleControllerSubOption() throws Exception {
         optionsContext.populate(Map.of("ldap-auth", List.of("sample-controller")));
         try {

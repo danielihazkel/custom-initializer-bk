@@ -1,0 +1,9 @@
+menora:
+  ldap-rest:
+    # Base URL of the Menora LDAP REST service. Groups are resolved via
+    # GET ${base-url}/employee/findGroupsByCn/{username}.
+    base-url: ${LDAP_REST_BASE_URL:https://menora-ldap-service-binqa.menora.co.il/api/ldapServices}
+
+# Prefix of the LDAP groups that grant access; roles map to "<prefix>ALL" / "<prefix>RO".
+header:
+  prefix: ${PERMISSION_GROUP_PREFIX:GRP_LTSMonitoringUi_}
