@@ -346,6 +346,73 @@ class EntityScaffoldContextTest {
     }
 
     @Test
+    void buildEntityContext_bulkUpdatableFieldsExcludePkAndReadOnly() {
+        EntityDefinition e = new EntityDefinition("Task", null, List.of(
+                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true),
+                new FieldDefinition("title", FieldType.STRING, false, false, true, false, 200, null, null, null, false, List.of(), true, true),
+                new FieldDefinition("status", FieldType.ENUM, false, false, false, false, null, null, null, null, false, List.of("OPEN", "DONE"), true, true),
+                new FieldDefinition("priority", FieldType.INTEGER, false, false, false, false, null, null, null, null, false, List.of(), true, true),
+                // read-only field — excluded from bulk edit (16-arg form)
+                new FieldDefinition("createdBy", FieldType.STRING, false, false, false, false, null, null, null, null, false, List.of(), true, true, null, true)));
+        Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
+        Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> bulk = (List<Map<String, Object>>) ctx.get("bulkUpdatableFields");
+        // id (PK) and createdBy (read-only) are excluded.
+        assertThat(bulk).extracting(m -> m.get("name")).containsExactly("title", "status", "priority");
+        assertThat(bulk).extracting(m -> m.get("bulkInputKind")).containsExactly("text", "enum", "number");
+        // last flag re-tagged for the frontend join / backend comma logic.
+        assertThat(bulk.get(2)).containsEntry("last", true);
+        assertThat(ctx).containsEntry("hasBulkUpdatableFields", true);
+    }
+
+    @Test
+    void buildEntityContext_bulkUpdateApplicableGatedOnOptAndShape() {
+        EntityDefinition writable = new EntityDefinition("Task", null, List.of(
+                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true),
+                new FieldDefinition("title", FieldType.STRING, false, false, true, false, 200, null, null, null, false, List.of(), true, true)));
+
+        // Opt absent → not applicable, and neither bulk action drives the shared selection UI.
+        Map<String, Object> off = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(writable));
+        Map<String, Object> offCtx = EntityScaffoldContext.buildEntityContext(off, writable);
+        assertThat(offCtx).containsEntry("bulkUpdateApplicable", false);
+        assertThat(offCtx).containsEntry("bulkSelectApplicable", false);
+
+        // Opt present on a writable, single-PK entity with an editable field → applicable.
+        Map<String, Object> on = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(writable));
+        on.put("optScaffoldBulkUpdate", true);
+        Map<String, Object> onCtx = EntityScaffoldContext.buildEntityContext(on, writable);
+        assertThat(onCtx).containsEntry("bulkUpdateApplicable", true);
+        assertThat(onCtx).containsEntry("bulkSelectApplicable", true);
+
+        // Composite-PK entity — never applicable even with the opt (id-list can't address it).
+        EntityDefinition composite = new EntityDefinition("OrderLine", null, List.of(
+                new FieldDefinition("orderId", FieldType.LONG, true, false, false, false, null, null, null, null, false, List.of(), true, true),
+                new FieldDefinition("lineNo", FieldType.INTEGER, true, false, false, false, null, null, null, null, false, List.of(), true, true),
+                new FieldDefinition("qty", FieldType.INTEGER, false, false, false, false, null, null, null, null, false, List.of(), true, true)));
+        Map<String, Object> compProj = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(composite));
+        compProj.put("optScaffoldBulkUpdate", true);
+        assertThat(EntityScaffoldContext.buildEntityContext(compProj, composite))
+                .containsEntry("bulkUpdateApplicable", false);
+
+        // Read-only entity — never applicable (no writes).
+        EntityDefinition readOnly = new EntityDefinition("Report", null, null,
+                List.of(new FieldDefinition("id", FieldType.LONG, true, false, false, false, null, null, null, null, false, List.of(), true, true),
+                        new FieldDefinition("name", FieldType.STRING, false, false, false, false, null, null, null, null, false, List.of(), true, true)),
+                List.of(), true, null);
+        Map<String, Object> roProj = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(readOnly));
+        roProj.put("optScaffoldBulkUpdate", true);
+        assertThat(EntityScaffoldContext.buildEntityContext(roProj, readOnly))
+                .containsEntry("bulkUpdateApplicable", false);
+    }
+
+    @Test
     void buildEntityContext_relationExposesFkSelectKeys() {
         EntityDefinition customer = new EntityDefinition("Customer", null, List.of(
                 new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true),

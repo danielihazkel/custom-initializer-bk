@@ -163,6 +163,18 @@ public final class EntityScaffoldContext {
         ctx.put("hasPaletteError", palette.getError() != null && !palette.getError().isBlank());
     }
 
+    /** The frontend value-input control a bulk-editable field uses in the bulk-edit bar. Mirrors the
+     *  form's control matrix: enum/boolean → &lt;select&gt;, temporal → date pickers, numeric → number,
+     *  everything else (string/text/uuid) → a plain text input. */
+    private static String bulkInputKind(Map<String, Object> fv) {
+        if (Boolean.TRUE.equals(fv.get("isEnum"))) return "enum";
+        if (Boolean.TRUE.equals(fv.get("isBoolean"))) return "boolean";
+        if (Boolean.TRUE.equals(fv.get("isDate"))) return "date";
+        if (Boolean.TRUE.equals(fv.get("isDateTime"))) return "datetime";
+        if (Boolean.TRUE.equals(fv.get("isNumeric"))) return "number";
+        return "text";
+    }
+
     /** A single kanban lane: {@code value} is matched against the grouping field's stringified
      *  value, {@code label} is the column heading. */
     private static Map<String, Object> kanbanColumn(String value, String label) {
@@ -216,6 +228,21 @@ public final class EntityScaffoldContext {
                 Boolean.TRUE.equals(ctx.get("optScaffoldBulkDelete"))
                         && !Boolean.TRUE.equals(ctx.get("hasCompositePk"))
                         && mutable);
+        // Bulk field-edit (opt-in) PATCHes one field across a list of single-column ids, so — like
+        // bulk delete — it needs a writable, single-PK entity; and it needs ≥1 editable non-PK field
+        // to set (bulkUpdatableFields, derived in entityViewModel).
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> bulkFields = (List<Map<String, Object>>) ctx.get("bulkUpdatableFields");
+        ctx.put("bulkUpdateApplicable",
+                Boolean.TRUE.equals(ctx.get("optScaffoldBulkUpdate"))
+                        && !Boolean.TRUE.equals(ctx.get("hasCompositePk"))
+                        && mutable
+                        && bulkFields != null && !bulkFields.isEmpty());
+        // The row-selection substrate (checkboxes, `selected` state) is shared by both bulk actions,
+        // so it is emitted when either is applicable.
+        ctx.put("bulkSelectApplicable",
+                Boolean.TRUE.equals(ctx.get("bulkDeleteApplicable"))
+                        || Boolean.TRUE.equals(ctx.get("bulkUpdateApplicable")));
         return ctx;
     }
 
@@ -310,6 +337,23 @@ public final class EntityScaffoldContext {
             pkPath.append("/{").append(pk.get("name")).append('}');
         }
         view.put("pkPath", pkPath.toString());
+        // Fields eligible for bulk field-edit: non-PK, non-read-only scalar fields (relations are
+        // deliberately excluded in v1). Each entry is a shallow copy of the field view-model — so the
+        // backend switch reuses the same type flags (isEnum/isIntegral/…) and the frontend gets a
+        // `bulkInputKind` picking its value control — with its own `last` for comma/join logic.
+        List<Map<String, Object>> bulkUpdatableViews = new ArrayList<>();
+        for (Map<String, Object> fv : nonPkViews) {
+            if (Boolean.TRUE.equals(fv.get("isReadOnly"))) continue;
+            Map<String, Object> bf = new LinkedHashMap<>(fv);
+            bf.put("bulkInputKind", bulkInputKind(fv));
+            bulkUpdatableViews.add(bf);
+        }
+        for (int i = 0; i < bulkUpdatableViews.size(); i++) {
+            bulkUpdatableViews.get(i).put("last", i == bulkUpdatableViews.size() - 1);
+        }
+        view.put("bulkUpdatableFields", bulkUpdatableViews);
+        view.put("hasBulkUpdatableFields", !bulkUpdatableViews.isEmpty());
+
         view.put("fields", fieldViews);
         view.put("nonPkFields", nonPkViews);
         view.put("pkField", pkView);

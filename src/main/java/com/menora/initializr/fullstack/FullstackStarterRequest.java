@@ -32,7 +32,25 @@ public record FullstackStarterRequest(
         String backendTemplateSet,
         String frontendTemplateSet,
         String colorPalette,
+        // Optional overrides for the generated dashboard header. Null/blank falls back to the
+        // built-in copy ("Welcome to <artifactId>" and a default blurb) — resolved in the template
+        // with a Mustache inverted-section fallback, since Mustache has no default operator.
+        String dashboardTitle,
+        String dashboardOverview,
         List<EntityDefinitionDto> entities) {
+
+    /** Back-compat constructor without the optional {@code dashboardTitle}/{@code dashboardOverview}
+     *  dashboard-header overrides (both default to null → the template's built-in copy). */
+    public FullstackStarterRequest(
+            String groupId, String artifactId, String name, String description, String packageName,
+            String domainPackage, String type, String language, String bootVersion, String packaging,
+            String javaVersion, String version, String configurationFileFormat, List<String> dependencies,
+            Map<String, List<String>> opts, String backendTemplateSet, String frontendTemplateSet,
+            String colorPalette, List<EntityDefinitionDto> entities) {
+        this(groupId, artifactId, name, description, packageName, domainPackage, type, language,
+                bootVersion, packaging, javaVersion, version, configurationFileFormat, dependencies,
+                opts, backendTemplateSet, frontendTemplateSet, colorPalette, null, null, entities);
+    }
 
     public record EntityDefinitionDto(
             String name,

@@ -133,9 +133,9 @@ export function DashboardPage({ onNavigate }: Props) {
           <LayoutGrid className="h-5 w-5" />
           <span className="text-xs font-semibold uppercase tracking-wider">Overview</span>
         </div>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">Welcome to {{artifactId}}</h1>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">{{#dashboardTitle}}{{dashboardTitle}}{{/dashboardTitle}}{{^dashboardTitle}}Welcome to {{artifactId}}{{/dashboardTitle}}</h1>
         <p className="mt-1 max-w-xl text-sm text-slate-300">
-          Manage your data below. Select a collection to browse, search, create, edit and delete records.
+          {{#dashboardOverview}}{{dashboardOverview}}{{/dashboardOverview}}{{^dashboardOverview}}Manage your data below. Select a collection to browse, search, create, edit and delete records.{{/dashboardOverview}}
         </p>
       </div>
 

@@ -102,6 +102,9 @@ public class FullstackProjectGenerationConfiguration {
             // to writable, single-PK entities in EntityScaffoldContext (bulkDeleteApplicable).
             projectCtx.put("optScaffoldCsvExport", optionsContext.hasOption("scaffold", "csvExport"));
             projectCtx.put("optScaffoldBulkDelete", optionsContext.hasOption("scaffold", "bulkDelete"));
+            // Bulk field-edit endpoint. Narrowed per entity in EntityScaffoldContext (bulkUpdateApplicable)
+            // to writable, single-PK entities with ≥1 editable non-PK field. No extra dependency.
+            projectCtx.put("optScaffoldBulkUpdate", optionsContext.hasOption("scaffold", "bulkUpdate"));
             log.info("Rendering backend CRUD scaffolding: set='{}', {} files, {} entities",
                     setKey, files.size(), entities.size());
             FullstackRenderer.render(files, projectCtx, entities, projectRoot);

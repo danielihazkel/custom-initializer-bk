@@ -86,4 +86,18 @@ public class {{EntityName}}Service {
     public void deleteAll(java.util.List<{{pkField.javaType}}> ids) {
         repository.deleteAllById(ids);
     }
-{{/bulkDeleteApplicable}}{{/mutable}}}
+{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}
+    /** Sets a single whitelisted {@code field} to {@code value} on every listed record. The raw
+     *  JSON scalar is coerced to the field's type; an unknown field name throws (→ 400 at the
+     *  controller). Read-only and primary-key fields are intentionally not in the switch. */
+    public void updateMany(java.util.List<{{pkField.javaType}}> ids, String field, Object value) {
+        java.util.List<{{EntityName}}> rows = repository.findAllById(ids);
+        for ({{EntityName}} entity : rows) {
+            switch (field) {
+{{#bulkUpdatableFields}}                case "{{name}}" -> entity.set{{Name}}(value == null ? null : {{#isEnum}}{{EntityName}}.{{enumTypeName}}.valueOf(value.toString()){{/isEnum}}{{#isBoolean}}Boolean.valueOf(value.toString()){{/isBoolean}}{{#isBigDecimal}}new java.math.BigDecimal(value.toString()){{/isBigDecimal}}{{#isIntegral}}{{javaType}}.valueOf(value.toString()){{/isIntegral}}{{#isUuid}}java.util.UUID.fromString(value.toString()){{/isUuid}}{{#isDate}}java.time.LocalDate.parse(value.toString()){{/isDate}}{{#isDateTime}}java.time.LocalDateTime.parse(value.toString()){{/isDateTime}}{{#isString}}value.toString(){{/isString}}{{#isText}}value.toString(){{/isText}});
+{{/bulkUpdatableFields}}                default -> throw new IllegalArgumentException("Field not bulk-updatable: " + field);
+            }
+        }
+        repository.saveAll(rows);
+    }
+{{/bulkUpdateApplicable}}{{/mutable}}}

@@ -100,6 +100,12 @@ export function useResource<T extends object>(basePath: string, params: PagePara
     await reload()
   }, [basePath, reload])
 
+  // Bulk-update a single field to `value` across a list of (single-column) primary keys.
+  const updateMany = useCallback(async (ids: Array<number | string>, field: string, value: unknown) => {
+    await api.patch(`${basePath}/bulk`, { ids, field, value })
+    await reload()
+  }, [basePath, reload])
+
   // Download the current result set (honoring search/filters/sort) as a CSV file. The backend
   // export endpoint ignores page/size and streams every matching row.
   const exportCsv = useCallback((filename = 'export.csv') => {
@@ -119,6 +125,7 @@ export function useResource<T extends object>(basePath: string, params: PagePara
     update,
     remove,
     removeMany,
+    updateMany,
     exportCsv,
   }
 }

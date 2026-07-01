@@ -162,12 +162,32 @@ public class {{EntityName}}Controller {
         service.deleteAll(ids);
         return ResponseEntity.noContent().build();
     }
-{{/bulkDeleteApplicable}}{{/mutable}}
+{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}
+{{#optScaffoldOpenApi}}    @Operation(summary = "Bulk-update one field across {{EntityName}} records by id")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
+{{/optScaffoldSecured}}    @PatchMapping("/bulk")
+    public ResponseEntity<Void> updateMany(@RequestBody BulkUpdateRequest request) {
+        service.updateMany(request.ids(), request.field(), request.value());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Sets {@code field} to {@code value} on every listed record. {@code value} is a raw JSON
+     *  scalar coerced to the field's type in the service; an unknown field name is a 400. */
+    public record BulkUpdateRequest(java.util.List<{{pkField.javaType}}> ids, String field, Object value) {}
+{{/bulkUpdateApplicable}}{{/mutable}}
 
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Void> handleNotFound(NoSuchElementException ex) {
         return ResponseEntity.notFound().build();
     }
+{{#bulkUpdateApplicable}}
+    /** A bad bulk-update field name or an uncoercible value surfaces as a 400 rather than a 500
+     *  (NumberFormatException and enum/UUID coercion failures are IllegalArgumentExceptions). */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleBadArgument(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+    }
+{{/bulkUpdateApplicable}}
 {{#hasValidation}}
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {

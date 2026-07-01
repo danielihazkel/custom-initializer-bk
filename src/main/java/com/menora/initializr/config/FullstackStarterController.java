@@ -209,7 +209,7 @@ public class FullstackStarterController {
 
         // Frontend — rendered inline outside the Initializr pipeline.
         renderFrontend(frontendSet, request, entities, domainPackage, body.colorPalette(),
-                tempDir.resolve("frontend"));
+                body.dashboardTitle(), body.dashboardOverview(), tempDir.resolve("frontend"));
 
         // Root files
         Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
@@ -346,7 +346,8 @@ public class FullstackStarterController {
      */
     private void renderFrontend(EntityTemplateSetEntity set, WebProjectRequest request,
                                 List<EntityDefinition> entities, String domainPackage,
-                                String colorPaletteId, Path targetDir) throws IOException {
+                                String colorPaletteId, String dashboardTitle, String dashboardOverview,
+                                Path targetDir) throws IOException {
         // 1. Substrate — reuse the standalone frontend generator.
         FrontendProjectDescription desc = buildFrontendDescription(request, colorPaletteId);
         frontendGenerator.renderInto(targetDir, desc);
@@ -387,6 +388,12 @@ public class FullstackStarterController {
         // bulkDeleteApplicable (derived in EntityScaffoldContext from optScaffoldBulkDelete).
         projectCtx.put("optScaffoldCsvExport", optionsContext.hasOption("scaffold", "csvExport"));
         projectCtx.put("optScaffoldBulkDelete", optionsContext.hasOption("scaffold", "bulkDelete"));
+        // Bulk field-edit selection UI. Like bulkDelete, narrowed per entity in EntityScaffoldContext
+        // (bulkUpdateApplicable) to writable, single-PK entities that have ≥1 editable non-PK field.
+        projectCtx.put("optScaffoldBulkUpdate", optionsContext.hasOption("scaffold", "bulkUpdate"));
+        // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.
+        putIfPresent(projectCtx, "dashboardTitle", dashboardTitle);
+        putIfPresent(projectCtx, "dashboardOverview", dashboardOverview);
         log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());
@@ -465,6 +472,14 @@ public class FullstackStarterController {
 
     private static String orDefault(String v, String fallback) {
         return (v == null || v.isBlank()) ? fallback : v;
+    }
+
+    /** Puts a trimmed value under {@code key} only when non-blank, so a Mustache
+     *  {@code {{#key}}…{{^key}}fallback{{/key}}} resolves to the template's built-in default. */
+    private static void putIfPresent(Map<String, Object> ctx, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            ctx.put(key, value.trim());
+        }
     }
 
     private void copyDirectory(Path source, Path target) throws IOException {

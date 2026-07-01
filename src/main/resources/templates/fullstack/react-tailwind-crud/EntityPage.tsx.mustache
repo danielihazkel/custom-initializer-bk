@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
+import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}PencilLine, {{/viewTable}}{{/bulkUpdateApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
 {{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
@@ -20,7 +20,14 @@ const columns: Column<{{EntityName}}>[] = [
 const filterDescriptors: FilterDescriptor[] = [
 {{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}} },
 {{/filterFields}}]
-{{/hasFilters}}
+{{/hasFilters}}{{#bulkUpdateApplicable}}{{#viewTable}}
+// Fields eligible for bulk edit. `kind` selects the value control shown in the bulk-edit bar; the
+// raw value is sent to the backend which coerces it to the field's type.
+type BulkFieldKind = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum'
+const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?: string[] }> = {
+{{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
+{{/bulkUpdatableFields}}}
+{{/viewTable}}{{/bulkUpdateApplicable}}
 export function {{EntityName}}Page() {
   const [page, setPage] = useState(0)
   const [size, setSize] = useState(20)
@@ -42,7 +49,7 @@ export function {{EntityName}}Page() {
 
   const {
     items, totalElements, totalPages, pageNumber, pageSize,
-    loading, error,{{#mutable}} create, update, remove,{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
+    loading, error,{{#mutable}} create, update, remove,{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
   } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{/hasFilters}} })
 {{#mutable}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
@@ -125,11 +132,10 @@ export function {{EntityName}}Page() {
       setDeleting(false)
     }
   }
-{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}}
-  // Bulk selection (table view only). Selected rows are tracked by primary-key value.
+{{/mutable}}{{#bulkSelectApplicable}}{{#viewTable}}
+  // Bulk selection (table view only). Selected rows are tracked by primary-key value. Shared by
+  // the bulk-delete and bulk-edit actions below.
   const [selected, setSelected] = useState<Array<number | string>>([])
-  const [bulkConfirm, setBulkConfirm] = useState(false)
-  const [bulkBusy, setBulkBusy] = useState(false)
   const pkOf = (row: {{EntityName}}) => row.{{pkField.name}} as number | string
   const isRowSelected = (row: {{EntityName}}) => selected.includes(pkOf(row))
   function toggleRow(row: {{EntityName}}) {
@@ -142,6 +148,9 @@ export function {{EntityName}}Page() {
       ? s.filter(id => !items.some(r => pkOf(r) === id))
       : Array.from(new Set([...s, ...items.map(pkOf)]))))
   }
+{{/viewTable}}{{/bulkSelectApplicable}}{{#bulkDeleteApplicable}}{{#viewTable}}
+  const [bulkConfirm, setBulkConfirm] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
   async function runBulkDelete() {
     setBulkBusy(true)
     try {
@@ -155,7 +164,27 @@ export function {{EntityName}}Page() {
       setBulkBusy(false)
     }
   }
-{{/viewTable}}{{/bulkDeleteApplicable}}
+{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}
+  const [bulkField, setBulkField] = useState<string>('')
+  const [bulkValue, setBulkValue] = useState<string>('')
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+  async function runBulkUpdate() {
+    if (!bulkField) return
+    setBulkUpdating(true)
+    try {
+      // An empty value clears the field (sent as null); otherwise the raw string is coerced server-side.
+      await updateMany(selected, bulkField, bulkValue === '' ? null : bulkValue)
+      toast.success(`${selected.length} {{entityLabel}} ${selected.length === 1 ? 'record' : 'records'} updated`)
+      setSelected([])
+      setBulkField('')
+      setBulkValue('')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBulkUpdating(false)
+    }
+  }
+{{/viewTable}}{{/bulkUpdateApplicable}}
   const pagination = {
     pageNumber,
     pageSize,
@@ -236,22 +265,59 @@ export function {{EntityName}}Page() {
       <div className="mb-4">
         <FilterBar filters={filterDescriptors} values={filters} onChange={setFilters} />
       </div>
-{{/hasFilters}}{{#bulkDeleteApplicable}}{{#viewTable}}      {selected.length > 0 && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-brand/40 bg-brand/5 px-4 py-2.5">
+{{/hasFilters}}{{#bulkSelectApplicable}}{{#viewTable}}      {selected.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/40 bg-brand/5 px-4 py-2.5">
           <span className="text-sm font-medium text-fg">{selected.length} selected</span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setSelected([])} className="rounded-lg px-3 py-1.5 text-sm text-muted transition-colors hover:text-fg">Clear</button>
+          <div className="flex flex-wrap items-center gap-2">
+{{#bulkUpdateApplicable}}            <select
+              value={bulkField}
+              onChange={e => { setBulkField(e.target.value); setBulkValue('') }}
+              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-fg"
+              aria-label="Field to edit"
+            >
+              <option value="">Set field…</option>
+{{#bulkUpdatableFields}}              <option value="{{name}}">{{label}}</option>
+{{/bulkUpdatableFields}}            </select>
+            {bulkField && (() => {
+              const meta = BULK_FIELDS[bulkField]
+              if (!meta) return null
+              const cls = 'rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-fg'
+              if (meta.kind === 'boolean') return (
+                <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label="New value">
+                  <option value="">—</option>
+                  <option value="true">True</option>
+                  <option value="false">False</option>
+                </select>
+              )
+              if (meta.kind === 'enum') return (
+                <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label="New value">
+                  <option value="">—</option>
+                  {meta.options!.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              )
+              const type = meta.kind === 'number' ? 'number' : meta.kind === 'date' ? 'date' : meta.kind === 'datetime' ? 'datetime-local' : 'text'
+              return <input type={type} value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} placeholder="New value" aria-label="New value" />
+            })()}
             <button
+              onClick={runBulkUpdate}
+              disabled={!bulkField || bulkUpdating}
+              className="inline-flex items-center gap-2 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-deep disabled:opacity-50"
+            >
+              <PencilLine className="h-4 w-4" />
+              Apply
+            </button>
+{{/bulkUpdateApplicable}}            <button onClick={() => setSelected([])} className="rounded-lg px-3 py-1.5 text-sm text-muted transition-colors hover:text-fg">Clear</button>
+{{#bulkDeleteApplicable}}            <button
               onClick={() => setBulkConfirm(true)}
               className="inline-flex items-center gap-2 rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-white transition-colors hover:opacity-90"
             >
               <Trash2 className="h-4 w-4" />
               Delete
             </button>
-          </div>
+{{/bulkDeleteApplicable}}          </div>
         </div>
       )}
-{{/viewTable}}{{/bulkDeleteApplicable}}
+{{/viewTable}}{{/bulkSelectApplicable}}
       {
 {{#viewCards}}      viewMode === 'cards' ? (
         <CardGrid
@@ -301,12 +367,12 @@ export function {{EntityName}}Page() {
           onSearchChange={setSearch}
 {{#hasStringFields}}          searchable={true}
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
-{{/hasStringFields}}{{#bulkDeleteApplicable}}          selectable={true}
+{{/hasStringFields}}{{#bulkSelectApplicable}}          selectable={true}
           isRowSelected={isRowSelected}
           onToggleRow={toggleRow}
           allOnPageSelected={allOnPageSelected}
           onToggleAllOnPage={toggleAllOnPage}
-{{/bulkDeleteApplicable}}          pagination={pagination}
+{{/bulkSelectApplicable}}          pagination={pagination}
         />
       ) : {{/viewTable}}null}
 {{#mutable}}
