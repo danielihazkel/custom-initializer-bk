@@ -61,8 +61,8 @@ public class GenerationAuditFilter {
                         GenerationEventEntity event = GenerationAuditService.newEvent(
                                 deriveEndpoint(uri), start, durationMs, status);
                         event.setErrorMessage(errorMessage);
-                        event.setArtifactId(request.getParameter("artifactId"));
-                        event.setGroupId(request.getParameter("groupId"));
+                        event.setArtifactId(param(request, "artifactId", "projectName"));
+                        event.setGroupId(param(request, "groupId", "scope"));
                         event.setBootVersion(request.getParameter("bootVersion"));
                         event.setJavaVersion(request.getParameter("javaVersion"));
                         event.setPackaging(request.getParameter("packaging"));
@@ -93,7 +93,18 @@ public class GenerationAuditFilter {
 
     private static boolean isStarterEndpoint(String uri) {
         if (uri == null) return false;
-        return uri.startsWith("/starter");
+        // Backend/fullstack live at the servlet root (/starter.zip, /starter-fullstack.zip);
+        // the frontend controller is namespaced under @RequestMapping("/frontend"), so its
+        // generation path is /frontend/starter.zip — match that too or FE stays unaudited.
+        return uri.startsWith("/starter") || uri.startsWith("/frontend/starter");
+    }
+
+    /** First non-blank of the {@code primary} then {@code fallback} request param. */
+    private static String param(HttpServletRequest request, String primary, String fallback) {
+        String v = request.getParameter(primary);
+        if (v != null && !v.isBlank()) return v;
+        String f = request.getParameter(fallback);
+        return (f != null && !f.isBlank()) ? f : null;
     }
 
     private static String deriveEndpoint(String uri) {
