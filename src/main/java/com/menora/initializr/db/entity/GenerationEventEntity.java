@@ -55,6 +55,9 @@ public class GenerationEventEntity {
     @Column(name = "remote_addr", length = 64)
     private String remoteAddr;
 
+    @Column(length = 255)
+    private String username;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Instant getEventTimestamp() { return eventTimestamp; }
@@ -83,4 +86,6 @@ public class GenerationEventEntity {
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
     public String getRemoteAddr() { return remoteAddr; }
     public void setRemoteAddr(String remoteAddr) { this.remoteAddr = remoteAddr; }
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
 }

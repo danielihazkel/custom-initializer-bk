@@ -25,7 +25,8 @@ public class GenerationAuditFilter {
     @Bean
     public FilterRegistrationBean<OncePerRequestFilter> generationAuditFilterRegistration(
             GenerationAuditService auditService,
-            @Value("${menora.audit.log-remote-addr:true}") boolean logRemoteAddr) {
+            @Value("${menora.audit.log-remote-addr:true}") boolean logRemoteAddr,
+            @Value("${menora.audit.user-header:userinfo}") String userHeader) {
 
         FilterRegistrationBean<OncePerRequestFilter> reg = new FilterRegistrationBean<>();
         reg.setFilter(new OncePerRequestFilter() {
@@ -71,6 +72,7 @@ public class GenerationAuditFilter {
                         if (logRemoteAddr) {
                             event.setRemoteAddr(trim(clientIp(request), 64));
                         }
+                        event.setUsername(trim(request.getHeader(userHeader), 255));
                         auditService.record(event);
                     } catch (Exception auditEx) {
                         log.warn("Failed to record generation audit event", auditEx);
@@ -78,7 +80,11 @@ public class GenerationAuditFilter {
                 }
             }
         });
-        reg.addUrlPatterns("/starter*", "/starter.*", "/starter-wizard.*", "/starter-multimodule.*");
+        // Map to every request and let isStarterEndpoint() decide. Servlet URL patterns only
+        // support /path/*, *.ext, / and exact strings — a pattern like "/starter*" is treated as
+        // an exact match and never matches "/starter.zip", so the earlier narrow mapping meant the
+        // filter never fired and the audit stayed empty.
+        reg.addUrlPatterns("/*");
         // Order=5 runs after AdminAuthFilter (order=1) and after InitializrWebConfiguration (Integer.MIN_VALUE),
         // so timing reflects what the end user sees.
         reg.setOrder(5);
