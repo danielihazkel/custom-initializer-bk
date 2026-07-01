@@ -393,6 +393,7 @@ public final class EntityScaffoldContext {
             Map<String, Object> ff = new LinkedHashMap<>();
             ff.put("name", fv.get("name"));
             ff.put("Name", fv.get("Name"));
+            ff.put("label", fv.get("label"));
             // The Java type the backend Filters carrier / @RequestParam uses for this field. For an
             // enum this is the per-entity enum type (Spring binds the request String to it by name).
             ff.put("javaType", fv.get("javaType"));
@@ -520,8 +521,16 @@ public final class EntityScaffoldContext {
     private static Map<String, Object> fieldViewModel(String entityPascal, FieldDefinition f) {
         Map<String, Object> fv = new LinkedHashMap<>();
         fv.put("name", f.name());
-        fv.put("Name", Naming.toPascalCase(f.name()));
+        String pascalName = Naming.toPascalCase(f.name());
+        fv.put("Name", pascalName);
         fv.put("column", Naming.toSnakeCase(f.name()));
+        // Human-facing display override for the generated UI (table header, form label, filter
+        // chip, detail row). Defaults to the PascalCase name when no custom label was supplied —
+        // done here because Mustache has no default operator.
+        fv.put("label", (f.label() != null && !f.label().isBlank()) ? f.label() : pascalName);
+        // Locked-after-create read-only: the form disables it on edit and Service.update skips it.
+        fv.put("isReadOnly", f.readOnly());
+        fv.put("isEditable", !f.readOnly());
 
         String javaType;
         String enumTypeName = null;

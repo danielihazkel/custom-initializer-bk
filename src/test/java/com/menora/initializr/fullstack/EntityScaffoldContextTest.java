@@ -73,6 +73,39 @@ class EntityScaffoldContextTest {
     }
 
     @Test
+    void buildEntityContext_emitsFieldLabelAndReadOnlyFlags() {
+        EntityDefinition e = new EntityDefinition(
+                "User", null,
+                List.of(
+                        // full 16-arg form: id has no custom label / editable
+                        new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false,
+                                List.of(), true, true, null, false),
+                        // custom Hebrew label + read-only
+                        new FieldDefinition("name", FieldType.STRING, false, false, true, false, null, null, null, null, false,
+                                List.of(), true, true, "שם", true),
+                        // blank label falls back to PascalCase name; editable
+                        new FieldDefinition("emailAddress", FieldType.STRING, false, false, false, false, null, null, null, null, false,
+                                List.of(), true, true, "   ", false)));
+        Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
+        Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) ctx.get("fields");
+        // id — default label = PascalCase name, editable
+        assertThat(fields.get(0)).containsEntry("label", "Id");
+        assertThat(fields.get(0)).containsEntry("isReadOnly", false);
+        assertThat(fields.get(0)).containsEntry("isEditable", true);
+        // name — custom label preserved, read-only
+        assertThat(fields.get(1)).containsEntry("label", "שם");
+        assertThat(fields.get(1)).containsEntry("isReadOnly", true);
+        assertThat(fields.get(1)).containsEntry("isEditable", false);
+        // emailAddress — blank label falls back to PascalCase name
+        assertThat(fields.get(2)).containsEntry("label", "EmailAddress");
+        assertThat(fields.get(2)).containsEntry("isReadOnly", false);
+    }
+
+    @Test
     void buildProjectContext_exposesPerLayerPackages() {
         EntityDefinition e = new EntityDefinition(
                 "User", null,

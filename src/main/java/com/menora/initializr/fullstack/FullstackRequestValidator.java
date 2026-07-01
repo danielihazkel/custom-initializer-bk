@@ -177,6 +177,7 @@ public final class FullstackRequestValidator {
                 }
 
                 String pattern = (f.pattern() == null || f.pattern().isBlank()) ? null : f.pattern();
+                String label = (f.label() == null || f.label().isBlank()) ? null : f.label().trim();
                 fields.add(new FieldDefinition(
                         fname,
                         type,
@@ -193,7 +194,11 @@ public final class FullstackRequestValidator {
                         // Per-field search/filter opt-out: default true (current behavior) when the
                         // wire omits the flag, unlike the default-false required/unique above.
                         f.searchable() == null || f.searchable(),
-                        f.filterable() == null || f.filterable()));
+                        f.filterable() == null || f.filterable(),
+                        // Per-field display label (null when omitted → templates fall back to
+                        // PascalCase name) and read-only flag (default false, like required/unique).
+                        label,
+                        Boolean.TRUE.equals(f.readOnly())));
             }
 
             if (pkCount == 0) {

@@ -42,6 +42,29 @@ class FullstackRequestValidatorTest {
     }
 
     @Test
+    void labelAndReadOnly_convertThroughWithDefaults() {
+        // labelled + read-only field, a blank-label field, and a plain field (defaults)
+        var labelled = new FullstackStarterRequest.FieldDefinitionDto(
+                "name", "String", null, null, null, null, null, null, null, null, null, null,
+                null, null, "  שם  ", true);
+        var blankLabel = new FullstackStarterRequest.FieldDefinitionDto(
+                "note", "String", null, null, null, null, null, null, null, null, null, null,
+                null, null, "   ", null);
+        var result = FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("User", List.of(pk(), labelled, blankLabel)))));
+        List<FieldDefinition> fields = result.get(0).fields();
+        // pk() — default: no label, editable
+        assertThat(fields.get(0).label()).isNull();
+        assertThat(fields.get(0).readOnly()).isFalse();
+        // labelled — trimmed label preserved, read-only true
+        assertThat(fields.get(1).label()).isEqualTo("שם");
+        assertThat(fields.get(1).readOnly()).isTrue();
+        // blank label normalizes to null; readOnly defaults false when omitted
+        assertThat(fields.get(2).label()).isNull();
+        assertThat(fields.get(2).readOnly()).isFalse();
+    }
+
+    @Test
     void rejects_missingEntities() {
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of())))
                 .isInstanceOf(WizardArgumentException.class)

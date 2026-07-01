@@ -19,7 +19,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
     <>
 {{#fields}}
 {{#isPrimaryKey}}{{#isGenerated}}      {!isNew && (
-        <Field label="{{Name}}" hint="System-generated, read-only">
+        <Field label="{{label}}" hint="System-generated, read-only">
           <input
             className={`${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
             value={String(value.{{name}} ?? '')}
@@ -27,7 +27,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           />
         </Field>
       )}
-{{/isGenerated}}{{^isGenerated}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{/isGenerated}}{{^isGenerated}}      <Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <input
           className={isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -37,38 +37,42 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
         />
       </Field>
 {{/isGenerated}}{{/isPrimaryKey}}
-{{^isPrimaryKey}}{{#isBoolean}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{^isPrimaryKey}}{{#isBoolean}}      <Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <select
-          className={inputClass}
+          className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
           onChange={e => set('{{name}}', e.target.value === '' ? null : e.target.value === 'true')}
+          {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         >
           <option value="">—</option>
           <option value="true">True</option>
           <option value="false">False</option>
         </select>
       </Field>
-{{/isBoolean}}{{#isEnum}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{/isBoolean}}{{#isEnum}}      <Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <select
-          className={inputClass}
+          className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           value={(value.{{name}} as string | null | undefined) ?? ''}
           onChange={e => set('{{name}}', e.target.value === '' ? null : (e.target.value as {{enumTypeName}}))}
+          {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         >
           <option value="">—</option>
           { {{enumTypeName}}Values.map(v => <option key={v} value={v}>{v}</option>) }
         </select>
       </Field>
-{{/isEnum}}{{^isBoolean}}{{^isEnum}}      <Field label="{{Name}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{/isEnum}}{{^isBoolean}}{{^isEnum}}      <Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
 {{#isText}}        <textarea
-          className={`${inputClass} min-h-[96px] resize-y`}
+          className={{#isReadOnly}}{isNew ? `${inputClass} min-h-[96px] resize-y` : `${inputClass} min-h-[96px] resize-y cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{`${inputClass} min-h-[96px] resize-y`}{{/isReadOnly}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
           onChange={e => set('{{name}}', e.target.value === '' ? null : e.target.value)}
+          {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         />
 {{/isText}}{{^isText}}        <input
-          className={inputClass}
+          className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           {{#isNumeric}}type="number"{{/isNumeric}}{{#isDate}}type="date"{{/isDate}}{{#isDateTime}}type="datetime-local"{{/isDateTime}}{{^isNumeric}}{{^isTemporal}}{{#isEmail}}type="email"{{/isEmail}}{{^isEmail}}type="text"{{/isEmail}}{{/isTemporal}}{{/isNumeric}}{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{/isNumeric}}{{#hasPattern}} pattern={"{{patternEscaped}}"}{{/hasPattern}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
           onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}})}
+          {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         />
 {{/isText}}      </Field>
 {{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}

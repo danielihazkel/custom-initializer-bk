@@ -470,6 +470,41 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_perFieldLabelAndReadOnly() throws Exception {
+        // title carries a custom (Hebrew) display label; status is read-only (locked after create).
+        Map<String, Object> title = Map.of("name", "title", "type", "String", "required", true, "label", "כותרת");
+        Map<String, Object> status = Map.of("name", "status", "type", "String", "readOnly", true);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "tasks");
+        body.put("packageName", "com.menora.tasks");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(
+                Map.of("name", "Task", "fields", List.of(pkField(), title, status))));
+
+        Map<String, String> entries = generateZip(body);
+
+        // Frontend column uses the custom label, but the data/sort key stays the field name.
+        String taskPage = entries.get("tasks/frontend/src/pages/task/ui/TaskPage.tsx");
+        assertThat(taskPage).contains("label: 'כותרת', sortKey: 'title'");
+
+        // Frontend form: the read-only field is locked after create (disabled on edit); the
+        // custom label reaches the Field. A generated PK uses a bare `disabled`, so `disabled={!isNew}`
+        // here comes from the read-only status field (there is no non-generated PK in this entity).
+        String taskForm = contentEndingWith(entries, "/task-form/ui/TaskForm.tsx");
+        assertThat(taskForm).contains("label=\"כותרת\"");
+        assertThat(taskForm).contains("disabled={!isNew}");
+
+        // Backend Service.update never overwrites the read-only field, but still copies the editable one.
+        String taskService = contentEndingWith(entries, "/service/TaskService.java");
+        assertThat(taskService).contains("existing.setTitle(updated.getTitle());");
+        assertThat(taskService).doesNotContain("existing.setStatus(updated.getStatus());");
+        // But status is still a real column/field (bound on create) — the entity carries the setter.
+        String taskEntity = contentEndingWith(entries, "/entity/Task.java");
+        assertThat(taskEntity).contains("private String status;");
+    }
+
+    @Test
     void fullstackEndpoint_rendersFieldConstraints() throws Exception {
         // email (String, email=true, length-bounded), age (Integer, min/max), and code
         // (String, regex pattern) exercise @Email/@Min/@Max/@Pattern in the DTO and the

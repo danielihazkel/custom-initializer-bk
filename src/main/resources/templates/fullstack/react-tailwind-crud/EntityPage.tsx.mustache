@@ -10,7 +10,7 @@ import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
 {{/mutable}}
 const columns: Column<{{EntityName}}>[] = [
-{{#fields}}  { label: '{{Name}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
+{{#fields}}  { label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
 {{/fields}}{{#relations}}  { label: '{{FieldName}} ID', render: r => r.{{fkFieldName}} == null ? '—' : String(r.{{fkFieldName}}) },
 {{/relations}}{{#auditApplicable}}  { label: 'Created', sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString() },
   { label: 'Updated', sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString() },
@@ -18,7 +18,7 @@ const columns: Column<{{EntityName}}>[] = [
 {{/inverseRelations}}{{/optScaffoldInverse}}]
 {{#hasFilters}}
 const filterDescriptors: FilterDescriptor[] = [
-{{#filterFields}}  { name: '{{name}}', label: '{{Name}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}} },
+{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}} },
 {{/filterFields}}]
 {{/hasFilters}}
 export function {{EntityName}}Page() {
