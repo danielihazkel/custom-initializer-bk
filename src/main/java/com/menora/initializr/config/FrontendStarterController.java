@@ -82,13 +82,14 @@ public class FrontendStarterController {
             @RequestParam(defaultValue = "") String dependencies,
             @RequestParam(defaultValue = "") String colorPalette,
             @RequestParam(defaultValue = "") String apiBaseUrl,
-            @RequestParam(defaultValue = "") String backendArtifactId
+            @RequestParam(defaultValue = "") String backendArtifactId,
+            @RequestParam(defaultValue = "false") boolean rtl
     ) throws IOException {
 
         FrontendProjectDescription desc = buildDescription(
                 projectName, description, scope, appTitle,
                 reactVersion, nodeVersion, packageManager, basePath, dependencies, colorPalette,
-                apiBaseUrl, backendArtifactId);
+                apiBaseUrl, backendArtifactId, rtl);
 
         byte[] zip = generator.generate(desc);
         return ResponseEntity.ok()
@@ -120,13 +121,14 @@ public class FrontendStarterController {
             @RequestParam(defaultValue = "") String dependencies,
             @RequestParam(defaultValue = "") String colorPalette,
             @RequestParam(defaultValue = "") String apiBaseUrl,
-            @RequestParam(defaultValue = "") String backendArtifactId
+            @RequestParam(defaultValue = "") String backendArtifactId,
+            @RequestParam(defaultValue = "false") boolean rtl
     ) throws IOException {
 
         FrontendProjectDescription desc = buildDescription(
                 projectName, description, scope, appTitle,
                 reactVersion, nodeVersion, packageManager, basePath, dependencies, colorPalette,
-                apiBaseUrl, backendArtifactId);
+                apiBaseUrl, backendArtifactId, rtl);
 
         Map<String, String> fileMap = generator.generateFileMap(desc);
         List<PreviewFile> files = fileMap.entrySet().stream()
@@ -148,7 +150,8 @@ public class FrontendStarterController {
                                                         String dependencies,
                                                         String colorPalette,
                                                         String apiBaseUrl,
-                                                        String backendArtifactId) {
+                                                        String backendArtifactId,
+                                                        boolean rtl) {
         FrontendProjectDescription desc = new FrontendProjectDescription();
         desc.setProjectName(projectName);
         desc.setDescription(description);
@@ -165,6 +168,7 @@ public class FrontendStarterController {
         desc.setColorPaletteId(colorPalette);
         desc.setApiBaseUrl(apiBaseUrl);
         desc.setBackendArtifactId(backendArtifactId);
+        desc.setRtl(rtl);
         desc.setTypescriptVersion(properties.getPinned().getTypescript());
         desc.setViteVersion(properties.getPinned().getVite());
         // Pull the npm semver ranges for the chosen React major out of the DB

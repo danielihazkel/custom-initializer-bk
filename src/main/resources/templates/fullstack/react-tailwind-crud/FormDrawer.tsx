@@ -71,8 +71,8 @@ export function FormDrawer({ open, title, subtitle, onClose, onSave, saving, dir
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`ml-auto relative flex h-full w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl transition-transform duration-200 ease-out ${
-          shown ? 'translate-x-0' : 'translate-x-full'
+        className={`ms-auto relative flex h-full w-full max-w-md flex-col border-s border-border bg-surface shadow-2xl transition-transform duration-200 ease-out ${
+          shown ? 'translate-x-0' : 'translate-x-full rtl:-translate-x-full'
         }`}
       >
         <div className="flex items-start justify-between border-b border-border px-5 py-4">
@@ -82,7 +82,7 @@ export function FormDrawer({ open, title, subtitle, onClose, onSave, saving, dir
           </div>
           <button
             onClick={requestClose}
-            className="-mr-1 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+            className="-me-1 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
             aria-label="Close"
           >
             <X className="h-5 w-5" />

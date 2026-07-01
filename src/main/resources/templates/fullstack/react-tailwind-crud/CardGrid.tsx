@@ -41,13 +41,13 @@ export function CardGrid<T extends object>({
     <div className="space-y-3">
       {searchable && (
         <div className="relative max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
             type="text"
             value={search}
             onChange={e => onSearchChange(e.target.value)}
             placeholder="Search…"
-            className="w-full rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm text-fg placeholder:text-muted shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40"
+            className="w-full rounded-lg border border-border bg-surface py-2 ps-9 pe-3 text-sm text-fg placeholder:text-muted shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40"
           />
         </div>
       )}
@@ -120,7 +120,7 @@ export function CardGrid<T extends object>({
                 {rest.map((col, i) => (
                   <div key={i} className="flex items-baseline justify-between gap-3 text-sm">
                     <dt className="shrink-0 text-muted">{col.label}</dt>
-                    <dd className="min-w-0 truncate text-right text-fg">{col.render(row)}</dd>
+                    <dd className="min-w-0 truncate text-end text-fg">{col.render(row)}</dd>
                   </div>
                 ))}
               </dl>

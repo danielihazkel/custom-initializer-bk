@@ -73,13 +73,13 @@ export function Table<T extends object>({
     <div className="space-y-3">
       {searchable && (
         <div className="relative max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
             type="text"
             value={search}
             onChange={e => onSearchChange(e.target.value)}
             placeholder="Search…"
-            className="w-full rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm text-fg placeholder:text-muted shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40"
+            className="w-full rounded-lg border border-border bg-surface py-2 ps-9 pe-3 text-sm text-fg placeholder:text-muted shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40"
           />
         </div>
       )}
@@ -90,7 +90,7 @@ export function Table<T extends object>({
             <thead className="sticky top-0 z-10">
               <tr className="border-b border-border bg-surface-2">
                 {selectable && (
-                  <th className="w-10 px-5 py-3 text-left">
+                  <th className="w-10 px-5 py-3 text-start">
                     <input
                       type="checkbox"
                       checked={!!allOnPageSelected}
@@ -106,7 +106,7 @@ export function Table<T extends object>({
                   return (
                     <th
                       key={i}
-                      className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted"
+                      className="px-5 py-3 text-start text-[11px] font-semibold uppercase tracking-wider text-muted"
                       style={col.width ? { width: col.width } : undefined}
                     >
                       {sortable ? (
@@ -125,7 +125,7 @@ export function Table<T extends object>({
                   )
                 })}
                 {hasActions && (
-                  <th className="sticky right-0 z-20 w-24 border-l border-border bg-surface-2 px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  <th className="sticky end-0 z-20 w-24 border-s border-border bg-surface-2 px-5 py-3 text-end text-[11px] font-semibold uppercase tracking-wider text-muted">
                     Actions
                   </th>
                 )}
@@ -163,7 +163,7 @@ export function Table<T extends object>({
                       </td>
                     ))}
                     {hasActions && (
-                      <td className="sticky right-0 z-10 border-l border-border bg-surface px-5 py-3 text-right transition-colors group-hover:bg-surface-2">
+                      <td className="sticky end-0 z-10 border-s border-border bg-surface px-5 py-3 text-end transition-colors group-hover:bg-surface-2">
                         <div className="flex items-center justify-end gap-1">
                           {onView && (
                             <button

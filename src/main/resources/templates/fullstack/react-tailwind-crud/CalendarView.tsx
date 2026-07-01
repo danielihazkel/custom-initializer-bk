@@ -89,16 +89,16 @@ export function CalendarView<T extends object>({ columns, rows, dateField, loadi
           const events = date ? (byDay.get(key) ?? []) : []
           const isToday = date != null && key === dayKey(today)
           return (
-            <div key={key} className={`min-h-24 border-b border-r border-border p-1.5 ${date ? '' : 'bg-surface-2/20'}`}>
+            <div key={key} className={`min-h-24 border-b border-e border-border p-1.5 ${date ? '' : 'bg-surface-2/20'}`}>
               {date && (
                 <>
-                  <div className={`mb-1 text-right text-xs ${isToday ? 'font-bold text-brand' : 'text-muted'}`}>{date.getDate()}</div>
+                  <div className={`mb-1 text-end text-xs ${isToday ? 'font-bold text-brand' : 'text-muted'}`}>{date.getDate()}</div>
                   <div className="space-y-1">
                     {events.slice(0, 4).map((row, j) => (
                       <button
                         key={(row as { id?: number | string | null }).id ?? j}
                         onClick={() => onView?.(row)}
-                        className="block w-full truncate rounded bg-brand/10 px-1.5 py-0.5 text-left text-xs text-brand transition-colors hover:bg-brand/20"
+                        className="block w-full truncate rounded bg-brand/10 px-1.5 py-0.5 text-start text-xs text-brand transition-colors hover:bg-brand/20"
                         title="View record"
                       >
                         {heading ? heading.render(row) : 'Record'}

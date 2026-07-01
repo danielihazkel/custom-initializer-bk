@@ -52,6 +52,7 @@ public final class FrontendMustacheContext {
         ctx.put("typescriptVersion", desc.getTypescriptVersion());
         ctx.put("viteVersion", desc.getViteVersion());
         ctx.put("basePath", desc.getBasePath());
+        ctx.put("isRtl", desc.isRtl());
         ctx.put("apiBaseUrl", desc.getApiBaseUrl());
         ctx.put("backendArtifactId", desc.getBackendArtifactId());
         ctx.put("hasBackendPair", desc.hasBackendPair());

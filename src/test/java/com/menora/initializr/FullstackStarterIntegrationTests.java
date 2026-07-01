@@ -713,6 +713,61 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_rtlOptionSetsDirAndMirrorsShell() throws Exception {
+        // opts.scaffold=[rtl] flips the frontend isRtl flag: index.html gets dir="rtl"/lang="he"
+        // and the shell/shared-UI templates use Tailwind logical utilities so the layout mirrors.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("rtl")));
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+
+        String indexHtml = entries.get("shop/frontend/index.html");
+        assertThat(indexHtml).contains("dir=\"rtl\"").contains("lang=\"he\"");
+
+        // The shell uses logical utilities (converted from physical border-l/ml/left/text-right),
+        // and the Toaster flips to the RTL-appropriate corner.
+        String app = entries.get("shop/frontend/src/app/App.tsx");
+        assertThat(app).contains("border-s-2").doesNotContain("border-l-2");
+        assertThat(app).contains("position={ 'top-left' }");
+        assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
+                .contains("sticky end-0").doesNotContain("sticky right-0");
+    }
+
+    @Test
+    void fullstackEndpoint_defaultsToLtrIndexHtml() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> entries = unzip(response.getBody());
+        String indexHtml = entries.get("shop/frontend/index.html");
+        assertThat(indexHtml).contains("lang=\"en\"").doesNotContain("dir=\"rtl\"");
+        // Logical utilities are always emitted (they behave identically in LTR).
+        assertThat(entries.get("shop/frontend/src/app/App.tsx"))
+                .contains("position={ 'top-right' }");
+    }
+
+    @Test
     void fullstackEndpoint_rejectsRelationToUnknownEntity() {
         Map<String, Object> rel = Map.of("type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Ghost");
         ResponseEntity<String> response = postFullstack(b -> {

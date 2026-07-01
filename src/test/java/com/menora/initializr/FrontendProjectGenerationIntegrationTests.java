@@ -1108,6 +1108,40 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(files.get("package.json")).contains("\"@azure/msal-react\"");
     }
 
+    // ── RTL layout option ──────────────────────────────────────────────────
+
+    @Test
+    void rtlDefaultsToLtrIndexHtml() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        Map<String, String> files = generator.generateFileMap(desc);
+        String indexHtml = files.get("index.html");
+        assertThat(indexHtml).isNotNull();
+        assertThat(indexHtml).contains("lang=\"en\"");
+        assertThat(indexHtml).doesNotContain("dir=\"rtl\"");
+    }
+
+    @Test
+    void rtlOptionSetsDirAndHebrewLangOnIndexHtml() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.setRtl(true);
+        Map<String, String> files = generator.generateFileMap(desc);
+        String indexHtml = files.get("index.html");
+        assertThat(indexHtml).isNotNull();
+        assertThat(indexHtml).contains("dir=\"rtl\"");
+        assertThat(indexHtml).contains("lang=\"he\"");
+        assertThat(indexHtml).doesNotContain("lang=\"en\"");
+    }
+
+    @Test
+    void rtlQueryParamFlowsThroughZipEndpoint() throws Exception {
+        ResponseEntity<byte[]> r = rest.getForEntity(
+                "/frontend/starter.zip?projectName=demo&rtl=true", byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String indexHtml = readZipEntry(r.getBody(), "demo/index.html");
+        assertThat(indexHtml).contains("dir=\"rtl\"");
+        assertThat(indexHtml).contains("lang=\"he\"");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private FrontendProjectDescription baseDescription(String projectName) {

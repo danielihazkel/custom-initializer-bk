@@ -36,6 +36,12 @@ public class FrontendProjectDescription {
     private String apiBaseUrl = "";
     /** Optional human-readable identifier of the paired backend (e.g. {@code "demo-api"}); surfaced in README only. */
     private String backendArtifactId = "";
+    /**
+     * When true the generated document is right-to-left: {@code <html dir="rtl" lang="he">}
+     * and the shell/shared-UI templates use Tailwind logical utilities so the layout mirrors.
+     * Default false (LTR, {@code lang="en"}).
+     */
+    private boolean rtl = false;
     private final Set<String> dependencies = new LinkedHashSet<>();
 
     public String getProjectName() { return projectName; }
@@ -81,6 +87,8 @@ public class FrontendProjectDescription {
     public void setBackendArtifactId(String backendArtifactId) {
         this.backendArtifactId = backendArtifactId == null ? "" : backendArtifactId.trim();
     }
+    public boolean isRtl() { return rtl; }
+    public void setRtl(boolean rtl) { this.rtl = rtl; }
     /** True when {@link #apiBaseUrl} is set — drives env-file + vite-proxy emission. */
     public boolean hasBackendPair() { return apiBaseUrl != null && !apiBaseUrl.isEmpty(); }
     public Set<String> getDependencies() { return dependencies; }

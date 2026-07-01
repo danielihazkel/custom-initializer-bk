@@ -17,7 +17,7 @@ export function TableSkeleton({ rows = 6, cols }: { rows?: number; cols: number 
             </td>
           ))}
           <td className="px-5 py-3.5">
-            <Skeleton className="ml-auto h-3.5 w-12" />
+            <Skeleton className="ms-auto h-3.5 w-12" />
           </td>
         </tr>
       ))}

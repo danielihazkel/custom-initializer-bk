@@ -402,6 +402,7 @@ public class FullstackStarterController {
         FrontendProjectDescription desc = new FrontendProjectDescription();
         desc.setProjectName(request.getArtifactId() + "-frontend");
         desc.setAppTitle(request.getArtifactId());
+        desc.setRtl(optionsContext.hasOption("scaffold", "rtl"));
         desc.setColorPaletteId(colorPaletteId);
         desc.setApiBaseUrl("http://localhost:8080");
         desc.setBackendArtifactId(request.getArtifactId());
