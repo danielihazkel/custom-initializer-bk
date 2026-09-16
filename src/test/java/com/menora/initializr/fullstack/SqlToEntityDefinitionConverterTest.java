@@ -121,6 +121,37 @@ class SqlToEntityDefinitionConverterTest {
     }
 
     @Test
+    void importsDb2ForIDdlWithAtSystemNamesUnderDefaultH2Dialect() {
+        // IBM i export pasted into the fullstack Import-from-DDL drawer with the
+        // dropdown left on its H2 default: '@'/'#' system names + CCSID must be
+        // auto-detected and stripped, and the composite PK must survive.
+        String sql = """
+                CREATE TABLE VNRF.VNPSXN (
+                --  SQL150B   10   REUSEDLT(*NO) in table VNPSXN in VNRF ignored.
+                    FRF_ZIHUY_HEVRAT_BITUAH FOR COLUMN @ZIHUY_HVR NUMERIC(1, 0) NOT NULL DEFAULT 0 ,
+                --  SQL150D   10   EDTCDE in column FRF_ZIHUY_HEVRAT_BITUAH ignored.
+                    FRF_MISPAR_SOXEN FOR COLUMN @SOXEN#    NUMERIC(6, 0) NOT NULL DEFAULT 0 ,
+                    FRF_SHEM_SOXEN FOR COLUMN @SXN_SHEM  CHAR(22) CCSID 424 NOT NULL DEFAULT '' ,
+                    FRF_KAMUT_PLS_HAYIM_SOXEN FOR COLUMN @#PLS_SXNH DECIMAL(5, 0) NOT NULL DEFAULT 0 ,
+                    PRIMARY KEY( FRF_ZIHUY_HEVRAT_BITUAH , FRF_MISPAR_SOXEN ) )
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);
+        assertThat(entities).hasSize(1);
+        EntityDefinition e = entities.get(0);
+        assertThat(e.name()).isEqualTo("Vnpsxn");
+        assertThat(e.tableName()).isEqualTo("VNPSXN");
+        assertThat(e.schema()).isEqualTo("VNRF");
+        assertThat(e.fields()).extracting(FieldDefinition::name)
+                .containsExactly("frfZihuyHevratBituah", "frfMisparSoxen", "frfShemSoxen", "frfKamutPlsHayimSoxen");
+        assertThat(e.fields().get(0).primaryKey()).isTrue();
+        assertThat(e.fields().get(1).primaryKey()).isTrue();
+        assertThat(e.fields().get(2).primaryKey()).isFalse();
+        assertThat(e.fields().get(2).type()).isEqualTo(FieldType.STRING);
+        assertThat(e.fields().get(2).length()).isEqualTo(22);
+        assertThat(e.fields().get(2).required()).isTrue();
+    }
+
+    @Test
     void pluralYWithIesGetsSingularized() {
         String sql = "CREATE TABLE categories (id BIGINT PRIMARY KEY, name VARCHAR(50));";
         List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);

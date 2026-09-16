@@ -365,6 +365,70 @@ class SqlEntityGeneratorTest {
                 .contains("private Integer stepCode;");
     }
 
+    @Test
+    void db2ForI_systemNamesWithAtAndHashAndCommentLinesParse() {
+        // Real iSeries export: every FOR COLUMN short name starts with '@' and some
+        // carry '#'; SQL150x diagnostic comment lines sit between the columns —
+        // sometimes two in a row, which once blanked out is the LF run JSqlParser
+        // reads as a statement terminator.
+        String sql = """
+                CREATE TABLE VNRF.VNPSXN (
+                --  SQL150B   10   REUSEDLT(*NO) in table VNPSXN in VNRF ignored.
+                    FRF_ZIHUY_HEVRAT_BITUAH FOR COLUMN @ZIHUY_HVR NUMERIC(1, 0) NOT NULL DEFAULT 0 ,
+                --  SQL150D   10   EDTCDE in column FRF_ZIHUY_HEVRAT_BITUAH ignored.
+                    FRF_MISPAR_SOXEN FOR COLUMN @SOXEN#    NUMERIC(6, 0) NOT NULL DEFAULT 0 ,
+                --  SQL150D   10   VALUES in column FRF_MISPAR_SOXEN ignored.
+                --  SQL150D   10   EDTCDE in column FRF_MISPAR_SOXEN ignored.
+                    FRF_QOD_SOXEN FOR COLUMN @QSOXEN    CHAR(1) CCSID 424 NOT NULL DEFAULT '' ,
+                    FRF_QOD_MISHLOAH_ISHUR_MAS_SX FOR COLUMN @QMSSX_MAS CHAR(1) CCSID 424 NOT NULL DEFAULT ' ' ,
+                    FRF_HESHBON_ANALAT_HESHBONOT FOR COLUMN @HESHBONH  NUMERIC(11, 0) NOT NULL DEFAULT 0 ,
+                    FRF_KAMUT_PLS_HAYIM_SOXEN FOR COLUMN @#PLS_SXNH DECIMAL(5, 0) NOT NULL DEFAULT 0 ,
+                    PRIMARY KEY( FRF_ZIHUY_HEVRAT_BITUAH , FRF_MISPAR_SOXEN ) )
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.DB2, "p", null);
+
+        String entity = findFile(files, "entity/Vnpsxn.java").content();
+        assertThat(entity)
+                .contains("@Table(name = \"VNPSXN\", schema = \"VNRF\")")
+                .contains("@IdClass(VnpsxnId.class)")
+                .contains("private Integer frfZihuyHevratBituah;")
+                .contains("private Integer frfMisparSoxen;")
+                .contains("private String frfQodSoxen;")
+                .contains("private String frfQodMishloahIshurMasSx;")
+                .contains("private Long frfHeshbonAnalatHeshbonot;")
+                .contains("private Integer frfKamutPlsHayimSoxen;")
+                .doesNotContain("FOR COLUMN")
+                .doesNotContain("CCSID")
+                .doesNotContain("@ZIHUY_HVR")
+                .doesNotContain("@SOXEN#")
+                .doesNotContain("@#PLS_SXNH")
+                .doesNotContain("BigDecimal");
+    }
+
+    @Test
+    void db2ForI_clausesAutoDetectedUnderH2Default() {
+        // The fullstack Import-from-DDL drawer defaults to H2; Db2-for-i clauses must
+        // still be normalized so the script parses without the user picking DB2.
+        String sql = """
+                CREATE TABLE VNRF.VNPSXN (
+                    FRF_ZIHUY_HEVRAT_BITUAH FOR COLUMN @ZIHUY_HVR NUMERIC(1, 0) NOT NULL DEFAULT 0 ,
+                    FRF_SHEM_SOXEN FOR COLUMN @SXN_SHEM  CHAR(22) CCSID 424 NOT NULL DEFAULT '' ,
+                    PRIMARY KEY( FRF_ZIHUY_HEVRAT_BITUAH ) )
+                """;
+        List<String> tables = generator.detectTableNames(sql, SqlDialect.H2);
+        assertThat(tables).containsExactly("VNPSXN");
+    }
+
+    @Test
+    void consecutiveBlankLinesInsideCreateTableDoNotSplitTheStatement() {
+        // JSqlParser 4.9 treats "\n\n\n" as a statement terminator; two real blank
+        // lines (or two adjacent -- comments) inside a CREATE TABLE must not 400.
+        String sql = "CREATE TABLE t (\n  id BIGINT PRIMARY KEY,\n\n\n\n  name VARCHAR(20),\n"
+                + "-- a\n-- b\n-- c\n  note VARCHAR(10)\n)";
+        List<String> tables = generator.detectTableNames(sql, SqlDialect.H2);
+        assertThat(tables).containsExactly("t");
+    }
+
     // ── Options ──────────────────────────────────────────────────────────────
 
     @Test

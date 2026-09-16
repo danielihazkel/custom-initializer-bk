@@ -404,9 +404,17 @@ public class SqlEntityGenerator {
     /** DB2-for-i (iSeries) lets a column carry a short system name ahead of its
      *  type: {@code STATUS_CODE FOR COLUMN STATU00001 NUMERIC(3,0)}. JSqlParser
      *  hits {@code FOR} where it expects a data type, so strip the clause — the
-     *  real (long) column name is the one we keep. */
+     *  real (long) column name is the one we keep. IBM i system names may
+     *  contain {@code @}, {@code #} and {@code $} ({@code @SOXEN#}, {@code @#PLS_SXNH})
+     *  or be double-quoted, so the name class is wider than {@code \w}. */
     private static final Pattern DB2_FOR_COLUMN =
-            Pattern.compile("\\bFOR\\s+COLUMN\\s+\\w+", Pattern.CASE_INSENSITIVE);
+            Pattern.compile("\\bFOR\\s+COLUMN\\s+(?:\"[^\"]+\"|[\\w@#$]+)", Pattern.CASE_INSENSITIVE);
+
+    /** Db2-for-i markers ({@code FOR COLUMN}, {@code CCSID n}) that appear in no
+     *  other dialect's DDL — used to auto-route Db2 normalization when the caller
+     *  left the dialect on the H2 default. */
+    private static final Pattern DB2I_MARKER =
+            Pattern.compile("\\bFOR\\s+COLUMN\\b|\\bCCSID\\s+(?:\\d+|UNICODE)\\b", Pattern.CASE_INSENSITIVE);
 
     /** DB2 column character-set clause ({@code CHAR(24) CCSID 424}); JSqlParser
      *  does not model it. */
@@ -459,7 +467,10 @@ public class SqlEntityGenerator {
     private List<TableModel> parseTables(String sql, SqlDialect dialect) {
         String prepared = sql;
         if (dialect == SqlDialect.ORACLE)   prepared = normalizeOracle(prepared);
-        else if (dialect == SqlDialect.DB2) prepared = normalizeDb2(prepared);
+        // DB2 when explicitly selected, or auto-detected by Db2-for-i clauses
+        // (FOR COLUMN, CCSID) under any other dialect (incl. the H2 default) so a
+        // pasted iSeries export parses even if the user didn't pick "DB2".
+        else if (dialect == SqlDialect.DB2 || looksLikeDb2i(prepared)) prepared = normalizeDb2(prepared);
         // MSSQL when explicitly selected, or auto-detected by its bracket-quoting
         // ([dbo].[t], [col]) under any other dialect (incl. the H2 default) so a
         // pasted T-SQL script parses even if the user didn't pick "SQL Server".
@@ -537,6 +548,13 @@ public class SqlEntityGenerator {
         out = DB2_FOR_DATA.matcher(out).replaceAll("");
         out = DB2_QUALIFIED_CONSTRAINT.matcher(out).replaceAll("$1$2");
         return out;
+    }
+
+    /** True when the script carries Db2-for-i column clauses ({@code FOR COLUMN},
+     *  {@code CCSID n}) — used to auto-route normalization when the caller didn't
+     *  explicitly pick the DB2 dialect. */
+    private static boolean looksLikeDb2i(String sql) {
+        return DB2I_MARKER.matcher(sql).find();
     }
 
     /** True when the script uses SQL Server bracket-quoting ({@code [ident]}) — a
@@ -617,7 +635,7 @@ public class SqlEntityGenerator {
                 int eol = s.indexOf('\n', i);
                 if (eol < 0) break;
                 i = eol + 1;
-                out.append('\n');
+                appendNewline(out);
                 continue;
             }
             if (c == '/' && i + 1 < s.length() && s.charAt(i + 1) == '*') {
@@ -626,10 +644,22 @@ public class SqlEntityGenerator {
                 i = end + 2;
                 continue;
             }
-            out.append(c);
+            if (c == '\n') appendNewline(out); else out.append(c);
             i++;
         }
         return out.toString();
+    }
+
+    /** JSqlParser 4.9 reads three consecutive bare LFs as a statement terminator
+     *  ({@code ST_SEMICOLON}), so a run of blank lines inside a CREATE TABLE splits
+     *  the statement and fails the parse. Two adjacent {@code --} comment lines
+     *  (an iSeries export is full of them) would produce exactly that once blanked
+     *  out above, as would two real blank lines in a hand-written script. Cap runs
+     *  at two LFs (one blank line) outside string literals. */
+    private static void appendNewline(StringBuilder out) {
+        int n = out.length();
+        if (n >= 2 && out.charAt(n - 1) == '\n' && out.charAt(n - 2) == '\n') return;
+        out.append('\n');
     }
 
     private static String snippet(String stmt) {
