@@ -5,7 +5,6 @@ import io.spring.initializr.metadata.InitializrMetadataProvider;
 import io.spring.initializr.web.project.ProjectGenerationInvoker;
 import io.spring.initializr.web.project.ProjectRequest;
 import io.spring.initializr.web.project.WebProjectRequest;
-import org.springframework.util.FileSystemUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RestController;
@@ -56,23 +55,18 @@ public class ProjectPreviewController {
                     .sorted()
                     .forEach(p -> {
                         String rel = projectDir.relativize(p).toString().replace('\\', '/');
-                        files.add(new PreviewFile(rel, readSafely(p)));
+                        files.add(new PreviewFile(rel, GeneratedProjectFiles.readSafely(p)));
                     });
             }
             return new PreviewResponse(files, PreviewTreeBuilder.buildTree(
                     files.stream().map(PreviewFile::path).sorted().toList()));
         } finally {
-            FileSystemUtils.deleteRecursively(projectDir);
+            // cleanTempFiles both deletes the tree and drops the entry the invoker
+            // registered for it — plain deleteRecursively leaks that map entry.
+            invoker.cleanTempFiles(projectDir);
         }
     }
 
-    private String readSafely(Path path) {
-        try {
-            return Files.readString(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            return "[binary file]";
-        }
-    }
 
     // ── Response records ─────────────────────────────────────────────────────
 

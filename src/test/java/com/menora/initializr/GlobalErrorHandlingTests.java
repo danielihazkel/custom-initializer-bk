@@ -49,6 +49,15 @@ class GlobalErrorHandlingTests {
                 .andExpect(jsonPath("$.detail").value("bad arg"));
     }
 
+    @Test
+    void unknownPathReturns404NotAWrapped500() throws Exception {
+        // The catch-all Exception handler used to swallow Spring's NoResourceFoundException,
+        // so every unmapped URL came back as {"error":"Internal error"} with status 500.
+        mvc.perform(get("/definitely-not-a-route"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Not found"));
+    }
+
     @RestController
     static class BoomController {
 

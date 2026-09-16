@@ -44,7 +44,7 @@ This app wraps the Spring Initializr framework (`initializr-web` + `initializr-g
 When a project is generated, the framework spins up a child Spring application context for that request and calls every `ProjectGenerationConfiguration` registered in `META-INF/spring.factories`. Only one is registered: `DynamicProjectGenerationConfiguration`, which contributes three beans:
 
 - **`dynamicFileContributor`** (`ProjectContributor`) — for each selected dependency (plus the special `__common__` entry), writes/merges all associated `FileContributionEntity` records into the generated project
-- **`dynamicDeleteContributor`** (`ProjectContributor`, `@Order(LOWEST_PRECEDENCE)`) — runs after everything else to delete files registered with `DELETE` type (e.g. `application.properties` written by the framework)
+- **`dynamicDeleteContributor`** (`ProjectContributor`, `@Order(LOWEST_PRECEDENCE)`) — runs after everything else to delete files registered with `DELETE` type (e.g. `application.properties` written by the framework). `DELETE` is handled **only** here, never in the write pass, and it applies the same `isGatedOut` sub-option/`javaVersion` gating and the same `resolveTargetPath` (`{{packagePath}}`) resolution as the write pass — the two share one predicate so they can't drift
 - **`dynamicBuildCustomizer`** (`BuildCustomizer<MavenBuild>`) — applies all `BuildCustomizationEntity` records (add dependency, exclude dependency, add repository). Like the file contributor, it skips a record whose `subOptionId` is set unless that sub-option was selected (`optionsContext.hasOption(depId, subOptionId)`) — e.g. `mapstruct`'s processor deps, or a database dep's secondary-datasource config, are added only with the matching sub-option
 
 ### FileContributionEntity — File Types
@@ -52,7 +52,7 @@ When a project is generated, the framework spins up a child Spring application c
 | Type | Behavior |
 |------|----------|
 | `STATIC_COPY` | Writes content verbatim to target path |
-| `YAML_MERGE` | Deep-merges YAML into the target file (creates if absent) |
+| `YAML_MERGE` | Deep-merges YAML into the target file (creates if absent). Blank / comments-only content loads as `null` in SnakeYAML and is treated as an empty map, so such a row is a no-op rather than an NPE |
 | `TEMPLATE` | Applies substitution variables then writes |
 | `DELETE` | Deletes target file (runs at LOWEST_PRECEDENCE, after framework writes) |
 
@@ -209,6 +209,8 @@ Sub-options are managed via `/admin/sub-options`.
 
 The provider caches the metadata. Call `POST /admin/refresh` to invalidate the cache after DB changes.
 
+A dependency that fails to build (bad `compatibilityRange`, bad `scope`, …) is skipped rather than taking the catalog down, but it then silently vanishes from `/metadata/client`. The skipped rows are recorded in `DatabaseInitializrMetadataProvider.getLoadFailures()` and returned by `/admin/refresh` as `{"message": …, "failed": […]}`; the admin UI shows them as an error toast.
+
 ### Dependency Version Compatibility Ranges
 
 Each `DependencyEntryEntity` has an optional `compatibilityRange` field (column: `compatibility_range`). When set, the Spring Initializr framework automatically:
@@ -241,18 +243,50 @@ A `@Component`, `@Order(Integer.MIN_VALUE)` servlet filter (extends `OncePerRequ
 2. **`X-Forwarded-Port` sanitization** — returns empty string if absent/unparseable/`"null"`
 3. **Sub-option context** — calls `optionsContext.populate(request)` before and `clear()` after the filter chain
 
+### Shared Generation Helpers
+
+The generation endpoints (`WizardStarterController`, `FullstackStarterController`,
+`MultiModuleController`, `ProjectPreviewController`, `FrontendProjectGenerator`) each used to
+carry private copies of the same filesystem code. Two shared classes own it now — add to these
+rather than re-introducing a private copy:
+
+- `config/GeneratedProjectFiles` — `zipDirectory`, `readSafely`, `copyDirectory` (public, since
+  `FrontendProjectGenerator` is in another package)
+- `config/PreviewTreeBuilder` — `buildTree(sortedPaths)`, the flat-paths → `TreeNode` shaping
+  behind every preview response
+
+### Per-Request ThreadLocal Contexts
+
+Five `@Component` holders in `config/` carry per-request state into the generation child
+context: `ProjectOptionsContext`, `SqlScriptsContext`, `OpenApiSpecContext`, `SoapSpecContext`,
+`EntityDefinitionContext`. Controllers populate what they need **inside** their `try` and clear
+it in the `finally`, but `InitializrWebConfiguration` (the `@Order(MIN_VALUE)` filter) clears
+**all five** in its own `finally` as the unconditional backstop — no controller covers every
+context, and an exception reaching `GlobalExceptionHandler` clears none. Without that backstop a
+leftover context gets scaffolded into the next request served by the same pooled Tomcat thread.
+Pinned by `config/GenerationContextCleanupTests`.
+
 ### Test Infrastructure
 
 Tests use `src/test/resources/application.properties` which configures an in-memory H2 (`ddl-auto: validate`, schema managed by Flyway; `admin.password=test`). `DataSeeder` runs automatically at test startup and seeds the DB from the catalog manifests, so tests exercise the full DB-driven pipeline.
 
 `src/test/java/com/menora/initializr/TestInvokerConfiguration.java` — a `@TestConfiguration` that provides a `ProjectGenerationInvoker<ProjectRequest>` bean. Test classes import it via `@Import(TestInvokerConfiguration.class)` to invoke project generation directly without HTTP.
 
-**Coverage:** `jacoco-maven-plugin` runs during `mvn test` (no gate) → report at `target/site/jacoco/index.html`.
+**Always release an invoker-generated directory with `invoker.cleanTempFiles(dir)`, not `FileSystemUtils.deleteRecursively(dir)`.** `ProjectGenerationInvoker` is a singleton bean that registers every generated root in a private `temporaryFiles` map and only drops the entry in `cleanTempFiles` — a plain delete removes the files but leaks the map entry for the life of the JVM. `cleanTempFiles` deletes the tree too, so it replaces the delete rather than joining it. It only accepts paths the invoker produced (it NPEs on an unknown path), so directories from `Files.createTempDirectory` still use `FileSystemUtils.deleteRecursively`. Pinned by `InvokerTempFileCleanupTests`.
+
+**Coverage:** `jacoco-maven-plugin` runs during `mvn test` → report at `target/site/jacoco/index.html`. A `check` execution gates the build at 78% instruction / 62% branch (bundle-wide) — set just under the measured 81.5% / 65.0%, so it catches a real regression without tripping on churn. Raise it as coverage rises; never lower it to make a build pass.
 
 **Seeder / admin tests:**
 - `db/DataSeederTest` — characterization test: asserts the observable seeded catalog (group/entry/file-contribution counts, representative content, compatibility/sub-option/template/palette/version counts). The regression oracle for catalog-manifest changes — together with `ProjectGenerationIntegrationTests` (actual generated file bytes) it pins seeding behavior.
 - `admin/AdminApiIntegrationTests` (`MockMvc`) — auth gate (login, 401), validation (400) and orphan-conflict (409) error paths, `/admin/refresh`.
 - `admin/ConfigurationExportImportServiceTest` — export → import round-trip preserves row counts and content (runs `@Transactional` so the destructive import rolls back).
+
+**Regression guards added alongside the fixes they pin:**
+- `InvokerTempFileCleanupTests` — the invoker's `temporaryFiles` map is empty after `cleanTempFiles` (reflective; the map is private).
+- `config/GenerationContextCleanupTests` — the filter clears all five ThreadLocal contexts, on both the success and the exception path.
+- `MultiModuleGenerationTests` — `/starter-multimodule.zip` and `.preview` over HTTP. The only generation tests that go through the servlet stack rather than calling the invoker in-process, which is what makes them able to catch request-binding bugs.
+- `GlobalErrorHandlingTests.unknownPathReturns404NotAWrapped500` — the catch-all handler must not swallow `NoResourceFoundException`.
+- In `ProjectGenerationIntegrationTests`: `blankYamlMerge*` (blank `YAML_MERGE` is a no-op), `deleteContributionResolvesPackagePathPlaceholder` and `deleteContributionGatedOnUnselectedSubOptionDoesNotFire` (the delete pass gates and resolves paths like the write pass).
 
 **Test coverage summary (`ProjectGenerationIntegrationTests`):**
 - `metadataEndpointReturnsOk` — HTTP smoke test; checks `kafka` and `rqueue` appear in metadata

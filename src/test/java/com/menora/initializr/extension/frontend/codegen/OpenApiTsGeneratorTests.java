@@ -1,8 +1,5 @@
-package com.menora.initializr.codegen;
+package com.menora.initializr.extension.frontend.codegen;
 
-import com.menora.initializr.extension.frontend.codegen.ErrorsTsRenderer;
-import com.menora.initializr.extension.frontend.codegen.OpenApiCodegenException;
-import com.menora.initializr.extension.frontend.codegen.OpenApiTsGenerator;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;

@@ -396,6 +396,122 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void blankYamlMergeContributionIsANoOpRatherThanACrash() throws Exception {
+        // SnakeYAML loads empty/comments-only content as null. The merge used to NPE on it
+        // (or write the literal "null" when the target did not exist yet).
+        FileContributionEntity fc = new FileContributionEntity();
+        fc.setDependencyId("__common__");
+        fc.setFileType(FileContributionEntity.FileType.YAML_MERGE);
+        fc.setTargetPath("blank-merge-test.yaml");
+        fc.setContent("# only a comment\n");
+        fc.setSortOrder(9998);
+        FileContributionEntity saved = fileContribRepo.save(fc);
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("web");
+            Path dir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+
+            assertThat(Files.exists(dir.resolve("blank-merge-test.yaml")))
+                    .as("a blank YAML_MERGE must write nothing, not a file containing 'null'")
+                    .isFalse();
+        } finally {
+            fileContribRepo.deleteById(saved.getId());
+        }
+    }
+
+    @Test
+    void blankYamlMergeLeavesAnExistingTargetIntact() throws Exception {
+        // application.yaml already exists by the time this row runs, so this exercises the
+        // deepMerge(existing, null) path that used to throw.
+        FileContributionEntity fc = new FileContributionEntity();
+        fc.setDependencyId("__common__");
+        fc.setFileType(FileContributionEntity.FileType.YAML_MERGE);
+        fc.setTargetPath("src/main/resources/application.yaml");
+        fc.setContent("   ");
+        fc.setSortOrder(9998);
+        FileContributionEntity saved = fileContribRepo.save(fc);
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("kafka");
+            Path dir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+
+            assertThat(Files.readString(dir.resolve("src/main/resources/application.yaml")))
+                    .as("merging blank content must not wipe the existing file")
+                    .contains("bootstrap-servers");
+        } finally {
+            fileContribRepo.deleteById(saved.getId());
+        }
+    }
+
+    @Test
+    void deleteContributionResolvesPackagePathPlaceholder() throws Exception {
+        // The LOWEST_PRECEDENCE delete pass used to resolve the raw target path, so a DELETE
+        // row containing {{packagePath}} silently matched nothing and the file survived.
+        FileContributionEntity write = new FileContributionEntity();
+        write.setDependencyId("__common__");
+        write.setFileType(FileContributionEntity.FileType.STATIC_COPY);
+        write.setTargetPath("src/main/java/{{packagePath}}/doomed.txt");
+        write.setContent("should not survive");
+        write.setSortOrder(9000);
+
+        FileContributionEntity delete = new FileContributionEntity();
+        delete.setDependencyId("__common__");
+        delete.setFileType(FileContributionEntity.FileType.DELETE);
+        delete.setTargetPath("src/main/java/{{packagePath}}/doomed.txt");
+        delete.setSortOrder(9999);
+
+        FileContributionEntity savedWrite = fileContribRepo.save(write);
+        FileContributionEntity savedDelete = fileContribRepo.save(delete);
+        try {
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("web");
+            Path dir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+
+            assertThat(Files.exists(dir.resolve("src/main/java/com/menora/demo/doomed.txt")))
+                    .as("DELETE row must resolve {{packagePath}} like the write pass does")
+                    .isFalse();
+        } finally {
+            fileContribRepo.deleteById(savedDelete.getId());
+            fileContribRepo.deleteById(savedWrite.getId());
+        }
+    }
+
+    @Test
+    void deleteContributionGatedOnUnselectedSubOptionDoesNotFire() throws Exception {
+        // The delete pass applied no gating at all, so a DELETE gated on a sub-option fired
+        // even when the user had not selected that option.
+        FileContributionEntity write = new FileContributionEntity();
+        write.setDependencyId("__common__");
+        write.setFileType(FileContributionEntity.FileType.STATIC_COPY);
+        write.setTargetPath("gated-delete-test.txt");
+        write.setContent("survivor");
+        write.setSortOrder(9000);
+
+        FileContributionEntity delete = new FileContributionEntity();
+        delete.setDependencyId("kafka");
+        delete.setSubOptionId("consumer-example");
+        delete.setFileType(FileContributionEntity.FileType.DELETE);
+        delete.setTargetPath("gated-delete-test.txt");
+        delete.setSortOrder(9999);
+
+        FileContributionEntity savedWrite = fileContribRepo.save(write);
+        FileContributionEntity savedDelete = fileContribRepo.save(delete);
+        try {
+            // kafka selected, but its consumer-example sub-option is not.
+            WebProjectRequest request = createBaseRequest();
+            request.getDependencies().add("kafka");
+            Path dir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+
+            assertThat(Files.readString(dir.resolve("gated-delete-test.txt")))
+                    .as("DELETE gated on an unselected sub-option must not fire")
+                    .isEqualTo("survivor");
+        } finally {
+            fileContribRepo.deleteById(savedDelete.getId());
+            fileContribRepo.deleteById(savedWrite.getId());
+        }
+    }
+
+    @Test
     void multipleDependenciesInjectAllConfigs() throws Exception {
         WebProjectRequest request = createBaseRequest();
         request.getDependencies().add("web");

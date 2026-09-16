@@ -11,6 +11,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.io.UncheckedIOException;
 import java.util.LinkedHashMap;
@@ -53,10 +55,30 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", "Invalid request body", "detail", detail));
     }
 
+    /**
+     * The catalog-import and fullstack type parsers signal bad caller input with plain
+     * {@code IllegalArgumentException}, so 400 is the right status for them. The cost is
+     * that a genuine internal IAE thrown deeper in the generator also comes back as
+     * "Validation failed" — so log it with a stack trace, otherwise such a bug is invisible.
+     * (Wizard input parsing uses {@link com.menora.initializr.config.WizardArgumentException},
+     * which is deliberately not an IAE.)
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
+        log.warn("Request rejected as invalid argument", ex);
         return ResponseEntity.badRequest()
                 .body(Map.of("error", "Validation failed", "detail", String.valueOf(ex.getMessage())));
+    }
+
+    /**
+     * Spring signals "no mapping for this path" with these, and they would otherwise be
+     * caught by {@link #handleUnexpected} below and reported as a 500 — so every unknown
+     * URL looked like a server fault instead of a 404.
+     */
+    @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
+    public ResponseEntity<Map<String, String>> handleNotFound(Exception ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Not found", "detail", String.valueOf(ex.getMessage())));
     }
 
     @ExceptionHandler(Exception.class)

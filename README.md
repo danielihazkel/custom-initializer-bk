@@ -29,13 +29,6 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
     - [Admin Endpoints](#fullstack-admin-endpoints)
 11. [Project Preview](#project-preview)
 12. [Frontend Project Generator (React + TS + Vite + FSD)](#frontend-project-generator-react--ts--vite--fsd)
-13. [Agent Contract (AI Scaffolding)](#agent-contract-ai-scaffolding)
-    - [GET /agent/manifest — Discovery](#get-agentmanifest--discovery)
-    - [POST /agent/scaffold — Generation](#post-agentscaffold--generation)
-    - [.menora-init.json Manifest](#menora-initjson-manifest)
-    - [OpenAPI Spec (Swagger)](#openapi-spec-swagger)
-    - [TypeScript SDK](#typescript-sdk)
-    - [MCP Server (Claude Code)](#mcp-server-claude-code)
 13. [Admin API](#admin-api)
    - [Hot-Reload Metadata](#hot-reload-metadata)
    - [Dependency Groups](#dependency-groups)
@@ -52,7 +45,7 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Orphan Detection on Delete](#orphan-detection-on-delete)
    - [Configuration Export/Import](#configuration-exportimport)
    - [Activity & Audit](#activity--audit)
-7. [Customization Guide](#customization-guide)
+14. [Customization Guide](#customization-guide)
    - [Change the Spring Boot Version](#change-the-spring-boot-version)
    - [Change the Initializr Version](#change-the-initializr-version)
    - [Add a New Dependency (no custom config needed)](#add-a-new-dependency-no-custom-config-needed)
@@ -67,9 +60,9 @@ A self-hosted, air-gapped Spring Initializr for the Menora corporate network. It
    - [Change the Artifactory URL](#change-the-artifactory-url)
    - [Add a New BOM (Bill of Materials)](#add-a-new-bom-bill-of-materials)
    - [Add a New Java Version Option](#add-a-new-java-version-option)
-8. [Testing](#testing)
-9. [Dependency Catalog Reference](#dependency-catalog-reference)
-10. [Architecture Reference](#architecture-reference)
+15. [Testing](#testing)
+16. [Dependency Catalog Reference](#dependency-catalog-reference)
+17. [Architecture Reference](#architecture-reference)
 
 ---
 
@@ -1096,239 +1089,11 @@ Every FE project description carries optional `apiBaseUrl` and `backendArtifactI
 
 ---
 
-## Agent Contract (AI Scaffolding)
-
-A small surface designed for AI agents (and any HTTP client that doesn't want to handle ZIPs). Agents call this contract to scaffold a Spring Boot project, then continue editing the generated tree with their own business logic. Three pieces:
-
-1. **`GET /agent/manifest`** — one-shot discovery of every dep, sub-option, template, and wizard.
-2. **`POST /agent/scaffold`** — same wizard pipeline as `/starter-wizard.zip`, but returns a JSON file tree (utf-8 + base64) instead of a binary ZIP.
-3. **`.menora-init.json`** — manifest dropped at the project root with inputs + per-file SHA-256, so future calls (or the agent itself) can tell scaffold-owned files from agent-edited ones.
-
-The contract is unauthed (matching the existing public endpoints). Authentication can be layered later if needed.
-
-### GET /agent/manifest — Discovery
-
-Replaces seven separate `/metadata/*` round-trips. Cacheable.
-
-```bash
-curl http://localhost:8080/agent/manifest | jq '.dependencies | length, .wizards.sql.capableDeps'
-```
-
-Response shape (truncated):
-```json
-{
-  "schemaVersion": 1,
-  "bootVersions": ["3.2.1"],
-  "javaVersions": ["21", "17"],
-  "languages": ["java", "kotlin"],
-  "packagings": ["jar", "war"],
-  "types": ["maven-project"],
-  "dependencies": [
-    {
-      "id": "web",
-      "name": "Spring Web",
-      "groupName": "Web",
-      "compatibilityRange": "[3.2.0,4.0.0)",
-      "subOptions": []
-    },
-    {
-      "id": "postgresql",
-      "name": "PostgreSQL Driver",
-      "groupName": "Data",
-      "compatibilityRange": null,
-      "subOptions": [
-        { "id": "pg-primary", "label": "Primary DataSource", "description": "..." }
-      ]
-    }
-  ],
-  "starterTemplates": [ /* ... */ ],
-  "moduleTemplates": [ /* ... */ ],
-  "compatibilityRules": [ /* ... */ ],
-  "wizards": {
-    "sql":     { "capableDeps": ["postgresql","h2","mssql","oracle","db2"], "dialects": { "postgresql": "POSTGRESQL", "h2": "H2", ... } },
-    "openApi": { "capableDeps": ["web","webflux"], "dialects": {} },
-    "soap":    { "capableDeps": ["web-services"], "dialects": {} }
-  },
-  "defaultGroupId": "com.menora",
-  "defaultArtifactId": "demo",
-  "defaultBootVersion": "3.2.1",
-  "defaultJavaVersion": "21"
-}
-```
-
-### POST /agent/scaffold — Generation
-
-Accepts the same JSON body as `/starter-wizard.zip` plus a `mode` flag:
-
-| Mode | Behavior |
-|------|----------|
-| `wizard` (default) | Single project; SQL/OpenAPI/SOAP wizard fields are honored |
-| `starter` | Single project; equivalent to `wizard` with empty wizard fields |
-| `multimodule` | Returns HTTP 501 — use `GET /starter-multimodule.zip` for now |
-
-```bash
-curl -s -X POST http://localhost:8080/agent/scaffold \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "groupId": "com.acme",
-    "artifactId": "svc",
-    "bootVersion": "3.2.1",
-    "javaVersion": "21",
-    "packaging": "jar",
-    "language": "java",
-    "dependencies": ["web", "data-jpa", "postgresql"],
-    "opts": { "postgresql": ["pg-primary"] }
-  }' | jq '.files | length'
-```
-
-Response shape:
-```json
-{
-  "manifest": { /* parsed .menora-init.json — see below */ },
-  "files": [
-    { "path": "pom.xml",                  "encoding": "utf-8",  "content": "<project>...</project>",        "sha256": "abc..." },
-    { "path": "src/main/java/.../App.java","encoding": "utf-8",  "content": "package ...;",                  "sha256": "def..." },
-    { "path": ".mvn/wrapper/mvn-wrapper.jar","encoding": "base64","content": "UEsDBBQACA...",                "sha256": "789..." },
-    { "path": ".menora-init.json",         "encoding": "utf-8",  "content": "{\n  \"schemaVersion\": 1...", "sha256": "xyz..." }
-  ]
-}
-```
-
-Text files (`.java`, `.xml`, `.yaml`, `.properties`, `Dockerfile`, `mvnw`, `.gitignore`, etc.) are inlined as UTF-8. Anything else falls back to base64. The `sha256` field always reflects the raw bytes — verify with:
-```bash
-echo -n "<utf-8 content>" | sha256sum
-# or for base64: base64 -d <<< "<content>" | sha256sum
-```
-
-Wizard inputs work identically to `/starter-wizard.zip`:
-```bash
-curl -s -X POST http://localhost:8080/agent/scaffold \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "bootVersion": "3.2.1",
-    "dependencies": ["postgresql","data-jpa"],
-    "opts": { "postgresql": ["pg-primary"] },
-    "sqlByDep": {
-      "postgresql": "CREATE TABLE users (id BIGSERIAL PRIMARY KEY, email VARCHAR(200) NOT NULL);"
-    },
-    "sqlOptions": {
-      "postgresql": {
-        "subPackage": "entity",
-        "tables": [{ "name": "users", "generateRepository": true }]
-      }
-    }
-  }' | jq '.files[].path' | grep entity
-```
-
-### .menora-init.json Manifest
-
-Every project generated through `/agent/scaffold` ships with `.menora-init.json` at its root:
-
-```json
-{
-  "schemaVersion": 1,
-  "generator": {
-    "name": "menora-initializr",
-    "version": "1.0.0-SNAPSHOT",
-    "generatedAt": "2026-04-27T12:34:56.789Z"
-  },
-  "inputs": {
-    "mode": "wizard",
-    "groupId": "com.acme",
-    "artifactId": "svc",
-    "bootVersion": "3.2.1",
-    "javaVersion": "21",
-    "packaging": "jar",
-    "language": "java",
-    "dependencies": ["web","data-jpa","postgresql"],
-    "modules": [],
-    "opts": { "postgresql": ["pg-primary"] },
-    "wizards": null
-  },
-  "files": [
-    { "path": "pom.xml", "sha256": "abc..." },
-    { "path": "src/main/java/.../App.java", "sha256": "def..." }
-  ]
-}
-```
-
-The agent-side rule is straightforward:
-
-| Working-tree state | Meaning |
-|--------------------|---------|
-| File path is in manifest **and** sha matches | Scaffold-owned, untouched |
-| File path is in manifest **and** sha differs | Agent edited a scaffold file |
-| File path is **not** in manifest | Agent added a new file |
-| File path is in manifest **and** missing on disk | Agent deleted a scaffold file |
-
-This makes safe re-scaffolding tractable: future iterations can compute a 3-way diff (old scaffold → new scaffold → agent edits) instead of clobbering the agent's work.
-
-### OpenAPI Spec (Swagger)
-
-The agent endpoints are documented through `springdoc-openapi`:
-
-- **JSON spec** — `GET /v3/api-docs`
-- **Swagger UI** — `GET /swagger-ui.html`
-
-The OpenAPI scan is scoped to `com.menora.initializr.agent` only — the existing browser-facing wizard controllers are excluded so the spec stays focused on the agent surface. Wire `openapi-typescript` or any code generator at this URL to keep your client SDK in sync.
-
-### TypeScript SDK
-
-A typed client lives at [`clients/typescript/`](../clients/typescript) (package name `@menora/initializr-client`).
-
-```ts
-import { InitializrClient, anthropicTools, executeAgentTool } from "@menora/initializr-client";
-
-const client = new InitializrClient({ baseUrl: "http://localhost:8080" });
-
-// Discovery
-const cap = await client.manifest();
-
-// Scaffolding
-const project = await client.scaffold({
-  bootVersion: cap.defaultBootVersion!,
-  dependencies: ["web", "actuator"],
-});
-for (const file of project.files) {
-  // write file.content (utf-8 or base64) to disk under your target path
-}
-
-// In Anthropic SDK apps: get tool definitions + a dispatch helper
-const tools = anthropicTools();             // pass to messages.create({ tools })
-const result = await executeAgentTool(name, input, client); // call inside your tool_use handler
-```
-
-The SDK uses `globalThis.fetch`, so it runs unmodified in Node 18+, browsers, Bun, Deno, and Cloudflare Workers. Build with `npm run build`.
-
-### MCP Server (Claude Code)
-
-A Model Context Protocol server lives at [`mcp-server/`](../mcp-server). It exposes the agent contract as MCP tools so Claude Code (and any MCP client) can drive scaffolding natively:
-
-```bash
-cd mcp-server && npm install && npm run build
-claude mcp add menora-initializr -- node /abs/path/to/mcp-server/dist/index.js
-# Then in Claude Code:
-#   "Use menora-initializr to scaffold a Spring Boot 3.2.1 service with web + data-jpa"
-```
-
-Configure the backend URL via `MENORA_INITIALIZR_URL` (defaults to `http://localhost:8080`).
-
-Tools exposed:
-
-| Tool | Backing endpoint | Use |
-|------|------------------|-----|
-| `list_capabilities` | `GET /agent/manifest` | discover deps, sub-options, wizard support |
-| `scaffold_project` | `POST /agent/scaffold` | generate the project (returns JSON file tree + manifest) |
-| `detect_openapi_paths` | `POST /starter-wizard.detect-paths` | validate an OpenAPI spec before passing it via `specByDep` |
-| `detect_wsdl_services` | `POST /starter-wizard.detect-services` | validate a WSDL before passing it via `wsdlByDep` |
-
----
-
 ## Admin API
 
 The admin API manages the database that drives project generation. All changes take effect immediately after calling `/admin/refresh` — no restart needed.
 
-> **Note:** The admin API is protected by password authentication. On first startup, a random password is generated and printed to the console. Set a custom password via the `ADMIN_PASSWORD` environment variable. The admin UI manages login/logout automatically; for curl, include `Authorization: Bearer <token>` after calling `POST /admin/login`.
+> **Note:** The admin API is protected by a single shared password read from the `admin.password` property (`application.yml`, default `changeme`). Override it per environment with `--admin.password=...` or `ADMIN_PASSWORD=...` (Spring's relaxed binding maps the env var onto the property). `POST /admin/login` exchanges the password for a bearer token held in memory for the JVM's lifetime; the admin UI manages login/logout automatically, and for curl you pass `Authorization: Bearer <token>`.
 
 ### Hot-Reload Metadata
 
@@ -1339,7 +1104,22 @@ POST /admin/refresh
 
 ```bash
 curl -X POST http://localhost:8080/admin/refresh
-# → "Metadata refreshed from database"
+# → {"message":"Metadata refreshed from database","failed":[]}
+```
+
+A dependency that cannot be built (malformed `compatibilityRange`, unknown `scope`, …) is
+skipped rather than failing the whole catalog — but it then silently disappears from
+`/metadata/client`. Those rows come back in `failed`, and the admin UI raises them as an
+error toast instead of reporting a clean refresh:
+
+```json
+{
+  "message": "Metadata refreshed — 1 dependency(ies) skipped",
+  "failed": [
+    { "depId": "kafka", "name": "Spring for Apache Kafka", "group": "Messaging",
+      "reason": "java.lang.IllegalArgumentException: Invalid version range [3.2.0" }
+  ]
+}
 ```
 
 ### Dependency Groups

@@ -59,47 +59,47 @@ public class DynamicProjectGenerationConfiguration {
     // escapeHTML=false: we render Java, Dockerfile, YAML — never HTML.
     private static final Mustache.Compiler MUSTACHE = Mustache.compiler().escapeHTML(false);
 
+    /**
+     * The file-contribution rows for this generation. Both contributors below need the same
+     * list; holding it in one bean of the per-request child context keeps it to a single query.
+     */
+    record SelectedFileContributions(List<FileContributionEntity> rows) {}
+
+    @Bean
+    SelectedFileContributions selectedFileContributions(ProjectDescription description,
+                                                        DependencyConfigService configService) {
+        Set<String> depIds = selectedDepIds(description);
+        log.info("generation: selectedDepIds={}", depIds);
+        return new SelectedFileContributions(configService.getFileContributions(depIds));
+    }
+
     @Bean
     @Order(0)
     ProjectContributor dynamicFileContributor(
             ProjectDescription description,
-            DependencyConfigService configService,
+            SelectedFileContributions selectedFileContributions,
             ProjectOptionsContext optionsContext,
             EntityDefinitionContext entityContext,
             SqlScriptsContext sqlContext) {
         return projectRoot -> {
             Set<String> depIds = selectedDepIds(description);
-            log.info("generation: selectedDepIds={}", depIds);
-            List<FileContributionEntity> contributions = configService.getFileContributions(depIds);
+            List<FileContributionEntity> contributions = selectedFileContributions.rows();
 
             Map<String, Object> baseContext =
                     buildBaseContext(description, depIds, optionsContext, entityContext, sqlContext);
 
             for (FileContributionEntity fc : contributions) {
-                // Skip if gated on a sub-option that wasn't selected
-                if (fc.getSubOptionId() != null
-                        && !optionsContext.hasOption(fc.getDependencyId(), fc.getSubOptionId())) {
-                    log.debug("skip fc id={} dep={} target={}: sub-option '{}' not selected",
-                            fc.getId(), fc.getDependencyId(), fc.getTargetPath(), fc.getSubOptionId());
-                    continue;
-                }
-                // Skip if gated on a Java version that doesn't match
-                if (fc.getJavaVersion() != null
-                        && !fc.getJavaVersion().equals(description.getLanguage().jvmVersion())) {
-                    log.debug("skip fc id={} dep={} target={}: javaVersion='{}' != project '{}'",
-                            fc.getId(), fc.getDependencyId(), fc.getTargetPath(),
-                            fc.getJavaVersion(), description.getLanguage().jvmVersion());
-                    continue;
-                }
+                if (isGatedOut(fc, description, optionsContext)) continue;
 
-                String targetPath = resolveTargetPath(fc.getTargetPath(), description);
-                Path target = projectRoot.resolve(targetPath);
+                Path target = projectRoot.resolve(resolveTargetPath(fc.getTargetPath(), description));
 
                 switch (fc.getFileType()) {
                     case YAML_MERGE -> mergeYaml(fc.getContent(), target);
                     case TEMPLATE -> writeTemplate(fc, baseContext, target);
                     case STATIC_COPY -> writeStatic(fc.getContent(), target);
-                    case DELETE -> Files.deleteIfExists(target);
+                    // Deliberately not handled here: dynamicDeleteContributor runs at
+                    // LOWEST_PRECEDENCE, after the framework has written what these target.
+                    case DELETE -> { }
                 }
             }
         };
@@ -114,17 +114,40 @@ public class DynamicProjectGenerationConfiguration {
     @Order(Ordered.LOWEST_PRECEDENCE)
     ProjectContributor dynamicDeleteContributor(
             ProjectDescription description,
-            DependencyConfigService configService) {
+            SelectedFileContributions selectedFileContributions,
+            ProjectOptionsContext optionsContext) {
         return projectRoot -> {
-            Set<String> depIds = selectedDepIds(description);
-            List<FileContributionEntity> contributions = configService.getFileContributions(depIds);
-
-            for (FileContributionEntity fc : contributions) {
-                if (fc.getFileType() == FileContributionEntity.FileType.DELETE) {
-                    Files.deleteIfExists(projectRoot.resolve(fc.getTargetPath()));
-                }
+            for (FileContributionEntity fc : selectedFileContributions.rows()) {
+                if (fc.getFileType() != FileContributionEntity.FileType.DELETE) continue;
+                // Same gating and path resolution as the write pass — a DELETE row can be
+                // gated on a sub-option or Java version, and can use {{packagePath}}.
+                if (isGatedOut(fc, description, optionsContext)) continue;
+                Files.deleteIfExists(projectRoot.resolve(resolveTargetPath(fc.getTargetPath(), description)));
             }
         };
+    }
+
+    /**
+     * Whether a file contribution is excluded for this generation. Shared by the write pass
+     * and the LOWEST_PRECEDENCE delete pass so the two can't drift apart.
+     */
+    private static boolean isGatedOut(FileContributionEntity fc,
+                                      ProjectDescription description,
+                                      ProjectOptionsContext optionsContext) {
+        if (fc.getSubOptionId() != null
+                && !optionsContext.hasOption(fc.getDependencyId(), fc.getSubOptionId())) {
+            log.debug("skip fc id={} dep={} target={}: sub-option '{}' not selected",
+                    fc.getId(), fc.getDependencyId(), fc.getTargetPath(), fc.getSubOptionId());
+            return true;
+        }
+        if (fc.getJavaVersion() != null
+                && !fc.getJavaVersion().equals(description.getLanguage().jvmVersion())) {
+            log.debug("skip fc id={} dep={} target={}: javaVersion='{}' != project '{}'",
+                    fc.getId(), fc.getDependencyId(), fc.getTargetPath(),
+                    fc.getJavaVersion(), description.getLanguage().jvmVersion());
+            return true;
+        }
+        return false;
     }
 
     @Bean
@@ -507,19 +530,24 @@ public class DynamicProjectGenerationConfiguration {
 
     private void mergeYaml(String newContent, Path targetYamlPath) throws IOException {
         Yaml yaml = new Yaml();
-        Map<String, Object> merged;
-        if (Files.exists(targetYamlPath)) {
-            Map<String, Object> existing = yaml.load(Files.readString(targetYamlPath));
-            Map<String, Object> incoming = yaml.load(newContent);
-            merged = deepMerge(existing, incoming);
-        } else {
-            merged = yaml.load(newContent);
-        }
+        // SnakeYAML returns null for empty or comments-only input, which the validator lets
+        // through (it only rejects null/empty strings). Coalesce before merging so a blank
+        // YAML_MERGE row is a no-op instead of an NPE or a file containing the literal "null".
+        Map<String, Object> incoming = orEmpty(yaml.load(newContent));
+        Map<String, Object> merged = Files.exists(targetYamlPath)
+                ? deepMerge(orEmpty(yaml.load(Files.readString(targetYamlPath))), incoming)
+                : incoming;
+        if (merged.isEmpty()) return;
         Files.createDirectories(targetYamlPath.getParent());
         DumperOptions opts = new DumperOptions();
         opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         opts.setPrettyFlow(true);
         Files.writeString(targetYamlPath, new Yaml(opts).dump(merged));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> orEmpty(Object loaded) {
+        return loaded instanceof Map ? (Map<String, Object>) loaded : new LinkedHashMap<>();
     }
 
     @SuppressWarnings("unchecked")

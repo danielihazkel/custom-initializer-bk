@@ -35,6 +35,16 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
 
     private volatile InitializrMetadata cachedMetadata;
 
+    /**
+     * Dependencies that the last {@link #buildMetadata()} could not load (bad compatibility
+     * range, bad scope, …). They are skipped rather than failing the whole catalog, but the
+     * admin who just saved the row needs to be told — see {@link #getLoadFailures()}.
+     */
+    private volatile List<LoadFailure> loadFailures = List.of();
+
+    /** One dependency the catalog could not load, and why. */
+    public record LoadFailure(String depId, String name, String group, String reason) {}
+
     public DatabaseInitializrMetadataProvider(InitializrProperties initializrProperties,
                                                DependencyConfigService configService,
                                                VersionService versionService) {
@@ -53,6 +63,11 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
             }
         }
         return cachedMetadata;
+    }
+
+    /** Dependencies skipped by the last catalog load; empty when everything loaded cleanly. */
+    public List<LoadFailure> getLoadFailures() {
+        return loadFailures;
     }
 
     /** Reload the metadata from the database. Call via POST /admin/refresh. */
@@ -104,6 +119,7 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
     private List<DependencyGroup> loadGroupsFromDb() {
         List<DependencyGroupEntity> entities = configService.getAllGroupsWithEntries();
         List<DependencyGroup> groups = new ArrayList<>();
+        List<LoadFailure> failures = new ArrayList<>();
 
         for (DependencyGroupEntity ge : entities) {
             DependencyGroup group = DependencyGroup.create(ge.getName());
@@ -142,6 +158,7 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
                 } catch (Exception ex) {
                     log.error("  [metadata] failed to load dep id='{}' name='{}' in group '{}': {}",
                             ee.getDepId(), ee.getName(), ge.getName(), ex.toString());
+                    failures.add(new LoadFailure(ee.getDepId(), ee.getName(), ge.getName(), ex.toString()));
                 }
             }
 
@@ -149,6 +166,7 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
             groups.add(group);
         }
 
+        this.loadFailures = List.copyOf(failures);
         return groups;
     }
 }

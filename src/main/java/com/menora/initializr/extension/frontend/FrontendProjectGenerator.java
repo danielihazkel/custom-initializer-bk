@@ -1,5 +1,6 @@
 package com.menora.initializr.extension.frontend;
 
+import com.menora.initializr.config.GeneratedProjectFiles;
 import com.menora.initializr.config.OpenApiSpecContext;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.db.DependencyConfigService;
@@ -22,7 +23,6 @@ import org.springframework.util.FileSystemUtils;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -36,8 +36,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 /**
  * Orchestrates generation of a React + TypeScript + Vite + FSD project skeleton.
@@ -135,7 +133,7 @@ public class FrontendProjectGenerator {
         Path tempDir = Files.createTempDirectory("frontend-");
         try {
             renderInto(tempDir, desc);
-            return zipDirectory(tempDir, desc.getProjectName());
+            return GeneratedProjectFiles.zipDirectory(tempDir, desc.getProjectName());
         } finally {
             FileSystemUtils.deleteRecursively(tempDir);
         }
@@ -400,22 +398,4 @@ public class FrontendProjectGenerator {
 
     // ── ZIP ──────────────────────────────────────────────────────────────────
 
-    private byte[] zipDirectory(Path dir, String rootDirName) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
-            try (Stream<Path> walk = Files.walk(dir)) {
-                walk.filter(Files::isRegularFile).sorted().forEach(p -> {
-                    String entryName = rootDirName + "/" + dir.relativize(p).toString().replace('\\', '/');
-                    try {
-                        zos.putNextEntry(new ZipEntry(entryName));
-                        Files.copy(p, zos);
-                        zos.closeEntry();
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                });
-            }
-        }
-        return baos.toByteArray();
-    }
 }

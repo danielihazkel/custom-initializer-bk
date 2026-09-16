@@ -19,15 +19,12 @@ import io.spring.initializr.web.project.WebProjectRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.FileSystemUtils;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,8 +35,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 /**
  * Unified POST sibling of {@code /starter.zip} that accepts a single JSON body
@@ -97,19 +92,22 @@ public class WizardStarterController {
         validateWsdls(body);
         validateSql(body);
         WebProjectRequest request = toWebRequest(body);
-        populateContexts(body);
-        defaultDatasourceRolesIfSql(body, request);
         Path projectDir = null;
         try {
+            // Inside the try: defaultDatasourceRolesIfSql hits the DB, and anything thrown
+            // between populate and the finally would otherwise leave the ThreadLocals set
+            // on this pooled request thread.
+            populateContexts(body);
+            defaultDatasourceRolesIfSql(body, request);
             projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
-            byte[] zip = zipDirectory(projectDir, request.getArtifactId());
+            byte[] zip = GeneratedProjectFiles.zipDirectory(projectDir, request.getArtifactId());
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=\"" + request.getArtifactId() + ".zip\"")
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .body(zip);
         } finally {
-            if (projectDir != null) FileSystemUtils.deleteRecursively(projectDir);
+            if (projectDir != null) invoker.cleanTempFiles(projectDir);
             clearAllContexts();
         }
     }
@@ -120,10 +118,13 @@ public class WizardStarterController {
         validateWsdls(body);
         validateSql(body);
         WebProjectRequest request = toWebRequest(body);
-        populateContexts(body);
-        defaultDatasourceRolesIfSql(body, request);
         Path projectDir = null;
         try {
+            // Inside the try: defaultDatasourceRolesIfSql hits the DB, and anything thrown
+            // between populate and the finally would otherwise leave the ThreadLocals set
+            // on this pooled request thread.
+            populateContexts(body);
+            defaultDatasourceRolesIfSql(body, request);
             projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
             List<ProjectPreviewController.PreviewFile> files = new ArrayList<>();
             final Path root = projectDir;
@@ -132,14 +133,14 @@ public class WizardStarterController {
                         .sorted()
                         .forEach(p -> {
                             String rel = root.relativize(p).toString().replace('\\', '/');
-                            files.add(new ProjectPreviewController.PreviewFile(rel, readSafely(p)));
+                            files.add(new ProjectPreviewController.PreviewFile(rel, GeneratedProjectFiles.readSafely(p)));
                         });
             }
             return new ProjectPreviewController.PreviewResponse(files,
-                    buildChildren("", files.stream()
+                    PreviewTreeBuilder.buildTree(files.stream()
                             .map(ProjectPreviewController.PreviewFile::path).sorted().toList()));
         } finally {
-            if (projectDir != null) FileSystemUtils.deleteRecursively(projectDir);
+            if (projectDir != null) invoker.cleanTempFiles(projectDir);
             clearAllContexts();
         }
     }
@@ -396,62 +397,8 @@ public class WizardStarterController {
         return (v == null || v.isBlank()) ? fallback : v;
     }
 
-    private byte[] zipDirectory(Path dir, String rootDirName) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
-            try (Stream<Path> walk = Files.walk(dir)) {
-                walk.filter(Files::isRegularFile)
-                        .sorted()
-                        .forEach(p -> {
-                            String entry = rootDirName + "/" + dir.relativize(p).toString().replace('\\', '/');
-                            try {
-                                zos.putNextEntry(new ZipEntry(entry));
-                                Files.copy(p, zos);
-                                zos.closeEntry();
-                            } catch (IOException ex) {
-                                throw new UncheckedIOException(ex);
-                            }
-                        });
-            }
-        }
-        return baos.toByteArray();
-    }
 
-    private String readSafely(Path p) {
-        try {
-            return Files.readString(p, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            return "[binary file]";
-        }
-    }
 
-    private List<ProjectPreviewController.TreeNode> buildChildren(String prefix, List<String> paths) {
-        Map<String, List<String>> subdirs = new LinkedHashMap<>();
-        List<String> directFiles = new ArrayList<>();
-        for (String path : paths) {
-            String relative = prefix.isEmpty() ? path : path.substring(prefix.length() + 1);
-            int slash = relative.indexOf('/');
-            if (slash == -1) {
-                directFiles.add(path);
-            } else {
-                String childDir = relative.substring(0, slash);
-                String childPrefix = prefix.isEmpty() ? childDir : prefix + "/" + childDir;
-                subdirs.computeIfAbsent(childPrefix, k -> new ArrayList<>()).add(path);
-            }
-        }
-        List<ProjectPreviewController.TreeNode> result = new ArrayList<>();
-        for (var e : subdirs.entrySet()) {
-            String dirPath = e.getKey();
-            String dirName = dirPath.contains("/") ? dirPath.substring(dirPath.lastIndexOf('/') + 1) : dirPath;
-            result.add(new ProjectPreviewController.TreeNode(dirName, dirPath, "directory",
-                    buildChildren(dirPath, e.getValue())));
-        }
-        for (String file : directFiles) {
-            String name = file.contains("/") ? file.substring(file.lastIndexOf('/') + 1) : file;
-            result.add(new ProjectPreviewController.TreeNode(name, file, "file", List.of()));
-        }
-        return result;
-    }
 
     // ── Request records ───────────────────────────────────────────────────────
 

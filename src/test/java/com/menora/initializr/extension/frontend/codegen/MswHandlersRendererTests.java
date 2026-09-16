@@ -1,8 +1,5 @@
-package com.menora.initializr.codegen;
+package com.menora.initializr.extension.frontend.codegen;
 
-import com.menora.initializr.extension.frontend.codegen.ErrorsTsRenderer;
-import com.menora.initializr.extension.frontend.codegen.MswHandlersRenderer;
-import com.menora.initializr.extension.frontend.codegen.OpenApiTsGenerator;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

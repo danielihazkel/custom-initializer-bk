@@ -9,6 +9,8 @@ import io.spring.initializr.web.project.ProjectGenerationInvoker;
 import io.spring.initializr.web.project.ProjectRequest;
 import io.spring.initializr.web.project.WebProjectRequest;
 import org.springframework.http.HttpHeaders;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.FileSystemUtils;
@@ -23,8 +25,6 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 /**
  * GET /starter-multimodule.zip — generates a multi-module Maven project.
@@ -38,6 +38,8 @@ import java.util.zip.ZipOutputStream;
  */
 @RestController
 public class MultiModuleController {
+
+    private static final Logger log = LoggerFactory.getLogger(MultiModuleController.class);
 
     private final ProjectGenerationInvoker<ProjectRequest> invoker;
     private final InitializrMetadataProvider metadataProvider;
@@ -67,7 +69,8 @@ public class MultiModuleController {
             @RequestParam(defaultValue = "3.2.1") String bootVersion,
             @RequestParam(defaultValue = "jar") String packaging,
             @RequestParam(defaultValue = "21") String javaVersion,
-            @RequestParam(defaultValue = "") String dependencies
+            @RequestParam(defaultValue = "") String dependencies,
+            @RequestParam(defaultValue = "properties") String configurationFileFormat
     ) throws IOException {
         Set<String> moduleIds = Arrays.stream(modules.split(","))
                 .map(String::trim).filter(s -> !s.isEmpty())
@@ -127,6 +130,10 @@ public class MultiModuleController {
                     request.setDependencies(new ArrayList<>(moduleDeps));
                 }
                 request.setVersion(defaultVersion);
+                // Built by hand from @RequestParams, so the filter's parameter-level default
+                // never reaches it — without this the framework throws
+                // "Unrecognized configuration file format id 'null'".
+                request.setConfigurationFileFormat(configurationFileFormat);
 
                 Path moduleDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
                 try {
@@ -138,9 +145,10 @@ public class MultiModuleController {
 
                     // Copy generated module into the temp dir under the module artifact ID
                     Path targetModuleDir = tempDir.resolve(moduleArtifactId);
-                    copyDirectory(moduleDir, targetModuleDir);
+                    GeneratedProjectFiles.copyDirectory(moduleDir, targetModuleDir);
                 } finally {
-                    FileSystemUtils.deleteRecursively(moduleDir);
+                    // cleanTempFiles deletes the tree *and* drops the invoker's map entry for it.
+                    invoker.cleanTempFiles(moduleDir);
                 }
             }
 
@@ -150,7 +158,7 @@ public class MultiModuleController {
             Files.writeString(tempDir.resolve("pom.xml"), parentPom, StandardCharsets.UTF_8);
 
             // ZIP it all up
-            byte[] zipBytes = zipDirectory(tempDir, artifactId);
+            byte[] zipBytes = GeneratedProjectFiles.zipDirectory(tempDir, artifactId);
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + artifactId + ".zip\"")
@@ -174,7 +182,8 @@ public class MultiModuleController {
             @RequestParam(defaultValue = "3.2.1") String bootVersion,
             @RequestParam(defaultValue = "jar") String packaging,
             @RequestParam(defaultValue = "21") String javaVersion,
-            @RequestParam(defaultValue = "") String dependencies
+            @RequestParam(defaultValue = "") String dependencies,
+            @RequestParam(defaultValue = "properties") String configurationFileFormat
     ) throws IOException {
         Set<String> moduleIds = Arrays.stream(modules.split(","))
                 .map(String::trim).filter(s -> !s.isEmpty())
@@ -221,6 +230,10 @@ public class MultiModuleController {
                     request.setDependencies(new ArrayList<>(moduleDeps));
                 }
                 request.setVersion(defaultVersion);
+                // Built by hand from @RequestParams, so the filter's parameter-level default
+                // never reaches it — without this the framework throws
+                // "Unrecognized configuration file format id 'null'".
+                request.setConfigurationFileFormat(configurationFileFormat);
 
                 Path moduleDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
                 try {
@@ -228,9 +241,10 @@ public class MultiModuleController {
                         deleteMainClass(moduleDir);
                         deleteTestClass(moduleDir);
                     }
-                    copyDirectory(moduleDir, tempDir.resolve(moduleArtifactId));
+                    GeneratedProjectFiles.copyDirectory(moduleDir, tempDir.resolve(moduleArtifactId));
                 } finally {
-                    FileSystemUtils.deleteRecursively(moduleDir);
+                    // cleanTempFiles deletes the tree *and* drops the invoker's map entry for it.
+                    invoker.cleanTempFiles(moduleDir);
                 }
             }
 
@@ -245,11 +259,11 @@ public class MultiModuleController {
                         .sorted()
                         .forEach(p -> {
                             String rel = tempDir.relativize(p).toString().replace('\\', '/');
-                            files.add(new ProjectPreviewController.PreviewFile(rel, readSafely(p)));
+                            files.add(new ProjectPreviewController.PreviewFile(rel, GeneratedProjectFiles.readSafely(p)));
                         });
             }
             return new MultiModulePreviewResponse(files,
-                    buildChildren("", files.stream().map(ProjectPreviewController.PreviewFile::path).sorted().toList()));
+                    PreviewTreeBuilder.buildTree(files.stream().map(ProjectPreviewController.PreviewFile::path).sorted().toList()));
         } finally {
             FileSystemUtils.deleteRecursively(tempDir);
         }
@@ -306,7 +320,11 @@ public class MultiModuleController {
                             if (content.contains("@SpringBootApplication")) {
                                 Files.delete(p);
                             }
-                        } catch (IOException ignored) {}
+                        } catch (IOException ex) {
+                            // Leaves a stray @SpringBootApplication in a module meant to have
+                            // none — the generated project won't build, so make it visible.
+                            log.warn("could not remove main class {}: {}", p, ex.toString());
+                        }
                     });
         }
     }
@@ -317,88 +335,20 @@ public class MultiModuleController {
             walk.filter(Files::isRegularFile)
                     .filter(p -> p.toString().endsWith("ApplicationTests.java"))
                     .forEach(p -> {
-                        try { Files.delete(p); } catch (IOException ignored) {}
+                        try {
+                            Files.delete(p);
+                        } catch (IOException ex) {
+                            log.warn("could not remove test class {}: {}", p, ex.toString());
+                        }
                     });
         }
     }
 
-    private void copyDirectory(Path source, Path target) throws IOException {
-        try (Stream<Path> walk = Files.walk(source)) {
-            walk.forEach(s -> {
-                Path t = target.resolve(source.relativize(s));
-                try {
-                    if (Files.isDirectory(s)) {
-                        Files.createDirectories(t);
-                    } else {
-                        Files.createDirectories(t.getParent());
-                        Files.copy(s, t);
-                    }
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-        }
-    }
 
-    private byte[] zipDirectory(Path dir, String rootDirName) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
-            try (Stream<Path> walk = Files.walk(dir)) {
-                walk.filter(Files::isRegularFile)
-                        .sorted()
-                        .forEach(p -> {
-                            String entryName = rootDirName + "/" + dir.relativize(p).toString().replace('\\', '/');
-                            try {
-                                zos.putNextEntry(new ZipEntry(entryName));
-                                Files.copy(p, zos);
-                                zos.closeEntry();
-                            } catch (IOException e) {
-                                throw new UncheckedIOException(e);
-                            }
-                        });
-            }
-        }
-        return baos.toByteArray();
-    }
 
-    private String readSafely(Path path) {
-        try {
-            return Files.readString(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            return "[binary file]";
-        }
-    }
 
     // ── Tree builder (same logic as ProjectPreviewController) ────────────────
 
-    private List<ProjectPreviewController.TreeNode> buildChildren(String prefix, List<String> paths) {
-        Map<String, List<String>> subdirs = new LinkedHashMap<>();
-        List<String> directFiles = new ArrayList<>();
-
-        for (String path : paths) {
-            String relative = prefix.isEmpty() ? path : path.substring(prefix.length() + 1);
-            int slash = relative.indexOf('/');
-            if (slash == -1) {
-                directFiles.add(path);
-            } else {
-                String childDir = relative.substring(0, slash);
-                String childPrefix = prefix.isEmpty() ? childDir : prefix + "/" + childDir;
-                subdirs.computeIfAbsent(childPrefix, k -> new ArrayList<>()).add(path);
-            }
-        }
-
-        List<ProjectPreviewController.TreeNode> result = new ArrayList<>();
-        for (Map.Entry<String, List<String>> entry : subdirs.entrySet()) {
-            String dirPath = entry.getKey();
-            String dirName = dirPath.contains("/") ? dirPath.substring(dirPath.lastIndexOf('/') + 1) : dirPath;
-            result.add(new ProjectPreviewController.TreeNode(dirName, dirPath, "directory", buildChildren(dirPath, entry.getValue())));
-        }
-        for (String filePath : directFiles) {
-            String fileName = filePath.contains("/") ? filePath.substring(filePath.lastIndexOf('/') + 1) : filePath;
-            result.add(new ProjectPreviewController.TreeNode(fileName, filePath, "file", List.of()));
-        }
-        return result;
-    }
 
     public record MultiModulePreviewResponse(
             List<ProjectPreviewController.PreviewFile> files,

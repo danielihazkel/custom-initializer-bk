@@ -36,13 +36,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -50,8 +47,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 /**
  * POST {@code /starter-fullstack.zip} — generates a fullstack scaffold (Spring Boot
@@ -118,7 +113,7 @@ public class FullstackStarterController {
         Path tempDir = Files.createTempDirectory("fullstack-");
         try {
             WebProjectRequest request = buildArtifacts(body, tempDir);
-            byte[] zipBytes = zipDirectory(tempDir, request.getArtifactId());
+            byte[] zipBytes = GeneratedProjectFiles.zipDirectory(tempDir, request.getArtifactId());
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=\"" + request.getArtifactId() + ".zip\"")
@@ -144,12 +139,12 @@ public class FullstackStarterController {
                         .sorted()
                         .forEach(p -> {
                             String rel = root.relativize(p).toString().replace('\\', '/');
-                            files.add(new ProjectPreviewController.PreviewFile(rel, readSafely(p)));
+                            files.add(new ProjectPreviewController.PreviewFile(rel, GeneratedProjectFiles.readSafely(p)));
                         });
             }
             List<String> paths = files.stream()
                     .map(ProjectPreviewController.PreviewFile::path).sorted().toList();
-            return new ProjectPreviewController.PreviewResponse(files, buildChildren("", paths));
+            return new ProjectPreviewController.PreviewResponse(files, PreviewTreeBuilder.buildTree(paths));
         } finally {
             FileSystemUtils.deleteRecursively(tempDir);
             entityContext.clear();
@@ -202,9 +197,10 @@ public class FullstackStarterController {
         // (registered in spring.factories) picks up the populated context.
         Path backendDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
         try {
-            copyDirectory(backendDir, tempDir.resolve("backend"));
+            GeneratedProjectFiles.copyDirectory(backendDir, tempDir.resolve("backend"));
         } finally {
-            FileSystemUtils.deleteRecursively(backendDir);
+            // cleanTempFiles deletes the tree *and* drops the invoker's map entry for it.
+            invoker.cleanTempFiles(backendDir);
         }
 
         // Frontend — rendered inline outside the Initializr pipeline.
@@ -482,79 +478,8 @@ public class FullstackStarterController {
         }
     }
 
-    private void copyDirectory(Path source, Path target) throws IOException {
-        try (Stream<Path> walk = Files.walk(source)) {
-            walk.forEach(s -> {
-                Path t = target.resolve(source.relativize(s).toString());
-                try {
-                    if (Files.isDirectory(s)) {
-                        Files.createDirectories(t);
-                    } else {
-                        if (t.getParent() != null) Files.createDirectories(t.getParent());
-                        Files.copy(s, t, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-        }
-    }
 
-    private String readSafely(Path p) {
-        try {
-            return Files.readString(p, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            return "[binary file]";
-        }
-    }
 
-    private List<ProjectPreviewController.TreeNode> buildChildren(String prefix, List<String> paths) {
-        Map<String, List<String>> subdirs = new LinkedHashMap<>();
-        List<String> directFiles = new ArrayList<>();
-        for (String path : paths) {
-            String relative = prefix.isEmpty() ? path : path.substring(prefix.length() + 1);
-            int slash = relative.indexOf('/');
-            if (slash == -1) {
-                directFiles.add(path);
-            } else {
-                String childDir = relative.substring(0, slash);
-                String childPrefix = prefix.isEmpty() ? childDir : prefix + "/" + childDir;
-                subdirs.computeIfAbsent(childPrefix, k -> new ArrayList<>()).add(path);
-            }
-        }
-        List<ProjectPreviewController.TreeNode> result = new ArrayList<>();
-        for (var e : subdirs.entrySet()) {
-            String dirPath = e.getKey();
-            String dirName = dirPath.contains("/") ? dirPath.substring(dirPath.lastIndexOf('/') + 1) : dirPath;
-            result.add(new ProjectPreviewController.TreeNode(dirName, dirPath, "directory",
-                    buildChildren(dirPath, e.getValue())));
-        }
-        for (String file : directFiles) {
-            String name = file.contains("/") ? file.substring(file.lastIndexOf('/') + 1) : file;
-            result.add(new ProjectPreviewController.TreeNode(name, file, "file", List.of()));
-        }
-        return result;
-    }
 
-    private byte[] zipDirectory(Path dir, String rootDirName) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
-            try (Stream<Path> walk = Files.walk(dir)) {
-                walk.filter(Files::isRegularFile)
-                        .sorted()
-                        .forEach(p -> {
-                            String entry = rootDirName + "/" + dir.relativize(p).toString().replace('\\', '/');
-                            try {
-                                zos.putNextEntry(new ZipEntry(entry));
-                                Files.copy(p, zos);
-                                zos.closeEntry();
-                            } catch (IOException ex) {
-                                throw new UncheckedIOException(ex);
-                            }
-                        });
-            }
-        }
-        return baos.toByteArray();
-    }
 
 }

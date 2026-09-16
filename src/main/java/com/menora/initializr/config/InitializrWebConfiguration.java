@@ -25,9 +25,21 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
     private static final String BOOT_VERSION_PARAM = "bootVersion";
 
     private final ProjectOptionsContext optionsContext;
+    private final SqlScriptsContext sqlContext;
+    private final OpenApiSpecContext specContext;
+    private final SoapSpecContext soapContext;
+    private final EntityDefinitionContext entityContext;
 
-    public InitializrWebConfiguration(ProjectOptionsContext optionsContext) {
+    public InitializrWebConfiguration(ProjectOptionsContext optionsContext,
+                                      SqlScriptsContext sqlContext,
+                                      OpenApiSpecContext specContext,
+                                      SoapSpecContext soapContext,
+                                      EntityDefinitionContext entityContext) {
         this.optionsContext = optionsContext;
+        this.sqlContext = sqlContext;
+        this.specContext = specContext;
+        this.soapContext = soapContext;
+        this.entityContext = entityContext;
     }
 
     @Override
@@ -106,8 +118,22 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
 
         }, response);
         } finally {
-            optionsContext.clear();
+            clearAllContexts();
         }
+    }
+
+    /**
+     * Unconditional backstop for every generation ThreadLocal. Controllers clear their own
+     * contexts on the happy path, but no single controller covers all five, and an exception
+     * that escapes to the {@code @ControllerAdvice} clears none of them — a leftover context
+     * would then be scaffolded into the next request served by this pooled thread.
+     */
+    private void clearAllContexts() {
+        optionsContext.clear();
+        sqlContext.clear();
+        specContext.clear();
+        soapContext.clear();
+        entityContext.clear();
     }
 
     private static String normalizeBootVersion(String v) {

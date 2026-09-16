@@ -93,13 +93,24 @@ public class AdminController {
 
     // ── Refresh ───────────────────────────────────────────────────────────────
 
+    /**
+     * Reload the catalog. A dependency that fails to build (bad compatibility range, bad
+     * scope, …) is skipped rather than taking the whole catalog down — but it then silently
+     * vanishes from /metadata/client, so the skipped rows are reported back here.
+     */
     @PostMapping("/refresh")
-    public ResponseEntity<String> refresh() {
+    public ResponseEntity<Map<String, Object>> refresh() {
         if (metadataProvider instanceof DatabaseInitializrMetadataProvider dbProvider) {
             dbProvider.refresh();
-            return ResponseEntity.ok("Metadata refreshed from database");
+            List<DatabaseInitializrMetadataProvider.LoadFailure> failures = dbProvider.getLoadFailures();
+            return ResponseEntity.ok(Map.of(
+                    "message", failures.isEmpty()
+                            ? "Metadata refreshed from database"
+                            : "Metadata refreshed — " + failures.size() + " dependency(ies) skipped",
+                    "failed", failures));
         }
-        return ResponseEntity.badRequest().body("Metadata provider does not support refresh");
+        return ResponseEntity.badRequest()
+                .body(Map.of("message", "Metadata provider does not support refresh", "failed", List.of()));
     }
 
     /** Invalidate the metadata cache after a catalog-affecting write. */
