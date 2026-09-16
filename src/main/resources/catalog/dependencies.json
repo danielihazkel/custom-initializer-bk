@@ -4,7 +4,7 @@
       "name": "Menora Standards",
       "sortOrder": 0,
       "entries": [
-        { "depId": "rqueue", "name": "Sonus Rqueue", "description": "Sonus Rqueue messaging library", "mavenGroupId": "com.sonus", "mavenArtifactId": "sonus-rqueue", "version": "1.0.0", "repository": "menora-release", "sortOrder": 0, "compatibilityRange": "[3.2.0,4.0.0)" },
+        { "depId": "rqueue", "name": "Sonus Rqueue", "description": "Sonus Rqueue messaging library", "mavenGroupId": "com.sonus", "mavenArtifactId": "sonus-rqueue", "version": "3.0.0-RELEASE", "repository": "menora-release", "sortOrder": 0, "compatibilityRange": "[3.2.0,4.0.0)" },
         { "depId": "logging", "name": "Kafka Log Shipping", "description": "Ship structured logs to the Menora Kafka logging pipeline (JSON console logging is on by default)", "sortOrder": 1, "starter": false }
       ]
     },
@@ -26,7 +26,7 @@
         { "depId": "data-jpa", "name": "Spring Data JPA", "description": "Persist data with JPA and Hibernate", "sortOrder": 0 },
         { "depId": "postgresql", "name": "PostgreSQL Driver", "description": "PostgreSQL JDBC driver", "mavenGroupId": "org.postgresql", "mavenArtifactId": "postgresql", "scope": "runtime", "sortOrder": 1 },
         { "depId": "mssql", "name": "Microsoft SQL Server Driver", "description": "Microsoft SQL Server JDBC driver", "mavenGroupId": "com.microsoft.sqlserver", "mavenArtifactId": "mssql-jdbc", "scope": "runtime", "sortOrder": 2 },
-        { "depId": "db2", "name": "IBM DB2 Driver", "description": "IBM DB2 JDBC driver", "mavenGroupId": "com.ibm.db2", "mavenArtifactId": "jcc", "scope": "runtime", "sortOrder": 3 },
+        { "depId": "db2", "name": "IBM DB2 Driver", "description": "IBM DB2 JDBC driver", "mavenGroupId": "net.sf.jt400", "mavenArtifactId": "jt400", "version": "20.0.6", "scope": "runtime", "sortOrder": 3 },
         { "depId": "oracle", "name": "Oracle Database Driver", "description": "Oracle JDBC driver", "mavenGroupId": "com.oracle.database.jdbc", "mavenArtifactId": "ojdbc11", "scope": "runtime", "sortOrder": 4 },
         { "depId": "h2", "name": "H2 Database", "description": "Embedded relational database — ideal for development and testing", "mavenGroupId": "com.h2database", "mavenArtifactId": "h2", "scope": "runtime", "sortOrder": 5 },
         { "depId": "mongodb", "name": "MongoDB", "description": "Spring Data MongoDB — document database driver", "sortOrder": 6 },

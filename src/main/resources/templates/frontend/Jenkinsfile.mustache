@@ -1,64 +1,63 @@
-pipeline {
-    agent any
+// B"H
 
-    environment {
-        APP_NAME     = '{{projectName}}'
-        IMAGE_REPO   = "repo.menora.co.il/docker/frontend/{{projectName}}"
-        IMAGE_TAG    = sh(script: 'node -p "require(\'./package.json\').version"', returnStdout: true).trim()
+// Declare external library scripts
+// Populating in preparations stage
+def pipelineScript
+// External library git url
+String externalLibraryGitUrl = "ssh://git@bitbucket.menora.co.il:7999/infops/pipeline.libs.git"
+
+String libsPath = "libsPath"
+
+String libsBranch = "tanzu2"  //Tanzu
+//String libsBranch = "tags/v1.0.2"  //ICP
+
+node("master") {
+    script {
+        // Clone jenkins external library
+        gitCheckout(externalLibraryGitUrl, libsBranch, libsPath)
+        script {
+            try {
+                // Clone this library for changes
+                String scmUrl = scm.getUserRemoteConfigs()[0].getUrl()
+                String scmBranch = env.PROJECT_BRANCH ?: "master"
+                gitCheckout(scmUrl, scmBranch, "source")
+            } catch (Exception e) {
+                echo 'Exception occurred: ' + e.toString()
+                echo '-------------------------------------------------------failed on checkout for commits changes---------------------------------------------------'
+                echo '-----------------------------------------------------------no commits apears in the table-------------------------------------------------------'
+            }
+        }
+
+        // Store default template as local variable.
+        // Change (can be also added same way) defaultTemlate namespace
+        //template["namespace"] = namespace
+        templateYaml = readFile "${libsPath}/templates/default.yaml"
+
+        // Invoke pipeline
+        pipelineScript = load "${libsPath}/pipeline/pipeline.groovy"
     }
+}
 
-    stages {
 
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        stage('Build') {
-            steps {
-                sh '{{#isPnpm}}corepack enable && pnpm install --frozen-lockfile && pnpm build{{/isPnpm}}{{^isPnpm}}npm ci && npm run build{{/isPnpm}}'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh '{{#isPnpm}}pnpm test{{/isPnpm}}{{^isPnpm}}npm test{{/isPnpm}}'
-            }
-        }
-
-        stage('Docker Build & Push') {
-            steps {
-                script {
-                    docker.withRegistry('https://repo.menora.co.il/docker', 'artifactory-credentials') {
-                        def image = docker.build("${IMAGE_REPO}:${IMAGE_TAG}")
-                        image.push()
-                        image.push('latest')
-                    }
-                }
-            }
-        }
-
-        stage('Deploy') {
-            when {
-                branch 'main'
-            }
-            steps {
-                sh """
-                    helm upgrade --install ${APP_NAME} ./k8s \
-                        --set image.tag=${IMAGE_TAG} \
-                        --namespace ${APP_NAME} \
-                        --create-namespace \
-                        --wait
-                """
-            }
-        }
-
-    }
-
-    post {
-        failure {
-            echo "Pipeline failed for ${APP_NAME}:${IMAGE_TAG}"
-        }
-    }
+// Git checkout function with option to choose branch, credentials and can be extened.
+void gitCheckout(String gitUrl, String branch, String subDir){
+    checkout(
+        [
+            $class: 'GitSCM', branches: [
+                [name: "$branch"
+                ]
+            ],
+            extensions: [
+                [
+                    $class: 'RelativeTargetDirectory', relativeTargetDir: subDir
+                ],
+            ],
+            userRemoteConfigs: [
+                [
+                    credentialsId: 'bitbucket-ssh-key',
+                    url: gitUrl
+                ]
+            ]
+        ]
+    )
 }

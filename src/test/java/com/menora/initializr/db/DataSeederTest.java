@@ -85,7 +85,7 @@ class DataSeederTest {
         DependencyEntryEntity rqueue = entryRepo.findByDepId("rqueue").orElseThrow();
         assertThat(rqueue.getMavenGroupId()).isEqualTo("com.sonus");
         assertThat(rqueue.getMavenArtifactId()).isEqualTo("sonus-rqueue");
-        assertThat(rqueue.getVersion()).isEqualTo("1.0.0");
+        assertThat(rqueue.getVersion()).isEqualTo("3.0.0-RELEASE");
         assertThat(rqueue.getRepository()).isEqualTo("menora-release");
         assertThat(rqueue.getCompatibilityRange()).isEqualTo("[3.2.0,4.0.0)");
     }

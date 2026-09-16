@@ -1,5 +1,7 @@
 spring:
   kafka:
+    user: ${KAFKA_USER:user}
+    pass: ${KAFKA_PASS:pass}
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: ${spring.application.name}

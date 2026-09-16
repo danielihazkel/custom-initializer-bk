@@ -136,13 +136,12 @@ class FrontendProjectGenerationIntegrationTests {
 
         String values = files.get("k8s/values.yaml");
         assertThat(values).isNotNull();
-        assertThat(values).contains("repository: repo.menora.co.il/docker/frontend/demo");
-        assertThat(values).contains("host: demo.menora.co.il");
+        assertThat(values).contains("appName: \"demo\"");
 
         String jenkins = files.get("k8s/Jenkinsfile");
         assertThat(jenkins).isNotNull();
-        assertThat(jenkins).contains("APP_NAME     = 'demo'");
-        assertThat(jenkins).contains("repo.menora.co.il/docker/frontend/demo");
+        // The Jenkinsfile delegates to the shared Menora pipeline library.
+        assertThat(jenkins).contains("pipeline.libs.git");
         // Node-based build, not Maven
         assertThat(jenkins).doesNotContain("./mvnw");
     }
@@ -154,18 +153,18 @@ class FrontendProjectGenerationIntegrationTests {
         FrontendProjectDescription desc20 = baseDescription("demo");
         desc20.setNodeVersion("20");
         assertThat(generator.generateFileMap(desc20).get("Dockerfile"))
-                .contains("FROM node:20-alpine AS build");
+                .contains("FROM repo.menora.co.il/devops-tools/node20:glibc-current as builder");
 
         FrontendProjectDescription desc22 = baseDescription("demo");
         desc22.setNodeVersion("22");
         String df22 = generator.generateFileMap(desc22).get("Dockerfile");
-        assertThat(df22).contains("FROM node:22-alpine AS build");
-        assertThat(df22).doesNotContain("node:20-alpine");
+        assertThat(df22).contains("FROM repo.menora.co.il/devops-tools/node22-sdk:glibc-5.0.0 as builder");
+        assertThat(df22).doesNotContain("node20:glibc-current");
 
         FrontendProjectDescription desc18 = baseDescription("demo");
         desc18.setNodeVersion("18");
         assertThat(generator.generateFileMap(desc18).get("Dockerfile"))
-                .contains("FROM node:18-alpine AS build");
+                .contains("FROM repo.menora.co.il/devops-tools/node18-sdk:glibc-current as builder");
     }
 
     @Test

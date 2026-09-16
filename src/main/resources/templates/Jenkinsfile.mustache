@@ -1,69 +1,53 @@
-pipeline {
-    agent any
+// B"H
 
-    environment {
-        APP_NAME     = '{{artifactId}}'
-        IMAGE_REPO   = "repo.menora.co.il/docker/{{groupId}}/{{artifactId}}"
-        IMAGE_TAG    = sh(script: 'cat VERSION', returnStdout: true).trim()
+// Declare external library scripts
+// Populating in preparations stage
+def pipelineScript
+// External library git url
+String externalLibraryGitUrl = "ssh://git@bitbucket.menora.co.il:7999/infops/pipeline.libs.git"
+
+String libsPath = "libsPath"
+//String libsBranch = "tags/v1.0.1" // send to ICP
+String libsBranch = "tanzu2" // send to Tanzu
+
+//String libsBranch = "tags/v0.1.4" - don't use
+//String libsBranch = "tags/v0.2.0" old - don't use
+
+node("master") {
+    script {
+        // Clone jenkins external library
+        gitCheckout(externalLibraryGitUrl, libsBranch, libsPath)
+
+        // Store default template as local variable.
+        // Change (can be also added same way) defaultTemlate namespace
+        //template["namespace"] = namespace
+        templateYaml = readFile "${libsPath}/templates/default.yaml"
+
+        // Invoke pipeline
+        pipelineScript = load "${libsPath}/pipeline/pipeline.groovy"
     }
+}
 
-    stages {
 
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        stage('Build') {
-            steps {
-                sh './mvnw clean package -DskipTests -B'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh './mvnw test -B'
-            }
-            post {
-                always {
-                    junit '**/target/surefire-reports/*.xml'
-                }
-            }
-        }
-
-        stage('Docker Build & Push') {
-            steps {
-                script {
-                    docker.withRegistry('https://repo.menora.co.il/docker', 'artifactory-credentials') {
-                        def image = docker.build("${IMAGE_REPO}:${IMAGE_TAG}")
-                        image.push()
-                        image.push('latest')
-                    }
-                }
-            }
-        }
-
-        stage('Deploy') {
-            when {
-                branch 'main'
-            }
-            steps {
-                sh """
-                    helm upgrade --install ${APP_NAME} ./k8s \
-                        --set image.tag=${IMAGE_TAG} \
-                        --namespace ${APP_NAME} \
-                        --create-namespace \
-                        --wait
-                """
-            }
-        }
-
-    }
-
-    post {
-        failure {
-            echo "Pipeline failed for ${APP_NAME}:${IMAGE_TAG}"
-        }
-    }
+// Git checkout function with option to choose branch, credentials and can be extened.
+void gitCheckout(String gitUrl, String branch, String subDir){
+    checkout(
+        [
+            $class: 'GitSCM', branches: [
+                [name: "$branch"
+                ]
+            ],
+            extensions: [
+                [
+                    $class: 'RelativeTargetDirectory', relativeTargetDir: subDir
+                ],
+            ],
+            userRemoteConfigs: [
+                [
+                    credentialsId: 'bitbucket-ssh-key',
+                    url: gitUrl
+                ]
+            ]
+        ]
+    )
 }

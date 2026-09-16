@@ -1,13 +1,67 @@
-FROM eclipse-temurin:21-jdk-alpine AS build
-WORKDIR /app
-COPY .mvn/ .mvn
-COPY mvnw pom.xml ./
-RUN ./mvnw dependency:go-offline -B
-COPY src ./src
-RUN ./mvnw package -DskipTests -B
+################################################BUILDER##################################################
+FROM repo.menora.co.il/devops-tools/java21-jdk-temurin:glibc-newgen as dependencies
 
-FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
-COPY --from=build /app/target/{{artifactId}}-{{version}}.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ARG MVN_MIRROR
+ENV MVN_MIRROR_BASE_URL=${MVN_MIRROR:-https://repo.menora.co.il/artifactory}
+ENV MAVEN_CONFIG_1=/root/.m2
+ENV BUILDER_DIRECTORY=/build \
+    RUNTIME_DIRECTORY=/app
+RUN \
+    mkdir -p ${BUILDER_DIRECTORY} ${RUNTIME_DIRECTORY}
+
+WORKDIR ${BUILDER_DIRECTORY}
+
+COPY settings.xml .
+COPY pom.xml .
+
+{{=<% %>=}}
+RUN \
+    mkdir -p ${MAVEN_CONFIG_1} && \
+    MVN_RELEASE_URL="${MVN_MIRROR_BASE_URL}/libs-release" && \
+    MVN_SNAPSHOT_URL="${MVN_MIRROR_BASE_URL}/libs-snapshot" && \
+    cat ./settings.xml \
+      | sed "s#{{ MIRROR_REPO_URL }}#${MVN_RELEASE_URL}#g" \
+      | sed "s#{{ MVN_RELEASE_URL }}#${MVN_RELEASE_URL}#g" \
+      | sed "s#{{ MVN_SNAPSHOT_URL }}#${MVN_SNAPSHOT_URL}#g" \
+      | sed "s#{{ MIRROR_RELEASE_URL }}#${MVN_RELEASE_URL}#g" \
+      | sed "s#{{ MIRROR_SNAPSHOT_URL }}#${MVN_SNAPSHOT_URL}#g" \
+      > ${MAVEN_CONFIG_1}/settings.xml && \
+    mvn dependency:resolve
+# --no-transfer-progress
+COPY . .
+<%={{ }}=%>
+ARG PRODUCT_ARTIFACT={{artifactId}}.jar
+# --no-transfer-progress
+RUN \
+    mvn package && \
+    mv ${BUILDER_DIRECTORY}/target/${PRODUCT_ARTIFACT} ${RUNTIME_DIRECTORY}/springboot-app.jar && \
+    rm -rf ${BUILDER_DIRECTORY}/target
+# -DskipTests
+
+WORKDIR ${RUNTIME_DIRECTORY}
+
+ARG BUILD_NUMBER=1
+ARG COMMIT_HASH=000000
+
+ENV LOG_DIR=${RUNTIME_DIRECTORY}/filebeat/logs \
+    BUILD_NUMBER_FILE=${RUNTIME_DIRECTORY}/buildNumber \
+    COMMIT_HASH_FILE=${RUNTIME_DIRECTORY}/commitHash \
+    ENTRYPOINT_FILE=${BUILDER_DIRECTORY}/entrypoint.sh
+
+# Creating buildNumber commitHash files, copying entrypoint
+RUN \
+    mkdir -p $LOG_DIR && \
+    echo $BUILD_NUMBER > $BUILD_NUMBER_FILE && \
+    echo $COMMIT_HASH > $COMMIT_HASH_FILE && \
+    for eptfile in $(ls -tr $ENTRYPOINT_FILE 2>/dev/null | xargs); do \
+        cp -rf $eptfile /entrypoint.sh; \
+        dos2unix /entrypoint.sh; \
+        chmod 755 /entrypoint.sh; \
+    done
+
+ENV JRE_HOME=/opt/java/openjdk
+ENV PORT=3000
+EXPOSE ${PORT}
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["java", "-Duser.timezone=Asia/Jerusalem", "-XX:+UseContainerSupport", "-Dspring.profiles.active=default", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/springboot-app.jar"]

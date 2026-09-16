@@ -1,23 +1,66 @@
 package {{packageName}}.config;
 
+import io.lettuce.core.ClientOptions;
+import io.lettuce.core.SocketOptions;
+import io.lettuce.core.protocol.ProtocolVersion;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.RedisSentinelConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+
+import java.time.Duration;
 
 @Configuration
 public class RqueueConfig {
 
-    @Value("${rqueue.redis.host:localhost}")
-    private String redisHost;
+    @Value("${spring.redis.sentinel.master}")
+    private String redisMaster;
 
-    @Value("${rqueue.redis.port:6379}")
-    private int redisPort;
+    @Value("#{'${spring.redis.sentinel.nodes}'.split(',')}")
+    private String[] redisMasterNodes;
+
+
+    @Value("${spring.redis.username}")
+    private String redisUsername;
+
+    @Value("${spring.redis.password}")
+    private String redisPassword;
+
+    @Value("${spring.redis.sentinel.username}")
+    private String sentinelUsername;
+    @Value("${spring.redis.sentinel.password}")
+    private String sentinelPassword;
+
 
     @Bean
     public RedisConnectionFactory redisConnectionFactory() {
-        return new LettuceConnectionFactory(redisHost, redisPort);
+        RedisSentinelConfiguration sentinelConfiguration = new RedisSentinelConfiguration().master(redisMaster);
+        for (String node : redisMasterNodes) {
+            String[] parts = node.split(":");
+            sentinelConfiguration.sentinel(parts[0], Integer.parseInt(parts[1]));
+        }
+        sentinelConfiguration.setUsername(redisUsername);
+        sentinelConfiguration.setPassword(redisPassword);
+
+        sentinelConfiguration.setSentinelUsername(sentinelUsername);
+        sentinelConfiguration.setSentinelPassword(sentinelPassword);
+
+        // Create client options that disable CLIENT SETINFO and use RESP2
+        ClientOptions clientOptions = ClientOptions.builder()
+                .socketOptions(SocketOptions.builder()
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .build())
+                .protocolVersion(ProtocolVersion.RESP2) // Use RESP2 protocol
+                .build();
+
+        LettuceClientConfiguration.LettuceClientConfigurationBuilder builder = LettuceClientConfiguration.builder().clientOptions(clientOptions).commandTimeout(Duration.ofSeconds(10));
+        builder.useSsl();
+
+        return new LettuceConnectionFactory(sentinelConfiguration, builder.build());
     }
+
 
 }

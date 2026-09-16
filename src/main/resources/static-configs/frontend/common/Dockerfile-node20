@@ -1,17 +1,65 @@
-# Multi-stage build: Node build → nginx static serve.
-FROM node:20-alpine AS build
-WORKDIR /app
-COPY package.json ./
-COPY pnpm-lock.yaml* package-lock.json* ./
-RUN if [ -f pnpm-lock.yaml ]; then \
-      corepack enable && pnpm install --frozen-lockfile; \
-    else \
-      npm install; \
-    fi
-COPY . .
-RUN if [ -f pnpm-lock.yaml ]; then pnpm build; else npm run build; fi
+# build environment
+FROM repo.menora.co.il/devops-tools/node20:glibc-current as builder
 
-FROM nginx:1.27-alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+
+ARG NPM_MIRROR
+ENV NPM_MIRROR_URL=${NPM_MIRROR:-https://repo.menora.co.il/artifactory/api/npm/virtual-npm}
+ENV RUNTIME_DIRECTORY=/app
+RUN \
+    mkdir -p ${RUNTIME_DIRECTORY}
+
+WORKDIR ${RUNTIME_DIRECTORY}
+ENV PATH /app/node_modules/.bin:$PATH
+# Copy package json and restore as distinct layers
+COPY package.json ./
+COPY package-lock.json ./
+#COPY entrypoint.sh ./
+RUN \
+    npm config set registry=${NPM_MIRROR_URL} && \
+    npm install --ignore-scripts --no-cache
+
+COPY . /app/
+
+#RUN rm /app/.env.production.local
+#RUN mv /app/.env.development.local /app/.env.production.local
+
+RUN \
+    npm run build
+
+FROM repo.menora.co.il/dockerhub/nginx:stable-alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/entrypoint.sh /usr/share/nginx/html
+#RUN rm /etc/nginx/conf.d/default.conf
+COPY nginx/nginx.conf /etc/nginx/conf.d
+
+
+ARG BUILD_NUMBER=1
+ARG COMMIT_HASH=000000
+
+ENV LOG_DIR=${RUNTIME_DIRECTORY}/filebeat/logs \
+BUILD_NUMBER_FILE=${RUNTIME_DIRECTORY}/buildNumber \
+COMMIT_HASH_FILE=${RUNTIME_DIRECTORY}/commitHash \
+ENTRYPOINT_FILE=${RUNTIME_DIRECTORY}/entrypoint.sh
+
+# Creating buildNumber commitHash files, copying entrypoint
+RUN \
+    mkdir -p $LOG_DIR && \
+    echo $BUILD_NUMBER > $BUILD_NUMBER_FILE && \
+    echo $COMMIT_HASH > $COMMIT_HASH_FILE && \
+    for eptfile in $(ls -tr $ENTRYPOINT_FILE 2>/dev/null | xargs); do \
+        cp -rf $eptfile /entrypoint.sh; \
+        dos2unix /entrypoint.sh; \
+        chmod 755 /entrypoint.sh; \
+    done
+
+ENV JSFOLDER=/usr/share/nginx/html/*.js
+#WORKDIR /usr/share/nginx/html
+
+ENV PORT=3000
+EXPOSE ${PORT}
+
+#ENTRYPOINT [ "/bin/tini", "--","/entrypoint.sh" ]
+#ENTRYPOINT ["./entrypoint.sh"]
+
+CMD ["/bin/sh","/usr/share/nginx/html/entrypoint.sh"]
+#CMD ["nginx", "-g", "daemon off;"]

@@ -112,7 +112,7 @@ class ProjectGenerationIntegrationTests {
 
         assertThat(Files.readString(projectDir.resolve("VERSION")).trim()).isEqualTo("0.0.1-SNAPSHOT");
         assertThat(Files.readString(projectDir.resolve("Dockerfile"))).contains("demo");
-        assertThat(Files.readString(projectDir.resolve("k8s/values.yaml"))).contains("com.menora");
+        assertThat(Files.readString(projectDir.resolve("k8s/values.yaml"))).contains("appName: \"demo\"");
     }
 
     @Test

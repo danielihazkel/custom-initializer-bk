@@ -13,11 +13,19 @@ import org.springframework.kafka.core.*;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.apache.kafka.clients.CommonClientConfigs.SECURITY_PROTOCOL_CONFIG;
+import static org.apache.kafka.common.config.SaslConfigs.SASL_JAAS_CONFIG;
+import static org.apache.kafka.common.config.SaslConfigs.SASL_MECHANISM;
+
 @Configuration
 public class KafkaConfig {
 
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
+    @Value(value = "${spring.kafka.user}")
+    String kafkaUser ;
+    @Value(value = "${spring.kafka.pass}")
+    String kafkaPass ;
 
     @Bean
     public ProducerFactory<String, String> producerFactory() {
@@ -25,6 +33,9 @@ public class KafkaConfig {
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        props.put(SASL_MECHANISM, "PLAIN");
+        props.put(SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
+        props.put(SASL_JAAS_CONFIG, "org.apache.kafka.common.security.plain.PlainLoginModule required username='"+kafkaUser+"' password='"+kafkaPass+"';");
         return new DefaultKafkaProducerFactory<>(props);
     }
 
@@ -40,6 +51,9 @@ public class KafkaConfig {
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put(SASL_MECHANISM, "PLAIN");
+        props.put(SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
+        props.put(SASL_JAAS_CONFIG, "org.apache.kafka.common.security.plain.PlainLoginModule required username='"+kafkaUser+"' password='"+kafkaPass+"';");
         return new DefaultKafkaConsumerFactory<>(props);
     }
 

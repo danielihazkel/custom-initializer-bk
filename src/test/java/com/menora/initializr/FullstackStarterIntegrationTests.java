@@ -186,7 +186,7 @@ class FullstackStarterIntegrationTests {
         assertThat(entries).containsKey("shop/frontend/eslint.config.js");
         assertThat(entries).containsKey("shop/frontend/.prettierrc.json");
         assertThat(entries).containsKey("shop/frontend/Dockerfile");
-        assertThat(entries).containsKey("shop/frontend/nginx.conf");
+        assertThat(entries).containsKey("shop/frontend/nginx/nginx.conf");
         assertThat(entries).containsKey("shop/frontend/.husky/pre-commit");
         assertThat(entries).containsKey("shop/frontend/src/widgets/README.md");
         // Paired-backend wiring: the dev .env points the FE at the proxied /api, and the Vite
@@ -1449,7 +1449,7 @@ class FullstackStarterIntegrationTests {
         // The YAML datasource block is still written too.
         assertThat(entries.get("db2app/backend/src/main/resources/application.yaml"))
                 .contains("db2:")
-                .contains("driver-class-name: com.ibm.db2.jcc.DB2Driver");
+                .contains("driver-class-name: com.ibm.as400.access.AS400JDBCDriver");
     }
 
     @Test

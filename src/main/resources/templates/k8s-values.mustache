@@ -1,50 +1,160 @@
-replicaCount: 1
+# Default values for demo.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+# ams - agent managment system
+pipeline:
+  appName: "{{artifactId}}"
+  namespace: "lts-lan"
+  department: "lts"
+  applicationID: ""
+  network: "LAN"  # LAN or DMZ
+  imageRepo: menora-lts
+  #
+  extra:
+    # Set chart wait time before install marked as failed
+    installTimeOut: 200
+    compliance: false
+    labels:
+      # seim: default is false. use siem: "qradar" in case you need to send logs to qradar 
+      siem: "false"   
+      index_name: "infra-kubernetes"
+      kuku: "app-12"
+  # 
+  tests:
+    enabled: false
+    type: "cypress"
 
-image:
-  repository: repo.menora.co.il/docker/{{groupId}}/{{artifactId}}
-  tag: "{{version}}"
-  pullPolicy: IfNotPresent
+certsecret:
+  enabled: true
+  name: lts-srt-tls
 
+
+
+Vault:
+  enabled: true
+  VaultUrl: https://vault-k8s.menora.co.il # https://vault-web.menora.co.il/
+  VaultImage: hashicorp/vault-enterprise:1.7.2_ent
+  configMapRef: APPNAME-cm
+  VaultNamespace: lts/ENVIORMENT-lan-01 # ENVIORMENT-dmz-01 dmz here need to change to lan in case of deployment to lan.
+  VolumeCmName: APPNAME-vault
+  VaultName: APPNAME
+
+#ConfigMap
+configmap: 
+  enabled: true
+  name: APPNAME-cm
+  common:
+    PORT: "3000"
+    # Example env variables 
+    ELK_LOGGER_LOGSTASH_TAM_URL: "isc-logstash-tam:9300"
+  int:
+    ENVIRONMENT: int
+    ENV_CONFIG: int
+    ENV: qa
+  qa:
+    ENVIRONMENT: qa
+    ENV_CONFIG: qa
+    ENV: qa
+  prd:
+    ENVIRONMENT: prd
+    ENV_CONFIG: prod
+    ENV: prod
+
+#Secrets
+secret:
+  enabled: true
+  name: APPNAME-secret
+  int:
+  qa:
+  prd:
+ 
 service:
   type: ClusterIP
-  port: 80
-  targetPort: 8080
-
-ingress:
-  enabled: false
-  host: {{artifactId}}.menora.co.il
-
+  port: 3000
 resources:
-  requests:
-    cpu: 250m
-    memory: 256Mi
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
   limits:
     cpu: 1000m
-    memory: 512Mi
-
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 3
-  targetCPUUtilizationPercentage: 80
-
-env: {}
-  # SPRING_PROFILES_ACTIVE: prod
-
-configMap: {}
-
-secrets: {}
-
-livenessProbe:
-  httpGet:
-    path: /actuator/health/liveness
-    port: 8080
-  initialDelaySeconds: 30
-  periodSeconds: 10
-
+    memory: 2048Mi
+  requests:
+    cpu: 500m
+    memory: 1024Mi
+# Readiness probe
 readinessProbe:
-  httpGet:
-    path: /actuator/health/readiness
-    port: 8080
+  enabled: true
+  path: /actuator/health
+  port: 3000
+  initialDelaySeconds: 5
+  timeoutSeconds: 1
+  failureThreshold: 3
+  periodSeconds: 10
+  successThreshold: 1
+# Liveness probe
+livenessProbe:
+  enabled: true
+  path: /actuator/health
+  port: 3000
   initialDelaySeconds: 20
-  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 30
+  periodSeconds: 10
+  successThreshold: 1
+#######################End#####################
+#######################End#####################
+replicaCount: 1
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+image:
+  repository: IMGREPO
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: IMAGETAG
+PackageName: APPNAME-DEPARTMENTENVIORMENT
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+podAnnotations: {}
+podSecurityContext: {}
+  # fsGroup: 2000
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+ingress:
+  enabled: true
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: APPNAME-DEPARTMENTENVIORMENT.menora.co.il
+      paths: 
+        - "/"
+  tls: # []
+   - secretName: APPNAME-DEPARTMENTENVIORMENT-tls
+     hosts:
+       - APPNAME-DEPARTMENTENVIORMENT.menora.co.il
+
+hostAliases: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+deployenv: {}

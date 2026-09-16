@@ -1,50 +1,181 @@
-replicaCount: 1
+# Default values for demo.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
 
-image:
-  repository: repo.menora.co.il/docker/frontend/{{projectName}}
-  tag: "latest"
-  pullPolicy: IfNotPresent
+pipeline:
+  appName: "{{projectName}}"
+  namespace: "lts-lan"
+  department: "lts"
+  applicationID: ""
+  network: "LAN" # LAN or DMZ
+  imageRepo:
+    menora-lts
+    #
+  extra:
+    # Set chart wait time before install marked as failed
+    dockerfile: "false" # Ex: nodejs/current/reactsub/Dockerfile only from repo or in your project
+    dockerignore: "false" # Ex: nodejs/current/reactsub/.dockerignore only from repo or in your project
+    entrypoint: "false" # Ex: nodejs/current/reactsub/entrypoint only from repo or in your project
+    build_args: "false" # Ex: nodejs/current/reactsub/args only from repo or in your project
+    installTimeOut: 120
+    compliance: true # Ex: nodejs/current/reactsub only from repo or in your project. put the command in dockerfile
+    labels:
+      # seim: default is false. use siem: "qradar" in case you need to send logs to qradar
+      siem: "false"
+      index_name: "infra-kubernetes"
+      #any other tags you may need eg
+      # foo: "bar"
+  #
+  tests:
+    enabled: false
+    type: "cypress"
+
+#ConfigMap
+configmap:
+  enabled: true
+  name: APPNAME-cm
+  common:
+    PORT: "3000"
+    # Example env variables
+  int:
+    ENVIRONMENT: int
+    ENV_CONFIG: int
+    ENV: int
+    BASE_URL: ""
+    URL_PREFIX: "/"
+    DEV_USERINFO_ENABLED: "on"
+    DEV_USERINFO_DEFAULT: "sergeyk"
+  qa:
+    ENVIRONMENT: qa
+    ENV_CONFIG: qa
+    ENV: qa
+    BASE_URL: ""
+    URL_PREFIX: "/"
+    DEV_USERINFO_ENABLED: "off"
+  prd:
+    ENVIRONMENT: prd
+    ENV_CONFIG: prod
+    ENV: prod
+    BASE_URL: ""
+    URL_PREFIX: "/"
+    DEV_USERINFO_ENABLED: "off"
+
+#Secrets
+secret:
+  enabled: true
+  name: APPNAME-secret
+  int:
+    SC_MONGO_USER: "int123"
+  qa:
+    SC_MONGO_USER: "qa123"
+  prd:
+    SC_MONGO_USER: "prd123"
 
 service:
   type: ClusterIP
-  port: 80
-  targetPort: 8080
-
-ingress:
-  enabled: false
-  host: {{projectName}}.menora.co.il
+  port: 3000
 
 resources:
-  requests:
-    cpu: 250m
-    memory: 256Mi
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
   limits:
-    cpu: 1000m
+    cpu: 200m
+    memory: 1024Mi
+  requests:
+    cpu: 100m
     memory: 512Mi
 
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 3
-  targetCPUUtilizationPercentage: 80
-
-env: {}
-  # SPRING_PROFILES_ACTIVE: prod
-
-configMap: {}
-
-secrets: {}
-
-livenessProbe:
-  httpGet:
-    path: /actuator/health/liveness
-    port: 8080
-  initialDelaySeconds: 30
-  periodSeconds: 10
-
+# Readiness probe
 readinessProbe:
-  httpGet:
-    path: /actuator/health/readiness
-    port: 8080
+  enabled: true
+  path: / #/health
+  port: 3000
+  initialDelaySeconds: 5
+  timeoutSeconds: 1
+  failureThreshold: 3
+  periodSeconds: 10
+  successThreshold: 1
+
+# Liveness probe
+livenessProbe:
+  enabled: true
+  path: / #/health
+  port: 3000
   initialDelaySeconds: 20
-  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 30
+  periodSeconds: 10
+  successThreshold: 1
+
+#######################End#####################
+#######################End#####################
+
+replicaCount: 1
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+image:
+  repository: IMGREPO
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: IMAGETAG
+
+PackageName: APPNAME-DEPARTMENTENVIORMENT
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  {}
+  # fsGroup: 2000
+
+securityContext:
+  {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+ingress:
+  enabled: true
+  annotations:
+    {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: APPNAME-DEPARTMENTENVIORMENT.menora.co.il
+      paths:
+        - "/"
+  tls: # []
+    - secretName: APPNAME-DEPARTMENTENVIORMENT-tls
+      hosts:
+        - APPNAME-DEPARTMENTENVIORMENT.menora.co.il
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+deployenv: {}

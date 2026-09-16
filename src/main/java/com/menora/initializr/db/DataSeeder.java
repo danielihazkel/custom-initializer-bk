@@ -367,11 +367,11 @@ public class DataSeeder implements SmartInitializingSingleton {
     private void seedStarterTemplates() {
         StarterTemplateEntity restApi = starterTemplate(
                 "rest-api", "REST API Service",
-                "Spring Web + JPA + PostgreSQL + Actuator",
+                "Spring Web + JPA + db2 + Actuator",
                 "api", "#4CAF50", null, null, null, 0);
         templateDep(restApi, "web", null);
         templateDep(restApi, "data-jpa", null);
-        templateDep(restApi, "postgresql", "pg-primary");
+        templateDep(restApi, "db2", "db2-primary");
         templateDep(restApi, "actuator", null);
         templateDep(restApi, "logging", null);
 

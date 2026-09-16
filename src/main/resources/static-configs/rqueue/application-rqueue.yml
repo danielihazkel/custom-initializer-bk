@@ -1,9 +1,27 @@
-rqueue:
+spring:
   redis:
-    host: ${REDIS_HOST:localhost}
-    port: ${REDIS_PORT:6379}
-  retry:
-    max-retries: 3
-    backoff-multiplier: 2
-  listener:
-    concurrency: 5
+    timeout: 3000000
+    ssl: true
+    username: ${REDIS_USERNAME:redis_user_name}
+    password: ${REDIS_PASSWORD:redis_password}
+    sentinel:
+      master: ${SENTINEL_MASTER_NAME:redis-master}
+      nodes: ${REDIS_ADDRESS_LIST:172.22.21.32:26380,172.22.21.34:26380,172.22.21.33:26380}
+      username: ${SENTINEL_USER_NAME:redis_sentinel_user_name}
+      password: ${SENTINEL_PASSWORD:redis_sentinel_password}
+
+rqueue:
+  latest:
+    version:
+      check:
+        enabled: false
+  scheduler:
+    enabled: false
+    listener:
+    shared: true
+  message:
+    durability: 500000
+  key:
+    prefix: "youre-queue-prefix"
+  queue:
+    active: ${QUEUE_NAME:youre-queue-name}

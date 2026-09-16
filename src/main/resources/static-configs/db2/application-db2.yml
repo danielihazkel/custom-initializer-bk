@@ -2,10 +2,10 @@ db2:
   datasource:
     # DataSourceBuilder builds a HikariDataSource whose URL property is `jdbcUrl`;
     # a plain `url` key does not bind to it, so it must be `jdbc-url` (see Db2Config).
-    jdbc-url: ${DB2_DB_URL:jdbc:db2://localhost:50000/appdb}
+    jdbc-url: ${DB2_DB_URL:jdbc:as400://AS4006;naming=system;libraries=ENTF,ENTA,VNRF,KLXF,VHRF;socket timeout=3000000;thread used=false;transaction isolation=read committed;translate binary=true;date format=iso;prompt=false}
     username: ${DB2_DB_USERNAME:db2inst1}
     password: ${DB2_DB_PASSWORD:password}
-    driver-class-name: com.ibm.db2.jcc.DB2Driver
+    driver-class-name: com.ibm.as400.access.AS400JDBCDriver
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
