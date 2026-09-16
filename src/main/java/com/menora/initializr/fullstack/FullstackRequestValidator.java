@@ -105,7 +105,7 @@ public final class FullstackRequestValidator {
                 if (RESERVED_JAVA_KEYWORDS.contains(fname.toLowerCase(Locale.ROOT))) {
                     throw new WizardArgumentException("Field name '" + fname + "' is a reserved keyword (entity '" + name + "')");
                 }
-                if (!seenFieldNames.add(fname)) {
+                if (!seenFieldNames.add(fname.toLowerCase(Locale.ROOT))) {
                     throw new WizardArgumentException("Duplicate field name '" + fname + "' (entity '" + name + "')");
                 }
 
@@ -297,7 +297,7 @@ public final class FullstackRequestValidator {
                 throw new WizardArgumentException("Relation field name '" + fieldName + "' is a reserved keyword (entity '" + entityName + "')");
             }
             // Collide against scalar fields and earlier relations (memberNames accumulates both).
-            if (!memberNames.add(fieldName)) {
+            if (!memberNames.add(fieldName.toLowerCase(Locale.ROOT))) {
                 throw new WizardArgumentException("Relation field name '" + fieldName + "' collides with another field/relation (entity '" + entityName + "')");
             }
 

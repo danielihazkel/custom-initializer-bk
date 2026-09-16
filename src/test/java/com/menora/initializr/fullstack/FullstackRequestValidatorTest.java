@@ -179,6 +179,16 @@ class FullstackRequestValidatorTest {
     }
 
     @Test
+    void rejects_duplicateFieldNameCaseInsensitive() {
+        // 'name' and 'Name' both render getName() in the generated entity, so they must collide
+        // server-side exactly as the UI's validation.ts already rejects them.
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("User", List.of(pk(), field("name", "String"), field("Name", "String")))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("Duplicate field");
+    }
+
+    @Test
     void rejects_generatedOnNonPrimaryKey() {
         var genNonPk = new FullstackStarterRequest.FieldDefinitionDto("code", "Long", false, true, null, null, null, null, null, null, null, null);
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
@@ -286,6 +296,16 @@ class FullstackRequestValidatorTest {
     @Test
     void rejects_relationFieldCollidingWithField() {
         var rel = new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_ONE", "name", "Customer", false);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Customer", List.of(pk())),
+                entityWithRelations("Order", List.of(pk(), field("name", "String")), List.of(rel))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("collides");
+    }
+
+    @Test
+    void rejects_relationFieldCollidingWithFieldCaseInsensitive() {
+        var rel = new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_ONE", "Name", "Customer", false);
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("Customer", List.of(pk())),
                 entityWithRelations("Order", List.of(pk(), field("name", "String")), List.of(rel))))))
