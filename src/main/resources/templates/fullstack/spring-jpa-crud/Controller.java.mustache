@@ -43,10 +43,10 @@ public class {{EntityName}}Controller {
 {{/optScaffoldSecured}}    @GetMapping
     public Page<{{EntityName}}Dto> list(
             @RequestParam(required = false) String q,
-{{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}},
+{{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isRelationFilter}},
 {{/filterFields}}            Pageable pageable) {
         Pageable effective = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sortOf(pageable));
-{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{^last}}, {{/last}}{{/filterFields}});
+{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
         return service.findAll(q, filters, effective).map({{EntityName}}Dto::from);
 {{/hasFilters}}{{^hasFilters}}        return service.findAll(q, effective).map({{EntityName}}Dto::from);
 {{/hasFilters}}    }
@@ -56,9 +56,9 @@ public class {{EntityName}}Controller {
 {{/optScaffoldSecured}}    @GetMapping("/export.csv")
     public ResponseEntity<StreamingResponseBody> exportCsv(
             @RequestParam(required = false) String q,
-{{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}},
+{{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isRelationFilter}},
 {{/filterFields}}            Pageable pageable) {
-{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{^last}}, {{/last}}{{/filterFields}});
+{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
 {{/hasFilters}}        Sort sort = sortOf(pageable);
         // Streamed in fixed-size chunks so memory stays bounded regardless of table size; each
         // chunk is its own read-only transaction, so no session is held open across the response.
@@ -77,7 +77,8 @@ public class {{EntityName}}Controller {
                     String[] cells = {
 {{#fields}}                            csv(dto.{{name}}()),
 {{/fields}}{{#relations}}                            csv(dto.{{fkFieldName}}()),
-{{/relations}}{{#auditApplicable}}                            csv(dto.createdAt()),
+{{#hasTargetLabel}}                            csv(dto.{{fieldName}}Label()),
+{{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}                            csv(dto.createdAt()),
                             csv(dto.updatedAt()),
 {{/auditApplicable}}                    };
                     w.write(String.join(",", cells));
@@ -98,7 +99,8 @@ public class {{EntityName}}Controller {
     private static final String[] CSV_HEADERS = {
 {{#fields}}            "{{name}}",
 {{/fields}}{{#relations}}            "{{fkFieldName}}",
-{{/relations}}{{#auditApplicable}}            "createdAt",
+{{#hasTargetLabel}}            "{{fieldName}}Label",
+{{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}            "createdAt",
             "updatedAt",
 {{/auditApplicable}}    };
 

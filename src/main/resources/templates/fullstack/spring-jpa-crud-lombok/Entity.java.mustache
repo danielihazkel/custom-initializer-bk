@@ -18,7 +18,8 @@ import org.hibernate.annotations.SQLRestriction;
 {{/softDeleteApplicable}}{{#hasInverseRelations}}{{#optScaffoldInverse}}import java.util.ArrayList;
 import java.util.List;
 import org.hibernate.annotations.Formula;
-{{/optScaffoldInverse}}{{/hasInverseRelations}}
+{{/optScaffoldInverse}}{{/hasInverseRelations}}{{#hasRelationLabels}}import org.hibernate.annotations.Formula;
+{{/hasRelationLabels}}
 
 @Entity
 {{#isView}}@Immutable
@@ -53,7 +54,13 @@ import org.hibernate.annotations.Formula;
     @JoinColumn(name = "{{joinColumn}}"{{#required}}, nullable = false{{/required}})
     private {{targetEntity}} {{fieldName}};
 
-{{/relations}}{{#auditApplicable}}    @CreatedDate
+{{#hasTargetLabel}}    /** Display label of the referenced {{targetEntity}} (its {{targetLabelField}}), computed by the
+     *  database on load so the DTO can show it without an open session (open-in-view is off). */
+    @Formula("(select t.{{targetLabelColumn}} from {{targetTableRef}} t where t.{{targetPkColumn}} = {{joinColumn}})")
+    @lombok.Setter(lombok.AccessLevel.NONE)
+    private String {{fieldName}}Label;
+
+{{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}    @CreatedDate
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
 

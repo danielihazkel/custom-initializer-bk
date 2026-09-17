@@ -24,6 +24,15 @@
       "gatedBy": "optScaffoldAudit"
     },
     {
+      "source": "DemoDataLoader.java.mustache",
+      "path": "src/main/java/{{packagePath}}/config/DemoDataLoader.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 4,
+      "gatedBy": "optScaffoldSeedData"
+    },
+    {
       "source": "ApiExceptionHandler.java.mustache",
       "path": "src/main/java/{{packagePath}}/web/ApiExceptionHandler.java",
       "perEntity": false,

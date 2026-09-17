@@ -22,7 +22,7 @@ export function {{EntityName}}Detail({ value }: Props) {
   return (
     <dl>
 {{#fields}}      <Row label="{{label}}">{value.{{name}} == null ? empty : {{#isText}}<span className="whitespace-pre-wrap break-words">{String(value.{{name}})}</span>{{/isText}}{{^isText}}String(value.{{name}}){{/isText}}}</Row>
-{{/fields}}{{#relations}}      <Row label="{{FieldName}}">{value.{{fkFieldName}} == null ? empty : String(value.{{fkFieldName}})}</Row>
+{{/fields}}{{#relations}}      <Row label="{{FieldName}}">{ {{#hasTargetLabel}}value.{{fieldName}}Label ?? ({{/hasTargetLabel}}value.{{fkFieldName}} == null ? empty : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(value.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} }</Row>
 {{/relations}}{{#auditApplicable}}      <Row label="Created">{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString()}</Row>
       <Row label="Updated">{value.updatedAt == null ? empty : new Date(value.updatedAt).toLocaleString()}</Row>
 {{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}      <Row label="{{CollectionField}}">{value.{{collectionField}}Count == null ? empty : String(value.{{collectionField}}Count)}</Row>

@@ -74,6 +74,10 @@ public final class EntityScaffoldContext {
             entityViews.add(view);
         }
         ctx.put("entities", entityViews);
+        // Demo-data seeding order (optScaffoldSeedData): parents before children, writable only.
+        List<Map<String, Object>> seedViews = buildSeedOrder(entities, entityViews);
+        ctx.put("seedEntities", seedViews);
+        ctx.put("hasSeedEntities", !seedViews.isEmpty());
         return ctx;
     }
 
@@ -145,6 +149,13 @@ public final class EntityScaffoldContext {
             FieldDefinition labelField = e.fields().stream()
                     .filter(f -> f.type().isString() && !f.primaryKey()).findFirst().orElse(null);
             s.put("labelField", labelField == null ? null : labelField.name());
+            // SQL names for a referencing entity's @Formula label subselect: this entity's table
+            // (custom name or default snake-plural, schema-qualified) and the PK/label columns —
+            // the same derivations its own @Table/@Column use.
+            String table = e.tableName() != null ? e.tableName() : Naming.pluralize(Naming.toSnakeCase(e.name()));
+            s.put("tableRef", (e.schema() != null && !e.schema().isBlank() ? e.schema() + "." : "") + table);
+            s.put("pkColumn", Naming.toSnakeCase(pkName));
+            s.put("labelColumn", labelField == null ? null : Naming.toSnakeCase(labelField.name()));
             summaries.put(e.name().toLowerCase(Locale.ROOT), s);
         }
         return summaries;
@@ -465,16 +476,10 @@ public final class EntityScaffoldContext {
             ff.put("isDate", fv.get("isDate"));
             ff.put("isDateTime", fv.get("isDateTime"));
             ff.put("enumValues", fv.get("enumValues"));
+            ff.put("isRelationFilter", false);
             filterFieldViews.add(ff);
         }
-        for (int i = 0; i < filterFieldViews.size(); i++) {
-            filterFieldViews.get(i).put("last", i == filterFieldViews.size() - 1);
-        }
-        view.put("filterFields", filterFieldViews);
-        view.put("hasFilters", !filterFieldViews.isEmpty());
-        // The generated Service builds a JPA Specification when it has either text search or
-        // type-aware filters — gates the Specification import / machinery in the template.
-        view.put("needsSpecification", !stringFieldViews.isEmpty() || !filterFieldViews.isEmpty());
+        // (relation filters are appended below, once the relation view-models exist)
 
         // The set of views the page actually generates: the user-requested listViews, intersected
         // with what this entity's fields support (table/cards always; kanban needs a breakdown field
@@ -530,6 +535,12 @@ public final class EntityScaffoldContext {
             Object labelField = target == null ? null : target.get("labelField");
             rv.put("targetLabelField", labelField);
             rv.put("hasTargetLabel", labelField != null);
+            // SQL names for the entity's @Formula `<field>Label` column (a per-row subselect of the
+            // target's label column, so the DTO can show a name instead of a raw FK id without an
+            // open session — open-in-view is off in the generated app).
+            rv.put("targetTableRef", target != null ? target.get("tableRef") : Naming.pluralize(Naming.toSnakeCase(rel.targetEntity())));
+            rv.put("targetPkColumn", target != null ? target.get("pkColumn") : "id");
+            rv.put("targetLabelColumn", target == null ? null : target.get("labelColumn"));
             rv.put("required", rel.required());
             rv.put("isManyToOne", rel.type() == RelationType.MANY_TO_ONE);
             rv.put("last", i == entity.relations().size() - 1);
@@ -539,6 +550,39 @@ public final class EntityScaffoldContext {
                 .anyMatch(m -> Boolean.TRUE.equals(m.get("required")));
         view.put("relations", relationViews);
         view.put("hasRelations", !relationViews.isEmpty());
+        view.put("hasRelationLabels", relationViews.stream()
+                .anyMatch(m -> Boolean.TRUE.equals(m.get("hasTargetLabel"))));
+
+        // Filter by relation FK ("orders of customer 7"): one filter entry per MANY_TO_ONE, keyed
+        // by the DTO's <field>Id, equality on the relation's target PK. The frontend renders a
+        // <select> fed from the target's list endpoint (labelled like the form's FK picker).
+        for (Map<String, Object> rv : relationViews) {
+            Map<String, Object> ff = new LinkedHashMap<>();
+            ff.put("name", rv.get("fkFieldName"));
+            ff.put("Name", rv.get("FieldName") + "Id");
+            ff.put("label", rv.get("FieldName"));
+            ff.put("javaType", rv.get("targetPkJavaType"));
+            ff.put("isEnumFilter", false);
+            ff.put("isBooleanFilter", false);
+            ff.put("isTemporalFilter", false);
+            ff.put("isNumericFilter", false);
+            ff.put("isRelationFilter", true);
+            ff.put("relationField", rv.get("fieldName"));
+            ff.put("targetPkName", rv.get("targetPkName"));
+            ff.put("targetEntityKebabPlural", rv.get("targetEntityKebabPlural"));
+            ff.put("targetLabelField", rv.get("targetLabelField"));
+            ff.put("hasTargetLabel", rv.get("hasTargetLabel"));
+            ff.put("enumValues", List.of());
+            filterFieldViews.add(ff);
+        }
+        for (int i = 0; i < filterFieldViews.size(); i++) {
+            filterFieldViews.get(i).put("last", i == filterFieldViews.size() - 1);
+        }
+        view.put("filterFields", filterFieldViews);
+        view.put("hasFilters", !filterFieldViews.isEmpty());
+        // The generated Service builds a JPA Specification when it has either text search or
+        // type-aware filters — gates the Specification import / machinery in the template.
+        view.put("needsSpecification", !stringFieldViews.isEmpty() || !filterFieldViews.isEmpty());
 
         // Inverse @OneToMany collections derived from other entities' MANY_TO_ONE relations (opt-in,
         // rendered only when optScaffoldInverse). Exposed read-only — the DTO surfaces a count.
@@ -642,6 +686,11 @@ public final class EntityScaffoldContext {
         fv.put("isSearchable", f.searchable());
         fv.put("isFilterable", f.filterable());
 
+        // Java expression the demo-data loader (optScaffoldSeedData) assigns to this field for row
+        // number `i` (1-based). Unique per row where uniqueness matters (strings carry i, integral
+        // values are i within any min/max bounds), so seeded rows never clash on unique columns.
+        fv.put("seedExpr", seedExpression(entityPascal, f, (String) fv.get("label"), enumTypeName));
+
         if (f.type() == FieldType.ENUM) {
             List<Map<String, Object>> values = new ArrayList<>();
             Set<String> seen = new LinkedHashSet<>();
@@ -660,5 +709,96 @@ public final class EntityScaffoldContext {
             fv.put("enumValues", List.of());
         }
         return fv;
+    }
+
+    /** See {@code seedExpr} in {@link #fieldViewModel}. The helper calls ({@code label}, {@code text},
+     *  {@code bounded}) are static methods of the generated {@code DemoDataLoader}. */
+    static String seedExpression(String entityPascal, FieldDefinition f, String label, String enumTypeName) {
+        String lbl = escapeStringLiteral(label == null ? f.name() : label);
+        return switch (f.type()) {
+            case ENUM -> entityPascal + "." + enumTypeName + ".values()[(i - 1) % "
+                    + entityPascal + "." + enumTypeName + ".values().length]";
+            case STRING -> f.email()
+                    ? "\"user\" + i + \"@example.com\""
+                    : "label(\"" + lbl + "\", i, " + (f.length() != null ? f.length() : "Integer.MAX_VALUE") + ")";
+            case TEXT -> "text(\"" + lbl + "\", i)";
+            case LONG -> "bounded(i, " + longLiteral(f.min()) + ", " + longLiteral(f.max()) + ")";
+            case INTEGER -> "(int) bounded(i, " + longLiteral(f.min()) + ", " + longLiteral(f.max()) + ")";
+            case BIG_DECIMAL -> "java.math.BigDecimal.valueOf(bounded(i, " + longLiteral(f.min()) + ", "
+                    + longLiteral(f.max()) + "))";
+            case BOOLEAN -> "i % 2 == 0";
+            case LOCAL_DATE -> "java.time.LocalDate.now().minusDays(i)";
+            case LOCAL_DATE_TIME -> "java.time.LocalDateTime.now().minusHours(i)";
+            case UUID -> "java.util.UUID.randomUUID()";
+        };
+    }
+
+    private static String longLiteral(Long v) {
+        return v == null ? "null" : v + "L";
+    }
+
+    /**
+     * Orders the seedable (writable, table-backed) entities so every {@code MANY_TO_ONE} parent is
+     * seeded before its children, and marks each relation with {@code targetSeeded} — true when the
+     * target's rows exist by the time this entity is seeded (so the loader can pick a parent), false
+     * for self-references, read-only targets, or the back edge of a cycle (left null). Cycles fall
+     * back to declaration order. Each entry is a copy of the entity view-model plus
+     * {@code seedFirst}/{@code seedLast}.
+     */
+    static List<Map<String, Object>> buildSeedOrder(List<EntityDefinition> entities,
+                                                    List<Map<String, Object>> entityViews) {
+        Map<String, Integer> indexByLower = new LinkedHashMap<>();
+        for (int i = 0; i < entities.size(); i++) {
+            indexByLower.put(entities.get(i).name().toLowerCase(Locale.ROOT), i);
+        }
+        List<Integer> remaining = new ArrayList<>();
+        for (int i = 0; i < entities.size(); i++) {
+            if (!entities.get(i).readOnly()) remaining.add(i);
+        }
+        Set<String> placed = new LinkedHashSet<>();
+        List<Integer> order = new ArrayList<>();
+        while (!remaining.isEmpty()) {
+            Integer next = null;
+            for (Integer idx : remaining) {
+                EntityDefinition e = entities.get(idx);
+                boolean ready = true;
+                for (RelationDefinition rel : e.relations()) {
+                    String t = rel.targetEntity().toLowerCase(Locale.ROOT);
+                    Integer ti = indexByLower.get(t);
+                    boolean seedableTarget = ti != null && !entities.get(ti).readOnly();
+                    if (seedableTarget && !t.equals(e.name().toLowerCase(Locale.ROOT)) && !placed.contains(t)) {
+                        ready = false;
+                        break;
+                    }
+                }
+                if (ready) { next = idx; break; }
+            }
+            if (next == null) next = remaining.get(0);   // cycle: take the first remaining as-is
+            remaining.remove(next);
+            placed.add(entities.get(next).name().toLowerCase(Locale.ROOT));
+            order.add(next);
+        }
+        List<Map<String, Object>> seeds = new ArrayList<>(order.size());
+        Set<String> seededSoFar = new LinkedHashSet<>();
+        for (int n = 0; n < order.size(); n++) {
+            int idx = order.get(n);
+            EntityDefinition e = entities.get(idx);
+            Map<String, Object> sv = new LinkedHashMap<>(entityViews.get(idx));
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rels = (List<Map<String, Object>>) sv.get("relations");
+            List<Map<String, Object>> relCopies = new ArrayList<>();
+            for (int r = 0; r < e.relations().size(); r++) {
+                Map<String, Object> rc = new LinkedHashMap<>(rels.get(r));
+                String t = e.relations().get(r).targetEntity().toLowerCase(Locale.ROOT);
+                rc.put("targetSeeded", seededSoFar.contains(t));
+                relCopies.add(rc);
+            }
+            sv.put("relations", relCopies);
+            sv.put("seedFirst", n == 0);
+            sv.put("seedLast", n == order.size() - 1);
+            seeds.add(sv);
+            seededSoFar.add(e.name().toLowerCase(Locale.ROOT));
+        }
+        return seeds;
     }
 }

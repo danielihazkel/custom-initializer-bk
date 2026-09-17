@@ -349,6 +349,58 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_seedDataOptGeneratesDemoLoaderInDependencyOrder() throws Exception {
+        // Order is declared BEFORE Customer but references it, so the loader must seed customers
+        // first and hand each order a customer. Every field type gets a deterministic expression.
+        Map<String, Object> customerName = Map.of("name", "name", "type", "STRING", "required", true, "unique", true, "length", 40);
+        Map<String, Object> customerEmail = Map.of("name", "email", "type", "STRING", "email", true);
+        Map<String, Object> customerActive = Map.of("name", "active", "type", "BOOLEAN");
+        Map<String, Object> orderStatus = Map.of("name", "status", "type", "ENUM", "enumValues", List.of("OPEN", "PAID"));
+        Map<String, Object> orderPlaced = Map.of("name", "placedAt", "type", "LOCAL_DATE");
+        Map<String, Object> orderTotal = Map.of("name", "total", "type", "BIG_DECIMAL", "min", 1, "max", 500);
+        Map<String, Object> orderQty = Map.of("name", "qty", "type", "INTEGER");
+        Map<String, Object> orderNotes = Map.of("name", "notes", "type", "TEXT");
+        Map<String, Object> rel = Map.of(
+                "type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Customer", "required", true);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("seedData")));
+        body.put("entities", List.of(
+                Map.of("name", "Order",
+                        "fields", List.of(pkField(), orderStatus, orderPlaced, orderTotal, orderQty, orderNotes),
+                        "relations", List.of(rel)),
+                Map.of("name", "Customer", "fields", List.of(pkField(), customerName, customerEmail, customerActive))));
+        Map<String, String> entries = generateZip(body);
+
+        String loader = entries.get("shop/backend/src/main/java/com/menora/shop/config/DemoDataLoader.java");
+        assertThat(loader)
+                .contains("@ConditionalOnProperty(prefix = \"app.demo-data\", name = \"enabled\", havingValue = \"true\", matchIfMissing = true)")
+                .contains("implements CommandLineRunner")
+                .contains("if (customerRepository.count() > 0 || orderRepository.count() > 0)")
+                // Customer rows are created before Order rows.
+                .contains("row.setName(label(\"Name\", i, 40));")
+                .contains("row.setEmail(\"user\" + i + \"@example.com\");")
+                .contains("row.setActive(i % 2 == 0);")
+                .contains("row.setStatus(Order.OrderStatusType.values()[(i - 1) % Order.OrderStatusType.values().length]);")
+                .contains("row.setPlacedAt(java.time.LocalDate.now().minusDays(i));")
+                .contains("row.setTotal(java.math.BigDecimal.valueOf(bounded(i, 1L, 500L)));")
+                .contains("row.setQty((int) bounded(i, null, null));")
+                .contains("row.setNotes(text(\"Notes\", i));")
+                .contains("row.setCustomer(customerRows.get((i - 1) % customerRows.size()));")
+                .contains("customerRows = customerRepository.saveAll(customerRows);")
+                .doesNotContain("row.setId(");
+        assertThat(loader.indexOf("List<Customer> customerRows"))
+                .isLessThan(loader.indexOf("List<Order> orderRows"));
+
+        // Without the opt the loader is not emitted.
+        body.remove("opts");
+        assertThat(generateZip(body)).doesNotContainKey("shop/backend/src/main/java/com/menora/shop/config/DemoDataLoader.java");
+    }
+
+    @Test
     void fullstackEndpoint_scaffoldsPerLayerSubPackages() throws Exception {
         // Default domainPackage (== packageName): classes split into .entity/.repository/.dto/
         // .service/.controller, wired together by cross-layer imports.
@@ -732,37 +784,49 @@ class FullstackStarterIntegrationTests {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         Map<String, String> entries = unzip(response.getBody());
 
-        // Owning entity: JPA association.
+        // Owning entity: JPA association + a @Formula label column (the target's first string
+        // field) so list/detail views can show "Acme" instead of a raw FK id without an open session.
         String orderEntity = contentEndingWith(entries, "/entity/Order.java");
         assertThat(orderEntity)
                 .contains("@ManyToOne(fetch = FetchType.LAZY, optional = false)")
                 .contains("@JoinColumn(name = \"customer_id\", nullable = false)")
                 .contains("private Customer customer;")
-                .contains("public Customer getCustomer()");
+                .contains("public Customer getCustomer()")
+                .contains("import org.hibernate.annotations.Formula;")
+                .contains("@Formula(\"(select t.name from customers t where t.id = customer_id)\")")
+                .contains("private String customerLabel;")
+                .contains("public String getCustomerLabel()");
 
-        // DTO: FK exposed as customerId, imports the target entity, @NotNull because required.
+        // DTO: FK exposed as customerId (+ read-only customerLabel), imports the target entity,
+        // @NotNull because required.
         String orderDto = contentEndingWith(entries, "/dto/OrderDto.java");
         assertThat(orderDto)
                 .contains("import com.menora.shop.entity.Customer;")
-                .contains("@NotNull Long customerId")
-                .contains("entity.getCustomer() == null ? null : entity.getCustomer().getId()")
+                .contains("@NotNull Long customerId,")
+                .contains("String customerLabel")
+                .contains("entity.getCustomer() == null ? null : entity.getCustomer().getId(),")
+                .contains("entity.getCustomerLabel()")
                 .contains("Customer customer = new Customer();")
                 .contains("customer.setId(this.customerId);")
                 .contains("entity.setCustomer(customer);")
-                // Comma-correctness: scalar fields keep their commas; the relation FK is the last
-                // record component, so it must NOT be followed by a comma (which would dangle before
-                // the close paren). CRLF-agnostic so it holds regardless of resource line endings.
+                // Comma-correctness: the label is the last record component, so it must NOT be
+                // followed by a comma. CRLF-agnostic so it holds regardless of resource line endings.
                 .contains("Long id,")
-                .doesNotContain("customerId,")
+                .doesNotContain("customerLabel,")
                 .doesNotContain(",,");
 
-        // Service copies the association on update.
+        // Service copies the association on update and filters by the relation's FK.
         assertThat(contentEndingWith(entries, "/service/OrderService.java"))
-                .contains("existing.setCustomer(updated.getCustomer());");
+                .contains("existing.setCustomer(updated.getCustomer());")
+                .contains("Long customerId")
+                .contains("cb.equal(root.get(\"customer\").get(\"id\"), filters.customerId())");
+        assertThat(contentEndingWith(entries, "/controller/OrderController.java"))
+                .contains("@RequestParam(required = false) Long customerId");
 
-        // Frontend: type + form + page carry customerId.
+        // Frontend: type + form + page carry customerId (and the label).
         assertThat(entries.get("shop/frontend/src/entities/order/model/types.ts"))
-                .contains("customerId: number | null");
+                .contains("customerId: number | null")
+                .contains("customerLabel?: string | null");
         // The FK now renders as a <select> populated from the target's list endpoint via useOptions.
         assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
                 .contains("import { useOptions } from '@shared/api'")
@@ -770,8 +834,14 @@ class FullstackStarterIntegrationTests {
                 .contains("label=\"Customer\" required")
                 .contains("<select")
                 .contains("set('customerId'");
+        // Table column shows the label (falling back to #id), and the filter bar gets a relation select.
         assertThat(entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx"))
-                .contains("label: 'Customer ID'");
+                .contains("label: 'Customer', render: r => r.customerLabel ?? (r.customerId == null ? '—' : '#' + String(r.customerId))")
+                .contains("kind: 'relation', optionsPath: '/api/customers', optionValue: 'id', optionLabel: 'name'");
+        assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderDetail.tsx"))
+                .contains("value.customerLabel ?? (");
+        assertThat(entries.get("shop/frontend/src/shared/ui/FilterBar.tsx"))
+                .contains("f.kind === 'relation'").contains("useOptions");
 
         // Customer (the target) is unaffected — no relations of its own.
         assertThat(contentEndingWith(entries, "/entity/Customer.java")).doesNotContain("@ManyToOne");

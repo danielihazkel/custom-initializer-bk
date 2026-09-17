@@ -266,8 +266,13 @@ Per-entity derived flag (set in `buildEntityContext`):
 | `hasBreakdown`, `breakdownField`, `breakdownLabel` | boolean / String | the first ENUM (else BOOLEAN) field, surfaced as a grouped bar chart on the dashboard; null when the entity has neither |
 | `kanbanField`, `kanbanLabel`, `kanbanIsEnum`, `kanbanColumns` | String / boolean / List | board-view grouping (used when `viewKanban`): the breakdown field is the grouping column; `kanbanColumns` is `{ value, label }` per lane (enum constants, or `true`/`false` for a boolean) |
 | `calendarField`, `calendarLabel` | String | calendar-view date field (used when `viewCalendar`): the first LOCAL_DATE / LOCAL_DATE_TIME field records are placed by |
-| `filterFields`, `hasFilters` | List / boolean | one entry per non-PK enum/boolean/temporal/numeric field, each with `name`, `Name`, `javaType`, kind flags (`isEnumFilter`/`isBooleanFilter`/`isTemporalFilter`/`isNumericFilter`), `isDate`/`isDateTime`, `enumValues`, `last` — drives the FE `FilterBar` and the BE filter `Specification` |
+| `filterFields`, `hasFilters` | List / boolean | one entry per non-PK enum/boolean/temporal/numeric field, each with `name`, `Name`, `javaType`, kind flags (`isEnumFilter`/`isBooleanFilter`/`isTemporalFilter`/`isNumericFilter`/`isRelationFilter`), `isDate`/`isDateTime`, `enumValues`, `last` — drives the FE `FilterBar` and the BE filter `Specification`. Relation entries (one per `MANY_TO_ONE`, appended after the scalar ones) are keyed by the FK `<field>Id` and add `relationField`, `targetPkName`, `targetEntityKebabPlural`, `targetLabelField`/`hasTargetLabel` |
+| `hasRelationLabels` | boolean | true when any relation's target has a label field — gates the `org.hibernate.annotations.Formula` import for the `<field>Label` columns (each relation carries `targetTableRef`/`targetPkColumn`/`targetLabelColumn` for the subselect) |
+| `seedEntities`, `hasSeedEntities` | List / boolean | **project-level**: the writable entities in demo-data seeding order (parents before children), each a copy of its entity view-model plus `seedFirst`/`seedLast`, with every relation carrying `targetSeeded`; read by `DemoDataLoader.java.mustache` (`optScaffoldSeedData`) |
 | `needsSpecification` | boolean | `hasStringFields || hasFilters` — gates the JPA `Specification` import/machinery in the Service template |
+
+Per-field (§4c) there is also `seedExpr`: the Java expression the demo-data loader assigns for row `i`
+(see `EntityScaffoldContext.seedExpression`).
 
 ### 4c. Per-field variables (inside `{{#fields}}`, `{{#pkFields}}`, …)
 

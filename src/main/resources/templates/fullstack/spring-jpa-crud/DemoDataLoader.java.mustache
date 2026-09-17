@@ -1,0 +1,84 @@
+{{#hasSeedEntities}}package {{packageName}}.config;
+
+{{#seedEntities}}import {{entityPackage}}.{{EntityName}};
+import {{repositoryPackage}}.{{EntityName}}Repository;
+{{/seedEntities}}import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Seeds a handful of demo rows per entity on startup so a freshly generated app has something to
+ * show. Runs only while every seeded table is empty, and is switched off with
+ * {@code app.demo-data.enabled=false} (do that in production). Parents are seeded before children
+ * so foreign keys resolve; strings and keys carry the row number so unique columns never clash.
+ */
+@Component
+@ConditionalOnProperty(prefix = "app.demo-data", name = "enabled", havingValue = "true", matchIfMissing = true)
+public class DemoDataLoader implements CommandLineRunner {
+
+    private static final Logger log = LoggerFactory.getLogger(DemoDataLoader.class);
+
+    /** Rows created per entity. */
+    static final int ROWS = 8;
+
+{{#seedEntities}}    private final {{EntityName}}Repository {{entityName}}Repository;
+{{/seedEntities}}
+    public DemoDataLoader({{#seedEntities}}{{EntityName}}Repository {{entityName}}Repository{{^seedLast}}, {{/seedLast}}{{/seedEntities}}) {
+{{#seedEntities}}        this.{{entityName}}Repository = {{entityName}}Repository;
+{{/seedEntities}}    }
+
+    @Override
+    public void run(String... args) {
+        if ({{#seedEntities}}{{^seedFirst}} || {{/seedFirst}}{{entityName}}Repository.count() > 0{{/seedEntities}}) {
+            log.info("Demo data: tables already contain rows, skipping");
+            return;
+        }
+{{#seedEntities}}
+        List<{{EntityName}}> {{entityName}}Rows = new ArrayList<>();
+        for (int i = 1; i <= ROWS; i++) {
+            {{EntityName}} row = new {{EntityName}}();
+{{#fields}}{{^isGenerated}}            row.set{{Name}}({{seedExpr}});
+{{/isGenerated}}{{/fields}}{{#relations}}{{#targetSeeded}}            row.set{{FieldName}}({{targetEntityCamel}}Rows.get((i - 1) % {{targetEntityCamel}}Rows.size()));
+{{/targetSeeded}}{{/relations}}            {{entityName}}Rows.add(row);
+        }
+        {{entityName}}Rows = {{entityName}}Repository.saveAll({{entityName}}Rows);
+{{/seedEntities}}
+        log.info("Demo data: seeded {} rows per entity", ROWS);
+    }
+
+    /** "{base} {i}", truncated to {max} characters while keeping the row number so values stay unique. */
+    static String label(String base, int i, int max) {
+        String s = base + " " + i;
+        if (s.length() <= max) {
+            return s;
+        }
+        String n = String.valueOf(i);
+        if (n.length() >= max) {
+            return n.substring(0, max);
+        }
+        return s.substring(0, max - n.length() - 1).trim() + " " + n;
+    }
+
+    /** A short paragraph of filler text ending in "{base} {i}". */
+    static String text(String base, int i) {
+        return "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt "
+                + "ut labore et dolore magna aliqua. " + base + " " + i;
+    }
+
+    /** Row number {i} mapped into [{min}, {max}] when bounds are set (cycling), else {i} itself. */
+    static long bounded(int i, Long min, Long max) {
+        if (min == null && max == null) {
+            return i;
+        }
+        long lo = min != null ? min : Math.min(0L, max);
+        long hi = max != null ? max : lo + 1000;
+        long span = Math.max(1L, hi - lo + 1);
+        return lo + (i - 1) % span;
+    }
+}
+{{/hasSeedEntities}}

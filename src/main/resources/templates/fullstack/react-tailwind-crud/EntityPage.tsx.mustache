@@ -11,14 +11,14 @@ import { ApiError } from '@shared/api'
 {{/mutable}}
 const columns: Column<{{EntityName}}>[] = [
 {{#fields}}  { label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
-{{/fields}}{{#relations}}  { label: '{{FieldName}} ID', render: r => r.{{fkFieldName}} == null ? '—' : String(r.{{fkFieldName}}) },
+{{/fields}}{{#relations}}  { label: '{{FieldName}}', render: r => {{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} },
 {{/relations}}{{#auditApplicable}}  { label: 'Created', sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString() },
   { label: 'Updated', sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString() },
 {{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
 {{/inverseRelations}}{{/optScaffoldInverse}}]
 {{#hasFilters}}
 const filterDescriptors: FilterDescriptor[] = [
-{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}} },
+{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{/isRelationFilter}} },
 {{/filterFields}}]
 {{/hasFilters}}{{#bulkUpdateApplicable}}{{#viewTable}}
 // Fields eligible for bulk edit. `kind` selects the value control shown in the bulk-edit bar; the

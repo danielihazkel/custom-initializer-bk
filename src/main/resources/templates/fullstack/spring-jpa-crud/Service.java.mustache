@@ -28,7 +28,7 @@ public class {{EntityName}}Service {
 {{#hasFilters}}
     /** Type-aware filter parameters bound from the request query string. Null fields are ignored. */
     public record Filters(
-{{#filterFields}}            {{#isEnumFilter}}{{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{javaType}} {{name}}Min, {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{javaType}} {{name}}From, {{javaType}} {{name}}To{{/isTemporalFilter}}{{^last}},{{/last}}
+{{#filterFields}}            {{#isEnumFilter}}{{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{javaType}} {{name}}Min, {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{javaType}} {{name}}From, {{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{javaType}} {{name}}{{/isRelationFilter}}{{^last}},{{/last}}
 {{/filterFields}}    ) {}
 
     @Transactional(readOnly = true)
@@ -46,7 +46,8 @@ public class {{EntityName}}Service {
         if (filters.{{name}}Max() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}Max()));
 {{/isNumericFilter}}{{#isTemporalFilter}}        if (filters.{{name}}From() != null) specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}From()));
         if (filters.{{name}}To() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}To()));
-{{/isTemporalFilter}}{{/filterFields}}        if (specs.isEmpty()) return repository.findAll(pageable);
+{{/isTemporalFilter}}{{#isRelationFilter}}        if (filters.{{name}}() != null) specs.add((root, query, cb) -> cb.equal(root.get("{{relationField}}").get("{{targetPkName}}"), filters.{{name}}()));
+{{/isRelationFilter}}{{/filterFields}}        if (specs.isEmpty()) return repository.findAll(pageable);
         Specification<{{EntityName}}> combined = specs.get(0);
         for (int i = 1; i < specs.size(); i++) combined = combined.and(specs.get(i));
         return repository.findAll(combined, pageable);

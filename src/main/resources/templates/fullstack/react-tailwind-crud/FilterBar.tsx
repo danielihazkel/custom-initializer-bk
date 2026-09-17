@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { SlidersHorizontal, X } from 'lucide-react'
+import { useOptions } from '@shared/api'
 
-export type FilterKind = 'enum' | 'boolean' | 'temporal' | 'numeric'
+export type FilterKind = 'enum' | 'boolean' | 'temporal' | 'numeric' | 'relation'
 
 export interface FilterDescriptor {
-  /** Base field name. Emitted query params derive from it: enum/boolean → `name`,
+  /** Base field name. Emitted query params derive from it: enum/boolean/relation → `name`,
    *  temporal → `nameFrom`/`nameTo`, numeric → `nameMin`/`nameMax`. */
   name: string
   label: string
@@ -13,6 +14,32 @@ export interface FilterDescriptor {
   options?: string[]
   /** Input type for a temporal filter. */
   inputType?: 'date' | 'datetime-local'
+  /** Relation filter: list endpoint of the referenced entity, and which of its fields supply the
+   *  option value (its primary key) and the human-readable label (falls back to the value). */
+  optionsPath?: string
+  optionValue?: string
+  optionLabel?: string
+}
+
+/** A <select> over the referenced entity's rows, e.g. "Customer" on the orders page. */
+function RelationSelect({ f, value, onChange, className }: {
+  f: FilterDescriptor
+  value: string
+  onChange: (value: string) => void
+  className: string
+}) {
+  const { options, loading } = useOptions<Record<string, unknown>>(f.optionsPath ?? '')
+  const valueKey = f.optionValue ?? 'id'
+  return (
+    <select className={className} value={value} onChange={e => onChange(e.target.value)} aria-label={f.label}>
+      <option value="">{loading ? 'Loading…' : 'Any'}</option>
+      {options.map(o => {
+        const v = String(o[valueKey])
+        const label = f.optionLabel ? String(o[f.optionLabel] ?? '') : ''
+        return <option key={v} value={v}>{label ? `${label} (#${v})` : v}</option>
+      })}
+    </select>
+  )
 }
 
 /** Query-param values keyed exactly as the backend reads them. Empty strings are dropped upstream. */
@@ -93,6 +120,9 @@ export function FilterBar({ filters, values, onChange }: Props) {
                   <span className="text-xs text-muted">–</span>
                   <input type={f.inputType ?? 'date'} className={fieldClass} value={values[`${f.name}To`] ?? ''} onChange={e => set(`${f.name}To`, e.target.value)} aria-label={`${f.label} to`} />
                 </div>
+              )}
+              {f.kind === 'relation' && (
+                <RelationSelect f={f} value={values[f.name] ?? ''} onChange={v => set(f.name, v)} className={fieldClass} />
               )}
               {f.kind === 'numeric' && (
                 <div className="flex items-center gap-1">

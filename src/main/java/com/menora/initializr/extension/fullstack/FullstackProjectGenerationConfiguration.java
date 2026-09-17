@@ -106,6 +106,9 @@ public class FullstackProjectGenerationConfiguration {
             // Bulk field-edit endpoint. Narrowed per entity in EntityScaffoldContext (bulkUpdateApplicable)
             // to writable, single-PK entities with ≥1 editable non-PK field. No extra dependency.
             projectCtx.put("optScaffoldBulkUpdate", optionsContext.hasOption("scaffold", "bulkUpdate"));
+            // Demo rows on first start (config/DemoDataLoader, a CommandLineRunner). Backend-only;
+            // the seeding order/expressions come from EntityScaffoldContext (seedEntities/seedExpr).
+            projectCtx.put("optScaffoldSeedData", optionsContext.hasOption("scaffold", "seedData"));
             // Boot 3.4 deprecated @MockBean in favour of Spring Framework 6.2's @MockitoBean and
             // Boot 4 removes it — pick the annotation the generated slice test uses by platform version.
             projectCtx.put("useMockitoBean", usesMockitoBean(description.getPlatformVersion()));
