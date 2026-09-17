@@ -552,6 +552,14 @@ public final class EntityScaffoldContext {
         view.put("hasRelations", !relationViews.isEmpty());
         view.put("hasRelationLabels", relationViews.stream()
                 .anyMatch(m -> Boolean.TRUE.equals(m.get("hasTargetLabel"))));
+        // The frontend validator (model/validate.ts) needs its `blank` helper only when something
+        // is required: a client-supplied PK, a required non-PK field, or a required relation —
+        // emitting it otherwise would trip the generated project's no-unused-vars lint rule.
+        view.put("hasBlankChecks",
+                hasRequiredRelations
+                        || fieldViews.stream().anyMatch(m ->
+                                (Boolean.TRUE.equals(m.get("isPrimaryKey")) && !Boolean.TRUE.equals(m.get("isGenerated")))
+                                || (!Boolean.TRUE.equals(m.get("isPrimaryKey")) && Boolean.TRUE.equals(m.get("isRequired")))));
 
         // Filter by relation FK ("orders of customer 7"): one filter entry per MANY_TO_ONE, keyed
         // by the DTO's <field>Id, equality on the relation's target PK. The frontend renders a

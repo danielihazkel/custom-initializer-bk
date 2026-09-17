@@ -1707,6 +1707,90 @@ class FullstackStarterIntegrationTests {
                 .doesNotContain("@SQLDelete");
         // The 'deleted' flag is never exposed on the DTO.
         assertThat(contentEndingWith(entries, "/dto/WidgetDto.java")).doesNotContain("deleted");
+
+        // A soft-deleted row can be restored: native UPDATE (JPQL can't see the row behind
+        // @SQLRestriction), a service method that 404s on an unknown id, POST /{id}/restore, and
+        // the frontend's delete toast wires its Undo to it instead of re-creating the record.
+        assertThat(contentEndingWith(entries, "/repository/WidgetRepository.java"))
+                .contains("@Modifying")
+                .contains("@Query(value = \"UPDATE widgets SET deleted = false WHERE id = :id\", nativeQuery = true)")
+                .contains("int restore(@Param(\"id\") Long id);");
+        assertThat(contentEndingWith(entries, "/service/WidgetService.java"))
+                .contains("public Widget restore(Long id)")
+                .contains("if (repository.restore(id) == 0)");
+        assertThat(contentEndingWith(entries, "/controller/WidgetController.java"))
+                .contains("@PostMapping(\"/{id}/restore\")")
+                .contains("service.restore(id)");
+        assertThat(entries.get("shop/frontend/src/pages/widget/ui/WidgetPage.tsx"))
+                .contains("restore(removed.id as number | string)")
+                .contains("label: 'Undo'")
+                .doesNotContain("create(removed");
+        // Composite PK: no soft delete, hence no restore anywhere.
+        assertThat(contentEndingWith(entries, "/repository/OrderLineRepository.java")).doesNotContain("restore");
+        assertThat(contentEndingWith(entries, "/controller/OrderLineController.java")).doesNotContain("restore");
+    }
+
+    @Test
+    void fullstackEndpoint_formValidatesClientSideAndDataHookGuardsStaleResponses() throws Exception {
+        Map<String, Object> name = Map.of("name", "name", "type", "String", "required", true, "length", 40);
+        Map<String, Object> email = Map.of("name", "email", "type", "String", "email", true);
+        Map<String, Object> age = Map.of("name", "age", "type", "Integer", "min", 0, "max", 120);
+        Map<String, Object> code = Map.of("name", "code", "type", "String", "pattern", "[A-Z]{3}");
+        Map<String, Object> rel = Map.of(
+                "type", "MANY_TO_ONE", "fieldName", "company", "targetEntity", "Company", "required", true);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(
+                Map.of("name", "Company", "fields", List.of(pkField(), Map.of("name", "name", "type", "String"))),
+                Map.of("name", "Contact", "fields", List.of(pkField(), name, email, age, code), "relations", List.of(rel))));
+        Map<String, String> entries = generateZip(body);
+
+        // The feature's model/validate.ts exports a validator derived from the same field metadata
+        // as the DTO's Bean Validation; the generated PK is never validated.
+        String validate = entries.get("shop/frontend/src/features/contact-form/model/validate.ts");
+        assertThat(validate)
+                .contains("export function validateContact(value: Partial<Contact>): Record<string, string>")
+                .contains("const blank = (v: unknown)")
+                .contains("if (blank(value.name)) errors.name = 'Required'")
+                .contains("value.name.length > 40) errors.name = 'Must be at most 40 characters'")
+                .contains("Number(value.age) < 0) errors.age = 'Must be at least 0'")
+                .contains("Number(value.age) > 120) errors.age = 'Must be at most 120'")
+                .contains("new RegExp('^(?:' + \"[A-Z]{3}\" + ')$').test(value.code)) errors.code = 'Invalid format'")
+                .contains("errors.email = 'Must be a valid email address'")
+                .contains("if (blank(value.companyId)) errors.companyId = 'Required'")
+                .doesNotContain("errors.id =");
+        // Nothing required on Company → no `blank` helper (the generated lint forbids unused vars).
+        assertThat(entries.get("shop/frontend/src/features/company-form/model/validate.ts"))
+                .contains("export function validateCompany(")
+                .doesNotContain("const blank");
+        assertThat(entries.get("shop/frontend/src/features/contact-form/ui/ContactForm.tsx")).doesNotContain("validateContact");
+        assertThat(entries.get("shop/frontend/src/features/contact-form/index.ts"))
+                .contains("export { validateContact } from './model/validate'");
+        // The page validates before calling the API, and — with no soft delete — offers no Undo.
+        assertThat(entries.get("shop/frontend/src/pages/contact/ui/ContactPage.tsx"))
+                .contains("import { ContactForm, validateContact } from '@features/contact-form'")
+                .contains("const clientErrors = validateContact(editing)")
+                .contains("k in formErrors")
+                .doesNotContain("label: 'Undo'")
+                .doesNotContain("create(removed");
+        // The drawer is a real form (Enter submits, Save is type=submit, browser bubbles off).
+        assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx"))
+                .contains("<form")
+                .contains("noValidate")
+                .contains("onSubmit={e => {")
+                .contains("type=\"submit\"")
+                .doesNotContain("onClick={onSave}");
+        // Out-of-order responses are dropped; a refetch keeps the current rows on screen.
+        assertThat(entries.get("shop/frontend/src/shared/api/useResource.ts"))
+                .contains("const requestRef = useRef(0)")
+                .contains("if (requestId !== requestRef.current) return")
+                .contains("const restore = useCallback(");
+        assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
+                .contains("loading && rows.length === 0 ? (");
+        assertThat(entries.get("shop/frontend/src/shared/ui/CardGrid.tsx"))
+                .contains("loading && rows.length === 0 ? (");
     }
 
     @Test

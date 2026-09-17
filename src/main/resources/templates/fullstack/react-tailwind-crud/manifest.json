@@ -48,6 +48,7 @@
     { "source": "entity-barrel.ts.mustache", "path": "src/entities/{{entityNameKebab}}/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 215 },
     { "source": "EntityForm.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Form.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 220 },
     { "source": "EntityDetail.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Detail.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 222 },
+    { "source": "EntityValidate.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/model/validate.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 224 },
     { "source": "feature-barrel.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 225 },
     { "source": "EntityPage.tsx.mustache", "path": "src/pages/{{entityNameKebab}}/ui/{{EntityName}}Page.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 230 },
     { "source": "page-barrel.ts.mustache", "path": "src/pages/{{entityNameKebab}}/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 235 }

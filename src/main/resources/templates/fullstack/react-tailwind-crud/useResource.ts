@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './client'
 
 /** A resource key: a single value, or — for composite primary keys — the key parts in
@@ -59,20 +59,26 @@ export function useResource<T extends object>(basePath: string, params: PagePara
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.page, params.size, params.sort, params.q, filterKey])
 
+  // Monotonic request counter: a response is applied only if no newer request was issued
+  // meanwhile, so a slow page-1 response can never overwrite a faster page-2 one.
+  const requestRef = useRef(0)
   const reload = useCallback(async () => {
+    const requestId = ++requestRef.current
     setLoading(true)
     setError(null)
     try {
       const page = await api.get<Page<T>>(`${basePath}?${query}`)
+      if (requestId !== requestRef.current) return
       setItems(page.content)
       setTotalElements(page.totalElements)
       setTotalPages(page.totalPages)
       setPageNumber(page.number)
       setPageSize(page.size)
     } catch (e) {
+      if (requestId !== requestRef.current) return
       setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setLoading(false)
+      if (requestId === requestRef.current) setLoading(false)
     }
   }, [basePath, query])
 
@@ -95,6 +101,14 @@ export function useResource<T extends object>(basePath: string, params: PagePara
   const remove = useCallback(async (id: ResourceId) => {
     await api.del(`${basePath}/${toPath(id)}`)
     await reload()
+  }, [basePath, reload])
+
+  // Un-deletes a soft-deleted record (only routed when the backend was generated with the
+  // softDelete opt; the page wires it to the Undo action of the delete toast).
+  const restore = useCallback(async (id: ResourceId) => {
+    const restored = await api.post<T>(`${basePath}/${toPath(id)}/restore`, undefined)
+    await reload()
+    return restored
   }, [basePath, reload])
 
   // Bulk delete by a list of (single-column) primary keys.
@@ -127,6 +141,7 @@ export function useResource<T extends object>(basePath: string, params: PagePara
     create,
     update,
     remove,
+    restore,
     removeMany,
     updateMany,
     exportCsv,

@@ -164,7 +164,14 @@ public class {{EntityName}}Controller {
         service.delete(id);
         return ResponseEntity.noContent().build();
     }
-{{/hasCompositePk}}{{#bulkDeleteApplicable}}
+{{#softDeleteApplicable}}
+{{#optScaffoldOpenApi}}    @Operation(summary = "Restore a soft-deleted {{EntityName}}")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
+{{/optScaffoldSecured}}    @PostMapping("/{id}/restore")
+    public {{EntityName}}Dto restore(@PathVariable {{pkField.javaType}} id) {
+        return {{EntityName}}Dto.from(service.restore(id));
+    }
+{{/softDeleteApplicable}}{{/hasCompositePk}}{{#bulkDeleteApplicable}}
 {{#optScaffoldOpenApi}}    @Operation(summary = "Bulk delete {{EntityName}} records by id")
 {{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
 {{/optScaffoldSecured}}    @DeleteMapping("/bulk")

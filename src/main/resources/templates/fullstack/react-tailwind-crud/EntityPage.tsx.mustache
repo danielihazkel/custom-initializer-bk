@@ -6,7 +6,7 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
-{{#mutable}}import { {{EntityName}}Form } from '@features/{{entityNameKebab}}-form'
+{{#mutable}}import { {{EntityName}}Form, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
 {{/mutable}}
 const columns: Column<{{EntityName}}>[] = [
@@ -53,7 +53,7 @@ export function {{EntityName}}Page() {
 
   const {
     items, totalElements, totalPages, pageNumber, pageSize,
-    loading, error,{{#viewKanban}} reload,{{/viewKanban}}{{#mutable}} create, update, remove,{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
+    loading, error,{{#viewKanban}} reload,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
   } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{/hasFilters}} })
 {{#mutable}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
@@ -87,8 +87,23 @@ export function {{EntityName}}Page() {
     setEditing(null)
     setFormErrors({})
   }
+  function focusFirstInvalid() {
+    // Move focus to the first field flagged invalid by <Field>.
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[role="dialog"] [aria-invalid="true"]')?.focus()
+    })
+  }
   async function save() {
     if (!editing) return
+    // Client-side validation first: required / length / min / max / pattern / email, mirroring
+    // the backend's constraints so obvious mistakes never cost a round-trip.
+    const clientErrors = validate{{EntityName}}(editing)
+    if (Object.keys(clientErrors).length > 0) {
+      setFormErrors(clientErrors)
+      toast.error('Please fix the highlighted fields')
+      focusFirstInvalid()
+      return
+    }
     setSaving(true)
     setFormErrors({})
     try {
@@ -101,10 +116,7 @@ export function {{EntityName}}Page() {
       if (e instanceof ApiError && e.fieldErrors) {
         setFormErrors(e.fieldErrors)
         toast.error('Please fix the highlighted fields')
-        // Move focus to the first field flagged invalid by <Field>.
-        requestAnimationFrame(() => {
-          document.querySelector<HTMLElement>('[role="dialog"] [aria-invalid="true"]')?.focus()
-        })
+        focusFirstInvalid()
       } else {
         toast.error(e instanceof Error ? e.message : String(e))
       }
@@ -119,18 +131,21 @@ export function {{EntityName}}Page() {
     try {
       await remove({{#hasCompositePk}}[{{#pkFields}}removed.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}removed.{{pkField.name}} as number | string{{/hasCompositePk}})
       setPendingDelete(null)
-      // Offer a best-effort undo by re-creating the just-removed record.
+{{#softDeleteApplicable}}      // Soft delete: the row is only flagged, so Undo really restores it (same id, same data).
       toast.success('{{entityLabel}} deleted', {
         action: {
           label: 'Undo',
           onClick: () => {
-            create(removed as Omit<{{EntityName}}, 'id'>)
+            restore(removed.{{pkField.name}} as number | string)
               .then(() => toast.success('{{entityLabel}} restored'))
               .catch(err => toast.error(err instanceof Error ? err.message : String(err)))
           },
         },
       })
-    } catch (e) {
+{{/softDeleteApplicable}}{{^softDeleteApplicable}}      // Hard delete: the row is gone for good, so no Undo is offered (re-creating it would
+      // hand out a new id and could collide on unique columns).
+      toast.success('{{entityLabel}} deleted')
+{{/softDeleteApplicable}}    } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
       setDeleting(false)
@@ -408,7 +423,21 @@ export function {{EntityName}}Page() {
         {editing && (
           <{{EntityName}}Form
             value={editing}
-            onChange={setEditing}
+            onChange={next => {
+              // Clear the message of any field the user just edited; the others stay until the
+              // next save re-validates.
+              const before = (editing ?? {}) as Record<string, unknown>
+              const after = next as Record<string, unknown>
+              const changed = Object.keys(after).filter(k => after[k] !== before[k] && k in formErrors)
+              if (changed.length > 0) {
+                setFormErrors(prev => {
+                  const copy = { ...prev }
+                  for (const k of changed) delete copy[k]
+                  return copy
+                })
+              }
+              setEditing(next)
+            }}
             errors={formErrors}
             isNew={isNew}
           />

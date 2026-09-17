@@ -134,8 +134,10 @@ export function Table<T extends object>({
                 )}
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
+            {/* Skeleton only for the very first load; a refetch (page/sort/search change) keeps the
+                current rows on screen, dimmed, instead of flashing an empty table. */}
+            <tbody className={loading && rows.length > 0 ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+              {loading && rows.length === 0 ? (
                 <TableSkeleton cols={columns.length + leadCols} />
               ) : empty ? (
                 <tr>

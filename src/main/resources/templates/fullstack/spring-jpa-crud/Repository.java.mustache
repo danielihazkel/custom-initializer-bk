@@ -4,8 +4,20 @@ import {{entityPackage}}.{{EntityName}};
 {{#hasCompositePk}}import {{entityPackage}}.{{keyClassName}};
 {{/hasCompositePk}}import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-
+{{#softDeleteApplicable}}import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
+{{/softDeleteApplicable}}
 public interface {{EntityName}}Repository
         extends JpaRepository<{{EntityName}}, {{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}}>,
                 JpaSpecificationExecutor<{{EntityName}}> {
-}
+{{#softDeleteApplicable}}
+    /** Un-deletes a soft-deleted row. Native SQL on purpose: @SQLRestriction hides deleted rows
+     *  from every entity query, so a JPQL update could never find one. Returns 0 when no row
+     *  has that id at all. */
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE {{tableName}} SET deleted = false WHERE {{pkField.column}} = :id", nativeQuery = true)
+    int restore(@Param("id") {{pkField.javaType}} id);
+{{/softDeleteApplicable}}}

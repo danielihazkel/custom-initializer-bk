@@ -93,6 +93,16 @@ public class {{EntityName}}Service {
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
         repository.delete(findById(id));
     }
+{{#softDeleteApplicable}}
+    /** Un-deletes a soft-deleted record (the frontend's Undo after delete). 404 when no row has
+     *  that id; restoring a live row is a harmless no-op. */
+    public {{EntityName}} restore({{pkField.javaType}} id) {
+        if (repository.restore(id) == 0) {
+            throw new ResourceNotFoundException("{{EntityName}} " + id + " not found");
+        }
+        return findById(id);
+    }
+{{/softDeleteApplicable}}
 {{#bulkDeleteApplicable}}
     public void deleteAll(java.util.List<{{pkField.javaType}}> ids) {
         repository.deleteAllById(ids);

@@ -81,6 +81,7 @@ export function FormDrawer({ open, title, subtitle, onClose, onSave, saving, dir
             {subtitle && <p className="mt-0.5 text-xs text-muted">{subtitle}</p>}
           </div>
           <button
+            type="button"
             onClick={requestClose}
             className="-me-1 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
             aria-label="Close"
@@ -88,25 +89,37 @@ export function FormDrawer({ open, title, subtitle, onClose, onSave, saving, dir
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-5">
-          {children}
-        </div>
-        <div className="flex items-center justify-end gap-2 border-t border-border bg-surface-2 px-5 py-3">
-          <button
-            onClick={requestClose}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onSave}
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep disabled:opacity-50"
-          >
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+        {/* A real form: Enter submits, Save is type=submit. noValidate keeps the browser's own
+            bubbles out of the way — the page validates and renders messages under each field. */}
+        <form
+          noValidate
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={e => {
+            e.preventDefault()
+            if (!saving) onSave()
+          }}
+        >
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-5">
+            {children}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-border bg-surface-2 px-5 py-3">
+            <button
+              type="button"
+              onClick={requestClose}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep disabled:opacity-50"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
