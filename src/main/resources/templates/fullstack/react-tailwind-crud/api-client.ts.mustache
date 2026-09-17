@@ -5,9 +5,10 @@
 const BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '').replace(/\/+$/, '')
 
 /**
- * Error thrown for non-2xx responses. A 400 from the API carries a `{ field: message }`
- * map (the controller's bean-validation handler) which is exposed as `fieldErrors` so
- * forms can show the message next to the offending input.
+ * Error thrown for non-2xx responses. The API answers with RFC-7807 problem details
+ * (`{ title, status, detail, errors? }`, see the backend's ApiExceptionHandler): `detail` becomes
+ * the message and, on a 400, the per-field `errors` map is exposed as `fieldErrors` so forms can
+ * show each message next to the offending input.
  */
 export class ApiError extends Error {
   readonly status: number
@@ -42,20 +43,25 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const text = await res.text().catch(() => '')
     let parsed: unknown = null
     try { parsed = text ? JSON.parse(text) : null } catch { /* not JSON */ }
-    const isObject = parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)
-    // A 400 with an object body is the validation field-error map.
-    if (res.status === 400 && isObject) {
-      throw new ApiError(res.status, 'Validation failed', parsed as Record<string, string>)
+    const problem = parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
+    const errors = problem && problem.errors != null && typeof problem.errors === 'object'
+      ? (problem.errors as Record<string, string>)
+      : undefined
+    // A 400 carrying `errors` is bean validation: keep the field map for the form.
+    if (res.status === 400 && errors) {
+      throw new ApiError(res.status, String(problem?.detail ?? 'Validation failed'), errors)
     }
-    const message = (isObject && ((parsed as Record<string, string>).error
-      || (parsed as Record<string, string>).message)) || text
-    throw new ApiError(res.status, `HTTP ${res.status} on ${method} ${path}: ${message}`)
+    // `detail`/`title` are the problem-detail fields; `error`/`message` cover non-scaffolded endpoints.
+    const message = (problem && (problem.detail || problem.title || problem.error || problem.message)) || text
+    throw new ApiError(res.status, `HTTP ${res.status} on ${method} ${path}: ${String(message)}`)
   }
   if (res.status === 204) return undefined as unknown as T
   // A misrouted /api (no proxy in front of a static build) answers with index.html and a 200;
   // fail with a pointed message instead of a bare JSON SyntaxError.
   const contentType = res.headers.get('content-type') ?? ''
-  if (!contentType.includes('application/json')) {
+  if (!contentType.includes('json')) {
     throw new ApiError(res.status,
       `Expected JSON from ${method} ${path} but got '${contentType || 'no content-type'}' — is /api routed to the backend?`)
   }

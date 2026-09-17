@@ -1,0 +1,10 @@
+package {{packageName}}.web;
+
+/** The request clashes with existing data, e.g. creating a record whose client-supplied key is
+ *  already taken. Mapped to HTTP 409 by {@link ApiExceptionHandler}. */
+public class ResourceConflictException extends RuntimeException {
+
+    public ResourceConflictException(String message) {
+        super(message);
+    }
+}

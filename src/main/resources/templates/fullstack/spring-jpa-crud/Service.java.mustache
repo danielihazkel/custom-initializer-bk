@@ -3,7 +3,10 @@ package {{servicePackage}};
 import {{entityPackage}}.{{EntityName}};
 {{#hasCompositePk}}import {{entityPackage}}.{{keyClassName}};
 {{/hasCompositePk}}import {{repositoryPackage}}.{{EntityName}}Repository;
-import org.springframework.data.domain.Page;
+import {{packageName}}.web.ResourceNotFoundException;
+{{#mutable}}{{^pkField.isGenerated}}import {{packageName}}.web.ResourceConflictException;
+{{/pkField.isGenerated}}{{/mutable}}{{#hasStringFields}}import java.util.Locale;
+{{/hasStringFields}}import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 {{#needsSpecification}}import org.springframework.data.jpa.domain.Specification;
 {{/needsSpecification}}{{#hasFilters}}import java.util.ArrayList;
@@ -32,9 +35,9 @@ public class {{EntityName}}Service {
     public Page<{{EntityName}}> findAll(String q, Filters filters, Pageable pageable) {
         List<Specification<{{EntityName}}>> specs = new ArrayList<>();
 {{#hasStringFields}}        if (q != null && !q.isBlank()) {
-            String like = "%" + q.toLowerCase() + "%";
+            String like = "%" + escapeLike(q.toLowerCase(Locale.ROOT)) + "%";
             specs.add((root, query, cb) -> cb.or(
-{{#stringFields}}                    cb.like(cb.lower(root.get("{{name}}")), like){{^lastString}},{{/lastString}}
+{{#stringFields}}                    cb.like(cb.lower(root.get("{{name}}")), like, '\\'){{^lastString}},{{/lastString}}
 {{/stringFields}}            ));
         }
 {{/hasStringFields}}{{#filterFields}}{{#isEnumFilter}}        if (filters.{{name}}() != null) specs.add((root, query, cb) -> cb.equal(root.get("{{name}}"), filters.{{name}}()));
@@ -52,9 +55,9 @@ public class {{EntityName}}Service {
     @Transactional(readOnly = true)
     public Page<{{EntityName}}> findAll(String q, Pageable pageable) {
 {{#hasStringFields}}        if (q != null && !q.isBlank()) {
-            String like = "%" + q.toLowerCase() + "%";
+            String like = "%" + escapeLike(q.toLowerCase(Locale.ROOT)) + "%";
             Specification<{{EntityName}}> spec = (root, query, cb) -> cb.or(
-{{#stringFields}}                    cb.like(cb.lower(root.get("{{name}}")), like){{^lastString}},{{/lastString}}
+{{#stringFields}}                    cb.like(cb.lower(root.get("{{name}}")), like, '\\'){{^lastString}},{{/lastString}}
 {{/stringFields}}            );
             return repository.findAll(spec, pageable);
         }
@@ -64,11 +67,16 @@ public class {{EntityName}}Service {
     @Transactional(readOnly = true)
     public {{EntityName}} findById({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
         return repository.findById(id).orElseThrow(() ->
-                new java.util.NoSuchElementException("{{EntityName}} " + id + " not found"));
+                new ResourceNotFoundException("{{EntityName}} " + id + " not found"));
     }
 
 {{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
 {{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
+{{/pkField.isGenerated}}{{^pkField.isGenerated}}        // Client-supplied key: save() would silently merge over an existing row, so refuse with a 409.
+        {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
+        if (id != null && repository.existsById(id)) {
+            throw new ResourceConflictException("{{EntityName}} " + id + " already exists");
+        }
 {{/pkField.isGenerated}}        return repository.save(entity);
     }
 
@@ -79,8 +87,8 @@ public class {{EntityName}}Service {
 {{/relations}}        return repository.save(existing);
     }
 
-    /** Loads first so a missing id surfaces as the controller's 404 (NoSuchElementException)
-     *  rather than a 500 from deleteById's EmptyResultDataAccessException. */
+    /** Loads first so a missing id surfaces as a 404 (ResourceNotFoundException) rather than a
+     *  500 from deleteById's EmptyResultDataAccessException. */
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
         repository.delete(findById(id));
     }
@@ -102,4 +110,10 @@ public class {{EntityName}}Service {
         }
         repository.saveAll(rows);
     }
-{{/bulkUpdateApplicable}}{{/mutable}}}
+{{/bulkUpdateApplicable}}{{/mutable}}{{#hasStringFields}}
+    /** Escapes LIKE wildcards in user input so `%` and `_` match literally (the query names `\` as
+     *  its escape character), and a search for "100%" does not match everything. */
+    private static String escapeLike(String s) {
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+{{/hasStringFields}}}

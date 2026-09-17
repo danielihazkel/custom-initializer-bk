@@ -12,6 +12,7 @@ import com.menora.initializr.fullstack.FullstackRenderer;
 import io.spring.initializr.generator.project.ProjectDescription;
 import io.spring.initializr.generator.project.ProjectGenerationConfiguration;
 import io.spring.initializr.generator.project.contributor.ProjectContributor;
+import io.spring.initializr.generator.version.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -105,9 +106,20 @@ public class FullstackProjectGenerationConfiguration {
             // Bulk field-edit endpoint. Narrowed per entity in EntityScaffoldContext (bulkUpdateApplicable)
             // to writable, single-PK entities with ≥1 editable non-PK field. No extra dependency.
             projectCtx.put("optScaffoldBulkUpdate", optionsContext.hasOption("scaffold", "bulkUpdate"));
+            // Boot 3.4 deprecated @MockBean in favour of Spring Framework 6.2's @MockitoBean and
+            // Boot 4 removes it — pick the annotation the generated slice test uses by platform version.
+            projectCtx.put("useMockitoBean", usesMockitoBean(description.getPlatformVersion()));
             log.info("Rendering backend CRUD scaffolding: set='{}', {} files, {} entities",
                     setKey, files.size(), entities.size());
             FullstackRenderer.render(files, projectCtx, entities, projectRoot);
         };
+    }
+
+    /** First Boot line whose test starter ships {@code @MockitoBean} (Spring Framework 6.2). */
+    static final Version MOCKITO_BEAN_SINCE = Version.parse("3.4.0");
+
+    /** {@code @MockitoBean} for Boot ≥ 3.4, the deprecated {@code @MockBean} before that. */
+    static boolean usesMockitoBean(Version platformVersion) {
+        return platformVersion != null && platformVersion.compareTo(MOCKITO_BEAN_SINCE) >= 0;
     }
 }

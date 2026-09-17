@@ -248,7 +248,7 @@ class FullstackStarterIntegrationTests {
         // production env file ships with it empty (same-origin behind nginx).
         assertThat(entries.get("shop/frontend/src/shared/api/client.ts"))
                 .contains("import.meta.env.VITE_API_BASE_URL")
-                .contains("contentType.includes('application/json')")
+                .contains("contentType.includes('json')")
                 .doesNotContain("const BASE = ''");
         assertThat(entries.get("shop/frontend/.env.production"))
                 .contains("VITE_API_BASE_URL=").doesNotContain("VITE_API_BASE_URL=http");
@@ -259,6 +259,93 @@ class FullstackStarterIntegrationTests {
                 .contains("rowKey={rowKey}");
         // The standalone landing page is replaced by the per-entity pages — its dir is removed.
         assertThat(entries.keySet()).noneMatch(p -> p.startsWith("shop/frontend/src/pages/home/"));
+    }
+
+    @Test
+    void fullstackEndpoint_hardensGeneratedApi() throws Exception {
+        // Three PK shapes: generated (Product), client-supplied single (Coupon.code) and composite
+        // (Line.orderId + lineNo). audit adds createdAt/updatedAt to the sortable set; tests pins
+        // the mock annotation; validation (a set default) enables the constraint-violation handler.
+        Map<String, Object> couponCode = new LinkedHashMap<>();
+        couponCode.put("name", "code"); couponCode.put("type", "String"); couponCode.put("primaryKey", true);
+        Map<String, Object> orderId = new LinkedHashMap<>();
+        orderId.put("name", "orderId"); orderId.put("type", "Long"); orderId.put("primaryKey", true);
+        Map<String, Object> lineNo = new LinkedHashMap<>();
+        lineNo.put("name", "lineNo"); lineNo.put("type", "Integer"); lineNo.put("primaryKey", true);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("audit", "tests")));
+        body.put("entities", List.of(
+                Map.of("name", "Product", "fields", List.of(pkField(),
+                        Map.of("name", "name", "type", "String", "required", true))),
+                Map.of("name", "Coupon", "fields", List.of(couponCode,
+                        Map.of("name", "discount", "type", "Integer"))),
+                Map.of("name", "Line", "fields", List.of(orderId, lineNo,
+                        Map.of("name", "qty", "type", "Integer")))));
+        Map<String, String> entries = generateZip(body);
+
+        // One RFC-7807 advice for the whole API, plus the two exceptions the services throw.
+        String base = "shop/backend/src/main/java/com/menora/shop/web/";
+        assertThat(entries).containsKey(base + "ResourceNotFoundException.java");
+        assertThat(entries).containsKey(base + "ResourceConflictException.java");
+        assertThat(entries.get(base + "ApiExceptionHandler.java"))
+                .contains("@RestControllerAdvice")
+                .contains("@Order(Ordered.HIGHEST_PRECEDENCE)")
+                .contains("ProblemDetail.forStatusAndDetail")
+                .contains("problem.setProperty(\"errors\", errors)")
+                .contains("A record with these values already exists")
+                .contains("@ExceptionHandler(ConstraintViolationException.class)")   // validation dep on
+                .contains("@ExceptionHandler(PropertyReferenceException.class)");
+
+        // Controllers carry no local handlers any more and whitelist ?sort= against the DTO's columns.
+        String productController = contentEndingWith(entries, "/ProductController.java");
+        assertThat(productController)
+                .doesNotContain("@ExceptionHandler")
+                .doesNotContain("NoSuchElementException")
+                .contains("SORTABLE = List.of(new String[] {")
+                .contains("\"id\",").contains("\"name\",").contains("\"createdAt\",").contains("\"updatedAt\",")
+                .contains("DEFAULT_SORT = Sort.by(\"id\").ascending()")
+                .contains("PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sortOf(pageable))")
+                .contains("throw new IllegalArgumentException(");
+        // Composite keys sort by every PK column so pagination is stable.
+        assertThat(contentEndingWith(entries, "/LineController.java"))
+                .contains("DEFAULT_SORT = Sort.by(\"orderId\", \"lineNo\").ascending()");
+
+        // Search escapes LIKE wildcards and lowercases locale-independently; 404 is a typed exception.
+        String productService = contentEndingWith(entries, "/ProductService.java");
+        assertThat(productService)
+                .contains("import com.menora.shop.web.ResourceNotFoundException;")
+                .contains("new ResourceNotFoundException(\"Product \" + id + \" not found\")")
+                .contains("escapeLike(q.toLowerCase(Locale.ROOT))")
+                .contains("like, '\\\\')")
+                .contains("private static String escapeLike(String s)")
+                .doesNotContain("NoSuchElementException")
+                .doesNotContain("existsById")           // generated PK: nothing to clash with
+                .doesNotContain("ResourceConflictException");
+        // A client-supplied key refuses to overwrite an existing row.
+        assertThat(contentEndingWith(entries, "/CouponService.java"))
+                .contains("import com.menora.shop.web.ResourceConflictException;")
+                .contains("String id = entity.getCode();")
+                .contains("if (id != null && repository.existsById(id))")
+                .contains("throw new ResourceConflictException(\"Coupon \" + id + \" already exists\")")
+                .contains("Locale.ROOT");               // the String key itself is searchable
+        assertThat(contentEndingWith(entries, "/LineService.java"))
+                .contains("LineId id = new LineId(entity.getOrderId(), entity.getLineNo());")
+                .contains("repository.existsById(id)")
+                .doesNotContain("Locale.ROOT")          // no string field → no search, no helper
+                .doesNotContain("escapeLike");
+
+        // Boot 3.2 still uses @MockBean; the switch to @MockitoBean is pinned by
+        // FullstackProjectGenerationConfigurationTest.
+        assertThat(contentEndingWith(entries, "/ProductControllerTest.java"))
+                .contains("@MockBean").doesNotContain("MockitoBean");
+
+        // The API client reads the problem-detail shape.
+        assertThat(entries.get("shop/frontend/src/shared/api/client.ts"))
+                .contains("problem.errors").contains("problem.detail || problem.title");
     }
 
     @Test
@@ -473,13 +560,16 @@ class FullstackStarterIntegrationTests {
         // id is a generated PK → it must NOT be @NotNull (it is null until persisted).
         assertThat(accountDto).contains("Long id");
 
-        // Controller validates the body and maps the failure modes to 400 / 409.
+        // Controller validates the body; the 400 / 409 mapping lives in the shared advice, not here.
         String accountController = contentEndingWith(entries, "/controller/AccountController.java");
         assertThat(accountController)
                 .contains("import jakarta.validation.Valid;")
                 .contains("@Valid")
-                .contains("MethodArgumentNotValidException")
-                .contains("DataIntegrityViolationException")
+                .doesNotContain("MethodArgumentNotValidException")
+                .doesNotContain("DataIntegrityViolationException");
+        assertThat(contentEndingWith(entries, "/web/ApiExceptionHandler.java"))
+                .contains("@ExceptionHandler(MethodArgumentNotValidException.class)")
+                .contains("@ExceptionHandler(DataIntegrityViolationException.class)")
                 .contains("HttpStatus.CONFLICT");
 
         // Required fields are marked in the generated form (email is required → asterisk).

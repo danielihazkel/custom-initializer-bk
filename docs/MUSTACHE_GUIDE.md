@@ -341,7 +341,9 @@ in `renderFrontend`. `optScaffoldSecured` is additionally ANDed with `ldap-auth`
 (its `security.*` imports come from that library), so it no-ops cleanly when ldap-auth is deselected.
 
 Also on the backend fullstack path: `hasValidation` (true when the `validation` starter is selected) —
-gate generated Bean Validation annotations on it so imports resolve.
+gate generated Bean Validation annotations on it so imports resolve — and `useMockitoBean` (true for
+Boot ≥ 3.4, where `@MockBean` is deprecated in favour of `@MockitoBean`; read by
+`EntityControllerTest.java.mustache`).
 
 Only on the frontend fullstack path (`renderFrontend`): `hasLdapAuth` (an `ldap-auth`/`ldap-auth-rest` dep is
 on the backend build — gates the dev-only `userinfo` header in `client.ts`), `dashboardTitle` /

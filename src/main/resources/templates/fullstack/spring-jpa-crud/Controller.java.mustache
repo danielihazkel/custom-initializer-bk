@@ -8,21 +8,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 {{#optScaffoldCsvExport}}import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
-{{/optScaffoldCsvExport}}{{#hasValidation}}import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-{{/hasValidation}}import org.springframework.web.bind.annotation.*;
+{{/optScaffoldCsvExport}}import org.springframework.web.bind.annotation.*;
 {{#hasValidation}}
 import jakarta.validation.Valid;
 {{/hasValidation}}
-import java.util.NoSuchElementException;
-{{#hasValidation}}import java.util.HashMap;
-{{/hasValidation}}import java.util.Map;
+import java.util.List;
 {{#hasFilters}}{{#imports}}import {{name}};
 {{/imports}}{{#fields}}{{#isEnum}}import {{entityPackage}}.{{EntityName}}.{{enumTypeName}};
 {{/isEnum}}{{/fields}}{{/hasFilters}}{{#optScaffoldOpenApi}}import io.swagger.v3.oas.annotations.Operation;
@@ -51,10 +45,7 @@ public class {{EntityName}}Controller {
             @RequestParam(required = false) String q,
 {{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}},
 {{/filterFields}}            Pageable pageable) {
-        Pageable effective = pageable.getSort().isSorted()
-                ? pageable
-                : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
-                        Sort.by("{{pkField.name}}").ascending());
+        Pageable effective = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sortOf(pageable));
 {{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{^last}}, {{/last}}{{/filterFields}});
         return service.findAll(q, filters, effective).map({{EntityName}}Dto::from);
 {{/hasFilters}}{{^hasFilters}}        return service.findAll(q, effective).map({{EntityName}}Dto::from);
@@ -68,7 +59,7 @@ public class {{EntityName}}Controller {
 {{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}},
 {{/filterFields}}            Pageable pageable) {
 {{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{^last}}, {{/last}}{{/filterFields}});
-{{/hasFilters}}        Sort sort = pageable.getSort().isSorted() ? pageable.getSort() : Sort.by("{{pkField.name}}").ascending();
+{{/hasFilters}}        Sort sort = sortOf(pageable);
         // Streamed in fixed-size chunks so memory stays bounded regardless of table size; each
         // chunk is its own read-only transaction, so no session is held open across the response.
         StreamingResponseBody stream = out -> {
@@ -193,31 +184,28 @@ public class {{EntityName}}Controller {
     public record BulkUpdateRequest(java.util.List<{{pkField.javaType}}> ids, String field, Object value) {}
 {{/bulkUpdateApplicable}}{{/mutable}}
 
-    @ExceptionHandler(NoSuchElementException.class)
-    public ResponseEntity<Void> handleNotFound(NoSuchElementException ex) {
-        return ResponseEntity.notFound().build();
-    }
-{{#bulkUpdateApplicable}}
-    /** A bad bulk-update field name or an uncoercible value surfaces as a 400 rather than a 500
-     *  (NumberFormatException and enum/UUID coercion failures are IllegalArgumentExceptions). */
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, String>> handleBadArgument(IllegalArgumentException ex) {
-        return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-    }
-{{/bulkUpdateApplicable}}
-{{#hasValidation}}
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
-        for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
-            errors.putIfAbsent(fe.getField(), fe.getDefaultMessage());
+    /** Sort keys accepted from {@code ?sort=}: every scalar column the DTO exposes. Anything else is
+     *  rejected as a 400 (via ApiExceptionHandler) instead of surfacing Spring Data's
+     *  PropertyReferenceException as a 500 — and it keeps sorting from walking into relations. */
+    private static final List<String> SORTABLE = List.of(new String[] {
+{{#fields}}            "{{name}}",
+{{/fields}}{{#auditApplicable}}            "createdAt",
+            "updatedAt",
+{{/auditApplicable}}    });
+
+    /** Stable default order when the client sends none: every primary-key column. */
+    private static final Sort DEFAULT_SORT = Sort.by({{#pkFields}}"{{name}}"{{^last}}, {{/last}}{{/pkFields}}).ascending();
+
+    private static Sort sortOf(Pageable pageable) {
+        if (!pageable.getSort().isSorted()) {
+            return DEFAULT_SORT;
         }
-        return ResponseEntity.badRequest().body(errors);
-    }
-{{/hasValidation}}
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<Map<String, String>> handleConflict(DataIntegrityViolationException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(Map.of("error", "A record with these values already exists"));
+        for (Sort.Order order : pageable.getSort()) {
+            if (!SORTABLE.contains(order.getProperty())) {
+                throw new IllegalArgumentException(
+                        "Unknown sort property '" + order.getProperty() + "'; sortable: " + SORTABLE);
+            }
+        }
+        return pageable.getSort();
     }
 }

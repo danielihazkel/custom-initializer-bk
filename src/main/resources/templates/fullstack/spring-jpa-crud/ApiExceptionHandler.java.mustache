@@ -1,0 +1,152 @@
+package {{packageName}}.web;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.mapping.PropertyReferenceException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+{{#hasValidation}}
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+{{/hasValidation}}
+
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+
+/**
+ * One error contract for every generated {@code /api/**} endpoint, as RFC 7807 problem details
+ * ({@code application/problem+json}):
+ *
+ * <pre>
+ * { "type": "about:blank", "title": "Bad Request", "status": 400,
+ *   "detail": "Validation failed", "instance": "/api/orders",
+ *   "errors": { "email": "must be a well-formed email address" } }   // 400 only
+ * </pre>
+ *
+ * <ul>
+ *   <li>404 — {@link ResourceNotFoundException} (thrown by the services' {@code findById})</li>
+ *   <li>409 — {@link ResourceConflictException} (create with an existing client-supplied key) and
+ *       database constraint violations, classified by the driver message so a unique clash reads
+ *       "already exists" while a foreign-key or not-null failure is described as such</li>
+ *   <li>400 — bean validation (with the per-field {@code errors} map the frontend maps onto its
+ *       form), unreadable JSON, bad parameter types, missing parameters, unknown sort properties
+ *       and any {@link IllegalArgumentException} raised by a service (e.g. bulk update)</li>
+ * </ul>
+ *
+ * <p>Ordered first so it wins over any other {@code @RestControllerAdvice} on the classpath (for
+ * example the {@code ValidationExceptionHandler} the validation starter contributes) for the
+ * exceptions listed here; everything else falls through to Spring Boot's default error handling.
+ */
+@RestControllerAdvice
+@Order(Ordered.HIGHEST_PRECEDENCE)
+public class ApiExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ProblemDetail handleNotFound(ResourceNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(ResourceConflictException.class)
+    public ProblemDetail handleConflict(ResourceConflictException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
+        String cause = rootMessage(ex).toLowerCase(Locale.ROOT);
+        String detail;
+        if (cause.contains("unique") || cause.contains("duplicate") || cause.contains("primary key")) {
+            detail = "A record with these values already exists";
+        } else if (cause.contains("foreign key") || cause.contains("referential")) {
+            detail = "The request references a record that does not exist, or the record is still referenced by others";
+        } else if (cause.contains("null")) {
+            detail = "A required value is missing";
+        } else {
+            detail = "The request conflicts with a database constraint";
+        }
+        log.debug("Data integrity violation: {}", rootMessage(ex));
+        return problem(HttpStatus.CONFLICT, detail);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
+            errors.putIfAbsent(fe.getField(), fe.getDefaultMessage() == null ? "invalid" : fe.getDefaultMessage());
+        }
+        ProblemDetail problem = problem(HttpStatus.BAD_REQUEST, "Validation failed");
+        problem.setProperty("errors", errors);
+        return problem;
+    }
+{{#hasValidation}}
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolation(ConstraintViolationException ex) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        for (ConstraintViolation<?> v : ex.getConstraintViolations()) {
+            errors.putIfAbsent(v.getPropertyPath().toString(), v.getMessage());
+        }
+        ProblemDetail problem = problem(HttpStatus.BAD_REQUEST, "Validation failed");
+        problem.setProperty("errors", errors);
+        return problem;
+    }
+{{/hasValidation}}
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail handleUnreadable(HttpMessageNotReadableException ex) {
+        return problem(HttpStatus.BAD_REQUEST, "Malformed request body");
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return problem(HttpStatus.BAD_REQUEST,
+                "Parameter '" + ex.getName() + "' has an invalid value: " + ex.getValue());
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ProblemDetail handleMissingParameter(MissingServletRequestParameterException ex) {
+        return problem(HttpStatus.BAD_REQUEST, "Missing required parameter '" + ex.getParameterName() + "'");
+    }
+
+    /** Safety net behind the controllers' sort whitelist: a property Spring Data cannot resolve
+     *  (e.g. {@code ?sort=nope}) is a client error, not a 500. */
+    @ExceptionHandler(PropertyReferenceException.class)
+    public ProblemDetail handleUnknownProperty(PropertyReferenceException ex) {
+        return problem(HttpStatus.BAD_REQUEST, "Unknown property '" + ex.getPropertyName() + "'");
+    }
+
+    /** Services signal bad input (an unknown bulk-update field, an uncoercible value, an unknown
+     *  sort property) with IllegalArgumentException; NumberFormatException and enum/UUID parse
+     *  failures are subclasses, so they land here too. */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleBadArgument(IllegalArgumentException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ex.getMessage() == null ? "Invalid request" : ex.getMessage());
+    }
+
+    private static ProblemDetail problem(HttpStatus status, String detail) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+        problem.setTitle(status.getReasonPhrase());
+        return problem;
+    }
+
+    private static String rootMessage(Throwable t) {
+        Throwable root = t;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        return root.getMessage() == null ? "" : root.getMessage();
+    }
+}

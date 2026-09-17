@@ -24,6 +24,30 @@
       "gatedBy": "optScaffoldAudit"
     },
     {
+      "source": "ApiExceptionHandler.java.mustache",
+      "path": "src/main/java/{{packagePath}}/web/ApiExceptionHandler.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7
+    },
+    {
+      "source": "ResourceNotFoundException.java.mustache",
+      "path": "src/main/java/{{packagePath}}/web/ResourceNotFoundException.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 8
+    },
+    {
+      "source": "ResourceConflictException.java.mustache",
+      "path": "src/main/java/{{packagePath}}/web/ResourceConflictException.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 9
+    },
+    {
       "source": "Entity.java.mustache",
       "path": "src/main/java/{{entityPackagePath}}/{{EntityName}}.java",
       "perEntity": true,

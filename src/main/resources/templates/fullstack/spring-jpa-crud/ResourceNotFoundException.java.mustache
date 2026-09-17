@@ -1,0 +1,9 @@
+package {{packageName}}.web;
+
+/** A record addressed by id does not exist. Mapped to HTTP 404 by {@link ApiExceptionHandler}. */
+public class ResourceNotFoundException extends RuntimeException {
+
+    public ResourceNotFoundException(String message) {
+        super(message);
+    }
+}
