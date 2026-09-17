@@ -2185,6 +2185,71 @@ class FullstackStarterIntegrationTests {
                 .doesNotContain("record Filters");
     }
 
+    @Test
+    void fullstackPreviewEndpoint_returnsTreeAndFileContents() throws Exception {
+        // Same request shape as the generate test, but against the JSON preview endpoint: the
+        // response carries every generated file (path + text) plus the folder tree the UI renders.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(
+                Map.of("name", "User", "fields", List.of(pkField(),
+                        Map.of("name", "name", "type", "String", "required", true))),
+                Map.of("name", "Order", "fields", List.of(pkField(),
+                        Map.of("name", "total", "type", "BigDecimal", "required", true)))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/starter-fullstack.preview", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        com.fasterxml.jackson.databind.JsonNode json =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.getBody());
+
+        // files: [{path, content}] — paths are relative to the project root (no artifactId prefix,
+        // unlike the zip), forward-slashed, and text files carry their rendered content.
+        com.fasterxml.jackson.databind.JsonNode files = json.get("files");
+        assertThat(files).isNotNull();
+        assertThat(files.isArray()).isTrue();
+        Map<String, String> byPath = new TreeMap<>();
+        for (com.fasterxml.jackson.databind.JsonNode f : files) {
+            byPath.put(f.get("path").asText(), f.get("content").asText());
+        }
+        assertThat(byPath).containsKey("backend/src/main/java/com/menora/shop/controller/UserController.java");
+        assertThat(byPath.get("backend/src/main/java/com/menora/shop/controller/UserController.java"))
+                .contains("@RestController")
+                .contains("@RequestMapping(\"/api/users\")");
+        assertThat(byPath).containsKey("frontend/src/pages/order/ui/OrderPage.tsx");
+        assertThat(byPath.get("frontend/src/pages/order/ui/OrderPage.tsx"))
+                .isNotBlank()
+                .contains("export function OrderPage");
+        assertThat(byPath).containsKey("README.md");
+
+        // tree: [{name, path, type, children}] — a folder node per top-level directory, built by
+        // PreviewTreeBuilder from the sorted file paths.
+        com.fasterxml.jackson.databind.JsonNode tree = json.get("tree");
+        assertThat(tree).isNotNull();
+        assertThat(tree.isArray()).isTrue();
+        Map<String, com.fasterxml.jackson.databind.JsonNode> roots = new LinkedHashMap<>();
+        for (com.fasterxml.jackson.databind.JsonNode n : tree) {
+            roots.put(n.get("name").asText(), n);
+        }
+        assertThat(roots).containsKeys("backend", "frontend");
+        assertThat(roots.get("backend").get("type").asText()).isEqualTo("directory");
+        assertThat(roots.get("backend").get("path").asText()).isEqualTo("backend");
+        assertThat(roots.get("backend").get("children").size()).isGreaterThan(0);
+        assertThat(roots.get("frontend").get("type").asText()).isEqualTo("directory");
+        assertThat(roots.get("frontend").get("children").size()).isGreaterThan(0);
+        // Every file in `files` has a leaf somewhere under the tree — spot-check the README root leaf.
+        assertThat(roots).containsKey("README.md");
+        assertThat(roots.get("README.md").get("type").asText()).isEqualTo("file");
+    }
+
     /** POSTs a fullstack request and returns the unzipped (path → text) generated tree. */
     private Map<String, String> generateZip(Map<String, Object> body) throws Exception {
         HttpHeaders headers = new HttpHeaders();
