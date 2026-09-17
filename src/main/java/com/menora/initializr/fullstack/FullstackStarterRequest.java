@@ -76,33 +76,38 @@ public record FullstackStarterRequest(
             // for plural surfaces (nav, list H1, dashboard); auto-pluralizing a localized/Hebrew
             // {@code label} is meaningless, so the plural is supplied explicitly.
             String label,
-            String labelPlural) {
+            String labelPlural,
+            // Per-entity overrides of the project-wide {@code opts.scaffold} flags, keyed by the
+            // scaffold option name ({@code audit}, {@code softDelete}, {@code csvExport},
+            // {@code bulkDelete}, {@code bulkUpdate}, {@code tests}) -> true/false. An absent key
+            // inherits the project setting; an unknown key is a 400. Null/empty = no overrides.
+            Map<String, Boolean> opts) {
 
         /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql/listView(s)). */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations) {
-            this(name, tableName, schema, fields, relations, null, null, null, null, null, null, null);
+            this(name, tableName, schema, fields, relations, null, null, null, null, null, null, null, null);
         }
 
         /** Back-compat overload without {@code sourceSql}/{@code listView(s)}. */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
                                    Boolean readOnly, String viewQuery) {
-            this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, null, null, null, null);
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, null, null, null, null, null, null);
         }
 
         /** Back-compat overload without {@code listView(s)}. */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
                                    Boolean readOnly, String viewQuery, String sourceSql) {
-            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, null, null, null, null);
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, null, null, null, null, null);
         }
 
         /** Back-compat overload with the legacy single {@code listView} but no {@code listViews}. */
         public EntityDefinitionDto(String name, String tableName, String schema,
                                    List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
                                    Boolean readOnly, String viewQuery, String sourceSql, String listView) {
-            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, null, null, null);
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, null, null, null, null);
         }
 
         /** Back-compat overload without the entity display {@code label}/{@code labelPlural}. */
@@ -111,7 +116,16 @@ public record FullstackStarterRequest(
                                    Boolean readOnly, String viewQuery, String sourceSql, String listView,
                                    List<String> listViews) {
             this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
-                    null, null);
+                    null, null, null);
+        }
+
+        /** Back-compat overload without the per-entity scaffold {@code opts} overrides. */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql, String listView,
+                                   List<String> listViews, String label, String labelPlural) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
+                    label, labelPlural, null);
         }
     }
 

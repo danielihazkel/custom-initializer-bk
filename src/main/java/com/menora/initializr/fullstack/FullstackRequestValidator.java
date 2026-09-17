@@ -45,7 +45,7 @@ public final class FullstackRequestValidator {
         record Parsed(int ei, String name, String tableName, String schema, List<FieldDefinition> fields,
                       Set<String> memberNames, List<FullstackStarterRequest.RelationDefinitionDto> rawRelations,
                       boolean readOnly, String viewQuery, List<String> listViews,
-                      String label, String labelPlural) {}
+                      String label, String labelPlural, Map<String, Boolean> opts) {}
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
@@ -225,7 +225,8 @@ public final class FullstackRequestValidator {
             String labelPlural = (e.labelPlural() == null || e.labelPlural().isBlank())
                     ? null : e.labelPlural().trim();
             parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
-                    readOnly, viewQuery, resolveListViews(e), label, labelPlural));
+                    readOnly, viewQuery, resolveListViews(e), label, labelPlural,
+                    parseEntityOpts(e.opts(), name)));
         }
 
         // Pass 2 — resolve and validate relations now that all entity names are known.
@@ -240,9 +241,29 @@ public final class FullstackRequestValidator {
                     parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
                             pkCountByLower, viewLowerNames);
             result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
-                    p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural()));
+                    p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts()));
         }
         return result;
+    }
+
+    /**
+     * Validates the per-entity scaffold-opt overrides: every key must be one of the overridable
+     * options ({@link EntityScaffoldContext#SCAFFOLD_OPT_FLAGS}); a null value is dropped (= inherit
+     * the project setting). Null/empty maps are fine and yield an empty result.
+     */
+    private static Map<String, Boolean> parseEntityOpts(Map<String, Boolean> raw, String entityName) {
+        if (raw == null || raw.isEmpty()) return Map.of();
+        Map<String, Boolean> opts = new HashMap<>();
+        for (Map.Entry<String, Boolean> entry : raw.entrySet()) {
+            String key = entry.getKey() == null ? "" : entry.getKey().trim();
+            if (!EntityScaffoldContext.SCAFFOLD_OPT_FLAGS.containsKey(key)) {
+                throw new WizardArgumentException("Unknown scaffold option '" + key + "' on entity "
+                        + entityName + " (known: "
+                        + String.join(", ", EntityScaffoldContext.SCAFFOLD_OPT_FLAGS.keySet()) + ")");
+            }
+            if (entry.getValue() != null) opts.put(key, entry.getValue());
+        }
+        return opts;
     }
 
     /** Resolves the enabled list-view modes from the wire DTO: the new {@code listViews} when present,

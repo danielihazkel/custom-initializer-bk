@@ -28,6 +28,47 @@ class EntityScaffoldContextTest {
     }
 
     @Test
+    void buildEntityContext_perEntityOptOverridesShadowProjectFlags() {
+        FieldDefinition id = new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true);
+        FieldDefinition name = new FieldDefinition("name", FieldType.STRING, false, false, false, false, null, null, null, null, false, List.of(), true, true);
+        EntityDefinition optOut = new EntityDefinition("Invoice", null, null, List.of(id, name), List.of(),
+                false, null, null, List.of("table"), null, null, Map.of("audit", false, "bulkDelete", false));
+        EntityDefinition optIn = new EntityDefinition("Note", null, null, List.of(id, name), List.of(),
+                false, null, null, List.of("table"), null, null, Map.of("csvExport", true, "tests", true));
+        EntityDefinition inherit = new EntityDefinition("Plain", null, List.of(id, name));
+        Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar",
+                List.of(optOut, optIn, inherit));
+        project.put("optScaffoldAudit", true);
+        project.put("optScaffoldBulkDelete", true);
+        project.put("optScaffoldCsvExport", false);
+        project.put("optScaffoldTests", false);
+
+        Map<String, Object> out = EntityScaffoldContext.buildEntityContext(project, optOut);
+        assertThat(out).containsEntry("optScaffoldAudit", false)
+                .containsEntry("auditApplicable", false)
+                .containsEntry("optScaffoldBulkDelete", false)
+                .containsEntry("bulkDeleteApplicable", false)
+                .containsEntry("optScaffoldCsvExport", false);
+
+        Map<String, Object> in = EntityScaffoldContext.buildEntityContext(project, optIn);
+        assertThat(in).containsEntry("optScaffoldCsvExport", true)
+                .containsEntry("optScaffoldTests", true)
+                .containsEntry("optScaffoldAudit", true)     // inherited
+                .containsEntry("auditApplicable", true)
+                .containsEntry("bulkDeleteApplicable", true);
+
+        Map<String, Object> plain = EntityScaffoldContext.buildEntityContext(project, inherit);
+        assertThat(plain).containsEntry("optScaffoldAudit", true)
+                .containsEntry("auditApplicable", true)
+                .containsEntry("optScaffoldCsvExport", false);
+        // The project context itself is never mutated by an entity override.
+        assertThat(project).containsEntry("optScaffoldAudit", true);
+        assertThat(EntityScaffoldContext.SCAFFOLD_OPT_FLAGS.keySet())
+                .containsExactly("audit", "softDelete", "csvExport", "bulkDelete", "bulkUpdate", "tests");
+    }
+
+    @Test
     void buildEntityContext_emitsFieldFlags() {
         EntityDefinition e = new EntityDefinition(
                 "User", null,

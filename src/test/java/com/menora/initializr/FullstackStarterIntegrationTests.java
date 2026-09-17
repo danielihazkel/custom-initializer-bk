@@ -2250,6 +2250,67 @@ class FullstackStarterIntegrationTests {
         assertThat(roots.get("README.md").get("type").asText()).isEqualTo("file");
     }
 
+    @Test
+    void fullstackEndpoint_perEntityOptOverrides() throws Exception {
+        // Project-wide opts.scaffold=[audit, csvExport]; entity B opts out of both via its own
+        // `opts` map, so only A gets the audit columns + CSV export while the project-level
+        // JpaAuditingConfig still ships (it is gated on the project flag, not per entity).
+        Map<String, Object> invoice = new LinkedHashMap<>();
+        invoice.put("name", "Invoice");
+        invoice.put("fields", List.of(pkField(), Map.of("name", "number", "type", "String")));
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "Note");
+        note.put("fields", List.of(pkField(), Map.of("name", "body", "type", "String")));
+        note.put("opts", Map.of("audit", false, "csvExport", false));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "books");
+        body.put("packageName", "com.menora.books");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(invoice, note));
+        body.put("opts", Map.of("scaffold", List.of("audit", "csvExport")));
+
+        Map<String, String> entries = generateZip(body);
+
+        // A inherits the project flags.
+        assertThat(contentEndingWith(entries, "/entity/Invoice.java"))
+                .contains("@CreatedDate")
+                .contains("@EntityListeners(AuditingEntityListener.class)");
+        assertThat(contentEndingWith(entries, "/controller/InvoiceController.java"))
+                .contains("@GetMapping(\"/export.csv\")");
+        assertThat(entries.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx"))
+                .contains("exportCsv('invoices.csv')");
+        assertThat(entries.get("books/frontend/src/entities/note/model/types.ts")).isNotNull();
+
+        // B opted out of both — on the backend and the frontend.
+        assertThat(contentEndingWith(entries, "/entity/Note.java"))
+                .doesNotContain("@CreatedDate")
+                .doesNotContain("AuditingEntityListener");
+        assertThat(contentEndingWith(entries, "/controller/NoteController.java"))
+                .doesNotContain("export.csv");
+        assertThat(entries.get("books/frontend/src/pages/note/ui/NotePage.tsx"))
+                .doesNotContain("exportCsv");
+        assertThat(entries.get("books/frontend/src/entities/note/model/types.ts"))
+                .doesNotContain("createdAt");
+        assertThat(entries.get("books/frontend/src/entities/invoice/model/types.ts"))
+                .contains("createdAt");
+
+        // The project-level auditing config is still emitted (the project flag is untouched).
+        assertThat(entries).containsKey("books/backend/src/main/java/com/menora/books/config/JpaAuditingConfig.java");
+
+        // An unknown override key is a 400 naming the key and the entity.
+        Map<String, Object> bogus = new LinkedHashMap<>(note);
+        bogus.put("opts", Map.of("bogus", true));
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "books");
+            b.put("bootVersion", "3.2.1");
+            b.put("entities", List.of(invoice, bogus));
+        });
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("Unknown scaffold option 'bogus' on entity Note");
+    }
+
     /** POSTs a fullstack request and returns the unzipped (path → text) generated tree. */
     private Map<String, String> generateZip(Map<String, Object> body) throws Exception {
         HttpHeaders headers = new HttpHeaders();

@@ -3,6 +3,7 @@ package com.menora.initializr.fullstack;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -20,6 +21,10 @@ import java.util.Set;
  * statement a table-backed entity was imported from. It is surfaced read-only in the editor
  * and is <em>not</em> used during generation. Views carry their source SELECT in
  * {@code viewQuery} instead, so {@code sourceSql} stays null for them.
+ *
+ * <p>{@code opts} holds per-entity overrides of the project-wide {@code opts.scaffold} flags
+ * (validated key -> true/false; see {@link EntityScaffoldContext#SCAFFOLD_OPT_FLAGS}). An absent
+ * key inherits the project-level setting. Never null (empty when no overrides were supplied).
  */
 public record EntityDefinition(
         String name,
@@ -32,7 +37,8 @@ public record EntityDefinition(
         String sourceSql,
         List<String> listViews,
         String label,
-        String labelPlural) {
+        String labelPlural,
+        Map<String, Boolean> opts) {
 
     /** The list-view modes the generated entity page may render. */
     private static final Set<String> KNOWN_VIEWS = Set.of("table", "cards", "kanban", "calendar");
@@ -59,6 +65,16 @@ public record EntityDefinition(
         }
         if (norm.isEmpty()) norm.add("table");
         listViews = List.copyOf(norm);
+        opts = opts == null ? Map.of() : Map.copyOf(opts);
+    }
+
+    /** Overload without the per-entity scaffold {@code opts} overrides (none). */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
+                            String label, String labelPlural) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
+                label, labelPlural, Map.of());
     }
 
     /** First enabled view — the generated page's initial mode. Back-compat for single-view readers. */

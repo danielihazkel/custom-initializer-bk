@@ -89,6 +89,30 @@ class FullstackRequestValidatorTest {
     }
 
     @Test
+    void entityOpts_knownKeysConvertThroughAndUnknownKeyIsRejected() {
+        // (name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView,
+        //  listViews, label, labelPlural, opts)
+        var overridden = new FullstackStarterRequest.EntityDefinitionDto(
+                "User", null, null, List.of(pk()), null,
+                null, null, null, null, null, null, null,
+                java.util.Map.of("audit", false, "csvExport", true));
+        var result = FullstackRequestValidator.validateAndConvert(req(List.of(overridden)));
+        assertThat(result.get(0).opts()).containsEntry("audit", false).containsEntry("csvExport", true);
+
+        // absent / empty opts → empty map (never null)
+        var plain = FullstackRequestValidator.validateAndConvert(req(List.of(entity("Item", List.of(pk())))));
+        assertThat(plain.get(0).opts()).isEmpty();
+
+        var bogus = new FullstackStarterRequest.EntityDefinitionDto(
+                "Order", null, null, List.of(pk()), null,
+                null, null, null, null, null, null, null,
+                java.util.Map.of("bogus", true));
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(bogus))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("Unknown scaffold option 'bogus' on entity Order");
+    }
+
+    @Test
     void rejects_missingEntities() {
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of())))
                 .isInstanceOf(WizardArgumentException.class)

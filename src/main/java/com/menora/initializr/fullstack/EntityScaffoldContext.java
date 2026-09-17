@@ -27,6 +27,24 @@ import java.util.TreeSet;
  */
 public final class EntityScaffoldContext {
 
+    /**
+     * The project-wide {@code opts.scaffold} options an entity may override individually via
+     * {@link EntityDefinition#opts()}: option key -> the {@code optScaffold<X>} context flag it maps
+     * to. Ordered so error messages list them deterministically. Options that are inherently
+     * project-wide (openapi, secured, inverseCollections, seedData, rtl) are deliberately absent.
+     */
+    public static final Map<String, String> SCAFFOLD_OPT_FLAGS;
+    static {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("audit", "optScaffoldAudit");
+        m.put("softDelete", "optScaffoldSoftDelete");
+        m.put("csvExport", "optScaffoldCsvExport");
+        m.put("bulkDelete", "optScaffoldBulkDelete");
+        m.put("bulkUpdate", "optScaffoldBulkUpdate");
+        m.put("tests", "optScaffoldTests");
+        SCAFFOLD_OPT_FLAGS = java.util.Collections.unmodifiableMap(m);
+    }
+
     private EntityScaffoldContext() {}
 
     public static Map<String, Object> buildProjectContext(
@@ -226,6 +244,17 @@ public final class EntityScaffoldContext {
                 (Map<String, List<Map<String, Object>>>) projectContext.get(INVERSE_RELATIONS_KEY);
         ctx.putAll(entityViewModel(entity, summaries == null ? Map.of() : summaries,
                 inverses == null ? Map.of() : inverses));
+        // Per-entity scaffold-opt overrides: resolve `override ?? projectOpt` for every overridable
+        // option and store it under the same optScaffold<X> key, so it shadows the project-level
+        // value for this entity only. Both the per-entity templates ({{#optScaffoldCsvExport}} ...)
+        // and the per-entity file gates (FullstackRenderer evaluates gatedBy against this context)
+        // see the resolved value; the *Applicable flags below are derived from it too.
+        for (Map.Entry<String, String> opt : SCAFFOLD_OPT_FLAGS.entrySet()) {
+            Boolean override = entity.opts().get(opt.getKey());
+            if (override != null) {
+                ctx.put(opt.getValue(), override);
+            }
+        }
         // Soft-delete is opt-in (optScaffoldSoftDelete) but its @SQLDelete WHERE clause only handles
         // a single PK column, so it is skipped for composite-PK entities. Computed per entity once
         // the project-level opt flag and the entity's hasCompositePk are both in the merged context.
