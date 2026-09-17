@@ -22,6 +22,12 @@ import java.util.List;
  * back to the PascalCase of {@code name}. Enables e.g. Hebrew column names. {@code readOnly}
  * marks the field <em>locked after create</em> — editable when creating a new row but disabled
  * on edit and never overwritten in {@code Service.update} (mirrors non-generated-PK behavior).
+ *
+ * <p>{@code defaultValue} is an optional, already type-checked default in canonical string form
+ * (validated and normalized by {@link FullstackRequestValidator} — e.g. an ENUM default is the
+ * upper-cased constant, a LOCAL_DATE the ISO form). Rendered as the entity field's Java
+ * initializer, as the form's initial value for a new row, and by the demo-data seeder for
+ * non-key, non-unique fields. Never set on a generated PK.
  */
 public record FieldDefinition(
         String name,
@@ -39,15 +45,30 @@ public record FieldDefinition(
         boolean searchable,
         boolean filterable,
         String label,
-        boolean readOnly) {
+        boolean readOnly,
+        String defaultValue) {
 
-    /** Back-compat constructor without the {@code label}/{@code readOnly} per-field props
-     *  (no custom label, editable). Keeps existing callers/tests compiling. */
+    /** Back-compat constructor without the {@code label}/{@code readOnly}/{@code defaultValue}
+     *  per-field props (no custom label, editable, no default). Keeps existing callers/tests compiling. */
     public FieldDefinition(String name, FieldType type, boolean primaryKey, boolean generated,
                            boolean required, boolean unique, Integer length, Long min, Long max,
                            String pattern, boolean email, List<String> enumValues,
                            boolean searchable, boolean filterable) {
         this(name, type, primaryKey, generated, required, unique, length, min, max,
-                pattern, email, enumValues, searchable, filterable, null, false);
+                pattern, email, enumValues, searchable, filterable, null, false, null);
+    }
+
+    /** Back-compat constructor without {@code defaultValue} (no default). */
+    public FieldDefinition(String name, FieldType type, boolean primaryKey, boolean generated,
+                           boolean required, boolean unique, Integer length, Long min, Long max,
+                           String pattern, boolean email, List<String> enumValues,
+                           boolean searchable, boolean filterable, String label, boolean readOnly) {
+        this(name, type, primaryKey, generated, required, unique, length, min, max,
+                pattern, email, enumValues, searchable, filterable, label, readOnly, null);
+    }
+
+    /** True when a validated default is present. */
+    public boolean hasDefault() {
+        return defaultValue != null;
     }
 }

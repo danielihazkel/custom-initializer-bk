@@ -68,6 +68,70 @@ class EntityScaffoldContextTest {
                 .containsExactly("audit", "softDelete", "csvExport", "bulkDelete", "bulkUpdate", "tests");
     }
 
+    private static FieldDefinition withDefault(String name, FieldType type, boolean unique, List<String> enumValues, String dflt) {
+        return new FieldDefinition(name, type, false, false, false, unique, null, null, null, null, false,
+                enumValues, true, true, null, false, dflt);
+    }
+
+    @Test
+    void fieldViewModel_rendersDefaultJavaAndTsLiterals() {
+        FieldDefinition id = new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true);
+        EntityDefinition e = new EntityDefinition("Ticket", null, List.of(
+                id,
+                withDefault("title", FieldType.STRING, false, List.of(), "He said \"hi\"\\ok"),
+                withDefault("notes", FieldType.TEXT, false, List.of(), "line1\nit's"),
+                withDefault("count", FieldType.LONG, false, List.of(), "5"),
+                withDefault("qty", FieldType.INTEGER, false, List.of(), "2"),
+                withDefault("price", FieldType.BIG_DECIMAL, false, List.of(), "1.50"),
+                withDefault("open", FieldType.BOOLEAN, false, List.of(), "true"),
+                withDefault("due", FieldType.LOCAL_DATE, false, List.of(), "2024-01-01"),
+                withDefault("at", FieldType.LOCAL_DATE_TIME, false, List.of(), "2024-01-01T10:15:30"),
+                withDefault("ref", FieldType.UUID, false, List.of(), "123e4567-e89b-12d3-a456-426614174000"),
+                withDefault("stage", FieldType.ENUM, false, List.of("ACTIVE", "CLOSED"), "ACTIVE"),
+                withDefault("code", FieldType.STRING, true, List.of(), "X"),
+                new FieldDefinition("plain", FieldType.STRING, false, false, false, false, null, null, null, null, false, List.of(), true, true)));
+        Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e));
+        Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, e);
+        assertThat(ctx).containsEntry("hasFieldDefaults", true);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) ctx.get("fields");
+        Map<String, Map<String, Object>> byName = new java.util.HashMap<>();
+        for (Map<String, Object> f : fields) byName.put((String) f.get("name"), f);
+
+        assertThat(byName.get("id")).containsEntry("hasDefault", false).containsEntry("defaultJava", null);
+        assertThat(byName.get("title"))
+                .containsEntry("hasDefault", true)
+                .containsEntry("defaultJava", "\"He said \\\"hi\\\"\\\\ok\"")
+                .containsEntry("defaultTs", "'He said \"hi\"\\\\ok'")
+                .containsEntry("seedExpr", "\"He said \\\"hi\\\"\\\\ok\"");
+        assertThat(byName.get("notes"))
+                .containsEntry("defaultJava", "\"line1\\nit's\"")
+                .containsEntry("defaultTs", "'line1\\nit\\'s'");
+        assertThat(byName.get("count")).containsEntry("defaultJava", "5L").containsEntry("defaultTs", "5");
+        assertThat(byName.get("qty")).containsEntry("defaultJava", "2").containsEntry("defaultTs", "2");
+        assertThat(byName.get("price")).containsEntry("defaultJava", "new BigDecimal(\"1.50\")").containsEntry("defaultTs", "1.50");
+        assertThat(byName.get("open")).containsEntry("defaultJava", "true").containsEntry("defaultTs", "true");
+        assertThat(byName.get("due")).containsEntry("defaultJava", "LocalDate.parse(\"2024-01-01\")").containsEntry("defaultTs", "'2024-01-01'");
+        assertThat(byName.get("at")).containsEntry("defaultJava", "LocalDateTime.parse(\"2024-01-01T10:15:30\")");
+        assertThat(byName.get("ref")).containsEntry("defaultJava", "java.util.UUID.fromString(\"123e4567-e89b-12d3-a456-426614174000\")");
+        // Enum: unqualified inside the entity, Entity-qualified in the demo loader.
+        assertThat(byName.get("stage"))
+                .containsEntry("defaultJava", "TicketStageType.ACTIVE")
+                .containsEntry("defaultTs", "'ACTIVE'")
+                .containsEntry("seedExpr", "Ticket.TicketStageType.ACTIVE");
+        // A unique column keeps its row-numbered seed expression despite the default.
+        assertThat(byName.get("code"))
+                .containsEntry("defaultJava", "\"X\"")
+                .containsEntry("seedExpr", "label(\"Code\", i, Integer.MAX_VALUE)");
+        assertThat(byName.get("plain")).containsEntry("hasDefault", false).containsEntry("defaultTs", null);
+
+        // No defaults at all → hasFieldDefaults false (the page keeps its plain `{}` draft).
+        EntityDefinition bare = new EntityDefinition("Plain", null, List.of(id));
+        assertThat(EntityScaffoldContext.buildEntityContext(project, bare)).containsEntry("hasFieldDefaults", false);
+    }
+
     @Test
     void buildEntityContext_emitsFieldFlags() {
         EntityDefinition e = new EntityDefinition(

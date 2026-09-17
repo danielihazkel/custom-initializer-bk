@@ -151,24 +151,38 @@ public record FullstackStarterRequest(
             Boolean searchable,
             Boolean filterable,
             String label,
-            Boolean readOnly) {
+            Boolean readOnly,
+            // Optional default value, as a string in the field type's natural wire form
+            // ("draft", "1", "true", "ACTIVE", "2024-01-01", ...). Type-checked by the validator;
+            // rendered as a Java field initializer and as the form's initial value for a new row.
+            String defaultValue) {
 
         /** Back-compat constructor without the {@code searchable}/{@code filterable} opt-out flags
-         *  or the {@code label}/{@code readOnly} per-field props (all default). */
+         *  or the {@code label}/{@code readOnly}/{@code defaultValue} per-field props (all default). */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
                                   Boolean required, Boolean unique, Integer length, Long min, Long max,
                                   String pattern, Boolean email, List<String> enumValues) {
             this(name, type, primaryKey, generated, required, unique, length, min, max,
-                    pattern, email, enumValues, null, null, null, null);
+                    pattern, email, enumValues, null, null, null, null, null);
         }
 
-        /** Back-compat constructor without the {@code label}/{@code readOnly} per-field props (both default). */
+        /** Back-compat constructor without the {@code label}/{@code readOnly}/{@code defaultValue}
+         *  per-field props (all default). */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
                                   Boolean required, Boolean unique, Integer length, Long min, Long max,
                                   String pattern, Boolean email, List<String> enumValues,
                                   Boolean searchable, Boolean filterable) {
             this(name, type, primaryKey, generated, required, unique, length, min, max,
-                    pattern, email, enumValues, searchable, filterable, null, null);
+                    pattern, email, enumValues, searchable, filterable, null, null, null);
+        }
+
+        /** Back-compat constructor without {@code defaultValue} (no default). */
+        public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
+                                  Boolean required, Boolean unique, Integer length, Long min, Long max,
+                                  String pattern, Boolean email, List<String> enumValues,
+                                  Boolean searchable, Boolean filterable, String label, Boolean readOnly) {
+            this(name, type, primaryKey, generated, required, unique, length, min, max,
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, null);
         }
     }
 }

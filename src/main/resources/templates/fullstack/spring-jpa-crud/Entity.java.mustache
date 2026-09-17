@@ -42,7 +42,7 @@ import org.hibernate.annotations.Formula;
 {{/isUuid}}{{^isUuid}}    @GeneratedValue(strategy = GenerationType.IDENTITY)
 {{/isUuid}}{{/isGenerated}}{{/isPrimaryKey}}{{#isEnum}}    @Enumerated(EnumType.STRING)
 {{/isEnum}}    @Column(name = "{{#isView}}{{name}}{{/isView}}{{^isView}}{{column}}{{/isView}}"{{#isRequired}}, nullable = false{{/isRequired}}{{#isUnique}}, unique = true{{/isUnique}}{{#hasLength}}, length = {{length}}{{/hasLength}}{{#isText}}, columnDefinition = "TEXT"{{/isText}})
-    private {{javaType}} {{name}};
+    private {{javaType}} {{name}}{{#hasDefault}} = {{{defaultJava}}}{{/hasDefault}};
 
 {{/fields}}{{#relations}}    @ManyToOne(fetch = FetchType.LAZY{{#required}}, optional = false{{/required}})
     @JoinColumn(name = "{{joinColumn}}"{{#required}}, nullable = false{{/required}})

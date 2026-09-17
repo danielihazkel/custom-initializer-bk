@@ -38,7 +38,7 @@ public record {{EntityName}}Dto(
 
     public {{EntityName}} toEntity() {
         {{EntityName}} entity = new {{EntityName}}();
-{{#fields}}        entity.set{{Name}}(this.{{name}});
+{{#fields}}        {{#hasDefault}}if (this.{{name}} != null) {{/hasDefault}}entity.set{{Name}}(this.{{name}});
 {{/fields}}{{#relations}}        if (this.{{fkFieldName}} != null) {
             {{targetEntity}} {{fieldName}} = new {{targetEntity}}();
             {{fieldName}}.set{{TargetPkName}}(this.{{fkFieldName}});

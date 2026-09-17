@@ -2311,6 +2311,75 @@ class FullstackStarterIntegrationTests {
         assertThat(response.getBody()).contains("Unknown scaffold option 'bogus' on entity Note");
     }
 
+    @Test
+    void fullstackEndpoint_rendersFieldDefaults() throws Exception {
+        // A declared defaultValue becomes the entity field's Java initializer, the form's initial
+        // value for a new row, a null-guard in the DTO's toEntity and the demo-data seed value.
+        Map<String, Object> ticket = new LinkedHashMap<>();
+        ticket.put("name", "Ticket");
+        ticket.put("fields", List.of(pkField(),
+                Map.of("name", "status", "type", "String", "defaultValue", "draft"),
+                Map.of("name", "priority", "type", "Integer", "defaultValue", "1"),
+                Map.of("name", "open", "type", "Boolean", "defaultValue", "true"),
+                Map.of("name", "stage", "type", "ENUM", "enumValues", List.of("ACTIVE", "CLOSED"), "defaultValue", "ACTIVE"),
+                Map.of("name", "due", "type", "LocalDate", "defaultValue", "2024-01-01"),
+                Map.of("name", "code", "type", "String", "unique", true, "defaultValue", "X")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "desk");
+        body.put("packageName", "com.menora.desk");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(ticket));
+        body.put("opts", Map.of("scaffold", List.of("seedData")));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/entity/Ticket.java"))
+                .contains("import java.time.LocalDate;")
+                .contains("private String status = \"draft\";")
+                .contains("private Integer priority = 1;")
+                .contains("private Boolean open = true;")
+                .contains("private TicketStageType stage = TicketStageType.ACTIVE;")
+                .contains("private LocalDate due = LocalDate.parse(\"2024-01-01\");")
+                .contains("private String code = \"X\";")
+                .contains("private Long id;");
+        // An omitted defaulted field keeps the entity initializer on create.
+        assertThat(contentEndingWith(entries, "/dto/TicketDto.java"))
+                .contains("if (this.status != null) entity.setStatus(this.status);")
+                .contains("        entity.setId(this.id);");
+        // The demo loader uses the default for plain fields but keeps row-numbered values for
+        // unique columns (every seeded row must differ).
+        assertThat(contentEndingWith(entries, "/config/DemoDataLoader.java"))
+                .contains("row.setStatus(\"draft\");")
+                .contains("row.setStage(Ticket.TicketStageType.ACTIVE);")
+                .contains("row.setCode(label(\"Code\", i, Integer.MAX_VALUE));");
+        // The page seeds a new record with the defaults.
+        String page = entries.get("desk/frontend/src/pages/ticket/ui/TicketPage.tsx");
+        assertThat(page)
+                .contains("const newDefaults = (): Partial<Ticket> => ({ status: 'draft', priority: 1, open: true, stage: 'ACTIVE', due: '2024-01-01', code: 'X', })")
+                .contains("setEditing(newDefaults())")
+                .contains("setInitial(newDefaults())")
+                .doesNotContain("setEditing({})");
+
+        // The Lombok set renders the same initializers.
+        body.put("backendTemplateSet", "spring-jpa-crud-lombok");
+        assertThat(contentEndingWith(generateZip(body), "/entity/Ticket.java"))
+                .contains("@Data")
+                .contains("private String status = \"draft\";")
+                .contains("private TicketStageType stage = TicketStageType.ACTIVE;");
+
+        // A default that does not parse as the field type is a 400 naming the field.
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "desk");
+            b.put("bootVersion", "3.2.1");
+            b.put("entities", List.of(Map.of("name", "Ticket", "fields", List.of(pkField(),
+                    Map.of("name", "priority", "type", "Integer", "defaultValue", "abc")))));
+        });
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("defaultValue 'abc' is not a valid INTEGER (field 'priority' on entity 'Ticket')");
+    }
+
     /** POSTs a fullstack request and returns the unzipped (path → text) generated tree. */
     private Map<String, String> generateZip(Map<String, Object> body) throws Exception {
         HttpHeaders headers = new HttpHeaders();

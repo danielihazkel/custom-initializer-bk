@@ -2,6 +2,10 @@ package com.menora.initializr.fullstack;
 
 import com.menora.initializr.config.WizardArgumentException;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -179,6 +183,8 @@ public final class FullstackRequestValidator {
 
                 String pattern = (f.pattern() == null || f.pattern().isBlank()) ? null : f.pattern();
                 String label = (f.label() == null || f.label().isBlank()) ? null : f.label().trim();
+                String defaultValue = normalizeDefault(f.defaultValue(), type, isGenerated, f.length(),
+                        f.enumValues(), fname, name);
                 fields.add(new FieldDefinition(
                         fname,
                         type,
@@ -199,7 +205,8 @@ public final class FullstackRequestValidator {
                         // Per-field display label (null when omitted → templates fall back to
                         // PascalCase name) and read-only flag (default false, like required/unique).
                         label,
-                        Boolean.TRUE.equals(f.readOnly())));
+                        Boolean.TRUE.equals(f.readOnly()),
+                        defaultValue));
             }
 
             if (pkCount == 0) {
@@ -244,6 +251,55 @@ public final class FullstackRequestValidator {
                     p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts()));
         }
         return result;
+    }
+
+    /**
+     * Type-checks a field's {@code defaultValue} against its {@link FieldType} and returns it in
+     * canonical form (ENUM → the upper-cased constant, temporal → ISO, numbers as parsed), or null
+     * when absent/blank. A default on a generated primary key is rejected (the database assigns it).
+     */
+    static String normalizeDefault(String raw, FieldType type, boolean generated, Integer length,
+                                   List<String> enumValues, String fname, String entityName) {
+        if (raw == null || raw.isBlank()) return null;
+        String where = " (field '" + fname + "' on entity '" + entityName + "')";
+        if (generated) {
+            throw new WizardArgumentException("defaultValue is not allowed on a generated primary key" + where);
+        }
+        String v = raw.trim();
+        try {
+            return switch (type) {
+                case STRING, TEXT -> {
+                    if (length != null && raw.length() > length) {
+                        throw new WizardArgumentException("defaultValue exceeds length " + length + where);
+                    }
+                    yield raw;
+                }
+                case LONG -> Long.toString(Long.parseLong(v));
+                case INTEGER -> Integer.toString(Integer.parseInt(v));
+                case BIG_DECIMAL -> new BigDecimal(v).toPlainString();
+                case BOOLEAN -> {
+                    if (!v.equalsIgnoreCase("true") && !v.equalsIgnoreCase("false")) {
+                        throw new NumberFormatException();
+                    }
+                    yield v.toLowerCase(Locale.ROOT);
+                }
+                case LOCAL_DATE -> LocalDate.parse(v).toString();
+                case LOCAL_DATE_TIME -> LocalDateTime.parse(v).toString();
+                case UUID -> java.util.UUID.fromString(v).toString();
+                case ENUM -> {
+                    List<String> values = enumValues == null ? List.of() : enumValues;
+                    for (String c : values) {
+                        if (c != null && c.equalsIgnoreCase(v)) yield c.toUpperCase(Locale.ROOT);
+                    }
+                    throw new WizardArgumentException("defaultValue '" + v + "' is not one of the enumValues "
+                            + values + where);
+                }
+            };
+        } catch (NumberFormatException | DateTimeParseException e) {
+            throw new WizardArgumentException("defaultValue '" + v + "' is not a valid " + type + where);
+        } catch (IllegalArgumentException e) { // UUID.fromString
+            throw new WizardArgumentException("defaultValue '" + v + "' is not a valid " + type + where);
+        }
     }
 
     /**

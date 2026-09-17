@@ -292,6 +292,7 @@ From `fieldViewModel` (`:376`):
 | `hasMin`, `min`, `hasMax`, `max` | boolean / Long | numeric bounds |
 | `hasPattern`, `pattern`, `patternEscaped` | boolean / String | regex; `patternEscaped` is escaped for Java/JS string literals |
 | `isEmail` | boolean | email constraint |
+| `hasDefault`, `defaultValue`, `defaultJava`, `defaultTs` | boolean / String | validated default: canonical string, the Java initializer expression (`"draft"`, `1L`, `new BigDecimal("1.5")`, `LocalDate.parse("2024-01-01")`, `<EnumType>.ACTIVE`) and the TS literal (`'draft'`, `1`, `true`) the form seeds a new record with |
 | `enumValues` | List | `{ value, last }` per enum constant |
 | `first`, `last` | boolean | position within `fields` (used for comma logic) |
 | `lastNonPk` | boolean | present in `nonPkFields` iteration |

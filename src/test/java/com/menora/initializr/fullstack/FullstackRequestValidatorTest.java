@@ -112,6 +112,75 @@ class FullstackRequestValidatorTest {
                 .hasMessageContaining("Unknown scaffold option 'bogus' on entity Order");
     }
 
+    private static FullstackStarterRequest.FieldDefinitionDto withDefault(String name, String type, String dflt) {
+        return new FullstackStarterRequest.FieldDefinitionDto(name, type, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, dflt);
+    }
+
+    private static FieldDefinition convertField(FullstackStarterRequest.FieldDefinitionDto f) {
+        return FullstackRequestValidator.validateAndConvert(req(List.of(entity("Item", List.of(pk(), f)))))
+                .get(0).fields().get(1);
+    }
+
+    @Test
+    void defaultValue_typeCheckedAndCanonicalized() {
+        assertThat(convertField(withDefault("status", "String", "draft")).defaultValue()).isEqualTo("draft");
+        assertThat(convertField(withDefault("qty", "Integer", " 7 ")).defaultValue()).isEqualTo("7");
+        assertThat(convertField(withDefault("big", "Long", "9000000000")).defaultValue()).isEqualTo("9000000000");
+        assertThat(convertField(withDefault("price", "BigDecimal", "1.50")).defaultValue()).isEqualTo("1.50");
+        assertThat(convertField(withDefault("open", "Boolean", "TRUE")).defaultValue()).isEqualTo("true");
+        assertThat(convertField(withDefault("due", "LocalDate", "2024-01-01")).defaultValue()).isEqualTo("2024-01-01");
+        assertThat(convertField(withDefault("at", "LocalDateTime", "2024-01-01T10:15:30")).defaultValue())
+                .isEqualTo("2024-01-01T10:15:30");
+        assertThat(convertField(withDefault("ref", "UUID", "123E4567-E89B-12D3-A456-426614174000")).defaultValue())
+                .isEqualTo("123e4567-e89b-12d3-a456-426614174000");
+        var enumField = new FullstackStarterRequest.FieldDefinitionDto("stage", "ENUM", null, null, null, null,
+                null, null, null, null, null, List.of("active", "closed"), null, null, null, null, "Active");
+        assertThat(convertField(enumField).defaultValue()).isEqualTo("ACTIVE");
+        // blank → no default; omitted → no default
+        assertThat(convertField(withDefault("note", "String", "   ")).defaultValue()).isNull();
+        assertThat(convertField(field("plain", "String")).defaultValue()).isNull();
+        assertThat(convertField(field("plain", "String")).hasDefault()).isFalse();
+    }
+
+    @Test
+    void rejects_wrongTypedDefaults() {
+        assertThatThrownBy(() -> convertField(withDefault("qty", "Integer", "abc")))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessage("defaultValue 'abc' is not a valid INTEGER (field 'qty' on entity 'Item')");
+        assertThatThrownBy(() -> convertField(withDefault("open", "Boolean", "yes")))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("is not a valid BOOLEAN (field 'open'");
+        assertThatThrownBy(() -> convertField(withDefault("due", "LocalDate", "01/02/2024")))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("is not a valid LOCAL_DATE (field 'due'");
+        assertThatThrownBy(() -> convertField(withDefault("ref", "UUID", "not-a-uuid")))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("is not a valid UUID (field 'ref'");
+        assertThatThrownBy(() -> convertField(withDefault("price", "BigDecimal", "1,5")))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("is not a valid BIG_DECIMAL (field 'price'");
+        var enumField = new FullstackStarterRequest.FieldDefinitionDto("stage", "ENUM", null, null, null, null,
+                null, null, null, null, null, List.of("ACTIVE", "CLOSED"), null, null, null, null, "GONE");
+        assertThatThrownBy(() -> convertField(enumField))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("defaultValue 'GONE' is not one of the enumValues [ACTIVE, CLOSED] (field 'stage'");
+        var tooLong = new FullstackStarterRequest.FieldDefinitionDto("code", "String", null, null, null, null,
+                3, null, null, null, null, null, null, null, null, null, "toolong");
+        assertThatThrownBy(() -> convertField(tooLong))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("defaultValue exceeds length 3 (field 'code'");
+    }
+
+    @Test
+    void rejects_defaultOnGeneratedPrimaryKey() {
+        var genPk = new FullstackStarterRequest.FieldDefinitionDto("id", "Long", true, true, null, null, null,
+                null, null, null, null, null, null, null, null, null, "1");
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(entity("Item", List.of(genPk))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("defaultValue is not allowed on a generated primary key (field 'id' on entity 'Item')");
+    }
+
     @Test
     void rejects_missingEntities() {
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of())))

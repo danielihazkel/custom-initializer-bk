@@ -402,6 +402,7 @@ public final class EntityScaffoldContext {
         view.put("hasBulkUpdatableFields", !bulkUpdatableViews.isEmpty());
 
         view.put("fields", fieldViews);
+        view.put("hasFieldDefaults", fieldViews.stream().anyMatch(m -> Boolean.TRUE.equals(m.get("hasDefault"))));
         view.put("nonPkFields", nonPkViews);
         view.put("pkField", pkView);
         view.put("pkFields", pkViews);
@@ -723,9 +724,18 @@ public final class EntityScaffoldContext {
         fv.put("isSearchable", f.searchable());
         fv.put("isFilterable", f.filterable());
 
+        // Optional default value (validated + canonicalized by FullstackRequestValidator), rendered
+        // as the entity field's Java initializer (`= …`, resolved inside the entity class so a nested
+        // enum is unqualified) and as the TS literal the form seeds a new record with.
+        fv.put("hasDefault", f.hasDefault());
+        fv.put("defaultValue", f.defaultValue());
+        fv.put("defaultJava", f.hasDefault() ? defaultJavaExpression(f, enumTypeName) : null);
+        fv.put("defaultTs", f.hasDefault() ? defaultTsLiteral(f) : null);
+
         // Java expression the demo-data loader (optScaffoldSeedData) assigns to this field for row
         // number `i` (1-based). Unique per row where uniqueness matters (strings carry i, integral
         // values are i within any min/max bounds), so seeded rows never clash on unique columns.
+        // A declared default wins for non-key, non-unique fields.
         fv.put("seedExpr", seedExpression(entityPascal, f, (String) fv.get("label"), enumTypeName));
 
         if (f.type() == FieldType.ENUM) {
@@ -748,9 +758,51 @@ public final class EntityScaffoldContext {
         return fv;
     }
 
+    /**
+     * The Java initializer expression for a field's validated {@code defaultValue}. {@code enumRef}
+     * is the enum type reference to use — the bare nested name inside the entity class, or the
+     * {@code Entity.EnumType} form from outside it (demo-data loader).
+     */
+    static String defaultJavaExpression(FieldDefinition f, String enumRef) {
+        String v = f.defaultValue();
+        return switch (f.type()) {
+            case STRING, TEXT -> "\"" + escapeJavaLiteral(v) + "\"";
+            case LONG -> v + "L";
+            case INTEGER -> v;
+            case BIG_DECIMAL -> "new BigDecimal(\"" + v + "\")";
+            case BOOLEAN -> v;
+            case LOCAL_DATE -> "LocalDate.parse(\"" + v + "\")";
+            case LOCAL_DATE_TIME -> "LocalDateTime.parse(\"" + v + "\")";
+            case UUID -> "java.util.UUID.fromString(\"" + v + "\")";
+            case ENUM -> enumRef + "." + v;
+        };
+    }
+
+    /** The TypeScript literal for a field's validated {@code defaultValue}: numbers and booleans
+     *  bare, everything else (strings, temporal ISO forms, UUIDs, enum constants) single-quoted. */
+    static String defaultTsLiteral(FieldDefinition f) {
+        String v = f.defaultValue();
+        return switch (f.type()) {
+            case LONG, INTEGER, BIG_DECIMAL, BOOLEAN -> v;
+            default -> "'" + v.replace("\\", "\\\\").replace("'", "\\'")
+                    .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "'";
+        };
+    }
+
+    /** Escapes for a Java double-quoted literal (also newlines/tabs, unlike {@link #escapeStringLiteral},
+     *  because a TEXT default may span lines). */
+    private static String escapeJavaLiteral(String s) {
+        return escapeStringLiteral(s).replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+    }
+
     /** See {@code seedExpr} in {@link #fieldViewModel}. The helper calls ({@code label}, {@code text},
      *  {@code bounded}) are static methods of the generated {@code DemoDataLoader}. */
     static String seedExpression(String entityPascal, FieldDefinition f, String label, String enumTypeName) {
+        // A declared default is the natural demo value — except on keys and unique columns, where
+        // every row must differ, so those keep the row-numbered expressions below.
+        if (f.hasDefault() && !f.primaryKey() && !f.unique()) {
+            return defaultJavaExpression(f, entityPascal + "." + enumTypeName);
+        }
         String lbl = escapeStringLiteral(label == null ? f.name() : label);
         return switch (f.type()) {
             case ENUM -> entityPascal + "." + enumTypeName + ".values()[(i - 1) % "

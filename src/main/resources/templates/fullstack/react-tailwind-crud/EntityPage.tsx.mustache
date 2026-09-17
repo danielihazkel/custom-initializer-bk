@@ -68,9 +68,11 @@ export function {{EntityName}}Page() {
   // Has the user changed anything since the drawer opened? Drives the discard guard.
   const dirty = editing != null && JSON.stringify(editing) !== JSON.stringify(initial)
 
-  function openNew() {
-    setEditing({})
-    setInitial({})
+{{#hasFieldDefaults}}  // Declared field defaults, pre-filled into every new record (and used as the dirty baseline).
+  const newDefaults = (): Partial<{{EntityName}}> => ({ {{#fields}}{{#hasDefault}}{{name}}: {{{defaultTs}}}, {{/hasDefault}}{{/fields}}})
+{{/hasFieldDefaults}}  function openNew() {
+    setEditing({{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}})
+    setInitial({{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}})
     setIsNew(true)
     setFormErrors({})
     setDrawerOpen(true)
