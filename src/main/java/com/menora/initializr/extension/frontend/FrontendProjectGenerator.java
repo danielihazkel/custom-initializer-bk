@@ -312,16 +312,36 @@ public class FrontendProjectGenerator {
     // ── Baselines: package.json + vite.config.ts ────────────────────────────
 
     private void writeBaselines(Path projectRoot, Set<String> depIds, Map<String, Object> ctx) throws IOException {
-        List<BuildCustomizationEntity> customizations =
-                configService.getBuildCustomizations(depIds, ProjectKind.FRONTEND).stream()
-                        .filter(this::subOptionAllows)
-                        .toList();
+        List<BuildCustomizationEntity> customizations = frontendBuildCustomizations(depIds);
 
         String pkgJson = packageJsonBuilder.build(loadClasspath(PACKAGE_JSON_TEMPLATE), ctx, customizations);
         Files.writeString(projectRoot.resolve("package.json"), pkgJson);
 
         String viteCfg = viteConfigBuilder.build(loadClasspath(VITE_CONFIG_TEMPLATE), ctx, customizations);
         Files.writeString(projectRoot.resolve("vite.config.ts"), viteCfg);
+    }
+
+    /**
+     * Folds the substrate's npm tooling back into a {@code package.json} that a caller has
+     * overwritten after {@link #renderInto}. The fullstack overlay replaces the file wholesale
+     * (to pin its own Tailwind v4 / Vite stack) while the substrate has already written
+     * {@code eslint.config.js}, {@code .prettierrc.json} and {@code .husky/pre-commit} — without
+     * this step those configs reference packages that are never installed. Existing entries in
+     * the overwritten file win; only absent deps/scripts are added. No-op when the file is absent.
+     */
+    public void mergeSubstrateTooling(Path projectRoot, Set<String> depIds) throws IOException {
+        Path pkg = projectRoot.resolve("package.json");
+        if (!Files.exists(pkg)) return;
+        String merged = packageJsonBuilder.merge(Files.readString(pkg), frontendBuildCustomizations(depIds));
+        Files.writeString(pkg, merged);
+    }
+
+    /** The frontend build-customization rows for {@code depIds}, sub-option filtered exactly as
+     *  {@link #writeBaselines} applies them. */
+    private List<BuildCustomizationEntity> frontendBuildCustomizations(Set<String> depIds) {
+        return configService.getBuildCustomizations(depIds, ProjectKind.FRONTEND).stream()
+                .filter(this::subOptionAllows)
+                .toList();
     }
 
     /**

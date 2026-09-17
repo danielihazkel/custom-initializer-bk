@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 {{#optScaffoldCsvExport}}import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 {{/optScaffoldCsvExport}}{{#hasValidation}}import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 {{/hasValidation}}import org.springframework.web.bind.annotation.*;
@@ -62,30 +63,46 @@ public class {{EntityName}}Controller {
 {{#optScaffoldOpenApi}}    @Operation(summary = "Export {{EntityName}} records as CSV (honors `q`, filters, and sort)")
 {{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
 {{/optScaffoldSecured}}    @GetMapping("/export.csv")
-    public ResponseEntity<byte[]> exportCsv(
+    public ResponseEntity<StreamingResponseBody> exportCsv(
             @RequestParam(required = false) String q,
 {{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}},
 {{/filterFields}}            Pageable pageable) {
 {{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{^last}}, {{/last}}{{/filterFields}});
-{{/hasFilters}}        Pageable all = PageRequest.of(0, Integer.MAX_VALUE,
-                pageable.getSort().isSorted() ? pageable.getSort() : Sort.by("{{pkField.name}}").ascending());
-        StringBuilder sb = new StringBuilder();
-        sb.append(String.join(",", CSV_HEADERS)).append("\r\n");
-        for ({{EntityName}}Dto dto : service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}all).map({{EntityName}}Dto::from)) {
-            String[] cells = {
-{{#fields}}                    csv(dto.{{name}}()),
-{{/fields}}{{#relations}}                    csv(dto.{{fkFieldName}}()),
-{{/relations}}{{#auditApplicable}}                    csv(dto.createdAt()),
-                    csv(dto.updatedAt()),
-{{/auditApplicable}}            };
-            sb.append(String.join(",", cells)).append("\r\n");
-        }
-        byte[] body = sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+{{/hasFilters}}        Sort sort = pageable.getSort().isSorted() ? pageable.getSort() : Sort.by("{{pkField.name}}").ascending();
+        // Streamed in fixed-size chunks so memory stays bounded regardless of table size; each
+        // chunk is its own read-only transaction, so no session is held open across the response.
+        StreamingResponseBody stream = out -> {
+            java.io.Writer w = new java.io.BufferedWriter(
+                    new java.io.OutputStreamWriter(out, java.nio.charset.StandardCharsets.UTF_8));
+            w.write('\uFEFF'); // UTF-8 BOM so Excel detects the encoding
+            w.write(String.join(",", CSV_HEADERS));
+            w.write("\r\n");
+            int pageNo = 0;
+            Page<{{EntityName}}Dto> chunk;
+            do {
+                chunk = service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}PageRequest.of(pageNo++, CSV_CHUNK_SIZE, sort))
+                        .map({{EntityName}}Dto::from);
+                for ({{EntityName}}Dto dto : chunk) {
+                    String[] cells = {
+{{#fields}}                            csv(dto.{{name}}()),
+{{/fields}}{{#relations}}                            csv(dto.{{fkFieldName}}()),
+{{/relations}}{{#auditApplicable}}                            csv(dto.createdAt()),
+                            csv(dto.updatedAt()),
+{{/auditApplicable}}                    };
+                    w.write(String.join(",", cells));
+                    w.write("\r\n");
+                }
+            } while (chunk.hasNext());
+            w.flush();
+        };
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"{{entityNamePluralKebab}}.csv\"")
-                .contentType(MediaType.parseMediaType("text/csv"))
-                .body(body);
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(stream);
     }
+
+    /** Rows fetched per chunk while streaming the CSV export. */
+    private static final int CSV_CHUNK_SIZE = 500;
 
     private static final String[] CSV_HEADERS = {
 {{#fields}}            "{{name}}",

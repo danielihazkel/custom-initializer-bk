@@ -404,6 +404,10 @@ public class FullstackStarterController {
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());
         FullstackRenderer.render(files, projectCtx, entities, targetDir);
+        // 3. The overlay overwrites the substrate's package.json (both shipped sets do, to pin the
+        // Tailwind v4 stack) — fold the substrate's eslint/prettier/husky packages and scripts back
+        // in so the eslint.config.js / .husky/pre-commit it wrote actually work.
+        frontendGenerator.mergeSubstrateTooling(targetDir, desc.getDependencies());
     }
 
     /**
@@ -471,8 +475,10 @@ public class FullstackStarterController {
                 + "CORS setup is needed when you run `npm run dev`.\n\n"
                 + "For a production build (`npm run build`), `vite preview` and static hosting do\n"
                 + "**not** run that proxy. Either serve the API at the same origin behind a reverse\n"
-                + "proxy / gateway, or set a base URL via the `BASE` constant in\n"
-                + "`frontend/src/shared/api/client.ts` to point at the backend directly.\n";
+                + "proxy / gateway (the shipped `frontend/nginx/nginx.conf` does this; leave\n"
+                + "`VITE_API_BASE_URL` empty in `frontend/.env.production`), or set\n"
+                + "`VITE_API_BASE_URL` to the backend origin in `.env.production` — the API client\n"
+                + "(`frontend/src/shared/api/client.ts`) reads it at build time.\n";
     }
 
     private static final String ROOT_GITIGNORE =

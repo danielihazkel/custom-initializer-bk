@@ -45,7 +45,32 @@ public class PackageJsonBuilder {
 
         String rendered = MUSTACHE.compile(baselineTemplate).execute(mustacheContext);
         ObjectNode root = (ObjectNode) MAPPER.readTree(rendered);
+        apply(root, customizations, true);
+        return finish(root);
+    }
 
+    /**
+     * Folds the substrate's <em>dev tooling</em> into an already-rendered {@code package.json}
+     * without overriding anything it declares. Used when a template set overwrites the
+     * substrate's {@code package.json} wholesale (the fullstack overlay pins its own
+     * Tailwind/Vite stack and owns the runtime dependency set — e.g. the Menora Digital set
+     * deliberately ships Assistant instead of the substrate's Inter font) but must still carry
+     * the packages the substrate's config files reference: {@code eslint.config.js} → the eslint
+     * stack, {@code .prettierrc.json} → prettier, {@code .husky/pre-commit} → husky + lint-staged.
+     * So only {@code scope=dev} dependency rows and script rows are applied, and only for names
+     * not already present (in either dependency block).
+     */
+    public String merge(String existingJson, List<BuildCustomizationEntity> customizations) throws IOException {
+        ObjectNode root = (ObjectNode) MAPPER.readTree(existingJson);
+        List<BuildCustomizationEntity> tooling = customizations.stream()
+                .filter(bc -> bc.getCustomizationType() != BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY
+                        || "dev".equalsIgnoreCase(bc.getScope()))
+                .toList();
+        apply(root, tooling, false);
+        return finish(root);
+    }
+
+    private static void apply(ObjectNode root, List<BuildCustomizationEntity> customizations, boolean overwrite) {
         ObjectNode deps = (ObjectNode) root.get("dependencies");
         if (deps == null) {
             deps = root.putObject("dependencies");
@@ -66,22 +91,28 @@ public class PackageJsonBuilder {
                     String ver = bc.getVersion();
                     if (pkg == null || pkg.isBlank() || ver == null || ver.isBlank()) continue;
                     boolean dev = "dev".equalsIgnoreCase(bc.getScope());
-                    (dev ? devDeps : deps).put(pkg, ver);
+                    ObjectNode target = dev ? devDeps : deps;
+                    // A package pinned in the other block (e.g. the overlay lists a dep the
+                    // catalog marks dev-scoped) is also "already present" — never duplicate it.
+                    if (!overwrite && (deps.has(pkg) || devDeps.has(pkg))) continue;
+                    target.put(pkg, ver);
                 }
                 case ADD_NPM_SCRIPT -> {
                     String name = bc.getMavenArtifactId();
                     String cmd = bc.getVersion();
                     if (name == null || name.isBlank() || cmd == null || cmd.isBlank()) continue;
+                    if (!overwrite && scripts.has(name)) continue;
                     scripts.put(name, cmd);
                 }
                 default -> { /* other types handled elsewhere (e.g. ViteConfigBuilder) */ }
             }
         }
+    }
 
+    private static String finish(ObjectNode root) throws IOException {
         sortKeys(root, "dependencies");
         sortKeys(root, "devDependencies");
         sortKeys(root, "scripts");
-
         return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root) + "\n";
     }
 

@@ -6,6 +6,8 @@ import { Skeleton } from './Skeleton'
 interface Props<T extends object> {
   columns: Column<T>[]
   rows: T[]
+  /** Stable identity for a row (primary key) — see Table. */
+  rowKey: (row: T) => string | number
   /** Optional row actions. Each renders as an icon button on the card; omit all three for a
    *  read-only grid (no action row). Mirrors Table so the two are drop-in interchangeable. */
   onView?: (row: T) => void
@@ -27,7 +29,7 @@ const PAGE_SIZES = [10, 20, 50, 100]
  * heading; the rest render as label/value rows. Sorting lives on the table view only.
  */
 export function CardGrid<T extends object>({
-  columns, rows, onView, onEdit, onDelete, loading,
+  columns, rows, rowKey, onView, onEdit, onDelete, loading,
   search, onSearchChange, pagination, searchable = true,
 }: Props<T>) {
   const { pageNumber, pageSize, totalPages, totalElements, onPageChange, onPageSizeChange } = pagination
@@ -69,9 +71,9 @@ export function CardGrid<T extends object>({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {rows.map((row, idx) => (
+          {rows.map(row => (
             <div
-              key={(row as { id?: number | string | null }).id ?? idx}
+              key={rowKey(row)}
               className="group flex flex-col rounded-xl border border-border bg-surface p-4 shadow-sm transition-colors hover:border-brand/40"
             >
               {heading && (

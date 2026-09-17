@@ -254,6 +254,11 @@ Per-entity derived flag (set in `buildEntityContext`):
 |---|---|---|
 | `softDeleteApplicable` | boolean | `optScaffoldSoftDelete && !hasCompositePk` — soft delete only fires for single-PK entities |
 | `bulkDeleteApplicable` | boolean | `optScaffoldBulkDelete && !hasCompositePk && mutable` — bulk delete (row checkboxes + `/bulk` endpoint) only for writable single-PK entities |
+| `auditApplicable` | boolean | `optScaffoldAudit && mutable` — audit columns only on writable, table-backed entities |
+| `bulkUpdateApplicable` | boolean | `optScaffoldBulkUpdate && !hasCompositePk && mutable && bulkUpdatableFields non-empty` — `PATCH /bulk` + the FE bulk-edit bar |
+| `bulkSelectApplicable` | boolean | `bulkDeleteApplicable \|\| bulkUpdateApplicable` — gates the row-selection checkboxes shared by both |
+| `bulkUpdatableFields`, `hasBulkUpdatableFields` | List / boolean | non-PK, non-read-only scalar fields; each carries `bulkInputKind` (`enum`/`boolean`/`date`/`datetime`/`number`/`text`) for the FE value control |
+| `readOnly`, `mutable`, `isView`, `viewQuery` | boolean / String | per-entity read-only flag, its negation, whether a `viewQuery` is set (→ `@Immutable @Subselect`), and the SELECT text |
 | `viewTable` / `viewCards` / `viewKanban` / `viewCalendar` | boolean | which list views the page generates — the entity's `listViews` ∩ what its fields support (table/cards always; kanban needs a breakdown field + `mutable`; calendar needs a temporal field). Gate the per-view imports, toggle buttons, and render branches |
 | `hasViewToggle` | boolean | more than one view enabled — the page renders the view-switch button group only then |
 | `initialView` | String | the first enabled view — the `useState` seed for `viewMode` |
@@ -325,6 +330,10 @@ silently never fires.
 | `optScaffoldInverse` | `inverseCollections` |
 | `optScaffoldOpenApi` | `openapi` (backend-only) |
 | `optScaffoldSecured` | `secured` (backend-only) |
+| `optScaffoldCsvExport` | `csvExport` |
+| `optScaffoldBulkDelete` | `bulkDelete` (→ per-entity `bulkDeleteApplicable`) |
+| `optScaffoldBulkUpdate` | `bulkUpdate` (→ per-entity `bulkUpdateApplicable`) |
+| *(none)* | `rtl` — not a flag: sets `FrontendProjectDescription.rtl`, so FE templates read `isRtl` (§5) |
 
 `optScaffoldOpenApi` and `optScaffoldSecured` affect only the backend `Controller.java.mustache`, so —
 unlike the audit/inverse flags — they are set **only** in `FullstackProjectGenerationConfiguration`, not
@@ -333,6 +342,19 @@ in `renderFrontend`. `optScaffoldSecured` is additionally ANDed with `ldap-auth`
 
 Also on the backend fullstack path: `hasValidation` (true when the `validation` starter is selected) —
 gate generated Bean Validation annotations on it so imports resolve.
+
+Only on the frontend fullstack path (`renderFrontend`): `hasLdapAuth` (an `ldap-auth`/`ldap-auth-rest` dep is
+on the backend build — gates the dev-only `userinfo` header in `client.ts`), `dashboardTitle` /
+`dashboardOverview` (request overrides, absent when blank so `{{^dashboardTitle}}` falls back), the whole
+§5 frontend context (`isRtl`, versions, `palette.*` with HSL forms, `has<Dep>` flags), and every
+`optScaffold*` above except `optScaffoldOpenApi`/`optScaffoldSecured`.
+
+The UI's `SCAFFOLD_OPTIONS` list (`ui/src/components/fullstack/FullstackView.tsx`) must name every opt
+too, or it is unreachable from the editor.
+
+Row identity in the generated list views: `EntityPage` defines one `rowKey(row)` (the PK, or the
+`pkFields` joined with `/` for composite keys) and passes it to `Table`/`CardGrid`/`KanbanBoard`/
+`CalendarView`, which key React rows by it — never by array index.
 
 ---
 

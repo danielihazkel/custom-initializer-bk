@@ -54,6 +54,9 @@ export function useResource<T extends object>(basePath: string, params: PagePara
       if (v !== '' && v != null) sp.set(k, v)
     }
     return sp.toString()
+    // filterKey is the serialized form of params.filters: a fresh object with equal contents must
+    // not rebuild the query (and refetch), so the object itself is deliberately not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.page, params.size, params.sort, params.q, filterKey])
 
   const reload = useCallback(async () => {

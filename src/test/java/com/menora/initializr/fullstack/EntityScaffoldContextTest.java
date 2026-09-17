@@ -338,6 +338,9 @@ class EntityScaffoldContextTest {
                 .containsEntry("childEntity", "Order")
                 .containsEntry("mappedBy", "customer")
                 .containsEntry("collectionField", "orders")
+                // SQL names for the parent's @Formula child count (child table + FK column).
+                .containsEntry("childTableRef", "orders")
+                .containsEntry("childJoinColumn", "customer_id")
                 .containsEntry("CollectionField", "Orders");
 
         // The owning side (Order) has no inverse of its own.

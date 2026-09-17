@@ -106,6 +106,13 @@ public final class EntityScaffoldContext {
                 inv.put("mappedBy", Naming.toCamelCase(rel.fieldName()));
                 inv.put("collectionField", coll);
                 inv.put("CollectionField", Naming.toPascalCase(coll));
+                // SQL names for the parent's @Formula child count: the child's table (custom name
+                // or the default snake-plural, schema-qualified when set) and its FK column —
+                // the same derivations the child's own @Table/@JoinColumn use.
+                String childTable = child.tableName() != null ? child.tableName()
+                        : Naming.pluralize(Naming.toSnakeCase(child.name()));
+                inv.put("childTableRef", (child.schema() != null ? child.schema() + "." : "") + childTable);
+                inv.put("childJoinColumn", Naming.toSnakeCase(rel.fieldName()) + "_id");
                 byLower.computeIfAbsent(parentLower, k -> new ArrayList<>()).add(inv);
             }
         }

@@ -79,8 +79,10 @@ public class {{EntityName}}Service {
 {{/relations}}        return repository.save(existing);
     }
 
+    /** Loads first so a missing id surfaces as the controller's 404 (NoSuchElementException)
+     *  rather than a 500 from deleteById's EmptyResultDataAccessException. */
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
-        repository.deleteById(id);
+        repository.delete(findById(id));
     }
 {{#bulkDeleteApplicable}}
     public void deleteAll(java.util.List<{{pkField.javaType}}> ids) {

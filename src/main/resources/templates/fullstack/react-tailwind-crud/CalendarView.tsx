@@ -7,6 +7,8 @@ interface Props<T extends object> {
   /** Same column model as Table — the first column is used as each event's label. */
   columns: Column<T>[]
   rows: T[]
+  /** Stable identity for a row (primary key) — see Table. */
+  rowKey: (row: T) => string | number
   /** Field the records are placed by (a LOCAL_DATE / LOCAL_DATE_TIME value). */
   dateField: string
   loading: boolean
@@ -27,7 +29,7 @@ function dayKey(d: Date): string {
  * month; clicking a record opens its detail via `onView`. Pure client-side date math — no extra
  * endpoint, so only the currently-loaded page of records is shown.
  */
-export function CalendarView<T extends object>({ columns, rows, dateField, loading, onView }: Props<T>) {
+export function CalendarView<T extends object>({ columns, rows, rowKey, dateField, loading, onView }: Props<T>) {
   const today = new Date()
   const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() })
   const heading = columns[0]
@@ -94,9 +96,9 @@ export function CalendarView<T extends object>({ columns, rows, dateField, loadi
                 <>
                   <div className={`mb-1 text-end text-xs ${isToday ? 'font-bold text-brand' : 'text-muted'}`}>{date.getDate()}</div>
                   <div className="space-y-1">
-                    {events.slice(0, 4).map((row, j) => (
+                    {events.slice(0, 4).map(row => (
                       <button
-                        key={(row as { id?: number | string | null }).id ?? j}
+                        key={rowKey(row)}
                         onClick={() => onView?.(row)}
                         className="block w-full truncate rounded bg-brand/10 px-1.5 py-0.5 text-start text-xs text-brand transition-colors hover:bg-brand/20"
                         title="View record"

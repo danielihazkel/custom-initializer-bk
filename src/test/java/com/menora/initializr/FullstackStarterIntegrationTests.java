@@ -1,6 +1,8 @@
 package com.menora.initializr;
 
 import org.junit.jupiter.api.Test;
+import com.menora.initializr.db.VersionService;
+import com.menora.initializr.db.entity.VersionKind;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -28,6 +30,9 @@ class FullstackStarterIntegrationTests {
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @Autowired
+    private VersionService versionService;
 
     @Test
     void fullstackEndpoint_generatesBackendAndFrontendForTwoEntities() throws Exception {
@@ -114,6 +119,10 @@ class FullstackStarterIntegrationTests {
         assertThat(userService).contains("findAll(String q, Pageable pageable)");
         assertThat(userService).contains("Specification<User>");
         assertThat(userService).contains("root.get(\"name\")");
+        // delete() loads first so a missing id is the controller's 404, not a 500 from deleteById.
+        assertThat(userService)
+                .contains("repository.delete(findById(id))")
+                .doesNotContain("repository.deleteById(id)");
 
         String userRepository = entries.entrySet().stream()
                 .filter(e -> e.getKey().endsWith("/UserRepository.java"))
@@ -147,7 +156,30 @@ class FullstackStarterIntegrationTests {
 
         // Frontend essentials
         assertThat(entries).containsKey("shop/frontend/package.json");
-        assertThat(entries.get("shop/frontend/package.json")).contains("\"shop-frontend\"");
+        String packageJson = entries.get("shop/frontend/package.json");
+        assertThat(packageJson).contains("\"shop-frontend\"");
+        // The overlay's package.json follows the selected React version rather than a hardcoded 18.
+        String react = versionService.defaultId(VersionKind.REACT);
+        assertThat(packageJson)
+                .contains("\"react\" : \"" + versionService.reactSemver(react).orElseThrow() + "\"")
+                .contains("\"@types/react\" : \"" + versionService.reactTypesSemver(react).orElseThrow() + "\"");
+        // The substrate's tooling packages/scripts are merged into the overlay's package.json so the
+        // eslint.config.js / .prettierrc.json / .husky/pre-commit it writes actually work.
+        assertThat(packageJson)
+                .contains("\"eslint\" :")
+                .contains("\"typescript-eslint\" :")
+                .contains("\"prettier\" :")
+                .contains("\"husky\" :")
+                .contains("\"lint-staged\" :")
+                .contains("\"lint\" : \"eslint .\"")
+                .contains("\"lint:fix\" :")
+                .contains("\"format\" : \"prettier --write .\"")
+                .contains("\"engines\"")
+                // Overlay pins win over the catalog's __common__ rows (vite/tailwind stay as pinned).
+                .contains("\"vite\" : \"^5.3.4\"")
+                .contains("\"tailwindcss\" : \"^4.0.0\"");
+        // (Only dev tooling is merged back — the overlay owns the runtime dependency set. The
+        // Menora Digital case below pins that: it ships Assistant and must not get Inter back.)
         assertThat(entries).containsKey("shop/frontend/src/app/App.tsx");
         String app = entries.get("shop/frontend/src/app/App.tsx");
         assertThat(app).contains("UserPage");
@@ -193,6 +225,17 @@ class FullstackStarterIntegrationTests {
         // dev-server proxy is emitted by the substrate.
         assertThat(entries).containsKey("shop/frontend/.env.development");
         assertThat(entries.get("shop/frontend/vite.config.ts")).contains("/api");
+        // The API client reads VITE_API_BASE_URL (build-time) instead of a hardcoded constant, and
+        // a production env file ships with it empty (same-origin behind nginx).
+        assertThat(entries.get("shop/frontend/src/shared/api/client.ts"))
+                .contains("import.meta.env.VITE_API_BASE_URL")
+                .doesNotContain("const BASE = ''");
+        assertThat(entries.get("shop/frontend/.env.production")).contains("VITE_API_BASE_URL=");
+        assertThat(readme).contains(".env.production").doesNotContain("`BASE` constant");
+        // Every list view keys rows by primary key, never by array index.
+        assertThat(userPage)
+                .contains("const rowKey = (row: User) => row.id as string | number")
+                .contains("rowKey={rowKey}");
         // The standalone landing page is replaced by the per-entity pages — its dir is removed.
         assertThat(entries.keySet()).noneMatch(p -> p.startsWith("shop/frontend/src/pages/home/"));
     }
@@ -673,7 +716,10 @@ class FullstackStarterIntegrationTests {
         body.put("packageName", "com.menora.demo");
         body.put("bootVersion", "3.2.1");
         body.put("opts", Map.of("scaffold", List.of("tests")));
-        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
+        // User has no filterable field (2-arg findAll); Task has a BOOLEAN -> Filters + 3-arg findAll.
+        body.put("entities", List.of(
+                Map.of("name", "User", "fields", List.of(pkField())),
+                Map.of("name", "Task", "fields", List.of(pkField(), Map.of("name", "done", "type", "Boolean")))));
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -689,7 +735,21 @@ class FullstackStarterIntegrationTests {
         assertThat(contentEndingWith(entries, "/controller/UserControllerTest.java"))
                 .contains("@WebMvcTest(UserController.class)")
                 .contains("@MockBean")
-                .contains("get(\"/api/users\")");
+                .contains("get(\"/api/users\")")
+                // No filter fields -> the service only has findAll(q, pageable): two matchers.
+                .contains("service.findAll(any(), any())")
+                .doesNotContain("service.findAll(any(), any(), any())");
+        // A filterable field switches the service to findAll(q, filters, pageable); the mocked
+        // call must carry three matchers or the generated test does not compile.
+        assertThat(contentEndingWith(entries, "/service/TaskService.java"))
+                .contains("findAll(String q, Filters filters, Pageable pageable)");
+        assertThat(contentEndingWith(entries, "/controller/TaskControllerTest.java"))
+                .contains("service.findAll(any(), any(), any())")
+                .doesNotContain("service.findAll(any(), any()))")
+                // The mocked page carries a real PageRequest: PageImpl(List) alone holds
+                // Pageable.unpaged(), which Jackson cannot serialize (the test would 500).
+                .contains("new PageImpl<Task>(List.of(), PageRequest.of(0, 20), 0)")
+                .contains("import org.springframework.data.domain.PageRequest;");
     }
 
     @Test
@@ -1368,6 +1428,13 @@ class FullstackStarterIntegrationTests {
         // The shared resource hook gained ordered-key path joining for composite addressing.
         assertThat(entries.get("shop/frontend/src/shared/api/useResource.ts"))
                 .contains("Array.isArray(id)");
+        // The page's React row key joins the key parts (no `id` property to fall back on).
+        assertThat(entries.get("shop/frontend/src/pages/order-line/ui/OrderLinePage.tsx"))
+                .contains("const rowKey = (row: OrderLine) => [String(row.orderId), String(row.lineNo)].join('/')")
+                .contains("rowKey={rowKey}");
+        assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
+                .contains("key={rowKey(row)}")
+                .doesNotContain(".id ?? idx");
     }
 
     @Test
@@ -1478,10 +1545,18 @@ class FullstackStarterIntegrationTests {
         // The parent (Customer) gets the inverse collection; the DTO surfaces a read-only count.
         assertThat(contentEndingWith(entries, "/entity/Customer.java"))
                 .contains("@OneToMany(mappedBy = \"customer\")")
-                .contains("private List<Order> orders = new ArrayList<>();");
+                .contains("private List<Order> orders = new ArrayList<>();")
+                // The count is a DB-computed @Formula column: the DTO is built outside the
+                // service transaction (open-in-view off), so touching the lazy collection there
+                // would throw LazyInitializationException on every GET.
+                .contains("import org.hibernate.annotations.Formula;")
+                .contains("@Formula(\"(select count(*) from orders c where c.customer_id = id)\")")
+                .contains("private Long ordersCount;")
+                .contains("public Long getOrdersCount()");
         assertThat(contentEndingWith(entries, "/dto/CustomerDto.java"))
                 .contains("int ordersCount")
-                .contains("entity.getOrders() == null ? 0 : entity.getOrders().size()");
+                .contains("entity.getOrdersCount() == null ? 0 : entity.getOrdersCount().intValue()")
+                .doesNotContain("entity.getOrders().size()");
     }
 
     @Test
@@ -1718,7 +1793,9 @@ class FullstackStarterIntegrationTests {
         assertThat(dashboard)
                 .contains("function BarChart")
                 .contains("Products by Status")
-                .contains("field: 'status'");
+                .contains("field: 'status'")
+                // Grouped client-side from a sample page -> says so when the table is larger.
+                .contains("Based on the first {sampled.shown} of {sampled.total} records");
         assertThat(dashboard).doesNotContain("Plains by");
     }
 
@@ -1772,7 +1849,7 @@ class FullstackStarterIntegrationTests {
         // (view-independent) filter bar, CSV export, and bulk-select table. No Cards/Calendar code.
         String taskPage = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
         assertThat(taskPage)
-                .contains("useState<'table' | 'kanban'>('table')")  // initial = first selected (canonical order)
+                .contains("const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')")  // initial = first selected (canonical order)
                 .contains("KanbanBoard, FilterBar")
                 .contains("<KanbanBoard")
                 .contains("groupField=\"status\"")
@@ -1785,7 +1862,12 @@ class FullstackStarterIntegrationTests {
                 .contains("options: ['OPEN', 'DONE']")
                 .contains("exportCsv('tasks.csv')")
                 .contains("selectable={true}")
-                .contains("isRowSelected={isRowSelected}");
+                .contains("isRowSelected={isRowSelected}")
+                // A failed drag-and-drop is toasted and the board reloaded, never a dropped promise.
+                .contains("async function onKanbanMove(row: Task, value: string)")
+                .contains("onMove={onKanbanMove}")
+                .contains("await reload()")
+                .contains(" reload,");
 
         // Event page: calendar-only — no toggle bar, no Table/CardGrid/KanbanBoard.
         String eventPage = entries.get("ops/frontend/src/pages/event/ui/EventPage.tsx");
@@ -1799,8 +1881,9 @@ class FullstackStarterIntegrationTests {
         // Plain page: legacy listView="kanban" down-grades to table-only, no filter bar.
         String plainPage = entries.get("ops/frontend/src/pages/plain/ui/PlainPage.tsx");
         assertThat(plainPage)
-                .contains("useState<'table'>('table')")
+                .contains("const [viewMode] = useState<'table'>('table')")   // no toggle → no unused setter
                 .doesNotContain("KanbanBoard")
+                .doesNotContain("onKanbanMove")
                 .doesNotContain("FilterBar");
 
         // Backend Task service: a Filters carrier + composed Specification + bulk delete.
@@ -1820,7 +1903,13 @@ class FullstackStarterIntegrationTests {
                 .contains("DateTimeFormat.ISO.DATE")
                 .contains("@GetMapping(\"/export.csv\")")
                 .contains("@DeleteMapping(\"/bulk\")")
-                .contains("new TaskService.Filters(");
+                .contains("new TaskService.Filters(")
+                // CSV export streams in fixed chunks rather than loading the whole table.
+                .contains("ResponseEntity<StreamingResponseBody> exportCsv(")
+                .contains("PageRequest.of(pageNo++, CSV_CHUNK_SIZE, sort)")
+                .contains("while (chunk.hasNext())")
+                .contains("w.write('\\uFEFF')")
+                .doesNotContain("Integer.MAX_VALUE");
 
         // Plain (no filters) keeps the simple two-arg findAll and no Filters record.
         assertThat(contentEndingWith(entries, "/service/PlainService.java"))

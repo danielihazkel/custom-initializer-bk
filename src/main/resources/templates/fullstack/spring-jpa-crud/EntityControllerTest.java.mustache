@@ -9,6 +9,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -32,8 +33,12 @@ class {{EntityName}}ControllerTest {
 
     @Test
     void list_returnsOk() throws Exception {
-        Page<{{EntityName}}> empty = new PageImpl<{{EntityName}}>(List.of());
-        Mockito.when(service.findAll(any(), any())).thenReturn(empty);
+        // A concrete PageRequest, not the single-arg constructor: that one carries
+        // Pageable.unpaged(), whose page size Jackson cannot serialize (-> HTTP 500).
+        Page<{{EntityName}}> empty = new PageImpl<{{EntityName}}>(List.of(), PageRequest.of(0, 20), 0);
+        // The service exposes findAll(q, filters, pageable) when the entity has filterable fields
+        // and findAll(q, pageable) otherwise — the matcher count must follow the same gate.
+        Mockito.when(service.findAll(any(), {{#hasFilters}}any(), {{/hasFilters}}any())).thenReturn(empty);
 
         mockMvc.perform(get("/api/{{entityNamePluralKebab}}"))
                 .andExpect(status().isOk());

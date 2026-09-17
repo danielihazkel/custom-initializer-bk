@@ -30,7 +30,7 @@ public record {{EntityName}}Dto(
 {{/relations}}{{#auditApplicable}},
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(){{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
-                entity.get{{CollectionField}}() == null ? 0 : entity.get{{CollectionField}}().size(){{/inverseRelations}}{{/optScaffoldInverse}}
+                entity.get{{CollectionField}}Count() == null ? 0 : entity.get{{CollectionField}}Count().intValue(){{/inverseRelations}}{{/optScaffoldInverse}}
         );
     }
 

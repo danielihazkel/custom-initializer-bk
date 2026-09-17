@@ -14,6 +14,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import org.hibernate.annotations.SQLRestriction;
 {{/softDeleteApplicable}}{{#hasInverseRelations}}{{#optScaffoldInverse}}import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.Formula;
 {{/optScaffoldInverse}}{{/hasInverseRelations}}
 
 @Entity
@@ -60,6 +61,12 @@ import java.util.List;
 {{/softDeleteApplicable}}{{#optScaffoldInverse}}{{#hasInverseRelations}}{{#inverseRelations}}    @OneToMany(mappedBy = "{{mappedBy}}")
     private List<{{childEntity}}> {{collectionField}} = new ArrayList<>();
 
+    /** Number of {{collectionField}}, computed by the database on every load so the DTO can
+     *  expose it without initializing the lazy collection (there is no open session outside the
+     *  service — open-in-view is off). Soft-deleted children, if any, are still counted. */
+    @Formula("(select count(*) from {{childTableRef}} c where c.{{childJoinColumn}} = {{pkField.column}})")
+    private Long {{collectionField}}Count;
+
 {{/inverseRelations}}{{/hasInverseRelations}}{{/optScaffoldInverse}}
     public {{EntityName}}() {}
 
@@ -99,6 +106,10 @@ import java.util.List;
 
 {{/softDeleteApplicable}}{{#optScaffoldInverse}}{{#hasInverseRelations}}{{#inverseRelations}}    public List<{{childEntity}}> get{{CollectionField}}() {
         return {{collectionField}};
+    }
+
+    public Long get{{CollectionField}}Count() {
+        return {{collectionField}}Count;
     }
 
 {{/inverseRelations}}{{/hasInverseRelations}}{{/optScaffoldInverse}}}

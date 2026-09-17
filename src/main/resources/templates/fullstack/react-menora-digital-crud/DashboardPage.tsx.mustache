@@ -20,7 +20,8 @@ interface ChartDef {
   field: string
 }
 
-// One breakdown per entity that has a low-cardinality (enum/boolean) field — derived server-side.
+// One breakdown per entity that has a low-cardinality (enum/boolean) field. Grouped client-side
+// from a sample page (see useBreakdown), so the chart labels itself as a sample on large tables.
 const CHARTS: ChartDef[] = [
 {{#entities}}{{#hasBreakdown}}  { label: '{{entityLabelPlural}} by {{breakdownLabel}}', path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}' },
 {{/hasBreakdown}}{{/entities}}]
@@ -41,18 +42,24 @@ function useCount(path: string) {
   return { count, failed }
 }
 
-/** Fetches a page and groups it by `field` to chart value distribution — client-side, no extra API. */
+const BREAKDOWN_SAMPLE = 200
+
+/** Fetches the first BREAKDOWN_SAMPLE records and groups them by `field` — client-side, no extra
+ *  API. `sampled` reports how many of the total records the chart is based on. */
 function useBreakdown(path: string, field: string) {
   const [data, setData] = useState<{ label: string; count: number }[] | null>(null)
+  const [sampled, setSampled] = useState<{ shown: number; total: number } | null>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let active = true
-    api.get<{ content: Record<string, unknown>[] }>(`${path}?size=200`)
+    api.get<{ content: Record<string, unknown>[]; totalElements: number }>(`${path}?size=${BREAKDOWN_SAMPLE}`)
       .then(p => {
         if (!active) return
+        const rows = p.content ?? []
+        setSampled({ shown: rows.length, total: p.totalElements ?? rows.length })
         const counts = new Map<string, number>()
-        for (const row of p.content ?? []) {
+        for (const row of rows) {
           const key = row[field] == null ? '—' : String(row[field])
           counts.set(key, (counts.get(key) ?? 0) + 1)
         }
@@ -62,7 +69,7 @@ function useBreakdown(path: string, field: string) {
     return () => { active = false }
   }, [path, field])
 
-  return { data, failed }
+  return { data, failed, sampled }
 }
 
 function BarChart({ data }: { data: { label: string; count: number }[] }) {
@@ -83,7 +90,7 @@ function BarChart({ data }: { data: { label: string; count: number }[] }) {
 }
 
 function ChartCard({ chart }: { chart: ChartDef }) {
-  const { data, failed } = useBreakdown(chart.path, chart.field)
+  const { data, failed, sampled } = useBreakdown(chart.path, chart.field)
   return (
     <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
       <div className="mb-4 text-sm font-semibold text-fg">{chart.label}</div>
@@ -94,7 +101,14 @@ function ChartCard({ chart }: { chart: ChartDef }) {
       ) : data.length === 0 ? (
         <div className="text-sm text-muted">No records yet.</div>
       ) : (
-        <BarChart data={data} />
+        <>
+          <BarChart data={data} />
+          {sampled && sampled.total > sampled.shown && (
+            <div className="mt-3 text-xs text-muted">
+              Based on the first {sampled.shown} of {sampled.total} records.
+            </div>
+          )}
+        </>
       )}
     </div>
   )

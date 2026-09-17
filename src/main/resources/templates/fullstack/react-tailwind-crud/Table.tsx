@@ -27,6 +27,9 @@ export interface PaginationProps {
 interface Props<T extends object> {
   columns: Column<T>[]
   rows: T[]
+  /** Stable identity for a row (its primary key, joined for composite keys). Drives React keys so
+   *  rows keep their DOM state across sort/page changes; never falls back to the array index. */
+  rowKey: (row: T) => string | number
   /** Omit all handlers for a read-only table — the Actions column is then hidden. */
   onView?: (row: T) => void
   onEdit?: (row: T) => void
@@ -58,7 +61,7 @@ function nextSort(current: SortSpec | null, field: string): SortSpec | null {
 }
 
 export function Table<T extends object>({
-  columns, rows, onView, onEdit, onDelete, loading,
+  columns, rows, rowKey, onView, onEdit, onDelete, loading,
   sort, onSortChange, search, onSearchChange, pagination, searchable = true,
   selectable = false, isRowSelected, onToggleRow, allOnPageSelected, onToggleAllOnPage,
 }: Props<T>) {
@@ -141,9 +144,9 @@ export function Table<T extends object>({
                   </td>
                 </tr>
               ) : (
-                rows.map((row, idx) => (
+                rows.map(row => (
                   <tr
-                    key={(row as { id?: number | string | null }).id ?? idx}
+                    key={rowKey(row)}
                     className="group border-t border-border transition-colors hover:bg-surface-2/60"
                   >
                     {selectable && (

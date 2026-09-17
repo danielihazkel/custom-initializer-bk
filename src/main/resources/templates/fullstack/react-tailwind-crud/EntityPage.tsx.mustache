@@ -28,13 +28,17 @@ const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?
 {{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
 {{/bulkUpdatableFields}}}
 {{/viewTable}}{{/bulkUpdateApplicable}}
+/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
+const rowKey = (row: {{EntityName}}) => {{#hasCompositePk}}[{{#pkFields}}String(row.{{name}}){{^last}}, {{/last}}{{/pkFields}}].join('/'){{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as string | number{{/hasCompositePk}}
+
 export function {{EntityName}}Page() {
   const [page, setPage] = useState(0)
   const [size, setSize] = useState(20)
   const [sort, setSort] = useState<SortSpec | null>(null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [viewMode, setViewMode] = useState<{{viewModeType}}>('{{initialView}}')
+  // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
+  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>('{{initialView}}')
   const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
 {{#hasFilters}}  const [filters, setFilters] = useState<FilterValues>({})
 {{/hasFilters}}
@@ -49,7 +53,7 @@ export function {{EntityName}}Page() {
 
   const {
     items, totalElements, totalPages, pageNumber, pageSize,
-    loading, error,{{#mutable}} create, update, remove,{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
+    loading, error,{{#viewKanban}} reload,{{/viewKanban}}{{#mutable}} create, update, remove,{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
   } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{/hasFilters}} })
 {{#mutable}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
@@ -132,7 +136,19 @@ export function {{EntityName}}Page() {
       setDeleting(false)
     }
   }
-{{/mutable}}{{#bulkSelectApplicable}}{{#viewTable}}
+{{/mutable}}{{#viewKanban}}
+  // Kanban drag-and-drop writes the new lane value back. On failure the board is reloaded so
+  // the card snaps back to its real lane instead of silently showing a move that never saved.
+  async function onKanbanMove(row: {{EntityName}}, value: string) {
+    try {
+      await update({{#hasCompositePk}}[{{#pkFields}}row.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...row, {{kanbanField}}: {{#kanbanIsEnum}}value{{/kanbanIsEnum}}{{^kanbanIsEnum}}value === 'true'{{/kanbanIsEnum}} } as {{EntityName}})
+      toast.success('{{entityLabel}} moved')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+      await reload()
+    }
+  }
+{{/viewKanban}}{{#bulkSelectApplicable}}{{#viewTable}}
   // Bulk selection (table view only). Selected rows are tracked by primary-key value. Shared by
   // the bulk-delete and bulk-edit actions below.
   const [selected, setSelected] = useState<Array<number | string>>([])
@@ -323,6 +339,7 @@ export function {{EntityName}}Page() {
         <CardGrid
           columns={columns}
           rows={items}
+          rowKey={rowKey}
           loading={loading}
           onView={setDetailRow}
 {{#mutable}}          onEdit={openEdit}
@@ -337,18 +354,20 @@ export function {{EntityName}}Page() {
         <KanbanBoard
           columns={columns}
           rows={items}
+          rowKey={rowKey}
           loading={loading}
           groupField="{{kanbanField}}"
           groupValues={[{{#kanbanColumns}}{ value: '{{value}}', label: '{{label}}' }{{^last}}, {{/last}}{{/kanbanColumns}}]}
           onView={setDetailRow}
           onEdit={openEdit}
           onDelete={setPendingDelete}
-          onMove={(row, value) => update({{#hasCompositePk}}[{{#pkFields}}row.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...row, {{kanbanField}}: {{#kanbanIsEnum}}value{{/kanbanIsEnum}}{{^kanbanIsEnum}}value === 'true'{{/kanbanIsEnum}} } as {{EntityName}})}
+          onMove={onKanbanMove}
         />
       ) : {{/viewKanban}}{{#viewCalendar}}viewMode === 'calendar' ? (
         <CalendarView
           columns={columns}
           rows={items}
+          rowKey={rowKey}
           loading={loading}
           dateField="{{calendarField}}"
           onView={setDetailRow}
@@ -357,6 +376,7 @@ export function {{EntityName}}Page() {
         <Table
           columns={columns}
           rows={items}
+          rowKey={rowKey}
           loading={loading}
           onView={setDetailRow}
 {{#mutable}}          onEdit={openEdit}

@@ -14,6 +14,7 @@
     { "source": "main.tsx", "path": "src/main.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 70 },
     { "source": "index.css.mustache", "path": "src/index.css", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 90 },
     { "source": "env-development.mustache", "path": ".env.development", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 95 },
+    { "source": "env-production.mustache", "path": ".env.production", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 96 },
 
     { "source": "App.tsx.mustache", "path": "src/app/App.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 80 },
 
