@@ -1,6 +1,7 @@
-// API origin. Empty (the .env.production default) means same-origin `/api/...`, which the Vite
-// dev proxy and the production nginx config both route to the backend; set VITE_API_BASE_URL
-// in an .env file to call a backend on another origin (CORS must then allow this app).
+// API origin. Empty (the default in both .env files) means same-origin `/api/...`: the Vite dev
+// server proxies it to the backend (vite.config.ts) and so does nginx in production
+// (nginx/nginx.conf, API_UPSTREAM). Set VITE_API_BASE_URL only to call a backend on another
+// origin — the backend must then allow this app via app.cors.allowed-origins.
 const BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '').replace(/\/+$/, '')
 
 /**
@@ -51,6 +52,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new ApiError(res.status, `HTTP ${res.status} on ${method} ${path}: ${message}`)
   }
   if (res.status === 204) return undefined as unknown as T
+  // A misrouted /api (no proxy in front of a static build) answers with index.html and a 200;
+  // fail with a pointed message instead of a bare JSON SyntaxError.
+  const contentType = res.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    throw new ApiError(res.status,
+      `Expected JSON from ${method} ${path} but got '${contentType || 'no content-type'}' — is /api routed to the backend?`)
+  }
   return res.json() as Promise<T>
 }
 

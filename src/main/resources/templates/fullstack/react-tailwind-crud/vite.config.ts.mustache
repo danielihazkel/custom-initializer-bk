@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
+  base: '{{basePath}}',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -17,8 +18,14 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    host: true,
+    // Same-origin /api/... in dev: the browser talks to :5173 only, Vite forwards to the backend.
+    // Production gets the equivalent from nginx/nginx.conf (API_UPSTREAM).
     proxy: {
-      '/api': 'http://localhost:8080'
-    }
-  }
+      '/api': {
+        target: '{{apiBaseUrl}}',
+        changeOrigin: true,
+      },
+    },
+  },
 })

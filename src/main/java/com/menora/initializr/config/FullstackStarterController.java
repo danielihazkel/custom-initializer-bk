@@ -470,15 +470,20 @@ public class FullstackStarterController {
                 + "- `frontend/` — React + Vite app. Run with `cd frontend && npm install && npm run dev` (port 5173).\n\n"
                 + "Open http://localhost:5173 to use the UI.\n\n"
                 + "## How the frontend reaches the backend\n\n"
-                + "In dev the frontend calls same-origin `/api/...` paths; the Vite dev server\n"
-                + "proxies `/api` to `http://localhost:8080` (see `frontend/vite.config.ts`), so no\n"
-                + "CORS setup is needed when you run `npm run dev`.\n\n"
-                + "For a production build (`npm run build`), `vite preview` and static hosting do\n"
-                + "**not** run that proxy. Either serve the API at the same origin behind a reverse\n"
-                + "proxy / gateway (the shipped `frontend/nginx/nginx.conf` does this; leave\n"
-                + "`VITE_API_BASE_URL` empty in `frontend/.env.production`), or set\n"
-                + "`VITE_API_BASE_URL` to the backend origin in `.env.production` — the API client\n"
-                + "(`frontend/src/shared/api/client.ts`) reads it at build time.\n";
+                + "The app always calls same-origin `/api/...` paths (`VITE_API_BASE_URL` is empty in\n"
+                + "both `frontend/.env.development` and `frontend/.env.production`):\n\n"
+                + "- **Dev** — the Vite dev server proxies `/api` to `http://localhost:8080`\n"
+                + "  (`frontend/vite.config.ts`), so the browser only ever talks to :5173 and no CORS\n"
+                + "  setup is needed for `npm run dev`.\n"
+                + "- **Production** — the shipped `frontend/nginx/nginx.conf` proxies `/api/` to the\n"
+                + "  backend named by the `API_UPSTREAM` container env var (default\n"
+                + "  `http://localhost:8080`), e.g. `docker run -e API_UPSTREAM=http://backend:8080 ...`.\n"
+                + "  `vite preview` and plain static hosting run no proxy — use nginx or a gateway.\n\n"
+                + "To call a backend on another origin instead, set `VITE_API_BASE_URL` in the\n"
+                + "matching `.env` file (the API client `frontend/src/shared/api/client.ts` reads it at\n"
+                + "build time) and allow that origin on the backend with\n"
+                + "`app.cors.allowed-origins=http://localhost:5173` (comma-separated; CORS is off\n"
+                + "when the property is empty — see `CorsConfig`).\n";
     }
 
     private static final String ROOT_GITIGNORE =

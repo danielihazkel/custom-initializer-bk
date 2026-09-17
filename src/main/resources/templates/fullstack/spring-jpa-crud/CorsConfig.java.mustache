@@ -1,20 +1,35 @@
 package {{packageName}}.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Allows the bundled React dev server (Vite on :5173) to call the API during development.
- * Tighten or remove the allowed origin for production deployments.
+ * Cross-origin access to the API, driven by {@code app.cors.allowed-origins}.
+ *
+ * <p>The shipped frontend calls same-origin {@code /api/...} — the Vite dev server proxies it in
+ * development and nginx does in production — so CORS is <b>off by default</b>. Set the property
+ * (comma-separated origins, e.g. {@code app.cors.allowed-origins=http://localhost:5173}) only when
+ * a browser client calls this API from another origin, such as a frontend built with
+ * {@code VITE_API_BASE_URL} pointing here directly.
  */
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
+    @Value("${app.cors.allowed-origins:}")
+    private String[] allowedOrigins;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        if (allowedOrigins == null || allowedOrigins.length == 0 || allowedOrigins[0].isBlank()) {
+            return;
+        }
         registry.addMapping("/api/**")
-                .allowedOrigins("http://localhost:5173")
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS");
+                .allowedOriginPatterns(allowedOrigins)
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true)
+                .maxAge(3600);
     }
 }

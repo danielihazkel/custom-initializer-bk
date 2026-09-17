@@ -24,8 +24,9 @@ Then open http://localhost:5173
 
 This project is wired to talk to **{{#hasBackendArtifactId}}`{{backendArtifactId}}`{{/hasBackendArtifactId}}{{^hasBackendArtifactId}}a backend{{/hasBackendArtifactId}}** at `{{apiBaseUrl}}`.
 
-- `.env.development` sets `VITE_API_BASE_URL={{apiBaseUrl}}` for the dev server.
-- `vite.config.ts` proxies `/api/*` to the same URL so the browser can call relative paths in dev without CORS.
+- `vite.config.ts` proxies `/api/*` to `{{apiBaseUrl}}`, so with `VITE_API_BASE_URL` left empty the browser calls same-origin `/api/...` in dev and no CORS setup is needed.
+- When `VITE_API_BASE_URL` is set in `.env.development`, the browser calls that origin directly and bypasses the proxy (the backend must then allow this origin).
+- In production `nginx/nginx.conf` proxies `/api/` the same way, to the backend named by the `API_UPSTREAM` container env var.
 - `.env.example` documents the override pattern for other environments.
 
 Start the backend first, then run `dev` above.

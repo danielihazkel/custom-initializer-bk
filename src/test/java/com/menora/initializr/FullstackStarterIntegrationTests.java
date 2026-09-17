@@ -67,7 +67,8 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/.gitignore"));
         // README documents the dev proxy + prod base-URL story (not "talks directly to :8080")
         String readme = entries.get("shop/README.md");
-        assertThat(readme).contains("proxy").contains("frontend/src/shared/api/client.ts");
+        assertThat(readme).contains("proxy").contains("frontend/src/shared/api/client.ts")
+                .contains("API_UPSTREAM").contains("app.cors.allowed-origins");
 
         // Backend pom + Application
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/backend/pom.xml"));
@@ -105,10 +106,14 @@ class FullstackStarterIntegrationTests {
         assertThat(userController).contains("Sort.by(\"id\").ascending()");
         // CORS is centralized in a single WebMvcConfigurer, not repeated per controller.
         assertThat(userController).doesNotContain("@CrossOrigin");
+        // CORS is off by default (the FE calls same-origin /api through Vite/nginx) and is
+        // switched on per environment via a property, never by editing Java.
         assertThat(contentEndingWith(entries, "/config/CorsConfig.java"))
                 .contains("implements WebMvcConfigurer")
                 .contains("addMapping(\"/api/**\")")
-                .contains("allowedOrigins(\"http://localhost:5173\")");
+                .contains("@Value(\"${app.cors.allowed-origins:}\")")
+                .contains("allowedOriginPatterns(allowedOrigins)")
+                .doesNotContain("allowedOrigins(\"http://localhost:5173\")");
         // CorsConfig is generated once (non-perEntity), under the base package for component scan.
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/backend/src/main/java/com/menora/shop/config/CorsConfig.java"));
 
@@ -221,16 +226,32 @@ class FullstackStarterIntegrationTests {
         assertThat(entries).containsKey("shop/frontend/nginx/nginx.conf");
         assertThat(entries).containsKey("shop/frontend/.husky/pre-commit");
         assertThat(entries).containsKey("shop/frontend/src/widgets/README.md");
-        // Paired-backend wiring: the dev .env points the FE at the proxied /api, and the Vite
-        // dev-server proxy is emitted by the substrate.
-        assertThat(entries).containsKey("shop/frontend/.env.development");
-        assertThat(entries.get("shop/frontend/vite.config.ts")).contains("/api");
-        // The API client reads VITE_API_BASE_URL (build-time) instead of a hardcoded constant, and
-        // a production env file ships with it empty (same-origin behind nginx).
+        // Paired-backend wiring: the FE always calls same-origin /api. In dev the base URL is
+        // empty so the Vite proxy (rendered from the overlay's mustache with the substrate's
+        // basePath/apiBaseUrl) forwards to the backend; in prod nginx proxies /api to API_UPSTREAM.
+        assertThat(entries.get("shop/frontend/.env.development"))
+                .contains("VITE_API_BASE_URL=").doesNotContain("VITE_API_BASE_URL=http");
+        assertThat(entries.get("shop/frontend/vite.config.ts"))
+                .contains("base: '/'")
+                .contains("host: true")
+                .contains("target: 'http://localhost:8080'")
+                .contains("changeOrigin: true")
+                .doesNotContain("{{");
+        assertThat(entries.get("shop/frontend/nginx/nginx.conf"))
+                .contains("location /api/")
+                .contains("proxy_pass ${API_UPSTREAM};");
+        assertThat(entries.get("shop/frontend/entrypoint.sh"))
+                .contains("API_UPSTREAM=\"${API_UPSTREAM:-http://localhost:8080}\"")
+                .contains("${API_UPSTREAM}");
+        // The API client reads VITE_API_BASE_URL (build-time) instead of a hardcoded constant,
+        // refuses a non-JSON answer (a misrouted /api serves index.html with a 200), and the
+        // production env file ships with it empty (same-origin behind nginx).
         assertThat(entries.get("shop/frontend/src/shared/api/client.ts"))
                 .contains("import.meta.env.VITE_API_BASE_URL")
+                .contains("contentType.includes('application/json')")
                 .doesNotContain("const BASE = ''");
-        assertThat(entries.get("shop/frontend/.env.production")).contains("VITE_API_BASE_URL=");
+        assertThat(entries.get("shop/frontend/.env.production"))
+                .contains("VITE_API_BASE_URL=").doesNotContain("VITE_API_BASE_URL=http");
         assertThat(readme).contains(".env.production").doesNotContain("`BASE` constant");
         // Every list view keys rows by primary key, never by array index.
         assertThat(userPage)
@@ -938,6 +959,9 @@ class FullstackStarterIntegrationTests {
         assertThat(entries).containsKey("shop/frontend/src/shared/api/useResource.ts");
         assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx")).contains("bg-primary").contains("text-on-primary");
         assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("bg-primary");
+        // vite.config.ts is borrowed as a mustache row (sourceSet) and rendered, not copied raw.
+        assertThat(entries.get("shop/frontend/vite.config.ts"))
+                .contains("base: '/'").contains("target: 'http://localhost:8080'").doesNotContain("{{");
 
         // Design-system substrate files + brand mark; the standalone landing page is still removed.
         assertThat(entries).containsKey("shop/frontend/src/shared/ui/menora/tokens.css");

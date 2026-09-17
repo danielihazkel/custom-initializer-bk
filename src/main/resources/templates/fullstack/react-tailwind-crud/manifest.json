@@ -7,7 +7,7 @@
   "sortOrder": 20,
   "files": [
     { "source": "package.json.mustache", "path": "package.json", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 10 },
-    { "source": "vite.config.ts", "path": "vite.config.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 20 },
+    { "source": "vite.config.ts.mustache", "path": "vite.config.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 20 },
     { "source": "tsconfig.json", "path": "tsconfig.json", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 30 },
     { "source": "tsconfig.node.json", "path": "tsconfig.node.json", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 40 },
     { "source": "vite-env.d.ts", "path": "src/vite-env.d.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 45 },
