@@ -60,6 +60,8 @@ public class FrontendProjectGenerator {
     private static final String TANSTACK_QUERY_DEP = "data-tanstack-query";
     /** Companion dep id that adds MSW handler stubs ({@code msw.ts}) for the test setup. */
     private static final String VITEST_RTL_DEP = "test-vitest-rtl";
+    /** Design-system dep id whose brand mark (a binary PNG) is copied alongside the common logo. */
+    private static final String DESIGN_MENORA_DIGITAL_DEP = "design-menora-digital";
 
     private final DependencyConfigService configService;
     private final ProjectOptionsContext optionsContext;
@@ -109,7 +111,7 @@ public class FrontendProjectGenerator {
         writeBaselines(targetDir, depIds, ctx);
         writeOpenApiSpec(targetDir, depIds);
         writeGeneratedTs(targetDir, depIds);
-        copyStaticAssets(targetDir);
+        copyStaticAssets(targetDir, depIds);
     }
 
     /**
@@ -119,12 +121,24 @@ public class FrontendProjectGenerator {
      * generator and — since the fullstack generator builds on {@link #renderInto} — the
      * fullstack frontend. Binary assets cannot ride the DB-driven file-contribution
      * pipeline (CLOB / UTF-8 text only), so they are streamed straight from the classpath.
+     *
+     * <p>Dependency-specific marks follow the same route, gated on the dep being selected:
+     * {@code design-menora-digital} ships the Menora Mivtachim header logo as
+     * {@code public/menora-mivtachim-logo.png}, referenced by its shell {@code App.tsx}.
      */
-    private void copyStaticAssets(Path targetDir) throws IOException {
+    private void copyStaticAssets(Path targetDir, Set<String> depIds) throws IOException {
         Path publicDir = targetDir.resolve("public");
         Files.createDirectories(publicDir);
-        try (InputStream in = new ClassPathResource("static-configs/frontend/common/logo.png").getInputStream()) {
-            Files.copy(in, publicDir.resolve("logo.png"), StandardCopyOption.REPLACE_EXISTING);
+        copyClasspathBinary("static-configs/frontend/common/logo.png", publicDir.resolve("logo.png"));
+        if (depIds.contains(DESIGN_MENORA_DIGITAL_DEP)) {
+            copyClasspathBinary("static-configs/frontend/design-menora-digital/menora-mivtachim-logo.png",
+                    publicDir.resolve("menora-mivtachim-logo.png"));
+        }
+    }
+
+    private static void copyClasspathBinary(String resource, Path target) throws IOException {
+        try (InputStream in = new ClassPathResource(resource).getInputStream()) {
+            Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

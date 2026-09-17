@@ -1,0 +1,118 @@
+import { useState } from 'react'
+import type { LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Menu, Moon, Sun, Table2, X } from 'lucide-react'
+import { Toaster } from 'sonner'
+import { useTheme } from '@shared/ui'
+import { ChatLauncher } from '@shared/ui/menora'
+import { DashboardPage } from '@pages/dashboard'
+{{#entities}}
+import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
+{{/entities}}
+
+type View = 'dashboard'{{#entities}} | '{{entityNameKebab}}'{{/entities}}
+
+const NAV: { id: View; label: string; icon: LucideIcon }[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+{{#entities}}
+  { id: '{{entityNameKebab}}', label: '{{entityLabelPlural}}', icon: Table2 },
+{{/entities}}
+]
+
+/**
+ * Menora Digital shell: a white top header on the #f8f8f8 page ground (logo, nav row with the
+ * active item in brand purple, an outlined theme toggle), the content, a dark ink footer band and
+ * the floating yellow chat launcher. Logical utilities (start/end, rtl:) keep it mirror-correct.
+ */
+export default function App() {
+  const [view, setView] = useState<View>('dashboard')
+  const [navOpen, setNavOpen] = useState(false)
+  const { isDark, toggle } = useTheme()
+  const current = NAV.find(n => n.id === view)
+
+  const go = (id: View) => {
+    setView(id)
+    setNavOpen(false)
+  }
+
+  const navItems = NAV.map(({ id, label, icon: Icon }) => {
+    const active = view === id
+    return (
+      <button
+        key={id}
+        onClick={() => go(id)}
+        aria-current={active ? 'page' : undefined}
+        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[17px] transition-colors ${
+          active ? 'font-medium text-brand' : 'text-fg hover:bg-brand/10'
+        }`}
+      >
+        <Icon className="h-4 w-4" />
+        {label}
+      </button>
+    )
+  })
+
+  return (
+    <div className="flex min-h-full flex-col bg-canvas text-fg">
+      <header className="rounded-b-xl bg-surface shadow-menu">
+        <div className="mx-auto flex max-w-[1283px] flex-wrap items-center justify-between gap-4 px-4 py-3 md:px-6">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setNavOpen(o => !o)}
+              className="-ms-1 rounded-lg p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg md:hidden"
+              aria-label={navOpen ? 'Close navigation' : 'Open navigation'}
+              aria-expanded={navOpen}
+            >
+              {navOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+            {/* The supplied mark is dark purple: keep it on a white chip so it survives dark mode. */}
+            <span className="inline-flex items-center rounded-lg bg-white px-2 py-1">
+              <img src="/menora-mivtachim-logo.png" alt="{{artifactId}}" className="h-auto w-[88px]" />
+            </span>
+            <div className="hidden leading-tight sm:block">
+              <div className="text-[11px] uppercase tracking-wider text-muted">{{artifactId}}</div>
+              <h1 className="text-sm font-semibold text-fg">{current?.label ?? 'Dashboard'}</h1>
+            </div>
+          </div>
+
+          {/* Static nav row (tablet and up) */}
+          <nav className="hidden items-center gap-2 md:flex" aria-label="Main">
+            {navItems}
+          </nav>
+
+          <button
+            onClick={toggle}
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-brand bg-surface px-5 text-sm font-medium text-brand transition-colors hover:bg-brand/10"
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label="Toggle theme"
+          >
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
+        </div>
+
+        {/* Collapsible nav (mobile) */}
+        {navOpen && (
+          <nav className="flex flex-col gap-1 border-t border-border px-4 py-3 md:hidden" aria-label="Main">
+            {navItems}
+          </nav>
+        )}
+      </header>
+
+      <main className="flex-1 overflow-auto">
+        {view === 'dashboard' && <DashboardPage onNavigate={v => go(v as View)} />}
+{{#entities}}
+        {view === '{{entityNameKebab}}' && <{{EntityName}}Page />}
+{{/entities}}
+      </main>
+
+      <footer className="bg-ink px-4 py-6 text-center text-sm font-light text-white">
+        {{artifactId}} · v0.0.1
+      </footer>
+
+      <div className="fixed bottom-0 end-0 z-40">
+        <ChatLauncher />
+      </div>
+
+      <Toaster richColors position={ {{#isRtl}}'top-left'{{/isRtl}}{{^isRtl}}'top-right'{{/isRtl}} } theme={isDark ? 'dark' : 'light'} />
+    </div>
+  )
+}

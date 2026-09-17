@@ -1,0 +1,113 @@
+@import "tailwindcss";
+/* Menora Digital tokens + .mn-* component classes (laid down by the design-menora-digital dep). */
+@import './shared/ui/menora/tokens.css';
+@import './shared/ui/menora/components.css';
+
+/* Class-based dark mode (toggled by adding `dark` to <html>). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Menora Digital theme (Tailwind v4 @theme) — the customer-site design system
+ * (menoramivt.co.il), not the palette picker: brand tokens are fixed here.
+ *
+ *  - brand = purple #684eed — IDENTITY: the active nav item, outlined borders, focus ring, hover tints.
+ *  - primary = yellow #ffc700 — the ONLY action fill (New / Save / Edit / CTA pills), label = ink.
+ *    Yellow pills do not change colour on hover (primary-deep == primary), only the cursor.
+ *  - ink = #37374e — headings, labels and the dark footer band; the page ground is #f8f8f8.
+ *  - success / danger still come from the selected palette's accent / error (fallbacks below).
+ *  - dark mode (the `dark` class set by useTheme) re-points the same tokens to the design system's
+ *    dark values in the `.dark` block below; tokens.css (imported above) flips the .mn-* components too.
+ *  - radii: rounded-lg 10px (menus/controls), rounded-xl 20px (sheets), rounded-2xl 30px (cards).
+ *  - shadows: shadow-card under white surfaces, shadow-cta under every yellow pill.
+ *
+ * The shared components only use these utility names, so re-pointing the tokens re-skins the
+ * whole CRUD app; `.bg-app-shell` / `.bg-app-bar` are kept as flat surfaces for compatibility.
+ */
+@theme {
+  --color-brand:        #684eed;
+  --color-brand-deep:   #5a3fd6;
+  --color-ink:          #37374e;
+  --color-ink-soft:     color-mix(in srgb, #37374e 86%, white);
+  --color-gold:         #ffc700;
+  --color-primary:      #ffc700;
+  --color-primary-deep: #ffc700;
+  --color-on-primary:   #37374e;
+  --color-success:      {{#hasPaletteAccent}}{{palette.accent}}{{/hasPaletteAccent}}{{^hasPaletteAccent}}#16a34a{{/hasPaletteAccent}};
+  --color-danger:       {{#hasPaletteError}}{{palette.error}}{{/hasPaletteError}}{{^hasPaletteError}}#dc2626{{/hasPaletteError}};
+
+  /* Neutral chrome — light defaults (flipped under .dark). */
+  --color-canvas:       #f8f8f8;
+  --color-surface:      #ffffff;
+  --color-surface-2:    #f4f1ff;
+  --color-fg:           #37374e;
+  --color-muted:        #725a89;
+  --color-border:       #725a891f;
+  --color-ring:         #684eed;
+
+  --radius-lg:          10px;
+  --radius-xl:          20px;
+  --radius-2xl:         30px;
+
+  --shadow-card:        0 27px 36px 0 rgba(55, 56, 78, 0.10);
+  --shadow-menu:        0 14px 44px 0 rgba(118, 118, 130, 0.12);
+  --shadow-cta:         0 8px 13px -3px #fbe38e;
+  --shadow-chat:        0 6px 37px 2px #fbe38e;
+
+  --font-sans:          'Almoni', 'Assistant', Arial, sans-serif;
+}
+
+/*
+ * Dark theme — the design system's own dark tokens (designed from the brand colours; the site has no
+ * dark mode): grounds are the footer slate deepened, never neutral grey or black; purple lifts to
+ * #a393ff (the light #684eed drops to 3:1 on slate); yellow and its ink label do not move; shadows go
+ * black-based and the white-12% hairline does more of the elevation work.
+ * Tailwind v4 utilities read these variables at use time, so overriding them here re-skins every
+ * `bg-brand` / `shadow-card` / … utility without touching the components.
+ */
+.dark {
+  --color-brand:        #a393ff;
+  --color-brand-deep:   #8f7cf5;
+  --color-ink:          #12121c;
+  --color-ink-soft:     color-mix(in srgb, #12121c 80%, white);
+  --color-canvas:       #1e1e2f;
+  --color-surface:      #2b2b41;
+  --color-surface-2:    #272341;
+  --color-fg:           #f1f0f7;
+  --color-muted:        #b8acd6;
+  --color-border:       #ffffff1f;
+  --color-ring:         #a393ff;
+
+  --shadow-card:        0 27px 36px 0 rgba(0, 0, 0, 0.35);
+  --shadow-menu:        0 14px 44px 0 rgba(0, 0, 0, 0.45);
+  --shadow-cta:         0 8px 16px -3px rgba(255, 199, 0, 0.28);
+  --shadow-chat:        0 6px 37px 2px rgba(255, 199, 0, 0.22);
+}
+
+/* Kept for templates that reference the default set's gradient utilities — flat Menora surfaces here. */
+.bg-app-shell {
+  background-color: var(--color-ink);
+}
+.bg-app-bar {
+  background-color: var(--color-surface);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  background-color: var(--color-canvas);
+  color: var(--color-fg);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Thin, theme-aware scrollbars so the dark mode doesn't show bright gutters. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}

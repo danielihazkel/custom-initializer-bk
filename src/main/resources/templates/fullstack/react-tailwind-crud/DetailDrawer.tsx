@@ -85,7 +85,7 @@ export function DetailDrawer({ open, title, subtitle, onClose, onEdit, children 
           {onEdit && (
             <button
               onClick={onEdit}
-              className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
             >
               <Pencil className="h-4 w-4" />
               Edit

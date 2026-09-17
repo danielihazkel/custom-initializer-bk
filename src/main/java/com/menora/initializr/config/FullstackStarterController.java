@@ -68,6 +68,8 @@ public class FullstackStarterController {
 
     private static final String DEFAULT_BACKEND_SET = "spring-jpa-crud";
     private static final String DEFAULT_FRONTEND_SET = "react-tailwind-crud";
+    /** Standalone design-system dep reused by template sets tagged {@code MENORA_DIGITAL}. */
+    private static final String DESIGN_MENORA_DIGITAL_DEP = "design-menora-digital";
 
     private final ProjectGenerationInvoker<ProjectRequest> invoker;
     private final InitializrMetadataProvider metadataProvider;
@@ -346,6 +348,14 @@ public class FullstackStarterController {
                                 Path targetDir) throws IOException {
         // 1. Substrate — reuse the standalone frontend generator.
         FrontendProjectDescription desc = buildFrontendDescription(request, colorPaletteId);
+        if (set.getDesignSystem() == EntityTemplateSetEntity.DesignSystem.MENORA_DIGITAL) {
+            // The Menora Digital set builds on the standalone design-system dep: selecting it here
+            // lays down the tokens/component ports under src/shared/ui/menora/, the brand logo in
+            // public/, and the @fontsource/assistant npm dep — the overlay then re-skins the
+            // Tailwind theme/shell on top. (Its substrate index.css/App.tsx/HomePage are overwritten
+            // or deleted by the overlay exactly like the default set's.)
+            desc.getDependencies().add(DESIGN_MENORA_DIGITAL_DEP);
+        }
         frontendGenerator.renderInto(targetDir, desc);
         // The standalone landing page is replaced by the per-entity pages below.
         FileSystemUtils.deleteRecursively(targetDir.resolve("src/pages/home"));
@@ -399,8 +409,10 @@ public class FullstackStarterController {
     /**
      * Builds the {@link FrontendProjectDescription} that drives substrate generation. The paired
      * backend is known from the same request, so dev {@code .env}/Vite-proxy wiring is enabled by
-     * default. No frontend deps are defaulted — the fullstack styling/tooling stack ships via the
-     * overlay and the {@code __common__} substrate, not via selectable frontend dependencies.
+     * default. No frontend deps are defaulted here — the fullstack styling/tooling stack ships via the
+     * overlay and the {@code __common__} substrate, not via selectable frontend dependencies. The one
+     * exception is added by {@link #renderFrontend}: a set tagged {@code MENORA_DIGITAL} pulls in the
+     * standalone {@code design-menora-digital} dep so its tokens/components/logo are reused.
      */
     private FrontendProjectDescription buildFrontendDescription(WebProjectRequest request, String colorPaletteId) {
         FrontendProjectDescription desc = new FrontendProjectDescription();

@@ -11,6 +11,10 @@
   { "sourceDepId": "design-mui", "targetDepId": "design-chakra", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 3 },
   { "sourceDepId": "design-mui", "targetDepId": "design-mantine", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 4 },
   { "sourceDepId": "design-chakra", "targetDepId": "design-mantine", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 5 },
+  { "sourceDepId": "design-shadcn", "targetDepId": "design-menora-digital", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 6 },
+  { "sourceDepId": "design-mui", "targetDepId": "design-menora-digital", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 7 },
+  { "sourceDepId": "design-chakra", "targetDepId": "design-menora-digital", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 8 },
+  { "sourceDepId": "design-mantine", "targetDepId": "design-menora-digital", "relationType": "CONFLICTS", "description": "Pick one design system", "sortOrder": 9 },
   { "sourceDepId": "form-react-hook-form", "targetDepId": "form-zod", "relationType": "RECOMMENDS", "description": "Pair RHF with Zod via @hookform/resolvers for typed validation", "sortOrder": 0 },
   { "sourceDepId": "api-client-openapi", "targetDepId": "data-tanstack-query", "relationType": "RECOMMENDS", "description": "Typed OpenAPI hooks are most useful with TanStack Query", "sortOrder": 1 }
 ]

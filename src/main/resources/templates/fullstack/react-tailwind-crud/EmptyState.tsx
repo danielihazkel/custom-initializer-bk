@@ -22,7 +22,7 @@ export function EmptyState({ icon: Icon = Inbox, title, hint, action }: Props) {
       {action && (
         <button
           onClick={action.onClick}
-          className="mt-1 rounded-lg bg-brand px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
+          className="mt-1 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
         >
           {action.label}
         </button>

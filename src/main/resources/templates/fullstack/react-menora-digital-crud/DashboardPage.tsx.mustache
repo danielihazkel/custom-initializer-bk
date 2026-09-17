@@ -1,0 +1,171 @@
+import { useEffect, useState } from 'react'
+import { ArrowRight, LayoutGrid, Table2 } from 'lucide-react'
+import { api } from '@shared/api'
+
+interface CardDef {
+  label: string
+  view: string
+  path: string
+}
+
+const CARDS: CardDef[] = [
+{{#entities}}
+  { label: '{{entityLabelPlural}}', view: '{{entityNameKebab}}', path: '/api/{{entityNamePluralKebab}}' },
+{{/entities}}
+]
+
+interface ChartDef {
+  label: string
+  path: string
+  field: string
+}
+
+// One breakdown per entity that has a low-cardinality (enum/boolean) field — derived server-side.
+const CHARTS: ChartDef[] = [
+{{#entities}}{{#hasBreakdown}}  { label: '{{entityLabelPlural}} by {{breakdownLabel}}', path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}' },
+{{/hasBreakdown}}{{/entities}}]
+
+/** Reads just the page metadata (size=1) to surface a live record count per entity. */
+function useCount(path: string) {
+  const [count, setCount] = useState<number | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    api.get<{ totalElements: number }>(`${path}?size=1`)
+      .then(p => { if (active) setCount(p.totalElements) })
+      .catch(() => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [path])
+
+  return { count, failed }
+}
+
+/** Fetches a page and groups it by `field` to chart value distribution — client-side, no extra API. */
+function useBreakdown(path: string, field: string) {
+  const [data, setData] = useState<{ label: string; count: number }[] | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    api.get<{ content: Record<string, unknown>[] }>(`${path}?size=200`)
+      .then(p => {
+        if (!active) return
+        const counts = new Map<string, number>()
+        for (const row of p.content ?? []) {
+          const key = row[field] == null ? '—' : String(row[field])
+          counts.set(key, (counts.get(key) ?? 0) + 1)
+        }
+        setData(Array.from(counts, ([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count))
+      })
+      .catch(() => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [path, field])
+
+  return { data, failed }
+}
+
+function BarChart({ data }: { data: { label: string; count: number }[] }) {
+  const max = data.reduce((m, d) => Math.max(m, d.count), 0) || 1
+  return (
+    <div className="space-y-2">
+      {data.map(d => (
+        <div key={d.label} className="flex items-center gap-3 text-sm">
+          <div className="w-28 shrink-0 truncate text-muted" title={d.label}>{d.label}</div>
+          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+            <div className="h-full rounded-full bg-brand" style={{ width: `${(d.count / max) * 100}%` }} />
+          </div>
+          <div className="w-8 shrink-0 text-end tabular-nums text-fg">{d.count}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ChartCard({ chart }: { chart: ChartDef }) {
+  const { data, failed } = useBreakdown(chart.path, chart.field)
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+      <div className="mb-4 text-sm font-semibold text-fg">{chart.label}</div>
+      {failed ? (
+        <div className="text-sm text-muted">Couldn’t load data.</div>
+      ) : data == null ? (
+        <div className="text-sm text-muted">…</div>
+      ) : data.length === 0 ? (
+        <div className="text-sm text-muted">No records yet.</div>
+      ) : (
+        <BarChart data={data} />
+      )}
+    </div>
+  )
+}
+
+function StatCard({ card, onNavigate }: { card: CardDef; onNavigate: (view: string) => void }) {
+  const { count, failed } = useCount(card.path)
+  return (
+    <button
+      onClick={() => onNavigate(card.view)}
+      className="group flex flex-col rounded-2xl border border-border bg-surface p-5 text-start shadow-card transition-all hover:-translate-y-0.5 hover:border-brand/40"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10 text-brand">
+          <Table2 className="h-5 w-5" />
+        </div>
+        <ArrowRight className="h-4 w-4 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+      </div>
+      <div className="mt-4 text-3xl font-semibold tabular-nums tracking-tight text-fg">
+        {failed ? '—' : count == null ? <span className="text-muted">…</span> : count}
+      </div>
+      <div className="mt-1 text-sm text-muted">{card.label}</div>
+    </button>
+  )
+}
+
+interface Props {
+  onNavigate: (view: string) => void
+}
+
+export function DashboardPage({ onNavigate }: Props) {
+  return (
+    <div className="mx-auto max-w-6xl p-4 md:p-8">
+      {/* Menora hero: display headline whose full stop is the yellow action colour, a light lead line, one yellow pill CTA. */}
+      <div className="mb-8 rounded-2xl bg-surface p-6 shadow-card md:p-8">
+        <div className="flex items-center gap-2 text-brand">
+          <LayoutGrid className="h-5 w-5" />
+          <span className="text-xs font-semibold uppercase tracking-wider">Overview</span>
+        </div>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight text-fg md:text-4xl">
+          {{#dashboardTitle}}{{dashboardTitle}}{{/dashboardTitle}}{{^dashboardTitle}}Welcome to {{artifactId}}{{/dashboardTitle}}<span className="text-primary">.</span>
+        </h1>
+        <p className="mt-2 max-w-xl text-lg font-light text-muted">
+          {{#dashboardOverview}}{{dashboardOverview}}{{/dashboardOverview}}{{^dashboardOverview}}Manage your data below. Select a collection to browse, search, create, edit and delete records.{{/dashboardOverview}}
+        </p>
+        {CARDS.length > 0 && (
+          <button
+            onClick={() => onNavigate(CARDS[0].view)}
+            className="mt-5 inline-flex min-h-[50px] items-center gap-2 rounded-full bg-primary px-8 text-base font-medium text-on-primary shadow-cta"
+          >
+            {CARDS[0].label}
+            <ArrowRight className="h-4 w-4 rtl:rotate-180" />
+          </button>
+        )}
+      </div>
+
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Collections</h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {CARDS.map(card => (
+          <StatCard key={card.view} card={card} onNavigate={onNavigate} />
+        ))}
+      </div>
+
+      {CHARTS.length > 0 && (
+        <>
+          <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-muted">Breakdowns</h2>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {CHARTS.map(chart => <ChartCard key={chart.label} chart={chart} />)}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}

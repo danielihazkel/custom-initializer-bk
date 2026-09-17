@@ -1,0 +1,69 @@
+import { Hero, ActionDisc, ServiceBubble, MagazineCard, CarouselArrow, Button } from '@shared/ui/menora';
+
+const section = { maxWidth: 'var(--container)', margin: '0 auto', padding: '48px 16px' } as const;
+const panel = {
+  background: 'var(--surface)',
+  borderRadius: 'var(--radius-card)',
+  boxShadow: 'var(--shadow-card)',
+  padding: '25px 16px',
+  display: 'flex',
+  flexWrap: 'wrap',
+  justifyContent: 'center',
+  gap: 16,
+} as const;
+const band = { background: 'var(--surface-lavender)', padding: '48px 0' } as const;
+const row = { display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 25 } as const;
+const cards = { display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 16 } as const;
+const title = { paddingBottom: 25 } as const;
+const more = { textAlign: 'center', marginTop: 25 } as const;
+
+const icon = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M3 10h18" />
+  </svg>
+);
+
+/** Menora Digital showcase — replace with your own content. Layout follows the customer-site homepage. */
+export function HomePage() {
+  return (
+    <main className="mn">
+      <section style={section}>
+        <Hero title="{{appTitle}}." lead="הצטרפו וקבלו עד 50% הנחה" cta="להצטרפות" />
+      </section>
+
+      <section style={section}>
+        <h2 className="mn-h2" style={title}>פעולות נפוצות</h2>
+        <div style={panel}>
+          <ActionDisc label="רכישת ביטוח" icon={icon} />
+          <ActionDisc label="הגשת תביעה" icon={icon} />
+          <ActionDisc label="מצב חשבון" icon={icon} />
+          <ActionDisc label="עדכון פרטים" icon={icon} />
+        </div>
+      </section>
+
+      <section style={band}>
+        <h2 className="mn-h2" style={title}>כל השירותים</h2>
+        <div style={row}>
+          <CarouselArrow direction="prev" />
+          <ServiceBubble label="ביטוח רכב" />
+          <ServiceBubble label="פנסיה וגמל" active />
+          <ServiceBubble label="ביטוח בריאות" />
+          <CarouselArrow direction="next" />
+        </div>
+      </section>
+
+      <section style={section}>
+        <h2 className="mn-h2" style={title}>חשבנו שיעניין אותך</h2>
+        <div style={cards}>
+          <MagazineCard title="מהו איזון אקטוארי?" meta="זמן קריאה: 4 דקות" />
+          <MagazineCard title="איך בוחרים מסלול השקעה" meta="זמן קריאה: 3 דקות" />
+          <MagazineCard title="המומחים מדברים" meta="זמן קריאה: 5 דקות" />
+        </div>
+        <div style={more}>
+          <Button label="לכל הכתבות" variant="text" />
+        </div>
+      </section>
+    </main>
+  );
+}

@@ -1,0 +1,27 @@
+/*
+ * Menora Digital baseline stylesheet (replaces the default src/index.css).
+ * Tokens + component classes live in src/shared/ui/menora/; the Assistant font is loaded in src/main.tsx.
+ */
+@import './shared/ui/menora/tokens.css';
+@import './shared/ui/menora/components.css';
+{{#hasStyleTailwind}}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+{{/hasStyleTailwind}}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--ink-body);
+  font: 500 18px/27px var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--purple);
+}

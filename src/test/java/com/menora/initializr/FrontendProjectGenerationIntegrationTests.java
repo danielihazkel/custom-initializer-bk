@@ -325,6 +325,76 @@ class FrontendProjectGenerationIntegrationTests {
     }
 
     @Test
+    void menoraDigitalShipsTokensComponentsShellAndShowcase() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("design-menora-digital");
+        desc.setRtl(true);
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        // Tokens + component classes + the eight React ports under src/shared/ui/menora/.
+        String tokens = files.get("src/shared/ui/menora/tokens.css");
+        assertThat(tokens)
+                .contains("--yellow: #ffc700").contains("--purple: #684eed")
+                .contains("--font-sans: 'Almoni', 'Assistant', Arial, sans-serif");
+        // Dark theme: the design system's own dark tokens, switched on data-theme="dark" (and .dark).
+        assertThat(tokens)
+                .contains(":root[data-theme=\"dark\"]").contains(":root.dark")
+                .contains("--surface-page: #1e1e2f").contains("--purple: #a393ff")
+                .contains("--shadow-cta: 0 8px 16px -3px rgba(255, 199, 0, 0.28)");
+        assertThat(files.get("src/shared/ui/menora/components.css"))
+                .contains(".mn-btn--primary").contains("focus-visible").doesNotContain("direction: rtl");
+        for (String c : List.of("Button", "NavLinks", "ActionDisc", "ServiceBubble",
+                "MagazineCard", "CarouselArrow", "ChatLauncher", "Hero", "ThemeToggle")) {
+            assertThat(files).containsKey("src/shared/ui/menora/" + c + ".tsx");
+        }
+        assertThat(files.get("src/shared/ui/menora/useMenoraTheme.ts")).contains("data-theme");
+        assertThat(files.get("src/shared/ui/menora/index.ts")).contains("export { Hero }").contains("export { ThemeToggle }");
+
+        // The Menora baseline replaces src/index.css (no Tailwind directives unless selected).
+        assertThat(files.get("src/index.css"))
+                .contains("@import './shared/ui/menora/tokens.css'")
+                .contains("background: var(--surface-page)")
+                .doesNotContain("@tailwind");
+
+        // Shell + showcase home + Assistant font, and no theme.ts (not a palette-driven design system).
+        assertThat(files.get("src/app/App.tsx"))
+                .contains("/menora-mivtachim-logo.png").contains("<ChatLauncher />").contains("<NavLinks")
+                .contains("<ThemeToggle />").contains("mn-logo-chip")
+                .doesNotContain("shellHeaderStyle");
+        assertThat(files.get("src/pages/home/ui/HomePage.tsx")).contains("<Hero title=\"Demo.\"").contains("ServiceBubble");
+        assertThat(files.get("src/main.tsx")).contains("@fontsource/assistant/500.css");
+        assertThat(files.get("package.json")).contains("@fontsource/assistant");
+        assertThat(files).doesNotContainKey("src/shared/theme/theme.ts");
+        assertThat(files.get("index.html")).contains("dir=\"rtl\"");
+        // Brand mark copied next to the common logo (binary — read as the [binary] marker).
+        assertThat(files).containsKey("public/menora-mivtachim-logo.png");
+        assertThat(files).containsKey("public/logo.png");
+    }
+
+    @Test
+    void menoraDigitalWithTailwindKeepsTailwindDirectives() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("style-tailwind");
+        desc.getDependencies().add("design-menora-digital");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files.get("src/index.css"))
+                .contains("@import './shared/ui/menora/components.css'")
+                .contains("@tailwind base");
+    }
+
+    @Test
+    void withoutMenoraDigitalNoMenoraFilesOrLogo() throws Exception {
+        FrontendProjectDescription desc = baseDescription("demo");
+        desc.getDependencies().add("design-none");
+        Map<String, String> files = generator.generateFileMap(desc);
+
+        assertThat(files).doesNotContainKey("public/menora-mivtachim-logo.png");
+        assertThat(files.keySet()).noneMatch(k -> k.startsWith("src/shared/ui/menora/"));
+        assertThat(files.get("src/main.tsx")).doesNotContain("@fontsource/assistant");
+    }
+
+    @Test
     void designNoneIgnoresPalette() throws Exception {
         FrontendProjectDescription desc = baseDescription("demo");
         desc.getDependencies().add("design-none");
@@ -720,6 +790,23 @@ class FrontendProjectGenerationIntegrationTests {
         String pkg = readZipEntry(r.getBody(), "demo/package.json");
         assertThat(pkg).contains("@mui/material");
         assertThat(pkg).doesNotContain("@chakra-ui/react");
+    }
+
+    @Test
+    void menoraDigitalConflictsWithTheOtherDesignSystems() throws Exception {
+        // design-mantine CONFLICTS design-menora-digital (seeded) — the later selection is dropped
+        // in either order.
+        ResponseEntity<byte[]> r = rest.getForEntity(
+                "/frontend/starter.zip?dependencies=design-mantine,design-menora-digital", byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String pkg = readZipEntry(r.getBody(), "demo/package.json");
+        assertThat(pkg).contains("@mantine/core").doesNotContain("@fontsource/assistant");
+
+        r = rest.getForEntity(
+                "/frontend/starter.zip?dependencies=design-menora-digital,design-mantine", byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        pkg = readZipEntry(r.getBody(), "demo/package.json");
+        assertThat(pkg).contains("@fontsource/assistant").doesNotContain("@mantine/core");
     }
 
     @Test

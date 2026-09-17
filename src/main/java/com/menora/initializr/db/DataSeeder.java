@@ -132,6 +132,7 @@ public class DataSeeder implements SmartInitializingSingleton {
         seedEntityTemplateSet("templates/fullstack/spring-jpa-crud/");
         seedEntityTemplateSet("templates/fullstack/spring-jpa-crud-lombok/");
         seedEntityTemplateSet("templates/fullstack/react-tailwind-crud/");
+        seedEntityTemplateSet("templates/fullstack/react-menora-digital-crud/");
     }
 
     private void seedEntityTemplateSet(String baseDir) throws IOException {
@@ -560,6 +561,9 @@ public class DataSeeder implements SmartInitializingSingleton {
                 "Warm neutrals with terracotta accent", "#2f3437", "#787774", "#d9730d", "#e03e3e", false, 7);
         colorPalette("tailwind-sky", "Tailwind Sky",
                 "Tailwind sky/rose default-ish pairing", "#0ea5e9", "#f43f5e", "#a855f7", "#dc2626", false, 8);
+        // The customer-site brand (menoramivt.co.il): purple is identity, yellow is the action colour.
+        colorPalette("menora-digital", "Menora Digital",
+                "Menora Mivtachim customer-site purple with the yellow action colour", "#684eed", "#ffc700", null, null, false, 9);
     }
 
     private void colorPalette(String paletteId, String name, String description,

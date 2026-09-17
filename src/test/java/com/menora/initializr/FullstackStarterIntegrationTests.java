@@ -811,13 +811,80 @@ class FullstackStarterIntegrationTests {
         String app = entries.get("shop/frontend/src/app/App.tsx");
         assertThat(app).contains("bg-app-shell").contains("text-gold").contains("border-gold");
         assertThat(app).doesNotContain("emerald");
-        assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx")).contains("bg-brand");
-        assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("bg-brand");
+        // Primary actions use the semantic action tokens (aliased to brand + white text in this set).
+        assertThat(css).contains("--color-primary:").contains("--color-on-primary:   #ffffff");
+        assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx")).contains("bg-primary").contains("text-on-primary");
+        assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("bg-primary");
+        // The default set does not pull in the Menora Digital design-system dep.
+        assertThat(entries).doesNotContainKey("shop/frontend/public/menora-mivtachim-logo.png");
+        assertThat(entries.keySet()).noneMatch(k -> k.startsWith("shop/frontend/src/shared/ui/menora/"));
 
         // Brand logo asset shipped and referenced in the sidebar + favicon.
         assertThat(entries).containsKey("shop/frontend/public/logo.png");
         assertThat(app).contains("/logo.png").doesNotContain("Database");
         assertThat(entries.get("shop/frontend/index.html")).contains("/logo.png");
+    }
+
+    @Test
+    void fullstackEndpoint_menoraDigitalSetReskinsTheFrontend() throws Exception {
+        // frontendTemplateSet=react-menora-digital-crud: the overlay re-points the Tailwind theme to
+        // the Menora Digital tokens (yellow action pills with ink labels, purple identity, #f8f8f8
+        // ground, Assistant font), swaps the shell for the white top-bar layout, and — because the
+        // set is tagged MENORA_DIGITAL — the substrate lays down the design-menora-digital dep's
+        // tokens/components/logo. Every other file is borrowed from react-tailwind-crud.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("frontendTemplateSet", "react-menora-digital-crud");
+        body.put("opts", Map.of("scaffold", List.of("rtl")));
+        body.put("entities", List.of(
+                Map.of("name", "User", "fields", List.of(pkField())),
+                Map.of("name", "Order", "fields", List.of(pkField()))));
+        Map<String, String> entries = generateZip(body);
+
+        String css = entries.get("shop/frontend/src/index.css");
+        assertThat(css)
+                .contains("@import \"tailwindcss\"")
+                .contains("@import './shared/ui/menora/tokens.css'")
+                .contains("--color-primary:      #ffc700")
+                .contains("--color-on-primary:   #37374e")
+                .contains("--color-brand:        #684eed")
+                .contains("--color-canvas:       #f8f8f8")
+                .contains("--radius-2xl:         30px")
+                .contains("'Assistant'")
+                // dark mode re-points the same tokens to the design system's dark values
+                .contains("--color-brand:        #a393ff").contains("--color-canvas:       #1e1e2f")
+                .doesNotContain("#9A83F7").doesNotContain("#2B2F4C");
+
+        assertThat(entries.get("shop/frontend/package.json"))
+                .contains("@fontsource/assistant").doesNotContain("@fontsource/inter");
+        assertThat(entries.get("shop/frontend/src/main.tsx")).contains("@fontsource/assistant/500.css");
+
+        String app = entries.get("shop/frontend/src/app/App.tsx");
+        assertThat(app)
+                .contains("/menora-mivtachim-logo.png").contains("<ChatLauncher />")
+                .contains("UserPage").contains("OrderPage")
+                .contains("position={ 'top-left' }")
+                .doesNotContain("bg-app-shell");
+
+        // Dashboard hero: yellow full stop + yellow pill CTA.
+        assertThat(entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx"))
+                .contains("<span className=\"text-primary\">.</span>")
+                .contains("bg-primary px-8 text-base font-medium text-on-primary shadow-cta");
+
+        // Borrowed files are present and unchanged; the shared action buttons use the semantic tokens.
+        assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx")).contains("onSortChange");
+        assertThat(entries).containsKey("shop/frontend/src/shared/api/useResource.ts");
+        assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx")).contains("bg-primary").contains("text-on-primary");
+        assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("bg-primary");
+
+        // Design-system substrate files + brand mark; the standalone landing page is still removed.
+        assertThat(entries).containsKey("shop/frontend/src/shared/ui/menora/tokens.css");
+        assertThat(entries).containsKey("shop/frontend/src/shared/ui/menora/ChatLauncher.tsx");
+        assertThat(entries).containsKey("shop/frontend/public/menora-mivtachim-logo.png");
+        assertThat(entries.keySet()).noneMatch(k -> k.startsWith("shop/frontend/src/pages/home/"));
+        assertThat(entries.get("shop/frontend/index.html")).contains("dir=\"rtl\"");
     }
 
     @Test

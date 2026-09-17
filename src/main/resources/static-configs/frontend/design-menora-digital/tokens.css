@@ -1,0 +1,120 @@
+/*
+ * Menora Digital — design tokens (light + dark).
+ * Source: Menora Mivtachim customer site (https://www.menoramivt.co.il/), computed styles read 2026-09-16.
+ * The light theme is extracted from the site; dark is designed for this system from the brand's own colours
+ * (the site itself has no dark mode).
+ *
+ * Theme switch: `data-theme="dark"` on <html> (the design system's convention) — `class="dark"` is honoured
+ * too so the same tokens work next to Tailwind's class-based dark variant. Components need no changes when
+ * every colour comes from a token.
+ *
+ * Typography: the brand face is Almoni Neue (licensed, served from the brand CDN — NOT bundled here).
+ * The generated project self-hosts Assistant (Google Fonts, Hebrew) via @fontsource/assistant as the
+ * sanctioned fallback; teams that own the Almoni licence drop the woff files in and keep --font-sans as is.
+ *
+ * Rules of thumb (see the design-system README):
+ *  - Ground is --surface-page; --surface is for things that sit on it (header, cards, bubbles).
+ *  - --yellow is the ONLY action fill and is identical in both themes; anything on it uses --on-yellow,
+ *    which stays dark slate in dark mode — never put --ink on yellow.
+ *  - --purple is identity, not action (nav "portal" item, outlined borders, focus rings, hover tints);
+ *    it lifts to #a393ff in dark because #684eed falls to 3:1 on slate.
+ *  - Elevation: shadows in light; in dark the shadows go black-based and the --line hairline (white 12%)
+ *    does more of the work.
+ *  - The supplied logo PNG is dark purple: keep it on a white chip in dark mode (never recolour it).
+ */
+:root {
+  color-scheme: light;
+
+  /* Colour */
+  --surface: #ffffff;
+  --surface-page: #f8f8f8;
+  --surface-subtle: #fbfbfb;
+  --surface-muted: #ededed;
+  --surface-lavender: #f4f1ff;
+  --lavender: #ede9fe;
+  --surface-dark: #37374e;
+  --ink: #37374e;
+  --ink-body: #37374ef0;
+  --ink-alt: #37384e;
+  --on-dark: #ffffff;
+  --on-yellow: #37374e;
+  --yellow: #ffc700;
+  --yellow-bright: #ffd028;
+  --yellow-glow: #fbe38e;
+  --purple: #684eed;
+  --purple-deep: #320f5b;
+  --purple-hover: #684eed14;
+  --line: #725a891f;
+  --line-strong: #725a89;
+  --link-blue: #006ce7;
+  --black: #000000;
+
+  /* Type */
+  --font-sans: 'Almoni', 'Assistant', Arial, sans-serif;
+  --font-system: Arial, sans-serif;
+
+  /* Spacing */
+  --space-1: 6px;
+  --space-2: 10px;
+  --space-3: 15px;
+  --space-4: 16px;
+  --space-5: 25px;
+  --space-6: 33px;
+  --space-8: 48px;
+  --container: 1140px;
+  --container-wide: 1283px;
+
+  /* Radius */
+  --radius-tab: 5px;
+  --radius-menu: 10px;
+  --radius-sheet: 20px;
+  --radius-card: 30px;
+  --radius-pill: 30px;
+  --radius-pill-lg: 35px;
+  --radius-chat: 39px;
+  --radius-circle: 50%;
+
+  /* Shadow */
+  --shadow-card: 0 27px 36px 0 rgba(55, 56, 78, 0.10);
+  --shadow-bubble: 0 37px 142px 4px rgba(55, 56, 78, 0.10);
+  --shadow-menu: 0 14px 44px 0 rgba(118, 118, 130, 0.12);
+  --shadow-cta: 0 8px 13px -3px #fbe38e;
+  --shadow-chat: 0 6px 37px 2px #fbe38e;
+  --shadow-overlay: 0 4px 10px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* Dark theme — grounds are the footer slate deepened (never neutral grey or black); yellow does not move. */
+:root[data-theme="dark"],
+:root.dark {
+  color-scheme: dark;
+
+  --surface: #2b2b41;
+  --surface-page: #1e1e2f;
+  --surface-subtle: #26263a;
+  --surface-muted: #34344c;
+  --surface-lavender: #272341;
+  --lavender: #3d3566;
+  --surface-dark: #12121c;
+  --ink: #f1f0f7;
+  --ink-body: #f1f0f7f0;
+  --ink-alt: #f1f0f7;
+  --on-dark: #ffffff;
+  --on-yellow: #37374e;
+  --yellow: #ffc700;
+  --yellow-bright: #ffd028;
+  --yellow-glow: #ffc70040;
+  --purple: #a393ff;
+  --purple-deep: #c9bfff;
+  --purple-hover: #a393ff1f;
+  --line: #ffffff1f;
+  --line-strong: #b8acd6;
+  --link-blue: #6fb3ff;
+  --black: #000000;
+
+  --shadow-card: 0 27px 36px 0 rgba(0, 0, 0, 0.35);
+  --shadow-bubble: 0 37px 142px 4px rgba(0, 0, 0, 0.45);
+  --shadow-menu: 0 14px 44px 0 rgba(0, 0, 0, 0.45);
+  --shadow-cta: 0 8px 16px -3px rgba(255, 199, 0, 0.28);
+  --shadow-chat: 0 6px 37px 2px rgba(255, 199, 0, 0.22);
+  --shadow-overlay: 0 4px 10px 0 rgba(0, 0, 0, 0.6);
+}

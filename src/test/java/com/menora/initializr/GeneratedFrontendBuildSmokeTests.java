@@ -75,6 +75,25 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void menoraDigitalFrontendProjectInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Menora Digital design system: plain-CSS tokens + React component ports + the
+        // Assistant font (needs @fontsource/assistant on the npm mirror). RTL on, as the brand is.
+        Path project = fetchAndExtract(workDir,
+                "/frontend/starter.zip?projectName=smoke-menora&dependencies=design-menora-digital&rtl=true");
+        runPnpm(project, "install", "--prefer-offline");
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void menoraDigitalWithTailwindProjectInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Co-selected with Tailwind: the Menora index.css keeps the @tailwind directives.
+        Path project = fetchAndExtract(workDir,
+                "/frontend/starter.zip?projectName=smoke-menora-tw&dependencies=style-tailwind,design-menora-digital");
+        runPnpm(project, "install", "--prefer-offline");
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void advertisedFeaturesProjectInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // Pulls together Playwright + Storybook + shadcn components + MSAL with all
         // of their sub-options selected — the combo the "finish what's advertised"

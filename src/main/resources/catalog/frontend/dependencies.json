@@ -41,7 +41,8 @@
         { "depId": "design-shadcn", "name": "shadcn/ui", "description": "Tailwind + Radix copy-paste components (requires Tailwind)", "sortOrder": 1 },
         { "depId": "design-mui", "name": "Material UI (MUI)", "description": "Comprehensive React component library implementing Material Design", "sortOrder": 2, "compatibilityRange": "[18.0.0,19.0.0)" },
         { "depId": "design-chakra", "name": "Chakra UI", "description": "Modular, accessible component library powered by Emotion", "sortOrder": 3, "compatibilityRange": "[18.0.0,19.0.0)" },
-        { "depId": "design-mantine", "name": "Mantine", "description": "Full-featured components plus a rich React hooks library", "sortOrder": 4, "compatibilityRange": "[18.0.0,19.0.0)" }
+        { "depId": "design-mantine", "name": "Mantine", "description": "Full-featured components plus a rich React hooks library", "sortOrder": 4, "compatibilityRange": "[18.0.0,19.0.0)" },
+        { "depId": "design-menora-digital", "name": "Menora Digital", "description": "Menora Mivtachim brand system — CSS tokens + .mn-* components, RTL-first, Assistant font", "sortOrder": 5 }
       ]
     },
     {

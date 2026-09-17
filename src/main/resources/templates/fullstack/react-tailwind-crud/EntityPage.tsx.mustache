@@ -252,7 +252,7 @@ export function {{EntityName}}Page() {
           </button>
 {{/optScaffoldCsvExport}}{{#mutable}}          <button
             onClick={openNew}
-            className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-deep"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
           >
             <Plus className="h-4 w-4" />
             New {{entityLabel}}
@@ -301,7 +301,7 @@ export function {{EntityName}}Page() {
             <button
               onClick={runBulkUpdate}
               disabled={!bulkField || bulkUpdating}
-              className="inline-flex items-center gap-2 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-deep disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-50"
             >
               <PencilLine className="h-4 w-4" />
               Apply

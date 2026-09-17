@@ -20,10 +20,18 @@
  * text-fg, text-muted, border-border, ring-ring. The signature Menora purple→gold
  * gradient is exposed as the plain utilities `.bg-app-shell` (vertical) and `.bg-app-bar`
  * (horizontal), defined outside `@theme` below.
+ *
+ * Semantic ACTION tokens (bg-primary / text-on-primary / hover:bg-primary-deep) drive the
+ * primary buttons (New / Save / Edit / empty-state CTA). Here they alias the brand colour with
+ * white text; a design-system variant set (e.g. Menora Digital) re-points them — yellow with
+ * ink text — without touching the shared components.
  */
 @theme {
   --color-brand:      {{palette.primary}};
   --color-brand-deep: color-mix(in srgb, {{palette.primary}} 85%, black);
+  --color-primary:      {{palette.primary}};
+  --color-primary-deep: color-mix(in srgb, {{palette.primary}} 85%, black);
+  --color-on-primary:   #ffffff;
   --color-ink:        #2B2F4C;
   --color-ink-soft:   color-mix(in srgb, #2B2F4C 86%, white);
   --color-gold:       {{palette.secondary}};

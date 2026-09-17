@@ -48,6 +48,7 @@
   { "depId": "design-chakra", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "framer-motion", "version": "^11.3.31", "sortOrder": 3 },
   { "depId": "design-mantine", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@mantine/core", "version": "^7.13.0", "sortOrder": 0 },
   { "depId": "design-mantine", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@mantine/hooks", "version": "^7.13.0", "sortOrder": 1 },
+  { "depId": "design-menora-digital", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@fontsource/assistant", "version": "^5.0.0", "sortOrder": 0 },
 
   { "depId": "form-react-hook-form", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "react-hook-form", "version": "^7.53.0", "sortOrder": 0 },
   { "depId": "form-react-hook-form", "type": "ADD_NPM_DEPENDENCY", "mavenArtifactId": "@hookform/resolvers", "version": "^3.9.0", "sortOrder": 1 },

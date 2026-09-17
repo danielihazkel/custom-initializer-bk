@@ -997,7 +997,7 @@ demo/
 | State Management | `state-zustand`, `state-redux-toolkit`, `state-jotai` | `devtools`, `persist`, `sample-store` |
 | Data Fetching | `data-tanstack-query`, `data-swr` | `devtools`, `axios-base`, `sample-query` |
 | Styling | `style-tailwind`, `style-mui`, `style-styled` | `dark-mode` |
-| Design System | `design-none`, `design-shadcn`, `design-mui`, `design-chakra`, `design-mantine` | — |
+| Design System | `design-none`, `design-shadcn`, `design-mui`, `design-chakra`, `design-mantine`, `design-menora-digital` | — |
 | Forms & Validation | `form-react-hook-form`, `form-zod` | `rhf-zod-resolver`, `sample-form` |
 | Animation | `anim-framer-motion` | — |
 | Testing | `test-vitest-rtl`, `test-playwright`, `test-msw` | `sample-tests`, `ci-config` |

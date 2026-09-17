@@ -3,6 +3,7 @@ package com.menora.initializr.db;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
 import com.menora.initializr.db.entity.DependencyCompatibilityEntity;
 import com.menora.initializr.db.entity.DependencyEntryEntity;
+import com.menora.initializr.db.entity.EntityTemplateSetEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
 import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.repository.BuildCustomizationRepository;
@@ -11,6 +12,7 @@ import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
 import com.menora.initializr.db.repository.DependencyEntryRepository;
 import com.menora.initializr.db.repository.DependencyGroupRepository;
 import com.menora.initializr.db.repository.DependencySubOptionRepository;
+import com.menora.initializr.db.repository.EntityTemplateFileRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetDefaultDepRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetRepository;
 import com.menora.initializr.db.repository.FileContributionRepository;
@@ -53,6 +55,7 @@ class DataSeederTest {
     @Autowired private ColorPaletteRepository colorPaletteRepo;
     @Autowired private VersionDefinitionRepository versionRepo;
     @Autowired private EntityTemplateSetRepository templateSetRepo;
+    @Autowired private EntityTemplateFileRepository templateFileRepo;
     @Autowired private EntityTemplateSetDefaultDepRepository defaultDepRepo;
 
     // ── Dependency catalog (backend) ───────────────────────────────────────────
@@ -285,7 +288,7 @@ class DataSeederTest {
 
     @Test
     void seedsColorPalettes() {
-        assertThat(colorPaletteRepo.findAll()).hasSize(9);
+        assertThat(colorPaletteRepo.findAll()).hasSize(10);
     }
 
     @Test
@@ -303,7 +306,7 @@ class DataSeederTest {
 
     @Test
     void seedsAllFrontendDependencyEntries() {
-        assertThat(entryRepo.findAllByProjectKind(ProjectKind.FRONTEND)).hasSize(28);
+        assertThat(entryRepo.findAllByProjectKind(ProjectKind.FRONTEND)).hasSize(29);
     }
 
     @Test
@@ -311,7 +314,7 @@ class DataSeederTest {
         long feFileContribs = fileContribRepo.findAll().stream()
                 .filter(f -> f.getProjectKind() == ProjectKind.FRONTEND)
                 .count();
-        assertThat(feFileContribs).isEqualTo(83);
+        assertThat(feFileContribs).isEqualTo(98);
 
         // The FSD layer barrels are FRONTEND __common__ rows.
         assertThat(fileContribRepo.findAll()).anySatisfy(f -> {
@@ -328,7 +331,7 @@ class DataSeederTest {
                 .toList();
 
         assertThat(fe).filteredOn(b -> b.getCustomizationType()
-                == BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY).hasSize(69);
+                == BuildCustomizationEntity.CustomizationType.ADD_NPM_DEPENDENCY).hasSize(70);
         assertThat(fe).filteredOn(b -> b.getCustomizationType()
                 == BuildCustomizationEntity.CustomizationType.ADD_VITE_PLUGIN).hasSize(1);
         assertThat(fe).filteredOn(b -> b.getCustomizationType()
@@ -387,7 +390,7 @@ class DataSeederTest {
         List<DependencyCompatibilityEntity> fe = compatibilityRepo.findAll().stream()
                 .filter(c -> c.getProjectKind() == ProjectKind.FRONTEND)
                 .toList();
-        assertThat(fe).hasSize(14);
+        assertThat(fe).hasSize(18);
 
         assertThat(fe).anySatisfy(c -> {
             assertThat(c.getSourceDepId()).isEqualTo("design-shadcn");
@@ -405,6 +408,61 @@ class DataSeederTest {
                 .isEqualTo("[18.0.0,19.0.0)");
         assertThat(entryRepo.findByDepId("design-mantine").orElseThrow().getCompatibilityRange())
                 .isEqualTo("[18.0.0,19.0.0)");
+    }
+
+    @Test
+    void menoraDigitalDesignSystemIsPlainCssAndReactVersionAgnostic() {
+        // Plain CSS tokens + component ports: no React-version range, one npm dep (the Assistant
+        // font), the 15 content rows and a CONFLICTS pair with each of the other four design systems.
+        DependencyEntryEntity entry = entryRepo.findByDepId("design-menora-digital").orElseThrow();
+        assertThat(entry.getCompatibilityRange()).isNull();
+        assertThat(entry.getProjectKind()).isEqualTo(ProjectKind.FRONTEND);
+
+        assertThat(buildCustomRepo.findAll())
+                .filteredOn(b -> "design-menora-digital".equals(b.getDependencyId()))
+                .singleElement()
+                .satisfies(b -> assertThat(b.getMavenArtifactId()).isEqualTo("@fontsource/assistant"));
+
+        List<String> targets = fileContribRepo.findAll().stream()
+                .filter(f -> "design-menora-digital".equals(f.getDependencyId()))
+                .map(FileContributionEntity::getTargetPath)
+                .toList();
+        assertThat(targets).hasSize(15)
+                .contains("src/shared/ui/menora/tokens.css", "src/shared/ui/menora/components.css",
+                        "src/shared/ui/menora/Hero.tsx", "src/shared/ui/menora/index.ts",
+                        "src/shared/ui/menora/useMenoraTheme.ts", "src/shared/ui/menora/ThemeToggle.tsx",
+                        "src/index.css", "src/pages/home/ui/HomePage.tsx");
+
+        assertThat(compatibilityRepo.findAll())
+                .filteredOn(c -> "design-menora-digital".equals(c.getTargetDepId()))
+                .extracting(DependencyCompatibilityEntity::getSourceDepId)
+                .containsExactlyInAnyOrder("design-shadcn", "design-mui", "design-chakra", "design-mantine");
+    }
+
+    @Test
+    void menoraDigitalFullstackSetBorrowsTheTailwindCrudFiles() {
+        // The variant set authors only the theme/shell/dashboard/main/package files and borrows the
+        // rest from react-tailwind-crud via sourceSet — so it must carry the same file paths.
+        EntityTemplateSetEntity set = templateSetRepo.findBySetKey("react-menora-digital-crud").orElseThrow();
+        assertThat(set.getKind()).isEqualTo(EntityTemplateSetEntity.Kind.FRONTEND_REACT);
+        assertThat(set.getDesignSystem()).isEqualTo(EntityTemplateSetEntity.DesignSystem.MENORA_DIGITAL);
+
+        Long tailwindId = templateSetRepo.findBySetKey("react-tailwind-crud").orElseThrow().getId();
+        List<String> tailwindPaths = templateFileRepo.findBySetIdOrderBySortOrderAsc(tailwindId).stream()
+                .map(f -> f.getPathTemplate()).toList();
+        List<String> menoraPaths = templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()).stream()
+                .map(f -> f.getPathTemplate()).toList();
+        assertThat(menoraPaths).containsExactlyInAnyOrderElementsOf(tailwindPaths);
+
+        // Borrowed content is copied verbatim at seed time; authored content differs.
+        assertThat(templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()))
+                .filteredOn(f -> f.getPathTemplate().equals("src/shared/ui/Table.tsx"))
+                .singleElement()
+                .satisfies(f -> assertThat(f.getContent()).contains("onSortChange"));
+        assertThat(templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()))
+                .filteredOn(f -> f.getPathTemplate().equals("src/index.css"))
+                .singleElement()
+                .satisfies(f -> assertThat(f.getContent()).contains("--color-primary:      #ffc700"));
     }
 
     // ── Fullstack template-set default deps ─────────────────────────────────────

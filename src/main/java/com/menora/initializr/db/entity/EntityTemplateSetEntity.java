@@ -30,6 +30,8 @@ public class EntityTemplateSetEntity {
         CHAKRA,
         MANTINE,
         SHADCN,
+        /** Menora Mivtachim customer-site brand system (plain CSS tokens + .mn-* components). */
+        MENORA_DIGITAL,
         NONE
     }
 

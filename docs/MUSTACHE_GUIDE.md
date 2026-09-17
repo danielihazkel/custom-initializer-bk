@@ -372,7 +372,9 @@ Color palette — a nested `palette` map plus gates:
 | `hasPaletteAccent`, `hasPaletteError` | gates |
 
 Dependency / sub-option flags: same `has<Dep>` / `opt<Dep><Option>` PascalCase convention as §3
-(e.g. `hasRouterReactRouter`, `optAuthMsalInitConfig`).
+(e.g. `hasRouterReactRouter`, `optAuthMsalInitConfig`, or `hasDesignMenoraDigital` for `design-menora-digital` — the flag the substrate `fe-app-tsx.mustache` /
+`fe-main-tsx.mustache` branch on; the fullstack `react-menora-digital-crud` set sees it too, because the
+controller adds that dep to the substrate description for sets tagged `MENORA_DIGITAL`)
 
 ### Node-version gating
 
