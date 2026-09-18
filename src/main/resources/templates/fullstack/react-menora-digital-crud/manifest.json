@@ -20,6 +20,8 @@
     {"source": "useResource.ts", "path": "src/shared/api/useResource.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 110, "sourceSet": "react-tailwind-crud"},
     {"source": "useOptions.ts", "path": "src/shared/api/useOptions.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 112, "sourceSet": "react-tailwind-crud"},
     {"source": "shared-api-barrel.ts", "path": "src/shared/api/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 115, "sourceSet": "react-tailwind-crud"},
+    {"source": "i18n-strings.ts.mustache", "path": "src/shared/i18n/strings.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 118, "sourceSet": "react-tailwind-crud"},
+    {"source": "i18n-barrel.ts", "path": "src/shared/i18n/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 119, "sourceSet": "react-tailwind-crud"},
     {"source": "Table.tsx", "path": "src/shared/ui/Table.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 120, "sourceSet": "react-tailwind-crud"},
     {"source": "CardGrid.tsx", "path": "src/shared/ui/CardGrid.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 121, "sourceSet": "react-tailwind-crud"},
     {"source": "KanbanBoard.tsx", "path": "src/shared/ui/KanbanBoard.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 122, "sourceSet": "react-tailwind-crud"},

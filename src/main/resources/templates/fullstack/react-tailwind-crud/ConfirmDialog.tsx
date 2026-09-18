@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
+import { t } from '../i18n'
 
 interface Props {
   open: boolean
@@ -13,7 +14,7 @@ interface Props {
 
 /** Centered confirmation modal for destructive actions (delete). */
 export function ConfirmDialog({
-  open, title, message, confirmLabel = 'Delete', busy, onConfirm, onCancel,
+  open, title, message, confirmLabel = t('delete'), busy, onConfirm, onCancel,
 }: Props) {
   const cancelRef = useRef<HTMLButtonElement>(null)
 
@@ -54,14 +55,14 @@ export function ConfirmDialog({
             onClick={onCancel}
             className="rounded-lg px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-2"
           >
-            Cancel
+            {t('cancel')}
           </button>
           <button
             onClick={onConfirm}
             disabled={busy}
             className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? 'Deleting…' : confirmLabel}
+            {busy ? t('deleting') : confirmLabel}
           </button>
         </div>
       </div>

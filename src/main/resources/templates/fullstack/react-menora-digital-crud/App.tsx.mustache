@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 import { LayoutDashboard, Menu, Moon, Sun, Table2, X } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { useTheme } from '@shared/ui'
+import { t } from '@shared/i18n'
 import { ChatLauncher } from '@shared/ui/menora'
 import { DashboardPage } from '@pages/dashboard'
 {{#entities}}
@@ -12,7 +13,7 @@ import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
 type View = 'dashboard'{{#entities}} | '{{entityNameKebab}}'{{/entities}}
 
 const NAV: { id: View; label: string; icon: LucideIcon }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard },
 {{#entities}}
   { id: '{{entityNameKebab}}', label: '{{entityLabelPlural}}', icon: Table2 },
 {{/entities}}
@@ -59,7 +60,7 @@ export default function App() {
             <button
               onClick={() => setNavOpen(o => !o)}
               className="-ms-1 rounded-lg p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg md:hidden"
-              aria-label={navOpen ? 'Close navigation' : 'Open navigation'}
+              aria-label={navOpen ? t('closeNav') : t('openNav')}
               aria-expanded={navOpen}
             >
               {navOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -70,20 +71,20 @@ export default function App() {
             </span>
             <div className="hidden leading-tight sm:block">
               <div className="text-[11px] uppercase tracking-wider text-muted">{{artifactId}}</div>
-              <h1 className="text-sm font-semibold text-fg">{current?.label ?? 'Dashboard'}</h1>
+              <h1 className="text-sm font-semibold text-fg">{current?.label ?? t('dashboard')}</h1>
             </div>
           </div>
 
           {/* Static nav row (tablet and up) */}
-          <nav className="hidden items-center gap-2 md:flex" aria-label="Main">
+          <nav className="hidden items-center gap-2 md:flex" aria-label={t('main')}>
             {navItems}
           </nav>
 
           <button
             onClick={toggle}
             className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-brand bg-surface px-5 text-sm font-medium text-brand transition-colors hover:bg-brand/10"
-            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-            aria-label="Toggle theme"
+            title={isDark ? t('switchToLight') : t('switchToDark')}
+            aria-label={t('toggleTheme')}
           >
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
@@ -91,7 +92,7 @@ export default function App() {
 
         {/* Collapsible nav (mobile) */}
         {navOpen && (
-          <nav className="flex flex-col gap-1 border-t border-border px-4 py-3 md:hidden" aria-label="Main">
+          <nav className="flex flex-col gap-1 border-t border-border px-4 py-3 md:hidden" aria-label={t('main')}>
             {navItems}
           </nav>
         )}

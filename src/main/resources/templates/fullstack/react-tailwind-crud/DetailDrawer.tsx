@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Pencil, X } from 'lucide-react'
+import { t } from '../i18n'
 
 interface Props {
   open: boolean
@@ -67,7 +68,7 @@ export function DetailDrawer({ open, title, subtitle, onClose, onEdit, children 
           <button
             onClick={onClose}
             className="-me-1 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
-            aria-label="Close"
+            aria-label={t('close')}
           >
             <X className="h-5 w-5" />
           </button>
@@ -80,7 +81,7 @@ export function DetailDrawer({ open, title, subtitle, onClose, onEdit, children 
             onClick={onClose}
             className="rounded-lg px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface"
           >
-            Close
+            {t('close')}
           </button>
           {onEdit && (
             <button
@@ -88,7 +89,7 @@ export function DetailDrawer({ open, title, subtitle, onClose, onEdit, children 
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
             >
               <Pencil className="h-4 w-4" />
-              Edit
+              {t('edit')}
             </button>
           )}
         </div>

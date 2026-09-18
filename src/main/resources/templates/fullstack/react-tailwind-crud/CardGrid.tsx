@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Eye, Pencil, Search, Trash2 } from 'lucide-r
 import type { Column, PaginationProps } from './Table'
 import { EmptyState } from './EmptyState'
 import { Skeleton } from './Skeleton'
+import { t } from '../i18n'
 
 interface Props<T extends object> {
   columns: Column<T>[]
@@ -48,7 +49,7 @@ export function CardGrid<T extends object>({
             type="text"
             value={search}
             onChange={e => onSearchChange(e.target.value)}
-            placeholder="Search…"
+            placeholder={t('search')}
             className="w-full rounded-lg border border-border bg-surface py-2 ps-9 pe-3 text-sm text-fg placeholder:text-muted shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40"
           />
         </div>
@@ -68,7 +69,7 @@ export function CardGrid<T extends object>({
         </div>
       ) : empty ? (
         <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-          <EmptyState title="No records yet" hint="Create your first record to see it here." />
+          <EmptyState title={t('noRecordsTitle')} hint={t('noRecordsHint')} />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -89,8 +90,8 @@ export function CardGrid<T extends object>({
                         <button
                           onClick={() => onView(row)}
                           className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
-                          title="View"
-                          aria-label="View"
+                          title={t('view')}
+                          aria-label={t('view')}
                         >
                           <Eye className="h-4 w-4" />
                         </button>
@@ -99,8 +100,8 @@ export function CardGrid<T extends object>({
                         <button
                           onClick={() => onEdit(row)}
                           className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
-                          title="Edit"
-                          aria-label="Edit"
+                          title={t('edit')}
+                          aria-label={t('edit')}
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -109,8 +110,8 @@ export function CardGrid<T extends object>({
                         <button
                           onClick={() => onDelete(row)}
                           className="rounded-lg p-1.5 text-muted transition-colors hover:bg-danger/10 hover:text-danger"
-                          title="Delete"
-                          aria-label="Delete"
+                          title={t('delete')}
+                          aria-label={t('delete')}
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -135,12 +136,12 @@ export function CardGrid<T extends object>({
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
         <div>
           {totalElements === 0
-            ? 'No results'
-            : <>Showing <span className="font-medium text-fg">{startRow}–{endRow}</span> of <span className="font-medium text-fg">{totalElements}</span></>}
+            ? t('noResults')
+            : <>{t('showing')} <span className="font-medium text-fg">{startRow}–{endRow}</span> {t('of')} <span className="font-medium text-fg">{totalElements}</span></>}
         </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2">
-            <span>Per page</span>
+            <span>{t('perPage')}</span>
             <select
               value={pageSize}
               onChange={e => onPageSizeChange(Number(e.target.value))}
@@ -156,8 +157,8 @@ export function CardGrid<T extends object>({
               disabled={pageNumber <= 0}
               className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronLeft className="h-4 w-4" />
-              Prev
+              <ChevronLeft className="h-4 w-4 rtl:rotate-180" />
+              {t('prev')}
             </button>
             <span className="px-2 tabular-nums">
               {totalPages === 0 ? 0 : pageNumber + 1} / {totalPages}
@@ -168,8 +169,8 @@ export function CardGrid<T extends object>({
               disabled={pageNumber + 1 >= totalPages}
               className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Next
-              <ChevronRight className="h-4 w-4" />
+              {t('next')}
+              <ChevronRight className="h-4 w-4 rtl:rotate-180" />
             </button>
           </div>
         </div>

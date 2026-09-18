@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
-
+{{#auditApplicable}}import { t, LOCALE } from '@shared/i18n'
+{{/auditApplicable}}
 interface Props {
   value: {{EntityName}}
 }
@@ -23,8 +24,8 @@ export function {{EntityName}}Detail({ value }: Props) {
     <dl>
 {{#fields}}      <Row label="{{label}}">{value.{{name}} == null ? empty : {{#isText}}<span className="whitespace-pre-wrap break-words">{String(value.{{name}})}</span>{{/isText}}{{^isText}}String(value.{{name}}){{/isText}}}</Row>
 {{/fields}}{{#relations}}      <Row label="{{FieldName}}">{ {{#hasTargetLabel}}value.{{fieldName}}Label ?? ({{/hasTargetLabel}}value.{{fkFieldName}} == null ? empty : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(value.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} }</Row>
-{{/relations}}{{#auditApplicable}}      <Row label="Created">{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString()}</Row>
-      <Row label="Updated">{value.updatedAt == null ? empty : new Date(value.updatedAt).toLocaleString()}</Row>
+{{/relations}}{{#auditApplicable}}      <Row label={t('created')}>{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString(LOCALE)}</Row>
+      <Row label={t('updated')}>{value.updatedAt == null ? empty : new Date(value.updatedAt).toLocaleString(LOCALE)}</Row>
 {{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}      <Row label="{{CollectionField}}">{value.{{collectionField}}Count == null ? empty : String(value.{{collectionField}}Count)}</Row>
 {{/inverseRelations}}{{/optScaffoldInverse}}    </dl>
   )

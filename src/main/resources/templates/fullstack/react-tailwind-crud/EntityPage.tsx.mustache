@@ -6,14 +6,15 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
+import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 {{#mutable}}import { {{EntityName}}Form, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
 {{/mutable}}
 const columns: Column<{{EntityName}}>[] = [
 {{#fields}}  { label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
 {{/fields}}{{#relations}}  { label: '{{FieldName}}', render: r => {{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} },
-{{/relations}}{{#auditApplicable}}  { label: 'Created', sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString() },
-  { label: 'Updated', sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString() },
+{{/relations}}{{#auditApplicable}}  { label: t('created'), sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
+  { label: t('updated'), sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
 {{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
 {{/inverseRelations}}{{/optScaffoldInverse}}]
 {{#hasFilters}}
@@ -102,7 +103,7 @@ export function {{EntityName}}Page() {
     const clientErrors = validate{{EntityName}}(editing)
     if (Object.keys(clientErrors).length > 0) {
       setFormErrors(clientErrors)
-      toast.error('Please fix the highlighted fields')
+      toast.error(t('fixHighlighted'))
       focusFirstInvalid()
       return
     }
@@ -111,13 +112,13 @@ export function {{EntityName}}Page() {
     try {
       if (isNew) await create(editing as Omit<{{EntityName}}, 'id'>)
       else await update({{#hasCompositePk}}[{{#pkFields}}editing.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}editing.{{pkField.name}} as number | string{{/hasCompositePk}}, editing as {{EntityName}})
-      toast.success(isNew ? '{{entityLabel}} created' : '{{entityLabel}} updated')
+      toast.success(isNew ? t('xCreated', { x: '{{entityLabel}}' }) : t('xUpdated', { x: '{{entityLabel}}' }))
       close()
     } catch (e) {
       // A 400 carries per-field messages — show them inline; anything else is a toast.
       if (e instanceof ApiError && e.fieldErrors) {
         setFormErrors(e.fieldErrors)
-        toast.error('Please fix the highlighted fields')
+        toast.error(t('fixHighlighted'))
         focusFirstInvalid()
       } else {
         toast.error(e instanceof Error ? e.message : String(e))
@@ -134,19 +135,19 @@ export function {{EntityName}}Page() {
       await remove({{#hasCompositePk}}[{{#pkFields}}removed.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}removed.{{pkField.name}} as number | string{{/hasCompositePk}})
       setPendingDelete(null)
 {{#softDeleteApplicable}}      // Soft delete: the row is only flagged, so Undo really restores it (same id, same data).
-      toast.success('{{entityLabel}} deleted', {
+      toast.success(t('xDeleted', { x: '{{entityLabel}}' }), {
         action: {
-          label: 'Undo',
+          label: t('undo'),
           onClick: () => {
             restore(removed.{{pkField.name}} as number | string)
-              .then(() => toast.success('{{entityLabel}} restored'))
+              .then(() => toast.success(t('xRestored', { x: '{{entityLabel}}' })))
               .catch(err => toast.error(err instanceof Error ? err.message : String(err)))
           },
         },
       })
 {{/softDeleteApplicable}}{{^softDeleteApplicable}}      // Hard delete: the row is gone for good, so no Undo is offered (re-creating it would
       // hand out a new id and could collide on unique columns).
-      toast.success('{{entityLabel}} deleted')
+      toast.success(t('xDeleted', { x: '{{entityLabel}}' }))
 {{/softDeleteApplicable}}    } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
@@ -159,7 +160,7 @@ export function {{EntityName}}Page() {
   async function onKanbanMove(row: {{EntityName}}, value: string) {
     try {
       await update({{#hasCompositePk}}[{{#pkFields}}row.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...row, {{kanbanField}}: {{#kanbanIsEnum}}value{{/kanbanIsEnum}}{{^kanbanIsEnum}}value === 'true'{{/kanbanIsEnum}} } as {{EntityName}})
-      toast.success('{{entityLabel}} moved')
+      toast.success(t('xMoved', { x: '{{entityLabel}}' }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
       await reload()
@@ -188,7 +189,7 @@ export function {{EntityName}}Page() {
     setBulkBusy(true)
     try {
       await removeMany(selected)
-      toast.success(`${selected.length} {{entityLabel}} ${selected.length === 1 ? 'record' : 'records'} deleted`)
+      toast.success(t('nXRecordsDeleted', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
       setSelected([])
       setBulkConfirm(false)
     } catch (e) {
@@ -207,7 +208,7 @@ export function {{EntityName}}Page() {
     try {
       // An empty value clears the field (sent as null); otherwise the raw string is coerced server-side.
       await updateMany(selected, bulkField, bulkValue === '' ? null : bulkValue)
-      toast.success(`${selected.length} {{entityLabel}} ${selected.length === 1 ? 'record' : 'records'} updated`)
+      toast.success(t('nXRecordsUpdated', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
       setSelected([])
       setBulkField('')
       setBulkValue('')
@@ -233,7 +234,7 @@ export function {{EntityName}}Page() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-fg">{{entityLabelPlural}}</h1>
           <p className="mt-1 text-sm text-muted">
-            {totalElements} {totalElements === 1 ? 'record' : 'records'}{{#isView}} · read-only view{{/isView}}
+            {totalElements} {t(totalElements === 1 ? 'record' : 'records')}{{#isView}} · {t('readOnlyView')}{{/isView}}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -242,8 +243,8 @@ export function {{EntityName}}Page() {
               onClick={() => setViewMode('table')}
               aria-pressed={viewMode === 'table'}
               className={`rounded-md p-1.5 transition-colors ${viewMode === 'table' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
-              title="Table view"
-              aria-label="Table view"
+              title={t('tableView')}
+              aria-label={t('tableView')}
             >
               <Table2 className="h-4 w-4" />
             </button>
@@ -251,8 +252,8 @@ export function {{EntityName}}Page() {
               onClick={() => setViewMode('cards')}
               aria-pressed={viewMode === 'cards'}
               className={`rounded-md p-1.5 transition-colors ${viewMode === 'cards' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
-              title="Card view"
-              aria-label="Card view"
+              title={t('cardView')}
+              aria-label={t('cardView')}
             >
               <LayoutGrid className="h-4 w-4" />
             </button>
@@ -260,8 +261,8 @@ export function {{EntityName}}Page() {
               onClick={() => setViewMode('kanban')}
               aria-pressed={viewMode === 'kanban'}
               className={`rounded-md p-1.5 transition-colors ${viewMode === 'kanban' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
-              title="Board view"
-              aria-label="Board view"
+              title={t('boardView')}
+              aria-label={t('boardView')}
             >
               <Columns3 className="h-4 w-4" />
             </button>
@@ -269,8 +270,8 @@ export function {{EntityName}}Page() {
               onClick={() => setViewMode('calendar')}
               aria-pressed={viewMode === 'calendar'}
               className={`rounded-md p-1.5 transition-colors ${viewMode === 'calendar' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
-              title="Calendar view"
-              aria-label="Calendar view"
+              title={t('calendarView')}
+              aria-label={t('calendarView')}
             >
               <Calendar className="h-4 w-4" />
             </button>
@@ -278,17 +279,17 @@ export function {{EntityName}}Page() {
 {{/hasViewToggle}}{{#optScaffoldCsvExport}}          <button
             onClick={() => exportCsv('{{entityNamePluralKebab}}.csv')}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
-            title="Export CSV"
+            title={t('exportCsv')}
           >
             <Download className="h-4 w-4" />
-            Export
+            {t('export')}
           </button>
 {{/optScaffoldCsvExport}}{{#mutable}}          <button
             onClick={openNew}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
           >
             <Plus className="h-4 w-4" />
-            New {{entityLabel}}
+            {t('newX', { x: '{{entityLabel}}' })}
           </button>
 {{/mutable}}        </div>
       </div>
@@ -300,15 +301,15 @@ export function {{EntityName}}Page() {
       </div>
 {{/hasFilters}}{{#bulkSelectApplicable}}{{#viewTable}}      {selected.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/40 bg-brand/5 px-4 py-2.5">
-          <span className="text-sm font-medium text-fg">{selected.length} selected</span>
+          <span className="text-sm font-medium text-fg">{t('nSelected', { n: selected.length })}</span>
           <div className="flex flex-wrap items-center gap-2">
 {{#bulkUpdateApplicable}}            <select
               value={bulkField}
               onChange={e => { setBulkField(e.target.value); setBulkValue('') }}
               className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-fg"
-              aria-label="Field to edit"
+              aria-label={t('fieldToEdit')}
             >
-              <option value="">Set field…</option>
+              <option value="">{t('setField')}</option>
 {{#bulkUpdatableFields}}              <option value="{{name}}">{{label}}</option>
 {{/bulkUpdatableFields}}            </select>
             {bulkField && (() => {
@@ -316,20 +317,20 @@ export function {{EntityName}}Page() {
               if (!meta) return null
               const cls = 'rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-fg'
               if (meta.kind === 'boolean') return (
-                <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label="New value">
+                <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label={t('newValue')}>
                   <option value="">—</option>
-                  <option value="true">True</option>
-                  <option value="false">False</option>
+                  <option value="true">{t('trueLabel')}</option>
+                  <option value="false">{t('falseLabel')}</option>
                 </select>
               )
               if (meta.kind === 'enum') return (
-                <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label="New value">
+                <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label={t('newValue')}>
                   <option value="">—</option>
                   {meta.options!.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               )
               const type = meta.kind === 'number' ? 'number' : meta.kind === 'date' ? 'date' : meta.kind === 'datetime' ? 'datetime-local' : 'text'
-              return <input type={type} value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} placeholder="New value" aria-label="New value" />
+              return <input type={type} value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} placeholder={t('newValue')} aria-label={t('newValue')} />
             })()}
             <button
               onClick={runBulkUpdate}
@@ -337,15 +338,15 @@ export function {{EntityName}}Page() {
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-50"
             >
               <PencilLine className="h-4 w-4" />
-              Apply
+              {t('apply')}
             </button>
-{{/bulkUpdateApplicable}}            <button onClick={() => setSelected([])} className="rounded-lg px-3 py-1.5 text-sm text-muted transition-colors hover:text-fg">Clear</button>
+{{/bulkUpdateApplicable}}            <button onClick={() => setSelected([])} className="rounded-lg px-3 py-1.5 text-sm text-muted transition-colors hover:text-fg">{t('clear')}</button>
 {{#bulkDeleteApplicable}}            <button
               onClick={() => setBulkConfirm(true)}
               className="inline-flex items-center gap-2 rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-white transition-colors hover:opacity-90"
             >
               <Trash2 className="h-4 w-4" />
-              Delete
+              {t('delete')}
             </button>
 {{/bulkDeleteApplicable}}          </div>
         </div>
@@ -415,8 +416,8 @@ export function {{EntityName}}Page() {
 {{#mutable}}
       <FormDrawer
         open={drawerOpen}
-        title={isNew ? 'New {{entityLabel}}' : 'Edit {{entityLabel}}'}
-        subtitle={isNew ? 'Create a new {{entityLabel}} record' : 'Update this {{entityLabel}} record'}
+        title={isNew ? t('newX', { x: '{{entityLabel}}' }) : t('editX', { x: '{{entityLabel}}' })}
+        subtitle={isNew ? t('createXBlurb', { x: '{{entityLabel}}' }) : t('updateXBlurb', { x: '{{entityLabel}}' })}
         onClose={close}
         onSave={save}
         saving={saving}
@@ -448,8 +449,8 @@ export function {{EntityName}}Page() {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title="Delete {{entityLabel}}?"
-        message="You can undo this right after, from the notification."
+        title={t('deleteX', { x: '{{entityLabel}}' })}
+        message={t('undoHint')}
         busy={deleting}
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}
@@ -457,8 +458,8 @@ export function {{EntityName}}Page() {
 {{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}}
       <ConfirmDialog
         open={bulkConfirm}
-        title={`Delete ${selected.length} {{entityLabel}} ${selected.length === 1 ? 'record' : 'records'}?`}
-        message="This action cannot be undone."
+        title={t('deleteNX', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') })}
+        message={t('cannotUndo')}
         busy={bulkBusy}
         onConfirm={runBulkDelete}
         onCancel={() => setBulkConfirm(false)}
@@ -466,7 +467,7 @@ export function {{EntityName}}Page() {
 {{/viewTable}}{{/bulkDeleteApplicable}}
       <DetailDrawer
         open={detailRow !== null}
-        title="{{entityLabel}} details"
+        title={t('xDetails', { x: '{{entityLabel}}' })}
         onClose={() => setDetailRow(null)}
 {{#mutable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
 {{/mutable}}      >

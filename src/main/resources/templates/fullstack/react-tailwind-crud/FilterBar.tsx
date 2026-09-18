@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { SlidersHorizontal, X } from 'lucide-react'
 import { useOptions } from '@shared/api'
+import { t } from '../i18n'
 
 export type FilterKind = 'enum' | 'boolean' | 'temporal' | 'numeric' | 'relation'
 
@@ -32,7 +33,7 @@ function RelationSelect({ f, value, onChange, className }: {
   const valueKey = f.optionValue ?? 'id'
   return (
     <select className={className} value={value} onChange={e => onChange(e.target.value)} aria-label={f.label}>
-      <option value="">{loading ? 'Loading…' : 'Any'}</option>
+      <option value="">{loading ? t('loading') : t('any')}</option>
       {options.map(o => {
         const v = String(o[valueKey])
         const label = f.optionLabel ? String(o[f.optionLabel] ?? '') : ''
@@ -80,7 +81,7 @@ export function FilterBar({ filters, values, onChange }: Props) {
           aria-expanded={open}
         >
           <SlidersHorizontal className="h-4 w-4 text-muted" />
-          Filters
+          {t('filters')}
           {activeCount > 0 && (
             <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-semibold text-white">{activeCount}</span>
           )}
@@ -91,7 +92,7 @@ export function FilterBar({ filters, values, onChange }: Props) {
             className="inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-fg"
           >
             <X className="h-3.5 w-3.5" />
-            Clear
+            {t('clear')}
           </button>
         )}
       </div>
@@ -103,22 +104,22 @@ export function FilterBar({ filters, values, onChange }: Props) {
               <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">{f.label}</label>
               {f.kind === 'enum' && (
                 <select className={fieldClass} value={values[f.name] ?? ''} onChange={e => set(f.name, e.target.value)}>
-                  <option value="">Any</option>
+                  <option value="">{t('any')}</option>
                   {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               )}
               {f.kind === 'boolean' && (
                 <select className={fieldClass} value={values[f.name] ?? ''} onChange={e => set(f.name, e.target.value)}>
-                  <option value="">Any</option>
-                  <option value="true">True</option>
-                  <option value="false">False</option>
+                  <option value="">{t('any')}</option>
+                  <option value="true">{t('trueLabel')}</option>
+                  <option value="false">{t('falseLabel')}</option>
                 </select>
               )}
               {f.kind === 'temporal' && (
                 <div className="flex items-center gap-1">
-                  <input type={f.inputType ?? 'date'} className={fieldClass} value={values[`${f.name}From`] ?? ''} onChange={e => set(`${f.name}From`, e.target.value)} aria-label={`${f.label} from`} />
+                  <input type={f.inputType ?? 'date'} className={fieldClass} value={values[`${f.name}From`] ?? ''} onChange={e => set(`${f.name}From`, e.target.value)} aria-label={t('xFrom', { x: f.label })} />
                   <span className="text-xs text-muted">–</span>
-                  <input type={f.inputType ?? 'date'} className={fieldClass} value={values[`${f.name}To`] ?? ''} onChange={e => set(`${f.name}To`, e.target.value)} aria-label={`${f.label} to`} />
+                  <input type={f.inputType ?? 'date'} className={fieldClass} value={values[`${f.name}To`] ?? ''} onChange={e => set(`${f.name}To`, e.target.value)} aria-label={t('xTo', { x: f.label })} />
                 </div>
               )}
               {f.kind === 'relation' && (
@@ -126,9 +127,9 @@ export function FilterBar({ filters, values, onChange }: Props) {
               )}
               {f.kind === 'numeric' && (
                 <div className="flex items-center gap-1">
-                  <input type="number" placeholder="Min" className={`${fieldClass} w-24`} value={values[`${f.name}Min`] ?? ''} onChange={e => set(`${f.name}Min`, e.target.value)} aria-label={`${f.label} min`} />
+                  <input type="number" placeholder={t('min')} className={`${fieldClass} w-24`} value={values[`${f.name}Min`] ?? ''} onChange={e => set(`${f.name}Min`, e.target.value)} aria-label={t('xMin', { x: f.label })} />
                   <span className="text-xs text-muted">–</span>
-                  <input type="number" placeholder="Max" className={`${fieldClass} w-24`} value={values[`${f.name}Max`] ?? ''} onChange={e => set(`${f.name}Max`, e.target.value)} aria-label={`${f.label} max`} />
+                  <input type="number" placeholder={t('max')} className={`${fieldClass} w-24`} value={values[`${f.name}Max`] ?? ''} onChange={e => set(`${f.name}Max`, e.target.value)} aria-label={t('xMax', { x: f.label })} />
                 </div>
               )}
             </div>
