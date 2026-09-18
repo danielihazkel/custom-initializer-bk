@@ -3,6 +3,8 @@ package com.menora.initializr.fullstack;
 import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.gen.Naming;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -707,10 +709,13 @@ public final class EntityScaffoldContext {
         fv.put("hasLength", f.length() != null);
         fv.put("length", f.length());
         // Numeric bounds (rendered as @Min/@Max on integral types, @DecimalMin/@DecimalMax on BigDecimal).
+        // Rendered as strings so the same value drops into @Min(0) / @DecimalMin(value = "0.5") /
+        // min="0.5" / Number(x) < 0.5 verbatim: integral bounds print as plain integers, decimal
+        // bounds in plain (non-scientific) notation.
         fv.put("hasMin", f.min() != null);
-        fv.put("min", f.min());
+        fv.put("min", boundLiteral(f.min(), isBigDecimal));
         fv.put("hasMax", f.max() != null);
-        fv.put("max", f.max());
+        fv.put("max", boundLiteral(f.max(), isBigDecimal));
         // String constraints. The pattern is injected into Java (@Pattern(regexp="..")) and JS
         // ("..") string literals, so backslashes and double-quotes are escaped once here — the
         // C-style escaping is valid in both languages.
@@ -822,8 +827,14 @@ public final class EntityScaffoldContext {
         };
     }
 
-    private static String longLiteral(Long v) {
-        return v == null ? "null" : v + "L";
+    private static String longLiteral(BigDecimal v) {
+        return v == null ? "null" : v.setScale(0, RoundingMode.DOWN).toPlainString() + "L";
+    }
+
+    /** A bound in the form the templates splice into Java and TS source (see the fv.put above). */
+    private static String boundLiteral(BigDecimal v, boolean decimal) {
+        if (v == null) return null;
+        return decimal ? v.toPlainString() : v.setScale(0, RoundingMode.DOWN).toPlainString();
     }
 
     /**

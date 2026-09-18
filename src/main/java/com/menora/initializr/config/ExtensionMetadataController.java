@@ -19,6 +19,7 @@ import com.menora.initializr.db.repository.StarterTemplateDepRepository;
 import com.menora.initializr.db.repository.StarterTemplateRepository;
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.FieldDefinition;
+import com.menora.initializr.fullstack.RelationDefinition;
 import com.menora.initializr.fullstack.SqlToEntityDefinitionConverter;
 import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
@@ -258,8 +259,12 @@ public class ExtensionMetadataController {
                         f.primaryKey(), f.generated(), f.required(), f.unique(),
                         f.length(), f.enumValues()));
             }
+            List<RelationWire> relations = new ArrayList<>(d.relations().size());
+            for (RelationDefinition r : d.relations()) {
+                relations.add(new RelationWire(r.type().name(), r.fieldName(), r.targetEntity(), r.required()));
+            }
             wire.add(new EntityWire(d.name(), d.tableName(), d.schema(), fields,
-                    d.readOnly(), d.viewQuery(), d.sourceSql()));
+                    d.readOnly(), d.viewQuery(), d.sourceSql(), relations));
         }
         return wire;
     }
@@ -289,7 +294,10 @@ public class ExtensionMetadataController {
     public record ImportDdlRequest(String sql, String dialect) {}
     public record ImportDdlResponse(List<EntityWire> entities, String note) {}
     public record EntityWire(String name, String tableName, String schema, List<FieldWire> fields,
-                             boolean readOnly, String viewQuery, String sourceSql) {}
+                             boolean readOnly, String viewQuery, String sourceSql,
+                             List<RelationWire> relations) {}
+    /** A MANY_TO_ONE derived from a single-column foreign key in the imported DDL. */
+    public record RelationWire(String type, String fieldName, String targetEntity, boolean required) {}
     public record FieldWire(
             String name, String type,
             boolean primaryKey, boolean generated, boolean required, boolean unique,

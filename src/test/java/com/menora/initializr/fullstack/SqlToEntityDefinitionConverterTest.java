@@ -262,4 +262,117 @@ class SqlToEntityDefinitionConverterTest {
         assertThat(SqlToEntityDefinitionConverter.singularize("status")).isEqualTo("status");
         assertThat(SqlToEntityDefinitionConverter.singularize("class")).isEqualTo("class");
     }
+
+    @Test
+    void singleColumnForeignKeyBecomesManyToOneAndDropsTheColumn() {
+        String sql = """
+                CREATE TABLE customers (id BIGINT PRIMARY KEY, name VARCHAR(50));
+                CREATE TABLE orders (
+                    id BIGINT PRIMARY KEY,
+                    customer_id BIGINT NOT NULL,
+                    approver_id BIGINT,
+                    total NUMERIC(10,2),
+                    FOREIGN KEY (customer_id) REFERENCES customers (id),
+                    FOREIGN KEY (approver_id) REFERENCES users (id)
+                );
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);
+        EntityDefinition order = entities.get(1);
+        assertThat(order.fields()).extracting(FieldDefinition::name).containsExactly("id", "approverId", "total");
+        assertThat(order.relations()).hasSize(1);
+        RelationDefinition rel = order.relations().get(0);
+        assertThat(rel.type()).isEqualTo(RelationType.MANY_TO_ONE);
+        assertThat(rel.fieldName()).isEqualTo("customer");
+        assertThat(rel.targetEntity()).isEqualTo("Customer");
+        assertThat(rel.required()).isTrue();
+        // FK to a table outside the paste (users) stays a plain, optional field.
+        assertThat(order.fields().get(1).required()).isFalse();
+        assertThat(entities.get(0).relations()).isEmpty();
+    }
+
+    @Test
+    void foreignKeysToCompositeKeyTablesAndCompositeForeignKeysStayFields() {
+        String sql = """
+                CREATE TABLE parts (make VARCHAR(10), code VARCHAR(10), PRIMARY KEY (make, code));
+                CREATE TABLE usages (
+                    id BIGINT PRIMARY KEY,
+                    part_make VARCHAR(10),
+                    part_code VARCHAR(10),
+                    FOREIGN KEY (part_make, part_code) REFERENCES parts (make, code)
+                );
+                CREATE TABLE notes (
+                    id BIGINT PRIMARY KEY,
+                    part_id VARCHAR(10),
+                    FOREIGN KEY (part_id) REFERENCES parts (make)
+                );
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);
+        assertThat(entities.get(1).relations()).isEmpty();
+        assertThat(entities.get(1).fields()).hasSize(3);
+        assertThat(entities.get(2).relations()).isEmpty();
+        assertThat(entities.get(2).fields()).extracting(FieldDefinition::name).containsExactly("id", "partId");
+    }
+
+    @Test
+    void foreignKeyOnAKeyColumnStaysAField() {
+        String sql = """
+                CREATE TABLE users (id BIGINT PRIMARY KEY);
+                CREATE TABLE profiles (
+                    user_id BIGINT PRIMARY KEY,
+                    bio VARCHAR(200),
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                );
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);
+        assertThat(entities.get(1).relations()).isEmpty();
+        assertThat(entities.get(1).fields().get(0).name()).isEqualTo("userId");
+        assertThat(entities.get(1).fields().get(0).primaryKey()).isTrue();
+    }
+
+    @Test
+    void relationNameFallsBackToTargetWhenTheColumnNameIsTakenOrUnusable() {
+        java.util.Set<String> taken = new java.util.HashSet<>(List.of("customer", "id"));
+        assertThat(SqlToEntityDefinitionConverter.relationFieldName("customer_id", "Customer", taken)).isNull();
+        assertThat(SqlToEntityDefinitionConverter.relationFieldName("owner_id", "Customer", taken)).isEqualTo("owner");
+        assertThat(SqlToEntityDefinitionConverter.relationFieldName("ownerId", "Customer", taken)).isEqualTo("owner");
+        assertThat(SqlToEntityDefinitionConverter.relationFieldName("id", "Customer", java.util.Set.of())).isEqualTo("customer");
+        assertThat(SqlToEntityDefinitionConverter.relationFieldName("class_id", "Course", java.util.Set.of())).isEqualTo("course");
+        assertThat(SqlToEntityDefinitionConverter.relationFieldName("paid", "Invoice", java.util.Set.of())).isEqualTo("paid");
+    }
+
+    @Test
+    void checkInConstraintsBecomeEnums() {
+        String sql = """
+                CREATE TABLE tickets (
+                    id BIGINT PRIMARY KEY,
+                    status VARCHAR(20) NOT NULL CHECK (status IN ('open', 'in progress', 'closed')),
+                    priority VARCHAR(10),
+                    kind VARCHAR(10) CHECK (kind IN ('a', 'A')),
+                    CONSTRAINT chk_priority CHECK (priority IN ('LOW', 'HIGH'))
+                );
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);
+        EntityDefinition ticket = entities.get(0);
+        FieldDefinition status = ticket.fields().get(1);
+        assertThat(status.type()).isEqualTo(FieldType.ENUM);
+        assertThat(status.enumValues()).containsExactly("OPEN", "IN_PROGRESS", "CLOSED");
+        assertThat(status.length()).isNull();
+        assertThat(status.required()).isTrue();
+        FieldDefinition priority = ticket.fields().get(2);
+        assertThat(priority.type()).isEqualTo(FieldType.ENUM);
+        assertThat(priority.enumValues()).containsExactly("LOW", "HIGH");
+        // 'a' and 'A' collapse to the same constant — the column is left as a string.
+        FieldDefinition kind = ticket.fields().get(3);
+        assertThat(kind.type()).isEqualTo(FieldType.STRING);
+        assertThat(kind.enumValues()).isEmpty();
+    }
+
+    @Test
+    void enumConstantSanitizing() {
+        assertThat(SqlToEntityDefinitionConverter.toEnumConstant("in progress")).isEqualTo("IN_PROGRESS");
+        assertThat(SqlToEntityDefinitionConverter.toEnumConstant("2fa")).isEqualTo("_2FA");
+        assertThat(SqlToEntityDefinitionConverter.toEnumConstant("new")).isEqualTo("NEW");
+        assertThat(SqlToEntityDefinitionConverter.toEnumConstant("---")).isNull();
+        assertThat(SqlToEntityDefinitionConverter.toEnumConstant("")).isNull();
+    }
 }

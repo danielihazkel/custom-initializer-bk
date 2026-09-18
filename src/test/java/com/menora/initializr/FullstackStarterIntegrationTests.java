@@ -69,6 +69,8 @@ class FullstackStarterIntegrationTests {
         String readme = entries.get("shop/README.md");
         assertThat(readme).contains("proxy").contains("frontend/src/shared/api/client.ts")
                 .contains("API_UPSTREAM").contains("app.cors.allowed-origins");
+        // The __common__ catalog deletes the Maven wrapper, so the run command must use plain mvn.
+        assertThat(readme).contains("mvn spring-boot:run").doesNotContain("mvnw");
 
         // Backend pom + Application
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/backend/pom.xml"));
@@ -718,13 +720,16 @@ class FullstackStarterIntegrationTests {
         Map<String, Object> email = Map.of("name", "email", "type", "String", "required", true, "length", 200, "email", true);
         Map<String, Object> age = Map.of("name", "age", "type", "Integer", "min", 0, "max", 120);
         Map<String, Object> code = Map.of("name", "code", "type", "String", "pattern", "[A-Z]{3}");
+        // A decimal bound on a BigDecimal renders through @DecimalMin/@DecimalMax (string-valued)
+        // and reaches the form/validator verbatim — integral bounds stay plain integers.
+        Map<String, Object> salary = Map.of("name", "salary", "type", "BigDecimal", "min", 0.5, "max", 99999.99);
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("artifactId", "people");
         body.put("packageName", "com.menora.people");
         body.put("bootVersion", "3.2.1");
         body.put("entities", List.of(
-                Map.of("name", "Person", "fields", List.of(pkField(), email, age, code))));
+                Map.of("name", "Person", "fields", List.of(pkField(), email, age, code, salary))));
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -744,14 +749,20 @@ class FullstackStarterIntegrationTests {
                 .contains("@Email")
                 .contains("@Pattern(regexp = \"[A-Z]{3}\")")
                 .contains("@Min(0)")
-                .contains("@Max(120)");
+                .contains("@Max(120)")
+                .contains("@DecimalMin(value = \"0.5\")")
+                .contains("@DecimalMax(value = \"99999.99\")");
 
         String form = entries.get("people/frontend/src/features/person-form/ui/PersonForm.tsx");
         assertThat(form)
                 .contains("type=\"email\"")
                 .contains("min=\"0\"")
                 .contains("max=\"120\"")
+                .contains("min=\"0.5\"")
+                .contains("step=\"any\"")
                 .contains("pattern={\"[A-Z]{3}\"}");
+        String validate = entries.get("people/frontend/src/features/person-form/model/validate.ts");
+        assertThat(validate).contains("0.5").contains("99999.99");
     }
 
     @Test
@@ -1335,6 +1346,57 @@ class FullstackStarterIntegrationTests {
         assertThat(fields.get(0)).containsEntry("type", "LONG").containsEntry("primaryKey", true);
         assertThat(fields.get(1)).containsEntry("type", "STRING").containsEntry("length", 64);
         assertThat(fields.get(2)).containsEntry("type", "BIG_DECIMAL");
+        assertThat(product.get("relations")).isEqualTo(List.of());
+    }
+
+    @Test
+    void importDdlEndpoint_turnsForeignKeysIntoRelationsAndCheckInIntoEnums() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("dialect", "H2");
+        body.put("sql", """
+                CREATE TABLE customers (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    name VARCHAR(120) NOT NULL
+                );
+                CREATE TABLE orders (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    customer_id BIGINT NOT NULL,
+                    status VARCHAR(20) NOT NULL CHECK (status IN ('NEW', 'PAID', 'SHIPPED')),
+                    total NUMERIC(10,2),
+                    CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
+                );
+                """);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                "/metadata/fullstack/import-ddl", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                new org.springframework.core.ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) response.getBody().get("entities");
+        assertThat(entities).hasSize(2);
+        Map<String, Object> order = entities.get(1);
+        assertThat(order).containsEntry("name", "Order");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) order.get("fields");
+        // The FK column is gone from the fields — it lives on as the relation's join column.
+        assertThat(fields).extracting(f -> f.get("name")).containsExactly("id", "status", "total");
+        assertThat(fields.get(1)).containsEntry("type", "ENUM")
+                .containsEntry("enumValues", List.of("NEW", "PAID", "SHIPPED"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> relations = (List<Map<String, Object>>) order.get("relations");
+        assertThat(relations).hasSize(1);
+        assertThat(relations.get(0))
+                .containsEntry("type", "MANY_TO_ONE")
+                .containsEntry("fieldName", "customer")
+                .containsEntry("targetEntity", "Customer")
+                .containsEntry("required", true);
     }
 
     @Test

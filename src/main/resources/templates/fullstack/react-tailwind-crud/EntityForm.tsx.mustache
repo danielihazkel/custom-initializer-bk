@@ -69,7 +69,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
         />
 {{/isText}}{{^isText}}        <input
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
-          {{#isNumeric}}type="number"{{/isNumeric}}{{#isDate}}type="date"{{/isDate}}{{#isDateTime}}type="datetime-local"{{/isDateTime}}{{^isNumeric}}{{^isTemporal}}{{#isEmail}}type="email"{{/isEmail}}{{^isEmail}}type="text"{{/isEmail}}{{/isTemporal}}{{/isNumeric}}{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{/isNumeric}}{{#hasPattern}} pattern={"{{patternEscaped}}"}{{/hasPattern}}
+          {{#isNumeric}}type="number"{{/isNumeric}}{{#isDate}}type="date"{{/isDate}}{{#isDateTime}}type="datetime-local"{{/isDateTime}}{{^isNumeric}}{{^isTemporal}}{{#isEmail}}type="email"{{/isEmail}}{{^isEmail}}type="text"{{/isEmail}}{{/isTemporal}}{{/isNumeric}}{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{#isBigDecimal}} step="any"{{/isBigDecimal}}{{/isNumeric}}{{#hasPattern}} pattern={"{{patternEscaped}}"}{{/hasPattern}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
           onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}})}
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}

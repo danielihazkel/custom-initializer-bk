@@ -2,6 +2,7 @@ package com.menora.initializr.fullstack;
 
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -76,7 +77,7 @@ class EntityScaffoldSeedOrderTest {
         FieldDefinition email = new FieldDefinition("email", FieldType.STRING, false, false, false, false,
                 null, null, null, null, true, List.of(), true, true);
         FieldDefinition qty = new FieldDefinition("qty", FieldType.INTEGER, false, false, false, false,
-                null, 1L, 9L, null, false, List.of(), true, true);
+                null, new BigDecimal("1"), new BigDecimal("9"), null, false, List.of(), true, true);
         FieldDefinition status = new FieldDefinition("status", FieldType.ENUM, false, false, false, false,
                 null, null, null, null, false, List.of("OPEN"), true, true);
 

@@ -2,6 +2,7 @@ package com.menora.initializr.fullstack;
 
 import com.menora.initializr.gen.Naming;
 import com.menora.initializr.sql.ColumnModel;
+import com.menora.initializr.sql.ForeignKey;
 import com.menora.initializr.sql.JavaType;
 import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
@@ -10,8 +11,15 @@ import com.menora.initializr.sql.TypeMappers;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Bridges the SQL wizard's {@link TableModel} representation into the fullstack
@@ -26,12 +34,24 @@ import java.util.Locale;
  *       {@link FieldType#BIG_DECIMAL}; {@code byte[]} and {@code UUID} → {@link FieldType#STRING}.</li>
  *   <li>Inline column-level {@code UNIQUE} is carried through to {@code unique}; table-level
  *       {@code UNIQUE(...)} constraints are not tracked.</li>
- *   <li>{@code CHECK col IN ('A','B')} is not parsed — users wanting an enum
- *       switch the type after import.</li>
+ *   <li>A single-column {@code FOREIGN KEY} whose referenced table is part of the same import
+ *       (and has a single-column key) becomes a {@link RelationType#MANY_TO_ONE} relation and the
+ *       FK column is dropped from the fields — the relation renders the join column. Composite FKs,
+ *       FKs to tables outside the paste, FKs to composite-key tables and FK columns that are also
+ *       part of the primary key stay plain fields.</li>
+ *   <li>{@code CHECK (col IN ('A','B'))} — column-level or table-level — turns the column into an
+ *       {@link FieldType#ENUM} with those constants. It is read from the statement text with a regex
+ *       rather than the JSqlParser AST because column-level checks only survive there as raw
+ *       tokens. Values that can't be made Java constants (or collide once upper-cased) leave the
+ *       column as a plain string.</li>
  * </ul>
  */
 @Component
 public class SqlToEntityDefinitionConverter {
+
+    /** {@code CHECK ( col IN ( 'A', 'B' ) )}, optionally with a quoted column name. */
+    private static final Pattern CHECK_IN = Pattern.compile(
+            "(?is)CHECK\\s*\\(\\s*[\"`\\[]?(\\w+)[\"`\\]]?\\s+IN\\s*\\(([^)]*)\\)\\s*\\)");
 
     private final SqlEntityGenerator generator;
 
@@ -39,15 +59,25 @@ public class SqlToEntityDefinitionConverter {
         this.generator = generator;
     }
 
+    /** What an imported table becomes, so a foreign key can resolve its target entity. */
+    private record ImportedTable(String entityName, int pkCount) {}
+
     /** Parses {@code sql} for {@code dialect} and converts each detected
      *  {@code CREATE TABLE} into an {@link EntityDefinition}. */
     public List<EntityDefinition> convert(String sql, SqlDialect dialect) {
         if (sql == null || sql.isBlank()) return List.of();
         SqlDialect effective = dialect != null ? dialect : SqlDialect.H2;
         List<TableModel> tables = generator.parseTablesForImport(sql, effective);
+        // Pass 1: every table in the paste, keyed by bare lower-case name, so pass 2 can turn a
+        // foreign key into a relation only when its target is imported too.
+        Map<String, ImportedTable> imported = new HashMap<>();
+        for (TableModel t : tables) {
+            imported.put(tableKey(t.name()),
+                    new ImportedTable(singularize(toPascalFromSnake(t.name())), t.pkColumns().size()));
+        }
         List<EntityDefinition> result = new ArrayList<>(tables.size());
         for (TableModel t : tables) {
-            result.add(toEntity(t, effective));
+            result.add(toEntity(t, effective, imported));
         }
         return result;
     }
@@ -105,19 +135,57 @@ public class SqlToEntityDefinitionConverter {
         return new SelectImportResult(List.of(view), note);
     }
 
-    private EntityDefinition toEntity(TableModel table, SqlDialect dialect) {
+    private EntityDefinition toEntity(TableModel table, SqlDialect dialect, Map<String, ImportedTable> imported) {
         String entityName = singularize(toPascalFromSnake(table.name()));
-        List<FieldDefinition> fields = new ArrayList<>(table.columns().size());
-        for (ColumnModel col : table.columns()) {
-            fields.add(toField(col, dialect));
+        Map<String, List<String>> enumsByColumn = detectEnumChecks(table.sourceSql());
+
+        // Which FK columns become relations: single-column FKs to an imported, single-key table.
+        Map<String, ForeignKey> relationByColumn = new LinkedHashMap<>();
+        for (ForeignKey fk : table.foreignKeys()) {
+            if (fk.columns().size() != 1) continue;
+            ImportedTable target = imported.get(tableKey(fk.referencedTable()));
+            if (target == null || target.pkCount() != 1) continue;
+            relationByColumn.put(fk.columns().get(0).toLowerCase(Locale.ROOT), fk);
         }
-        return new EntityDefinition(entityName, table.name(), table.schema(), fields, List.of(),
+
+        List<FieldDefinition> fields = new ArrayList<>(table.columns().size());
+        List<ColumnModel> fkColumns = new ArrayList<>();
+        Set<String> taken = new HashSet<>();
+        for (ColumnModel col : table.columns()) {
+            String key = col.name().toLowerCase(Locale.ROOT);
+            // A key column that is also an FK (join tables, shared PKs) stays a plain field: the
+            // scaffold addresses rows by their PK fields, not by an association.
+            if (relationByColumn.containsKey(key) && !col.isPk()) {
+                fkColumns.add(col);
+                continue;
+            }
+            FieldDefinition f = toField(col, dialect, enumsByColumn.get(key));
+            fields.add(f);
+            taken.add(f.name().toLowerCase(Locale.ROOT));
+        }
+        // Relations after the fields so their names can steer clear of every field name.
+        List<RelationDefinition> relations = new ArrayList<>(fkColumns.size());
+        for (ColumnModel col : fkColumns) {
+            ForeignKey fk = relationByColumn.get(col.name().toLowerCase(Locale.ROOT));
+            ImportedTable target = imported.get(tableKey(fk.referencedTable()));
+            String fieldName = relationFieldName(col.name(), target.entityName(), taken);
+            if (fieldName == null) {
+                // No usable name — keep the column as a plain field rather than emit a clash.
+                FieldDefinition f = toField(col, dialect, null);
+                fields.add(f);
+                taken.add(f.name().toLowerCase(Locale.ROOT));
+                continue;
+            }
+            relations.add(new RelationDefinition(RelationType.MANY_TO_ONE, fieldName, target.entityName(), !col.nullable()));
+            taken.add(fieldName.toLowerCase(Locale.ROOT));
+        }
+        return new EntityDefinition(entityName, table.name(), table.schema(), fields, relations,
                 false, null, table.sourceSql());
     }
 
-    private FieldDefinition toField(ColumnModel col, SqlDialect dialect) {
+    private FieldDefinition toField(ColumnModel col, SqlDialect dialect, List<String> enumValues) {
         JavaType jt = TypeMappers.map(dialect, col.rawType(), col.precision(), col.scale());
-        FieldType type = mapType(jt);
+        FieldType type = enumValues != null ? FieldType.ENUM : mapType(jt);
         Integer length = type == FieldType.STRING ? col.precision() : null;
         return new FieldDefinition(
                 Naming.toCamelCase(col.name()),
@@ -131,9 +199,95 @@ public class SqlToEntityDefinitionConverter {
                 null,
                 null,
                 false,
-                List.of(),
+                enumValues != null ? enumValues : List.of(),
                 true, true, // imported fields default to searchable/filterable
                 null, false); // no custom label; editable
+    }
+
+    /**
+     * The association field for an FK column: the column minus its {@code _id}/{@code Id} suffix
+     * in camelCase ({@code customer_id} → {@code customer}), falling back to the decapitalized
+     * target entity name when that is empty, reserved or already taken. Null when even the
+     * fallback collides — the caller then keeps the column as a plain field.
+     */
+    static String relationFieldName(String column, String targetEntity, Set<String> taken) {
+        String lower = column.toLowerCase(Locale.ROOT);
+        String base;
+        if (lower.equals("id")) {
+            base = "";
+        } else if (lower.endsWith("_id")) {
+            base = column.substring(0, column.length() - 3);
+        } else if (column.endsWith("Id") && column.length() > 2 && Character.isLowerCase(column.charAt(column.length() - 3))) {
+            base = column.substring(0, column.length() - 2);
+        } else {
+            base = column;
+        }
+        String candidate = base.isEmpty() ? "" : Naming.toCamelCase(base);
+        if (!usable(candidate, taken)) {
+            candidate = Naming.decapitalize(targetEntity);
+            if (!usable(candidate, taken)) return null;
+        }
+        return candidate;
+    }
+
+    private static boolean usable(String name, Set<String> taken) {
+        return name != null && !name.isEmpty()
+                && FullstackRequestValidator.isValidJavaIdentifier(name)
+                && !FullstackRequestValidator.RESERVED_JAVA_KEYWORDS.contains(name.toLowerCase(Locale.ROOT))
+                && !taken.contains(name.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Every {@code CHECK (col IN (...))} in the statement, keyed by lower-case column name, with
+     * the listed values turned into enum constants. A column whose values can't all be made
+     * distinct Java constants is left out (it stays a plain string).
+     */
+    static Map<String, List<String>> detectEnumChecks(String sourceSql) {
+        Map<String, List<String>> out = new HashMap<>();
+        if (sourceSql == null || sourceSql.isBlank()) return out;
+        Matcher m = CHECK_IN.matcher(sourceSql);
+        while (m.find()) {
+            String column = m.group(1).toLowerCase(Locale.ROOT);
+            List<String> constants = new ArrayList<>();
+            Set<String> seen = new HashSet<>();
+            boolean ok = true;
+            for (String raw : m.group(2).split(",")) {
+                String constant = toEnumConstant(unquote(raw.trim()));
+                if (constant == null || !seen.add(constant)) {
+                    ok = false;
+                    break;
+                }
+                constants.add(constant);
+            }
+            if (ok && !constants.isEmpty()) out.put(column, constants);
+        }
+        return out;
+    }
+
+    private static String unquote(String v) {
+        if (v.length() >= 2 && ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith("\"") && v.endsWith("\"")))) {
+            return v.substring(1, v.length() - 1);
+        }
+        return v;
+    }
+
+    /** {@code in progress} → {@code IN_PROGRESS}; {@code 2fa} → {@code _2FA}; null when nothing
+     *  identifier-like remains (e.g. an empty string or only punctuation). */
+    static String toEnumConstant(String value) {
+        String s = value.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_]", "_");
+        if (s.isEmpty() || s.chars().allMatch(c -> c == '_')) return null;
+        if (Character.isDigit(s.charAt(0))) s = "_" + s;
+        return s;
+    }
+
+    /** Bare, unquoted, lower-case table name — {@code inv."Orders"} → {@code orders}. */
+    private static String tableKey(String name) {
+        if (name == null) return "";
+        String n = name.trim();
+        int dot = n.lastIndexOf('.');
+        if (dot >= 0) n = n.substring(dot + 1);
+        n = n.replaceAll("^[\"`\\[]|[\"`\\]]$", "");
+        return n.toLowerCase(Locale.ROOT);
     }
 
     /** Maps a resolved Java type back onto the fullstack {@link FieldType} enum.

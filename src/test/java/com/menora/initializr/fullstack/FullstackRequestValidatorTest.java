@@ -3,6 +3,7 @@ package com.menora.initializr.fullstack;
 import com.menora.initializr.config.WizardArgumentException;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -301,7 +302,7 @@ class FullstackRequestValidatorTest {
 
     @Test
     void rejects_minMaxOnNonNumeric() {
-        var f = new FullstackStarterRequest.FieldDefinitionDto("name", "String", null, null, null, null, null, 1L, 10L, null, null, null);
+        var f = new FullstackStarterRequest.FieldDefinitionDto("name", "String", null, null, null, null, null, new BigDecimal("1"), new BigDecimal("10"), null, null, null);
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("User", List.of(pk(), f))))))
                 .isInstanceOf(WizardArgumentException.class)
@@ -310,11 +311,53 @@ class FullstackRequestValidatorTest {
 
     @Test
     void rejects_minGreaterThanMax() {
-        var f = new FullstackStarterRequest.FieldDefinitionDto("age", "Integer", null, null, null, null, null, 10L, 1L, null, null, null);
+        var f = new FullstackStarterRequest.FieldDefinitionDto("age", "Integer", null, null, null, null, null, new BigDecimal("10"), new BigDecimal("1"), null, null, null);
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("User", List.of(pk(), f))))))
                 .isInstanceOf(WizardArgumentException.class)
                 .hasMessageContaining("min must be <= max");
+    }
+
+    @Test
+    void rejects_fractionalBoundOnIntegralField() {
+        var f = new FullstackStarterRequest.FieldDefinitionDto("qty", "Integer", null, null, null, null, null, new BigDecimal("0.5"), null, null, null, null);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Item", List.of(pk(), f))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("must be whole numbers on integral fields");
+    }
+
+    @Test
+    void rejects_integerBoundOutsideIntRange() {
+        var f = new FullstackStarterRequest.FieldDefinitionDto("qty", "Integer", null, null, null, null, null, null, new BigDecimal("3000000000"), null, null, null);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Item", List.of(pk(), f))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("out of range for INTEGER");
+    }
+
+    @Test
+    void keepsDecimalBoundsOnBigDecimalField() {
+        var f = new FullstackStarterRequest.FieldDefinitionDto("price", "BigDecimal", null, null, null, null, null, new BigDecimal("0.5"), new BigDecimal("99.99"), null, null, null);
+        var result = FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Item", List.of(pk(), f)))));
+        FieldDefinition price = result.get(0).fields().get(1);
+        assertThat(price.min()).isEqualByComparingTo("0.5");
+        assertThat(price.max()).isEqualByComparingTo("99.99");
+    }
+
+    @Test
+    void enumConstantKeywordCheckIsCaseSensitive() {
+        // NEW / DEFAULT are ordinary upper-case constants; a literal `new` would not compile.
+        var ok = new FullstackStarterRequest.FieldDefinitionDto("status", "Enum", null, null, null, null, null, null, null, null, null, List.of("NEW", "DEFAULT", "DONE"));
+        var result = FullstackRequestValidator.validateAndConvert(req(List.of(entity("Order", List.of(pk(), ok)))));
+        assertThat(result.get(0).fields().get(1).enumValues()).containsExactly("NEW", "DEFAULT", "DONE");
+
+        var bad = new FullstackStarterRequest.FieldDefinitionDto("status", "Enum", null, null, null, null, null, null, null, null, null, List.of("new"));
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Order", List.of(pk(), bad))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("reserved keyword");
     }
 
     @Test
@@ -409,14 +452,14 @@ class FullstackRequestValidatorTest {
     @Test
     void happyPath_carriesConstraintsThrough() {
         var email = new FullstackStarterRequest.FieldDefinitionDto("email", "String", null, null, true, null, 200, null, null, "^.+@.+$", true, null);
-        var age = new FullstackStarterRequest.FieldDefinitionDto("age", "Integer", null, null, null, null, null, 0L, 120L, null, null, null);
+        var age = new FullstackStarterRequest.FieldDefinitionDto("age", "Integer", null, null, null, null, null, new BigDecimal("0"), new BigDecimal("120"), null, null, null);
         var result = FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("User", List.of(pk(), email, age)))));
         FieldDefinition emailField = result.get(0).fields().get(1);
         assertThat(emailField.email()).isTrue();
         assertThat(emailField.pattern()).isEqualTo("^.+@.+$");
         FieldDefinition ageField = result.get(0).fields().get(2);
-        assertThat(ageField.min()).isEqualTo(0L);
-        assertThat(ageField.max()).isEqualTo(120L);
+        assertThat(ageField.min()).isEqualByComparingTo("0");
+        assertThat(ageField.max()).isEqualByComparingTo("120");
     }
 }

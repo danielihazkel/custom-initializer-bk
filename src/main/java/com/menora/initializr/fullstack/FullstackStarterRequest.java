@@ -2,6 +2,7 @@ package com.menora.initializr.fullstack;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -143,8 +144,8 @@ public record FullstackStarterRequest(
             Boolean required,
             Boolean unique,
             Integer length,
-            Long min,
-            Long max,
+            BigDecimal min,
+            BigDecimal max,
             String pattern,
             Boolean email,
             List<String> enumValues,
@@ -160,7 +161,7 @@ public record FullstackStarterRequest(
         /** Back-compat constructor without the {@code searchable}/{@code filterable} opt-out flags
          *  or the {@code label}/{@code readOnly}/{@code defaultValue} per-field props (all default). */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
-                                  Boolean required, Boolean unique, Integer length, Long min, Long max,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
                                   String pattern, Boolean email, List<String> enumValues) {
             this(name, type, primaryKey, generated, required, unique, length, min, max,
                     pattern, email, enumValues, null, null, null, null, null);
@@ -169,7 +170,7 @@ public record FullstackStarterRequest(
         /** Back-compat constructor without the {@code label}/{@code readOnly}/{@code defaultValue}
          *  per-field props (all default). */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
-                                  Boolean required, Boolean unique, Integer length, Long min, Long max,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
                                   String pattern, Boolean email, List<String> enumValues,
                                   Boolean searchable, Boolean filterable) {
             this(name, type, primaryKey, generated, required, unique, length, min, max,
@@ -178,7 +179,7 @@ public record FullstackStarterRequest(
 
         /** Back-compat constructor without {@code defaultValue} (no default). */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
-                                  Boolean required, Boolean unique, Integer length, Long min, Long max,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
                                   String pattern, Boolean email, List<String> enumValues,
                                   Boolean searchable, Boolean filterable, String label, Boolean readOnly) {
             this(name, type, primaryKey, generated, required, unique, length, min, max,

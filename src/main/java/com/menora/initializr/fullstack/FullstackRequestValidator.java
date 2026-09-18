@@ -25,7 +25,7 @@ import java.util.regex.PatternSyntaxException;
  */
 public final class FullstackRequestValidator {
 
-    private static final Set<String> RESERVED_JAVA_KEYWORDS = Set.of(
+    static final Set<String> RESERVED_JAVA_KEYWORDS = Set.of(
             "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char",
             "class", "const", "continue", "default", "do", "double", "else", "enum",
             "extends", "final", "finally", "float", "for", "goto", "if", "implements",
@@ -131,7 +131,9 @@ public final class FullstackRequestValidator {
                         if (v == null || v.isBlank() || !isValidJavaIdentifier(v)) {
                             throw new WizardArgumentException("Invalid enum constant '" + v + "' on field '" + fname + "'");
                         }
-                        if (RESERVED_JAVA_KEYWORDS.contains(v.toLowerCase(Locale.ROOT))) {
+                        // Exact-case: Java keywords are all lower-case, so the conventional upper-case
+                        // constants (NEW, DEFAULT, CLASS) are fine — only a literal `new` would not compile.
+                        if (RESERVED_JAVA_KEYWORDS.contains(v)) {
                             throw new WizardArgumentException("Enum constant '" + v + "' is a reserved keyword (field '" + fname + "' on entity '" + name + "')");
                         }
                     }
@@ -150,7 +152,22 @@ public final class FullstackRequestValidator {
                 if ((f.min() != null || f.max() != null) && !type.isNumeric()) {
                     throw new WizardArgumentException("min/max only allowed on numeric fields (field '" + fname + "' on entity '" + name + "')");
                 }
-                if (f.min() != null && f.max() != null && f.min() > f.max()) {
+                // Integral types render the bounds into @Min/@Max (long-valued), so a fractional bound
+                // would not compile; decimals are only meaningful on BIG_DECIMAL (@DecimalMin/@DecimalMax).
+                if (type != FieldType.BIG_DECIMAL) {
+                    for (BigDecimal bound : new BigDecimal[] {f.min(), f.max()}) {
+                        if (bound == null) continue;
+                        if (bound.stripTrailingZeros().scale() > 0) {
+                            throw new WizardArgumentException("min/max must be whole numbers on integral fields (field '" + fname + "' on entity '" + name + "')");
+                        }
+                        try {
+                            if (type == FieldType.INTEGER) bound.intValueExact(); else bound.longValueExact();
+                        } catch (ArithmeticException ae) {
+                            throw new WizardArgumentException("min/max is out of range for " + type + " (field '" + fname + "' on entity '" + name + "')");
+                        }
+                    }
+                }
+                if (f.min() != null && f.max() != null && f.min().compareTo(f.max()) > 0) {
                     throw new WizardArgumentException("min must be <= max (field '" + fname + "' on entity '" + name + "')");
                 }
 
@@ -405,7 +422,7 @@ public final class FullstackRequestValidator {
         return relations;
     }
 
-    private static boolean isValidJavaIdentifier(String s) {
+    static boolean isValidJavaIdentifier(String s) {
         if (s == null || s.isEmpty()) return false;
         if (!Character.isJavaIdentifierStart(s.charAt(0))) return false;
         for (int i = 1; i < s.length(); i++) {
