@@ -2586,4 +2586,27 @@ class FullstackStarterIntegrationTests {
         }
         return result;
     }
+
+    @Test
+    void fullstackEndpoint_acceptsTheClientMetadataSpellingOfTheBootVersion() throws Exception {
+        // /metadata/client hands browsers "3.2.1.RELEASE" for catalog id "3.2.1"; both must work and
+        // the generated pom must carry the catalog id.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "verspell");
+        body.put("packageName", "com.menora.verspell");
+        body.put("bootVersion", "3.2.1.RELEASE");
+        body.put("dependencies", List.of("data-jpa", "web", "h2"));
+        body.put("entities", List.of(Map.of("name", "Item", "fields", List.of(pkField(),
+                Map.of("name", "name", "type", "String")))));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = restTemplate.exchange(
+                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String pom = unzip(response.getBody()).get("verspell/backend/pom.xml");
+        assertThat(pom).contains("<version>3.2.1</version>").doesNotContain("3.2.1.RELEASE");
+    }
 }

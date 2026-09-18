@@ -227,15 +227,24 @@ public class FullstackStarterController {
         return set;
     }
 
-    /** Rejects an unknown Boot/Java version with a 400. A null/blank value is left for the
-     *  framework to default. */
-    private static void requireKnownVersion(SingleSelectCapability capability, String value, String fieldName) {
+    /**
+     * Rejects an unknown Boot/Java version with a 400 and returns the catalog id to use. A
+     * null/blank value is left for the framework to default. {@code /metadata/client} hands
+     * browsers the Initializr v1 spelling ({@code 3.2.1.RELEASE}) while the catalog id is
+     * {@code 3.2.1}; both are accepted and the catalog id is what goes into the request.
+     */
+    private static String requireKnownVersion(SingleSelectCapability capability, String value, String fieldName) {
         if (value == null || value.isBlank()) {
-            return;
+            return value;
         }
-        if (capability.get(value) == null) {
-            throw new WizardArgumentException(fieldName + " '" + value + "' is not a known version");
+        if (capability.get(value) != null) {
+            return value;
         }
+        String canonical = value.endsWith(".RELEASE") ? value.substring(0, value.length() - ".RELEASE".length()) : value;
+        if (!canonical.equals(value) && capability.get(canonical) != null) {
+            return canonical;
+        }
+        throw new WizardArgumentException(fieldName + " '" + value + "' is not a known version");
     }
 
     /**
@@ -288,19 +297,19 @@ public class FullstackStarterController {
         // Fail fast on an unknown Boot/Java version with a clean 400, rather than letting
         // the framework fail deep in generation with an opaque 500. The UI only ever sends
         // values from the metadata dropdowns; this guards direct API callers (curl/IntelliJ).
-        requireKnownVersion(metadata.getBootVersions(), body.bootVersion(), "bootVersion");
-        requireKnownVersion(metadata.getJavaVersions(), body.javaVersion(), "javaVersion");
+        String bootVersion = requireKnownVersion(metadata.getBootVersions(), body.bootVersion(), "bootVersion");
+        String javaVersion = requireKnownVersion(metadata.getJavaVersions(), body.javaVersion(), "javaVersion");
         WebProjectRequest r = new WebProjectRequest();
         r.setType(orDefault(body.type(), "maven-project"));
         r.setLanguage(orDefault(body.language(), "java"));
-        r.setBootVersion(body.bootVersion());
+        r.setBootVersion(bootVersion);
         r.setGroupId(orDefault(body.groupId(), "com.menora"));
         r.setArtifactId(orDefault(body.artifactId(), "demo"));
         r.setName(orDefault(body.name(), r.getArtifactId()));
         r.setDescription(orDefault(body.description(), ""));
         r.setPackageName(orDefault(body.packageName(), r.getGroupId() + "." + r.getArtifactId()));
         r.setPackaging(orDefault(body.packaging(), "jar"));
-        r.setJavaVersion(orDefault(body.javaVersion(), "21"));
+        r.setJavaVersion(orDefault(javaVersion, "21"));
         r.setVersion(orDefault(body.version(), (String) metadata.defaults().get("version")));
         r.setConfigurationFileFormat(orDefault(body.configurationFileFormat(), "properties"));
         if (body.dependencies() != null) {
