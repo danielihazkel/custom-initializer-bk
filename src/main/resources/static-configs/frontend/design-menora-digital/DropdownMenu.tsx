@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 export interface MenuItem {
@@ -49,6 +49,9 @@ export function DropdownMenu({ trigger, groups, width, open, onOpenChange, ariaL
   const isOpen = isControlled ? open : innerOpen;
   const hostRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
+  // The compact panel is positioned against the viewport so it escapes any overflow container
+  // (a table's horizontal scroll box, a drawer) instead of being clipped by it.
+  const [pos, setPos] = useState<CSSProperties | null>(null);
 
   const setOpen = useCallback(
     (next: boolean) => {
@@ -71,6 +74,32 @@ export function DropdownMenu({ trigger, groups, width, open, onOpenChange, ariaL
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [isOpen, setOpen]);
+
+  const sheet = width === 'full' || (width === undefined && groups.length > 1);
+
+  // Compact panel: anchor under the trigger's reading-end edge, in viewport coordinates.
+  useEffect(() => {
+    if (!isOpen || sheet) {
+      setPos(null);
+      return;
+    }
+    const place = () => {
+      const trigger = hostRef.current?.querySelector<HTMLElement>('[aria-haspopup="menu"]');
+      if (!trigger) return;
+      const r = trigger.getBoundingClientRect();
+      const rtl = getComputedStyle(trigger).direction === 'rtl';
+      setPos(rtl
+        ? { top: r.bottom + 4, left: r.left }
+        : { top: r.bottom + 4, right: Math.max(0, window.innerWidth - r.right) });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [isOpen, sheet]);
 
   // Opening moves focus to the first enabled item.
   useEffect(() => {
@@ -96,7 +125,6 @@ export function DropdownMenu({ trigger, groups, width, open, onOpenChange, ariaL
     items[next].focus();
   }
 
-  const sheet = width === 'full' || (width === undefined && groups.length > 1);
   const toggle = () => setOpen(!isOpen);
   const triggerProps: MenuTriggerProps = {
     'aria-haspopup': 'menu',
@@ -112,7 +140,7 @@ export function DropdownMenu({ trigger, groups, width, open, onOpenChange, ariaL
   }
 
   const hostCls = ['mn', sheet ? '' : 'mn-menu-host', className ?? ''].filter(Boolean).join(' ');
-  const panelCls = ['mn-menu', sheet ? 'mn-menu--sheet' : ''].filter(Boolean).join(' ');
+  const panelCls = ['mn-menu', sheet ? 'mn-menu--sheet' : 'mn-menu--fixed'].filter(Boolean).join(' ');
   return (
     <div ref={hostRef} className={hostCls} onKeyDown={onKeyDown}>
       {trigger({ open: isOpen, toggle, props: triggerProps })}
@@ -122,7 +150,7 @@ export function DropdownMenu({ trigger, groups, width, open, onOpenChange, ariaL
           role="menu"
           aria-label={ariaLabel}
           className={panelCls}
-          style={sheet ? { gridTemplateColumns: `repeat(${groups.length}, minmax(0, 1fr))` } : undefined}
+          style={sheet ? { gridTemplateColumns: `repeat(${groups.length}, minmax(0, 1fr))` } : (pos ?? { opacity: 0 })}
         >
           {groups.map((group, gi) => (
             <div key={group.title ?? gi} className="mn-menu__group" role={group.title ? 'group' : undefined} aria-label={group.title}>

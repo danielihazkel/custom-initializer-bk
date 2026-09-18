@@ -41,9 +41,13 @@ export interface TableProps<T> {
   /** Optional leading column (e.g. a selection checkbox). */
   leadingHead?: ReactNode;
   leading?: (row: T) => ReactNode;
+  /** Pins the leading column (e.g. selection) to the reading-start edge while the table scrolls sideways (default true). */
+  stickyLeading?: boolean;
   /** Optional trailing column (row actions — a text Button or a DropdownMenu, never a primary Button). */
   trailingHead?: ReactNode;
   trailing?: (row: T) => ReactNode;
+  /** Pins the trailing column to the reading-end edge while the table scrolls sideways (default true). */
+  stickyTrailing?: boolean;
   /** Keeps the current rows on screen, dimmed, while they are being refetched. */
   dimmed?: boolean;
   /** Replaces the body (e.g. skeleton rows for the very first load). */
@@ -58,10 +62,12 @@ export interface TableProps<T> {
  */
 export function Table<T>({
   caption, columns, rows, rowKey, sort, onSort, density = 'comfortable', empty,
-  leadingHead, leading, trailingHead, trailing, dimmed = false, body, className,
+  leadingHead, leading, stickyLeading = true, trailingHead, trailing, stickyTrailing = true, dimmed = false, body, className,
 }: TableProps<T>) {
   const hasLeading = !!leading;
   const hasTrailing = !!trailing;
+  const stickCls = stickyTrailing ? 'mn-table__stick' : undefined;
+  const stickStartCls = stickyLeading ? 'mn-table__stick-start' : undefined;
   const showEmpty = !body && rows.length === 0;
   const tableCls = ['mn-table', density === 'compact' ? 'compact' : '', dimmed ? 'is-dimmed' : ''].filter(Boolean).join(' ');
 
@@ -79,7 +85,7 @@ export function Table<T>({
             <caption>{caption}</caption>
             <thead>
               <tr>
-                {hasLeading && <th scope="col"><span>{leadingHead}</span></th>}
+                {hasLeading && <th scope="col" className={stickStartCls}><span>{leadingHead}</span></th>}
                 {columns.map(col => {
                   const active = !!sort && sort.key === col.key;
                   const ariaSort = col.sortable ? (active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none') : undefined;
@@ -102,20 +108,20 @@ export function Table<T>({
                     </th>
                   );
                 })}
-                {hasTrailing && <th scope="col"><span>{trailingHead}</span></th>}
+                {hasTrailing && <th scope="col" className={stickCls}><span>{trailingHead}</span></th>}
               </tr>
             </thead>
             <tbody>
               {body ??
                 rows.map(row => (
                   <tr key={rowKey(row)}>
-                    {hasLeading && <td>{leading!(row)}</td>}
+                    {hasLeading && <td className={stickStartCls}>{leading!(row)}</td>}
                     {columns.map(col => (
                       <td key={col.key} className={[col.numeric ? 'num' : '', col.keyCol ? 'key' : ''].filter(Boolean).join(' ') || undefined}>
                         {col.render(row)}
                       </td>
                     ))}
-                    {hasTrailing && <td>{trailing!(row)}</td>}
+                    {hasTrailing && <td className={stickCls}>{trailing!(row)}</td>}
                   </tr>
                 ))}
             </tbody>

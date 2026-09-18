@@ -343,7 +343,7 @@ class FrontendProjectGenerationIntegrationTests {
                 .contains("--shadow-cta: 0 8px 16px -3px rgba(255, 199, 0, 0.28)");
         assertThat(files.get("src/shared/ui/menora/components.css"))
                 .contains(".mn-btn--primary").contains("focus-visible").doesNotContain("direction: rtl")
-                .contains(".mn-table").contains(".mn-chip").contains(".mn-footer").contains(".mn-tab");
+                .contains(".mn-table").contains(".mn-table__stick").contains(".mn-table__stick-start").contains(".mn-chip").contains(".mn-footer").contains(".mn-tab");
         for (String c : List.of("Button", "NavLinks", "ActionDisc", "ServiceBubble",
                 "MagazineCard", "CarouselArrow", "ChatLauncher", "Hero", "ThemeToggle",
                 "SectionHeader", "ActionPanel", "Tabs", "DropdownMenu", "SearchField", "ExpertTip", "Chip", "Footer", "Table")) {

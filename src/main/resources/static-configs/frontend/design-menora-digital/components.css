@@ -112,6 +112,8 @@
 .mn-menu { position: absolute; top: 100%; inset-inline-end: 0; z-index: 30; background: var(--surface); box-shadow: var(--shadow-menu);
   border-radius: var(--radius-menu); padding: 16px 20px; min-width: 190px; box-sizing: border-box;
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px 32px; }
+/* A row/toolbar menu escapes any overflow container by positioning against the viewport. */
+.mn-menu--fixed { position: fixed; top: auto; inset-inline-end: auto; }
 .mn-menu--sheet { position: static; border-radius: 0 0 var(--radius-sheet) var(--radius-sheet); padding: 24px 28px; min-width: 0; width: 100%; }
 .mn-menu__group { display: flex; flex-direction: column; gap: 7px; }
 .mn-menu--sheet .mn-menu__group { gap: 9px; }
@@ -208,6 +210,18 @@
 .mn-table.compact th > button, .mn-table.compact th > span, .mn-table.compact td { padding: 7px 18px; }
 .mn-table.compact td { font-size: 17px; line-height: 25px; }
 .mn-table.is-dimmed tbody { opacity: 0.6; transition: opacity 0.2s ease; }
+/* Pinned trailing column (row actions): stays at the reading-end edge while the rows scroll sideways.
+   Solid grounds (the hover tint is layered over surface) so the scrolled cells never show through, and a
+   start-side hairline marks the seam. */
+.mn-table .mn-table__stick { position: sticky; inset-inline-end: 0; z-index: 2; background: var(--surface);
+  border-inline-start: 1px solid var(--line); }
+.mn-table th.mn-table__stick { background: var(--surface-subtle); z-index: 3; }
+.mn-table tbody tr:hover td.mn-table__stick { background: linear-gradient(var(--purple-hover), var(--purple-hover)), var(--surface); }
+/* Pinned leading column (selection checkboxes): the mirror image at the reading-start edge. */
+.mn-table .mn-table__stick-start { position: sticky; inset-inline-start: 0; z-index: 2; background: var(--surface);
+  border-inline-end: 1px solid var(--line); }
+.mn-table th.mn-table__stick-start { background: var(--surface-subtle); z-index: 3; }
+.mn-table tbody tr:hover td.mn-table__stick-start { background: linear-gradient(var(--purple-hover), var(--purple-hover)), var(--surface); }
 .mn-table__caret { width: 6px; height: 6px; border-left: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; display: inline-block;
   flex-shrink: 0; transform: rotate(-45deg); }
 .mn-table__caret--asc { transform: rotate(135deg); }
