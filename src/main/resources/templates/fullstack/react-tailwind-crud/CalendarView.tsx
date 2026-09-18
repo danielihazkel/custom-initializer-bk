@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Column } from './Table'
 import { Skeleton } from './Skeleton'
+import { t, LOCALE } from '../i18n'
 
 interface Props<T extends object> {
   /** Same column model as Table — the first column is used as each event's label. */
@@ -15,9 +16,11 @@ interface Props<T extends object> {
   onView?: (row: T) => void
 }
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December']
+// Weekday/month names follow the generated locale; the grid always starts on Sunday.
+const weekdayFormat = new Intl.DateTimeFormat(LOCALE, { weekday: 'short' })
+const monthFormat = new Intl.DateTimeFormat(LOCALE, { month: 'long' })
+// 2023-01-01 is a Sunday, so day i of that week is weekday i.
+const WEEKDAYS = Array.from({ length: 7 }, (_, i) => weekdayFormat.format(new Date(2023, 0, 1 + i)))
 
 /** Local yyyy-mm-dd key for a Date, for bucketing without timezone drift. */
 function dayKey(d: Date): string {
@@ -67,16 +70,16 @@ export function CalendarView<T extends object>({ columns, rows, rowKey, dateFiel
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-fg">{MONTHS[cursor.month]} {cursor.year}</h2>
+        <h2 className="text-sm font-semibold text-fg">{monthFormat.format(first)} {cursor.year}</h2>
         <div className="flex items-center gap-1">
-          <button onClick={() => step(-1)} className="rounded-lg border border-border bg-surface p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg" title="Previous month" aria-label="Previous month">
-            <ChevronLeft className="h-4 w-4" />
+          <button onClick={() => step(-1)} className="rounded-lg border border-border bg-surface p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg" title={t('previousMonth')} aria-label={t('previousMonth')}>
+            <ChevronLeft className="h-4 w-4 rtl:rotate-180" />
           </button>
           <button onClick={() => setCursor({ year: today.getFullYear(), month: today.getMonth() })} className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-surface-2 hover:text-fg">
-            Today
+            {t('today')}
           </button>
-          <button onClick={() => step(1)} className="rounded-lg border border-border bg-surface p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg" title="Next month" aria-label="Next month">
-            <ChevronRight className="h-4 w-4" />
+          <button onClick={() => step(1)} className="rounded-lg border border-border bg-surface p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg" title={t('nextMonth')} aria-label={t('nextMonth')}>
+            <ChevronRight className="h-4 w-4 rtl:rotate-180" />
           </button>
         </div>
       </div>
@@ -101,12 +104,12 @@ export function CalendarView<T extends object>({ columns, rows, rowKey, dateFiel
                         key={rowKey(row)}
                         onClick={() => onView?.(row)}
                         className="block w-full truncate rounded bg-brand/10 px-1.5 py-0.5 text-start text-xs text-brand transition-colors hover:bg-brand/20"
-                        title="View record"
+                        title={t('viewRecord')}
                       >
-                        {heading ? heading.render(row) : 'Record'}
+                        {heading ? heading.render(row) : t('recordFallback')}
                       </button>
                     ))}
-                    {events.length > 4 && <div className="px-1.5 text-[11px] text-muted">+{events.length - 4} more</div>}
+                    {events.length > 4 && <div className="px-1.5 text-[11px] text-muted">{t('nMore', { n: events.length - 4 })}</div>}
                   </div>
                 </>
               )}

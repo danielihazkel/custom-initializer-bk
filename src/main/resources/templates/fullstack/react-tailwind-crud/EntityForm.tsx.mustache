@@ -1,5 +1,6 @@
 import { Field, inputClass } from '@shared/ui'
-{{#hasRelations}}import { useOptions } from '@shared/api'
+{{#formUsesStrings}}import { t } from '@shared/i18n'
+{{/formUsesStrings}}{{#hasRelations}}import { useOptions } from '@shared/api'
 {{/hasRelations}}import type { {{EntityName}}{{#fields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
 {{#fields}}{{#isEnum}}import { {{enumTypeName}}Values } from '@entities/{{entityNameKebab}}'
 {{/isEnum}}{{/fields}}
@@ -19,7 +20,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
     <>
 {{#fields}}
 {{#isPrimaryKey}}{{#isGenerated}}      {!isNew && (
-        <Field label="{{label}}" hint="System-generated, read-only">
+        <Field label="{{label}}" hint={t('systemGenerated')}>
           <input
             className={`${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
             value={String(value.{{name}} ?? '')}
@@ -45,8 +46,8 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         >
           <option value="">—</option>
-          <option value="true">True</option>
-          <option value="false">False</option>
+          <option value="true">{t('trueLabel')}</option>
+          <option value="false">{t('falseLabel')}</option>
         </select>
       </Field>
 {{/isBoolean}}{{#isEnum}}      <Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
@@ -84,7 +85,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           value={value.{{fkFieldName}} == null ? '' : String(value.{{fkFieldName}})}
           onChange={e => set('{{fkFieldName}}', e.target.value === '' ? null : {{#isTargetPkNumeric}}Number(e.target.value){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}e.target.value{{/isTargetPkNumeric}})}
         >
-          <option value="">{ {{fieldName}}Options.loading ? 'Loading…' : '—' }</option>
+          <option value="">{ {{fieldName}}Options.loading ? t('loading') : '—' }</option>
           { {{fieldName}}Options.options.map(o => (
             <option key={String(o.{{targetPkName}})} value={String(o.{{targetPkName}})}>
               {{#hasTargetLabel}}{`${String(o.{{targetLabelField}} ?? '')} (#${String(o.{{targetPkName}})})`}{{/hasTargetLabel}}{{^hasTargetLabel}}{String(o.{{targetPkName}})}{{/hasTargetLabel}}

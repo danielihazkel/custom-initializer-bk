@@ -8,7 +8,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 import java.io.BufferedReader;
@@ -18,7 +22,9 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -112,7 +118,77 @@ class GeneratedFrontendBuildSmokeTests {
         runPnpm(project, "run", "build");
     }
 
+    @Test
+    void fullstackFrontendEnglishInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The fullstack overlay (per-entity CRUD pages + shared UI + i18n strings module), default
+        // English chrome. Exercises every view mode, the filter bar, bulk actions and audit columns
+        // so each t()/LOCALE call site is type-checked.
+        Path project = fetchFullstackFrontend(workDir, "en", "react-tailwind-crud", false);
+        runPnpm(project, "install", "--prefer-offline");
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendHebrewInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Same overlay with the Hebrew table selected and the Menora Digital set (its own App/Dashboard
+        // templates also read t()), RTL on as the brand is.
+        Path project = fetchFullstackFrontend(workDir, "he", "react-menora-digital-crud", true);
+        runPnpm(project, "install", "--prefer-offline");
+        runPnpm(project, "run", "build");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * POSTs a rich fullstack request (two related entities with every field kind, all list views,
+     * audit/soft-delete/CSV/bulk opts) with the given chrome locale and frontend set, unpacks the
+     * ZIP and returns the generated {@code frontend/} directory.
+     */
+    private Path fetchFullstackFrontend(Path workDir, String locale, String frontendSet, boolean rtl) throws Exception {
+        Map<String, Object> pk = new LinkedHashMap<>();
+        pk.put("name", "id"); pk.put("type", "Long"); pk.put("primaryKey", true); pk.put("generated", true);
+        Map<String, Object> customer = Map.of("name", "Customer", "fields", List.of(pk,
+                Map.of("name", "name", "type", "String", "required", true, "length", 80),
+                Map.of("name", "email", "type", "String", "email", true),
+                Map.of("name", "active", "type", "Boolean")));
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("name", "Order");
+        order.put("listViews", List.of("table", "cards", "kanban", "calendar"));
+        order.put("fields", List.of(pk,
+                Map.of("name", "title", "type", "String", "required", true),
+                Map.of("name", "notes", "type", "Text"),
+                Map.of("name", "status", "type", "Enum", "enumValues", List.of("OPEN", "DONE")),
+                Map.of("name", "quantity", "type", "Integer", "min", 1, "max", 999),
+                Map.of("name", "total", "type", "BigDecimal"),
+                Map.of("name", "shippedOn", "type", "LocalDate")));
+        order.put("relations", List.of(Map.of("type", "MANY_TO_ONE", "fieldName", "customer",
+                "targetEntity", "Customer", "required", true)));
+        List<String> scaffold = new java.util.ArrayList<>(List.of("audit", "softDelete", "csvExport", "bulkDelete", "bulkUpdate", "inverseCollections"));
+        if (rtl) scaffold.add("rtl");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "smoke-fullstack-" + locale);
+        body.put("packageName", "com.menora.smoke");
+        body.put("bootVersion", "3.2.1");
+        body.put("locale", locale);
+        body.put("frontendTemplateSet", frontendSet);
+        body.put("opts", Map.of("scaffold", scaffold));
+        body.put("entities", List.of(customer, order));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> r = rest.exchange("/starter-fullstack.zip", HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+        assertThat(r.getStatusCode())
+                .as("POST /starter-fullstack.zip: " + (r.getStatusCode().is2xxSuccessful() || r.getBody() == null
+                        ? "" : new String(r.getBody(), StandardCharsets.UTF_8)))
+                .isEqualTo(HttpStatus.OK);
+        assertThat(r.getBody()).isNotNull();
+        Path root = extract(workDir, r.getBody());
+        Path frontend = root.resolve("frontend");
+        assertThat(Files.isDirectory(frontend)).as("generated frontend/ directory").isTrue();
+        return frontend;
+    }
 
     /**
      * Hits {@code /frontend/starter.zip} with the supplied query string,
@@ -123,9 +199,13 @@ class GeneratedFrontendBuildSmokeTests {
         ResponseEntity<byte[]> r = rest.getForEntity(url, byte[].class);
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(r.getBody()).isNotNull();
+        return extract(workDir, r.getBody());
+    }
 
+    /** Unpacks a ZIP under {@code workDir} and returns its single top-level directory. */
+    private static Path extract(Path workDir, byte[] zipBytes) throws Exception {
         String topLevel = null;
-        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(r.getBody()))) {
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
             ZipEntry e;
             while ((e = zip.getNextEntry()) != null) {
                 Path out = workDir.resolve(e.getName()).normalize();

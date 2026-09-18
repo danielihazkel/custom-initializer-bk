@@ -340,6 +340,7 @@ silently never fires.
 | `optScaffoldBulkDelete` | `bulkDelete` (→ per-entity `bulkDeleteApplicable`) |
 | `optScaffoldBulkUpdate` | `bulkUpdate` (→ per-entity `bulkUpdateApplicable`) |
 | *(none)* | `rtl` — not a flag: sets `FrontendProjectDescription.rtl`, so FE templates read `isRtl` (§5) |
+| `locale` / `isHebrew` | request field `locale` (`en`/`he`), not an opt — frontend context only; `i18n-strings.ts.mustache` picks the string table on `isHebrew`, `LOCALE` = `locale` |
 
 `optScaffoldOpenApi` and `optScaffoldSecured` affect only the backend `Controller.java.mustache`, so —
 unlike the audit/inverse flags — they are set **only** in `FullstackProjectGenerationConfiguration`, not

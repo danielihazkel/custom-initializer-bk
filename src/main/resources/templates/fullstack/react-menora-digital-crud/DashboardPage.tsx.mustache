@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, LayoutGrid, Table2 } from 'lucide-react'
 import { api } from '@shared/api'
+import { t } from '@shared/i18n'
 
 interface CardDef {
   label: string
@@ -23,7 +24,7 @@ interface ChartDef {
 // One breakdown per entity that has a low-cardinality (enum/boolean) field. Grouped client-side
 // from a sample page (see useBreakdown), so the chart labels itself as a sample on large tables.
 const CHARTS: ChartDef[] = [
-{{#entities}}{{#hasBreakdown}}  { label: '{{entityLabelPlural}} by {{breakdownLabel}}', path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}' },
+{{#entities}}{{#hasBreakdown}}  { label: t('xByY', { x: '{{entityLabelPlural}}', y: '{{breakdownLabel}}' }), path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}' },
 {{/hasBreakdown}}{{/entities}}]
 
 /** Reads just the page metadata (size=1) to surface a live record count per entity. */
@@ -95,17 +96,17 @@ function ChartCard({ chart }: { chart: ChartDef }) {
     <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
       <div className="mb-4 text-sm font-semibold text-fg">{chart.label}</div>
       {failed ? (
-        <div className="text-sm text-muted">Couldn’t load data.</div>
+        <div className="text-sm text-muted">{t('couldNotLoad')}</div>
       ) : data == null ? (
         <div className="text-sm text-muted">…</div>
       ) : data.length === 0 ? (
-        <div className="text-sm text-muted">No records yet.</div>
+        <div className="text-sm text-muted">{t('noRecordsYetDot')}</div>
       ) : (
         <>
           <BarChart data={data} />
           {sampled && sampled.total > sampled.shown && (
             <div className="mt-3 text-xs text-muted">
-              Based on the first {sampled.shown} of {sampled.total} records.
+              {t('basedOnSample', { shown: sampled.shown, total: sampled.total })}
             </div>
           )}
         </>
@@ -146,13 +147,13 @@ export function DashboardPage({ onNavigate }: Props) {
       <div className="mb-8 rounded-2xl bg-surface p-6 shadow-card md:p-8">
         <div className="flex items-center gap-2 text-brand">
           <LayoutGrid className="h-5 w-5" />
-          <span className="text-xs font-semibold uppercase tracking-wider">Overview</span>
+          <span className="text-xs font-semibold uppercase tracking-wider">{t('overview')}</span>
         </div>
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-fg md:text-4xl">
-          {{#dashboardTitle}}{{dashboardTitle}}{{/dashboardTitle}}{{^dashboardTitle}}Welcome to {{artifactId}}{{/dashboardTitle}}<span className="text-primary">.</span>
+          {{#dashboardTitle}}{{dashboardTitle}}{{/dashboardTitle}}{{^dashboardTitle}}{t('welcomeTo', { name: '{{artifactId}}' })}{{/dashboardTitle}}<span className="text-primary">.</span>
         </h1>
         <p className="mt-2 max-w-xl text-lg font-light text-muted">
-          {{#dashboardOverview}}{{dashboardOverview}}{{/dashboardOverview}}{{^dashboardOverview}}Manage your data below. Select a collection to browse, search, create, edit and delete records.{{/dashboardOverview}}
+          {{#dashboardOverview}}{{dashboardOverview}}{{/dashboardOverview}}{{^dashboardOverview}}{t('manageBlurb')}{{/dashboardOverview}}
         </p>
         {CARDS.length > 0 && (
           <button
@@ -165,7 +166,7 @@ export function DashboardPage({ onNavigate }: Props) {
         )}
       </div>
 
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Collections</h2>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">{t('collections')}</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {CARDS.map(card => (
           <StatCard key={card.view} card={card} onNavigate={onNavigate} />
@@ -174,7 +175,7 @@ export function DashboardPage({ onNavigate }: Props) {
 
       {CHARTS.length > 0 && (
         <>
-          <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-muted">Breakdowns</h2>
+          <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-muted">{t('breakdowns')}</h2>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {CHARTS.map(chart => <ChartCard key={chart.label} chart={chart} />)}
           </div>

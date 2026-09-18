@@ -1,5 +1,6 @@
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
-
+{{#hasValidationChecks}}import { t } from '@shared/i18n'
+{{/hasValidationChecks}}
 /** Client-side checks mirroring the backend's Bean Validation (required, length, min/max,
  *  pattern, email), run before a save so obvious mistakes are flagged without a round-trip.
  *  Returns `{ fieldName: message }`; empty when the value is valid. A generated primary key is
@@ -7,13 +8,13 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 export function validate{{EntityName}}(value: Partial<{{EntityName}}>): Record<string, string> {
   const errors: Record<string, string> = {}
 {{#hasBlankChecks}}  const blank = (v: unknown) => v == null || (typeof v === 'string' && v.trim() === '')
-{{/hasBlankChecks}}{{#fields}}{{#isPrimaryKey}}{{^isGenerated}}  if (blank(value.{{name}})) errors.{{name}} = 'Required'
-{{/isGenerated}}{{/isPrimaryKey}}{{^isPrimaryKey}}{{#isRequired}}  if (blank(value.{{name}})) errors.{{name}} = 'Required'
-{{/isRequired}}{{/isPrimaryKey}}{{^isGenerated}}{{#hasLength}}  if (!errors.{{name}} && typeof value.{{name}} === 'string' && value.{{name}}.length > {{length}}) errors.{{name}} = 'Must be at most {{length}} characters'
-{{/hasLength}}{{#isNumeric}}{{#hasMin}}  if (!errors.{{name}} && value.{{name}} != null && Number(value.{{name}}) < {{min}}) errors.{{name}} = 'Must be at least {{min}}'
-{{/hasMin}}{{#hasMax}}  if (!errors.{{name}} && value.{{name}} != null && Number(value.{{name}}) > {{max}}) errors.{{name}} = 'Must be at most {{max}}'
-{{/hasMax}}{{/isNumeric}}{{#hasPattern}}  if (!errors.{{name}} && typeof value.{{name}} === 'string' && value.{{name}} !== '' && !new RegExp('^(?:' + "{{patternEscaped}}" + ')$').test(value.{{name}})) errors.{{name}} = 'Invalid format'
-{{/hasPattern}}{{#isEmail}}  if (!errors.{{name}} && typeof value.{{name}} === 'string' && value.{{name}} !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.{{name}})) errors.{{name}} = 'Must be a valid email address'
-{{/isEmail}}{{/isGenerated}}{{/fields}}{{#relations}}{{#required}}  if (blank(value.{{fkFieldName}})) errors.{{fkFieldName}} = 'Required'
+{{/hasBlankChecks}}{{#fields}}{{#isPrimaryKey}}{{^isGenerated}}  if (blank(value.{{name}})) errors.{{name}} = t('required')
+{{/isGenerated}}{{/isPrimaryKey}}{{^isPrimaryKey}}{{#isRequired}}  if (blank(value.{{name}})) errors.{{name}} = t('required')
+{{/isRequired}}{{/isPrimaryKey}}{{^isGenerated}}{{#hasLength}}  if (!errors.{{name}} && typeof value.{{name}} === 'string' && value.{{name}}.length > {{length}}) errors.{{name}} = t('maxChars', { n: {{length}} })
+{{/hasLength}}{{#isNumeric}}{{#hasMin}}  if (!errors.{{name}} && value.{{name}} != null && Number(value.{{name}}) < {{min}}) errors.{{name}} = t('atLeast', { n: {{min}} })
+{{/hasMin}}{{#hasMax}}  if (!errors.{{name}} && value.{{name}} != null && Number(value.{{name}}) > {{max}}) errors.{{name}} = t('atMost', { n: {{max}} })
+{{/hasMax}}{{/isNumeric}}{{#hasPattern}}  if (!errors.{{name}} && typeof value.{{name}} === 'string' && value.{{name}} !== '' && !new RegExp('^(?:' + "{{patternEscaped}}" + ')$').test(value.{{name}})) errors.{{name}} = t('invalidFormat')
+{{/hasPattern}}{{#isEmail}}  if (!errors.{{name}} && typeof value.{{name}} === 'string' && value.{{name}} !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.{{name}})) errors.{{name}} = t('invalidEmail')
+{{/isEmail}}{{/isGenerated}}{{/fields}}{{#relations}}{{#required}}  if (blank(value.{{fkFieldName}})) errors.{{fkFieldName}} = t('required')
 {{/required}}{{/relations}}  return errors
 }

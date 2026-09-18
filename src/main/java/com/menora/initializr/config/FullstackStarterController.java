@@ -172,6 +172,7 @@ public class FullstackStarterController {
                 requireSet(backendSetKey, EntityTemplateSetEntity.Kind.BACKEND_JAVA, "backendTemplateSet");
         EntityTemplateSetEntity frontendSet =
                 requireSet(frontendSetKey, EntityTemplateSetEntity.Kind.FRONTEND_REACT, "frontendTemplateSet");
+        String locale = resolveLocale(body.locale());
 
         WebProjectRequest request = toWebRequest(body);
         String domainPackage = resolveDomainPackage(body.domainPackage(), request.getPackageName());
@@ -207,7 +208,7 @@ public class FullstackStarterController {
 
         // Frontend — rendered inline outside the Initializr pipeline.
         renderFrontend(frontendSet, request, entities, domainPackage, body.colorPalette(),
-                body.dashboardTitle(), body.dashboardOverview(), tempDir.resolve("frontend"));
+                body.dashboardTitle(), body.dashboardOverview(), locale, tempDir.resolve("frontend"));
 
         // Root files
         Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
@@ -345,7 +346,7 @@ public class FullstackStarterController {
     private void renderFrontend(EntityTemplateSetEntity set, WebProjectRequest request,
                                 List<EntityDefinition> entities, String domainPackage,
                                 String colorPaletteId, String dashboardTitle, String dashboardOverview,
-                                Path targetDir) throws IOException {
+                                String locale, Path targetDir) throws IOException {
         // 1. Substrate — reuse the standalone frontend generator.
         FrontendProjectDescription desc = buildFrontendDescription(request, colorPaletteId);
         if (set.getDesignSystem() == EntityTemplateSetEntity.DesignSystem.MENORA_DIGITAL) {
@@ -400,6 +401,11 @@ public class FullstackStarterController {
         // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.
         putIfPresent(projectCtx, "dashboardTitle", dashboardTitle);
         putIfPresent(projectCtx, "dashboardOverview", dashboardOverview);
+        // Chrome-string language. The overlay's src/shared/i18n/strings.ts ships both tables and
+        // picks one on `isHebrew`; `locale` is also the BCP-47 tag the generated app hands to Intl.
+        // Frontend-only — the backend's ProblemDetail messages stay English.
+        projectCtx.put("locale", locale);
+        projectCtx.put("isHebrew", "he".equals(locale));
         log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());
@@ -491,6 +497,19 @@ public class FullstackStarterController {
 
     private static String orDefault(String v, String fallback) {
         return (v == null || v.isBlank()) ? fallback : v;
+    }
+
+    /** Supported chrome-string languages of the generated frontend (see {@code i18n-strings.ts.mustache}). */
+    private static final Set<String> SUPPORTED_LOCALES = Set.of("en", "he");
+
+    /** Blank → {@code en}; anything outside {@link #SUPPORTED_LOCALES} is a 400, never a silent fallback. */
+    private static String resolveLocale(String raw) {
+        String locale = orDefault(raw, "en").trim().toLowerCase(java.util.Locale.ROOT);
+        if (!SUPPORTED_LOCALES.contains(locale)) {
+            throw new WizardArgumentException("locale '" + raw + "' is not supported (expected one of "
+                    + String.join(", ", SUPPORTED_LOCALES.stream().sorted().toList()) + ")");
+        }
+        return locale;
     }
 
     /** Puts a trimmed value under {@code key} only when non-blank, so a Mustache

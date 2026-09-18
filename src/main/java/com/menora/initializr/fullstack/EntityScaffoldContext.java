@@ -587,11 +587,28 @@ public final class EntityScaffoldContext {
         // The frontend validator (model/validate.ts) needs its `blank` helper only when something
         // is required: a client-supplied PK, a required non-PK field, or a required relation —
         // emitting it otherwise would trip the generated project's no-unused-vars lint rule.
-        view.put("hasBlankChecks",
-                hasRequiredRelations
+        boolean hasBlankChecks = hasRequiredRelations
+                || fieldViews.stream().anyMatch(m ->
+                        (Boolean.TRUE.equals(m.get("isPrimaryKey")) && !Boolean.TRUE.equals(m.get("isGenerated")))
+                        || (!Boolean.TRUE.equals(m.get("isPrimaryKey")) && Boolean.TRUE.equals(m.get("isRequired"))));
+        view.put("hasBlankChecks", hasBlankChecks);
+        // Same lint concern for the validator's `t`/`tf` string imports: only import them when at
+        // least one check (blank, length, min/max, pattern, email) is actually emitted.
+        view.put("hasValidationChecks",
+                hasBlankChecks
                         || fieldViews.stream().anyMatch(m ->
-                                (Boolean.TRUE.equals(m.get("isPrimaryKey")) && !Boolean.TRUE.equals(m.get("isGenerated")))
-                                || (!Boolean.TRUE.equals(m.get("isPrimaryKey")) && Boolean.TRUE.equals(m.get("isRequired")))));
+                                !Boolean.TRUE.equals(m.get("isGenerated"))
+                                && (Boolean.TRUE.equals(m.get("hasLength")) || Boolean.TRUE.equals(m.get("hasMin"))
+                                        || Boolean.TRUE.equals(m.get("hasMax")) || Boolean.TRUE.equals(m.get("hasPattern"))
+                                        || Boolean.TRUE.equals(m.get("isEmail")))));
+        // And for the form (ui/<Entity>Form.tsx): it reads a chrome string only for a generated PK's
+        // hint, boolean/enum <option> labels, and the relation picker's loading placeholder.
+        view.put("formUsesStrings",
+                !relationViews.isEmpty()
+                        || fieldViews.stream().anyMatch(m ->
+                                (Boolean.TRUE.equals(m.get("isPrimaryKey")) && Boolean.TRUE.equals(m.get("isGenerated")))
+                                || Boolean.TRUE.equals(m.get("isBoolean"))
+                                || Boolean.TRUE.equals(m.get("isEnum"))));
 
         // Filter by relation FK ("orders of customer 7"): one filter entry per MANY_TO_ONE, keyed
         // by the DTO's <field>Id, equality on the relation's target PK. The frontend renders a

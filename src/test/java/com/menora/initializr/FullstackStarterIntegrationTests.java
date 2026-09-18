@@ -1533,7 +1533,7 @@ class FullstackStarterIntegrationTests {
 
         // Read-only view frontend page has no New/Edit/Delete surface.
         String viewPage = contentEndingWith(entries, "/UserSummaryPage.tsx");
-        assertThat(viewPage).doesNotContain("New UserSummary").doesNotContain("onDelete=");
+        assertThat(viewPage).doesNotContain("t('newX'").doesNotContain("onDelete=");
     }
 
     @Test
@@ -1785,7 +1785,7 @@ class FullstackStarterIntegrationTests {
                 .contains("service.restore(id)");
         assertThat(entries.get("shop/frontend/src/pages/widget/ui/WidgetPage.tsx"))
                 .contains("restore(removed.id as number | string)")
-                .contains("label: 'Undo'")
+                .contains("label: t('undo')")
                 .doesNotContain("create(removed");
         // Composite PK: no soft delete, hence no restore anywhere.
         assertThat(contentEndingWith(entries, "/repository/OrderLineRepository.java")).doesNotContain("restore");
@@ -1814,19 +1814,22 @@ class FullstackStarterIntegrationTests {
         String validate = entries.get("shop/frontend/src/features/contact-form/model/validate.ts");
         assertThat(validate)
                 .contains("export function validateContact(value: Partial<Contact>): Record<string, string>")
+                .contains("import { t } from '@shared/i18n'")
                 .contains("const blank = (v: unknown)")
-                .contains("if (blank(value.name)) errors.name = 'Required'")
-                .contains("value.name.length > 40) errors.name = 'Must be at most 40 characters'")
-                .contains("Number(value.age) < 0) errors.age = 'Must be at least 0'")
-                .contains("Number(value.age) > 120) errors.age = 'Must be at most 120'")
-                .contains("new RegExp('^(?:' + \"[A-Z]{3}\" + ')$').test(value.code)) errors.code = 'Invalid format'")
-                .contains("errors.email = 'Must be a valid email address'")
-                .contains("if (blank(value.companyId)) errors.companyId = 'Required'")
+                .contains("if (blank(value.name)) errors.name = t('required')")
+                .contains("value.name.length > 40) errors.name = t('maxChars', { n: 40 })")
+                .contains("Number(value.age) < 0) errors.age = t('atLeast', { n: 0 })")
+                .contains("Number(value.age) > 120) errors.age = t('atMost', { n: 120 })")
+                .contains("new RegExp('^(?:' + \"[A-Z]{3}\" + ')$').test(value.code)) errors.code = t('invalidFormat')")
+                .contains("errors.email = t('invalidEmail')")
+                .contains("if (blank(value.companyId)) errors.companyId = t('required')")
                 .doesNotContain("errors.id =");
-        // Nothing required on Company → no `blank` helper (the generated lint forbids unused vars).
+        // Nothing required on Company → no `blank` helper and no string import (the generated lint
+        // forbids unused vars).
         assertThat(entries.get("shop/frontend/src/features/company-form/model/validate.ts"))
                 .contains("export function validateCompany(")
-                .doesNotContain("const blank");
+                .doesNotContain("const blank")
+                .doesNotContain("@shared/i18n");
         assertThat(entries.get("shop/frontend/src/features/contact-form/ui/ContactForm.tsx")).doesNotContain("validateContact");
         assertThat(entries.get("shop/frontend/src/features/contact-form/index.ts"))
                 .contains("export { validateContact } from './model/validate'");
@@ -1835,7 +1838,7 @@ class FullstackStarterIntegrationTests {
                 .contains("import { ContactForm, validateContact } from '@features/contact-form'")
                 .contains("const clientErrors = validateContact(editing)")
                 .contains("k in formErrors")
-                .doesNotContain("label: 'Undo'")
+                .doesNotContain("label: t('undo')")
                 .doesNotContain("create(removed");
         // The drawer is a real form (Enter submits, Save is type=submit, browser bubbles off).
         assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx"))
@@ -2122,11 +2125,11 @@ class FullstackStarterIntegrationTests {
         String dashboard = entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx");
         assertThat(dashboard)
                 .contains("function BarChart")
-                .contains("Products by Status")
+                .contains("label: t('xByY', { x: 'Products', y: 'Status' })")
                 .contains("field: 'status'")
                 // Grouped client-side from a sample page -> says so when the table is larger.
-                .contains("Based on the first {sampled.shown} of {sampled.total} records");
-        assertThat(dashboard).doesNotContain("Plains by");
+                .contains("t('basedOnSample', { shown: sampled.shown, total: sampled.total })");
+        assertThat(dashboard).doesNotContain("x: 'Plains'");
     }
 
     @Test
@@ -2183,9 +2186,9 @@ class FullstackStarterIntegrationTests {
                 .contains("KanbanBoard, FilterBar")
                 .contains("<KanbanBoard")
                 .contains("groupField=\"status\"")
-                .contains("aria-label=\"Table view\"")              // toggle bar present (2 views)
-                .contains("aria-label=\"Board view\"")
-                .doesNotContain("aria-label=\"Card view\"")         // cards not selected
+                .contains("aria-label={t('tableView')}")            // toggle bar present (2 views)
+                .contains("aria-label={t('boardView')}")
+                .doesNotContain("aria-label={t('cardView')}")       // cards not selected
                 .doesNotContain("<CardGrid")
                 .doesNotContain("<CalendarView")
                 .contains("<FilterBar filters={filterDescriptors}")
@@ -2206,7 +2209,7 @@ class FullstackStarterIntegrationTests {
                 .contains("<CalendarView")
                 .contains("dateField=\"startsAt\"")
                 .doesNotContain("<Table")
-                .doesNotContain("aria-label=\"Calendar view\"");     // single view → no toggle
+                .doesNotContain("aria-label={t('calendarView')}");   // single view → no toggle
 
         // Plain page: legacy listView="kanban" down-grades to table-only, no filter bar.
         String plainPage = entries.get("ops/frontend/src/pages/plain/ui/PlainPage.tsx");
@@ -2442,6 +2445,93 @@ class FullstackStarterIntegrationTests {
         assertThat(response.getBody()).contains("defaultValue 'abc' is not a valid INTEGER (field 'priority' on entity 'Ticket')");
     }
 
+    // ── Chrome-string locale ──────────────────────────────────────────────────
+
+    @Test
+    void fullstackEndpoint_defaultsChromeStringsToEnglish() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(
+                Map.of("name", "Task", "fields", List.of(pkField(), Map.of("name", "title", "type", "String")))));
+        Map<String, String> entries = generateZip(body);
+
+        // One strings module ships both tables; the generated locale picks the English one.
+        String strings = entries.get("shop/frontend/src/shared/i18n/strings.ts");
+        assertThat(strings)
+                .contains("export const LOCALE = 'en'")
+                .contains("const S: Record<StringKey, string> = en")
+                .contains("dashboard: 'Dashboard'")
+                .contains("dashboard: 'לוח בקרה'")
+                .contains("export function t(key: StringKey, params?: Record<string, string | number>): string");
+        assertThat(entries.get("shop/frontend/src/shared/i18n/index.ts"))
+                .contains("export { t, LOCALE, type StringKey } from './strings'");
+        // Chrome text is read through t(), never inlined, so a locale flip touches one file.
+        assertThat(entries.get("shop/frontend/src/app/App.tsx"))
+                .contains("import { t } from '@shared/i18n'")
+                .contains("label: t('dashboard')")
+                .doesNotContain("'Dashboard'");
+        assertThat(entries.get("shop/frontend/src/pages/task/ui/TaskPage.tsx"))
+                .contains("t('newX', { x: 'Task' })")
+                .contains("t(totalElements === 1 ? 'record' : 'records')")
+                .doesNotContain("New Task");
+        assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
+                .contains("import { t } from '../i18n'")
+                .contains("placeholder={t('search')}");
+        assertThat(entries.get("shop/frontend/src/shared/ui/CalendarView.tsx"))
+                .contains("new Intl.DateTimeFormat(LOCALE, { weekday: 'short' })")
+                .doesNotContain("'January'");
+        // The form only imports the strings module when it actually reads a string (generated-PK
+        // hint here); Task has no boolean/enum/relation so that hint is the sole use.
+        assertThat(entries.get("shop/frontend/src/features/task-form/ui/TaskForm.tsx"))
+                .contains("import { t } from '@shared/i18n'")
+                .contains("hint={t('systemGenerated')}");
+    }
+
+    @Test
+    void fullstackEndpoint_hebrewLocaleRendersHebrewChrome() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("locale", "he");
+        body.put("frontendTemplateSet", "react-menora-digital-crud");
+        body.put("entities", List.of(
+                Map.of("name", "Task", "fields", List.of(pkField(), Map.of("name", "title", "type", "String")))));
+        Map<String, String> entries = generateZip(body);
+
+        String strings = entries.get("shop/frontend/src/shared/i18n/strings.ts");
+        assertThat(strings)
+                .contains("export const LOCALE = 'he'")
+                .contains("const S: Record<StringKey, string> = he")
+                .contains("dashboard: 'לוח בקרה'")
+                .contains("newX: '{x} חדש'");
+        // The Menora-authored shell and dashboard go through t() like the default set's.
+        assertThat(entries.get("shop/frontend/src/app/App.tsx"))
+                .contains("import { t } from '@shared/i18n'")
+                .contains("aria-label={t('main')}")
+                .contains("label: t('dashboard')");
+        assertThat(entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx"))
+                .contains("t('welcomeTo', { name: 'shop' })")
+                .contains("{t('collections')}");
+        // `locale` is independent of `rtl`: no rtl opt → the document stays LTR.
+        assertThat(entries.get("shop/frontend/index.html")).doesNotContain("dir=\"rtl\"");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsUnknownLocale() {
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "demo");
+            b.put("bootVersion", "3.2.1");
+            b.put("locale", "fr");
+            b.put("entities", List.of(Map.of("name", "Task", "fields", List.of(pkField()))));
+        });
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("locale 'fr' is not supported").contains("en, he");
+    }
+
     /** POSTs a fullstack request and returns the unzipped (path → text) generated tree. */
     private Map<String, String> generateZip(Map<String, Object> body) throws Exception {
         HttpHeaders headers = new HttpHeaders();
@@ -2490,7 +2580,8 @@ class FullstackStarterIntegrationTests {
                 if (entry.isDirectory()) continue;
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 zin.transferTo(out);
-                result.put(entry.getName(), out.toString());
+                // Generated files are UTF-8 (Hebrew chrome strings); never the platform default.
+                result.put(entry.getName(), out.toString(java.nio.charset.StandardCharsets.UTF_8));
             }
         }
         return result;
