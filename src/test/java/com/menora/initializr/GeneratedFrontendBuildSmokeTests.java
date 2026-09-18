@@ -137,6 +137,15 @@ class GeneratedFrontendBuildSmokeTests {
         runPnpm(project, "run", "build");
     }
 
+    @Test
+    void fullstackFrontendMenoraEnglishInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Menora set authors its own shared UI + entity page around the design-system ports;
+        // type-check and lint them in the LTR/English configuration too.
+        Path project = fetchFullstackFrontend(workDir, "en", "react-menora-digital-crud", false);
+        runPnpm(project, "install", "--prefer-offline");
+        runPnpm(project, "run", "build");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**

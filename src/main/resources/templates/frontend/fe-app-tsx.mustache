@@ -13,7 +13,7 @@ import { theme } from '@shared/theme/theme';
 import { theme } from '@shared/theme/theme';
 {{/hasDesignChakra}}{{#hasDesignMantine}}import { MantineProvider } from '@mantine/core';
 import { theme } from '@shared/theme/theme';
-{{/hasDesignMantine}}{{#hasDesignMenoraDigital}}import { NavLinks, Button, ChatLauncher, ThemeToggle } from '@shared/ui/menora';
+{{/hasDesignMantine}}{{#hasDesignMenoraDigital}}import { NavLinks, Button, ChatLauncher, ThemeToggle, Footer } from '@shared/ui/menora';
 {{/hasDesignMenoraDigital}}{{#hasStyleStyled}}{{^hasDesignMui}}{{^hasDesignChakra}}{{^hasDesignMantine}}{{^hasDesignMenoraDigital}}import { ThemeProvider } from 'styled-components';
 import { theme } from '@shared/theme/theme';
 {{/hasDesignMenoraDigital}}{{/hasDesignMantine}}{{/hasDesignChakra}}{{/hasDesignMui}}{{/hasStyleStyled}}{{^hasRouterReactRouter}}import { HomePage } from '@pages/home';
@@ -47,15 +47,22 @@ const menoraHeaderActionsStyle = { display: 'flex', alignItems: 'center', gap: 1
 
 const menoraMainStyle = { flex: 1 } as const;
 
-const menoraFooterStyle = {
-  background: 'var(--surface-dark)',
-  color: 'var(--on-dark)',
-  padding: '25px 16px',
-  font: '300 18px/27px var(--font-sans)',
-  textAlign: 'center',
-} as const;
+// The footer band: five link columns, outlined social circles, the one yellow-bright accent link and the legal line.
+const menoraFooterColumns = [
+  { title: 'ביטוחים', items: [{ label: 'ביטוח רכב' }, { label: 'ביטוח דירה' }, { label: 'ביטוח נסיעות' }] },
+  { title: 'חיסכון פנסיוני', items: [{ label: 'קרן פנסיה' }, { label: 'קופת גמל' }, { label: 'קרן השתלמות' }] },
+  { title: 'תביעות', items: [{ label: 'הגשת תביעה' }, { label: 'מעקב תביעה' }, { label: 'מרכז הסיוע' }] },
+  { title: 'שירות', items: [{ label: 'צור קשר' }, { label: 'סניפים' }, { label: 'שאלות נפוצות' }] },
+  { title: 'אודות', items: [{ label: 'הקבוצה' }, { label: 'דרושים' }, { label: 'דוחות' }] },
+];
+const menoraFooterSocial = [
+  { network: 'facebook', href: '#', label: 'פייסבוק' },
+  { network: 'instagram', href: '#', label: 'אינסטגרם' },
+  { network: 'linkedin', href: '#', label: 'לינקדאין' },
+] as const;
 
 const menoraChatStyle = { position: 'fixed', bottom: 0, insetInlineEnd: 0, zIndex: 40 } as const;
+const menoraFooterAccent = { label: 'לאזור האישי', href: '#' };
 
 const menoraNav = [
   { label: 'ביטוחים', href: '#', menu: true },
@@ -121,7 +128,12 @@ const shellLogoImgStyle = { height: '100%', width: 'auto' } as const;
           <main style={menoraMainStyle}>
             {{#hasRouterReactRouter}}<RouterProvider router={router} />{{/hasRouterReactRouter}}{{^hasRouterReactRouter}}<HomePage />{{/hasRouterReactRouter}}
           </main>
-          <footer style={menoraFooterStyle}>{{appTitle}}</footer>
+          <Footer
+            columns={menoraFooterColumns}
+            social={[...menoraFooterSocial]}
+            accent={menoraFooterAccent}
+            legal="© {{appTitle}}"
+          />
           <div style={menoraChatStyle}>
             <ChatLauncher />
           </div>

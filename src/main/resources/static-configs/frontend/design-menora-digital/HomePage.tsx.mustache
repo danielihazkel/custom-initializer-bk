@@ -1,31 +1,118 @@
-import { Hero, ActionDisc, ServiceBubble, MagazineCard, CarouselArrow, Button } from '@shared/ui/menora';
+import { useState } from 'react';
+import {
+  Hero, ActionPanel, SectionHeader, ServiceBubble, MagazineCard, CarouselArrow,
+  Tabs, SearchField, Chip, DropdownMenu, ExpertTip, Table,
+} from '@shared/ui/menora';
+import type { TableSort } from '@shared/ui/menora';
 
 const section = { maxWidth: 'var(--container)', margin: '0 auto', padding: '48px 16px' } as const;
-const panel = {
-  background: 'var(--surface)',
-  borderRadius: 'var(--radius-card)',
-  boxShadow: 'var(--shadow-card)',
-  padding: '25px 16px',
-  display: 'flex',
-  flexWrap: 'wrap',
-  justifyContent: 'center',
-  gap: 16,
-} as const;
 const band = { background: 'var(--surface-lavender)', padding: '48px 0' } as const;
 const row = { display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 25 } as const;
 const cards = { display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 16 } as const;
 const title = { paddingBottom: 25 } as const;
-const more = { textAlign: 'center', marginTop: 25 } as const;
+const stack = { display: 'flex', flexDirection: 'column', gap: 25 } as const;
+const chips = { display: 'flex', flexWrap: 'wrap', gap: 10 } as const;
+const twoUp = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 25, alignItems: 'start' } as const;
+const panelUnderTabs = { marginTop: -25 } as const;
+const caret = { width: 6, height: 6, borderLeft: '1.5px solid currentColor', borderBottom: '1.5px solid currentColor', transform: 'rotate(-45deg)', marginTop: -4 } as const;
+const noClaims = { title: 'אין תביעות להצגה', hint: 'כשתגישו תביעה היא תופיע כאן, עם הסטטוס והסכום.' };
 
 const icon = (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-    <rect x="3" y="5" width="18" height="14" rx="2" />
-    <path d="M3 10h18" />
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <rect x="4" y="6" width="16" height="12" rx="2" />
+    <path d="M4 10h16" />
+  </svg>
+);
+const plus = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+const shield = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" />
+  </svg>
+);
+const doc = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <path d="M7 3h7l5 5v13H7z" />
+    <path d="M14 3v5h5" />
+  </svg>
+);
+const clock = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <circle cx="12" cy="12" r="8" />
+    <path d="M12 8v4l3 2" />
+  </svg>
+);
+const refresh = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <path d="M4 12a8 8 0 1 1 3 6" />
+    <path d="M4 13v-5h5" />
   </svg>
 );
 
+const actions = [
+  { label: 'רכישת ביטוח', icon },
+  { label: 'הפקדה חד פעמית', icon: plus },
+  { label: "צ'ק אפ דיגיטלי", icon: shield },
+  { label: 'הגשת תביעה', icon: doc },
+  { label: 'הוספת נהג מזדמן', icon: clock },
+  { label: 'חידוש ביטוח', icon: refresh },
+];
+
+const tabs = [
+  { id: 'car', label: 'ביטוח רכב', text: 'כיסוי מלא, השתתפות עצמית מופחתת והנחה של עד 50% להצטרפות אונליין.' },
+  { id: 'home', label: 'ביטוח דירה', text: 'מבנה ותכולה בפוליסה אחת, כולל נזקי מים וצד שלישי.' },
+  { id: 'travel', label: 'ביטוח נסיעות', text: 'כיסוי רפואי בחו"ל, ביטול נסיעה וכבודה — מיום היציאה.' },
+  { id: 'health', label: 'ביטוח בריאות', text: 'שירותים רפואיים פרטיים, ניתוחים והשתלות בארץ ובחו"ל.' },
+];
+
+const suggestions = ['פנסיה מקיפה', 'פנסיה כללית', 'משיכת כספי פיצויים', 'איזון אקטוארי'];
+
+const menuGroups = [
+  { title: 'ביטוחי רכב', items: [{ label: 'חובה ומקיף' }, { label: 'צד שלישי' }, { label: 'נהג מזדמן' }] },
+  { title: 'ביטוחי דירה', items: [{ label: 'מבנה ותכולה' }, { label: 'נזקי מים' }, { label: 'צד שלישי' }] },
+  { title: 'ביטוחי בריאות', items: [{ label: 'ניתוחים בישראל' }, { label: 'תרופות' }, { label: 'שירותים רפואיים' }] },
+];
+
+interface Claim {
+  id: string;
+  kind: string;
+  date: string;
+  status: string;
+  amount: number;
+  t: number;
+}
+
+const claims: Claim[] = [
+  { id: '4821-77', kind: 'ביטוח רכב', date: '12.03.2026', status: 'בטיפול', amount: 4200, t: 20260312 },
+  { id: '4796-12', kind: 'ביטוח דירה', date: '28.02.2026', status: 'אושרה', amount: 11750, t: 20260228 },
+  { id: '4755-04', kind: 'ביטוח בריאות', date: '05.02.2026', status: 'נדחתה', amount: 980, t: 20260205 },
+  { id: '4710-39', kind: 'ביטוח רכב', date: '21.01.2026', status: 'אושרה', amount: 2340, t: 20260121 },
+  { id: '4688-55', kind: 'ביטוח נסיעות', date: '09.01.2026', status: 'בטיפול', amount: 6100, t: 20260109 },
+  { id: '4602-18', kind: 'ביטוח דירה', date: '17.12.2025', status: 'אושרה', amount: 3775, t: 20251217 },
+];
+const statusOrder: Record<string, number> = { 'בטיפול': 0, 'אושרה': 1, 'נדחתה': 2 };
+const money = (v: number) => '₪ ' + String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
 /** Menora Digital showcase — replace with your own content. Layout follows the customer-site homepage. */
 export function HomePage() {
+  const [tab, setTab] = useState(0);
+  const [query, setQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [filter, setFilter] = useState('הכל');
+  const [sort, setSort] = useState<TableSort>({ key: 'date', dir: 'desc' });
+
+  const sorted = [...claims].sort((a, b) => {
+    const va = sort.key === 'amount' ? a.amount : sort.key === 'status' ? statusOrder[a.status] : a.t;
+    const vb = sort.key === 'amount' ? b.amount : sort.key === 'status' ? statusOrder[b.status] : b.t;
+    return sort.dir === 'asc' ? va - vb : vb - va;
+  });
+  const onSort = (key: string) =>
+    setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
+  const matches = suggestions.filter(s => query && s.includes(query)).map(label => ({ label, onSelect: () => { setQuery(label); setSearching(false); } }));
+
   return (
     <main className="mn">
       <section style={section}>
@@ -33,17 +120,12 @@ export function HomePage() {
       </section>
 
       <section style={section}>
-        <h2 className="mn-h2" style={title}>פעולות נפוצות</h2>
-        <div style={panel}>
-          <ActionDisc label="רכישת ביטוח" icon={icon} />
-          <ActionDisc label="הגשת תביעה" icon={icon} />
-          <ActionDisc label="מצב חשבון" icon={icon} />
-          <ActionDisc label="עדכון פרטים" icon={icon} />
-        </div>
+        <div style={title}><SectionHeader title="פעולות נפוצות" /></div>
+        <ActionPanel items={actions} ariaLabel="פעולות נפוצות" />
       </section>
 
       <section style={band}>
-        <h2 className="mn-h2" style={title}>כל השירותים</h2>
+        <div style={title}><SectionHeader title="כל השירותים" /></div>
         <div style={row}>
           <CarouselArrow direction="prev" />
           <ServiceBubble label="ביטוח רכב" />
@@ -54,14 +136,75 @@ export function HomePage() {
       </section>
 
       <section style={section}>
-        <h2 className="mn-h2" style={title}>חשבנו שיעניין אותך</h2>
+        <div style={title}><SectionHeader title="חשבנו שיעניין אותך" moreLabel="לכל הכתבות" moreHref="#" /></div>
         <div style={cards}>
           <MagazineCard title="מהו איזון אקטוארי?" meta="זמן קריאה: 4 דקות" />
           <MagazineCard title="איך בוחרים מסלול השקעה" meta="זמן קריאה: 3 דקות" />
           <MagazineCard title="המומחים מדברים" meta="זמן קריאה: 5 דקות" />
         </div>
-        <div style={more}>
-          <Button label="לכל הכתבות" variant="text" />
+      </section>
+
+      <section style={section}>
+        <div style={title}><SectionHeader title="המומחים מדברים" moreLabel="לכל הטיפים" moreHref="#" /></div>
+        <div style={twoUp}>
+          <ExpertTip
+            quote="זקוקים לניתוח? מרכז הסיוע מלווה אתכם משלב האבחון ועד ההחלמה."
+            name="יעל פליישר גולני"
+            role={'סמנכ"ל, מנהלת תחום תביעות'}
+          />
+          <div style={stack}>
+            <SearchField
+              value={query}
+              onInput={v => { setQuery(v); setSearching(true); }}
+              label="חיפוש באתר"
+              placeholder="מה תרצו למצוא?"
+              suggestions={matches}
+              expanded={searching}
+              onClear={() => setQuery('')}
+              clearLabel="ניקוי החיפוש"
+            />
+            <div style={chips}>
+              {['הכל', 'פנסיה', 'בריאות', 'רכב'].map(f => (
+                <Chip key={f} label={f} tone="outlined" selected={filter === f} onClick={() => setFilter(f)} />
+              ))}
+            </div>
+            <DropdownMenu
+              width="full"
+              groups={menuGroups}
+              ariaLabel="ביטוחים"
+              trigger={({ props }) => (
+                <button type="button" {...props} className={`mn mn-btn mn-btn--text ${props.className}`}>
+                  ביטוחים
+                  <span className="mn-caret" aria-hidden="true" style={caret} />
+                </button>
+              )}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section style={section}>
+        <div style={title}><SectionHeader title="התביעות שלי" /></div>
+        <div style={stack}>
+          <Tabs items={tabs.map(({ id, label }) => ({ id, label, panelId: `${id}-panel` }))} activeIndex={tab} onChange={setTab} ariaLabel="סוגי ביטוח" />
+          <div id={`${tabs[tab].id}-panel`} role="tabpanel" aria-labelledby={`${tabs[tab].id}-tab`} className="mn-tabpanel" style={panelUnderTabs}>
+            {tabs[tab].text}
+          </div>
+          <Table
+            caption="התביעות שלי"
+            columns={[
+              { key: 'id', label: 'מספר תביעה', numeric: true, keyCol: true, render: r => r.id },
+              { key: 'kind', label: 'סוג ביטוח', render: r => r.kind },
+              { key: 'date', label: 'תאריך הגשה', numeric: true, sortable: true, render: r => r.date },
+              { key: 'status', label: 'סטטוס', sortable: true, render: r => <Chip label={r.status} compact weight={r.status === 'בטיפול' ? 600 : 400} /> },
+              { key: 'amount', label: 'סכום', numeric: true, sortable: true, render: r => money(r.amount) },
+            ]}
+            rows={sorted}
+            rowKey={r => r.id}
+            sort={sort}
+            onSort={onSort}
+            empty={noClaims}
+          />
         </div>
       </section>
     </main>

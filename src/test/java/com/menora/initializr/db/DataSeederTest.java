@@ -314,7 +314,7 @@ class DataSeederTest {
         long feFileContribs = fileContribRepo.findAll().stream()
                 .filter(f -> f.getProjectKind() == ProjectKind.FRONTEND)
                 .count();
-        assertThat(feFileContribs).isEqualTo(98);
+        assertThat(feFileContribs).isEqualTo(107);
 
         // The FSD layer barrels are FRONTEND __common__ rows.
         assertThat(fileContribRepo.findAll()).anySatisfy(f -> {
@@ -413,7 +413,8 @@ class DataSeederTest {
     @Test
     void menoraDigitalDesignSystemIsPlainCssAndReactVersionAgnostic() {
         // Plain CSS tokens + component ports: no React-version range, one npm dep (the Assistant
-        // font), the 15 content rows and a CONFLICTS pair with each of the other four design systems.
+        // font), the 24 content rows (tokens, classes, 17 ports + barrel + theme hook, index.css,
+        // showcase) and a CONFLICTS pair with each of the other four design systems.
         DependencyEntryEntity entry = entryRepo.findByDepId("design-menora-digital").orElseThrow();
         assertThat(entry.getCompatibilityRange()).isNull();
         assertThat(entry.getProjectKind()).isEqualTo(ProjectKind.FRONTEND);
@@ -427,9 +428,14 @@ class DataSeederTest {
                 .filter(f -> "design-menora-digital".equals(f.getDependencyId()))
                 .map(FileContributionEntity::getTargetPath)
                 .toList();
-        assertThat(targets).hasSize(15)
+        assertThat(targets).hasSize(24)
                 .contains("src/shared/ui/menora/tokens.css", "src/shared/ui/menora/components.css",
                         "src/shared/ui/menora/Hero.tsx", "src/shared/ui/menora/index.ts",
+                        "src/shared/ui/menora/SectionHeader.tsx", "src/shared/ui/menora/ActionPanel.tsx",
+                        "src/shared/ui/menora/Tabs.tsx", "src/shared/ui/menora/DropdownMenu.tsx",
+                        "src/shared/ui/menora/SearchField.tsx", "src/shared/ui/menora/ExpertTip.tsx",
+                        "src/shared/ui/menora/Chip.tsx", "src/shared/ui/menora/Footer.tsx",
+                        "src/shared/ui/menora/Table.tsx",
                         "src/shared/ui/menora/useMenoraTheme.ts", "src/shared/ui/menora/ThemeToggle.tsx",
                         "src/index.css", "src/pages/home/ui/HomePage.tsx");
 
@@ -440,9 +446,11 @@ class DataSeederTest {
     }
 
     @Test
-    void menoraDigitalFullstackSetBorrowsTheTailwindCrudFiles() {
-        // The variant set authors only the theme/shell/dashboard/main/package files and borrows the
-        // rest from react-tailwind-crud via sourceSet — so it must carry the same file paths.
+    void menoraDigitalFullstackSetAuthorsItsSharedUiAndBorrowsTheRest() {
+        // The variant set authors the theme/shell/dashboard/main/package files plus the Menora-skinned
+        // shared UI (Table, CardGrid, EmptyState, FilterBar, drawers, dialog, Badge) and the entity page,
+        // and borrows everything else from react-tailwind-crud via sourceSet — so it must carry exactly
+        // the same file paths.
         EntityTemplateSetEntity set = templateSetRepo.findBySetKey("react-menora-digital-crud").orElseThrow();
         assertThat(set.getKind()).isEqualTo(EntityTemplateSetEntity.Kind.FRONTEND_REACT);
         assertThat(set.getDesignSystem()).isEqualTo(EntityTemplateSetEntity.DesignSystem.MENORA_DIGITAL);
@@ -454,11 +462,22 @@ class DataSeederTest {
                 .map(f -> f.getPathTemplate()).toList();
         assertThat(menoraPaths).containsExactlyInAnyOrderElementsOf(tailwindPaths);
 
-        // Borrowed content is copied verbatim at seed time; authored content differs.
+        // Authored content wraps the design-system ports (same exports, superset props); borrowed
+        // content is copied verbatim at seed time.
         assertThat(templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()))
                 .filteredOn(f -> f.getPathTemplate().equals("src/shared/ui/Table.tsx"))
                 .singleElement()
-                .satisfies(f -> assertThat(f.getContent()).contains("onSortChange"));
+                .satisfies(f -> assertThat(f.getContent()).contains("onSortChange").contains("MenoraTable"));
+        assertThat(templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()))
+                .filteredOn(f -> f.getPathTemplate().equals("src/pages/{{entityNameKebab}}/ui/{{EntityName}}Page.tsx"))
+                .singleElement()
+                .satisfies(f -> assertThat(f.getContent()).contains("<SectionHeader"));
+        String borrowedKanban = templateFileRepo.findBySetIdOrderBySortOrderAsc(tailwindId).stream()
+                .filter(f -> f.getPathTemplate().equals("src/shared/ui/KanbanBoard.tsx")).findFirst().orElseThrow().getContent();
+        assertThat(templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()))
+                .filteredOn(f -> f.getPathTemplate().equals("src/shared/ui/KanbanBoard.tsx"))
+                .singleElement()
+                .satisfies(f -> assertThat(f.getContent()).isEqualTo(borrowedKanban));
         assertThat(templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()))
                 .filteredOn(f -> f.getPathTemplate().equals("src/index.css"))
                 .singleElement()

@@ -1,10 +1,8 @@
 import { useState } from 'react'
-import type { LucideIcon } from 'lucide-react'
-import { LayoutDashboard, Menu, Moon, Sun, Table2, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import { Toaster } from 'sonner'
-import { useTheme } from '@shared/ui'
 import { t } from '@shared/i18n'
-import { ChatLauncher } from '@shared/ui/menora'
+import { NavLinks, ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'
 import { DashboardPage } from '@pages/dashboard'
 {{#entities}}
 import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
@@ -12,22 +10,23 @@ import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
 
 type View = 'dashboard'{{#entities}} | '{{entityNameKebab}}'{{/entities}}
 
-const NAV: { id: View; label: string; icon: LucideIcon }[] = [
-  { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard },
+const NAV: { id: View; label: string }[] = [
+  { id: 'dashboard', label: t('dashboard') },
 {{#entities}}
-  { id: '{{entityNameKebab}}', label: '{{entityLabelPlural}}', icon: Table2 },
+  { id: '{{entityNameKebab}}', label: '{{entityLabelPlural}}' },
 {{/entities}}
 ]
 
 /**
- * Menora Digital shell: a white top header on the #f8f8f8 page ground (logo, nav row with the
- * active item in brand purple, an outlined theme toggle), the content, a dark ink footer band and
- * the floating yellow chat launcher. Logical utilities (start/end, rtl:) keep it mirror-correct.
+ * Menora Digital shell: a white top header on the #f8f8f8 page ground (logo chip, the design system's
+ * NavLinks row with the current item in brand purple, the outlined ThemeToggle), the content, and the
+ * dark Footer band. No floating chat launcher — that is the marketing site's contact control, not an
+ * admin app's. Logical utilities (start/end, rtl:) keep it mirror-correct.
  */
 export default function App() {
   const [view, setView] = useState<View>('dashboard')
   const [navOpen, setNavOpen] = useState(false)
-  const { isDark, toggle } = useTheme()
+  const { isDark } = useMenoraTheme()
   const current = NAV.find(n => n.id === view)
 
   const go = (id: View) => {
@@ -35,22 +34,7 @@ export default function App() {
     setNavOpen(false)
   }
 
-  const navItems = NAV.map(({ id, label, icon: Icon }) => {
-    const active = view === id
-    return (
-      <button
-        key={id}
-        onClick={() => go(id)}
-        aria-current={active ? 'page' : undefined}
-        className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[17px] transition-colors ${
-          active ? 'font-medium text-brand' : 'text-fg hover:bg-brand/10'
-        }`}
-      >
-        <Icon className="h-4 w-4" />
-        {label}
-      </button>
-    )
-  })
+  const navItems = NAV.map(({ id, label }) => ({ label, current: view === id, onClick: () => go(id) }))
 
   return (
     <div className="flex min-h-full flex-col bg-canvas text-fg">
@@ -66,7 +50,7 @@ export default function App() {
               {navOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
             {/* The supplied mark is dark purple: keep it on a white chip so it survives dark mode. */}
-            <span className="inline-flex items-center rounded-lg bg-white px-2 py-1">
+            <span className="mn-logo-chip">
               <img src="/menora-mivtachim-logo.png" alt="{{artifactId}}" className="h-auto w-[88px]" />
             </span>
             <div className="hidden leading-tight sm:block">
@@ -76,25 +60,18 @@ export default function App() {
           </div>
 
           {/* Static nav row (tablet and up) */}
-          <nav className="hidden items-center gap-2 md:flex" aria-label={t('main')}>
-            {navItems}
-          </nav>
+          <div className="hidden md:block">
+            <NavLinks ariaLabel={t('main')} items={navItems} />
+          </div>
 
-          <button
-            onClick={toggle}
-            className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-brand bg-surface px-5 text-sm font-medium text-brand transition-colors hover:bg-brand/10"
-            title={isDark ? t('switchToLight') : t('switchToDark')}
-            aria-label={t('toggleTheme')}
-          >
-            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
+          <ThemeToggle darkLabel={t('switchToDark')} lightLabel={t('switchToLight')} />
         </div>
 
         {/* Collapsible nav (mobile) */}
         {navOpen && (
-          <nav className="flex flex-col gap-1 border-t border-border px-4 py-3 md:hidden" aria-label={t('main')}>
-            {navItems}
-          </nav>
+          <div className="border-t border-border px-4 py-3 md:hidden">
+            <NavLinks ariaLabel={t('main')} items={navItems} stacked />
+          </div>
         )}
       </header>
 
@@ -105,13 +82,7 @@ export default function App() {
 {{/entities}}
       </main>
 
-      <footer className="bg-ink px-4 py-6 text-center text-sm font-light text-white">
-        {{artifactId}} · v0.0.1
-      </footer>
-
-      <div className="fixed bottom-0 end-0 z-40">
-        <ChatLauncher />
-      </div>
+      <Footer legal="{{artifactId}} · v0.0.1" />
 
       <Toaster richColors position={ {{#isRtl}}'top-left'{{/isRtl}}{{^isRtl}}'top-right'{{/isRtl}} } theme={isDark ? 'dark' : 'light'} />
     </div>

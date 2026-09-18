@@ -331,7 +331,7 @@ class FrontendProjectGenerationIntegrationTests {
         desc.setRtl(true);
         Map<String, String> files = generator.generateFileMap(desc);
 
-        // Tokens + component classes + the eight React ports under src/shared/ui/menora/.
+        // Tokens + component classes + the 17 React ports (8 from the bundle, 9 from the canvas) under src/shared/ui/menora/.
         String tokens = files.get("src/shared/ui/menora/tokens.css");
         assertThat(tokens)
                 .contains("--yellow: #ffc700").contains("--purple: #684eed")
@@ -342,13 +342,17 @@ class FrontendProjectGenerationIntegrationTests {
                 .contains("--surface-page: #1e1e2f").contains("--purple: #a393ff")
                 .contains("--shadow-cta: 0 8px 16px -3px rgba(255, 199, 0, 0.28)");
         assertThat(files.get("src/shared/ui/menora/components.css"))
-                .contains(".mn-btn--primary").contains("focus-visible").doesNotContain("direction: rtl");
+                .contains(".mn-btn--primary").contains("focus-visible").doesNotContain("direction: rtl")
+                .contains(".mn-table").contains(".mn-chip").contains(".mn-footer").contains(".mn-tab");
         for (String c : List.of("Button", "NavLinks", "ActionDisc", "ServiceBubble",
-                "MagazineCard", "CarouselArrow", "ChatLauncher", "Hero", "ThemeToggle")) {
+                "MagazineCard", "CarouselArrow", "ChatLauncher", "Hero", "ThemeToggle",
+                "SectionHeader", "ActionPanel", "Tabs", "DropdownMenu", "SearchField", "ExpertTip", "Chip", "Footer", "Table")) {
             assertThat(files).containsKey("src/shared/ui/menora/" + c + ".tsx");
         }
         assertThat(files.get("src/shared/ui/menora/useMenoraTheme.ts")).contains("data-theme");
-        assertThat(files.get("src/shared/ui/menora/index.ts")).contains("export { Hero }").contains("export { ThemeToggle }");
+        assertThat(files.get("src/shared/ui/menora/index.ts"))
+                .contains("export { Hero }").contains("export { ThemeToggle }")
+                .contains("export { Footer }").contains("export { Table }");
 
         // The Menora baseline replaces src/index.css (no Tailwind directives unless selected).
         assertThat(files.get("src/index.css"))
@@ -359,9 +363,13 @@ class FrontendProjectGenerationIntegrationTests {
         // Shell + showcase home + Assistant font, and no theme.ts (not a palette-driven design system).
         assertThat(files.get("src/app/App.tsx"))
                 .contains("/menora-mivtachim-logo.png").contains("<ChatLauncher />").contains("<NavLinks")
-                .contains("<ThemeToggle />").contains("mn-logo-chip")
-                .doesNotContain("shellHeaderStyle");
-        assertThat(files.get("src/pages/home/ui/HomePage.tsx")).contains("<Hero title=\"Demo.\"").contains("ServiceBubble");
+                .contains("<ThemeToggle />").contains("mn-logo-chip").contains("<Footer")
+                .doesNotContain("shellHeaderStyle").doesNotContain("menoraFooterStyle");
+        // The showcase demos the whole system, including the canvas's proposed components.
+        assertThat(files.get("src/pages/home/ui/HomePage.tsx"))
+                .contains("<Hero title=\"Demo.\"").contains("ServiceBubble")
+                .contains("<ActionPanel").contains("<Tabs").contains("<SearchField").contains("<ExpertTip")
+                .contains("<Table").contains("caption=\"התביעות שלי\"").doesNotContain("{{");
         assertThat(files.get("src/main.tsx")).contains("@fontsource/assistant/500.css");
         assertThat(files.get("package.json")).contains("@fontsource/assistant");
         assertThat(files).doesNotContainKey("src/shared/theme/theme.ts");

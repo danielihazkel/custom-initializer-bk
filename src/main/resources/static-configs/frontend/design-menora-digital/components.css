@@ -16,23 +16,31 @@
 .mn-btn--outlined { background: var(--surface); color: var(--purple); border: 1px solid var(--purple);
   border-radius: var(--radius-pill); min-height: 50px; padding: 6px 25px; }
 .mn-btn--outlined:hover { background: var(--surface); }
-.mn-btn:focus-visible, .mn-arrow:focus-visible, .mn-bubble:focus-visible, .mn-action:focus-visible, .mn-chat:focus-visible, .mn-card:focus-visible { outline: 2px solid var(--purple); outline-offset: 3px; }
+.mn-btn:focus-visible, .mn-arrow:focus-visible, .mn-bubble:focus-visible, .mn-action:focus-visible, .mn-chat:focus-visible, .mn-card:focus-visible,
+.mn-tab:focus-visible, .mn-menu__item:focus-visible, .mn-search__item:focus-visible, .mn-chip:is(a, button):focus-visible,
+.mn-footer a:focus-visible, .mn-field:focus-visible { outline: 2px solid var(--purple); outline-offset: 3px; }
 .mn-btn--text { background: transparent; color: var(--ink); font: 600 16px/23px var(--font-sans); padding: 0 15px; }
 .mn-btn--text:hover { background: var(--purple-hover); border-radius: var(--radius-menu); }
 .mn-btn--text .mn-chev { width: 8px; height: 8px; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor;
   transform: rotate(45deg); display: inline-block; }
+.mn-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Nav link */
 .mn-nav { display: flex; gap: 22px; align-items: center; }
 .mn-nav a { color: var(--ink-alt); font: 400 17px/28px var(--font-sans); padding: 10px 2px; text-decoration: none;
   display: inline-flex; align-items: center; gap: 4px; }
 .mn-nav a.is-portal { color: var(--purple); font-weight: 500; }
+.mn-nav a[aria-current="page"] { color: var(--purple); font-weight: 500; }
+.mn-nav a:hover { background: var(--purple-hover); border-radius: var(--radius-menu); }
 .mn-nav a .mn-caret { width: 6px; height: 6px; border-left: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
   transform: rotate(-45deg); margin-top: -4px; }
+/* Stacked variant for a mobile drawer: one link per row, padded so the hit area reaches 44px. */
+.mn-nav--stack { flex-direction: column; align-items: stretch; gap: 0; }
+.mn-nav--stack a { padding: 8px 10px; }
 
 /* Action disc (common actions) */
 .mn-action { display: inline-flex; flex-direction: column; align-items: center; gap: 8px; width: 100px; padding: 7px;
-  text-decoration: none; color: var(--ink); font: 500 16px/15px var(--font-sans); text-align: center; }
+  text-decoration: none; color: var(--ink); font: 500 16px/15px var(--font-sans); text-align: center; flex-shrink: 0; }
 .mn-action__disc { width: 46px; height: 46px; border-radius: var(--radius-circle); background: var(--yellow);
   display: grid; place-items: center; color: var(--on-yellow); }
 .mn-action__disc svg { width: 22px; height: 22px; }
@@ -71,9 +79,150 @@
 .mn-display .dot { color: var(--yellow); }
 .mn-lead { font: 300 36px/44px var(--font-sans); color: var(--ink-body); margin: 8px 0 0; }
 
+/* ── Canvas additions (the "proposed" components of the Menora Component Explorer) ─────────────────────── */
+
+/* Panel: the surface card every proposed container is built from (ActionPanel, Table frame, ExpertTip, stat cards). */
+.mn-panel { background: var(--surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.mn-panel--lined { border: 1px solid var(--line); }
+
+/* Section header: h2 + the chevroned "לכל ה…" text link, baseline-aligned 18px apart. */
+.mn-section { display: flex; align-items: baseline; gap: 18px; justify-content: flex-start; }
+.mn-section--center { justify-content: center; }
+.mn-section__title { margin: 0; font: 600 36px/40px var(--font-sans); color: var(--ink); }
+
+/* Action panel: the white card holding the row of action discs. Never wraps — scrolls sideways instead. */
+.mn-action-panel { padding: 25px 16px; display: flex; justify-content: center; gap: 4px; overflow-x: auto; }
+.mn-action-panel > * { flex-shrink: 0; }
+
+/* Tabs: the active tab is a surface lip rising out of the panel; inactive tabs sit flush in surface-muted. */
+.mn-tabs { display: flex; gap: 3px; padding: 0 14px; }
+.mn-tab { border: 0; cursor: pointer; padding: 11px 22px; border-radius: var(--radius-tab) var(--radius-tab) 0 0;
+  font: 500 17px/24px var(--font-sans); background: var(--surface-muted); color: var(--ink-body); white-space: nowrap; }
+.mn-tab[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 600; }
+.mn-tab:hover, .mn-tab:focus-visible { background: var(--purple-hover); color: var(--ink); }
+.mn-tab[aria-selected="true"]:hover { background: var(--surface); }
+.mn-tabpanel { background: var(--surface); border-radius: 0 0 var(--radius-menu) var(--radius-menu); box-shadow: var(--shadow-card);
+  padding: 22px 24px; min-height: 74px; box-sizing: border-box; font: 500 18px/27px var(--font-sans); color: var(--ink-body); }
+/* A strip that only switches views (no panel underneath) closes its own bottom edge. */
+.mn-tabs--bare .mn-tab { border-radius: var(--radius-tab); }
+.mn-tabs--bare .mn-tab[aria-selected="true"] { box-shadow: var(--shadow-menu); }
+
+/* Dropdown menu: `auto` = compact panel at radius-menu, `sheet` = full-width header sheet with square top corners. */
+.mn-menu-host { position: relative; display: inline-block; }
+.mn-menu { position: absolute; top: 100%; inset-inline-end: 0; z-index: 30; background: var(--surface); box-shadow: var(--shadow-menu);
+  border-radius: var(--radius-menu); padding: 16px 20px; min-width: 190px; box-sizing: border-box;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px 32px; }
+.mn-menu--sheet { position: static; border-radius: 0 0 var(--radius-sheet) var(--radius-sheet); padding: 24px 28px; min-width: 0; width: 100%; }
+.mn-menu__group { display: flex; flex-direction: column; gap: 7px; }
+.mn-menu--sheet .mn-menu__group { gap: 9px; }
+.mn-menu__title { font: 600 18px/27px var(--font-sans); color: var(--ink); }
+.mn-menu__item { display: block; width: 100%; box-sizing: border-box; text-align: start; background: none; border: 0; cursor: pointer;
+  font: 300 17px/25px var(--font-sans); color: var(--ink-body); text-decoration: none; padding: 4px 8px; margin: 0 -8px; border-radius: 8px;
+  white-space: nowrap; }
+.mn-menu--sheet .mn-menu__item { font: 300 18px/27px var(--font-sans); }
+.mn-menu__item:hover { background: var(--purple-hover); color: var(--ink); }
+.mn-menu__item:disabled { opacity: 0.5; cursor: not-allowed; }
+/* The open trigger keeps a purple-hover ground with its bottom corners squared, so trigger and panel read as one surface. */
+.mn-menu-trigger[aria-expanded="true"] { background: var(--purple-hover); border-radius: var(--radius-menu) var(--radius-menu) 0 0; }
+
+/* Search field: the system's only text input — a 50px pill on line-strong, purple on focus. */
+.mn-search { position: relative; }
+.mn-search__pill { display: flex; align-items: center; gap: 10px; height: 50px; box-sizing: border-box; padding: 0 18px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-pill); color: var(--ink); }
+.mn-search__pill:focus-within { border-color: var(--purple); box-shadow: 0 0 0 2px var(--purple); }
+.mn-search__pill svg { flex-shrink: 0; }
+.mn-search__input { flex-grow: 1; min-width: 0; border: 0; outline: none; background: transparent;
+  font: 500 18px/27px var(--font-sans); color: var(--ink); }
+.mn-search__input::placeholder { color: var(--ink-body); opacity: 0.6; }
+.mn-search__clear { border: 0; background: none; cursor: pointer; color: var(--ink); padding: 4px; border-radius: var(--radius-circle);
+  display: inline-grid; place-items: center; }
+.mn-search__clear:hover { background: var(--purple-hover); }
+.mn-search__panel { position: absolute; inset-inline: 0; top: 100%; z-index: 30; margin-top: 8px; background: var(--surface);
+  border-radius: var(--radius-menu); box-shadow: var(--shadow-menu); padding: 12px 8px; display: flex; flex-direction: column; }
+.mn-search__item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; border: 0; background: none;
+  cursor: pointer; width: 100%; box-sizing: border-box; text-align: start; font: 400 17px/25px var(--font-sans); color: var(--ink-body);
+  text-decoration: none; }
+.mn-search__item svg { opacity: 0.45; flex-shrink: 0; }
+.mn-search__item:hover { background: var(--purple-hover); color: var(--ink); }
+/* Generic form control that inherits the search pill's look at radius-menu (filter bar selects/inputs, drawer fields). */
+.mn-field { box-sizing: border-box; min-height: 44px; padding: 6px 14px; background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-menu); font: 500 17px/25px var(--font-sans); color: var(--ink); }
+.mn-field:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 2px var(--purple); }
+.mn-field::placeholder { color: var(--ink-body); opacity: 0.6; }
+
+/* Expert tip: quote first, attribution second. No quotation marks — the weight already marks it as speech. */
+.mn-tip { padding: 30px 32px; display: flex; flex-direction: column; gap: 22px; box-sizing: border-box; }
+.mn-tip__quote { margin: 0; font: 600 26px/30px var(--font-sans); color: var(--ink); text-wrap: pretty; }
+.mn-tip__who { display: flex; align-items: center; gap: 14px; }
+.mn-tip__photo { width: 52px; height: 52px; border-radius: var(--radius-circle); background: var(--surface-lavender); object-fit: cover; flex-shrink: 0; }
+.mn-tip__lines { display: flex; flex-direction: column; gap: 5px; }
+.mn-tip__name { font: 600 15px/16px var(--font-sans); color: var(--ink); }
+.mn-tip__role { font: 400 15px/16px var(--font-sans); color: var(--ink-body); opacity: 0.82; }
+
+/* Chip: the soft lavender label. Outlined for an unselected filter, yellow only when selected. No shadow, ever. */
+.mn-chip { display: inline-flex; align-items: center; padding: 7px 18px; border-radius: var(--radius-pill);
+  font: 500 15px/21px var(--font-sans); white-space: nowrap; background: var(--lavender); color: var(--ink); border: 0;
+  text-decoration: none; box-sizing: border-box; }
+.mn-chip:is(a, button) { cursor: pointer; }
+.mn-chip--outlined { background: transparent; color: var(--purple); border: 1px solid var(--purple); padding: 6px 17px; }
+.mn-chip.is-selected { background: var(--yellow); color: var(--on-yellow); border: 0; padding: 7px 18px; }
+.mn-chip--compact { padding: 5px 14px; }
+.mn-chip--strong { font-weight: 600; }
+.mn-chip--quiet { font-weight: 400; }
+
+/* Footer: the dark band that owns surface-dark, on-dark, yellow-bright and body-light. */
+.mn-footer { background: var(--surface-dark); color: var(--on-dark); padding: 34px 40px 26px; display: flex; flex-direction: column; gap: 26px;
+  font-family: var(--font-sans); }
+.mn-footer__cols { display: grid; grid-template-columns: repeat(var(--mn-footer-cols, 5), minmax(0, 1fr)); gap: 24px; }
+.mn-footer__col { display: flex; flex-direction: column; gap: 9px; }
+.mn-footer__title { font: 600 18px/27px var(--font-sans); color: var(--on-dark); }
+.mn-footer__col a { font: 300 18px/27px var(--font-sans); color: var(--on-dark); text-decoration: none; opacity: 0.88; }
+.mn-footer__row { display: flex; align-items: center; gap: 16px; padding-top: 20px; border-top: 1px solid #ffffff2e; flex-wrap: wrap; }
+.mn-footer__cols + .mn-footer__row { padding-top: 20px; }
+.mn-footer__social { display: flex; gap: 10px; }
+.mn-footer__social a { width: 34px; height: 34px; border-radius: var(--radius-circle); border: 1px solid var(--on-dark);
+  display: grid; place-items: center; color: var(--on-dark); }
+.mn-footer__spacer { flex-grow: 1; }
+.mn-footer__accent { font: 600 16px/23px var(--font-sans); color: var(--yellow-bright); text-decoration: none; }
+.mn-footer__legal { font: 400 14px/20px var(--font-sans); color: var(--on-dark); opacity: 0.7; }
+@media (max-width: 720px) { .mn-footer { padding: 26px 20px 20px; } .mn-footer__cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Table: rows on hairlines, heads on surface-subtle, no zebra, no status colour. */
+.mn-table__frame { background: var(--surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); overflow: hidden; position: relative; }
+.mn-table__scroll { overflow-x: auto; }
+.mn-table { width: 100%; border-collapse: collapse; }
+.mn-table caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.mn-table th { padding: 0; background: var(--surface-subtle); border-bottom: 1px solid var(--line); font: 600 16px/23px var(--font-sans);
+  color: var(--ink); text-align: start; white-space: nowrap; }
+.mn-table th > button, .mn-table th > span { display: flex; align-items: center; gap: 7px; width: 100%; box-sizing: border-box; padding: 13px 18px;
+  font: inherit; color: inherit; text-align: inherit; background: none; border: 0; }
+.mn-table th > button { cursor: pointer; }
+.mn-table th > button:hover { background: var(--purple-hover); }
+.mn-table th > button:focus-visible { outline: 2px solid var(--purple); outline-offset: -3px; }
+.mn-table td { padding: 13px 18px; border-bottom: 1px solid var(--line); font: 500 18px/27px var(--font-sans); color: var(--ink-body); }
+.mn-table tbody tr:last-child td { border-bottom: 0; }
+.mn-table tbody tr:hover td { background: var(--purple-hover); }
+.mn-table .num { direction: ltr; text-align: left; font-variant-numeric: tabular-nums; }
+.mn-table th.num > button, .mn-table th.num > span { justify-content: flex-end; direction: ltr; }
+.mn-table .key { color: var(--ink); font-weight: 600; }
+.mn-table.compact th > button, .mn-table.compact th > span, .mn-table.compact td { padding: 7px 18px; }
+.mn-table.compact td { font-size: 17px; line-height: 25px; }
+.mn-table.is-dimmed tbody { opacity: 0.6; transition: opacity 0.2s ease; }
+.mn-table__caret { width: 6px; height: 6px; border-left: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; display: inline-block;
+  flex-shrink: 0; transform: rotate(-45deg); }
+.mn-table__caret--asc { transform: rotate(135deg); }
+.mn-table__empty { padding: 52px 24px; text-align: center; }
+.mn-table__empty-title { display: block; font: 600 20px/28px var(--font-sans); color: var(--ink); margin-bottom: 6px; }
+.mn-table__empty-hint { display: block; font: 300 18px/27px var(--font-sans); color: var(--ink-body); }
+.mn-table__empty-action { margin-top: 18px; }
+
 /* Generator additions (not part of the source bundle) */
 /* Logo chip: the supplied mark is dark purple, so it always sits on a white chip — invisible on the light header,
    a small white pill in dark mode (the README asks for a reversed mark from the brand rather than a recolour). */
 .mn-logo-chip { display: inline-flex; align-items: center; background: #ffffff; border-radius: var(--radius-menu); padding: 4px 8px; }
 /* Compact outlined pill used by the shell's light/dark toggle. */
 .mn-theme-toggle { min-height: 44px; padding: 0 16px; font-size: 16px; }
+/* Compact primary/outlined pills for toolbars (the canvas sizes are for marketing blocks). */
+.mn-btn--compact { min-height: 44px; padding: 4px 20px; font-size: 16px; }
+/* Icon-only text button (row-action trigger): a 36px hit area with the text-button hover. */
+.mn-btn--icon { padding: 0; width: 36px; min-height: 36px; border-radius: var(--radius-menu); }

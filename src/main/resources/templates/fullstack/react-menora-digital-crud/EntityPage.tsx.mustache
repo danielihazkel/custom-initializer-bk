@@ -1,0 +1,445 @@
+import { useEffect, useState } from 'react'
+{{#bulkDeleteApplicable}}{{#viewTable}}import { Trash2 } from 'lucide-react'
+{{/viewTable}}{{/bulkDeleteApplicable}}{{#mutable}}import { toast } from 'sonner'
+{{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
+import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
+import { SectionHeader, Chip{{#hasViewToggle}}, Tabs{{/hasViewToggle}}{{#mutable}}, Button{{/mutable}}{{^mutable}}{{#optScaffoldCsvExport}}, Button{{/optScaffoldCsvExport}}{{/mutable}} } from '@shared/ui/menora'
+import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
+import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
+{{#mutable}}import { {{EntityName}}Form, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
+import { ApiError } from '@shared/api'
+{{/mutable}}
+// `numeric` columns render LTR with tabular figures (numbers, dates, ids); `chip` columns render
+// their value as a lavender Chip (enums, booleans) — see the Menora Table.
+const columns: Column<{{EntityName}}>[] = [
+{{#fields}}  { label: '{{label}}', sortKey: '{{name}}'{{#isNumeric}}, numeric: true{{/isNumeric}}{{#isTemporal}}, numeric: true{{/isTemporal}}{{#isUuid}}, numeric: true{{/isUuid}}{{#isEnum}}, chip: true{{/isEnum}}{{#isBoolean}}, chip: true{{/isBoolean}}, render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
+{{/fields}}{{#relations}}  { label: '{{FieldName}}', render: r => {{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} },
+{{/relations}}{{#auditApplicable}}  { label: t('created'), sortKey: 'createdAt', numeric: true, render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
+  { label: t('updated'), sortKey: 'updatedAt', numeric: true, render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
+{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { label: '{{CollectionField}}', numeric: true, render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
+{{/inverseRelations}}{{/optScaffoldInverse}}]
+{{#hasViewToggle}}
+// The enabled list views, in order; drives the toolbar Tabs (a view switcher, so `bare`).
+const VIEW_TABS: { id: {{viewModeType}}; label: string }[] = [{{#viewTable}}{ id: 'table', label: t('tableView') }, {{/viewTable}}{{#viewCards}}{ id: 'cards', label: t('cardView') }, {{/viewCards}}{{#viewKanban}}{ id: 'kanban', label: t('boardView') }, {{/viewKanban}}{{#viewCalendar}}{ id: 'calendar', label: t('calendarView') }, {{/viewCalendar}}]
+{{/hasViewToggle}}{{#hasFilters}}
+const filterDescriptors: FilterDescriptor[] = [
+{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{/isRelationFilter}} },
+{{/filterFields}}]
+{{/hasFilters}}{{#bulkUpdateApplicable}}{{#viewTable}}
+// Fields eligible for bulk edit. `kind` selects the value control shown in the bulk-edit bar; the
+// raw value is sent to the backend which coerces it to the field's type.
+type BulkFieldKind = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum'
+const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?: string[] }> = {
+{{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
+{{/bulkUpdatableFields}}}
+{{/viewTable}}{{/bulkUpdateApplicable}}
+/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
+const rowKey = (row: {{EntityName}}) => {{#hasCompositePk}}[{{#pkFields}}String(row.{{name}}){{^last}}, {{/last}}{{/pkFields}}].join('/'){{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as string | number{{/hasCompositePk}}
+
+export function {{EntityName}}Page() {
+  const [page, setPage] = useState(0)
+  const [size, setSize] = useState(20)
+  const [sort, setSort] = useState<SortSpec | null>(null)
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
+  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>('{{initialView}}')
+  const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
+{{#hasFilters}}  const [filters, setFilters] = useState<FilterValues>({})
+{{/hasFilters}}
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => {
+    setPage(0)
+  }, [debouncedSearch, sort, size{{#hasFilters}}, filters{{/hasFilters}}])
+
+  const {
+    items, totalElements, totalPages, pageNumber, pageSize,
+    loading, error,{{#viewKanban}} reload,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
+  } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{/hasFilters}} })
+{{#mutable}}
+  const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
+  const [initial, setInitial] = useState<Partial<{{EntityName}}>>({})
+  const [isNew, setIsNew] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [pendingDelete, setPendingDelete] = useState<{{EntityName}} | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  // Has the user changed anything since the drawer opened? Drives the discard guard.
+  const dirty = editing != null && JSON.stringify(editing) !== JSON.stringify(initial)
+
+{{#hasFieldDefaults}}  // Declared field defaults, pre-filled into every new record (and used as the dirty baseline).
+  const newDefaults = (): Partial<{{EntityName}}> => ({ {{#fields}}{{#hasDefault}}{{name}}: {{{defaultTs}}}, {{/hasDefault}}{{/fields}}})
+{{/hasFieldDefaults}}  function openNew() {
+    setEditing({{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}})
+    setInitial({{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}})
+    setIsNew(true)
+    setFormErrors({})
+    setDrawerOpen(true)
+  }
+  function openEdit(row: {{EntityName}}) {
+    setEditing({ ...row })
+    setInitial({ ...row })
+    setIsNew(false)
+    setFormErrors({})
+    setDrawerOpen(true)
+  }
+  function close() {
+    setDrawerOpen(false)
+    setEditing(null)
+    setFormErrors({})
+  }
+  function focusFirstInvalid() {
+    // Move focus to the first field flagged invalid by <Field>.
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[role="dialog"] [aria-invalid="true"]')?.focus()
+    })
+  }
+  async function save() {
+    if (!editing) return
+    // Client-side validation first: required / length / min / max / pattern / email, mirroring
+    // the backend's constraints so obvious mistakes never cost a round-trip.
+    const clientErrors = validate{{EntityName}}(editing)
+    if (Object.keys(clientErrors).length > 0) {
+      setFormErrors(clientErrors)
+      toast.error(t('fixHighlighted'))
+      focusFirstInvalid()
+      return
+    }
+    setSaving(true)
+    setFormErrors({})
+    try {
+      if (isNew) await create(editing as Omit<{{EntityName}}, 'id'>)
+      else await update({{#hasCompositePk}}[{{#pkFields}}editing.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}editing.{{pkField.name}} as number | string{{/hasCompositePk}}, editing as {{EntityName}})
+      toast.success(isNew ? t('xCreated', { x: '{{entityLabel}}' }) : t('xUpdated', { x: '{{entityLabel}}' }))
+      close()
+    } catch (e) {
+      // A 400 carries per-field messages — show them inline; anything else is a toast.
+      if (e instanceof ApiError && e.fieldErrors) {
+        setFormErrors(e.fieldErrors)
+        toast.error(t('fixHighlighted'))
+        focusFirstInvalid()
+      } else {
+        toast.error(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    const removed = pendingDelete
+    setDeleting(true)
+    try {
+      await remove({{#hasCompositePk}}[{{#pkFields}}removed.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}removed.{{pkField.name}} as number | string{{/hasCompositePk}})
+      setPendingDelete(null)
+{{#softDeleteApplicable}}      // Soft delete: the row is only flagged, so Undo really restores it (same id, same data).
+      toast.success(t('xDeleted', { x: '{{entityLabel}}' }), {
+        action: {
+          label: t('undo'),
+          onClick: () => {
+            restore(removed.{{pkField.name}} as number | string)
+              .then(() => toast.success(t('xRestored', { x: '{{entityLabel}}' })))
+              .catch(err => toast.error(err instanceof Error ? err.message : String(err)))
+          },
+        },
+      })
+{{/softDeleteApplicable}}{{^softDeleteApplicable}}      // Hard delete: the row is gone for good, so no Undo is offered (re-creating it would
+      // hand out a new id and could collide on unique columns).
+      toast.success(t('xDeleted', { x: '{{entityLabel}}' }))
+{{/softDeleteApplicable}}    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDeleting(false)
+    }
+  }
+{{/mutable}}{{#viewKanban}}
+  // Kanban drag-and-drop writes the new lane value back. On failure the board is reloaded so
+  // the card snaps back to its real lane instead of silently showing a move that never saved.
+  async function onKanbanMove(row: {{EntityName}}, value: string) {
+    try {
+      await update({{#hasCompositePk}}[{{#pkFields}}row.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...row, {{kanbanField}}: {{#kanbanIsEnum}}value{{/kanbanIsEnum}}{{^kanbanIsEnum}}value === 'true'{{/kanbanIsEnum}} } as {{EntityName}})
+      toast.success(t('xMoved', { x: '{{entityLabel}}' }))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+      await reload()
+    }
+  }
+{{/viewKanban}}{{#bulkSelectApplicable}}{{#viewTable}}
+  // Bulk selection (table view only). Selected rows are tracked by primary-key value. Shared by
+  // the bulk-delete and bulk-edit actions below.
+  const [selected, setSelected] = useState<Array<number | string>>([])
+  const pkOf = (row: {{EntityName}}) => row.{{pkField.name}} as number | string
+  const isRowSelected = (row: {{EntityName}}) => selected.includes(pkOf(row))
+  function toggleRow(row: {{EntityName}}) {
+    const id = pkOf(row)
+    setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
+  }
+  const allOnPageSelected = items.length > 0 && items.every(r => selected.includes(pkOf(r)))
+  function toggleAllOnPage() {
+    setSelected(s => (allOnPageSelected
+      ? s.filter(id => !items.some(r => pkOf(r) === id))
+      : Array.from(new Set([...s, ...items.map(pkOf)]))))
+  }
+{{/viewTable}}{{/bulkSelectApplicable}}{{#bulkDeleteApplicable}}{{#viewTable}}
+  const [bulkConfirm, setBulkConfirm] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  async function runBulkDelete() {
+    setBulkBusy(true)
+    try {
+      await removeMany(selected)
+      toast.success(t('nXRecordsDeleted', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
+      setSelected([])
+      setBulkConfirm(false)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}
+  const [bulkField, setBulkField] = useState<string>('')
+  const [bulkValue, setBulkValue] = useState<string>('')
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+  async function runBulkUpdate() {
+    if (!bulkField) return
+    setBulkUpdating(true)
+    try {
+      // An empty value clears the field (sent as null); otherwise the raw string is coerced server-side.
+      await updateMany(selected, bulkField, bulkValue === '' ? null : bulkValue)
+      toast.success(t('nXRecordsUpdated', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
+      setSelected([])
+      setBulkField('')
+      setBulkValue('')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBulkUpdating(false)
+    }
+  }
+{{/viewTable}}{{/bulkUpdateApplicable}}
+  const pagination = {
+    pageNumber,
+    pageSize,
+    totalPages,
+    totalElements,
+    onPageChange: setPage,
+    onPageSizeChange: setSize,
+  }
+
+  return (
+    <div className="mx-auto max-w-6xl p-4 md:p-8">
+      <div className="mb-4">
+        <SectionHeader title="{{entityLabelPlural}}" align="start" />
+      </div>
+      {/* Toolbar: view switcher + record count on the start side, the one yellow action on the end side. */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+{{#hasViewToggle}}          <Tabs
+            bare
+            ariaLabel={t('viewMode')}
+            items={VIEW_TABS}
+            activeIndex={VIEW_TABS.findIndex(v => v.id === viewMode)}
+            onChange={i => setViewMode(VIEW_TABS[i].id)}
+          />
+{{/hasViewToggle}}          <Chip label={`${totalElements} ${t(totalElements === 1 ? 'record' : 'records')}`} />
+{{#isView}}          <Chip tone="outlined" label={t('readOnlyView')} />
+{{/isView}}        </div>
+        <div className="flex items-center gap-2">
+{{#optScaffoldCsvExport}}          <Button variant="outlined" className="mn-btn--compact" label={t('export')} onClick={() => exportCsv('{{entityNamePluralKebab}}.csv')} />
+{{/optScaffoldCsvExport}}{{#mutable}}          <Button variant="primary" className="mn-btn--compact" label={t('newX', { x: '{{entityLabel}}' })} onClick={openNew} />
+{{/mutable}}        </div>
+      </div>
+
+      {error && <Alert>{error}</Alert>}
+{{#hasFilters}}
+      <div className="mb-4">
+        <FilterBar filters={filterDescriptors} values={filters} onChange={setFilters} />
+      </div>
+{{/hasFilters}}{{#bulkSelectApplicable}}{{#viewTable}}      {selected.length > 0 && (
+        <div className="mn-panel mn-panel--lined mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+          <Chip weight={600} label={t('nSelected', { n: selected.length })} />
+          <div className="flex flex-wrap items-center gap-2">
+{{#bulkUpdateApplicable}}            <select
+              value={bulkField}
+              onChange={e => { setBulkField(e.target.value); setBulkValue('') }}
+              className="mn-field"
+              aria-label={t('fieldToEdit')}
+            >
+              <option value="">{t('setField')}</option>
+{{#bulkUpdatableFields}}              <option value="{{name}}">{{label}}</option>
+{{/bulkUpdatableFields}}            </select>
+            {bulkField && (() => {
+              const meta = BULK_FIELDS[bulkField]
+              if (!meta) return null
+              const cls = 'mn-field'
+              if (meta.kind === 'boolean') return (
+                <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label={t('newValue')}>
+                  <option value="">—</option>
+                  <option value="true">{t('trueLabel')}</option>
+                  <option value="false">{t('falseLabel')}</option>
+                </select>
+              )
+              if (meta.kind === 'enum') return (
+                <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label={t('newValue')}>
+                  <option value="">—</option>
+                  {meta.options!.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              )
+              const type = meta.kind === 'number' ? 'number' : meta.kind === 'date' ? 'date' : meta.kind === 'datetime' ? 'datetime-local' : 'text'
+              return <input type={type} value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} placeholder={t('newValue')} aria-label={t('newValue')} />
+            })()}
+            {/* Native button: the Button port has no `disabled`. */}
+            <button
+              type="button"
+              onClick={runBulkUpdate}
+              disabled={!bulkField || bulkUpdating}
+              className="mn mn-btn mn-btn--primary mn-btn--compact"
+            >
+              {t('apply')}
+            </button>
+{{/bulkUpdateApplicable}}            <Button variant="text" label={t('clear')} onClick={() => setSelected([])} />
+{{#bulkDeleteApplicable}}            <button
+              type="button"
+              onClick={() => setBulkConfirm(true)}
+              className="inline-flex items-center gap-2 rounded-full bg-danger px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
+            >
+              <Trash2 className="h-4 w-4" />
+              {t('delete')}
+            </button>
+{{/bulkDeleteApplicable}}          </div>
+        </div>
+      )}
+{{/viewTable}}{{/bulkSelectApplicable}}
+      {
+{{#viewCards}}      viewMode === 'cards' ? (
+        <CardGrid
+          columns={columns}
+          rows={items}
+          rowKey={rowKey}
+          loading={loading}
+          onView={setDetailRow}
+{{#mutable}}          onEdit={openEdit}
+          onDelete={setPendingDelete}
+{{/mutable}}          search={search}
+          onSearchChange={setSearch}
+{{#hasStringFields}}          searchable={true}
+{{/hasStringFields}}{{^hasStringFields}}          searchable={false}
+{{/hasStringFields}}          pagination={pagination}
+        />
+      ) : {{/viewCards}}{{#viewKanban}}viewMode === 'kanban' ? (
+        <KanbanBoard
+          columns={columns}
+          rows={items}
+          rowKey={rowKey}
+          loading={loading}
+          groupField="{{kanbanField}}"
+          groupValues={[{{#kanbanColumns}}{ value: '{{value}}', label: '{{label}}' }{{^last}}, {{/last}}{{/kanbanColumns}}]}
+          onView={setDetailRow}
+          onEdit={openEdit}
+          onDelete={setPendingDelete}
+          onMove={onKanbanMove}
+        />
+      ) : {{/viewKanban}}{{#viewCalendar}}viewMode === 'calendar' ? (
+        <CalendarView
+          columns={columns}
+          rows={items}
+          rowKey={rowKey}
+          loading={loading}
+          dateField="{{calendarField}}"
+          onView={setDetailRow}
+        />
+      ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
+        <Table
+          caption="{{entityLabelPlural}}"
+          columns={columns}
+          rows={items}
+          rowKey={rowKey}
+          loading={loading}
+          onView={setDetailRow}
+{{#mutable}}          onEdit={openEdit}
+          onDelete={setPendingDelete}
+{{/mutable}}          sort={sort}
+          onSortChange={setSort}
+          search={search}
+          onSearchChange={setSearch}
+{{#hasStringFields}}          searchable={true}
+{{/hasStringFields}}{{^hasStringFields}}          searchable={false}
+{{/hasStringFields}}{{#bulkSelectApplicable}}          selectable={true}
+          isRowSelected={isRowSelected}
+          onToggleRow={toggleRow}
+          allOnPageSelected={allOnPageSelected}
+          onToggleAllOnPage={toggleAllOnPage}
+{{/bulkSelectApplicable}}          pagination={pagination}
+        />
+      ) : {{/viewTable}}null}
+{{#mutable}}
+      <FormDrawer
+        open={drawerOpen}
+        title={isNew ? t('newX', { x: '{{entityLabel}}' }) : t('editX', { x: '{{entityLabel}}' })}
+        subtitle={isNew ? t('createXBlurb', { x: '{{entityLabel}}' }) : t('updateXBlurb', { x: '{{entityLabel}}' })}
+        onClose={close}
+        onSave={save}
+        saving={saving}
+        dirty={dirty}
+      >
+        {editing && (
+          <{{EntityName}}Form
+            value={editing}
+            onChange={next => {
+              // Clear the message of any field the user just edited; the others stay until the
+              // next save re-validates.
+              const before = (editing ?? {}) as Record<string, unknown>
+              const after = next as Record<string, unknown>
+              const changed = Object.keys(after).filter(k => after[k] !== before[k] && k in formErrors)
+              if (changed.length > 0) {
+                setFormErrors(prev => {
+                  const copy = { ...prev }
+                  for (const k of changed) delete copy[k]
+                  return copy
+                })
+              }
+              setEditing(next)
+            }}
+            errors={formErrors}
+            isNew={isNew}
+          />
+        )}
+      </FormDrawer>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={t('deleteX', { x: '{{entityLabel}}' })}
+        message={t('undoHint')}
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
+{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}}
+      <ConfirmDialog
+        open={bulkConfirm}
+        title={t('deleteNX', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') })}
+        message={t('cannotUndo')}
+        busy={bulkBusy}
+        onConfirm={runBulkDelete}
+        onCancel={() => setBulkConfirm(false)}
+      />
+{{/viewTable}}{{/bulkDeleteApplicable}}
+      <DetailDrawer
+        open={detailRow !== null}
+        title={t('xDetails', { x: '{{entityLabel}}' })}
+        onClose={() => setDetailRow(null)}
+{{#mutable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
+{{/mutable}}      >
+        {detailRow && <{{EntityName}}Detail value={detailRow} />}
+      </DetailDrawer>
+    </div>
+  )
+}

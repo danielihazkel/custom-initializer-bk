@@ -1113,23 +1113,32 @@ class FullstackStarterIntegrationTests {
                 .contains("@fontsource/assistant").doesNotContain("@fontsource/inter");
         assertThat(entries.get("shop/frontend/src/main.tsx")).contains("@fontsource/assistant/500.css");
 
+        // Shell: the design system's NavLinks / ThemeToggle / Footer, and NO floating chat launcher —
+        // that is the marketing site's contact control, not an admin app's.
         String app = entries.get("shop/frontend/src/app/App.tsx");
         assertThat(app)
-                .contains("/menora-mivtachim-logo.png").contains("<ChatLauncher />")
+                .contains("/menora-mivtachim-logo.png")
+                .contains("<NavLinks").contains("<ThemeToggle").contains("<Footer")
                 .contains("UserPage").contains("OrderPage")
                 .contains("position={ 'top-left' }")
-                .doesNotContain("bg-app-shell");
+                .doesNotContain("<ChatLauncher").doesNotContain("bg-app-shell");
 
-        // Dashboard hero: yellow full stop + yellow pill CTA.
-        assertThat(entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx"))
-                .contains("<span className=\"text-primary\">.</span>")
-                .contains("bg-primary px-8 text-base font-medium text-on-primary shadow-cta");
+        // Dashboard: the Hero (yellow full stop, no CTA) and an ActionPanel with one yellow disc per
+        // entity — not a single primary pill bound to the first entity.
+        String dashboard = entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx");
+        assertThat(dashboard)
+                .contains("<Hero").contains("<ActionPanel").contains("<SectionHeader")
+                .contains("label: 'Users'").contains("label: 'Orders'")
+                .contains("t('welcomeTo', { name: 'shop' }) + '.'")
+                .doesNotContain("bg-primary px-8");
 
-        // Borrowed files are present and unchanged; the shared action buttons use the semantic tokens.
-        assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx")).contains("onSortChange");
+        // Authored shared UI wraps the design-system ports; borrowed files are present and unchanged.
+        assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
+                .contains("onSortChange").contains("MenoraTable").contains("caption");
         assertThat(entries).containsKey("shop/frontend/src/shared/api/useResource.ts");
-        assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx")).contains("bg-primary").contains("text-on-primary");
-        assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("bg-primary");
+        assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx"))
+                .contains("<SectionHeader title=\"Users\"").contains("caption=\"Users\"").contains("variant=\"primary\"");
+        assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("mn-btn--primary");
         // vite.config.ts is borrowed as a mustache row (sourceSet) and rendered, not copied raw.
         assertThat(entries.get("shop/frontend/vite.config.ts"))
                 .contains("base: '/'").contains("target: 'http://localhost:8080'").doesNotContain("{{");
@@ -2510,11 +2519,11 @@ class FullstackStarterIntegrationTests {
         // The Menora-authored shell and dashboard go through t() like the default set's.
         assertThat(entries.get("shop/frontend/src/app/App.tsx"))
                 .contains("import { t } from '@shared/i18n'")
-                .contains("aria-label={t('main')}")
+                .contains("ariaLabel={t('main')}")
                 .contains("label: t('dashboard')");
         assertThat(entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx"))
                 .contains("t('welcomeTo', { name: 'shop' })")
-                .contains("{t('collections')}");
+                .contains("title={t('collections')}");
         // `locale` is independent of `rtl`: no rtl opt → the document stays LTR.
         assertThat(entries.get("shop/frontend/index.html")).doesNotContain("dir=\"rtl\"");
     }
