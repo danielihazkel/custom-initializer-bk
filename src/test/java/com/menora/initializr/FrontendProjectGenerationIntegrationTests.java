@@ -95,6 +95,8 @@ class FrontendProjectGenerationIntegrationTests {
                 "demo/vite.config.ts",
                 "demo/index.html",
                 "demo/tsconfig.json",
+                // Types import.meta.env for tsc -b (auth-msal, the tanstack axios client, …).
+                "demo/src/vite-env.d.ts",
                 "demo/.editorconfig",
                 "demo/.gitignore",
                 "demo/Dockerfile",
@@ -1169,6 +1171,8 @@ class FrontendProjectGenerationIntegrationTests {
         assertThat(files.get("src/shared/auth/msal-config.ts"))
                 .contains("PublicClientApplication")
                 .contains("VITE_MSAL_CLIENT_ID");
+        // msal-config reads import.meta.env, which only type-checks with the Vite client types.
+        assertThat(files.get("src/vite-env.d.ts")).contains("/// <reference types=\"vite/client\" />");
 
         assertThat(files).containsKey("src/shared/ui/login-button.tsx");
         assertThat(files).containsKey("src/shared/lib/use-auth.ts");

@@ -20,6 +20,7 @@
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/frontend/fe-readme.mustache", "targetPath": "README.md", "substitutionType": "MUSTACHE", "sortOrder": 17 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/tsconfig.json", "targetPath": "tsconfig.json", "substitutionType": "NONE", "sortOrder": 18 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/tsconfig.node.json", "targetPath": "tsconfig.node.json", "substitutionType": "NONE", "sortOrder": 19 },
+  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/vite-env.d.ts", "targetPath": "src/vite-env.d.ts", "substitutionType": "NONE", "sortOrder": 19 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/.gitignore", "targetPath": ".gitignore", "substitutionType": "NONE", "sortOrder": 20 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/.editorconfig", "targetPath": ".editorconfig", "substitutionType": "NONE", "sortOrder": 21 },
   { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/frontend/common/.dockerignore", "targetPath": ".dockerignore", "substitutionType": "NONE", "sortOrder": 22 },
