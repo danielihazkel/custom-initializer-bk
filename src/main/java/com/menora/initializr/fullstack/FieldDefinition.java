@@ -2,6 +2,7 @@ package com.menora.initializr.fullstack;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * One field on a user-defined entity. Submitted by clients as JSON; converted from
@@ -30,6 +31,10 @@ import java.util.List;
  * upper-cased constant, a LOCAL_DATE the ISO form). Rendered as the entity field's Java
  * initializer, as the form's initial value for a new row, and by the demo-data seeder for
  * non-key, non-unique fields. Never set on a generated PK.
+ *
+ * <p>{@code enumLabels} maps an ENUM constant (already upper-cased, as the generated Java enum
+ * spells it) to its human-facing display label. Always non-null (empty when none were supplied);
+ * a constant absent from the map gets a humanized fallback at render time.
  */
 public record FieldDefinition(
         String name,
@@ -48,7 +53,22 @@ public record FieldDefinition(
         boolean filterable,
         String label,
         boolean readOnly,
-        String defaultValue) {
+        String defaultValue,
+        Map<String, String> enumLabels) {
+
+    public FieldDefinition {
+        enumLabels = enumLabels == null ? Map.of() : Map.copyOf(enumLabels);
+    }
+
+    /** Back-compat constructor without {@code enumLabels} (no custom labels). */
+    public FieldDefinition(String name, FieldType type, boolean primaryKey, boolean generated,
+                           boolean required, boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                           String pattern, boolean email, List<String> enumValues,
+                           boolean searchable, boolean filterable, String label, boolean readOnly,
+                           String defaultValue) {
+        this(name, type, primaryKey, generated, required, unique, length, min, max,
+                pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, null);
+    }
 
     /** Back-compat constructor without the {@code label}/{@code readOnly}/{@code defaultValue}
      *  per-field props (no custom label, editable, no default). Keeps existing callers/tests compiling. */

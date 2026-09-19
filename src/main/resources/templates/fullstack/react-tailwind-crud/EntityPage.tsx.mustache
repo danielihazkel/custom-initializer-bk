@@ -3,6 +3,8 @@ import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}Lay
 {{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{#hasEnumFields}}import { {{#fields}}{{#isEnum}}{{enumTypeName}}Labels, {{/isEnum}}{{/fields}}} from '@entities/{{entityNameKebab}}'
+{{/hasEnumFields}}
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
@@ -11,7 +13,7 @@ import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 import { ApiError } from '@shared/api'
 {{/mutable}}
 const columns: Column<{{EntityName}}>[] = [
-{{#fields}}  { label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : String(r.{{name}}) },
+{{#fields}}  { label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : {{#isEnum}}{{enumTypeName}}Labels[r.{{name}}]{{/isEnum}}{{^isEnum}}String(r.{{name}}){{/isEnum}} },
 {{/fields}}{{#relations}}  { label: '{{FieldName}}', render: r => {{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} },
 {{/relations}}{{#auditApplicable}}  { label: t('created'), sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
   { label: t('updated'), sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
@@ -19,14 +21,14 @@ const columns: Column<{{EntityName}}>[] = [
 {{/inverseRelations}}{{/optScaffoldInverse}}]
 {{#hasFilters}}
 const filterDescriptors: FilterDescriptor[] = [
-{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{/isRelationFilter}} },
+{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{/isRelationFilter}} },
 {{/filterFields}}]
 {{/hasFilters}}{{#bulkUpdateApplicable}}{{#viewTable}}
 // Fields eligible for bulk edit. `kind` selects the value control shown in the bulk-edit bar; the
 // raw value is sent to the backend which coerces it to the field's type.
 type BulkFieldKind = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum'
-const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?: string[] }> = {
-{{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
+const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?: { value: string; label: string }[] }> = {
+{{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
 {{/bulkUpdatableFields}}}
 {{/viewTable}}{{/bulkUpdateApplicable}}
 /** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
@@ -326,7 +328,7 @@ export function {{EntityName}}Page() {
               if (meta.kind === 'enum') return (
                 <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label={t('newValue')}>
                   <option value="">—</option>
-                  {meta.options!.map(o => <option key={o} value={o}>{o}</option>)}
+                  {meta.options!.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               )
               const type = meta.kind === 'number' ? 'number' : meta.kind === 'date' ? 'date' : meta.kind === 'datetime' ? 'datetime-local' : 'text'
@@ -375,7 +377,7 @@ export function {{EntityName}}Page() {
           rowKey={rowKey}
           loading={loading}
           groupField="{{kanbanField}}"
-          groupValues={[{{#kanbanColumns}}{ value: '{{value}}', label: '{{label}}' }{{^last}}, {{/last}}{{/kanbanColumns}}]}
+          groupValues={[{{#kanbanColumns}}{ value: '{{value}}', label: {{labelExpr}} }{{^last}}, {{/last}}{{/kanbanColumns}}]}
           onView={setDetailRow}
           onEdit={openEdit}
           onDelete={setPendingDelete}

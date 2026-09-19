@@ -2,7 +2,7 @@ import { Field, inputClass } from '@shared/ui'
 {{#formUsesStrings}}import { t } from '@shared/i18n'
 {{/formUsesStrings}}{{#hasRelations}}import { useOptions } from '@shared/api'
 {{/hasRelations}}import type { {{EntityName}}{{#fields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
-{{#fields}}{{#isEnum}}import { {{enumTypeName}}Values } from '@entities/{{entityNameKebab}}'
+{{#fields}}{{#isEnum}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
 {{/isEnum}}{{/fields}}
 
 interface Props {
@@ -58,7 +58,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         >
           <option value="">—</option>
-          { {{enumTypeName}}Values.map(v => <option key={v} value={v}>{v}</option>) }
+          { {{enumTypeName}}Options.map(o => <option key={o.value} value={o.value}>{o.label}</option>) }
         </select>
       </Field>
 {{/isEnum}}{{^isBoolean}}{{^isEnum}}      <Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>

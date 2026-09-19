@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{#hasEnumFields}}import { {{#fields}}{{#isEnum}}{{enumTypeName}}Labels, {{/isEnum}}{{/fields}}} from '@entities/{{entityNameKebab}}'
+{{/hasEnumFields}}
 {{#auditApplicable}}import { t, LOCALE } from '@shared/i18n'
 {{/auditApplicable}}
 interface Props {
@@ -22,7 +24,7 @@ const empty = <span className="text-muted">—</span>
 export function {{EntityName}}Detail({ value }: Props) {
   return (
     <dl>
-{{#fields}}      <Row label="{{label}}">{value.{{name}} == null ? empty : {{#isText}}<span className="whitespace-pre-wrap break-words">{String(value.{{name}})}</span>{{/isText}}{{^isText}}String(value.{{name}}){{/isText}}}</Row>
+{{#fields}}      <Row label="{{label}}">{value.{{name}} == null ? empty : {{#isText}}<span className="whitespace-pre-wrap break-words">{String(value.{{name}})}</span>{{/isText}}{{^isText}}{{#isEnum}}{{enumTypeName}}Labels[value.{{name}}]{{/isEnum}}{{^isEnum}}String(value.{{name}}){{/isEnum}}{{/isText}}}</Row>
 {{/fields}}{{#relations}}      <Row label="{{FieldName}}">{ {{#hasTargetLabel}}value.{{fieldName}}Label ?? ({{/hasTargetLabel}}value.{{fkFieldName}} == null ? empty : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(value.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} }</Row>
 {{/relations}}{{#auditApplicable}}      <Row label={t('created')}>{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString(LOCALE)}</Row>
       <Row label={t('updated')}>{value.updatedAt == null ? empty : new Date(value.updatedAt).toLocaleString(LOCALE)}</Row>

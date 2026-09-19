@@ -140,6 +140,12 @@ public final class FullstackRequestValidator {
                 } else if (f.enumValues() != null && !f.enumValues().isEmpty()) {
                     throw new WizardArgumentException("enumValues only allowed when type=ENUM (field '" + fname + "' on entity '" + name + "')");
                 }
+                if (type != FieldType.ENUM && f.enumLabels() != null && !f.enumLabels().isEmpty()) {
+                    throw new WizardArgumentException("enumLabels only allowed when type=ENUM (field '" + fname + "' on entity '" + name + "')");
+                }
+                Map<String, String> enumLabels = type == FieldType.ENUM
+                        ? canonicalEnumLabels(f.enumLabels(), f.enumValues(), fname, name)
+                        : Map.of();
 
                 if (f.length() != null && type != FieldType.STRING) {
                     throw new WizardArgumentException("length only allowed on STRING fields (field '" + fname + "' on entity '" + name + "')");
@@ -223,7 +229,8 @@ public final class FullstackRequestValidator {
                         // PascalCase name) and read-only flag (default false, like required/unique).
                         label,
                         Boolean.TRUE.equals(f.readOnly()),
-                        defaultValue));
+                        defaultValue,
+                        enumLabels));
             }
 
             if (pkCount == 0) {
@@ -275,6 +282,43 @@ public final class FullstackRequestValidator {
      * canonical form (ENUM → the upper-cased constant, temporal → ISO, numbers as parsed), or null
      * when absent/blank. A default on a generated primary key is rejected (the database assigns it).
      */
+    /** Longest display label accepted for an enum constant. */
+    static final int MAX_ENUM_LABEL_LENGTH = 80;
+
+    /**
+     * Validates the optional per-constant display labels of an ENUM field and returns them keyed
+     * by the upper-cased constant (the spelling the generated Java enum and the templates use).
+     * A key is matched case-insensitively against {@code enumValues}; an unknown key, a blank
+     * label or one over {@link #MAX_ENUM_LABEL_LENGTH} chars is a 400 naming the field and key.
+     */
+    static Map<String, String> canonicalEnumLabels(Map<String, String> raw, List<String> enumValues,
+                                                   String fieldName, String entityName) {
+        if (raw == null || raw.isEmpty()) return Map.of();
+        Map<String, String> byConstant = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, String> e : raw.entrySet()) {
+            String key = e.getKey() == null ? "" : e.getKey().trim();
+            String constant = null;
+            for (String v : enumValues) {
+                if (v != null && v.equalsIgnoreCase(key)) { constant = v.toUpperCase(Locale.ROOT); break; }
+            }
+            if (constant == null) {
+                throw new WizardArgumentException("enumLabels key '" + key + "' is not one of the enumValues "
+                        + enumValues + " (field '" + fieldName + "' on entity '" + entityName + "')");
+            }
+            String label = e.getValue() == null ? "" : e.getValue().trim();
+            if (label.isEmpty()) {
+                throw new WizardArgumentException("enumLabels['" + key + "'] must not be blank (field '"
+                        + fieldName + "' on entity '" + entityName + "')");
+            }
+            if (label.length() > MAX_ENUM_LABEL_LENGTH) {
+                throw new WizardArgumentException("enumLabels['" + key + "'] is longer than " + MAX_ENUM_LABEL_LENGTH
+                        + " characters (field '" + fieldName + "' on entity '" + entityName + "')");
+            }
+            byConstant.put(constant, label);
+        }
+        return Map.copyOf(byConstant);
+    }
+
     static String normalizeDefault(String raw, FieldType type, boolean generated, Integer length,
                                    List<String> enumValues, String fname, String entityName) {
         if (raw == null || raw.isBlank()) return null;

@@ -2,6 +2,9 @@
 export type {{enumTypeName}} = {{#enumValues}}'{{value}}'{{^last}} | {{/last}}{{/enumValues}}
 
 export const {{enumTypeName}}Values: {{enumTypeName}}[] = [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]
+/** Display label per constant — what every enum surface (form, filters, lanes, cells, chart) shows. */
+export const {{enumTypeName}}Labels: Record<{{enumTypeName}}, string> = { {{#enumValues}}{{value}}: '{{labelTs}}'{{^last}}, {{/last}}{{/enumValues}} }
+export const {{enumTypeName}}Options: { value: {{enumTypeName}}; label: string }[] = {{enumTypeName}}Values.map(v => ({ value: v, label: {{enumTypeName}}Labels[v] }))
 {{/isEnum}}{{/fields}}
 
 export interface {{EntityName}} {

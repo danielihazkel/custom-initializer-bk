@@ -13,7 +13,8 @@ export interface FilterDescriptor {
   label: string
   kind: FilterKind
   /** Allowed values for an enum filter. */
-  options?: string[]
+  /** Enum choices: a bare value, or a value with its display label. */
+  options?: Array<string | { value: string; label: string }>
   /** Input type for a temporal filter. */
   inputType?: 'date' | 'datetime-local'
   /** Relation filter: list endpoint of the referenced entity, and which of its fields supply the
@@ -21,6 +22,11 @@ export interface FilterDescriptor {
   optionsPath?: string
   optionValue?: string
   optionLabel?: string
+}
+
+/** Normalizes an enum option to its value/label pair (a bare string labels itself). */
+function toOption(o: string | { value: string; label: string }): { value: string; label: string } {
+  return typeof o === 'string' ? { value: o, label: o } : o
 }
 
 /** A <select> over the referenced entity's rows, e.g. "Customer" on the orders page. */
@@ -102,7 +108,7 @@ export function FilterBar({ filters, values, onChange }: Props) {
               {f.kind === 'enum' && (
                 <select className={fieldClass} value={values[f.name] ?? ''} onChange={e => set(f.name, e.target.value)}>
                   <option value="">{t('any')}</option>
-                  {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+                  {(f.options ?? []).map(toOption).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               )}
               {f.kind === 'boolean' && (

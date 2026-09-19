@@ -156,7 +156,11 @@ class GeneratedFrontendBuildSmokeTests {
     private Path fetchFullstackFrontend(Path workDir, String locale, String frontendSet, boolean rtl) throws Exception {
         Map<String, Object> pk = new LinkedHashMap<>();
         pk.put("name", "id"); pk.put("type", "Long"); pk.put("primaryKey", true); pk.put("generated", true);
-        Map<String, Object> customer = Map.of("name", "Customer", "fields", List.of(pk,
+        // Customer: a boolean-only breakdown, so its kanban lanes take the i18n true/false headings.
+        Map<String, Object> customer = new LinkedHashMap<>();
+        customer.put("name", "Customer");
+        customer.put("listViews", List.of("table", "kanban"));
+        customer.put("fields", List.of(pk,
                 Map.of("name", "name", "type", "String", "required", true, "length", 80),
                 Map.of("name", "email", "type", "String", "email", true),
                 Map.of("name", "active", "type", "Boolean")));
@@ -166,7 +170,9 @@ class GeneratedFrontendBuildSmokeTests {
         order.put("fields", List.of(pk,
                 Map.of("name", "title", "type", "String", "required", true),
                 Map.of("name", "notes", "type", "Text"),
-                Map.of("name", "status", "type", "Enum", "enumValues", List.of("OPEN", "DONE")),
+                // One labelled constant (with an apostrophe) and one humanized — both enum lane branches.
+                Map.of("name", "status", "type", "Enum", "enumValues", List.of("OPEN", "DONE"),
+                        "enumLabels", Map.of("OPEN", "Open / פתוח", "DONE", "Won't fix")),
                 Map.of("name", "quantity", "type", "Integer", "min", 1, "max", 999),
                 Map.of("name", "total", "type", "BigDecimal"),
                 Map.of("name", "shippedOn", "type", "LocalDate")));

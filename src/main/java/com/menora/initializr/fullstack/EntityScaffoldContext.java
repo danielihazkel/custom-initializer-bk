@@ -215,10 +215,13 @@ public final class EntityScaffoldContext {
 
     /** A single kanban lane: {@code value} is matched against the grouping field's stringified
      *  value, {@code label} is the column heading. */
-    private static Map<String, Object> kanbanColumn(String value, String label) {
+    private static Map<String, Object> kanbanColumn(String value, String label, String labelExpr) {
         Map<String, Object> col = new LinkedHashMap<>();
         col.put("value", value);
         col.put("label", label);
+        // The TS expression the page emits for the lane heading: a quoted literal for an enum
+        // lane, `t('trueLabel')`/`t('falseLabel')` for the boolean lanes.
+        col.put("labelExpr", labelExpr);
         return col;
     }
 
@@ -226,6 +229,20 @@ public final class EntityScaffoldContext {
      *  (backslash and double-quote only — both languages share C-style escaping). */
     private static String escapeStringLiteral(String s) {
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    /** Escapes a string for embedding in a single-quoted TS/JS literal (backslash and apostrophe —
+     *  Hebrew labels often carry a geresh). */
+    static String escapeTsSingleQuoted(String s) {
+        return s.replace("\\", "\\\\").replace("'", "\\'");
+    }
+
+    /** Fallback display label for an enum constant without a user label:
+     *  {@code IN_PROGRESS} -> {@code In progress}. */
+    static String humanizeConstant(String constant) {
+        String words = constant.replace('_', ' ').trim().toLowerCase(Locale.ROOT);
+        if (words.isEmpty()) return constant;
+        return Character.toUpperCase(words.charAt(0)) + words.substring(1);
     }
 
     /** Puts {@code <name>} = {@code base.layer} and {@code <name>Path} = the slash form. */
@@ -446,6 +463,11 @@ public final class EntityScaffoldContext {
         view.put("hasBreakdown", breakdown != null);
         view.put("breakdownField", breakdown == null ? null : breakdown.get("name"));
         view.put("breakdownLabel", breakdown == null ? null : breakdown.get("Name"));
+        boolean breakdownIsEnum = breakdown != null && Boolean.TRUE.equals(breakdown.get("isEnum"));
+        view.put("breakdownIsEnum", breakdownIsEnum);
+        // The per-entity enum type whose `...Labels` const the dashboard chart reads (null for a
+        // boolean breakdown, whose two values need no label map).
+        view.put("breakdownEnumTypeName", breakdownIsEnum ? breakdown.get("enumTypeName") : null);
 
         // Kanban board view (listView == "kanban"): reuse the breakdown field as the grouping
         // column and turn its distinct values into lanes. Dragging a card writes the new lane value
@@ -463,14 +485,20 @@ public final class EntityScaffoldContext {
                 @SuppressWarnings("unchecked")
                 List<Map<String, Object>> evs = (List<Map<String, Object>>) breakdown.get("enumValues");
                 for (Map<String, Object> ev : evs) {
-                    kanbanColumns.add(kanbanColumn(String.valueOf(ev.get("value")), String.valueOf(ev.get("value"))));
+                    String laneLabel = String.valueOf(ev.get("label"));
+                    kanbanColumns.add(kanbanColumn(String.valueOf(ev.get("value")), laneLabel,
+                            "'" + escapeTsSingleQuoted(laneLabel) + "'"));
                 }
-            } else { // boolean breakdown — two fixed lanes
-                kanbanColumns.add(kanbanColumn("true", "True"));
-                kanbanColumns.add(kanbanColumn("false", "False"));
+            } else { // boolean breakdown — two fixed lanes, headed by the generated app's own i18n words
+                kanbanColumns.add(kanbanColumn("true", "True", "t('trueLabel')"));
+                kanbanColumns.add(kanbanColumn("false", "False", "t('falseLabel')"));
             }
         }
+        for (int i = 0; i < kanbanColumns.size(); i++) {
+            kanbanColumns.get(i).put("last", i == kanbanColumns.size() - 1);
+        }
         view.put("kanbanColumns", kanbanColumns);
+        view.put("kanbanEnumTypeName", kanbanIsEnum ? breakdown.get("enumTypeName") : null);
 
         // Calendar view (listView == "calendar"): bucket records onto a month grid by their first
         // temporal (LOCAL_DATE / LOCAL_DATE_TIME) field. No writable requirement — it only reads.
@@ -508,6 +536,7 @@ public final class EntityScaffoldContext {
             ff.put("isDate", fv.get("isDate"));
             ff.put("isDateTime", fv.get("isDateTime"));
             ff.put("enumValues", fv.get("enumValues"));
+            ff.put("enumTypeName", fv.get("enumTypeName"));
             ff.put("isRelationFilter", false);
             filterFieldViews.add(ff);
         }
@@ -763,19 +792,29 @@ public final class EntityScaffoldContext {
         if (f.type() == FieldType.ENUM) {
             List<Map<String, Object>> values = new ArrayList<>();
             Set<String> seen = new LinkedHashSet<>();
+            boolean anyCustomLabel = false;
             for (String v : f.enumValues()) {
                 String constant = v.toUpperCase(Locale.ROOT);
                 if (!seen.add(constant)) continue;
                 Map<String, Object> ev = new LinkedHashMap<>();
                 ev.put("value", constant);
+                // Display label: the user's, else a humanized constant ("IN_PROGRESS" -> "In progress").
+                // `label` is the raw text; `labelTs` is safe inside a single-quoted TS literal.
+                String custom = f.enumLabels().get(constant);
+                String label = custom != null ? custom : humanizeConstant(constant);
+                anyCustomLabel |= custom != null;
+                ev.put("label", label);
+                ev.put("labelTs", escapeTsSingleQuoted(label));
                 values.add(ev);
             }
             for (int i = 0; i < values.size(); i++) {
                 values.get(i).put("last", i == values.size() - 1);
             }
             fv.put("enumValues", values);
+            fv.put("hasEnumLabels", anyCustomLabel);
         } else {
             fv.put("enumValues", List.of());
+            fv.put("hasEnumLabels", false);
         }
         return fv;
     }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '@shared/api'
 import { t } from '@shared/i18n'
+{{#entities}}{{#breakdownEnumTypeName}}import { {{breakdownEnumTypeName}}Labels } from '@entities/{{entityNameKebab}}'
+{{/breakdownEnumTypeName}}{{/entities}}
 import { Hero, ActionPanel, SectionHeader } from '@shared/ui/menora'
 
 interface CardDef {
@@ -19,12 +21,14 @@ interface ChartDef {
   label: string
   path: string
   field: string
+  /** Enum breakdowns: display label per constant, so the bars read like the rest of the app. */
+  labels?: Record<string, string>
 }
 
 // One breakdown per entity that has a low-cardinality (enum/boolean) field. Grouped client-side
 // from a sample page (see useBreakdown), so the chart labels itself as a sample on large tables.
 const CHARTS: ChartDef[] = [
-{{#entities}}{{#hasBreakdown}}  { label: t('xByY', { x: '{{entityLabelPlural}}', y: '{{breakdownLabel}}' }), path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}' },
+{{#entities}}{{#hasBreakdown}}  { label: t('xByY', { x: '{{entityLabelPlural}}', y: '{{breakdownLabel}}' }), path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}'{{#breakdownEnumTypeName}}, labels: {{breakdownEnumTypeName}}Labels{{/breakdownEnumTypeName}} },
 {{/hasBreakdown}}{{/entities}}]
 
 // The 22px line icon every action disc holds (stroke currentColor, so it inherits on-yellow).
@@ -55,7 +59,7 @@ const BREAKDOWN_SAMPLE = 200
 
 /** Fetches the first BREAKDOWN_SAMPLE records and groups them by `field` — client-side, no extra
  *  API. `sampled` reports how many of the total records the chart is based on. */
-function useBreakdown(path: string, field: string) {
+function useBreakdown(path: string, field: string, labels?: Record<string, string>) {
   const [data, setData] = useState<{ label: string; count: number }[] | null>(null)
   const [sampled, setSampled] = useState<{ shown: number; total: number } | null>(null)
   const [failed, setFailed] = useState(false)
@@ -69,7 +73,8 @@ function useBreakdown(path: string, field: string) {
         setSampled({ shown: rows.length, total: p.totalElements ?? rows.length })
         const counts = new Map<string, number>()
         for (const row of rows) {
-          const key = row[field] == null ? '—' : String(row[field])
+          const raw = row[field] == null ? '—' : String(row[field])
+          const key = labels?.[raw] ?? raw
           counts.set(key, (counts.get(key) ?? 0) + 1)
         }
         setData(Array.from(counts, ([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count))
@@ -99,7 +104,7 @@ function BarChart({ data }: { data: { label: string; count: number }[] }) {
 }
 
 function ChartCard({ chart }: { chart: ChartDef }) {
-  const { data, failed, sampled } = useBreakdown(chart.path, chart.field)
+  const { data, failed, sampled } = useBreakdown(chart.path, chart.field, chart.labels)
   return (
     <div className="mn-panel mn-panel--lined p-6">
       <div className="mb-4 text-base font-semibold text-fg">{chart.label}</div>

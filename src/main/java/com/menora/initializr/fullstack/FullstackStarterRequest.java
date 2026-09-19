@@ -174,7 +174,21 @@ public record FullstackStarterRequest(
             // Optional default value, as a string in the field type's natural wire form
             // ("draft", "1", "true", "ACTIVE", "2024-01-01", ...). Type-checked by the validator;
             // rendered as a Java field initializer and as the form's initial value for a new row.
-            String defaultValue) {
+            String defaultValue,
+            // Optional display label per enum constant (constant -> label, e.g. {"OPEN": "פתוח"}).
+            // Keys are matched case-insensitively against enumValues; only valid on ENUM fields.
+            // A constant without a label falls back to a humanized form ("IN_PROGRESS" -> "In progress").
+            Map<String, String> enumLabels) {
+
+        /** Back-compat constructor without {@code enumLabels} (no custom labels). */
+        public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                                  String pattern, Boolean email, List<String> enumValues,
+                                  Boolean searchable, Boolean filterable, String label, Boolean readOnly,
+                                  String defaultValue) {
+            this(name, type, primaryKey, generated, required, unique, length, min, max,
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, null);
+        }
 
         /** Back-compat constructor without the {@code searchable}/{@code filterable} opt-out flags
          *  or the {@code label}/{@code readOnly}/{@code defaultValue} per-field props (all default). */

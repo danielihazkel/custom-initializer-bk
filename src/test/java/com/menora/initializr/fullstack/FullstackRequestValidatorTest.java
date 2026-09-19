@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -461,5 +462,35 @@ class FullstackRequestValidatorTest {
         FieldDefinition ageField = result.get(0).fields().get(2);
         assertThat(ageField.min()).isEqualByComparingTo("0");
         assertThat(ageField.max()).isEqualByComparingTo("120");
+    }
+
+    private static FullstackStarterRequest.FieldDefinitionDto enumWithLabels(String type, List<String> values, Map<String, String> labels) {
+        return new FullstackStarterRequest.FieldDefinitionDto("status", type, null, null, null, null, null, null, null,
+                null, null, values, null, null, null, null, null, labels);
+    }
+
+    @Test
+    void enumLabels_canonicalizedToUpperCaseConstants() {
+        FieldDefinition f = convertField(enumWithLabels("Enum", List.of("open", "IN_REVIEW", "DONE"),
+                Map.of("Open", "  פתוח ", "done", "Won't fix")));
+        assertThat(f.enumLabels()).containsExactlyInAnyOrderEntriesOf(Map.of("OPEN", "פתוח", "DONE", "Won't fix"));
+        // Absent → empty, never null, so the context can look constants up without a guard.
+        assertThat(convertField(enumWithLabels("Enum", List.of("A"), null)).enumLabels()).isEmpty();
+    }
+
+    @Test
+    void enumLabels_rejected_unknownKey_blank_tooLong_andOnNonEnum() {
+        assertThatThrownBy(() -> convertField(enumWithLabels("Enum", List.of("OPEN", "DONE"), Map.of("GONE", "Gone"))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessage("enumLabels key 'GONE' is not one of the enumValues [OPEN, DONE] (field 'status' on entity 'Item')");
+        assertThatThrownBy(() -> convertField(enumWithLabels("Enum", List.of("OPEN"), Map.of("OPEN", "   "))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessage("enumLabels['OPEN'] must not be blank (field 'status' on entity 'Item')");
+        assertThatThrownBy(() -> convertField(enumWithLabels("Enum", List.of("OPEN"), Map.of("OPEN", "x".repeat(81)))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessage("enumLabels['OPEN'] is longer than 80 characters (field 'status' on entity 'Item')");
+        assertThatThrownBy(() -> convertField(enumWithLabels("String", null, Map.of("OPEN", "Open"))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessage("enumLabels only allowed when type=ENUM (field 'status' on entity 'Item')");
     }
 }

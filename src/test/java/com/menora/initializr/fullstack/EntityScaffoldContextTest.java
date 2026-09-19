@@ -541,4 +541,28 @@ class EntityScaffoldContextTest {
                 .containsEntry("hasTargetLabel", true)
                 .containsEntry("targetLabelField", "name");
     }
+
+    @Test
+    void enumLabels_fallBackToHumanizedConstants_andEscapeForTs() {
+        assertThat(EntityScaffoldContext.humanizeConstant("IN_PROGRESS")).isEqualTo("In progress");
+        assertThat(EntityScaffoldContext.humanizeConstant("DONE")).isEqualTo("Done");
+        assertThat(EntityScaffoldContext.escapeTsSingleQuoted("Won't \\ fix")).isEqualTo("Won\\'t \\\\ fix");
+
+        FieldDefinition status = new FieldDefinition("status", FieldType.ENUM, false, false, false, false,
+                null, null, null, null, false, List.of("OPEN", "IN_REVIEW"), true, true, null, false, null,
+                Map.of("OPEN", "Open '24"));
+        EntityDefinition e = new EntityDefinition("Task", null, List.of(
+                new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true),
+                status));
+        Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(e)), e);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) ctx.get("fields");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> values = (List<Map<String, Object>>) fields.get(1).get("enumValues");
+        assertThat(fields.get(1)).containsEntry("hasEnumLabels", true);
+        assertThat(values.get(0)).containsEntry("value", "OPEN").containsEntry("label", "Open '24").containsEntry("labelTs", "Open \\'24");
+        assertThat(values.get(1)).containsEntry("value", "IN_REVIEW").containsEntry("label", "In review").containsEntry("labelTs", "In review");
+        assertThat(ctx).containsEntry("breakdownIsEnum", true).containsEntry("breakdownEnumTypeName", "TaskStatusType");
+    }
 }

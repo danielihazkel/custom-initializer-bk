@@ -522,14 +522,17 @@ class FullstackStarterIntegrationTests {
         assertThat(personForm).isNotNull();
         // 1.1 — enum <option> map wrapped in JSX braces
         assertThat(personForm)
-                .contains("{ PersonStatusTypeValues.map(v => <option key={v} value={v}>{v}</option>) }");
+                .contains("{ PersonStatusTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>) }");
         // 1.2 — LocalDate uses a plain date input, never datetime-local
         assertThat(personForm).contains("type=\"date\"");
         assertThat(personForm).doesNotContain("type=\"datetime-local\"");
 
         // Enum union type is emitted for the field
         String personType = entries.get("people/frontend/src/entities/person/model/types.ts");
-        assertThat(personType).contains("export type PersonStatusType = 'ACTIVE' | 'INACTIVE'");
+        assertThat(personType).contains("export type PersonStatusType = 'ACTIVE' | 'INACTIVE'")
+                // No enumLabels → humanized constants, still emitted so every enum surface reads the same map.
+                .contains("export const PersonStatusTypeLabels: Record<PersonStatusType, string> = { ACTIVE: 'Active', INACTIVE: 'Inactive' }")
+                .contains("export const PersonStatusTypeOptions: { value: PersonStatusType; label: string }[] = PersonStatusTypeValues.map(v => ({ value: v, label: PersonStatusTypeLabels[v] }))");
 
         // Backend: the DTO lives in its own .dto sub-package and imports the entity plus its
         // nested enum, so the bare PersonStatusType reference still resolves across packages.
@@ -2201,7 +2204,7 @@ class FullstackStarterIntegrationTests {
                 .doesNotContain("<CardGrid")
                 .doesNotContain("<CalendarView")
                 .contains("<FilterBar filters={filterDescriptors}")
-                .contains("options: ['OPEN', 'DONE']")
+                .contains("options: [{ value: 'OPEN', label: 'Open' }, { value: 'DONE', label: 'Done' }]")
                 .contains("exportCsv('tasks.csv')")
                 .contains("selectable={true}")
                 .contains("isRowSelected={isRowSelected}")
@@ -2617,5 +2620,116 @@ class FullstackStarterIntegrationTests {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         String pom = unzip(response.getBody()).get("verspell/backend/pom.xml");
         assertThat(pom).contains("<version>3.2.1</version>").doesNotContain("3.2.1.RELEASE");
+    }
+
+    @Test
+    void fullstackEndpoint_rendersEnumLabels() throws Exception {
+        // Task.status carries a label for two of its three constants (one with an apostrophe, to
+        // pin the TS escaping); the third falls back to the humanized constant. Flag has only a
+        // boolean breakdown, so its kanban lanes must be headed by the app's own i18n words.
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("name", "status");
+        status.put("type", "Enum");
+        status.put("enumValues", List.of("OPEN", "IN_REVIEW", "DONE"));
+        status.put("enumLabels", Map.of("open", "Open", "DONE", "Won't fix"));
+        Map<String, Object> task = new LinkedHashMap<>();
+        task.put("name", "Task");
+        task.put("listViews", List.of("table", "kanban"));
+        task.put("fields", List.of(pkField(), Map.of("name", "title", "type", "String"), status));
+
+        Map<String, Object> flag = new LinkedHashMap<>();
+        flag.put("name", "Flag");
+        flag.put("listViews", List.of("table", "kanban"));
+        flag.put("fields", List.of(pkField(), Map.of("name", "name", "type", "String"),
+                Map.of("name", "active", "type", "Boolean")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "ops");
+        body.put("packageName", "com.menora.ops");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(task, flag));
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "bulkUpdate")));
+
+        Map<String, String> entries = generateZip(body);
+
+        // One label map per enum, next to the union type; Options derives from it.
+        String taskType = entries.get("ops/frontend/src/entities/task/model/types.ts");
+        assertThat(taskType)
+                .contains("export const TaskStatusTypeLabels: Record<TaskStatusType, string> = { OPEN: 'Open', IN_REVIEW: 'In review', DONE: 'Won\\'t fix' }")
+                .contains("export const TaskStatusTypeOptions: { value: TaskStatusType; label: string }[] = TaskStatusTypeValues.map(v => ({ value: v, label: TaskStatusTypeLabels[v] }))");
+
+        // Form select shows the label, posts the constant.
+        assertThat(entries.get("ops/frontend/src/features/task-form/ui/TaskForm.tsx"))
+                .contains("import { TaskStatusTypeOptions } from '@entities/task'")
+                .contains("{ TaskStatusTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>) }");
+
+        // List page: the table cell, the filter options, the bulk-edit options and the kanban lanes.
+        String taskPage = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+        assertThat(taskPage)
+                .contains("import { TaskStatusTypeLabels, } from '@entities/task'")
+                .contains("render: r => r.status == null ? '—' : TaskStatusTypeLabels[r.status] }")
+                .contains("options: [{ value: 'OPEN', label: 'Open' }, { value: 'IN_REVIEW', label: 'In review' }, { value: 'DONE', label: 'Won\\'t fix' }]")
+                .contains("options?: { value: string; label: string }[] }> = {")
+                .contains("<option key={o.value} value={o.value}>{o.label}</option>")
+                .contains("groupValues={[{ value: 'OPEN', label: 'Open' }, { value: 'IN_REVIEW', label: 'In review' }, { value: 'DONE', label: 'Won\\'t fix' }]}");
+        // Boolean lanes go through i18n, never a hardcoded True/False.
+        assertThat(entries.get("ops/frontend/src/pages/flag/ui/FlagPage.tsx"))
+                .contains("groupValues={[{ value: 'true', label: t('trueLabel') }, { value: 'false', label: t('falseLabel') }]}")
+                .doesNotContain("Labels");
+
+        // Detail view and dashboard chart read the same map; a boolean breakdown needs none.
+        assertThat(contentEndingWith(entries, "/TaskDetail.tsx"))
+                .contains("import { TaskStatusTypeLabels, } from '@entities/task'")
+                .contains("TaskStatusTypeLabels[value.status]");
+        assertThat(contentEndingWith(entries, "/DashboardPage.tsx"))
+                .contains("import { TaskStatusTypeLabels } from '@entities/task'")
+                .contains("field: 'status', labels: TaskStatusTypeLabels },")
+                .contains("field: 'active' },")
+                .contains("const key = labels?.[raw] ?? raw");
+
+        // The shared filter bar accepts both bare values and value/label pairs.
+        assertThat(entries.get("ops/frontend/src/shared/ui/FilterBar.tsx"))
+                .contains("options?: Array<string | { value: string; label: string }>")
+                .contains("(f.options ?? []).map(toOption)");
+
+        // Backend: the Java enum and the CSV export keep the raw constants — labels are a UI concern.
+        assertThat(contentEndingWith(entries, "/entity/Task.java")).contains("OPEN, IN_REVIEW, DONE");
+        assertThat(contentEndingWith(entries, "/controller/TaskController.java"))
+                .contains("@GetMapping(\"/export.csv\")")
+                .doesNotContain("Won't fix");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsBadEnumLabels() throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        // Unknown key names the field and the key.
+        Map<String, Object> unknownKey = new LinkedHashMap<>();
+        unknownKey.put("name", "status"); unknownKey.put("type", "Enum");
+        unknownKey.put("enumValues", List.of("OPEN", "DONE"));
+        unknownKey.put("enumLabels", Map.of("GONE", "Gone"));
+        ResponseEntity<String> r1 = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(bodyWithField(unknownKey), headers), String.class);
+        assertThat(r1.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(r1.getBody()).contains("enumLabels key 'GONE' is not one of the enumValues [OPEN, DONE] (field 'status' on entity 'Task')");
+
+        // Labels on a non-ENUM field.
+        Map<String, Object> notEnum = new LinkedHashMap<>();
+        notEnum.put("name", "title"); notEnum.put("type", "String");
+        notEnum.put("enumLabels", Map.of("X", "x"));
+        ResponseEntity<String> r2 = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(bodyWithField(notEnum), headers), String.class);
+        assertThat(r2.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(r2.getBody()).contains("enumLabels only allowed when type=ENUM (field 'title' on entity 'Task')");
+    }
+
+    private static Map<String, Object> bodyWithField(Map<String, Object> field) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "ops");
+        body.put("packageName", "com.menora.ops");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "Task", "fields", List.of(pkField(), field))));
+        return body;
     }
 }
