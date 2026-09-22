@@ -116,6 +116,18 @@ in `catalog/file-contributions.json` — including the H2/Oracle/Postgres dataso
 | `packagePath` | String | `packageName.replace('.', '/')` (`:438`) | slash form, e.g. `com/menora/demo`. Also the one placeholder allowed in target paths. |
 | `javaVersion` | String | `description.getLanguage().jvmVersion()` (`:439`) | e.g. `"17"`, `"21"` |
 | `packaging` | String | `description.getPackaging().id()` (`:440`) | e.g. `"jar"`, `"war"`; null if unset |
+| `department` | String | `DepartmentResolver.putVars` | selected department id, e.g. `lts` (see *Department* below) |
+| `departmentUpper` | String | `DepartmentResolver.putVars` | upper-cased id, e.g. `LTS` (log4j2 topic, ldap group prefix) |
+| `departmentName` | String | `DepartmentResolver.putVars` | the admin display name, e.g. `LTS` |
+
+**Department.** `department` / `departmentUpper` / `departmentName` are set in **all three contexts**
+(backend dep, fullstack entity, frontend) by `config/DepartmentResolver.putVars`. The id comes from
+the request (`department` query param on `/starter.zip`, `/starter-multimodule.*` and
+`/frontend/starter.*`; `department` body field on `/starter-wizard.*` and `/starter-fullstack.*`),
+carried on `ProjectOptionsContext.department()`. Blank or unknown → the admin `isDefault` row → the
+`lts` sentinel. The list is managed in the admin **Departments** tab (`/admin/departments`) and
+exposed to the generator screens at `GET /metadata/departments`. Used by both `k8s-values.mustache`
+files, `logging/log4j2-spring.xml.mustache` and the ldap-auth group prefix.
 
 ### Dependency & sub-option flags (dynamic)
 
@@ -167,8 +179,8 @@ per-entity context; a `perEntity: false` file is rendered once with the project 
 
 ### 4a. Project-wide variables
 
-`artifactId`, `groupId`, `version`, `packageName`, `packagePath`, `javaVersion`, `packaging` — same
-meaning as §3.
+`artifactId`, `groupId`, `version`, `packageName`, `packagePath`, `javaVersion`, `packaging`,
+`department`, `departmentUpper`, `departmentName` — same meaning as §3.
 
 Plus the CRUD **layer packages** (each also gets a `…Path` slash-form variant):
 
@@ -384,6 +396,7 @@ Project & versions:
 | `nodeVersion` | `"18"` / `"20"` / `"22"` |
 | `packageManager`, `isNpm`, `isPnpm` | package manager + convenience flags |
 | `typescriptVersion`, `viteVersion`, `basePath` | tooling |
+| `department`, `departmentUpper`, `departmentName` | selected department (see §3 *Department*); added by `FrontendProjectGenerator.renderInto` / `FullstackStarterController.renderFrontend` after `build(...)` |
 
 Backend pairing:
 
@@ -599,6 +612,9 @@ row.
   `ctx.put(...)` there is what makes a new `{{name}}` usable; there's nowhere else to wire it.
 - **`optScaffold*` must be set on both render paths** — backend
   (`FullstackProjectGenerationConfiguration`) and frontend (`FullstackStarterController.renderFrontend`).
+- **`YAML_MERGE` rows honour `substitutionType`** — a `MUSTACHE` YAML_MERGE row is rendered with the
+  same context before the merge (the ldap-auth `application.yaml` fragments use this for
+  `{{departmentUpper}}`); `NONE` merges the content verbatim.
 - **`pkField` can be null** — an entity with no PK leaves `pkField` null; guard with
   `{{#pkField}}…{{/pkField}}`.
 
@@ -612,5 +628,6 @@ row.
 | Fullstack entity context | `fullstack/EntityScaffoldContext.java` |
 | Frontend context | `extension/frontend/FrontendMustacheContext.java`, `FrontendProjectGenerator.java` |
 | Opt flags wiring | `extension/fullstack/FullstackProjectGenerationConfiguration.java`, `config/FullstackStarterController.java` |
+| Department vars | `config/DepartmentResolver.java`, `config/ProjectOptionsContext.java` (`department()`) |
 | Row model | `db/entity/FileContributionEntity.java`, `db/entity/EntityTemplateFileEntity.java` |
 | Seed manifests | `resources/catalog/file-contributions.json`, `resources/catalog/frontend/file-contributions.json`, `resources/templates/fullstack/<set>/manifest.json` |

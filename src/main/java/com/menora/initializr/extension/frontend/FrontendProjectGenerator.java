@@ -1,5 +1,6 @@
 package com.menora.initializr.extension.frontend;
 
+import com.menora.initializr.config.DepartmentResolver;
 import com.menora.initializr.config.GeneratedProjectFiles;
 import com.menora.initializr.config.OpenApiSpecContext;
 import com.menora.initializr.config.ProjectOptionsContext;
@@ -72,6 +73,7 @@ public class FrontendProjectGenerator {
     private final OpenApiTsGenerator openApiTsGenerator;
     private final HooksTsRenderer hooksTsRenderer;
     private final MswHandlersRenderer mswHandlersRenderer;
+    private final DepartmentResolver departmentResolver;
 
     public FrontendProjectGenerator(DependencyConfigService configService,
                                     ProjectOptionsContext optionsContext,
@@ -81,7 +83,8 @@ public class FrontendProjectGenerator {
                                     OpenApiSpecContext openApiSpecContext,
                                     OpenApiTsGenerator openApiTsGenerator,
                                     HooksTsRenderer hooksTsRenderer,
-                                    MswHandlersRenderer mswHandlersRenderer) {
+                                    MswHandlersRenderer mswHandlersRenderer,
+                                    DepartmentResolver departmentResolver) {
         this.configService = configService;
         this.optionsContext = optionsContext;
         this.packageJsonBuilder = packageJsonBuilder;
@@ -91,6 +94,7 @@ public class FrontendProjectGenerator {
         this.openApiTsGenerator = openApiTsGenerator;
         this.hooksTsRenderer = hooksTsRenderer;
         this.mswHandlersRenderer = mswHandlersRenderer;
+        this.departmentResolver = departmentResolver;
     }
 
     /**
@@ -105,6 +109,7 @@ public class FrontendProjectGenerator {
         Set<String> depIds = desc.getDependencies();
         ColorPaletteEntity palette = resolvePalette(desc.getColorPaletteId());
         Map<String, Object> ctx = FrontendMustacheContext.build(desc, depIds, optionsContext, palette);
+        departmentResolver.putVars(ctx, desc.getDepartment());
 
         Files.createDirectories(targetDir);
         applyFileContributions(targetDir, depIds, ctx, desc);
@@ -228,7 +233,8 @@ public class FrontendProjectGenerator {
             switch (fc.getFileType()) {
                 case STATIC_COPY -> writeStatic(fc.getContent(), target);
                 case TEMPLATE -> writeTemplate(fc, ctx, target);
-                case YAML_MERGE -> mergeYaml(fc.getContent(), target);
+                case YAML_MERGE -> mergeYaml(fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.MUSTACHE
+                        ? MUSTACHE.compile(fc.getContent()).execute(ctx) : fc.getContent(), target);
                 case DELETE -> { /* deferred */ }
             }
         }

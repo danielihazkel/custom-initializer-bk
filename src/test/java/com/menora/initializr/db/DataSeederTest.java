@@ -8,6 +8,7 @@ import com.menora.initializr.db.entity.FileContributionEntity;
 import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.repository.BuildCustomizationRepository;
 import com.menora.initializr.db.repository.ColorPaletteRepository;
+import com.menora.initializr.db.repository.DepartmentRepository;
 import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
 import com.menora.initializr.db.repository.DependencyEntryRepository;
 import com.menora.initializr.db.repository.DependencyGroupRepository;
@@ -44,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DataSeederTest {
 
     @Autowired private DependencyGroupRepository groupRepo;
+    @Autowired private DepartmentRepository departmentRepo;
     @Autowired private DependencyEntryRepository entryRepo;
     @Autowired private FileContributionRepository fileContribRepo;
     @Autowired private BuildCustomizationRepository buildCustomRepo;
@@ -289,6 +291,14 @@ class DataSeederTest {
     @Test
     void seedsColorPalettes() {
         assertThat(colorPaletteRepo.findAll()).hasSize(10);
+    }
+
+    @Test
+    void seedsLtsAsTheSingleDefaultDepartment() {
+        assertThat(departmentRepo.findAll()).singleElement().satisfies(d -> {
+            assertThat(d.getDepartmentId()).isEqualTo("lts");
+            assertThat(d.isDefault()).isTrue();
+        });
     }
 
     @Test

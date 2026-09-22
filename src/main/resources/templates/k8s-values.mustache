@@ -4,11 +4,11 @@
 # ams - agent managment system
 pipeline:
   appName: "{{artifactId}}"
-  namespace: "lts-lan"
-  department: "lts"
+  namespace: "{{department}}-lan"
+  department: "{{department}}"
   applicationID: ""
   network: "LAN"  # LAN or DMZ
-  imageRepo: menora-lts
+  imageRepo: menora-{{department}}
   #
   extra:
     # Set chart wait time before install marked as failed
@@ -26,7 +26,7 @@ pipeline:
 
 certsecret:
   enabled: true
-  name: lts-srt-tls
+  name: {{department}}-srt-tls
 
 
 
@@ -35,7 +35,7 @@ Vault:
   VaultUrl: https://vault-k8s.menora.co.il # https://vault-web.menora.co.il/
   VaultImage: hashicorp/vault-enterprise:1.7.2_ent
   configMapRef: APPNAME-cm
-  VaultNamespace: lts/ENVIORMENT-lan-01 # ENVIORMENT-dmz-01 dmz here need to change to lan in case of deployment to lan.
+  VaultNamespace: {{department}}/ENVIORMENT-lan-01 # ENVIORMENT-dmz-01 dmz here need to change to lan in case of deployment to lan.
   VolumeCmName: APPNAME-vault
   VaultName: APPNAME
 

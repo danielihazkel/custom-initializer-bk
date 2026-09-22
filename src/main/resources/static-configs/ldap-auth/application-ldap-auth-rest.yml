@@ -6,4 +6,4 @@ menora:
 
 # Prefix of the LDAP groups that grant access; roles map to "<prefix>ALL" / "<prefix>RO".
 header:
-  prefix: ${PERMISSION_GROUP_PREFIX:GRP_LTSMonitoringUi_}
+  prefix: ${PERMISSION_GROUP_PREFIX:GRP_{{departmentUpper}}MonitoringUi_}

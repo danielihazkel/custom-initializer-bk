@@ -15,8 +15,8 @@ import java.util.Map;
 /**
  * Validates the syntax of {@link FileContributionEntity#getContent()} before
  * the entity is persisted by the admin API. Dispatches to a per-language
- * validator based on the extension of {@code targetPath}. For TEMPLATE +
- * MUSTACHE contributions, the template is compiled and rendered against a
+ * validator based on the extension of {@code targetPath}. For TEMPLATE or
+ * YAML_MERGE + MUSTACHE contributions, the template is compiled and rendered against a
  * "maximally enabled" dummy context before the rendered output is validated.
  *
  * <p>Returns an empty list when content is valid, {@code fileType} is
@@ -57,7 +57,7 @@ public class FileContributionContentValidator {
         ContentSyntaxValidator validator = pickValidator(fc.getTargetPath());
         if (validator == null) return List.of();
 
-        if (fc.getFileType() == FileType.TEMPLATE
+        if ((fc.getFileType() == FileType.TEMPLATE || fc.getFileType() == FileType.YAML_MERGE)
                 && fc.getSubstitutionType() == SubstitutionType.MUSTACHE) {
             Template template;
             try {
@@ -104,6 +104,9 @@ public class FileContributionContentValidator {
                 case "packagePath": return "com/example/demo";
                 case "javaVersion": return "21";
                 case "packaging":   return "jar";
+                case "department":      return "lts";
+                case "departmentUpper": return "LTS";
+                case "departmentName":  return "LTS";
                 default: break;
             }
             if (name.startsWith("has") || name.startsWith("opt")) return Boolean.TRUE;

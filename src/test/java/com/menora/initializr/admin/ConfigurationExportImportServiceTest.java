@@ -5,6 +5,7 @@ import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.repository.BuildCustomizationRepository;
 import com.menora.initializr.db.repository.ColorPaletteRepository;
+import com.menora.initializr.db.repository.DepartmentRepository;
 import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
 import com.menora.initializr.db.repository.DependencyEntryRepository;
 import com.menora.initializr.db.repository.DependencyGroupRepository;
@@ -53,6 +54,7 @@ class ConfigurationExportImportServiceTest {
     @Autowired private ModuleDependencyMappingRepository moduleMappingRepo;
     @Autowired private ColorPaletteRepository colorPaletteRepo;
     @Autowired private VersionDefinitionRepository versionRepo;
+    @Autowired private DepartmentRepository departmentRepo;
 
     @Test
     void roundTripPreservesRowCounts() {
@@ -67,6 +69,7 @@ class ConfigurationExportImportServiceTest {
         long moduleMappings = moduleMappingRepo.count();
         long palettes = colorPaletteRepo.count();
         long versions = versionRepo.count();
+        long departments = departmentRepo.count();
 
         ConfigurationExport export = service.exportAll();
         service.importAll(export);
@@ -82,6 +85,8 @@ class ConfigurationExportImportServiceTest {
         assertThat(moduleMappingRepo.count()).isEqualTo(moduleMappings);
         assertThat(colorPaletteRepo.count()).isEqualTo(palettes);
         assertThat(versionRepo.count()).isEqualTo(versions);
+        assertThat(departments).isPositive();
+        assertThat(departmentRepo.count()).isEqualTo(departments);
     }
 
     @Test

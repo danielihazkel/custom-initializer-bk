@@ -254,6 +254,32 @@ Set via the admin UI (Dependencies tab → edit → Compatibility Range field) o
 
 The Menora Mivtachim customer-site brand (menoramivt.co.il), imported from the "Menora Mivtachim Design System" artifact. Unlike MUI/Chakra/Mantine it is **plain CSS, not palette-aware** (the tokens *are* the brand): `static-configs/frontend/design-menora-digital/` holds `tokens.css` (every colour/type/spacing/radius/shadow token as a `:root` custom property; `--font-sans: 'Almoni', 'Assistant', Arial`), `components.css` (the `.mn-*` classes — Button primary/header/outlined/text, NavLinks, ActionDisc, ServiceBubble, MagazineCard, CarouselArrow, ChatLauncher, Hero, plus the canvas's "proposed" set: SectionHeader, ActionPanel, Tabs, DropdownMenu, SearchField, ExpertTip, Chip, Footer, Table and the shared `.mn-panel` / `.mn-field` helpers), **17 typed React ports** of those components (`src/shared/ui/menora/*.tsx` + barrel; the source of truth is the "Menora Component Explorer" Claude Design canvas, https://claude.ai/artifact/K6M7i6ug16tJbhvNzPekMk — one artboard per component with markup, Props and Rules). The ports live in a dep with no i18n module, so **every string they show is a prop** (the fullstack overlay passes `t('…')`; the bundle components keep their canvas defaults, e.g. ChatLauncher's `פנו אלינו`), a `src/index.css` override (sortOrder 10, keeps `@tailwind` directives when `style-tailwind` is co-selected), a Hebrew showcase `HomePage.tsx` (sortOrder 20, overwrites the `__common__` one) and the 150×46 header logo. The substrate's `fe-app-tsx.mustache` has a `{{#hasDesignMenoraDigital}}` shell branch (white header with logo + `NavLinks` + header pill, page ground, dark footer band, fixed `ChatLauncher`) and `fe-main-tsx.mustache` imports `@fontsource/assistant/{300..700}.css` — Almoni is licensed and **not bundled**, Assistant is the design system's sanctioned fallback (self-hosted via npm, never a CDN link). The logo is a binary, so `FrontendProjectGenerator.copyStaticAssets(targetDir, depIds)` copies it to `public/menora-mivtachim-logo.png` only when the dep is selected. It CONFLICTS with the other four design systems and is React-version agnostic. **Dark mode:** `tokens.css` carries the design system's dark theme (designed from the brand colours — the site has none) under `:root[data-theme="dark"], :root.dark`; the standalone shell ships `useMenoraTheme` + a `ThemeToggle` pill (sets `data-theme` and the `dark` class, persists to localStorage), and the fullstack set's `index.css.mustache` `.dark` block re-points the Tailwind tokens to the same values (purple lifts to `#a393ff`, grounds go slate, shadows black-based). Yellow and its `--on-yellow` label never change; the dark-purple PNG logo always sits on a white chip (`.mn-logo-chip`) so it survives dark grounds. `components.css` deliberately drops the source bundle's `direction: rtl` on `.mn` so `<html dir>` (the `rtl` flag) governs layout; the generator UI turns the RTL toggle on when this design system is picked. A `menora-digital` colour palette (`#684eed`/`#ffc700`) is also seeded so the palette-driven design systems and the default fullstack set can be brand-coloured.
 
+### Department (`{{department}}`)
+
+An admin-managed list (`initializer_department`, `V20`; `DepartmentEntity` — `departmentId` is a
+lower-case slug because it lands in k8s names) shared by the Backend, Frontend and Fullstack screens.
+Seeded with `lts` as the default by `DataSeeder.seedDepartmentsIfMissing` (table-scoped, so a
+deleted row is not resurrected). Admin CRUD at `/admin/departments` (`DepartmentAdminController`,
+single-default rule like palettes), public list at `GET /metadata/departments`, included in admin
+export/import (`departments`, skipped when an older export lacks it).
+
+**Transport.** The request's id rides on `ProjectOptionsContext.department()`: the filter reads the
+`department` query param (so `/starter.zip`, `/starter.preview` and `/starter-multimodule.*` need no
+controller change), and the JSON endpoints call `optionsContext.setDepartment(body.department())`
+after `populate(opts)` (wizard, fullstack). `/frontend/starter.*` takes it as a `@RequestParam` onto
+`FrontendProjectDescription.department`. `ProjectOptionsContext.clear()` resets it, so the filter
+backstop covers it.
+
+**Rendering.** `DepartmentResolver.putVars(ctx, id)` adds `department` / `departmentUpper` /
+`departmentName` to every context (backend `buildBaseContext`, fullstack backend
+`FullstackProjectGenerationConfiguration`, frontend `renderInto` and fullstack `renderFrontend`).
+Unknown/blank → the default row → `lts`. Used by both `k8s-values.mustache` (namespace, department,
+imageRepo, cert secret, Vault namespace), the log4j2 Kafka topic and the ldap-auth group prefix
+(`PermissionService` + the two ldap `application.yaml` fragments — `YAML_MERGE` rows now honour
+`substitutionType: MUSTACHE`, and the admin content validator renders them before validating).
+Pinned by `DepartmentIntegrationTests`. **Upgraded DBs** keep the old hardcoded-`lts` template rows
+until re-seeded or edited in admin (the department table itself appears automatically).
+
 ### Frontend Compatibility Rules (REQUIRES / CONFLICTS / RECOMMENDS)
 
 Inter-dependency rules live in `dependency_compatibility` and are tagged by `project_kind`. The endpoint `/metadata/compatibility?projectKind=FRONTEND` returns FE-scoped rules (omit the param to get every row). FE seed rules are in `DataSeeder.feCompat(...)` and cover design-system conflicts, state-mgmt conflicts, and `design-shadcn REQUIRES style-tailwind`.

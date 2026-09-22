@@ -30,6 +30,9 @@ public class ProjectOptionsContext {
     private static final ThreadLocal<Map<String, Set<String>>> OPTIONS =
             ThreadLocal.withInitial(HashMap::new);
 
+    /** The requested department id ({@code department} request param / body field); null = default. */
+    private static final ThreadLocal<String> DEPARTMENT = new ThreadLocal<>();
+
     public void populate(HttpServletRequest request) {
         Map<String, Set<String>> options = new HashMap<>();
         Enumeration<String> names = request.getParameterNames();
@@ -47,6 +50,7 @@ public class ProjectOptionsContext {
             }
         }
         OPTIONS.set(options);
+        setDepartment(request.getParameter("department"));
     }
 
     /** Direct map-based populate for callers that don't have an HttpServletRequest
@@ -99,6 +103,18 @@ public class ProjectOptionsContext {
 
     public void clear() {
         OPTIONS.remove();
+        DEPARTMENT.remove();
+    }
+
+    /** Sets the requested department id for this request. JSON-body endpoints call this after
+     *  {@link #populate(Map)}, which leaves the department untouched. */
+    public void setDepartment(String departmentId) {
+        DEPARTMENT.set(departmentId == null || departmentId.isBlank() ? null : departmentId.trim());
+    }
+
+    /** The requested department id, or null when none was sent (→ the default department). */
+    public String department() {
+        return DEPARTMENT.get();
     }
 
     public boolean hasOption(String depId, String optId) {

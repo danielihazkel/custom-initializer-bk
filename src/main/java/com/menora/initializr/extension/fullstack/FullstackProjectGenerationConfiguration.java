@@ -1,5 +1,6 @@
 package com.menora.initializr.extension.fullstack;
 
+import com.menora.initializr.config.DepartmentResolver;
 import com.menora.initializr.config.EntityDefinitionContext;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.db.entity.EntityTemplateFileEntity;
@@ -41,7 +42,8 @@ public class FullstackProjectGenerationConfiguration {
             EntityDefinitionContext entityContext,
             EntityTemplateSetRepository setRepo,
             EntityTemplateFileRepository fileRepo,
-            ProjectOptionsContext optionsContext) {
+            ProjectOptionsContext optionsContext,
+            DepartmentResolver departmentResolver) {
         return projectRoot -> {
             if (entityContext.isEmpty()) {
                 return;
@@ -84,6 +86,7 @@ public class FullstackProjectGenerationConfiguration {
             // Opt-in scaffolding extras (via opts: { "scaffold": ["tests", ...] }). The matching
             // gatedBy flag on a template file toggles whether it is rendered. Uses spring-boot-
             // starter-test, which the Initializr framework adds to every generated project.
+            departmentResolver.putVars(projectCtx, optionsContext.department());
             projectCtx.put("optScaffoldTests", optionsContext.hasOption("scaffold", "tests"));
             projectCtx.put("optScaffoldAudit", optionsContext.hasOption("scaffold", "audit"));
             projectCtx.put("optScaffoldSoftDelete", optionsContext.hasOption("scaffold", "softDelete"));

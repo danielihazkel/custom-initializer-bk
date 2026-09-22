@@ -83,13 +83,15 @@ public class FrontendStarterController {
             @RequestParam(defaultValue = "") String colorPalette,
             @RequestParam(defaultValue = "") String apiBaseUrl,
             @RequestParam(defaultValue = "") String backendArtifactId,
-            @RequestParam(defaultValue = "false") boolean rtl
+            @RequestParam(defaultValue = "false") boolean rtl,
+            @RequestParam(defaultValue = "") String department
     ) throws IOException {
 
         FrontendProjectDescription desc = buildDescription(
                 projectName, description, scope, appTitle,
                 reactVersion, nodeVersion, packageManager, basePath, dependencies, colorPalette,
                 apiBaseUrl, backendArtifactId, rtl);
+        desc.setDepartment(department);
 
         byte[] zip = generator.generate(desc);
         return ResponseEntity.ok()
@@ -122,13 +124,15 @@ public class FrontendStarterController {
             @RequestParam(defaultValue = "") String colorPalette,
             @RequestParam(defaultValue = "") String apiBaseUrl,
             @RequestParam(defaultValue = "") String backendArtifactId,
-            @RequestParam(defaultValue = "false") boolean rtl
+            @RequestParam(defaultValue = "false") boolean rtl,
+            @RequestParam(defaultValue = "") String department
     ) throws IOException {
 
         FrontendProjectDescription desc = buildDescription(
                 projectName, description, scope, appTitle,
                 reactVersion, nodeVersion, packageManager, basePath, dependencies, colorPalette,
                 apiBaseUrl, backendArtifactId, rtl);
+        desc.setDepartment(department);
 
         Map<String, String> fileMap = generator.generateFileMap(desc);
         List<PreviewFile> files = fileMap.entrySet().stream()

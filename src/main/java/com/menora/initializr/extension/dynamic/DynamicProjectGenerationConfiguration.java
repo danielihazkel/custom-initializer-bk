@@ -2,6 +2,7 @@ package com.menora.initializr.extension.dynamic;
 
 import com.menora.initializr.config.EntityDefinitionContext;
 import com.menora.initializr.config.OpenApiSpecContext;
+import com.menora.initializr.config.DepartmentResolver;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.config.SoapSpecContext;
 import com.menora.initializr.config.SqlScriptsContext;
@@ -80,13 +81,15 @@ public class DynamicProjectGenerationConfiguration {
             SelectedFileContributions selectedFileContributions,
             ProjectOptionsContext optionsContext,
             EntityDefinitionContext entityContext,
-            SqlScriptsContext sqlContext) {
+            SqlScriptsContext sqlContext,
+            DepartmentResolver departmentResolver) {
         return projectRoot -> {
             Set<String> depIds = selectedDepIds(description);
             List<FileContributionEntity> contributions = selectedFileContributions.rows();
 
             Map<String, Object> baseContext =
                     buildBaseContext(description, depIds, optionsContext, entityContext, sqlContext);
+            departmentResolver.putVars(baseContext, optionsContext.department());
 
             for (FileContributionEntity fc : contributions) {
                 if (isGatedOut(fc, description, optionsContext)) continue;
@@ -94,7 +97,7 @@ public class DynamicProjectGenerationConfiguration {
                 Path target = projectRoot.resolve(resolveTargetPath(fc.getTargetPath(), description));
 
                 switch (fc.getFileType()) {
-                    case YAML_MERGE -> mergeYaml(fc.getContent(), target);
+                    case YAML_MERGE -> mergeYaml(render(fc, baseContext), target);
                     case TEMPLATE -> writeTemplate(fc, baseContext, target);
                     case STATIC_COPY -> writeStatic(fc.getContent(), target);
                     // Deliberately not handled here: dynamicDeleteContributor runs at
@@ -428,9 +431,7 @@ public class DynamicProjectGenerationConfiguration {
 
     private void writeTemplate(FileContributionEntity fc, Map<String, Object> ctx, Path target)
             throws IOException {
-        String content = fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.MUSTACHE
-                ? MUSTACHE.compile(fc.getContent()).execute(ctx)
-                : fc.getContent();
+        String content = render(fc, ctx);
         Files.createDirectories(target.getParent());
         Files.writeString(target, content);
     }
@@ -526,6 +527,14 @@ public class DynamicProjectGenerationConfiguration {
     private void writeStatic(String content, Path target) throws IOException {
         Files.createDirectories(target.getParent());
         Files.writeString(target, content);
+    }
+
+    /** The row's content, rendered through Mustache when its substitution type is MUSTACHE.
+     *  Honoured by TEMPLATE and YAML_MERGE rows alike. */
+    private static String render(FileContributionEntity fc, Map<String, Object> ctx) {
+        return fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.MUSTACHE
+                ? MUSTACHE.compile(fc.getContent()).execute(ctx)
+                : fc.getContent();
     }
 
     private void mergeYaml(String newContent, Path targetYamlPath) throws IOException {

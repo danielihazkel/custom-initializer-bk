@@ -312,6 +312,7 @@ public class WizardStarterController {
         // The servlet filter that populates ProjectOptionsContext from opts-*
         // URL params isn't in our chain here (JSON body, not query string).
         optionsContext.populate(body.opts());
+        optionsContext.setDepartment(body.department());
 
         // SQL side — always populate (empty map is a no-op for the contributor).
         Map<String, SqlDepOptions> sqlOpts = new LinkedHashMap<>();
@@ -415,7 +416,9 @@ public class WizardStarterController {
             Map<String, String> specByDep,
             Map<String, OpenApiOptionsDto> openApiOptions,
             Map<String, String> wsdlByDep,
-            Map<String, SoapOptionsDto> soapOptions) {
+            Map<String, SoapOptionsDto> soapOptions,
+            // Department id exposed to templates as {{department}}; null → the default.
+            String department) {
     }
 
     public record SqlDepOptionsDto(String subPackage, List<SqlTableOptionsDto> tables, String apiMode) {}

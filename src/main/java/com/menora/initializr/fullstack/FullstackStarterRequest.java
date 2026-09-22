@@ -41,6 +41,9 @@ public record FullstackStarterRequest(
         // Language of the generated frontend's chrome strings (nav, buttons, toasts, validation
         // messages): "en" (default) or "he". Frontend-only; independent of the `rtl` scaffold opt.
         String locale,
+        // Department id (see DepartmentResolver) exposed to both halves' templates as
+        // {{department}}; null/blank → the default department.
+        String department,
         List<EntityDefinitionDto> entities) {
 
     /** Back-compat constructor without the optional {@code dashboardTitle}/{@code dashboardOverview}
@@ -54,7 +57,7 @@ public record FullstackStarterRequest(
             String colorPalette, List<EntityDefinitionDto> entities) {
         this(groupId, artifactId, name, description, packageName, domainPackage, type, language,
                 bootVersion, packaging, javaVersion, version, configurationFileFormat, dependencies,
-                opts, backendTemplateSet, frontendTemplateSet, colorPalette, null, null, null, entities);
+                opts, backendTemplateSet, frontendTemplateSet, colorPalette, null, null, null, null, entities);
     }
 
     /** Back-compat constructor without {@code locale} (defaults to English). */
@@ -68,7 +71,21 @@ public record FullstackStarterRequest(
         this(groupId, artifactId, name, description, packageName, domainPackage, type, language,
                 bootVersion, packaging, javaVersion, version, configurationFileFormat, dependencies,
                 opts, backendTemplateSet, frontendTemplateSet, colorPalette, dashboardTitle,
-                dashboardOverview, null, entities);
+                dashboardOverview, null, null, entities);
+    }
+
+    /** Back-compat constructor without {@code department} (defaults to the default department). */
+    public FullstackStarterRequest(
+            String groupId, String artifactId, String name, String description, String packageName,
+            String domainPackage, String type, String language, String bootVersion, String packaging,
+            String javaVersion, String version, String configurationFileFormat, List<String> dependencies,
+            Map<String, List<String>> opts, String backendTemplateSet, String frontendTemplateSet,
+            String colorPalette, String dashboardTitle, String dashboardOverview, String locale,
+            List<EntityDefinitionDto> entities) {
+        this(groupId, artifactId, name, description, packageName, domainPackage, type, language,
+                bootVersion, packaging, javaVersion, version, configurationFileFormat, dependencies,
+                opts, backendTemplateSet, frontendTemplateSet, colorPalette, dashboardTitle,
+                dashboardOverview, locale, null, entities);
     }
 
     public record EntityDefinitionDto(

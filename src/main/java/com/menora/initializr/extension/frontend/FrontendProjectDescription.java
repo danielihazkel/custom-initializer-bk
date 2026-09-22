@@ -27,6 +27,8 @@ public class FrontendProjectDescription {
     private String basePath = "/";
     /** Palette id from the {@code color_palette} table; empty string falls back to the default palette. */
     private String colorPaletteId = "";
+    /** Requested department id; blank → the default department (see DepartmentResolver). */
+    private String department = "";
     /**
      * Optional base URL of a paired backend (e.g. {@code "http://localhost:8080"}).
      * When set, {@code .env.development}/{@code .env.example} and a Vite {@code /api}
@@ -70,6 +72,8 @@ public class FrontendProjectDescription {
     public void setBasePath(String basePath) { this.basePath = (basePath == null || basePath.isBlank()) ? "/" : basePath; }
     public String getColorPaletteId() { return colorPaletteId; }
     public void setColorPaletteId(String colorPaletteId) { this.colorPaletteId = colorPaletteId == null ? "" : colorPaletteId; }
+    public String getDepartment() { return department; }
+    public void setDepartment(String department) { this.department = department == null ? "" : department; }
     public String getApiBaseUrl() { return apiBaseUrl; }
     public void setApiBaseUrl(String apiBaseUrl) {
         if (apiBaseUrl == null) { this.apiBaseUrl = ""; return; }

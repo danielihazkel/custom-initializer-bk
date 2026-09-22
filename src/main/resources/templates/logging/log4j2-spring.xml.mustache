@@ -6,7 +6,7 @@
         <Property name="kafkaUrl"
                   value="${env:LOG_KAFKA_URL:-172.22.21.27:9092,172.22.21.30:9092,172.22.21.31:9092}" />
         <Property name="kafkaTopicName"
-                  value="${env:LOG_KAFKA_TOPIC_NAME:-QA_APP_LTS_MNG_SYS}" />
+                  value="${env:LOG_KAFKA_TOPIC_NAME:-QA_APP_{{departmentUpper}}_MNG_SYS}" />
 {{/hasLogging}}
     </Properties>
 

@@ -83,6 +83,7 @@ public class FullstackStarterController {
     private final FrontendProperties frontendProperties;
     private final VersionService versionService;
     private final DependencyConfigService configService;
+    private final DepartmentResolver departmentResolver;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                       InitializrMetadataProvider metadataProvider,
@@ -95,7 +96,8 @@ public class FullstackStarterController {
                                       FrontendProjectGenerator frontendGenerator,
                                       FrontendProperties frontendProperties,
                                       VersionService versionService,
-                                      DependencyConfigService configService) {
+                                      DependencyConfigService configService,
+                                      DepartmentResolver departmentResolver) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
@@ -108,6 +110,7 @@ public class FullstackStarterController {
         this.frontendProperties = frontendProperties;
         this.versionService = versionService;
         this.configService = configService;
+        this.departmentResolver = departmentResolver;
     }
 
     @PostMapping("/starter-fullstack.zip")
@@ -178,6 +181,7 @@ public class FullstackStarterController {
         String domainPackage = resolveDomainPackage(body.domainPackage(), request.getPackageName());
         ensureRequiredDeps(request, backendSet, body.dependencies() != null);
         optionsContext.populate(body.opts());
+        optionsContext.setDepartment(body.department());
         // The `openapi` scaffold opt enriches generated controllers with springdoc @Tag/@Operation
         // annotations, which need the springdoc starter on the classpath. Force-add it here (before
         // generation) so the dep lands in the pom — analogous to how the `tests` opt relies on
@@ -386,6 +390,7 @@ public class FullstackStarterController {
         // pairing) onto the entity-scaffold context so per-entity templates see both shapes. This
         // replaces the plain palette from EntityScaffoldContext with the HSL-bearing one.
         projectCtx.putAll(FrontendMustacheContext.build(desc, desc.getDependencies(), optionsContext, palette));
+        departmentResolver.putVars(projectCtx, desc.getDepartment());
         // Gate the dev-mode `userinfo` header (read by the backend's @RequiresPermission aspect)
         // on the backend actually including the LDAP authorization dependency.
         boolean hasLdapAuth = request.getDependencies() != null
@@ -439,6 +444,7 @@ public class FullstackStarterController {
         desc.setAppTitle(request.getArtifactId());
         desc.setRtl(optionsContext.hasOption("scaffold", "rtl"));
         desc.setColorPaletteId(colorPaletteId);
+        desc.setDepartment(optionsContext.department());
         desc.setApiBaseUrl("http://localhost:8080");
         desc.setBackendArtifactId(request.getArtifactId());
         String react = versionService.defaultId(VersionKind.REACT);

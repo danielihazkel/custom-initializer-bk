@@ -48,6 +48,7 @@ public class DataSeeder implements SmartInitializingSingleton {
     private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
     private final ColorPaletteRepository colorPaletteRepo;
     private final VersionDefinitionRepository versionRepo;
+    private final DepartmentRepository departmentRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
@@ -63,7 +64,8 @@ public class DataSeeder implements SmartInitializingSingleton {
                       EntityTemplateFileRepository entityTemplateFileRepo,
                       EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
                       ColorPaletteRepository colorPaletteRepo,
-                      VersionDefinitionRepository versionRepo) {
+                      VersionDefinitionRepository versionRepo,
+                      DepartmentRepository departmentRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
@@ -79,6 +81,7 @@ public class DataSeeder implements SmartInitializingSingleton {
         this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
         this.colorPaletteRepo = colorPaletteRepo;
         this.versionRepo = versionRepo;
+        this.departmentRepo = departmentRepo;
     }
 
     @Override
@@ -91,6 +94,7 @@ public class DataSeeder implements SmartInitializingSingleton {
             seedColorPalettes();
             seedEntityTemplateSetsIfMissing();
             seedVersionsIfMissing();
+            seedDepartmentsIfMissing();
 
             if (groupRepo.count() > 0) {
                 log.info("Database already seeded — skipping main DataSeeder");
@@ -564,6 +568,21 @@ public class DataSeeder implements SmartInitializingSingleton {
         // The customer-site brand (menoramivt.co.il): purple is identity, yellow is the action colour.
         colorPalette("menora-digital", "Menora Digital",
                 "Menora Mivtachim customer-site purple with the yellow action colour", "#684eed", "#ffc700", null, null, false, 9);
+    }
+
+    /**
+     * Seeds the department list with {@code lts} as the default — the value every template
+     * hardcoded before departments became selectable. Table-scoped (not per-row) so a
+     * department an admin deleted is not resurrected on the next restart.
+     */
+    private void seedDepartmentsIfMissing() {
+        if (departmentRepo.count() > 0) return;
+        DepartmentEntity d = new DepartmentEntity();
+        d.setDepartmentId("lts");
+        d.setName("LTS");
+        d.setDefault(true);
+        d.setSortOrder(0);
+        departmentRepo.save(d);
     }
 
     private void colorPalette(String paletteId, String name, String description,

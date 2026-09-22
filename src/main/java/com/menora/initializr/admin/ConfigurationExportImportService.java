@@ -31,6 +31,7 @@ public class ConfigurationExportImportService {
     private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
     private final ColorPaletteRepository colorPaletteRepo;
     private final VersionDefinitionRepository versionRepo;
+    private final DepartmentRepository departmentRepo;
 
     public ConfigurationExportImportService(InitializrMetadataProvider metadataProvider,
                                              DependencyGroupRepository groupRepo,
@@ -47,7 +48,8 @@ public class ConfigurationExportImportService {
                                              EntityTemplateFileRepository entityTemplateFileRepo,
                                              EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
                                              ColorPaletteRepository colorPaletteRepo,
-                                             VersionDefinitionRepository versionRepo) {
+                                             VersionDefinitionRepository versionRepo,
+                                             DepartmentRepository departmentRepo) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -64,6 +66,7 @@ public class ConfigurationExportImportService {
         this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
         this.colorPaletteRepo = colorPaletteRepo;
         this.versionRepo = versionRepo;
+        this.departmentRepo = departmentRepo;
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -277,6 +280,16 @@ public class ConfigurationExportImportService {
                     ve.setNpmSemver(v.getNpmSemver());
                     ve.setTypesSemver(v.getTypesSemver());
                     return ve;
+                }).toList());
+
+        export_.setDepartments(
+                departmentRepo.findAllByOrderBySortOrderAsc().stream().map(d -> {
+                    DepartmentExport de = new DepartmentExport();
+                    de.setDepartmentId(d.getDepartmentId());
+                    de.setName(d.getName());
+                    de.setDefault(d.isDefault());
+                    de.setSortOrder(d.getSortOrder());
+                    return de;
                 }).toList());
 
         return export_;
@@ -530,6 +543,19 @@ public class ConfigurationExportImportService {
             }
         }
 
+        // Departments. Backward-compatible like versions: older exports predate the field.
+        if (data.getDepartments() != null) {
+            departmentRepo.deleteAllInBatch();
+            for (DepartmentExport d : data.getDepartments()) {
+                DepartmentEntity entity = new DepartmentEntity();
+                entity.setDepartmentId(d.getDepartmentId());
+                entity.setName(d.getName());
+                entity.setDefault(d.isDefault());
+                entity.setSortOrder(d.getSortOrder());
+                departmentRepo.save(entity);
+            }
+        }
+
         // Refresh metadata cache
         if (metadataProvider instanceof DatabaseInitializrMetadataProvider dbProvider) {
             dbProvider.refresh();
@@ -552,6 +578,7 @@ public class ConfigurationExportImportService {
         counts.put("entityTemplateSetDefaultDeps", safe(data.getEntityTemplateSetDefaultDeps()).size());
         counts.put("colorPalettes", safe(data.getColorPalettes()).size());
         counts.put("versionDefinitions", safe(data.getVersionDefinitions()).size());
+        counts.put("departments", safe(data.getDepartments()).size());
         return counts;
     }
 

@@ -19,8 +19,8 @@ public class PermissionService {
 
     private final LdapService ldapService;
 
-    @Value("${header.prefix:GRP_LTSMonitoringUi_}")
-    private String GROUP_PREFIX = "GRP_LTSMonitoringUi_";
+    @Value("${header.prefix:GRP_{{departmentUpper}}MonitoringUi_}")
+    private String GROUP_PREFIX = "GRP_{{departmentUpper}}MonitoringUi_";
 
     public List<String> getUserGroups(String username) throws UnauthorizedException {
         try {

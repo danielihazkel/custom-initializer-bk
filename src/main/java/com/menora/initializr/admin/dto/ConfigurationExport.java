@@ -23,6 +23,7 @@ public class ConfigurationExport {
     private List<EntityTemplateSetDefaultDepExport> entityTemplateSetDefaultDeps;
     private List<ColorPaletteExport> colorPalettes;
     private List<VersionExport> versionDefinitions;
+    private List<DepartmentExport> departments;
 
     // ── Getters/Setters ──────────────────────────────────────────────────────
 
@@ -60,6 +61,8 @@ public class ConfigurationExport {
     public void setColorPalettes(List<ColorPaletteExport> colorPalettes) { this.colorPalettes = colorPalettes; }
     public List<VersionExport> getVersionDefinitions() { return versionDefinitions; }
     public void setVersionDefinitions(List<VersionExport> versionDefinitions) { this.versionDefinitions = versionDefinitions; }
+    public List<DepartmentExport> getDepartments() { return departments; }
+    public void setDepartments(List<DepartmentExport> departments) { this.departments = departments; }
 
     // ── Inner DTOs ───────────────────────────────────────────────────────────
 
@@ -467,5 +470,21 @@ public class ConfigurationExport {
         public void setNpmSemver(String npmSemver) { this.npmSemver = npmSemver; }
         public String getTypesSemver() { return typesSemver; }
         public void setTypesSemver(String typesSemver) { this.typesSemver = typesSemver; }
+    }
+
+    public static class DepartmentExport {
+        private String departmentId;
+        private String name;
+        private boolean isDefault;
+        private int sortOrder;
+
+        public String getDepartmentId() { return departmentId; }
+        public void setDepartmentId(String departmentId) { this.departmentId = departmentId; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public boolean isDefault() { return isDefault; }
+        public void setDefault(boolean isDefault) { this.isDefault = isDefault; }
+        public int getSortOrder() { return sortOrder; }
+        public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     }
 }

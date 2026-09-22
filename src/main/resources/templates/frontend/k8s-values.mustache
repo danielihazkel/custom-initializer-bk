@@ -4,12 +4,12 @@
 
 pipeline:
   appName: "{{projectName}}"
-  namespace: "lts-lan"
-  department: "lts"
+  namespace: "{{department}}-lan"
+  department: "{{department}}"
   applicationID: ""
   network: "LAN" # LAN or DMZ
   imageRepo:
-    menora-lts
+    menora-{{department}}
     #
   extra:
     # Set chart wait time before install marked as failed
