@@ -1,5 +1,6 @@
 package com.menora.initializr.admin;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.admin.dto.ConfigurationExport;
 import com.menora.initializr.admin.dto.ConfigurationExport.*;
 import com.menora.initializr.config.DatabaseInitializrMetadataProvider;
@@ -32,6 +33,8 @@ public class ConfigurationExportImportService {
     private final ColorPaletteRepository colorPaletteRepo;
     private final VersionDefinitionRepository versionRepo;
     private final DepartmentRepository departmentRepo;
+    private final FullstackExampleRepository fullstackExampleRepo;
+    private final ObjectMapper objectMapper;
 
     public ConfigurationExportImportService(InitializrMetadataProvider metadataProvider,
                                              DependencyGroupRepository groupRepo,
@@ -49,7 +52,9 @@ public class ConfigurationExportImportService {
                                              EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
                                              ColorPaletteRepository colorPaletteRepo,
                                              VersionDefinitionRepository versionRepo,
-                                             DepartmentRepository departmentRepo) {
+                                             DepartmentRepository departmentRepo,
+                                             FullstackExampleRepository fullstackExampleRepo,
+                                             ObjectMapper objectMapper) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -67,6 +72,8 @@ public class ConfigurationExportImportService {
         this.colorPaletteRepo = colorPaletteRepo;
         this.versionRepo = versionRepo;
         this.departmentRepo = departmentRepo;
+        this.fullstackExampleRepo = fullstackExampleRepo;
+        this.objectMapper = objectMapper;
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -290,6 +297,19 @@ public class ConfigurationExportImportService {
                     de.setDefault(d.isDefault());
                     de.setSortOrder(d.getSortOrder());
                     return de;
+                }).toList());
+
+        export_.setFullstackExamples(
+                fullstackExampleRepo.findAllByOrderBySortOrderAscIdAsc().stream().map(e -> {
+                    FullstackExampleExport fe = new FullstackExampleExport();
+                    fe.setExampleId(e.getExampleId());
+                    fe.setName(e.getName());
+                    fe.setDescription(e.getDescription());
+                    fe.setIcon(e.getIcon());
+                    fe.setEntities(FullstackExampleAdminController.readEntities(e, objectMapper));
+                    fe.setSortOrder(e.getSortOrder());
+                    fe.setEnabled(e.isEnabled());
+                    return fe;
                 }).toList());
 
         return export_;
@@ -556,6 +576,23 @@ public class ConfigurationExportImportService {
             }
         }
 
+        // Fullstack examples. Backward-compatible: older exports predate the field. Entities
+        // were already checked against the fullstack validator in validate().
+        if (data.getFullstackExamples() != null) {
+            fullstackExampleRepo.deleteAllInBatch();
+            for (FullstackExampleExport ex : data.getFullstackExamples()) {
+                FullstackExampleEntity entity = new FullstackExampleEntity();
+                entity.setExampleId(ex.getExampleId());
+                entity.setName(ex.getName());
+                entity.setDescription(ex.getDescription());
+                entity.setIcon(ex.getIcon());
+                entity.setEntities(FullstackExampleAdminController.validateEntities(ex.getEntities(), objectMapper));
+                entity.setSortOrder(ex.getSortOrder());
+                entity.setEnabled(ex.isEnabled());
+                fullstackExampleRepo.save(entity);
+            }
+        }
+
         // Refresh metadata cache
         if (metadataProvider instanceof DatabaseInitializrMetadataProvider dbProvider) {
             dbProvider.refresh();
@@ -579,6 +616,7 @@ public class ConfigurationExportImportService {
         counts.put("colorPalettes", safe(data.getColorPalettes()).size());
         counts.put("versionDefinitions", safe(data.getVersionDefinitions()).size());
         counts.put("departments", safe(data.getDepartments()).size());
+        counts.put("fullstackExamples", safe(data.getFullstackExamples()).size());
         return counts;
     }
 
@@ -628,6 +666,22 @@ public class ConfigurationExportImportService {
         for (TemplateDepExport td : safe(data.getStarterTemplateDeps())) {
             if (!templateIds.contains(td.getTemplateId())) {
                 throw new IllegalArgumentException("Template dep references unknown template: " + td.getTemplateId());
+            }
+        }
+
+        // Fullstack examples must be ones the generator accepts — checked here, before the wipe.
+        Set<String> exampleIds = new HashSet<>();
+        for (FullstackExampleExport ex : safe(data.getFullstackExamples())) {
+            if (ex.getExampleId() == null || ex.getExampleId().isBlank() || ex.getName() == null || ex.getName().isBlank()) {
+                throw new IllegalArgumentException("Fullstack example needs an exampleId and a name");
+            }
+            if (!exampleIds.add(ex.getExampleId())) {
+                throw new IllegalArgumentException("Duplicate fullstack exampleId: " + ex.getExampleId());
+            }
+            try {
+                FullstackExampleAdminController.validateEntities(ex.getEntities(), objectMapper);
+            } catch (FullstackExampleAdminController.InvalidExampleException e) {
+                throw new IllegalArgumentException("Fullstack example '" + ex.getExampleId() + "': " + e.getMessage());
             }
         }
     }

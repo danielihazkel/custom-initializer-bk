@@ -49,6 +49,7 @@ public class DataSeeder implements SmartInitializingSingleton {
     private final ColorPaletteRepository colorPaletteRepo;
     private final VersionDefinitionRepository versionRepo;
     private final DepartmentRepository departmentRepo;
+    private final FullstackExampleRepository fullstackExampleRepo;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
@@ -65,7 +66,8 @@ public class DataSeeder implements SmartInitializingSingleton {
                       EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
                       ColorPaletteRepository colorPaletteRepo,
                       VersionDefinitionRepository versionRepo,
-                      DepartmentRepository departmentRepo) {
+                      DepartmentRepository departmentRepo,
+                      FullstackExampleRepository fullstackExampleRepo) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
@@ -82,6 +84,7 @@ public class DataSeeder implements SmartInitializingSingleton {
         this.colorPaletteRepo = colorPaletteRepo;
         this.versionRepo = versionRepo;
         this.departmentRepo = departmentRepo;
+        this.fullstackExampleRepo = fullstackExampleRepo;
     }
 
     @Override
@@ -95,6 +98,7 @@ public class DataSeeder implements SmartInitializingSingleton {
             seedEntityTemplateSetsIfMissing();
             seedVersionsIfMissing();
             seedDepartmentsIfMissing();
+            seedFullstackExamplesIfMissing();
 
             if (groupRepo.count() > 0) {
                 log.info("Database already seeded — skipping main DataSeeder");
@@ -583,6 +587,28 @@ public class DataSeeder implements SmartInitializingSingleton {
         d.setDefault(true);
         d.setSortOrder(0);
         departmentRepo.save(d);
+    }
+
+    /**
+     * Seeds the Fullstack tab's "Start from → Examples" from {@code catalog/fullstack-examples.json}.
+     * Table-scoped like departments, so an example an admin deleted is not resurrected and an
+     * existing installation picks the table up on its next start.
+     */
+    private void seedFullstackExamplesIfMissing() throws IOException {
+        if (fullstackExampleRepo.count() > 0) return;
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode root = mapper.readTree(readClasspath("catalog/fullstack-examples.json"));
+        for (JsonNode ex : root) {
+            FullstackExampleEntity e = new FullstackExampleEntity();
+            e.setExampleId(ex.get("exampleId").asText());
+            e.setName(ex.get("name").asText());
+            e.setDescription(ex.path("description").asText(null));
+            e.setIcon(ex.path("icon").asText(null));
+            e.setSortOrder(ex.path("sortOrder").asInt(0));
+            e.setEnabled(ex.path("enabled").asBoolean(true));
+            e.setEntities(mapper.writeValueAsString(ex.get("entities")));
+            fullstackExampleRepo.save(e);
+        }
     }
 
     private void colorPalette(String paletteId, String name, String description,

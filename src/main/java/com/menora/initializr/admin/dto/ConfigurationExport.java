@@ -1,6 +1,7 @@
 package com.menora.initializr.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.List;
 
@@ -24,6 +25,7 @@ public class ConfigurationExport {
     private List<ColorPaletteExport> colorPalettes;
     private List<VersionExport> versionDefinitions;
     private List<DepartmentExport> departments;
+    private List<FullstackExampleExport> fullstackExamples;
 
     // ── Getters/Setters ──────────────────────────────────────────────────────
 
@@ -63,6 +65,8 @@ public class ConfigurationExport {
     public void setVersionDefinitions(List<VersionExport> versionDefinitions) { this.versionDefinitions = versionDefinitions; }
     public List<DepartmentExport> getDepartments() { return departments; }
     public void setDepartments(List<DepartmentExport> departments) { this.departments = departments; }
+    public List<FullstackExampleExport> getFullstackExamples() { return fullstackExamples; }
+    public void setFullstackExamples(List<FullstackExampleExport> fullstackExamples) { this.fullstackExamples = fullstackExamples; }
 
     // ── Inner DTOs ───────────────────────────────────────────────────────────
 
@@ -486,5 +490,31 @@ public class ConfigurationExport {
         public void setDefault(boolean isDefault) { this.isDefault = isDefault; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    }
+
+    /** A Fullstack "Start from → Examples" model; {@code entities} is the wire-entity JSON array. */
+    public static class FullstackExampleExport {
+        private String exampleId;
+        private String name;
+        private String description;
+        private String icon;
+        private JsonNode entities;
+        private int sortOrder;
+        private boolean enabled = true;
+
+        public String getExampleId() { return exampleId; }
+        public void setExampleId(String exampleId) { this.exampleId = exampleId; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getDescription() { return description; }
+        public void setDescription(String description) { this.description = description; }
+        public String getIcon() { return icon; }
+        public void setIcon(String icon) { this.icon = icon; }
+        public JsonNode getEntities() { return entities; }
+        public void setEntities(JsonNode entities) { this.entities = entities; }
+        public int getSortOrder() { return sortOrder; }
+        public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
     }
 }

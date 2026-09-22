@@ -6,6 +6,7 @@ import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.repository.BuildCustomizationRepository;
 import com.menora.initializr.db.repository.ColorPaletteRepository;
 import com.menora.initializr.db.repository.DepartmentRepository;
+import com.menora.initializr.db.repository.FullstackExampleRepository;
 import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
 import com.menora.initializr.db.repository.DependencyEntryRepository;
 import com.menora.initializr.db.repository.DependencyGroupRepository;
@@ -55,6 +56,7 @@ class ConfigurationExportImportServiceTest {
     @Autowired private ColorPaletteRepository colorPaletteRepo;
     @Autowired private VersionDefinitionRepository versionRepo;
     @Autowired private DepartmentRepository departmentRepo;
+    @Autowired private FullstackExampleRepository fullstackExampleRepo;
 
     @Test
     void roundTripPreservesRowCounts() {
@@ -70,6 +72,8 @@ class ConfigurationExportImportServiceTest {
         long palettes = colorPaletteRepo.count();
         long versions = versionRepo.count();
         long departments = departmentRepo.count();
+        long examples = fullstackExampleRepo.count();
+        String blogEntities = fullstackExampleRepo.findByExampleId("blog").orElseThrow().getEntities();
 
         ConfigurationExport export = service.exportAll();
         service.importAll(export);
@@ -87,6 +91,9 @@ class ConfigurationExportImportServiceTest {
         assertThat(versionRepo.count()).isEqualTo(versions);
         assertThat(departments).isPositive();
         assertThat(departmentRepo.count()).isEqualTo(departments);
+        assertThat(examples).isPositive();
+        assertThat(fullstackExampleRepo.count()).isEqualTo(examples);
+        assertThat(fullstackExampleRepo.findByExampleId("blog").orElseThrow().getEntities()).isEqualTo(blogEntities);
     }
 
     @Test

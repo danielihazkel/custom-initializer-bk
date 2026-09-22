@@ -9,6 +9,7 @@ import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.repository.BuildCustomizationRepository;
 import com.menora.initializr.db.repository.ColorPaletteRepository;
 import com.menora.initializr.db.repository.DepartmentRepository;
+import com.menora.initializr.db.repository.FullstackExampleRepository;
 import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
 import com.menora.initializr.db.repository.DependencyEntryRepository;
 import com.menora.initializr.db.repository.DependencyGroupRepository;
@@ -46,6 +47,7 @@ class DataSeederTest {
 
     @Autowired private DependencyGroupRepository groupRepo;
     @Autowired private DepartmentRepository departmentRepo;
+    @Autowired private FullstackExampleRepository fullstackExampleRepo;
     @Autowired private DependencyEntryRepository entryRepo;
     @Autowired private FileContributionRepository fileContribRepo;
     @Autowired private BuildCustomizationRepository buildCustomRepo;
@@ -298,6 +300,17 @@ class DataSeederTest {
         assertThat(departmentRepo.findAll()).singleElement().satisfies(d -> {
             assertThat(d.getDepartmentId()).isEqualTo("lts");
             assertThat(d.isDefault()).isTrue();
+        });
+    }
+
+    @Test
+    void seedsTheSixFullstackExamplesInOrder() {
+        assertThat(fullstackExampleRepo.findAllByOrderBySortOrderAscIdAsc())
+                .extracting(e -> e.getExampleId())
+                .containsExactly("blog", "orders", "tickets", "inventory", "enrolments", "reporting");
+        assertThat(fullstackExampleRepo.findAll()).allSatisfy(e -> {
+            assertThat(e.isEnabled()).isTrue();
+            assertThat(e.getEntities()).startsWith("[");
         });
     }
 
