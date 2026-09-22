@@ -127,7 +127,7 @@
   {
     "exampleId": "orders",
     "name": "Orders",
-    "description": "Customers place orders for products; each order has lines. Orders show on a kanban and a calendar.",
+    "description": "Customers place orders for products. Opens on a sales-desk dashboard; products and customers share a tabbed catalog page.",
     "icon": "shopping_cart",
     "sortOrder": 1,
     "entities": [
@@ -286,12 +286,95 @@
           }
         ]
       }
-    ]
+    ],
+    "pages": [
+      {
+        "id": "desk",
+        "type": "dashboard",
+        "title": "Sales desk",
+        "description": "Orders at a glance: volume, status mix and the latest orders.",
+        "widgets": [
+          {
+            "kind": "kpi",
+            "entity": "Order",
+            "title": "Orders"
+          },
+          {
+            "kind": "kpi",
+            "entity": "Customer",
+            "title": "Customers"
+          },
+          {
+            "kind": "kpi",
+            "entity": "Product",
+            "title": "Products"
+          },
+          {
+            "kind": "kpi",
+            "entity": "OrderLine",
+            "title": "Order lines"
+          },
+          {
+            "kind": "bar",
+            "entity": "Order",
+            "groupBy": "status"
+          },
+          {
+            "kind": "recent",
+            "entity": "Order",
+            "limit": 6
+          }
+        ]
+      },
+      {
+        "id": "orders",
+        "type": "entity-list",
+        "entity": "Order"
+      },
+      {
+        "id": "order-lines",
+        "type": "entity-list",
+        "entity": "OrderLine",
+        "title": "Order lines"
+      },
+      {
+        "id": "catalog",
+        "type": "tabs",
+        "title": "Catalog",
+        "tabs": [
+          {
+            "title": "Products",
+            "page": "products"
+          },
+          {
+            "title": "Customers",
+            "page": "customers"
+          }
+        ]
+      },
+      {
+        "id": "products",
+        "type": "entity-list",
+        "entity": "Product",
+        "hidden": true
+      },
+      {
+        "id": "customers",
+        "type": "entity-list",
+        "entity": "Customer",
+        "hidden": true
+      }
+    ],
+    "settings": {
+      "scaffold": [
+        "csvExport"
+      ]
+    }
   },
   {
     "exampleId": "tickets",
     "name": "Support tickets",
-    "description": "Teams of agents work tickets by priority and status, with due dates on a calendar.",
+    "description": "Tickets are routed to teams and assigned to agents. A support dashboard plus a queue page with Open / In progress / All tabs.",
     "icon": "confirmation_number",
     "sortOrder": 2,
     "entities": [
@@ -418,7 +501,104 @@
           }
         ]
       }
-    ]
+    ],
+    "pages": [
+      {
+        "id": "overview",
+        "type": "dashboard",
+        "title": "Support overview",
+        "widgets": [
+          {
+            "kind": "kpi",
+            "entity": "Ticket",
+            "title": "Tickets"
+          },
+          {
+            "kind": "kpi",
+            "entity": "Agent",
+            "title": "Agents"
+          },
+          {
+            "kind": "kpi",
+            "entity": "Team",
+            "title": "Teams"
+          },
+          {
+            "kind": "bar",
+            "entity": "Ticket",
+            "groupBy": "status"
+          },
+          {
+            "kind": "bar",
+            "entity": "Ticket",
+            "groupBy": "priority"
+          },
+          {
+            "kind": "recent",
+            "entity": "Ticket",
+            "limit": 5
+          }
+        ]
+      },
+      {
+        "id": "queue",
+        "type": "tabs",
+        "title": "Ticket queue",
+        "tabs": [
+          {
+            "title": "Open",
+            "page": "tickets-open"
+          },
+          {
+            "title": "In progress",
+            "page": "tickets-in-progress"
+          },
+          {
+            "title": "All tickets",
+            "page": "tickets-all"
+          }
+        ]
+      },
+      {
+        "id": "tickets-open",
+        "type": "entity-list",
+        "entity": "Ticket",
+        "hidden": true,
+        "presetFilter": {
+          "status": "OPEN"
+        }
+      },
+      {
+        "id": "tickets-in-progress",
+        "type": "entity-list",
+        "entity": "Ticket",
+        "hidden": true,
+        "presetFilter": {
+          "status": "IN_PROGRESS"
+        }
+      },
+      {
+        "id": "tickets-all",
+        "type": "entity-list",
+        "entity": "Ticket",
+        "hidden": true
+      },
+      {
+        "id": "agents",
+        "type": "entity-list",
+        "entity": "Agent"
+      },
+      {
+        "id": "teams",
+        "type": "entity-list",
+        "entity": "Team"
+      }
+    ],
+    "settings": {
+      "scaffold": [
+        "bulkUpdate"
+      ]
+    }
   },
   {
     "exampleId": "inventory",
@@ -724,6 +904,51 @@
           }
         ]
       }
-    ]
+    ],
+    "pages": [
+      {
+        "id": "report",
+        "type": "dashboard",
+        "title": "Sales report",
+        "widgets": [
+          {
+            "kind": "kpi",
+            "entity": "Sale",
+            "title": "Sales"
+          },
+          {
+            "kind": "kpi",
+            "entity": "MonthlySales",
+            "title": "Months reported"
+          },
+          {
+            "kind": "bar",
+            "entity": "Sale",
+            "groupBy": "region"
+          },
+          {
+            "kind": "recent",
+            "entity": "Sale",
+            "title": "Latest sales",
+            "limit": 8
+          }
+        ]
+      },
+      {
+        "id": "sales",
+        "type": "entity-list",
+        "entity": "Sale"
+      },
+      {
+        "id": "monthly",
+        "type": "entity-list",
+        "entity": "MonthlySales"
+      }
+    ],
+    "settings": {
+      "scaffold": [
+        "csvExport"
+      ]
+    }
   }
 ]

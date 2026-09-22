@@ -22,6 +22,8 @@ const en = {
   couldNotLoad: 'Couldn’t load data.',
   noRecordsYetDot: 'No records yet.',
   basedOnSample: 'Based on the first {shown} of {total} records.',
+  recentX: 'Recent {x}',
+  viewAll: 'View all',
   // List page
   record: 'record',
   records: 'records',
@@ -133,6 +135,8 @@ const he: Record<keyof typeof en, string> = {
   couldNotLoad: 'לא ניתן לטעון נתונים.',
   noRecordsYetDot: 'אין רשומות עדיין.',
   basedOnSample: 'מבוסס על {shown} הרשומות הראשונות מתוך {total}.',
+  recentX: '{x} – אחרונים',
+  viewAll: 'הצג הכל',
   // List page
   record: 'רשומה',
   records: 'רשומות',
@@ -223,6 +227,10 @@ const he: Record<keyof typeof en, string> = {
   invalidFormat: 'פורמט לא תקין',
   invalidEmail: 'כתובת דוא״ל לא תקינה',
 }
+
+/** Both tables — for code that needs the other language. Exported so neither is an unused local
+ *  (the generated lint rejects those, and only one of them is selected below). */
+export const STRINGS = { en, he } as const
 
 export type StringKey = keyof typeof en
 

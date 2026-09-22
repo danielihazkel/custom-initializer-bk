@@ -62,6 +62,65 @@ class FullstackExampleTests {
     }
 
     @Test
+    void seededLayoutsPassThePageValidatorAndTravelWithTheExample() {
+        JsonNode list = rest.getForEntity(PUBLIC, JsonNode.class).getBody();
+        assertThat(list).isNotNull();
+        int withPages = 0;
+        for (JsonNode example : list) {
+            JsonNode pages = example.get("pages");
+            if (pages == null || pages.isNull()) continue;
+            withPages++;
+            assertThat(FullstackExampleAdminController.validatePages(example.get("entities"), pages, json))
+                    .as(example.get("id").asText())
+                    .isNotBlank();
+            assertThat(FullstackExampleAdminController.validateSettings(example.get("settings"), json))
+                    .as(example.get("id").asText() + " settings")
+                    .isNotBlank();
+        }
+        assertThat(withPages).as("examples that showcase page layouts").isGreaterThanOrEqualTo(3);
+        // The classic examples stay layout-free: that is the generator's default shell.
+        JsonNode blog = list.get(0);
+        assertThat(blog.get("pages").isNull()).isTrue();
+        assertThat(blog.get("settings").isNull()).isTrue();
+    }
+
+    @Test
+    void adminCrudValidatesPagesAndSettings() throws Exception {
+        HttpHeaders auth = adminHeaders();
+
+        // A page that points at an entity the example doesn't have — 400 from the page validator.
+        Map<String, Object> badPage = example("bad-pages", validEntities(), true);
+        badPage.put("pages", List.of(Map.of("id", "things", "type", "entity-list", "entity", "Nope")));
+        ResponseEntity<JsonNode> bad = exchange(HttpMethod.POST, ADMIN, badPage, auth);
+        assertThat(bad.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(bad.getBody().get("detail").asText()).contains("unknown entity 'Nope'");
+
+        // An unknown settings key — 400 naming it.
+        Map<String, Object> badSettings = example("bad-settings", validEntities(), true);
+        badSettings.put("settings", Map.of("theme", "dark"));
+        ResponseEntity<JsonNode> bad2 = exchange(HttpMethod.POST, ADMIN, badSettings, auth);
+        assertThat(bad2.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(bad2.getBody().get("detail").asText()).contains("settings.theme is not a known setting");
+
+        // A valid layout + settings is stored and served on the public list as JSON.
+        Map<String, Object> good = example("with-layout", validEntities(), true);
+        good.put("pages", List.of(
+                Map.of("id", "home", "type", "dashboard", "widgets", List.of(Map.of("kind", "kpi", "entity", "Thing"))),
+                Map.of("id", "things", "type", "entity-list", "entity", "Thing")));
+        good.put("settings", Map.of("locale", "he", "scaffold", List.of("csvExport")));
+        ResponseEntity<JsonNode> created = exchange(HttpMethod.POST, ADMIN, good, auth);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        JsonNode served = java.util.stream.StreamSupport.stream(
+                        rest.getForEntity(PUBLIC, JsonNode.class).getBody().spliterator(), false)
+                .filter(n -> n.get("id").asText().equals("with-layout")).findFirst().orElseThrow();
+        assertThat(served.get("pages").get(1).get("entity").asText()).isEqualTo("Thing");
+        assertThat(served.get("settings").get("locale").asText()).isEqualTo("he");
+
+        rest.exchange(ADMIN + "/" + created.getBody().get("id").asLong(), HttpMethod.DELETE,
+                new HttpEntity<>(auth), Void.class);
+    }
+
+    @Test
     void adminEndpointRequiresAuth() {
         assertThat(rest.getForEntity(ADMIN, String.class).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }

@@ -374,6 +374,24 @@ on the backend build — gates the dev-only `userinfo` header in `client.ts`), `
 The UI's `SCAFFOLD_OPTIONS` list (`ui/src/components/fullstack/FullstackView.tsx`) must name every opt
 too, or it is unreachable from the editor.
 
+### 4f. Page-layout variables (frontend, `putPageContext`)
+
+Only when the request carries `pages`. Project context: `hasPages` (always set, false for the classic
+shell), `pages` (every page), `navPages` (visible ones, declaration order), `initialPageId`,
+`navUsesTable2`/`navUsesLayoutDashboard`/`navUsesLayers` (lucide imports), `hasDashboardPages`,
+`hasTabsPages`. Files with `perPage=true` render once per `pages` entry with that entry merged over
+the project context:
+
+| Key | Meaning |
+|---|---|
+| `pageId`, `PageName` | slug and its PascalCase (`tickets-open` → `TicketsOpen`) |
+| `pageIsEntityList` / `pageIsDashboard` / `pageIsTabs` | the type — use as the file's `gatedBy` |
+| `pageTitleExpr`, `pageDescriptionExpr` | ready TS expressions (`'Escaped text'` or `t('dashboard')`) — splice unquoted |
+| `hidden`, `navIcon`, `needsNavigate`, `usesT` | nav flags; `needsNavigate`/`usesT` gate the `onNavigate` prop and the `t` import |
+| `EntityName`, `entityNameKebab`, `hasPresetFilter`, `presetFilterTs` | entity-list |
+| `widgets[]` (`widgetIsKpi/Bar/Recent`, `titleExpr`, `path`, `hasTarget`, `targetPageId`, `groupBy`, `labelsRef`, `limit`, `sortField`, `displayField`), `usesKpi/Bar/Recent`, `labelImports[]` (`entityNameKebab`, `labelsRefs`) | dashboard |
+| `tabs[]` (`tabIndex`, `tabId`, `tabTitleExpr`, `TargetName`, `targetNeedsNavigate`) | tabs |
+
 Row identity in the generated list views: `EntityPage` defines one `rowKey(row)` (the PK, or the
 `pkFields` joined with `/` for composite keys) and passes it to `Table`/`CardGrid`/`KanbanBoard`/
 `CalendarView`, which key React rows by it — never by array index.

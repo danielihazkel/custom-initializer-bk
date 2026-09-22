@@ -1,0 +1,5 @@
+import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
+
+export function {{PageName}}Screen() {
+  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}} />
+}

@@ -427,6 +427,7 @@ public class ConfigurationExport {
         private String substitutionType;
         private String fileType;
         private boolean perEntity;
+        private boolean perPage;
         private int sortOrder;
         private String gatedBy;
 
@@ -442,6 +443,8 @@ public class ConfigurationExport {
         public void setFileType(String fileType) { this.fileType = fileType; }
         public boolean isPerEntity() { return perEntity; }
         public void setPerEntity(boolean perEntity) { this.perEntity = perEntity; }
+        public boolean isPerPage() { return perPage; }
+        public void setPerPage(boolean perPage) { this.perPage = perPage; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
         public String getGatedBy() { return gatedBy; }
@@ -499,6 +502,8 @@ public class ConfigurationExport {
         private String description;
         private String icon;
         private JsonNode entities;
+        private JsonNode pages;
+        private JsonNode settings;
         private int sortOrder;
         private boolean enabled = true;
 
@@ -512,6 +517,10 @@ public class ConfigurationExport {
         public void setIcon(String icon) { this.icon = icon; }
         public JsonNode getEntities() { return entities; }
         public void setEntities(JsonNode entities) { this.entities = entities; }
+        public JsonNode getPages() { return pages; }
+        public void setPages(JsonNode pages) { this.pages = pages; }
+        public JsonNode getSettings() { return settings; }
+        public void setSettings(JsonNode settings) { this.settings = settings; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
         public boolean isEnabled() { return enabled; }

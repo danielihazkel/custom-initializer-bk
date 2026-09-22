@@ -7,6 +7,7 @@ import com.samskivert.mustache.Mustache;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -29,7 +30,18 @@ public final class FullstackRenderer {
             List<EntityDefinition> entities,
             Path targetRoot) throws IOException {
         for (EntityTemplateFileEntity file : files) {
-            if (file.isPerEntity()) {
+            if (file.isPerPage()) {
+                // Per-page files (the frontend screens) render once per entry of the context's
+                // `pages` list — absent (classic layout, and the backend) means never.
+                for (Map<String, Object> page : pages(projectContext)) {
+                    Map<String, Object> ctx = new LinkedHashMap<>(projectContext);
+                    ctx.putAll(page);
+                    if (isGatedOut(file, ctx)) {
+                        continue;
+                    }
+                    writeOne(file, ctx, targetRoot);
+                }
+            } else if (file.isPerEntity()) {
                 for (EntityDefinition entity : entities) {
                     Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(projectContext, entity);
                     // Per-entity files evaluate their gate against the per-entity context, so a
@@ -46,6 +58,12 @@ public final class FullstackRenderer {
                 writeOne(file, projectContext, targetRoot);
             }
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> pages(Map<String, Object> projectContext) {
+        Object pages = projectContext.get("pages");
+        return pages instanceof List<?> list ? (List<Map<String, Object>>) list : List.of();
     }
 
     /**

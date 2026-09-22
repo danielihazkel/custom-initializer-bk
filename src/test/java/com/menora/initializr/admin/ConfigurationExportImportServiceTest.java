@@ -6,6 +6,7 @@ import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.repository.BuildCustomizationRepository;
 import com.menora.initializr.db.repository.ColorPaletteRepository;
 import com.menora.initializr.db.repository.DepartmentRepository;
+import com.menora.initializr.db.repository.EntityTemplateFileRepository;
 import com.menora.initializr.db.repository.FullstackExampleRepository;
 import com.menora.initializr.db.repository.DependencyCompatibilityRepository;
 import com.menora.initializr.db.repository.DependencyEntryRepository;
@@ -57,6 +58,7 @@ class ConfigurationExportImportServiceTest {
     @Autowired private VersionDefinitionRepository versionRepo;
     @Autowired private DepartmentRepository departmentRepo;
     @Autowired private FullstackExampleRepository fullstackExampleRepo;
+    @Autowired private EntityTemplateFileRepository entityTemplateFileRepo;
 
     @Test
     void roundTripPreservesRowCounts() {
@@ -74,6 +76,9 @@ class ConfigurationExportImportServiceTest {
         long departments = departmentRepo.count();
         long examples = fullstackExampleRepo.count();
         String blogEntities = fullstackExampleRepo.findByExampleId("blog").orElseThrow().getEntities();
+        String ticketPages = fullstackExampleRepo.findByExampleId("tickets").orElseThrow().getPages();
+        String ticketSettings = fullstackExampleRepo.findByExampleId("tickets").orElseThrow().getSettings();
+        long perPageFiles = perPageTemplateFileCount();
 
         ConfigurationExport export = service.exportAll();
         service.importAll(export);
@@ -94,6 +99,15 @@ class ConfigurationExportImportServiceTest {
         assertThat(examples).isPositive();
         assertThat(fullstackExampleRepo.count()).isEqualTo(examples);
         assertThat(fullstackExampleRepo.findByExampleId("blog").orElseThrow().getEntities()).isEqualTo(blogEntities);
+        assertThat(ticketPages).isNotBlank();
+        assertThat(fullstackExampleRepo.findByExampleId("tickets").orElseThrow().getPages()).isEqualTo(ticketPages);
+        assertThat(fullstackExampleRepo.findByExampleId("tickets").orElseThrow().getSettings()).isEqualTo(ticketSettings);
+        assertThat(perPageFiles).isPositive();
+        assertThat(perPageTemplateFileCount()).isEqualTo(perPageFiles);
+    }
+
+    private long perPageTemplateFileCount() {
+        return entityTemplateFileRepo.findAll().stream().filter(f -> f.isPerPage()).count();
     }
 
     @Test

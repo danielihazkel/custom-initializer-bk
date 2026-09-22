@@ -1,9 +1,15 @@
 import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
+{{^hasPages}}
 import { LayoutDashboard, Menu, Moon, Sun, Table2 } from 'lucide-react'
+{{/hasPages}}
+{{#hasPages}}
+import { {{#navUsesLayers}}Layers, {{/navUsesLayers}}{{#navUsesLayoutDashboard}}LayoutDashboard, {{/navUsesLayoutDashboard}}Menu, Moon, Sun{{#navUsesTable2}}, Table2{{/navUsesTable2}} } from 'lucide-react'
+{{/hasPages}}
 import { Toaster } from 'sonner'
 import { useTheme } from '@shared/ui'
 import { t } from '@shared/i18n'
+{{^hasPages}}
 import { DashboardPage } from '@pages/dashboard'
 {{#entities}}
 import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
@@ -17,9 +23,23 @@ const NAV: { id: View; label: string; icon: LucideIcon }[] = [
   { id: '{{entityNameKebab}}', label: '{{entityLabelPlural}}', icon: Table2 },
 {{/entities}}
 ]
+{{/hasPages}}
+{{#hasPages}}
+{{#navPages}}
+import { {{PageName}}Screen } from '@app/screens/{{PageName}}Screen'
+{{/navPages}}
+
+type View = {{#navPages}}{{^-first}} | {{/-first}}'{{pageId}}'{{/navPages}}
+
+const NAV: { id: View; label: string; icon: LucideIcon }[] = [
+{{#navPages}}
+  { id: '{{pageId}}', label: {{pageTitleExpr}}, icon: {{navIcon}} },
+{{/navPages}}
+]
+{{/hasPages}}
 
 export default function App() {
-  const [view, setView] = useState<View>('dashboard')
+  const [view, setView] = useState<View>('{{#hasPages}}{{initialPageId}}{{/hasPages}}{{^hasPages}}dashboard{{/hasPages}}')
   const [navOpen, setNavOpen] = useState(false)
   const { isDark, toggle } = useTheme()
   const current = NAV.find(n => n.id === view)
@@ -117,10 +137,15 @@ export default function App() {
         </header>
 
         <main className="flex-1 overflow-auto bg-canvas">
+{{^hasPages}}
           {view === 'dashboard' && <DashboardPage onNavigate={v => go(v as View)} />}
 {{#entities}}
           {view === '{{entityNameKebab}}' && <{{EntityName}}Page />}
 {{/entities}}
+{{/hasPages}}
+{{#navPages}}
+          {view === '{{pageId}}' && <{{PageName}}Screen{{#needsNavigate}} onNavigate={v => go(v as View)}{{/needsNavigate}} />}
+{{/navPages}}
         </main>
       </div>
 

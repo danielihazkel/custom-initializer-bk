@@ -3,6 +3,7 @@ import { Menu, X } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { t } from '@shared/i18n'
 import { NavLinks, ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'
+{{^hasPages}}
 import { DashboardPage } from '@pages/dashboard'
 {{#entities}}
 import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
@@ -16,6 +17,20 @@ const NAV: { id: View; label: string }[] = [
   { id: '{{entityNameKebab}}', label: '{{entityLabelPlural}}' },
 {{/entities}}
 ]
+{{/hasPages}}
+{{#hasPages}}
+{{#navPages}}
+import { {{PageName}}Screen } from '@app/screens/{{PageName}}Screen'
+{{/navPages}}
+
+type View = {{#navPages}}{{^-first}} | {{/-first}}'{{pageId}}'{{/navPages}}
+
+const NAV: { id: View; label: string }[] = [
+{{#navPages}}
+  { id: '{{pageId}}', label: {{pageTitleExpr}} },
+{{/navPages}}
+]
+{{/hasPages}}
 
 /**
  * Menora Digital shell: a white top header on the #f8f8f8 page ground (logo chip, the design system's
@@ -24,7 +39,7 @@ const NAV: { id: View; label: string }[] = [
  * admin app's. Logical utilities (start/end, rtl:) keep it mirror-correct.
  */
 export default function App() {
-  const [view, setView] = useState<View>('dashboard')
+  const [view, setView] = useState<View>('{{#hasPages}}{{initialPageId}}{{/hasPages}}{{^hasPages}}dashboard{{/hasPages}}')
   const [navOpen, setNavOpen] = useState(false)
   const { isDark } = useMenoraTheme()
   const current = NAV.find(n => n.id === view)
@@ -76,10 +91,15 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-auto">
+{{^hasPages}}
         {view === 'dashboard' && <DashboardPage onNavigate={v => go(v as View)} />}
 {{#entities}}
         {view === '{{entityNameKebab}}' && <{{EntityName}}Page />}
 {{/entities}}
+{{/hasPages}}
+{{#navPages}}
+        {view === '{{pageId}}' && <{{PageName}}Screen{{#needsNavigate}} onNavigate={v => go(v as View)}{{/needsNavigate}} />}
+{{/navPages}}
       </main>
 
       <Footer legal="{{artifactId}} · v0.0.1" />

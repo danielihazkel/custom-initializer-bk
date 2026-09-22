@@ -246,6 +246,7 @@ public class ConfigurationExportImportService {
                     efe.setSubstitutionType(f.getSubstitutionType() != null ? f.getSubstitutionType().name() : null);
                     efe.setFileType(f.getFileType() != null ? f.getFileType().name() : null);
                     efe.setPerEntity(f.isPerEntity());
+                    efe.setPerPage(f.isPerPage());
                     efe.setSortOrder(f.getSortOrder());
                     efe.setGatedBy(f.getGatedBy());
                     return efe;
@@ -307,6 +308,8 @@ public class ConfigurationExportImportService {
                     fe.setDescription(e.getDescription());
                     fe.setIcon(e.getIcon());
                     fe.setEntities(FullstackExampleAdminController.readEntities(e, objectMapper));
+                    fe.setPages(FullstackExampleAdminController.readJson(e.getPages(), e, objectMapper));
+                    fe.setSettings(FullstackExampleAdminController.readJson(e.getSettings(), e, objectMapper));
                     fe.setSortOrder(e.getSortOrder());
                     fe.setEnabled(e.isEnabled());
                     return fe;
@@ -526,6 +529,7 @@ public class ConfigurationExportImportService {
             entity.setFileType(f.getFileType() != null
                     ? EntityTemplateFileEntity.FileType.valueOf(f.getFileType()) : null);
             entity.setPerEntity(f.isPerEntity());
+            entity.setPerPage(f.isPerPage());
             entity.setSortOrder(f.getSortOrder());
             entity.setGatedBy(f.getGatedBy());
             entityTemplateFileRepo.save(entity);
@@ -587,6 +591,8 @@ public class ConfigurationExportImportService {
                 entity.setDescription(ex.getDescription());
                 entity.setIcon(ex.getIcon());
                 entity.setEntities(FullstackExampleAdminController.validateEntities(ex.getEntities(), objectMapper));
+                entity.setPages(FullstackExampleAdminController.validatePages(ex.getEntities(), ex.getPages(), objectMapper));
+                entity.setSettings(FullstackExampleAdminController.validateSettings(ex.getSettings(), objectMapper));
                 entity.setSortOrder(ex.getSortOrder());
                 entity.setEnabled(ex.isEnabled());
                 fullstackExampleRepo.save(entity);
@@ -680,6 +686,8 @@ public class ConfigurationExportImportService {
             }
             try {
                 FullstackExampleAdminController.validateEntities(ex.getEntities(), objectMapper);
+                FullstackExampleAdminController.validatePages(ex.getEntities(), ex.getPages(), objectMapper);
+                FullstackExampleAdminController.validateSettings(ex.getSettings(), objectMapper);
             } catch (FullstackExampleAdminController.InvalidExampleException e) {
                 throw new IllegalArgumentException("Fullstack example '" + ex.getExampleId() + "': " + e.getMessage());
             }

@@ -44,7 +44,24 @@ public record FullstackStarterRequest(
         // Department id (see DepartmentResolver) exposed to both halves' templates as
         // {{department}}; null/blank → the default department.
         String department,
-        List<EntityDefinitionDto> entities) {
+        List<EntityDefinitionDto> entities,
+        // Optional frontend page layout (dashboards, entity lists, tabbed pages). Null/empty keeps
+        // the classic shell: one dashboard plus one list page per entity. See FullstackPageValidator.
+        List<PageDefinitionDto> pages) {
+
+    /** Back-compat constructor without {@code pages} (the classic one-page-per-entity layout). */
+    public FullstackStarterRequest(
+            String groupId, String artifactId, String name, String description, String packageName,
+            String domainPackage, String type, String language, String bootVersion, String packaging,
+            String javaVersion, String version, String configurationFileFormat, List<String> dependencies,
+            Map<String, List<String>> opts, String backendTemplateSet, String frontendTemplateSet,
+            String colorPalette, String dashboardTitle, String dashboardOverview, String locale,
+            String department, List<EntityDefinitionDto> entities) {
+        this(groupId, artifactId, name, description, packageName, domainPackage, type, language,
+                bootVersion, packaging, javaVersion, version, configurationFileFormat, dependencies,
+                opts, backendTemplateSet, frontendTemplateSet, colorPalette, dashboardTitle,
+                dashboardOverview, locale, department, entities, null);
+    }
 
     /** Back-compat constructor without the optional {@code dashboardTitle}/{@code dashboardOverview}
      *  dashboard-header overrides (both default to null → the template's built-in copy) and without
@@ -164,6 +181,39 @@ public record FullstackStarterRequest(
                     label, labelPlural, null);
         }
     }
+
+    /**
+     * One page of the generated frontend. {@code type} is {@code entity-list}, {@code dashboard} or
+     * {@code tabs}; which of the other properties apply depends on it (see FullstackPageValidator).
+     */
+    public record PageDefinitionDto(
+            String id,
+            String type,
+            String title,
+            String description,
+            // Hidden pages stay out of the navigation; a tabs page can still embed them.
+            Boolean hidden,
+            // entity-list: the entity whose list page this is, and optional fixed filter values
+            // (enum/boolean field name -> value) the page opens with.
+            String entity,
+            Map<String, String> presetFilter,
+            // dashboard
+            List<WidgetDto> widgets,
+            // tabs
+            List<TabDto> tabs) {}
+
+    /** A dashboard widget: {@code kpi} (record count), {@code bar} (count by an enum/boolean
+     *  field) or {@code recent} (the latest rows). */
+    public record WidgetDto(
+            String kind,
+            String entity,
+            String title,
+            String agg,
+            String groupBy,
+            Integer limit) {}
+
+    /** One tab of a {@code tabs} page, embedding another (non-tabs) page by id. */
+    public record TabDto(String title, String page) {}
 
     public record RelationDefinitionDto(
             String type,

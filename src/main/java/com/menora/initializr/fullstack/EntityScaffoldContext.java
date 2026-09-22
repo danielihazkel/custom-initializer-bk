@@ -101,6 +101,205 @@ public final class EntityScaffoldContext {
         return ctx;
     }
 
+    /**
+     * Adds the frontend page layout to a (frontend) project context. With no pages this only sets
+     * {@code hasPages=false}, which keeps the classic shell (one dashboard + one list page per
+     * entity) byte-for-byte. With pages, the shell's nav/switch iterates {@code navPages} and each
+     * page renders once as {@code src/app/screens/<PageName>Screen.tsx} from the per-page context
+     * {@link FullstackRenderer} builds (project context + one entry of {@code pages}).
+     *
+     * <p>Must run after {@link #buildProjectContext}: widgets and list pages resolve their entity
+     * through the {@code entities} view-models.
+     */
+    @SuppressWarnings("unchecked")
+    public static void putPageContext(Map<String, Object> ctx, List<PageDefinition> pages) {
+        ctx.put("hasPages", !pages.isEmpty());
+        if (pages.isEmpty()) return;
+
+        Map<String, Map<String, Object>> entityByPascal = new LinkedHashMap<>();
+        for (Map<String, Object> ev : (List<Map<String, Object>>) ctx.get("entities")) {
+            entityByPascal.put((String) ev.get("EntityName"), ev);
+        }
+        Map<String, Map<String, Object>> summaries = (Map<String, Map<String, Object>>) ctx.get(ENTITY_SUMMARIES_KEY);
+
+        // Where a dashboard widget links to: the first visible list page of its entity.
+        Map<String, String> listPageByEntity = new LinkedHashMap<>();
+        for (PageDefinition p : pages) {
+            if (p.type() == PageDefinition.Type.ENTITY_LIST && !p.hidden()) {
+                listPageByEntity.putIfAbsent(p.entity(), p.id());
+            }
+        }
+
+        Map<String, Map<String, Object>> viewById = new LinkedHashMap<>();
+        for (PageDefinition p : pages) {
+            Map<String, Object> pv = new LinkedHashMap<>();
+            pv.put("pageId", p.id());
+            pv.put("PageName", Naming.toPascalCase(p.id()));
+            pv.put("hidden", p.hidden());
+            pv.put("pageIsEntityList", p.type() == PageDefinition.Type.ENTITY_LIST);
+            pv.put("pageIsDashboard", p.type() == PageDefinition.Type.DASHBOARD);
+            pv.put("pageIsTabs", p.type() == PageDefinition.Type.TABS);
+            pv.put("hasPageDescription", p.description() != null);
+            pv.put("pageDescriptionExpr", p.description() == null ? null : tsString(p.description()));
+            pv.put("needsNavigate", false);
+            String defaultTitleExpr;
+            switch (p.type()) {
+                case ENTITY_LIST -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    pv.put("EntityName", ev.get("EntityName"));
+                    pv.put("entityNameKebab", ev.get("entityNameKebab"));
+                    pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
+                    pv.put("presetFilterTs", presetFilterTs(p.presetFilter()));
+                    pv.put("navIcon", "Table2");
+                    defaultTitleExpr = tsString((String) ev.get("entityLabelPlural"));
+                }
+                case DASHBOARD -> {
+                    putDashboard(pv, p, entityByPascal, summaries, listPageByEntity);
+                    pv.put("navIcon", "LayoutDashboard");
+                    defaultTitleExpr = "t('dashboard')";
+                }
+                default -> {
+                    pv.put("navIcon", "Layers");
+                    // The validator requires a tabs page title; this fallback is never used.
+                    defaultTitleExpr = tsString(p.id());
+                }
+            }
+            pv.put("pageTitleExpr", p.title() != null ? tsString(p.title()) : defaultTitleExpr);
+            viewById.put(p.id(), pv);
+        }
+
+        // Tabs last: a tab's label and onNavigate plumbing come from the page it embeds.
+        for (PageDefinition p : pages) {
+            if (p.type() != PageDefinition.Type.TABS) continue;
+            Map<String, Object> pv = viewById.get(p.id());
+            List<Map<String, Object>> tabViews = new ArrayList<>();
+            boolean needsNavigate = false;
+            for (int i = 0; i < p.tabs().size(); i++) {
+                PageDefinition.Tab tab = p.tabs().get(i);
+                Map<String, Object> target = viewById.get(tab.page());
+                boolean targetNavigates = Boolean.TRUE.equals(target.get("needsNavigate"));
+                needsNavigate |= targetNavigates;
+                Map<String, Object> tv = new LinkedHashMap<>();
+                tv.put("tabIndex", i);
+                tv.put("tabId", tab.page());
+                tv.put("tabTitleExpr", tab.title() != null ? tsString(tab.title()) : target.get("pageTitleExpr"));
+                tv.put("TargetName", target.get("PageName"));
+                tv.put("targetNeedsNavigate", targetNavigates);
+                tv.put("first", i == 0);
+                tv.put("last", i == p.tabs().size() - 1);
+                tabViews.add(tv);
+            }
+            pv.put("tabs", tabViews);
+            pv.put("needsNavigate", needsNavigate);
+        }
+
+        // Screens import the i18n `t` only when one of their label expressions calls it — the
+        // generated lint rejects an unused import.
+        for (Map<String, Object> pv : viewById.values()) {
+            List<Object> exprs = new ArrayList<>();
+            exprs.add(pv.get("pageTitleExpr"));
+            for (String listKey : List.of("widgets", "tabs")) {
+                for (Map<String, Object> item : (List<Map<String, Object>>) pv.getOrDefault(listKey, List.of())) {
+                    exprs.add(item.get("titleExpr"));
+                    exprs.add(item.get("tabTitleExpr"));
+                }
+            }
+            pv.put("usesT", exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
+        }
+
+        List<Map<String, Object>> all = new ArrayList<>(viewById.values());
+        List<Map<String, Object>> nav = all.stream().filter(v -> !Boolean.TRUE.equals(v.get("hidden"))).toList();
+        ctx.put("pages", all);
+        ctx.put("navPages", nav);
+        ctx.put("initialPageId", nav.get(0).get("pageId"));
+        for (String icon : List.of("Table2", "LayoutDashboard", "Layers")) {
+            ctx.put("navUses" + icon, nav.stream().anyMatch(v -> icon.equals(v.get("navIcon"))));
+        }
+        ctx.put("hasDashboardPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsDashboard"))));
+        ctx.put("hasTabsPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTabs"))));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void putDashboard(Map<String, Object> pv, PageDefinition p,
+                                     Map<String, Map<String, Object>> entityByPascal,
+                                     Map<String, Map<String, Object>> summaries,
+                                     Map<String, String> listPageByEntity) {
+        List<Map<String, Object>> widgetViews = new ArrayList<>();
+        // The `<Enum>Labels` consts the bar charts read, grouped into one import per entity module
+        // (deduped, declaration order).
+        Map<String, Set<String>> labelRefsByModule = new LinkedHashMap<>();
+        boolean needsNavigate = false;
+        for (int i = 0; i < p.widgets().size(); i++) {
+            PageDefinition.Widget w = p.widgets().get(i);
+            Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
+            Map<String, Object> summary = summaries.get(w.entity().toLowerCase(Locale.ROOT));
+            String entityLabels = tsString((String) ev.get("entityLabelPlural"));
+            Map<String, Object> wv = new LinkedHashMap<>();
+            wv.put("widgetKey", "w" + i);
+            wv.put("widgetIsKpi", w.kind() == PageDefinition.WidgetKind.KPI);
+            wv.put("widgetIsBar", w.kind() == PageDefinition.WidgetKind.BAR);
+            wv.put("widgetIsRecent", w.kind() == PageDefinition.WidgetKind.RECENT);
+            wv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
+            String target = listPageByEntity.get(w.entity());
+            wv.put("hasTarget", target != null);
+            wv.put("targetPageId", target);
+            needsNavigate |= target != null;
+            String defaultTitle;
+            switch (w.kind()) {
+                case KPI -> defaultTitle = entityLabels;
+                case BAR -> {
+                    Map<String, Object> fv = ((List<Map<String, Object>>) ev.get("fields")).stream()
+                            .filter(f -> w.groupBy().equals(f.get("name"))).findFirst().orElseThrow();
+                    wv.put("groupBy", w.groupBy());
+                    Object enumType = Boolean.TRUE.equals(fv.get("isEnum")) ? fv.get("enumTypeName") : null;
+                    wv.put("hasLabels", enumType != null);
+                    wv.put("labelsRef", enumType == null ? null : enumType + "Labels");
+                    if (enumType != null) {
+                        labelRefsByModule.computeIfAbsent((String) ev.get("entityNameKebab"), k -> new LinkedHashSet<>())
+                                .add(enumType + "Labels");
+                    }
+                    defaultTitle = "t('xByY', { x: " + entityLabels + ", y: " + tsString((String) fv.get("label")) + " })";
+                }
+                default -> {
+                    wv.put("limit", w.limit());
+                    wv.put("sortField", summary.get("pkName"));
+                    Object labelField = summary.get("labelField");
+                    wv.put("displayField", labelField != null ? labelField : summary.get("pkName"));
+                    defaultTitle = "t('recentX', { x: " + entityLabels + " })";
+                }
+            }
+            wv.put("titleExpr", w.title() != null ? tsString(w.title()) : defaultTitle);
+            widgetViews.add(wv);
+        }
+        pv.put("widgets", widgetViews);
+        pv.put("usesKpi", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsKpi"))));
+        pv.put("usesBar", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsBar"))));
+        pv.put("usesRecent", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsRecent"))));
+        List<Map<String, Object>> labelImports = new ArrayList<>();
+        labelRefsByModule.forEach((kebab, refs) ->
+                labelImports.add(Map.of("entityNameKebab", kebab, "labelsRefs", String.join(", ", refs))));
+        pv.put("labelImports", labelImports);
+        pv.put("needsNavigate", needsNavigate);
+    }
+
+    /** {@code {status=OPEN}} → {@code { status: 'OPEN' }}; values are validated constants/booleans. */
+    private static String presetFilterTs(Map<String, String> filter) {
+        if (filter.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder("{ ");
+        int i = 0;
+        for (Map.Entry<String, String> en : new java.util.TreeMap<>(filter).entrySet()) {
+            if (i++ > 0) sb.append(", ");
+            sb.append(en.getKey()).append(": ").append(tsString(en.getValue()));
+        }
+        return sb.append(" }").toString();
+    }
+
+    /** A user-supplied string as a single-quoted TS literal (apostrophes, backslashes and line
+     *  breaks escaped). */
+    static String tsString(String s) {
+        return "'" + escapeTsSingleQuoted(s).replace("\r", "").replace("\n", "\\n") + "'";
+    }
+
     /** Internal key under which the entity-summary lookup rides in the project context.
      *  Not referenced by any template. */
     private static final String ENTITY_SUMMARIES_KEY = "__entitySummaries";

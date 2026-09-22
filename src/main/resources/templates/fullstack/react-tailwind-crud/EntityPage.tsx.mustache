@@ -34,7 +34,7 @@ const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?
 /** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
 const rowKey = (row: {{EntityName}}) => {{#hasCompositePk}}[{{#pkFields}}String(row.{{name}}){{^last}}, {{/last}}{{/pkFields}}].join('/'){{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as string | number{{/hasCompositePk}}
 
-export function {{EntityName}}Page() {
+export function {{EntityName}}Page({{#hasPages}}{{#hasFilters}}{ initialFilters }: { initialFilters?: FilterValues } = {}{{/hasFilters}}{{/hasPages}}) {
   const [page, setPage] = useState(0)
   const [size, setSize] = useState(20)
   const [sort, setSort] = useState<SortSpec | null>(null)
@@ -43,7 +43,7 @@ export function {{EntityName}}Page() {
   // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
   const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>('{{initialView}}')
   const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
-{{#hasFilters}}  const [filters, setFilters] = useState<FilterValues>({})
+{{#hasFilters}}  const [filters, setFilters] = useState<FilterValues>({{#hasPages}}initialFilters ?? {}{{/hasPages}}{{^hasPages}}{}{{/hasPages}})
 {{/hasFilters}}
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)

@@ -17,7 +17,9 @@ import com.menora.initializr.extension.frontend.FrontendProjectGenerator;
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
 import com.menora.initializr.fullstack.FullstackRenderer;
+import com.menora.initializr.fullstack.FullstackPageValidator;
 import com.menora.initializr.fullstack.FullstackRequestValidator;
+import com.menora.initializr.fullstack.PageDefinition;
 import com.menora.initializr.fullstack.FullstackStarterRequest;
 import io.spring.initializr.metadata.InitializrMetadata;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
@@ -166,6 +168,7 @@ public class FullstackStarterController {
      */
     private WebProjectRequest buildArtifacts(FullstackStarterRequest body, Path tempDir) throws IOException {
         List<EntityDefinition> entities = FullstackRequestValidator.validateAndConvert(body);
+        List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), entities);
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
 
@@ -211,7 +214,7 @@ public class FullstackStarterController {
         }
 
         // Frontend — rendered inline outside the Initializr pipeline.
-        renderFrontend(frontendSet, request, entities, domainPackage, body.colorPalette(),
+        renderFrontend(frontendSet, request, entities, pages, domainPackage, body.colorPalette(),
                 body.dashboardTitle(), body.dashboardOverview(), locale, tempDir.resolve("frontend"));
 
         // Root files
@@ -357,8 +360,8 @@ public class FullstackStarterController {
      * </ol>
      */
     private void renderFrontend(EntityTemplateSetEntity set, WebProjectRequest request,
-                                List<EntityDefinition> entities, String domainPackage,
-                                String colorPaletteId, String dashboardTitle, String dashboardOverview,
+                                List<EntityDefinition> entities, List<PageDefinition> pages,
+                                String domainPackage, String colorPaletteId, String dashboardTitle, String dashboardOverview,
                                 String locale, Path targetDir) throws IOException {
         // 1. Substrate — reuse the standalone frontend generator.
         FrontendProjectDescription desc = buildFrontendDescription(request, colorPaletteId);
@@ -386,6 +389,8 @@ public class FullstackStarterController {
                 request.getJavaVersion(),
                 request.getPackaging(),
                 entities);
+        // Page layout (dashboards / list pages / tabs). No pages → hasPages=false, the classic shell.
+        EntityScaffoldContext.putPageContext(projectCtx, pages);
         // Overlay the frontend view-model (dep flags, versions, palette with HSL forms, backend
         // pairing) onto the entity-scaffold context so per-entity templates see both shapes. This
         // replaces the plain palette from EntityScaffoldContext with the HSL-bearing one.

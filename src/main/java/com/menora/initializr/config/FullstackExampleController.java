@@ -25,14 +25,17 @@ public class FullstackExampleController {
     }
 
     /** {@code id} is the example's slug, which is what the UI keys the cards on. */
-    public record ExampleView(String id, String name, String description, String icon, JsonNode entities) {
+    public record ExampleView(String id, String name, String description, String icon, JsonNode entities,
+                              JsonNode pages, JsonNode settings) {
     }
 
     @GetMapping("/metadata/fullstack/examples")
     public List<ExampleView> list() {
         return repo.findByEnabledTrueOrderBySortOrderAscIdAsc().stream()
                 .map(e -> new ExampleView(e.getExampleId(), e.getName(), e.getDescription(), e.getIcon(),
-                        FullstackExampleAdminController.readEntities(e, objectMapper)))
+                        FullstackExampleAdminController.readEntities(e, objectMapper),
+                        FullstackExampleAdminController.readJson(e.getPages(), e, objectMapper),
+                        FullstackExampleAdminController.readJson(e.getSettings(), e, objectMapper)))
                 .toList();
     }
 }

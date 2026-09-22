@@ -73,6 +73,8 @@ function useBreakdown(path: string, field: string, labels?: Record<string, strin
       })
       .catch(() => { if (active) setFailed(true) })
     return () => { active = false }
+    // `labels` is a module-level constant (the CHARTS entry), so it never changes identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, field])
 
   return { data, failed, sampled }

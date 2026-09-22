@@ -125,6 +125,7 @@ class GeneratedFrontendBuildSmokeTests {
         // so each t()/LOCALE call site is type-checked.
         Path project = fetchFullstackFrontend(workDir, "en", "react-tailwind-crud", false);
         runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
         runPnpm(project, "run", "build");
     }
 
@@ -134,6 +135,7 @@ class GeneratedFrontendBuildSmokeTests {
         // templates also read t()), RTL on as the brand is.
         Path project = fetchFullstackFrontend(workDir, "he", "react-menora-digital-crud", true);
         runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
         runPnpm(project, "run", "build");
     }
 
@@ -143,10 +145,53 @@ class GeneratedFrontendBuildSmokeTests {
         // type-check and lint them in the LTR/English configuration too.
         Path project = fetchFullstackFrontend(workDir, "en", "react-menora-digital-crud", false);
         runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendPageLayoutsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // The Tickets example's page layout: a dashboard with every widget kind, a tabs page over
+        // hidden list pages with preset filters, plain list pages.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackPagesIntegrationTests.exampleBody("tickets", "react-tailwind-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraPageLayoutsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // The Orders layout on the Menora set: its own Tabs-port screen, the borrowed dashboard.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackPagesIntegrationTests.exampleBody("orders", "react-menora-digital-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
         runPnpm(project, "run", "build");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * Lints the whole generated frontend with no warnings allowed: the screens gate their imports
+     * (t, the enum label consts, onNavigate) on use, which only eslint's no-unused-vars catches, and
+     * the generated pre-commit hook runs the same lint.
+     */
+    private void lintAll(Path project) throws Exception {
+        runPnpm(project, "exec", "eslint", "--max-warnings", "0", ".");
+    }
+
+    /** POSTs a fullstack request, unpacks the ZIP and returns the generated {@code frontend/}. */
+    private Path postAndExtractFrontend(Path workDir, Map<String, Object> body) throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> r = rest.exchange("/starter-fullstack.zip", HttpMethod.POST,
+                new HttpEntity<>(body, headers), byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Path frontend = extract(workDir, r.getBody()).resolve("frontend");
+        assertThat(Files.isDirectory(frontend)).as("generated frontend/ directory").isTrue();
+        return frontend;
+    }
 
     /**
      * POSTs a rich fullstack request (two related entities with every field kind, all list views,

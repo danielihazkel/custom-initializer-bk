@@ -39,11 +39,16 @@
     { "source": "DetailDrawer.tsx", "path": "src/shared/ui/DetailDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 145 },
     { "source": "useTheme.ts", "path": "src/shared/ui/useTheme.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147 },
     { "source": "shared-ui-barrel.ts", "path": "src/shared/ui/index.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 148 },
+    { "source": "widgets.tsx", "path": "src/shared/ui/widgets.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 149, "gatedBy": "hasDashboardPages" },
 
     { "source": "DashboardPage.tsx.mustache", "path": "src/pages/dashboard/ui/DashboardPage.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 150 },
     { "source": "dashboard-barrel.ts.mustache", "path": "src/pages/dashboard/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 152 },
 
     { "source": "pages-barrel.ts.mustache", "path": "src/pages/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 156 },
+
+    { "source": "ScreenEntityList.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 160, "gatedBy": "pageIsEntityList" },
+    { "source": "ScreenDashboard.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 161, "gatedBy": "pageIsDashboard" },
+    { "source": "ScreenTabs.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 162, "gatedBy": "pageIsTabs" },
 
     { "source": "EntityType.ts.mustache", "path": "src/entities/{{entityNameKebab}}/model/types.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 200 },
     { "source": "useEntity.ts.mustache", "path": "src/entities/{{entityNameKebab}}/api/use{{EntityName}}.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 210 },

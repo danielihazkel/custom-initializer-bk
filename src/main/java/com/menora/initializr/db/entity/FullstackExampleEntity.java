@@ -39,6 +39,15 @@ public class FullstackExampleEntity {
     @Column(nullable = false)
     private String entities;
 
+    /** Optional frontend page layout (the {@code pages} of a fullstack request), JSON text. */
+    @Lob
+    private String pages;
+
+    /** Optional editor settings the example applies on load (template sets, scaffold options,
+     *  locale, dashboard copy, palette), a JSON object as text. */
+    @Lob
+    private String settings;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
@@ -57,6 +66,10 @@ public class FullstackExampleEntity {
     public void setIcon(String icon) { this.icon = icon; }
     public String getEntities() { return entities; }
     public void setEntities(String entities) { this.entities = entities; }
+    public String getPages() { return pages; }
+    public void setPages(String pages) { this.pages = pages; }
+    public String getSettings() { return settings; }
+    public void setSettings(String settings) { this.settings = settings; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     public boolean isEnabled() { return enabled; }

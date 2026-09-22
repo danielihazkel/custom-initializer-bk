@@ -195,6 +195,7 @@ public class DataSeeder implements SmartInitializingSingleton {
                     f.get("substitutionType").asText()));
             row.setFileType(EntityTemplateFileEntity.FileType.valueOf(f.get("fileType").asText()));
             row.setPerEntity(f.hasNonNull("perEntity") && f.get("perEntity").asBoolean());
+            row.setPerPage(f.hasNonNull("perPage") && f.get("perPage").asBoolean());
             row.setSortOrder(f.hasNonNull("sortOrder") ? f.get("sortOrder").asInt() : 0);
             row.setGatedBy(f.hasNonNull("gatedBy") ? f.get("gatedBy").asText() : null);
             entityTemplateFileRepo.save(row);
@@ -607,6 +608,8 @@ public class DataSeeder implements SmartInitializingSingleton {
             e.setSortOrder(ex.path("sortOrder").asInt(0));
             e.setEnabled(ex.path("enabled").asBoolean(true));
             e.setEntities(mapper.writeValueAsString(ex.get("entities")));
+            if (ex.hasNonNull("pages")) e.setPages(mapper.writeValueAsString(ex.get("pages")));
+            if (ex.hasNonNull("settings")) e.setSettings(mapper.writeValueAsString(ex.get("settings")));
             fullstackExampleRepo.save(e);
         }
     }

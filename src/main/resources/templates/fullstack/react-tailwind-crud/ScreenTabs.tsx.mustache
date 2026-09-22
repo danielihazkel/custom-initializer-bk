@@ -1,0 +1,56 @@
+import { useState } from 'react'
+{{#usesT}}
+import { t } from '@shared/i18n'
+{{/usesT}}
+{{#tabs}}
+import { {{TargetName}}Screen } from './{{TargetName}}Screen'
+{{/tabs}}
+
+const TABS = [
+{{#tabs}}
+  { id: '{{tabId}}', label: {{tabTitleExpr}} },
+{{/tabs}}
+]
+{{#needsNavigate}}
+
+interface Props {
+  onNavigate: (view: string) => void
+}
+{{/needsNavigate}}
+
+export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+  const [active, setActive] = useState(0)
+  return (
+    <div>
+      <div
+        role="tablist"
+        aria-label={ {{pageTitleExpr}} }
+        className="flex gap-1 overflow-x-auto border-b border-border bg-surface px-4 md:px-8"
+      >
+        {TABS.map((tab, i) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            id={`${tab.id}-tab`}
+            aria-selected={active === i}
+            aria-controls={`${tab.id}-panel`}
+            onClick={() => setActive(i)}
+            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+              active === i ? 'border-brand text-fg' : 'border-transparent text-muted hover:text-fg'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+{{#tabs}}
+      {active === {{tabIndex}} && (
+        <div role="tabpanel" id="{{tabId}}-panel" aria-labelledby="{{tabId}}-tab">
+          <{{TargetName}}Screen{{#targetNeedsNavigate}} onNavigate={onNavigate}{{/targetNeedsNavigate}} />
+        </div>
+      )}
+{{/tabs}}
+    </div>
+  )
+}

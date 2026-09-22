@@ -1,0 +1,39 @@
+import { useState } from 'react'
+{{#usesT}}
+import { t } from '@shared/i18n'
+{{/usesT}}
+import { Tabs } from '@shared/ui/menora'
+{{#tabs}}
+import { {{TargetName}}Screen } from './{{TargetName}}Screen'
+{{/tabs}}
+
+const TABS = [
+{{#tabs}}
+  { id: '{{tabId}}', label: {{tabTitleExpr}}, panelId: '{{tabId}}-panel' },
+{{/tabs}}
+]
+{{#needsNavigate}}
+
+interface Props {
+  onNavigate: (view: string) => void
+}
+{{/needsNavigate}}
+
+/** Menora Tabs strip (bare: each embedded page brings its own panel), one page per tab. */
+export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+  const [active, setActive] = useState(0)
+  return (
+    <div>
+      <div className="mx-auto max-w-[1283px] px-4 pt-6 md:px-6">
+        <Tabs items={TABS} activeIndex={active} onChange={setActive} ariaLabel={ {{pageTitleExpr}} } bare />
+      </div>
+{{#tabs}}
+      {active === {{tabIndex}} && (
+        <div role="tabpanel" id="{{tabId}}-panel" aria-labelledby="{{tabId}}-tab">
+          <{{TargetName}}Screen{{#targetNeedsNavigate}} onNavigate={onNavigate}{{/targetNeedsNavigate}} />
+        </div>
+      )}
+{{/tabs}}
+    </div>
+  )
+}

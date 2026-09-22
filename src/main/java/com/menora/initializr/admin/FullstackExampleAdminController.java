@@ -7,16 +7,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.config.WizardArgumentException;
 import com.menora.initializr.db.entity.FullstackExampleEntity;
 import com.menora.initializr.db.repository.FullstackExampleRepository;
+import com.menora.initializr.fullstack.EntityDefinition;
+import com.menora.initializr.fullstack.FullstackPageValidator;
 import com.menora.initializr.fullstack.FullstackRequestValidator;
 import com.menora.initializr.fullstack.FullstackStarterRequest;
 import com.menora.initializr.fullstack.FullstackStarterRequest.EntityDefinitionDto;
+import com.menora.initializr.fullstack.FullstackStarterRequest.PageDefinitionDto;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -44,12 +49,20 @@ public class FullstackExampleAdminController {
 
     /** Admin wire shape — the entity with {@code entities} as parsed JSON. */
     public record ExampleAdminView(Long id, String exampleId, String name, String description, String icon,
-                                   JsonNode entities, int sortOrder, boolean enabled) {
+                                   JsonNode entities, JsonNode pages, JsonNode settings,
+                                   int sortOrder, boolean enabled) {
     }
 
     public record ExampleRequest(String exampleId, String name, String description, String icon,
-                                 JsonNode entities, Integer sortOrder, Boolean enabled) {
+                                 JsonNode entities, JsonNode pages, JsonNode settings,
+                                 Integer sortOrder, Boolean enabled) {
     }
+
+    /** Keys an example's {@code settings} object may carry — the editor state it applies on load. */
+    static final Set<String> SETTINGS_STRING_KEYS = Set.of(
+            "dashboardTitle", "dashboardOverview", "locale", "backendTemplateSet", "frontendTemplateSet",
+            "colorPalette");
+    static final Pattern SCAFFOLD_OPT = Pattern.compile("^[a-zA-Z]{1,40}$");
 
     @GetMapping
     public List<ExampleAdminView> list() {
@@ -111,6 +124,8 @@ public class FullstackExampleAdminController {
         e.setDescription(description);
         e.setIcon(icon);
         e.setEntities(validateEntities(body.entities(), objectMapper));
+        e.setPages(validatePages(body.entities(), body.pages(), objectMapper));
+        e.setSettings(validateSettings(body.settings(), objectMapper));
         e.setSortOrder(body.sortOrder() == null ? 0 : body.sortOrder());
         e.setEnabled(body.enabled() == null || body.enabled());
     }
@@ -150,9 +165,95 @@ public class FullstackExampleAdminController {
         return json;
     }
 
+    /**
+     * Checks {@code pages} is a page layout the generator accepts for {@code entities} (which must
+     * already have passed {@link #validateEntities}) and returns it as compact JSON text, or null
+     * when absent/empty (the classic layout).
+     */
+    public static String validatePages(JsonNode entities, JsonNode pages, ObjectMapper objectMapper) {
+        if (pages == null || pages.isNull() || (pages.isArray() && pages.isEmpty())) return null;
+        if (!pages.isArray()) throw new InvalidExampleException("pages must be a JSON array");
+        List<PageDefinitionDto> dtos;
+        try {
+            dtos = objectMapper.convertValue(pages, new TypeReference<List<PageDefinitionDto>>() {});
+        } catch (IllegalArgumentException ex) {
+            throw new InvalidExampleException("pages do not match the fullstack page shape: " + ex.getMessage());
+        }
+        try {
+            List<EntityDefinition> converted = FullstackRequestValidator.validateAndConvert(new FullstackStarterRequest(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null,
+                    null, null, null, null, null,
+                    objectMapper.convertValue(entities, new TypeReference<List<EntityDefinitionDto>>() {})));
+            FullstackPageValidator.validateAndConvert(dtos, converted);
+        } catch (WizardArgumentException ex) {
+            throw new InvalidExampleException(ex.getMessage());
+        }
+        return toJson(pages, "pages", objectMapper);
+    }
+
+    /**
+     * Checks {@code settings} is an object of known keys — strings, plus {@code scaffold} as an
+     * array of option names — and returns it as compact JSON text, or null when absent/empty.
+     * Template-set and palette keys are not resolved here: the editor ignores a key it can't match.
+     */
+    public static String validateSettings(JsonNode settings, ObjectMapper objectMapper) {
+        if (settings == null || settings.isNull() || (settings.isObject() && settings.isEmpty())) return null;
+        if (!settings.isObject()) throw new InvalidExampleException("settings must be a JSON object");
+        for (Iterator<Map.Entry<String, JsonNode>> it = settings.fields(); it.hasNext(); ) {
+            Map.Entry<String, JsonNode> en = it.next();
+            String key = en.getKey();
+            JsonNode v = en.getValue();
+            if (SETTINGS_STRING_KEYS.contains(key)) {
+                if (!v.isTextual() || v.asText().length() > 500) {
+                    throw new InvalidExampleException("settings." + key + " must be a string of at most 500 characters");
+                }
+                if (key.equals("locale") && !Set.of("en", "he").contains(v.asText())) {
+                    throw new InvalidExampleException("settings.locale must be 'en' or 'he'");
+                }
+            } else if (key.equals("scaffold")) {
+                if (!v.isArray() || v.size() > 20) {
+                    throw new InvalidExampleException("settings.scaffold must be an array of at most 20 option names");
+                }
+                for (JsonNode opt : v) {
+                    if (!opt.isTextual() || !SCAFFOLD_OPT.matcher(opt.asText()).matches()) {
+                        throw new InvalidExampleException("settings.scaffold holds an invalid option name: " + opt);
+                    }
+                }
+            } else {
+                throw new InvalidExampleException("settings." + key + " is not a known setting (expected one of "
+                        + new java.util.TreeSet<>(SETTINGS_STRING_KEYS) + " or scaffold)");
+            }
+        }
+        return toJson(settings, "settings", objectMapper);
+    }
+
+    private static String toJson(JsonNode node, String what, ObjectMapper objectMapper) {
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(node);
+        } catch (JsonProcessingException ex) {
+            throw new InvalidExampleException(what + " are not serializable: " + ex.getOriginalMessage());
+        }
+        if (json.length() > MAX_ENTITIES_CHARS) {
+            throw new InvalidExampleException(what + " exceed " + MAX_ENTITIES_CHARS + " characters");
+        }
+        return json;
+    }
+
     private ExampleAdminView view(FullstackExampleEntity e) {
         return new ExampleAdminView(e.getId(), e.getExampleId(), e.getName(), e.getDescription(), e.getIcon(),
-                readEntities(e, objectMapper), e.getSortOrder(), e.isEnabled());
+                readEntities(e, objectMapper), readJson(e.getPages(), e, objectMapper),
+                readJson(e.getSettings(), e, objectMapper), e.getSortOrder(), e.isEnabled());
+    }
+
+    /** Parses an optional stored JSON column ({@code pages}/{@code settings}); null stays null. */
+    public static JsonNode readJson(String json, FullstackExampleEntity e, ObjectMapper objectMapper) {
+        if (json == null) return null;
+        try {
+            return objectMapper.readTree(json);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Stored JSON of example " + e.getExampleId() + " is not valid", ex);
+        }
     }
 
     public static JsonNode readEntities(FullstackExampleEntity e, ObjectMapper objectMapper) {

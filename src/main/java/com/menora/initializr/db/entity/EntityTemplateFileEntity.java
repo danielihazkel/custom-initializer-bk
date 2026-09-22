@@ -12,6 +12,8 @@ import jakarta.validation.constraints.Size;
  * <p>When {@code perEntity=true}, this file is rendered once per user-supplied entity
  * (e.g. {@code UserController.java}, {@code OrderController.java}). When false, it is
  * rendered once total (shared infrastructure like {@code package.json} or {@code App.tsx}).
+ * When {@code perPage=true} it is rendered once per page of the request's frontend page layout
+ * (the {@code src/app/screens/*} files) — and not at all for the classic layout.
  */
 @Entity
 @Table(name = "initializer_entity_template_file")
@@ -51,6 +53,9 @@ public class EntityTemplateFileEntity {
     @Column(name = "per_entity", nullable = false)
     private boolean perEntity = false;
 
+    @Column(name = "per_page", nullable = false)
+    private boolean perPage = false;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
@@ -77,6 +82,8 @@ public class EntityTemplateFileEntity {
     public void setFileType(FileType fileType) { this.fileType = fileType; }
     public boolean isPerEntity() { return perEntity; }
     public void setPerEntity(boolean perEntity) { this.perEntity = perEntity; }
+    public boolean isPerPage() { return perPage; }
+    public void setPerPage(boolean perPage) { this.perPage = perPage; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     public String getGatedBy() { return gatedBy; }
