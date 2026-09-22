@@ -19,17 +19,26 @@ const NAV: { id: View; label: string }[] = [
 ]
 {{/hasPages}}
 {{#hasPages}}
-{{#navPages}}
+{{#routePages}}
 import { {{PageName}}Screen } from '@app/screens/{{PageName}}Screen'
-{{/navPages}}
+{{/routePages}}
 
-type View = {{#navPages}}{{^-first}} | {{/-first}}'{{pageId}}'{{/navPages}}
+type View = {{#routePages}}{{^-first}} | {{/-first}}'{{pageId}}'{{/routePages}}
 
 const NAV: { id: View; label: string }[] = [
 {{#navPages}}
   { id: '{{pageId}}', label: {{pageTitleExpr}} },
 {{/navPages}}
 ]
+{{#hasRecordPages}}
+
+// Record pages open from a row (with its id) and stay out of the nav; the header still names them.
+const RECORD_TITLES: Partial<Record<View, string>> = {
+{{#recordPages}}
+  '{{pageId}}': {{pageTitleExpr}},
+{{/recordPages}}
+}
+{{/hasRecordPages}}
 {{/hasPages}}
 
 /**
@@ -41,13 +50,25 @@ const NAV: { id: View; label: string }[] = [
 export default function App() {
   const [view, setView] = useState<View>('{{#hasPages}}{{initialPageId}}{{/hasPages}}{{^hasPages}}dashboard{{/hasPages}}')
   const [navOpen, setNavOpen] = useState(false)
+{{#hasRecordPages}}
+  // The record id a record page was opened with.
+  const [routeArg, setRouteArg] = useState<string | undefined>(undefined)
+{{/hasRecordPages}}
   const { isDark } = useMenoraTheme()
   const current = NAV.find(n => n.id === view)
 
-  const go = (id: View) => {
+  const go = (id: View{{#hasRecordPages}}, arg?: string{{/hasRecordPages}}) => {
     setView(id)
+{{#hasRecordPages}}
+    setRouteArg(arg)
+{{/hasRecordPages}}
     setNavOpen(false)
   }
+{{#hasNavigatingScreens}}
+
+  // Screens navigate by page id (a record page also takes the record's key).
+  const goView = (v: string{{#hasRecordPages}}, arg?: string{{/hasRecordPages}}) => go(v as View{{#hasRecordPages}}, arg{{/hasRecordPages}})
+{{/hasNavigatingScreens}}
 
   const navItems = NAV.map(({ id, label }) => ({ label, current: view === id, onClick: () => go(id) }))
 
@@ -70,7 +91,7 @@ export default function App() {
             </span>
             <div className="hidden leading-tight sm:block">
               <div className="text-[11px] uppercase tracking-wider text-muted">{{artifactId}}</div>
-              <h1 className="text-sm font-semibold text-fg">{current?.label ?? t('dashboard')}</h1>
+              <h1 className="text-sm font-semibold text-fg">{current?.label ?? {{#hasRecordPages}}RECORD_TITLES[view] ?? {{/hasRecordPages}}t('dashboard')}</h1>
             </div>
           </div>
 
@@ -97,9 +118,14 @@ export default function App() {
         {view === '{{entityNameKebab}}' && <{{EntityName}}Page />}
 {{/entities}}
 {{/hasPages}}
-{{#navPages}}
-        {view === '{{pageId}}' && <{{PageName}}Screen{{#needsNavigate}} onNavigate={v => go(v as View)}{{/needsNavigate}} />}
-{{/navPages}}
+{{#routePages}}
+{{^pageIsRecord}}
+        {view === '{{pageId}}' && <{{PageName}}Screen{{#needsNavigate}} onNavigate={goView}{{/needsNavigate}} />}
+{{/pageIsRecord}}
+{{#pageIsRecord}}
+        {view === '{{pageId}}' && routeArg && <{{PageName}}Screen key={routeArg} recordId={routeArg}{{#needsNavigate}} onNavigate={goView}{{/needsNavigate}} />}
+{{/pageIsRecord}}
+{{/routePages}}
       </main>
 
       <Footer legal="{{artifactId}} · v0.0.1" />

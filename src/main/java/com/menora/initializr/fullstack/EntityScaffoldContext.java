@@ -121,14 +121,7 @@ public final class EntityScaffoldContext {
             entityByPascal.put((String) ev.get("EntityName"), ev);
         }
         Map<String, Map<String, Object>> summaries = (Map<String, Map<String, Object>>) ctx.get(ENTITY_SUMMARIES_KEY);
-
-        // Where a dashboard widget links to: the first visible list page of its entity.
-        Map<String, String> listPageByEntity = new LinkedHashMap<>();
-        for (PageDefinition p : pages) {
-            if (p.type() == PageDefinition.Type.ENTITY_LIST && !p.hidden()) {
-                listPageByEntity.putIfAbsent(p.entity(), p.id());
-            }
-        }
+        PageLinks links = PageLinks.of(pages);
 
         Map<String, Map<String, Object>> viewById = new LinkedHashMap<>();
         for (PageDefinition p : pages) {
@@ -139,6 +132,8 @@ public final class EntityScaffoldContext {
             pv.put("pageIsEntityList", p.type() == PageDefinition.Type.ENTITY_LIST);
             pv.put("pageIsDashboard", p.type() == PageDefinition.Type.DASHBOARD);
             pv.put("pageIsTabs", p.type() == PageDefinition.Type.TABS);
+            pv.put("pageIsMasterDetail", p.type() == PageDefinition.Type.MASTER_DETAIL);
+            pv.put("pageIsRecord", p.type() == PageDefinition.Type.RECORD);
             pv.put("hasPageDescription", p.description() != null);
             pv.put("pageDescriptionExpr", p.description() == null ? null : tsString(p.description()));
             pv.put("needsNavigate", false);
@@ -150,13 +145,74 @@ public final class EntityScaffoldContext {
                     pv.put("entityNameKebab", ev.get("entityNameKebab"));
                     pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
                     pv.put("presetFilterTs", presetFilterTs(p.presetFilter()));
+                    putRecordLink(pv, "", p.entity(), links, summaries);
+                    pv.put("needsNavigate", pv.get("hasRecordPage"));
                     pv.put("navIcon", "Table2");
                     defaultTitleExpr = tsString((String) ev.get("entityLabelPlural"));
                 }
                 case DASHBOARD -> {
-                    putDashboard(pv, p, entityByPascal, summaries, listPageByEntity);
+                    putDashboard(pv, p, entityByPascal, summaries, links);
                     pv.put("navIcon", "LayoutDashboard");
                     defaultTitleExpr = "t('dashboard')";
+                }
+                case MASTER_DETAIL -> {
+                    Map<String, Object> parent = entityByPascal.get(Naming.toPascalCase(p.parent()));
+                    Map<String, Object> child = entityByPascal.get(Naming.toPascalCase(p.child()));
+                    Map<String, Object> parentSummary = summaries.get(p.parent().toLowerCase(Locale.ROOT));
+                    pv.put("parentEntityName", parent.get("EntityName"));
+                    pv.put("parentEntityNameKebab", parent.get("entityNameKebab"));
+                    pv.put("parentPkName", parentSummary.get("pkName"));
+                    pv.put("parentLabelField", parentSummary.get("labelField"));
+                    pv.put("parentHasLabel", parentSummary.get("labelField") != null);
+                    pv.put("parentSearchable", parent.get("hasStringFields"));
+                    pv.put("parentLabelPluralExpr", tsString((String) parent.get("entityLabelPlural")));
+                    pv.put("parentLabelExpr", tsString((String) parent.get("entityLabel")));
+                    pv.put("childEntityName", child.get("EntityName"));
+                    pv.put("childEntityNameKebab", child.get("entityNameKebab"));
+                    pv.put("childLabelPluralExpr", tsString((String) child.get("entityLabelPlural")));
+                    pv.put("viaParam", Naming.toCamelCase(p.via()) + "Id");
+                    putRecordLink(pv, "parent", p.parent(), links, summaries);
+                    putRecordLink(pv, "child", p.child(), links, summaries);
+                    pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("parentHasRecordPage"))
+                            || Boolean.TRUE.equals(pv.get("childHasRecordPage")));
+                    pv.put("navIcon", "PanelLeft");
+                    defaultTitleExpr = tsString((String) parent.get("entityLabelPlural"));
+                }
+                case RECORD -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    Map<String, Object> summary = summaries.get(p.entity().toLowerCase(Locale.ROOT));
+                    pv.put("EntityName", ev.get("EntityName"));
+                    pv.put("entityNameKebab", ev.get("entityNameKebab"));
+                    pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
+                    pv.put("pkName", summary.get("pkName"));
+                    pv.put("labelField", summary.get("labelField"));
+                    pv.put("hasLabel", summary.get("labelField") != null);
+                    pv.put("entityLabelExpr", tsString((String) ev.get("entityLabel")));
+                    String back = links.homeOf(p.entity());
+                    pv.put("hasBack", back != null);
+                    pv.put("backPageId", back);
+                    List<Map<String, Object>> tabViews = new ArrayList<>();
+                    boolean navigates = back != null;
+                    for (int i = 0; i < p.childTabs().size(); i++) {
+                        PageDefinition.ChildTab tab = p.childTabs().get(i);
+                        Map<String, Object> cv = entityByPascal.get(Naming.toPascalCase(tab.entity()));
+                        Map<String, Object> tv = new LinkedHashMap<>();
+                        // Tab 0 is the record's own details.
+                        tv.put("tabIndex", i + 1);
+                        tv.put("tabId", cv.get("entityNameKebab"));
+                        tv.put("childEntityName", cv.get("EntityName"));
+                        tv.put("childEntityNameKebab", cv.get("entityNameKebab"));
+                        tv.put("viaParam", Naming.toCamelCase(tab.via()) + "Id");
+                        tv.put("tabTitleExpr", tsString((String) cv.get("entityLabelPlural")));
+                        putRecordLink(tv, "child", tab.entity(), links, summaries);
+                        navigates |= Boolean.TRUE.equals(tv.get("childHasRecordPage"));
+                        tabViews.add(tv);
+                    }
+                    pv.put("childTabs", tabViews);
+                    pv.put("hasChildTabs", !tabViews.isEmpty());
+                    pv.put("needsNavigate", navigates);
+                    pv.put("navIcon", "Table2");
+                    defaultTitleExpr = tsString((String) ev.get("entityLabel"));
                 }
                 default -> {
                     pv.put("navIcon", "Layers");
@@ -194,36 +250,93 @@ public final class EntityScaffoldContext {
         }
 
         // Screens import the i18n `t` only when one of their label expressions calls it — the
-        // generated lint rejects an unused import.
+        // generated lint rejects an unused import. Master-detail and record screens always use it.
         for (Map<String, Object> pv : viewById.values()) {
             List<Object> exprs = new ArrayList<>();
             exprs.add(pv.get("pageTitleExpr"));
-            for (String listKey : List.of("widgets", "tabs")) {
+            for (String listKey : List.of("widgets", "tabs", "childTabs")) {
                 for (Map<String, Object> item : (List<Map<String, Object>>) pv.getOrDefault(listKey, List.of())) {
                     exprs.add(item.get("titleExpr"));
                     exprs.add(item.get("tabTitleExpr"));
                 }
             }
-            pv.put("usesT", exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
+            pv.put("usesT", Boolean.TRUE.equals(pv.get("pageIsMasterDetail")) || Boolean.TRUE.equals(pv.get("pageIsRecord"))
+                    || exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
         }
 
         List<Map<String, Object>> all = new ArrayList<>(viewById.values());
         List<Map<String, Object>> nav = all.stream().filter(v -> !Boolean.TRUE.equals(v.get("hidden"))).toList();
+        List<Map<String, Object>> records = all.stream().filter(v -> Boolean.TRUE.equals(v.get("pageIsRecord"))).toList();
+        List<Map<String, Object>> routes = new ArrayList<>(nav);
+        routes.addAll(records);
         ctx.put("pages", all);
         ctx.put("navPages", nav);
+        // Everything the shell can show: the nav pages, plus record pages (opened with an id).
+        ctx.put("routePages", routes);
+        ctx.put("recordPages", records);
+        ctx.put("hasRecordPages", !records.isEmpty());
+        // The shell declares its `goView` helper only when some screen takes onNavigate.
+        ctx.put("hasNavigatingScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("needsNavigate"))));
         ctx.put("initialPageId", nav.get(0).get("pageId"));
-        for (String icon : List.of("Table2", "LayoutDashboard", "Layers")) {
+        for (String icon : List.of("Table2", "LayoutDashboard", "Layers", "PanelLeft")) {
             ctx.put("navUses" + icon, nav.stream().anyMatch(v -> icon.equals(v.get("navIcon"))));
         }
         ctx.put("hasDashboardPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsDashboard"))));
         ctx.put("hasTabsPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTabs"))));
     }
 
+    /**
+     * Where the pages of a layout link to: an entity's record page (opened from its rows), and its
+     * "home" — the first visible list page, else a visible master-detail page listing it as the
+     * parent, else a visible tabs page embedding one of its list pages.
+     */
+    private record PageLinks(Map<String, String> recordPageByEntity, Map<String, String> homeByEntity) {
+
+        static PageLinks of(List<PageDefinition> pages) {
+            Map<String, String> records = new LinkedHashMap<>();
+            Map<String, String> homes = new LinkedHashMap<>();
+            Map<String, PageDefinition> byId = new LinkedHashMap<>();
+            for (PageDefinition p : pages) byId.put(p.id(), p);
+            for (PageDefinition p : pages) {
+                if (p.type() == PageDefinition.Type.RECORD) records.put(p.entity(), p.id());
+                if (p.type() == PageDefinition.Type.ENTITY_LIST && !p.hidden()) homes.putIfAbsent(p.entity(), p.id());
+            }
+            for (PageDefinition p : pages) {
+                if (p.type() == PageDefinition.Type.MASTER_DETAIL && !p.hidden()) homes.putIfAbsent(p.parent(), p.id());
+            }
+            for (PageDefinition p : pages) {
+                if (p.type() != PageDefinition.Type.TABS || p.hidden()) continue;
+                for (PageDefinition.Tab tab : p.tabs()) {
+                    PageDefinition target = byId.get(tab.page());
+                    if (target.type() == PageDefinition.Type.ENTITY_LIST) homes.putIfAbsent(target.entity(), p.id());
+                    if (target.type() == PageDefinition.Type.MASTER_DETAIL) homes.putIfAbsent(target.parent(), p.id());
+                }
+            }
+            return new PageLinks(records, homes);
+        }
+
+        String recordPageOf(String entity) { return recordPageByEntity.get(entity); }
+
+        String homeOf(String entity) { return homeByEntity.get(entity); }
+    }
+
+    /** {@code <prefix>HasRecordPage}/{@code <prefix>RecordPageId}/{@code <prefix>RecordPk} (prefix ""
+     *  gives {@code hasRecordPage}/{@code recordPageId}/{@code recordPk}): whether rows of {@code entity}
+     *  open on a record page, which one, and the key field whose value is the route argument. */
+    private static void putRecordLink(Map<String, Object> view, String prefix, String entity, PageLinks links,
+                                      Map<String, Map<String, Object>> summaries) {
+        String page = links.recordPageOf(entity);
+        view.put(prefix.isEmpty() ? "hasRecordPage" : prefix + "HasRecordPage", page != null);
+        view.put(prefix.isEmpty() ? "recordPageId" : prefix + "RecordPageId", page);
+        view.put(prefix.isEmpty() ? "recordPk" : prefix + "RecordPk",
+                summaries.get(entity.toLowerCase(Locale.ROOT)).get("pkName"));
+    }
+
     @SuppressWarnings("unchecked")
     private static void putDashboard(Map<String, Object> pv, PageDefinition p,
                                      Map<String, Map<String, Object>> entityByPascal,
                                      Map<String, Map<String, Object>> summaries,
-                                     Map<String, String> listPageByEntity) {
+                                     PageLinks links) {
         List<Map<String, Object>> widgetViews = new ArrayList<>();
         // The `<Enum>Labels` consts the bar charts read, grouped into one import per entity module
         // (deduped, declaration order).
@@ -240,7 +353,7 @@ public final class EntityScaffoldContext {
             wv.put("widgetIsBar", w.kind() == PageDefinition.WidgetKind.BAR);
             wv.put("widgetIsRecent", w.kind() == PageDefinition.WidgetKind.RECENT);
             wv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
-            String target = listPageByEntity.get(w.entity());
+            String target = links.homeOf(w.entity());
             wv.put("hasTarget", target != null);
             wv.put("targetPageId", target);
             needsNavigate |= target != null;
@@ -265,6 +378,9 @@ public final class EntityScaffoldContext {
                     wv.put("sortField", summary.get("pkName"));
                     Object labelField = summary.get("labelField");
                     wv.put("displayField", labelField != null ? labelField : summary.get("pkName"));
+                    // A recent row opens its record page, when the entity has one.
+                    putRecordLink(wv, "", w.entity(), links, summaries);
+                    needsNavigate |= Boolean.TRUE.equals(wv.get("hasRecordPage"));
                     defaultTitle = "t('recentX', { x: " + entityLabels + " })";
                 }
             }
@@ -462,6 +578,9 @@ public final class EntityScaffoldContext {
                 (Map<String, List<Map<String, Object>>>) projectContext.get(INVERSE_RELATIONS_KEY);
         ctx.putAll(entityViewModel(entity, summaries == null ? Map.of() : summaries,
                 inverses == null ? Map.of() : inverses));
+        // Page layouts only: the list page can be scoped to one parent through a relation filter
+        // (master-detail and record pages), so it takes a `scope` prop.
+        ctx.put("pageScopeable", Boolean.TRUE.equals(projectContext.get("hasPages")) && !entity.relations().isEmpty());
         // Per-entity scaffold-opt overrides: resolve `override ?? projectOpt` for every overridable
         // option and store it under the same optScaffold<X> key, so it shadows the project-level
         // value for this entity only. Both the per-entity templates ({{#optScaffoldCsvExport}} ...)

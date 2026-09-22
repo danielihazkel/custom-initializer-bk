@@ -378,19 +378,27 @@ too, or it is unreachable from the editor.
 
 Only when the request carries `pages`. Project context: `hasPages` (always set, false for the classic
 shell), `pages` (every page), `navPages` (visible ones, declaration order), `initialPageId`,
-`navUsesTable2`/`navUsesLayoutDashboard`/`navUsesLayers` (lucide imports), `hasDashboardPages`,
-`hasTabsPages`. Files with `perPage=true` render once per `pages` entry with that entry merged over
-the project context:
+`routePages` (nav pages + record pages — everything the shell can show), `recordPages`,
+`navUsesTable2`/`navUsesLayoutDashboard`/`navUsesLayers`/`navUsesPanelLeft` (lucide imports),
+`hasDashboardPages`, `hasTabsPages`, `hasRecordPages` (the shell keeps a `routeArg`) and
+`hasNavigatingScreens` (it declares `goView`). Files with `perPage=true` render once per `pages`
+entry with that entry merged over the project context:
 
 | Key | Meaning |
 |---|---|
 | `pageId`, `PageName` | slug and its PascalCase (`tickets-open` → `TicketsOpen`) |
-| `pageIsEntityList` / `pageIsDashboard` / `pageIsTabs` | the type — use as the file's `gatedBy` |
+| `pageIsEntityList` / `pageIsDashboard` / `pageIsTabs` / `pageIsMasterDetail` / `pageIsRecord` | the type — use as the file's `gatedBy` |
 | `pageTitleExpr`, `pageDescriptionExpr` | ready TS expressions (`'Escaped text'` or `t('dashboard')`) — splice unquoted |
 | `hidden`, `navIcon`, `needsNavigate`, `usesT` | nav flags; `needsNavigate`/`usesT` gate the `onNavigate` prop and the `t` import |
-| `EntityName`, `entityNameKebab`, `hasPresetFilter`, `presetFilterTs` | entity-list |
+| `EntityName`, `entityNameKebab`, `hasPresetFilter`, `presetFilterTs`, `hasRecordPage`, `recordPageId`, `recordPk` | entity-list |
 | `widgets[]` (`widgetIsKpi/Bar/Recent`, `titleExpr`, `path`, `hasTarget`, `targetPageId`, `groupBy`, `labelsRef`, `limit`, `sortField`, `displayField`), `usesKpi/Bar/Recent`, `labelImports[]` (`entityNameKebab`, `labelsRefs`) | dashboard |
 | `tabs[]` (`tabIndex`, `tabId`, `tabTitleExpr`, `TargetName`, `targetNeedsNavigate`) | tabs |
+| `parentEntityName`/`parentEntityNameKebab`/`parentPkName`/`parentLabelField`/`parentHasLabel`/`parentSearchable`/`parentLabelPluralExpr`, `childEntityName`/`childEntityNameKebab`/`childLabelPluralExpr`, `viaParam` (`<via>Id`), `parentHasRecordPage`/`parentRecordPageId`/`parentRecordPk` (and the `child…` trio) | master-detail |
+| `EntityName`, `entityNameKebab`, `entityNamePluralKebab`, `pkName`, `labelField`/`hasLabel`, `entityLabelExpr`, `hasBack`/`backPageId`, `childTabs[]` (`tabIndex` from 1, `tabId`, `childEntityName`, `childEntityNameKebab`, `viaParam`, `tabTitleExpr`, `childHasRecordPage`/`childRecordPageId`/`childRecordPk`), `hasChildTabs` | record |
+
+A per-entity companion flag, `pageScopeable` (`hasPages` and the entity has relations, set in
+`buildEntityContext`), gates the `scope` prop of `EntityPage` — the pinned relation filter a
+master-detail or record page passes for the selected parent.
 
 Row identity in the generated list views: `EntityPage` defines one `rowKey(row)` (the PK, or the
 `pkFields` joined with `/` for composite keys) and passes it to `Table`/`CardGrid`/`KanbanBoard`/

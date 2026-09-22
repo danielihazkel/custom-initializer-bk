@@ -1,0 +1,125 @@
+import { useEffect, useState } from 'react'
+{{#hasBack}}
+import { ArrowLeft } from 'lucide-react'
+{{/hasBack}}
+import { api } from '@shared/api'
+import { Alert } from '@shared/ui'
+import { t } from '@shared/i18n'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
+{{#childTabs}}
+import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
+{{/childTabs}}
+
+interface Props {
+  /** The record's key, as the shell received it from the row that opened this page. */
+  recordId: string
+{{#needsNavigate}}
+  onNavigate: (view: string, arg?: string) => void
+{{/needsNavigate}}
+}
+{{#hasChildTabs}}
+
+const TABS = [
+  { id: 'details', label: t('xDetails', { x: {{entityLabelExpr}} }) },
+{{#childTabs}}
+  { id: '{{tabId}}', label: {{tabTitleExpr}} },
+{{/childTabs}}
+]
+{{/hasChildTabs}}
+
+export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
+  const [record, setRecord] = useState<{{EntityName}} | null>(null)
+  const [error, setError] = useState<string | null>(null)
+{{#hasChildTabs}}
+  const [active, setActive] = useState(0)
+{{/hasChildTabs}}
+
+  // The shell remounts this screen for every record id, so one fetch per mount is enough.
+  useEffect(() => {
+    let current = true
+    api.get<{{EntityName}}>('/api/{{entityNamePluralKebab}}/' + encodeURIComponent(recordId))
+      .then(r => { if (current) setRecord(r) })
+      .catch(e => { if (current) setError(e instanceof Error ? e.message : String(e)) })
+    return () => { current = false }
+  }, [recordId])
+
+  const heading = record == null
+    ? {{entityLabelExpr}}
+{{#hasLabel}}
+    : record.{{labelField}} == null || record.{{labelField}} === '' ? '#' + String(record.{{pkName}}) : String(record.{{labelField}})
+{{/hasLabel}}
+{{^hasLabel}}
+    : {{entityLabelExpr}} + ' #' + String(record.{{pkName}})
+{{/hasLabel}}
+
+  return (
+    <div className="mx-auto max-w-6xl p-4 md:p-8">
+{{#hasBack}}
+      <button
+        type="button"
+        onClick={() => onNavigate('{{backPageId}}')}
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-fg"
+      >
+        <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
+        {t('back')}
+      </button>
+{{/hasBack}}
+      <div className="mb-6">
+        <div className="text-xs font-medium uppercase tracking-wider text-muted">{ {{pageTitleExpr}} }</div>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-fg">{heading}</h1>
+{{#hasPageDescription}}
+        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      </div>
+      {error && <Alert>{error}</Alert>}
+      {!error && record == null && <div className="text-sm text-muted">{t('loading')}</div>}
+      {record && (
+{{#hasChildTabs}}
+        <>
+          <div role="tablist" aria-label={heading} className="mb-4 flex gap-1 overflow-x-auto border-b border-border">
+            {TABS.map((tab, i) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                id={`${tab.id}-tab`}
+                aria-selected={active === i}
+                aria-controls={`${tab.id}-panel`}
+                onClick={() => setActive(i)}
+                className={`-mb-px whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+                  active === i ? 'border-brand text-fg' : 'border-transparent text-muted hover:text-fg'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          {active === 0 && (
+            <div role="tabpanel" id="details-panel" aria-labelledby="details-tab" className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+              <{{EntityName}}Detail value={record} />
+            </div>
+          )}
+{{#childTabs}}
+          {active === {{tabIndex}} && (
+            <div role="tabpanel" id="{{tabId}}-panel" aria-labelledby="{{tabId}}-tab">
+              <{{childEntityName}}Page
+                scope={ { param: '{{viaParam}}', value: record.{{pkName}} as string | number } }
+{{#childHasRecordPage}}
+                onOpenRecord={r => onNavigate('{{childRecordPageId}}', String(r.{{childRecordPk}}))}
+{{/childHasRecordPage}}
+              />
+            </div>
+          )}
+{{/childTabs}}
+        </>
+{{/hasChildTabs}}
+{{^hasChildTabs}}
+        <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+          <{{EntityName}}Detail value={record} />
+        </div>
+{{/hasChildTabs}}
+      )}
+    </div>
+  )
+}

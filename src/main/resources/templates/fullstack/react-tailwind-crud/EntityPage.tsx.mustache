@@ -34,7 +34,23 @@ const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?
 /** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
 const rowKey = (row: {{EntityName}}) => {{#hasCompositePk}}[{{#pkFields}}String(row.{{name}}){{^last}}, {{/last}}{{/pkFields}}].join('/'){{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as string | number{{/hasCompositePk}}
 
-export function {{EntityName}}Page({{#hasPages}}{{#hasFilters}}{ initialFilters }: { initialFilters?: FilterValues } = {}{{/hasFilters}}{{/hasPages}}) {
+{{#hasPages}}
+interface {{EntityName}}PageProps {
+{{#hasFilters}}
+  /** Filter values the page opens with (a preset-filtered list page). */
+  initialFilters?: FilterValues
+{{/hasFilters}}
+{{#pageScopeable}}
+  /** Pins a relation filter (e.g. the selected customer of a master-detail page): always applied,
+   *  hidden from the filter bar, and pre-filled into new records. */
+  scope?: { param: string; value: string | number }
+{{/pageScopeable}}
+  /** Opens a row on its record page instead of the quick-look drawer. */
+  onOpenRecord?: (row: {{EntityName}}) => void
+}
+
+{{/hasPages}}
+export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord }: {{EntityName}}PageProps = {}{{/hasPages}}) {
   const [page, setPage] = useState(0)
   const [size, setSize] = useState(20)
   const [sort, setSort] = useState<SortSpec | null>(null)
@@ -43,8 +59,17 @@ export function {{EntityName}}Page({{#hasPages}}{{#hasFilters}}{ initialFilters 
   // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
   const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>('{{initialView}}')
   const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
+{{#hasPages}}
+  // A layout with a record page for this entity opens rows there instead of in the drawer.
+  const openRow = onOpenRecord ?? setDetailRow
+{{/hasPages}}
 {{#hasFilters}}  const [filters, setFilters] = useState<FilterValues>({{#hasPages}}initialFilters ?? {}{{/hasPages}}{{^hasPages}}{}{{/hasPages}})
 {{/hasFilters}}
+{{#pageScopeable}}
+  // The scope always applies, whatever the filter bar holds, and its own filter is not offered.
+  const scopedFilters = scope ? { ...filters, [scope.param]: String(scope.value) } : filters
+  const visibleFilters = scope ? filterDescriptors.filter(f => f.name !== scope.param) : filterDescriptors
+{{/pageScopeable}}
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(t)
@@ -57,7 +82,7 @@ export function {{EntityName}}Page({{#hasPages}}{{#hasFilters}}{ initialFilters 
   const {
     items, totalElements, totalPages, pageNumber, pageSize,
     loading, error,{{#viewKanban}} reload,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
-  } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{/hasFilters}} })
+  } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/hasFilters}} })
 {{#mutable}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
   const [initial, setInitial] = useState<Partial<{{EntityName}}>>({})
@@ -73,9 +98,15 @@ export function {{EntityName}}Page({{#hasPages}}{{#hasFilters}}{ initialFilters 
 
 {{#hasFieldDefaults}}  // Declared field defaults, pre-filled into every new record (and used as the dirty baseline).
   const newDefaults = (): Partial<{{EntityName}}> => ({ {{#fields}}{{#hasDefault}}{{name}}: {{{defaultTs}}}, {{/hasDefault}}{{/fields}}})
-{{/hasFieldDefaults}}  function openNew() {
-    setEditing({{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}})
-    setInitial({{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}})
+{{/hasFieldDefaults}}{{#pageScopeable}}  // A new record inside a scope starts linked to it (a new order of the selected customer).
+  const newRecord = (): Partial<{{EntityName}}> => {
+    const record: Record<string, unknown> = {{#hasFieldDefaults}}{ ...newDefaults() }{{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}
+    if (scope) record[scope.param] = scope.value
+    return record as Partial<{{EntityName}}>
+  }
+{{/pageScopeable}}  function openNew() {
+    setEditing({{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}})
+    setInitial({{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}})
     setIsNew(true)
     setFormErrors({})
     setDrawerOpen(true)
@@ -299,7 +330,7 @@ export function {{EntityName}}Page({{#hasPages}}{{#hasFilters}}{ initialFilters 
       {error && <Alert>{error}</Alert>}
 {{#hasFilters}}
       <div className="mb-4">
-        <FilterBar filters={filterDescriptors} values={filters} onChange={setFilters} />
+        <FilterBar filters={{#pageScopeable}}{visibleFilters}{{/pageScopeable}}{{^pageScopeable}}{filterDescriptors}{{/pageScopeable}} values={filters} onChange={setFilters} />
       </div>
 {{/hasFilters}}{{#bulkSelectApplicable}}{{#viewTable}}      {selected.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/40 bg-brand/5 px-4 py-2.5">
@@ -361,7 +392,7 @@ export function {{EntityName}}Page({{#hasPages}}{{#hasFilters}}{ initialFilters 
           rows={items}
           rowKey={rowKey}
           loading={loading}
-          onView={setDetailRow}
+          onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
 {{#mutable}}          onEdit={openEdit}
           onDelete={setPendingDelete}
 {{/mutable}}          search={search}
@@ -378,7 +409,7 @@ export function {{EntityName}}Page({{#hasPages}}{{#hasFilters}}{ initialFilters 
           loading={loading}
           groupField="{{kanbanField}}"
           groupValues={[{{#kanbanColumns}}{ value: '{{value}}', label: {{labelExpr}} }{{^last}}, {{/last}}{{/kanbanColumns}}]}
-          onView={setDetailRow}
+          onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
           onEdit={openEdit}
           onDelete={setPendingDelete}
           onMove={onKanbanMove}
@@ -390,7 +421,7 @@ export function {{EntityName}}Page({{#hasPages}}{{#hasFilters}}{ initialFilters 
           rowKey={rowKey}
           loading={loading}
           dateField="{{calendarField}}"
-          onView={setDetailRow}
+          onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
         />
       ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
         <Table
@@ -398,7 +429,7 @@ export function {{EntityName}}Page({{#hasPages}}{{#hasFilters}}{ initialFilters 
           rows={items}
           rowKey={rowKey}
           loading={loading}
-          onView={setDetailRow}
+          onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
 {{#mutable}}          onEdit={openEdit}
           onDelete={setPendingDelete}
 {{/mutable}}          sort={sort}

@@ -8,7 +8,7 @@ import { {{labelsRefs}} } from '@entities/{{entityNameKebab}}'
 {{#needsNavigate}}
 
 interface Props {
-  onNavigate: (view: string) => void
+  onNavigate: (view: string, arg?: string) => void
 }
 {{/needsNavigate}}
 
@@ -55,6 +55,9 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
             sortField="{{sortField}}"
             displayField="{{displayField}}"
             limit={ {{limit}} }
+{{#hasRecordPage}}
+            onOpenRow={r => onNavigate('{{recordPageId}}', String(r['{{recordPk}}']))}
+{{/hasRecordPage}}
 {{#hasTarget}}
             onOpen={() => onNavigate('{{targetPageId}}')}
 {{/hasTarget}}

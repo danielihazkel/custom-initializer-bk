@@ -1,5 +1,11 @@
 import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
+{{#needsNavigate}}
 
-export function {{PageName}}Screen() {
-  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}} />
+interface Props {
+  onNavigate: (view: string, arg?: string) => void
+}
+{{/needsNavigate}}
+
+export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#hasRecordPage}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}} />
 }

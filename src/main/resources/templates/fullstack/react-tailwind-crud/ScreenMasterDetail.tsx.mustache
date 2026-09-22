@@ -1,0 +1,147 @@
+import { {{#parentSearchable}}useEffect, {{/parentSearchable}}useState } from 'react'
+{{#parentHasRecordPage}}
+import { ArrowUpRight } from 'lucide-react'
+{{/parentHasRecordPage}}
+import { use{{parentEntityName}} } from '@entities/{{parentEntityNameKebab}}'
+import type { {{parentEntityName}} } from '@entities/{{parentEntityNameKebab}}'
+import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
+import { Alert, EmptyState } from '@shared/ui'
+import { t } from '@shared/i18n'
+{{#needsNavigate}}
+
+interface Props {
+  onNavigate: (view: string, arg?: string) => void
+}
+{{/needsNavigate}}
+
+const PAGE_SIZE = 20
+
+/** How a parent row is named in the list: its first text field, else its key. */
+const parentLabel = (row: {{parentEntityName}}) =>
+{{#parentHasLabel}}
+  row.{{parentLabelField}} == null || row.{{parentLabelField}} === '' ? '#' + String(row.{{parentPkName}}) : String(row.{{parentLabelField}})
+{{/parentHasLabel}}
+{{^parentHasLabel}}
+  '#' + String(row.{{parentPkName}})
+{{/parentHasLabel}}
+
+export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+  const [page, setPage] = useState(0)
+{{#parentSearchable}}
+  const [search, setSearch] = useState('')
+  const [q, setQ] = useState('')
+{{/parentSearchable}}
+  const [selected, setSelected] = useState<{{parentEntityName}} | null>(null)
+{{#parentSearchable}}
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQ(search)
+      setPage(0)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
+{{/parentSearchable}}
+
+  const { items, totalPages, pageNumber, loading, error } =
+    use{{parentEntityName}}({ page, size: PAGE_SIZE, sort: null, {{#parentSearchable}}q{{/parentSearchable}}{{^parentSearchable}}q: ''{{/parentSearchable}} })
+
+  return (
+    <div className="mx-auto max-w-7xl p-4 md:p-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <aside className="self-start overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+          <div className="border-b border-border px-4 py-3 text-sm font-semibold text-fg">{ {{parentLabelPluralExpr}} }</div>
+{{#parentSearchable}}
+          <div className="border-b border-border p-3">
+            <input
+              type="search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={t('search')}
+              aria-label={t('search')}
+              className="w-full rounded-lg border border-border bg-canvas px-3 py-2 text-sm text-fg placeholder:text-muted focus:border-brand focus:outline-none"
+            />
+          </div>
+{{/parentSearchable}}
+          {error && <div className="p-3"><Alert>{error}</Alert></div>}
+          <ul className={`max-h-[60vh] divide-y divide-border overflow-auto transition-opacity ${loading ? 'opacity-60' : ''}`}>
+            {items.map(row => {
+              const active = selected?.{{parentPkName}} === row.{{parentPkName}}
+              return (
+                <li key={String(row.{{parentPkName}})} className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => setSelected(row)}
+                    aria-pressed={active}
+                    className={`min-w-0 flex-1 truncate px-4 py-2.5 text-start text-sm transition-colors ${
+                      active ? 'bg-brand/10 font-medium text-fg' : 'text-muted hover:bg-surface-2 hover:text-fg'
+                    }`}
+                  >
+                    {parentLabel(row)}
+                  </button>
+{{#parentHasRecordPage}}
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('{{parentRecordPageId}}', String(row.{{parentRecordPk}}))}
+                    title={t('openX', { x: parentLabel(row) })}
+                    aria-label={t('openX', { x: parentLabel(row) })}
+                    className="me-2 rounded-md p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-brand"
+                  >
+                    <ArrowUpRight className="h-4 w-4 rtl:-scale-x-100" />
+                  </button>
+{{/parentHasRecordPage}}
+                </li>
+              )
+            })}
+            {!loading && items.length === 0 && (
+              <li className="px-4 py-6 text-center text-sm text-muted">{t('noResults')}</li>
+            )}
+          </ul>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted">
+              <button
+                type="button"
+                disabled={pageNumber === 0}
+                onClick={() => setPage(pageNumber - 1)}
+                className="rounded px-2 py-1 transition-colors hover:text-fg disabled:opacity-40"
+              >
+                {t('prev')}
+              </button>
+              <span className="tabular-nums">{pageNumber + 1} / {totalPages}</span>
+              <button
+                type="button"
+                disabled={pageNumber >= totalPages - 1}
+                onClick={() => setPage(pageNumber + 1)}
+                className="rounded px-2 py-1 transition-colors hover:text-fg disabled:opacity-40"
+              >
+                {t('next')}
+              </button>
+            </div>
+          )}
+        </aside>
+        <section className="min-w-0 rounded-2xl border border-border bg-surface shadow-sm">
+          {selected ? (
+            <{{childEntityName}}Page
+              key={String(selected.{{parentPkName}})}
+              scope={ { param: '{{viaParam}}', value: selected.{{parentPkName}} as string | number } }
+{{#childHasRecordPage}}
+              onOpenRecord={r => onNavigate('{{childRecordPageId}}', String(r.{{childRecordPk}}))}
+{{/childHasRecordPage}}
+            />
+          ) : (
+            <EmptyState
+              title={ {{parentLabelPluralExpr}} }
+              hint={t('pickXToSeeY', { x: {{parentLabelPluralExpr}}, y: {{childLabelPluralExpr}} })}
+            />
+          )}
+        </section>
+      </div>
+    </div>
+  )
+}

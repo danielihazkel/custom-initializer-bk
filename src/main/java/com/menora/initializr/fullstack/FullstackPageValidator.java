@@ -35,7 +35,7 @@ public final class FullstackPageValidator {
     static final int DEFAULT_RECENT_LIMIT = 5;
 
     /** Page types reserved for a later release: named so the error says "not yet", not "unknown". */
-    private static final Set<String> PLANNED_TYPES = Set.of("master-detail", "record", "report", "wizard");
+    private static final Set<String> PLANNED_TYPES = Set.of("report", "wizard");
 
     private FullstackPageValidator() {}
 
@@ -63,6 +63,7 @@ public final class FullstackPageValidator {
         }
 
         List<PageDefinition> pages = new ArrayList<>(raw.size());
+        Map<String, String> recordPageByEntity = new HashMap<>();
         boolean anyVisible = false;
         for (PageDefinitionDto p : raw) {
             String id = p.id().trim();
@@ -71,6 +72,14 @@ public final class FullstackPageValidator {
             String description = checkLength(trimToNull(p.description()), MAX_DESCRIPTION,
                     "Page '" + id + "' description");
             boolean hidden = Boolean.TRUE.equals(p.hidden());
+            if (type == PageDefinition.Type.RECORD) {
+                // A record page opens with a record id, so there is nothing to show from the nav.
+                if (Boolean.FALSE.equals(p.hidden())) {
+                    throw new WizardArgumentException("Page '" + id
+                            + "' (record) cannot be in the navigation: it opens from a row of its entity");
+                }
+                hidden = true;
+            }
             anyVisible |= !hidden;
             rejectForeignProps(id, type, p);
             pages.add(switch (type) {
@@ -86,6 +95,27 @@ public final class FullstackPageValidator {
                     if (title == null) throw new WizardArgumentException("Page '" + id + "' (tabs) needs a title");
                     yield new PageDefinition(id, type, title, description, hidden, null, null, null,
                             tabs(id, p.tabs(), typeById));
+                }
+                case MASTER_DETAIL -> {
+                    String prefix = "Page '" + id + "' (master-detail)";
+                    EntityDefinition parent = requireEntity(entitiesByLower, p.parent(), prefix + " parent");
+                    EntityDefinition child = requireEntity(entitiesByLower, p.child(), prefix + " child");
+                    requireSinglePk(prefix, parent);
+                    String via = via(prefix, child, parent, trimToNull(p.via()));
+                    yield new PageDefinition(id, type, title, description, hidden, null, null, null, null,
+                            parent.name(), child.name(), via, null);
+                }
+                case RECORD -> {
+                    String prefix = "Page '" + id + "' (record)";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    requireSinglePk(prefix, entity);
+                    String previous = recordPageByEntity.putIfAbsent(entity.name(), id);
+                    if (previous != null) {
+                        throw new WizardArgumentException(prefix + ": " + entity.name()
+                                + " already has a record page ('" + previous + "')");
+                    }
+                    yield new PageDefinition(id, type, title, description, true, entity.name(), null, null, null,
+                            null, null, null, childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower));
                 }
             });
         }
@@ -104,17 +134,26 @@ public final class FullstackPageValidator {
             throw new WizardArgumentException("Page '" + id + "': type '" + t + "' is not supported yet");
         }
         throw new WizardArgumentException("Page '" + id + "': unknown type '" + t
-                + "' (expected entity-list, dashboard or tabs)");
+                + "' (expected entity-list, dashboard, tabs, master-detail or record)");
     }
 
     /** A property that belongs to another page type is a mistake worth reporting, not ignoring. */
     private static void rejectForeignProps(String id, PageDefinition.Type type, PageDefinitionDto p) {
         String prefix = "Page '" + id + "' (" + type.wire() + ") ";
-        if (type != PageDefinition.Type.ENTITY_LIST) {
-            if (trimToNull(p.entity()) != null) throw new WizardArgumentException(prefix + "does not take 'entity'");
-            if (p.presetFilter() != null && !p.presetFilter().isEmpty()) {
-                throw new WizardArgumentException(prefix + "does not take 'presetFilter'");
-            }
+        if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.RECORD
+                && trimToNull(p.entity()) != null) {
+            throw new WizardArgumentException(prefix + "does not take 'entity'");
+        }
+        if (type != PageDefinition.Type.ENTITY_LIST && p.presetFilter() != null && !p.presetFilter().isEmpty()) {
+            throw new WizardArgumentException(prefix + "does not take 'presetFilter'");
+        }
+        if (type != PageDefinition.Type.MASTER_DETAIL) {
+            if (trimToNull(p.parent()) != null) throw new WizardArgumentException(prefix + "does not take 'parent'");
+            if (trimToNull(p.child()) != null) throw new WizardArgumentException(prefix + "does not take 'child'");
+            if (trimToNull(p.via()) != null) throw new WizardArgumentException(prefix + "does not take 'via'");
+        }
+        if (type != PageDefinition.Type.RECORD && p.childTabs() != null && !p.childTabs().isEmpty()) {
+            throw new WizardArgumentException(prefix + "does not take 'childTabs'");
         }
         if (type != PageDefinition.Type.DASHBOARD && p.widgets() != null && !p.widgets().isEmpty()) {
             throw new WizardArgumentException(prefix + "does not take 'widgets'");
@@ -246,8 +285,81 @@ public final class FullstackPageValidator {
             if (targetType == PageDefinition.Type.TABS) {
                 throw new WizardArgumentException(prefix + ": a tab cannot embed another tabs page ('" + target + "')");
             }
+            if (targetType == PageDefinition.Type.RECORD) {
+                throw new WizardArgumentException(prefix + ": a tab cannot embed a record page ('" + target
+                        + "') — it needs a record id");
+            }
             if (!seen.add(target)) throw new WizardArgumentException(prefix + ": page '" + target + "' is already a tab");
             out.add(new PageDefinition.Tab(checkLength(trimToNull(t.title()), MAX_TITLE, prefix + " title"), target));
+        }
+        return out;
+    }
+
+    /** Master-detail parents and record pages address one row by a single id. */
+    private static void requireSinglePk(String prefix, EntityDefinition entity) {
+        long pks = entity.fields().stream().filter(FieldDefinition::primaryKey).count();
+        if (pks != 1) {
+            throw new WizardArgumentException(prefix + ": " + entity.name()
+                    + " has a composite key; only single-key entities can be opened as one record");
+        }
+    }
+
+    /** The child's MANY_TO_ONE fields that point at {@code parent}, in declaration order. */
+    private static List<String> relationsTo(EntityDefinition child, EntityDefinition parent) {
+        return child.relations().stream()
+                .filter(r -> r.type() == RelationType.MANY_TO_ONE && r.targetEntity().equalsIgnoreCase(parent.name()))
+                .map(RelationDefinition::fieldName)
+                .toList();
+    }
+
+    /** The relation linking child to parent: the named one, else the only one. */
+    private static String via(String prefix, EntityDefinition child, EntityDefinition parent, String requested) {
+        List<String> candidates = relationsTo(child, parent);
+        if (candidates.isEmpty()) {
+            throw new WizardArgumentException(prefix + ": " + child.name() + " has no relation to " + parent.name());
+        }
+        if (requested != null) {
+            return candidates.stream().filter(c -> c.equalsIgnoreCase(requested)).findFirst()
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": via '" + requested + "' is not a relation of "
+                            + child.name() + " to " + parent.name() + " (expected one of " + candidates + ")"));
+        }
+        if (candidates.size() > 1) {
+            throw new WizardArgumentException(prefix + ": " + child.name() + " has several relations to " + parent.name()
+                    + " " + candidates + "; set 'via' to pick one");
+        }
+        return candidates.get(0);
+    }
+
+    /** A record page's related lists: the named entities, else every entity with a relation to it.
+     *  Each links through its first relation to the record entity. */
+    private static List<PageDefinition.ChildTab> childTabs(String prefix, EntityDefinition entity, List<String> raw,
+                                                          List<EntityDefinition> entities,
+                                                          Map<String, EntityDefinition> entitiesByLower) {
+        List<PageDefinition.ChildTab> out = new ArrayList<>();
+        if (raw == null) {
+            for (EntityDefinition candidate : entities) {
+                List<String> rels = relationsTo(candidate, entity);
+                if (!rels.isEmpty()) out.add(new PageDefinition.ChildTab(candidate.name(), rels.get(0)));
+                // The default takes the first related lists that fit, rather than failing.
+                if (out.size() == MAX_TABS - 1) break;
+            }
+        } else {
+            Set<String> seen = new HashSet<>();
+            for (int i = 0; i < raw.size(); i++) {
+                String itemPrefix = prefix + " childTabs[" + i + "]";
+                EntityDefinition child = requireEntity(entitiesByLower, raw.get(i), itemPrefix);
+                List<String> rels = relationsTo(child, entity);
+                if (rels.isEmpty()) {
+                    throw new WizardArgumentException(itemPrefix + ": " + child.name() + " has no relation to " + entity.name());
+                }
+                if (!seen.add(child.name())) {
+                    throw new WizardArgumentException(itemPrefix + ": " + child.name() + " is already a tab");
+                }
+                out.add(new PageDefinition.ChildTab(child.name(), rels.get(0)));
+            }
+        }
+        if (out.size() > MAX_TABS - 1) {
+            throw new WizardArgumentException(prefix + ": at most " + (MAX_TABS - 1) + " related lists are allowed");
         }
         return out;
     }

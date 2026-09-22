@@ -136,13 +136,15 @@ export function BreakdownCard({ title, path, field, labels, onOpen }: {
 }
 
 /** The latest `limit` rows of `path`, newest key first, labelled by `displayField`. */
-export function RecentList({ title, path, sortField, displayField, limit, onOpen }: {
+export function RecentList({ title, path, sortField, displayField, limit, onOpen, onOpenRow }: {
   title: string
   path: string
   sortField: string
   displayField: string
   limit: number
   onOpen?: () => void
+  /** Opens one row (its record page); without it the rows are plain text. */
+  onOpenRow?: (row: Record<string, unknown>) => void
 }) {
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [failed, setFailed] = useState(false)
@@ -163,7 +165,17 @@ export function RecentList({ title, path, sortField, displayField, limit, onOpen
         <ul className="divide-y divide-border">
           {rows.map((row, i) => (
             <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <span className="truncate text-fg">{row[displayField] == null ? '—' : String(row[displayField])}</span>
+              {onOpenRow ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenRow(row)}
+                  className="truncate text-start font-medium text-brand hover:underline"
+                >
+                  {row[displayField] == null ? '—' : String(row[displayField])}
+                </button>
+              ) : (
+                <span className="truncate text-fg">{row[displayField] == null ? '—' : String(row[displayField])}</span>
+              )}
               {displayField !== sortField && row[sortField] != null && (
                 <span className="shrink-0 tabular-nums text-muted">#{String(row[sortField])}</span>
               )}

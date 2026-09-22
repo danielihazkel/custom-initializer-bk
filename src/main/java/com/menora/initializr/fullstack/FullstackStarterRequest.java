@@ -200,7 +200,23 @@ public record FullstackStarterRequest(
             // dashboard
             List<WidgetDto> widgets,
             // tabs
-            List<TabDto> tabs) {}
+            List<TabDto> tabs,
+            // master-detail: the parent list, the child entity shown for the selected parent, and
+            // the child's MANY_TO_ONE field that links them (optional when there is only one).
+            String parent,
+            String child,
+            String via,
+            // record: the child entities shown as tabs under the record (default: every entity
+            // with a MANY_TO_ONE to it). The record entity itself goes in `entity`.
+            List<String> childTabs) {
+
+        /** Back-compat constructor for the phase-1 page types (no master-detail/record props). */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, null, null, null, null);
+        }
+    }
 
     /** A dashboard widget: {@code kpi} (record count), {@code bar} (count by an enum/boolean
      *  field) or {@code recent} (the latest rows). */

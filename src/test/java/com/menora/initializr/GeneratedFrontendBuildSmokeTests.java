@@ -151,10 +151,10 @@ class GeneratedFrontendBuildSmokeTests {
 
     @Test
     void fullstackFrontendPageLayoutsInstallAndBuild(@TempDir Path workDir) throws Exception {
-        // The Tickets example's page layout: a dashboard with every widget kind, a tabs page over
-        // hidden list pages with preset filters, plain list pages.
+        // The Orders example's page layout: a dashboard with every widget kind, plain list pages,
+        // a master-detail page and a record page with a related list (the two id-driven screens).
         Path project = postAndExtractFrontend(workDir,
-                FullstackPagesIntegrationTests.exampleBody("tickets", "react-tailwind-crud"));
+                FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud"));
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
         runPnpm(project, "run", "build");
@@ -162,9 +162,10 @@ class GeneratedFrontendBuildSmokeTests {
 
     @Test
     void fullstackFrontendMenoraPageLayoutsInstallAndBuild(@TempDir Path workDir) throws Exception {
-        // The Orders layout on the Menora set: its own Tabs-port screen, the borrowed dashboard.
+        // The Tickets layout on the Menora set: its own Tabs-port screen over preset-filtered list
+        // pages, plus the borrowed dashboard and master-detail screens.
         Path project = postAndExtractFrontend(workDir,
-                FullstackPagesIntegrationTests.exampleBody("orders", "react-menora-digital-crud"));
+                FullstackPagesIntegrationTests.exampleBody("tickets", "react-menora-digital-crud"));
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
         runPnpm(project, "run", "build");

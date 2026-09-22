@@ -332,37 +332,31 @@
         "entity": "Order"
       },
       {
+        "id": "customers",
+        "type": "master-detail",
+        "title": "Customers",
+        "description": "Pick a customer to see and add their orders.",
+        "parent": "Customer",
+        "child": "Order"
+      },
+      {
         "id": "order-lines",
         "type": "entity-list",
         "entity": "OrderLine",
         "title": "Order lines"
       },
       {
-        "id": "catalog",
-        "type": "tabs",
-        "title": "Catalog",
-        "tabs": [
-          {
-            "title": "Products",
-            "page": "products"
-          },
-          {
-            "title": "Customers",
-            "page": "customers"
-          }
-        ]
-      },
-      {
         "id": "products",
         "type": "entity-list",
-        "entity": "Product",
-        "hidden": true
+        "entity": "Product"
       },
       {
-        "id": "customers",
-        "type": "entity-list",
-        "entity": "Customer",
-        "hidden": true
+        "id": "order",
+        "type": "record",
+        "entity": "Order",
+        "childTabs": [
+          "OrderLine"
+        ]
       }
     ],
     "settings": {
@@ -590,8 +584,11 @@
       },
       {
         "id": "teams",
-        "type": "entity-list",
-        "entity": "Team"
+        "type": "master-detail",
+        "title": "Teams",
+        "parent": "Team",
+        "child": "Ticket",
+        "via": "team"
       }
     ],
     "settings": {
