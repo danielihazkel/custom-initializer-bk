@@ -23,6 +23,7 @@ import java.util.Map;
  * @param dateRange    {@link Type#DASHBOARD} only — the period its picker opens on (null: no picker)
  * @param steps        {@link Type#WIZARD} only — the create form, step by step
  * @param headerStats  {@link Type#RECORD} only — the number tiles above its tabs
+ * @param roles        the roles (any of) that may open the page; empty: everyone
  */
 public record PageDefinition(
         String id,
@@ -43,9 +44,11 @@ public record PageDefinition(
         String icon,
         DateRange dateRange,
         List<Step> steps,
-        List<HeaderStat> headerStats) {
+        List<HeaderStat> headerStats,
+        List<String> roles) {
 
     public PageDefinition {
+        roles = roles == null ? List.of() : List.copyOf(roles);
         presetFilter = presetFilter == null ? Map.of() : Map.copyOf(presetFilter);
         widgets = widgets == null ? List.of() : List.copyOf(widgets);
         tabs = tabs == null ? List.of() : List.copyOf(tabs);
@@ -53,6 +56,15 @@ public record PageDefinition(
         charts = charts == null ? List.of() : List.copyOf(charts);
         steps = steps == null ? List.of() : List.copyOf(steps);
         headerStats = headerStats == null ? List.of() : List.copyOf(headerStats);
+    }
+
+    /** Every page property but {@code roles} (open to everyone). */
+    public PageDefinition(String id, Type type, String title, String description, boolean hidden, String entity,
+                          Map<String, String> presetFilter, List<Widget> widgets, List<Tab> tabs, String parent,
+                          String child, String via, List<ChildTab> childTabs, List<Chart> charts, String group,
+                          String icon, DateRange dateRange, List<Step> steps, List<HeaderStat> headerStats) {
+        this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via, childTabs,
+                charts, group, icon, dateRange, steps, headerStats, null);
     }
 
     /** A report's first chart — the one its totals table follows; null for any other page. */
@@ -77,13 +89,19 @@ public record PageDefinition(
     /** The same page placed in a nav section and given an icon. */
     public PageDefinition withNav(String group, String icon) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats);
+                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles);
+    }
+
+    /** The same page, open only to users holding one of {@code roles}. */
+    public PageDefinition withRoles(List<String> roles) {
+        return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
+                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles);
     }
 
     /** The same dashboard with a period picker opening on {@code range}. */
     public PageDefinition withDateRange(DateRange range) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                parent, child, via, childTabs, charts, group, icon, range, steps, headerStats);
+                parent, child, via, childTabs, charts, group, icon, range, steps, headerStats, roles);
     }
 
     /** A {@link Type#WIZARD} page: the entity it creates, step by step. */

@@ -97,6 +97,9 @@ public class FullstackProjectGenerationConfiguration {
             // Per-endpoint @RequiresPermission. The security.* classes only exist when an
             // ldap-auth variant (direct bind or REST) is on the build, so the flag requires one —
             // otherwise the imports wouldn't resolve.
+            // With an ldap-auth variant the backend also answers /api/me/roles (page roles in the UI).
+            projectCtx.put("hasLdapAuth", description.getRequestedDependencies().containsKey("ldap-auth")
+                    || description.getRequestedDependencies().containsKey("ldap-auth-rest"));
             projectCtx.put("optScaffoldSecured",
                     optionsContext.hasOption("scaffold", "secured")
                             && (description.getRequestedDependencies().containsKey("ldap-auth")

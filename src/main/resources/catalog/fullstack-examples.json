@@ -1317,7 +1317,10 @@
       {
         "id": "monthly",
         "type": "entity-list",
-        "entity": "MonthlySales"
+        "entity": "MonthlySales",
+        "roles": [
+          "ADMIN"
+        ]
       }
     ],
     "settings": {

@@ -4,7 +4,14 @@
   "description": "Same per-entity JPA CRUD as spring-jpa-crud, but entities use Lombok @Data/@NoArgsConstructor/@AllArgsConstructor instead of hand-written accessors. Lombok ships with every Menora project.",
   "kind": "BACKEND_JAVA",
   "sortOrder": 15,
-  "defaultDeps": ["data-jpa", "web", "h2", "validation", "actuator", "ldap-auth"],
+  "defaultDeps": [
+    "data-jpa",
+    "web",
+    "h2",
+    "validation",
+    "actuator",
+    "ldap-auth"
+  ],
   "files": [
     {
       "source": "CorsConfig.java.mustache",
@@ -69,6 +76,16 @@
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
       "sortOrder": 10
+    },
+    {
+      "source": "MeController.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/web/MeController.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 11,
+      "gatedBy": "hasLdapAuth"
     },
     {
       "source": "EntityId.java.mustache",

@@ -1,0 +1,35 @@
+import { useEffect, useState } from 'react'
+import { api } from '@shared/api'
+import type { View } from './route'
+
+/** The pages restricted to roles: a user needs one of them to see and open the page. */
+const PAGE_ROLES: Partial<Record<View, readonly string[]>> = {
+{{#routePages}}
+{{#hasRoles}}
+  '{{pageId}}': {{{rolesTs}}},
+{{/hasRoles}}
+{{/routePages}}
+}
+
+/**
+ * The caller's roles, from the backend's /api/me/roles (which reads the same LDAP groups as
+ * @RequiresPermission). Null while loading; a failed call counts as no roles.
+ */
+export function useRoles(): ReadonlySet<string> | null {
+  const [roles, setRoles] = useState<ReadonlySet<string> | null>(null)
+  useEffect(() => {
+    let active = true
+    api.get<string[]>('/api/me/roles')
+      .then(r => { if (active) setRoles(new Set(r)) })
+      .catch(() => { if (active) setRoles(new Set()) })
+    return () => { active = false }
+  }, [])
+  return roles
+}
+
+/** Whether a user with `roles` may see the page `view` (an unrestricted page: always). */
+export function canSee(view: View, roles: ReadonlySet<string> | null): boolean {
+  const needed = PAGE_ROLES[view]
+  if (!needed) return true
+  return roles != null && needed.some(r => roles.has(r))
+}

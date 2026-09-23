@@ -137,6 +137,9 @@ export default function App() {
 {{/hasPages}}
 {{#hasPages}}
 import { useRoute, type View } from '@app/route'
+{{#hasPageRoles}}
+import { canSee, useRoles } from '@app/access'
+{{/hasPageRoles}}
 {{#routePages}}
 import { {{PageName}}Screen } from '@app/screens/{{PageName}}Screen'
 {{/routePages}}
@@ -161,15 +164,41 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
 {{/navGroups}}
 ]
 const NAV = NAV_SECTIONS.flatMap(section => section.items)
-{{#hasRecordPages}}
+{{#hasOffNavPages}}
 
 // Record pages open from a row (with its id) and stay out of the nav; the header still names them.
 const RECORD_TITLES: Partial<Record<View, string>> = {
-{{#recordPages}}
+{{#offNavPages}}
   '{{pageId}}': {{pageTitleExpr}},
-{{/recordPages}}
+{{/offNavPages}}
 }
-{{/hasRecordPages}}
+{{/hasOffNavPages}}
+{{#hasBreadcrumbs}}
+
+// Where an off-nav page belongs: its entity's home page, shown as a breadcrumb in the header.
+const RECORD_PARENTS: Partial<Record<View, View>> = {
+{{#crumbPages}}
+  '{{pageId}}': '{{backPageId}}',
+{{/crumbPages}}
+}
+{{/hasBreadcrumbs}}
+
+/** A whole-page message with one way out: an unknown page, or one this user may not open. */
+function PageNotice({ title, hint, action, onAction }: { title: string; hint: string; action: string; onAction: () => void }) {
+  return (
+    <div className="mx-auto flex max-w-md flex-col items-center gap-3 p-10 text-center" role="alert">
+      <h2 className="text-lg font-semibold text-fg">{title}</h2>
+      <p className="text-sm text-muted">{hint}</p>
+      <button
+        type="button"
+        onClick={onAction}
+        className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
+      >
+        {action}
+      </button>
+    </div>
+  )
+}
 
 export default function App() {
   const [route, navigate] = useRoute()
@@ -177,6 +206,18 @@ export default function App() {
   const { isDark, toggle } = useTheme()
   const { view } = route
   const current = NAV.find(n => n.id === view)
+{{#hasPageRoles}}
+  // Pages restricted to roles leave the nav, and their route shows a notice, for other users.
+  const roles = useRoles()
+  const sections = NAV_SECTIONS.map(s => ({ ...s, items: s.items.filter(i => canSee(i.id, roles)) })).filter(s => s.items.length > 0)
+{{/hasPageRoles}}
+{{^hasPageRoles}}
+  const sections = NAV_SECTIONS
+{{/hasPageRoles}}
+{{#hasBreadcrumbs}}
+  const parentId = RECORD_PARENTS[view]
+  const crumb = parentId ? NAV.find(n => n.id === parentId) : undefined
+{{/hasBreadcrumbs}}
 
   const go = (id: View, arg?: string, query: Record<string, string> = {}) => {
     navigate({ view: id, arg, query })
@@ -200,7 +241,7 @@ export default function App() {
         </div>
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
-        {NAV_SECTIONS.map((section, i) => (
+        {sections.map((section, i) => (
           <div key={i} className="space-y-0.5">
             {section.label && (
               <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</div>
@@ -271,8 +312,29 @@ export default function App() {
               <Menu className="h-5 w-5" />
             </button>
             <div>
+{{#hasBreadcrumbs}}
+              {crumb ? (
+                <nav aria-label={t('breadcrumb')} className="text-[11px] text-muted">
+                  <a
+                    href={`#/${crumb.id}`}
+                    onClick={e => {
+                      e.preventDefault()
+                      go(crumb.id)
+                    }}
+                    className="transition-colors hover:text-fg hover:underline"
+                  >
+                    {crumb.label}
+                  </a>
+                  <span aria-hidden="true"> /</span>
+                </nav>
+              ) : (
+                <div className="text-[11px] uppercase tracking-wider text-muted">{{artifactId}}</div>
+              )}
+{{/hasBreadcrumbs}}
+{{^hasBreadcrumbs}}
               <div className="text-[11px] uppercase tracking-wider text-muted">{{artifactId}}</div>
-              <h1 className="text-sm font-semibold text-fg">{current?.label ?? {{#hasRecordPages}}RECORD_TITLES[view] ?? {{/hasRecordPages}}t('dashboard')}</h1>
+{{/hasBreadcrumbs}}
+              <h1 className="text-sm font-semibold text-fg">{current?.label ?? {{#hasOffNavPages}}RECORD_TITLES[view] ?? {{/hasOffNavPages}}t('dashboard')}</h1>
             </div>
           </div>
           <button
@@ -286,6 +348,14 @@ export default function App() {
         </header>
 
         <main className="flex-1 overflow-auto bg-canvas">
+        {route.notFound != null ? (
+          <PageNotice title={t('pageNotFound')} hint={t('pageNotFoundHint', { x: route.notFound })} action={t('goToStart')} onAction={() => go('{{initialPageId}}')} />
+{{#hasPageRoles}}
+        ) : !canSee(view, roles) ? (
+          roles == null ? null : <PageNotice title={t('noAccess')} hint={t('noAccessHint')} action={t('goToStart')} onAction={() => go('{{initialPageId}}')} />
+{{/hasPageRoles}}
+        ) : (
+          <>
 {{#routePages}}
 {{^pageIsRecord}}
           {view === '{{pageId}}' && <{{PageName}}Screen{{routeProps}}{{#needsNavigate}} onNavigate={goView}{{/needsNavigate}} />}
@@ -294,6 +364,8 @@ export default function App() {
           {view === '{{pageId}}' && route.arg && <{{PageName}}Screen key={route.arg} recordId={route.arg}{{#needsNavigate}} onNavigate={goView}{{/needsNavigate}} />}
 {{/pageIsRecord}}
 {{/routePages}}
+          </>
+        )}
         </main>
       </div>
 

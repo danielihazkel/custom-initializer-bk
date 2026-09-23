@@ -75,7 +75,8 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/app/route.ts"))
                 .contains("export type View = 'overview' | 'queue' | 'agents' | 'teams'")
                 .contains("const VIEWS: readonly View[] = ['overview', 'queue', 'agents', 'teams']")
-                .contains("if (!view) return { view: 'overview', query: {} }")
+                // An unknown page is flagged, so the shell can say so instead of silently redirecting.
+                .contains("if (!view) return id === '' ? { view: 'overview', query: {} } : { view: 'overview', query: {}, notFound: decode(id) }")
                 .contains("window.addEventListener('hashchange', onHashChange)")
                 // No record pages: nothing needs an id to open.
                 .doesNotContain("RECORD_VIEWS");
@@ -346,7 +347,7 @@ class FullstackPagesIntegrationTests {
         // A record page needs an id: without one the route falls back to the start page.
         assertThat(files.get(FE + "src/app/route.ts"))
                 .contains("const RECORD_VIEWS: readonly View[] = ['agent']")
-                .contains("if (!view || (RECORD_VIEWS.includes(view) && !arg)) return { view: 'overview', query: {} }");
+                .contains("if (RECORD_VIEWS.includes(view) && !arg) return { view: 'overview', query: {} }");
     }
 
     @Test
@@ -831,6 +832,66 @@ class FullstackPagesIntegrationTests {
                 "a text widget needs 'text'");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "text", "Hi"))),
                 "only a text widget takes 'text'");
+    }
+
+    @Test
+    void fullstackEndpoint_restrictsPagesToRolesWithLdapAuth() throws Exception {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        pages(body).stream().filter(p -> "agents".equals(p.get("id"))).findFirst().orElseThrow()
+                .put("roles", List.of("admin"));
+        Map<String, String> files = generate(body);
+
+        assertThat(files.get(FE + "src/app/access.ts"))
+                .contains("  'agents': ['ADMIN'],\n")
+                .contains("api.get<string[]>('/api/me/roles')");
+        assertThat(files.get(FE + "src/app/App.tsx"))
+                .contains("import { canSee, useRoles } from '@app/access'")
+                .contains("const sections = NAV_SECTIONS.map(s => ({ ...s, items: s.items.filter(i => canSee(i.id, roles)) }))")
+                .contains(") : !canSee(view, roles) ? (");
+        assertThat(files.get("support/backend/src/main/java/com/menora/support/web/MeController.java"))
+                .contains("@GetMapping(\"/roles\")")
+                .contains("permissionService.mapRoleToGroup(role)");
+
+        // Without roles: no access module, no guard (ldap-auth, a set default, still answers /api/me/roles).
+        Map<String, String> open = generate(exampleBody("tickets", "react-tailwind-crud"));
+        assertThat(open).doesNotContainKey(FE + "src/app/access.ts");
+        assertThat(open.get(FE + "src/app/App.tsx"))
+                .contains("const sections = NAV_SECTIONS\n")
+                .doesNotContain("canSee");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsRolesItCannotEnforce() {
+        Map<String, Object> noLdap = exampleBody("tickets", "react-tailwind-crud");
+        noLdap.put("dependencies", List.of("data-jpa", "web"));
+        pages(noLdap).get(5).put("roles", List.of("ADMIN"));
+        assertBadRequest(noLdap, "Page 'agents' has roles, which need the ldap-auth or ldap-auth-rest dependency");
+        Map<String, Object> start = exampleBody("tickets", "react-tailwind-crud");
+        pages(start).get(0).put("roles", List.of("ADMIN"));
+        assertBadRequest(start, "Page 'overview' is the start page, so it takes no 'roles'");
+        Map<String, Object> tab = exampleBody("tickets", "react-tailwind-crud");
+        pages(tab).get(2).put("roles", List.of("USER"));
+        assertBadRequest(tab, "Page 'tickets-open' is a tab of 'queue', so it takes no 'roles'");
+        assertRejected(p -> p.get(5).put("roles", List.of("OWNER")), "Page 'agents': unknown role 'OWNER' (expected ADMIN or USER)");
+    }
+
+    @Test
+    void fullstackEndpoint_shellShowsNotFoundAndRecordBreadcrumbs() throws Exception {
+        Map<String, String> files = generate(exampleBody("orders", "react-tailwind-crud"));
+        String app = files.get(FE + "src/app/App.tsx");
+        assertThat(app)
+                .contains("function PageNotice(")
+                .contains("{route.notFound != null ? (")
+                .contains("hint={t('pageNotFoundHint', { x: route.notFound })}")
+                // The order record page sits under the orders list.
+                .contains("const RECORD_PARENTS: Partial<Record<View, View>> = {\n  'order': 'orders',\n}")
+                .contains("const crumb = parentId ? NAV.find(n => n.id === parentId) : undefined");
+        assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("pageNotFound: 'Page not found',");
+
+        Map<String, String> menora = generate(exampleBody("orders", "react-menora-digital-crud"));
+        assertThat(menora.get(FE + "src/app/App.tsx"))
+                .contains("{route.notFound != null ? (")
+                .contains("<nav aria-label={t('breadcrumb')}");
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

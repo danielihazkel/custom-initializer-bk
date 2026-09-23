@@ -232,14 +232,28 @@ public record FullstackStarterRequest(
             List<StepDto> steps,
             // record: number tiles over its related lists above the tabs (default: one row count
             // per related list; an empty list: none).
-            List<HeaderStatDto> headerStats) {
+            List<HeaderStatDto> headerStats,
+            // any page: the roles (ADMIN, USER) of which a user needs one to see and open it; needs
+            // an ldap-auth dependency. Absent: everyone.
+            List<String> roles) {
 
         /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
                                  String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
                                  List<TabDto> tabs) {
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                    null, null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null, null);
+        }
+
+        /** Every property but {@code roles}. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, null);
         }
     }
 

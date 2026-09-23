@@ -17,6 +17,7 @@
     {"source": "env-production.mustache", "path": ".env.production", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 96, "sourceSet": "react-tailwind-crud"},
     {"source": "App.tsx.mustache", "path": "src/app/App.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 80},
     {"source": "route.ts.mustache", "path": "src/app/route.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 81, "gatedBy": "hasPages", "sourceSet": "react-tailwind-crud"},
+    { "source": "access.ts.mustache", "path": "src/app/access.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 82, "gatedBy": "hasPageRoles", "sourceSet": "react-tailwind-crud" },
     {"source": "api-client.ts.mustache", "path": "src/shared/api/client.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 100, "sourceSet": "react-tailwind-crud"},
     {"source": "useResource.ts", "path": "src/shared/api/useResource.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 110, "sourceSet": "react-tailwind-crud"},
     {"source": "useOptions.ts", "path": "src/shared/api/useOptions.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 112, "sourceSet": "react-tailwind-crud"},

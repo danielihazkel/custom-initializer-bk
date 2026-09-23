@@ -183,6 +183,16 @@ public class FullstackStarterController {
         WebProjectRequest request = toWebRequest(body);
         String domainPackage = resolveDomainPackage(body.domainPackage(), request.getPackageName());
         ensureRequiredDeps(request, backendSet, body.dependencies() != null);
+        // Page roles are enforced against the generated backend's LDAP groups (/api/me/roles), so
+        // they need an ldap-auth variant among the resolved deps (the set defaults include one).
+        boolean ldap = request.getDependencies() != null
+                && (request.getDependencies().contains("ldap-auth") || request.getDependencies().contains("ldap-auth-rest"));
+        pages.stream().filter(p -> !p.roles().isEmpty()).findFirst().ifPresent(p -> {
+            if (!ldap) {
+                throw new WizardArgumentException("Page '" + p.id()
+                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency");
+            }
+        });
         optionsContext.populate(body.opts());
         optionsContext.setDepartment(body.department());
         // The `openapi` scaffold opt enriches generated controllers with springdoc @Tag/@Operation

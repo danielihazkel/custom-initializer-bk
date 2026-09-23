@@ -4,7 +4,14 @@
   "description": "Per-entity JPA Entity, Repository, DTO, Service, and Controller with standard REST endpoints",
   "kind": "BACKEND_JAVA",
   "sortOrder": 10,
-  "defaultDeps": ["data-jpa", "web", "h2", "validation", "actuator", "ldap-auth"],
+  "defaultDeps": [
+    "data-jpa",
+    "web",
+    "h2",
+    "validation",
+    "actuator",
+    "ldap-auth"
+  ],
   "files": [
     {
       "source": "CorsConfig.java.mustache",
@@ -63,6 +70,15 @@
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
       "sortOrder": 10
+    },
+    {
+      "source": "MeController.java.mustache",
+      "path": "src/main/java/{{packagePath}}/web/MeController.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 11,
+      "gatedBy": "hasLdapAuth"
     },
     {
       "source": "EntityId.java.mustache",

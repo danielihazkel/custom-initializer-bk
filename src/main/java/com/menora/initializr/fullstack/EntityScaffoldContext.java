@@ -274,6 +274,9 @@ public final class EntityScaffoldContext {
             pv.put("pageTitleExpr", p.title() != null ? tsString(p.title()) : defaultTitleExpr);
             if (p.icon() != null) pv.put("navIcon", p.icon());
             pv.put("navGroup", p.group());
+            // Pages restricted to roles: the shell hides them from the nav and guards their route.
+            pv.put("hasRoles", !p.roles().isEmpty());
+            pv.put("rolesTs", "[" + String.join(", ", p.roles().stream().map(r -> "'" + r + "'").toList()) + "]");
             viewById.put(p.id(), pv);
         }
 
@@ -352,6 +355,15 @@ public final class EntityScaffoldContext {
         ctx.put("routePages", routes);
         ctx.put("recordPages", records);
         ctx.put("hasRecordPages", !records.isEmpty());
+        // Routes outside the nav (record pages, hidden wizards): the header names them from here,
+        // and one with a home page shows it as a breadcrumb.
+        List<Map<String, Object>> offNav = routes.stream().filter(v -> !nav.contains(v)).toList();
+        ctx.put("offNavPages", offNav);
+        ctx.put("hasOffNavPages", !offNav.isEmpty());
+        List<Map<String, Object>> crumbs = offNav.stream().filter(v -> Boolean.TRUE.equals(v.get("hasBack"))).toList();
+        ctx.put("crumbPages", crumbs);
+        ctx.put("hasBreadcrumbs", !crumbs.isEmpty());
+        ctx.put("hasPageRoles", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasRoles"))));
         // The shell declares its `goView` helper only when some screen takes onNavigate.
         ctx.put("hasNavigatingScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("needsNavigate"))));
         ctx.put("initialPageId", nav.get(0).get("pageId"));

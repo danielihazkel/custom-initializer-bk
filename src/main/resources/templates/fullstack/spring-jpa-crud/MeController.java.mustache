@@ -1,0 +1,40 @@
+package {{packageName}}.web;
+
+import {{packageName}}.security.Constants;
+import {{packageName}}.security.PermissionService;
+import {{packageName}}.security.UnauthorizedException;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Which of the application's roles ({@link Constants}) the caller holds — the frontend shows a
+ * page restricted to roles only to users who hold one. The {@code userinfo} header is the one
+ * {@code @RequiresPermission} reads (set by the SSO gateway; by the dev proxy locally).
+ */
+@RestController
+@RequestMapping("/api/me")
+public class MeController {
+
+    private final PermissionService permissionService;
+
+    public MeController(PermissionService permissionService) {
+        this.permissionService = permissionService;
+    }
+
+    @GetMapping("/roles")
+    public List<String> roles(@RequestHeader(value = "userinfo", required = false) String user) throws UnauthorizedException {
+        List<String> roles = new ArrayList<>();
+        if (user == null || user.isBlank()) return roles;
+        List<String> groups = permissionService.getUserGroups(user);
+        for (String role : List.of(Constants.ADMIN, Constants.USER)) {
+            String group = permissionService.mapRoleToGroup(role);
+            if (groups.stream().anyMatch(g -> g.contains(group))) roles.add(role);
+        }
+        return roles;
+    }
+}

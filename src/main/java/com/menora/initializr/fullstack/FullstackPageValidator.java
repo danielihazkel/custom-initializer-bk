@@ -31,6 +31,8 @@ public final class FullstackPageValidator {
     static final int MAX_TABS = 6;
     /** A text widget's content. */
     static final int MAX_TEXT = 2000;
+    /** The logical roles the ldap-auth dependency's security package defines (its Constants). */
+    static final List<String> ROLES = List.of("ADMIN", "USER");
     static final int MAX_TITLE = 80;
     static final int MAX_DESCRIPTION = 300;
     static final int MAX_RECENT_LIMIT = 20;
@@ -166,10 +168,39 @@ public final class FullstackPageValidator {
                             steps(prefix, entity, p.steps()));
                 }
             };
-            pages.add(page.withNav(group, icon));
+            pages.add(page.withNav(group, icon).withRoles(roles(id, p.roles())));
         }
         if (!anyVisible) throw new WizardArgumentException("At least one page must be visible in the navigation");
+        // The app opens on the first nav page, so everyone must be allowed there.
+        pages.stream().filter(q -> !q.hidden()).findFirst().filter(q -> !q.roles().isEmpty()).ifPresent(q -> {
+            throw new WizardArgumentException("Page '" + q.id() + "' is the start page, so it takes no 'roles'"
+                    + " — everyone opens the app there");
+        });
+        // A tab shows whatever it embeds, so the restriction belongs on the tabs page.
+        for (PageDefinition page : pages) {
+            for (PageDefinition.Tab tab : page.tabs()) {
+                pages.stream().filter(q -> q.id().equals(tab.page()) && !q.roles().isEmpty()).findFirst().ifPresent(q -> {
+                    throw new WizardArgumentException("Page '" + q.id() + "' is a tab of '" + page.id()
+                            + "', so it takes no 'roles' — restrict '" + page.id() + "' instead");
+                });
+            }
+        }
         return pages;
+    }
+
+    /** The roles a page is restricted to: the generated security's ADMIN / USER, upper-cased. */
+    private static List<String> roles(String id, List<String> raw) {
+        if (raw == null || raw.isEmpty()) return List.of();
+        Set<String> out = new java.util.LinkedHashSet<>();
+        for (String r : raw) {
+            String role = trimToNull(r) == null ? null : r.trim().toUpperCase(Locale.ROOT);
+            if (!ROLES.contains(role)) {
+                throw new WizardArgumentException("Page '" + id + "': unknown role '" + r + "' (expected "
+                        + String.join(" or ", ROLES) + ")");
+            }
+            out.add(role);
+        }
+        return List.copyOf(out);
     }
 
     private static PageDefinition.Type parseType(String id, String rawType) {
