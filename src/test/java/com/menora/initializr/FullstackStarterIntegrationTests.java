@@ -337,7 +337,9 @@ class FullstackStarterIntegrationTests {
         assertThat(contentEndingWith(entries, "/LineService.java"))
                 .contains("LineId id = new LineId(entity.getOrderId(), entity.getLineNo());")
                 .contains("repository.existsById(id)")
-                .doesNotContain("Locale.ROOT")          // no string field → no search, no helper
+                // No string field → no search and no helper. (Bare "Locale.ROOT" would also match
+                // the stats endpoint, which lowercases its own agg/bucket parameters.)
+                .doesNotContain("q.toLowerCase(Locale.ROOT)")
                 .doesNotContain("escapeLike");
 
         // Boot 3.2 still uses @MockBean; the switch to @MockitoBean is pinned by
@@ -678,6 +680,56 @@ class FullstackStarterIntegrationTests {
                 .contains("priorityMin");
         String gadgetPage = entries.get("tools/frontend/src/pages/gadget/ui/GadgetPage.tsx");
         assertThat(gadgetPage).contains("searchable={true}").contains("filterDescriptors");
+    }
+
+    @Test
+    void fullstackEndpoint_generatesTheStatsRollupForChartableEntities() throws Exception {
+        // Sale has all three shapes (enum / date / numeric); Note has none of them.
+        Map<String, Object> region = Map.of("name", "region", "type", "Enum", "enumValues", List.of("NORTH", "SOUTH"));
+        Map<String, Object> amount = Map.of("name", "amount", "type", "BigDecimal");
+        Map<String, Object> soldOn = Map.of("name", "soldOn", "type", "LocalDate");
+        Map<String, Object> text = Map.of("name", "text", "type", "String");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "sales");
+        body.put("packageName", "com.menora.sales");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(
+                Map.of("name", "Sale", "fields", List.of(pkField(), region, amount, soldOn)),
+                Map.of("name", "Note", "fields", List.of(pkField(), text))));
+
+        Map<String, String> entries = generateZip(body);
+
+        String saleService = contentEndingWith(entries, "/service/SaleService.java");
+        assertThat(saleService)
+                .contains("public java.util.List<StatsBucket> stats(")
+                .contains("public record StatsBucket(String key, java.math.BigDecimal value) {}")
+                // Hibernate's builder, so the date parts become extract(<unit> from x) per dialect.
+                .contains("HibernateCriteriaBuilder cb = (HibernateCriteriaBuilder) entityManager.getCriteriaBuilder()")
+                .contains("groups.add(cb.year(when))")
+                .contains("if (!\"year\".equals(unit)) groups.add(cb.month(when))")
+                // Whitelists, one case per chartable column.
+                .contains("case \"region\" -> root.get(\"region\")")
+                .contains("case \"soldOn\" -> root.<LocalDate>get(\"soldOn\")")
+                .contains("case \"amount\" -> root.<BigDecimal>get(\"amount\")")
+                .contains("return groupBy.equals(\"soldOn\") || false;")
+                // The list and the rollup share one predicate, so they can never drift.
+                .contains("Specification<Sale> spec = specOf(q, filters)")
+                .contains("private Specification<Sale> specOf(String q, Filters filters)");
+        assertThat(contentEndingWith(entries, "/controller/SaleController.java"))
+                .contains("@GetMapping(\"/stats\")")
+                .contains("public StatsResponse stats(")
+                .contains("@RequestParam(required = false) String groupBy")
+                .contains("service.stats(q, filters, groupBy, bucket, agg, field)")
+                .contains("public record StatsResponse(List<SaleService.StatsBucket> buckets, java.math.BigDecimal total) {}");
+
+        // Nothing to group, bucket or reduce → no endpoint, and no EntityManager to inject.
+        assertThat(contentEndingWith(entries, "/service/NoteService.java"))
+                .doesNotContain("StatsBucket")
+                .doesNotContain("EntityManager")
+                .contains("public NoteService(NoteRepository repository) {");
+        assertThat(contentEndingWith(entries, "/controller/NoteController.java"))
+                .doesNotContain("/stats");
     }
 
     @Test
@@ -2139,8 +2191,10 @@ class FullstackStarterIntegrationTests {
                 .contains("function BarChart")
                 .contains("label: t('xByY', { x: 'Products', y: 'Status' })")
                 .contains("field: 'status'")
-                // Grouped client-side from a sample page -> says so when the table is larger.
-                .contains("t('basedOnSample', { shown: sampled.shown, total: sampled.total })");
+                // Grouped by the backend's rollup, so the chart is exact rather than a sample.
+                .contains("`${path}/stats?groupBy=${field}`")
+                .doesNotContain("BREAKDOWN_SAMPLE")
+                .doesNotContain("basedOnSample");
         assertThat(dashboard).doesNotContain("x: 'Plains'");
     }
 
@@ -2685,7 +2739,9 @@ class FullstackStarterIntegrationTests {
                 .contains("import { TaskStatusTypeLabels } from '@entities/task'")
                 .contains("field: 'status', labels: TaskStatusTypeLabels },")
                 .contains("field: 'active' },")
-                .contains("const key = labels?.[raw] ?? raw");
+                // The rollup's bucket key goes through the same label map ('' = the null group).
+                .contains("const raw = b.key === '' ? '—' : b.key")
+                .contains("label: labels?.[raw] ?? raw");
 
         // The shared filter bar accepts both bare values and value/label pairs.
         assertThat(entries.get("ops/frontend/src/shared/ui/FilterBar.tsx"))

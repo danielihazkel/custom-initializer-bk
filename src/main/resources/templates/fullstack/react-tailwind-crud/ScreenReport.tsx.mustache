@@ -1,0 +1,114 @@
+{{#hasFilters}}
+import { useMemo, useState } from 'react'
+{{/hasFilters}}
+{{#reportHasExport}}
+import { Download } from 'lucide-react'
+import { api } from '@shared/api'
+{{/reportHasExport}}
+{{#hasFilters}}
+import { FilterBar, type FilterDescriptor, type FilterValues } from '@shared/ui'
+{{/hasFilters}}
+import { {{#chartIsBar}}BarRows{{/chartIsBar}}{{#chartIsLine}}LineChart{{/chartIsLine}} } from '@shared/ui/widgets'
+import { formatStat, {{#chartIsBar}}statLabel, {{/chartIsBar}}statsQuery, useStats } from '@shared/ui/stats'
+import { t } from '@shared/i18n'
+{{#chartHasLabels}}
+import { {{chartLabelsRef}} } from '@entities/{{entityNameKebab}}'
+{{/chartHasLabels}}
+
+const PATH = '/api/{{entityNamePluralKebab}}'
+/** The fixed half of the rollup this page charts; the filter bar's values ride along, so the
+ *  chart, the totals and the CSV always describe exactly the same rows. */
+const ROLLUP = '{{rollupQuery}}'
+{{#hasFilters}}
+
+const filterDescriptors: FilterDescriptor[] = [
+{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{/isRelationFilter}} },
+{{/filterFields}}]
+{{/hasFilters}}
+
+export function {{PageName}}Screen() {
+{{#hasFilters}}
+  const [filters, setFilters] = useState<FilterValues>({{#hasPresetFilter}}{{presetFilterTs}}{{/hasPresetFilter}}{{^hasPresetFilter}}{}{{/hasPresetFilter}})
+  // A string, so the rollup only refetches when a filter actually changes.
+  const search = useMemo(() => {
+    const params = new URLSearchParams()
+    for (const [name, value] of Object.entries(filters)) if (value !== '') params.set(name, value)
+    return params.toString()
+  }, [filters])
+{{/hasFilters}}
+{{^hasFilters}}
+  const search = ''
+{{/hasFilters}}
+  const { stats, failed } = useStats(PATH, statsQuery(ROLLUP, search))
+  const rows = (stats?.buckets ?? []).map(b => ({
+    label: {{#chartIsBar}}statLabel(b{{#chartHasLabels}}, {{chartLabelsRef}}{{/chartHasLabels}}){{/chartIsBar}}{{#chartIsLine}}b.key === '' ? '—' : b.key{{/chartIsLine}},
+    value: b.value ?? 0,
+  }))
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-4 p-4 md:p-8">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+          <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+        </div>
+{{#reportHasExport}}
+        <button
+          type="button"
+          onClick={() => api.download(`${PATH}/export.csv${search ? `?${search}` : ''}`, '{{entityNamePluralKebab}}.csv')}
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
+        >
+          <Download className="h-4 w-4" />
+          {t('exportCsv')}
+        </button>
+{{/reportHasExport}}
+      </div>
+{{#hasFilters}}
+      <FilterBar filters={filterDescriptors} values={filters} onChange={setFilters} />
+{{/hasFilters}}
+
+      <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+        {failed ? (
+          <div className="text-sm text-muted">{t('couldNotLoad')}</div>
+        ) : stats == null ? (
+          <div className="text-sm text-muted">…</div>
+        ) : rows.length === 0 ? (
+          <div className="text-sm text-muted">{t('noMatchingRecords')}</div>
+        ) : (
+          <>
+{{#chartIsBar}}
+            <BarRows data={rows} />
+{{/chartIsBar}}
+{{#chartIsLine}}
+            <LineChart data={rows} />
+{{/chartIsLine}}
+            <table className="mt-5 w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted">
+                  <th className="py-2 text-start font-semibold">{ {{chartGroupLabelExpr}} }</th>
+                  <th className="py-2 text-end font-semibold">{ {{#chartHasValueColumn}}{{chartValueHeaderExpr}}{{/chartHasValueColumn}}{{^chartHasValueColumn}}t('rows'){{/chartHasValueColumn}} }</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {rows.map(row => (
+                  <tr key={row.label}>
+                    <td className="py-2 text-fg">{row.label}</td>
+                    <td className="py-2 text-end tabular-nums text-fg">{formatStat(row.value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border font-semibold text-fg">
+                  <td className="py-2">{t('total')}</td>
+                  <td className="py-2 text-end tabular-nums">{formatStat(stats.total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}

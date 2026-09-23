@@ -389,8 +389,6 @@ public class FullstackStarterController {
                 request.getJavaVersion(),
                 request.getPackaging(),
                 entities);
-        // Page layout (dashboards / list pages / tabs). No pages → hasPages=false, the classic shell.
-        EntityScaffoldContext.putPageContext(projectCtx, pages);
         // Overlay the frontend view-model (dep flags, versions, palette with HSL forms, backend
         // pairing) onto the entity-scaffold context so per-entity templates see both shapes. This
         // replaces the plain palette from EntityScaffoldContext with the HSL-bearing one.
@@ -425,6 +423,10 @@ public class FullstackStarterController {
         // Frontend-only — the backend's ProblemDetail messages stay English.
         projectCtx.put("locale", locale);
         projectCtx.put("isHebrew", "he".equals(locale));
+        // Page layout (dashboards / list pages / tabs / master-detail / record / report). No pages
+        // → hasPages=false, the classic shell. Runs last: a report screen resolves its Export
+        // button from optScaffoldCsvExport, which is only in the context by this point.
+        EntityScaffoldContext.putPageContext(projectCtx, pages);
         log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());

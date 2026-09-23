@@ -306,8 +306,95 @@ class FullstackPagesIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_rendersReportPageAndAggregateWidgets() throws Exception {
+        Map<String, Object> body = exampleBody("reporting", "react-tailwind-crud");
+        // The example ships settings.scaffold = [csvExport]; exampleBody carries entities and
+        // pages only, so the opt is set here for the report's Export button.
+        body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        Map<String, String> files = generate(body);
+
+        // The report screen: a filter bar, the bar chart of the rollup, and the totals table.
+        String report = files.get(FE + "src/app/screens/RevenueScreen.tsx");
+        assertThat(report)
+                .contains("const PATH = '/api/sales'")
+                .contains("const ROLLUP = 'groupBy=region&agg=sum&field=amount'")
+                .contains("import { BarRows } from '@shared/ui/widgets'")
+                .contains("import { formatStat, statLabel, statsQuery, useStats } from '@shared/ui/stats'")
+                .contains("import { SaleRegionTypeLabels } from '@entities/sale'")
+                .contains("const filterDescriptors: FilterDescriptor[] = [")
+                .contains("<FilterBar filters={filterDescriptors} values={filters} onChange={setFilters} />")
+                .contains("<BarRows data={rows} />")
+                .contains("{t('total')}")
+                .contains("{ t('aggSum', { x: 'Amount' }) }")
+                .doesNotContain("<LineChart");
+
+        // csvExport is on for this example, so the report offers the same filters as a download.
+        assertThat(report)
+                .contains("import { Download } from 'lucide-react'")
+                .contains("api.download(`${PATH}/export.csv${search ? `?${search}` : ''}`, 'sales.csv')");
+
+        // The dashboard: a counting tile, two reducing tiles, a reducing bar and a trend.
+        String dashboard = files.get(FE + "src/app/screens/ReportScreen.tsx");
+        assertThat(dashboard)
+                .contains("import { BreakdownCard, KpiTile, TrendCard, RecentList, } from '@shared/ui/widgets'")
+                .contains("agg=\"sum\"")
+                .contains("agg=\"avg\"")
+                .contains("field=\"amount\"")
+                .contains("<TrendCard")
+                .contains("on=\"soldOn\"")
+                .contains("bucket=\"month\"")
+                .contains("valueField=\"amount\"");
+
+        // The shared widgets ship for a report even with no dashboard, and no longer sample rows.
+        String widgets = files.get(FE + "src/shared/ui/widgets.tsx");
+        assertThat(widgets)
+                .contains("export function LineChart(")
+                .contains("export function TrendCard(")
+                .doesNotContain("BREAKDOWN_SAMPLE");
+
+        // A report is an ordinary nav page, with its own icon.
+        assertThat(files.get(FE + "src/app/App.tsx"))
+                .contains("BarChart3")
+                .contains("{ id: 'revenue', label: 'Revenue analysis', icon: BarChart3 },");
+    }
+
+    @Test
+    void fullstackEndpoint_reportOverTimeDrawsALineAndCountsRows() throws Exception {
+        Map<String, Object> body = exampleBody("reporting", "react-tailwind-crud");
+        List<Map<String, Object>> pages = pages(body);
+        // Same page, grouped over the date column and counting rather than reducing.
+        pages.get(2).put("chart", Map.of("groupBy", "soldOn", "bucket", "month"));
+        Map<String, String> files = generate(body);
+
+        assertThat(files.get(FE + "src/app/screens/RevenueScreen.tsx"))
+                .contains("const ROLLUP = 'groupBy=soldOn&bucket=month'")
+                .contains("import { LineChart } from '@shared/ui/widgets'")
+                // Counting over a date: no enum labels, so statLabel is not imported either.
+                .contains("import { formatStat, statsQuery, useStats } from '@shared/ui/stats'")
+                .contains("<LineChart data={rows} />")
+                // Counting rows, so the value column is headed "Rows" and no labels are imported.
+                .contains("{ t('rows') }")
+                .doesNotContain("@entities/sale")
+                .doesNotContain("<BarRows");
+    }
+
+    @Test
+    void fullstackEndpoint_shipsWidgetsForAReportWithoutADashboard() throws Exception {
+        Map<String, Object> body = exampleBody("reporting", "react-tailwind-crud");
+        List<Map<String, Object>> pages = pages(body);
+        // Drop the dashboard: widgets.tsx is gated on hasWidgets, not hasDashboardPages.
+        pages.remove(0);
+        Map<String, String> files = generate(body);
+
+        assertThat(files).containsKey(FE + "src/shared/ui/widgets.tsx");
+        assertThat(files).containsKey(FE + "src/shared/ui/stats.ts");
+        assertThat(files).containsKey(FE + "src/app/screens/RevenueScreen.tsx");
+        assertThat(files.keySet()).noneMatch(k -> k.endsWith("ReportScreen.tsx"));
+    }
+
+    @Test
     void fullstackEndpoint_rejectsInvalidPages() {
-        assertRejected(p -> p.get(0).put("type", "report"), "type 'report' is not supported yet");
+        assertRejected(p -> p.get(0).put("type", "wizard"), "type 'wizard' is not supported yet");
         assertRejected(p -> p.get(0).put("type", "gallery"), "unknown type 'gallery'");
         assertRejected(p -> p.get(0).put("id", "Overview"), "Page id 'Overview' must be lower-case");
         assertRejected(p -> p.get(5).put("id", "overview"), "Duplicate page id 'overview'");
@@ -319,7 +406,32 @@ class FullstackPagesIntegrationTests {
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "bar", "entity", "Team"))),
                 "Team has no enum or boolean field to group by");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "agg", "sum"))),
-                "agg 'sum' is not supported yet");
+                "agg 'sum' needs a numeric 'field' of Ticket to reduce");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket",
+                        "agg", "count", "field", "subject"))),
+                "agg 'count' counts records, so it takes no 'field'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket",
+                        "agg", "sum", "field", "subject"))),
+                "field 'subject' must be a non-key numeric field to be aggregated");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "agg", "median"))),
+                "unknown agg 'median' (expected count, sum, avg, min or max)");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "pie", "entity", "Ticket"))),
+                "unknown widget kind 'pie' (expected kpi, bar, line or recent)");
+        // line widgets plot a temporal field, bucketed
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "line", "entity", "Team"))),
+                "Team has no date field to plot over time");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "line", "entity", "Ticket",
+                        "groupBy", "status"))),
+                "groupBy 'status' must be a non-key date field to plot over time");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "line", "entity", "Ticket",
+                        "bucket", "fortnight"))),
+                "unknown bucket 'fortnight' (expected day, month or year)");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "bar", "entity", "Ticket",
+                        "groupBy", "status", "bucket", "month"))),
+                "only a line widget takes 'bucket'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "recent", "entity", "Ticket",
+                        "agg", "sum", "field", "id"))),
+                "a recent widget lists rows, so it takes no 'agg'");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "recent", "entity", "Ticket", "limit", 99))),
                 "limit must be between 1 and 20");
         assertRejected(p -> p.get(1).put("tabs", List.of(Map.of("page", "tickets-open"))), "needs between 2 and 6 tabs");
@@ -359,6 +471,16 @@ class FullstackPagesIntegrationTests {
             p.add(page);
         }, "Team has no relation to Ticket");
         assertRejected(p -> p.get(0).put("childTabs", List.of("Team")), "(dashboard) does not take 'childTabs'");
+        // Report
+        assertRejected(p -> p.add(reportPage("by-status", "Ticket", null)), "a report needs a 'chart'");
+        assertRejected(p -> p.add(reportPage("by-status", "Ticket", Map.of("groupBy", "subject"))),
+                "groupBy 'subject' must be a non-key enum, boolean or date field");
+        assertRejected(p -> p.add(reportPage("by-status", "Team", Map.of())),
+                "Team has no enum, boolean or date field to group by");
+        assertRejected(p -> p.add(reportPage("by-status", "Ticket", Map.of("groupBy", "status", "bucket", "month"))),
+                "'bucket' applies to a date groupBy, and 'status' is not one");
+        assertRejected(p -> p.get(0).put("chart", Map.of("groupBy", "status")),
+                "(dashboard) does not take 'chart'");
     }
 
     @Test
@@ -416,6 +538,13 @@ class FullstackPagesIntegrationTests {
     private static Map<String, Object> recordPage(String id, String entity, Boolean hidden) {
         Map<String, Object> page = new LinkedHashMap<>(Map.of("id", id, "type", "record", "entity", entity));
         if (hidden != null) page.put("hidden", hidden);
+        return page;
+    }
+
+    /** A report page over {@code entity}; a null {@code chart} leaves the property off entirely. */
+    private static Map<String, Object> reportPage(String id, String entity, Map<String, String> chart) {
+        Map<String, Object> page = new LinkedHashMap<>(Map.of("id", id, "type", "report", "entity", entity));
+        if (chart != null) page.put("chart", chart);
         return page;
     }
 

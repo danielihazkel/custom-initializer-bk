@@ -134,6 +134,7 @@ public final class EntityScaffoldContext {
             pv.put("pageIsTabs", p.type() == PageDefinition.Type.TABS);
             pv.put("pageIsMasterDetail", p.type() == PageDefinition.Type.MASTER_DETAIL);
             pv.put("pageIsRecord", p.type() == PageDefinition.Type.RECORD);
+            pv.put("pageIsReport", p.type() == PageDefinition.Type.REPORT);
             pv.put("hasPageDescription", p.description() != null);
             pv.put("pageDescriptionExpr", p.description() == null ? null : tsString(p.description()));
             pv.put("needsNavigate", false);
@@ -154,6 +155,27 @@ public final class EntityScaffoldContext {
                     putDashboard(pv, p, entityByPascal, summaries, links);
                     pv.put("navIcon", "LayoutDashboard");
                     defaultTitleExpr = "t('dashboard')";
+                }
+                case REPORT -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    pv.put("EntityName", ev.get("EntityName"));
+                    pv.put("entityNameKebab", ev.get("entityNameKebab"));
+                    pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
+                    // The report builds the same FilterDescriptor[] as the entity page. A per-page
+                    // context is project context + page view-model, so the entity's filter fields
+                    // have to be copied in — EntityPage is deliberately left untouched.
+                    pv.put("filterFields", ev.get("filterFields"));
+                    pv.put("hasFilters", ev.get("hasFilters"));
+                    pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
+                    pv.put("presetFilterTs", presetFilterTs(p.presetFilter()));
+                    // A per-page screen never runs through buildEntityContext, so the entity's own
+                    // csvExport override has to be resolved against the project opt here.
+                    Object csvOverride = ev.get("csvExportOverride");
+                    pv.put("reportHasExport", csvOverride != null ? Boolean.TRUE.equals(csvOverride)
+                            : Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport")));
+                    putChart(pv, p.chart(), ev);
+                    pv.put("navIcon", "BarChart3");
+                    defaultTitleExpr = "t('xReport', { x: " + tsString((String) ev.get("entityLabelPlural")) + " })";
                 }
                 case MASTER_DETAIL -> {
                     Map<String, Object> parent = entityByPascal.get(Naming.toPascalCase(p.parent()));
@@ -261,6 +283,7 @@ public final class EntityScaffoldContext {
                 }
             }
             pv.put("usesT", Boolean.TRUE.equals(pv.get("pageIsMasterDetail")) || Boolean.TRUE.equals(pv.get("pageIsRecord"))
+                    || Boolean.TRUE.equals(pv.get("pageIsReport"))
                     || exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
         }
 
@@ -278,10 +301,14 @@ public final class EntityScaffoldContext {
         // The shell declares its `goView` helper only when some screen takes onNavigate.
         ctx.put("hasNavigatingScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("needsNavigate"))));
         ctx.put("initialPageId", nav.get(0).get("pageId"));
-        for (String icon : List.of("Table2", "LayoutDashboard", "Layers", "PanelLeft")) {
+        for (String icon : List.of("Table2", "LayoutDashboard", "Layers", "PanelLeft", "BarChart3")) {
             ctx.put("navUses" + icon, nav.stream().anyMatch(v -> icon.equals(v.get("navIcon"))));
         }
         ctx.put("hasDashboardPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsDashboard"))));
+        ctx.put("hasReportPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsReport"))));
+        // widgets.tsx backs both the dashboard screens and the report screen's chart.
+        ctx.put("hasWidgets", Boolean.TRUE.equals(ctx.get("hasDashboardPages"))
+                || Boolean.TRUE.equals(ctx.get("hasReportPages")));
         ctx.put("hasTabsPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTabs"))));
     }
 
@@ -351,7 +378,14 @@ public final class EntityScaffoldContext {
             wv.put("widgetKey", "w" + i);
             wv.put("widgetIsKpi", w.kind() == PageDefinition.WidgetKind.KPI);
             wv.put("widgetIsBar", w.kind() == PageDefinition.WidgetKind.BAR);
+            wv.put("widgetIsLine", w.kind() == PageDefinition.WidgetKind.LINE);
             wv.put("widgetIsRecent", w.kind() == PageDefinition.WidgetKind.RECENT);
+            // `count` is the default everywhere, so only a real reduction reaches the props.
+            boolean reduces = w.agg() != null && w.agg() != PageDefinition.Agg.COUNT;
+            wv.put("hasAgg", reduces);
+            wv.put("agg", w.agg() == null ? null : w.agg().wire());
+            wv.put("aggField", w.field());
+            wv.put("bucket", w.bucket() == null ? null : w.bucket().wire());
             wv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
             String target = links.homeOf(w.entity());
             wv.put("hasTarget", target != null);
@@ -359,7 +393,14 @@ public final class EntityScaffoldContext {
             needsNavigate |= target != null;
             String defaultTitle;
             switch (w.kind()) {
-                case KPI -> defaultTitle = entityLabels;
+                // A reducing tile is titled by what it reduces ("Total Amount"), a counting one by
+                // what it counts.
+                case KPI -> defaultTitle = reduces ? aggTitle(w, ev) : entityLabels;
+                case LINE -> {
+                    wv.put("groupBy", w.groupBy());
+                    defaultTitle = "t('xOverTime', { x: "
+                            + (reduces ? aggTitle(w, ev) : entityLabels) + " })";
+                }
                 case BAR -> {
                     Map<String, Object> fv = ((List<Map<String, Object>>) ev.get("fields")).stream()
                             .filter(f -> w.groupBy().equals(f.get("name"))).findFirst().orElseThrow();
@@ -371,7 +412,9 @@ public final class EntityScaffoldContext {
                         labelRefsByModule.computeIfAbsent((String) ev.get("entityNameKebab"), k -> new LinkedHashSet<>())
                                 .add(enumType + "Labels");
                     }
-                    defaultTitle = "t('xByY', { x: " + entityLabels + ", y: " + tsString((String) fv.get("label")) + " })";
+                    defaultTitle = reduces
+                            ? "t('xByY', { x: " + aggTitle(w, ev) + ", y: " + tsString((String) fv.get("label")) + " })"
+                            : "t('xByY', { x: " + entityLabels + ", y: " + tsString((String) fv.get("label")) + " })";
                 }
                 default -> {
                     wv.put("limit", w.limit());
@@ -390,12 +433,68 @@ public final class EntityScaffoldContext {
         pv.put("widgets", widgetViews);
         pv.put("usesKpi", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsKpi"))));
         pv.put("usesBar", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsBar"))));
+        pv.put("usesLine", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsLine"))));
         pv.put("usesRecent", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsRecent"))));
         List<Map<String, Object>> labelImports = new ArrayList<>();
         labelRefsByModule.forEach((kebab, refs) ->
                 labelImports.add(Map.of("entityNameKebab", kebab, "labelsRefs", String.join(", ", refs))));
         pv.put("labelImports", labelImports);
         pv.put("needsNavigate", needsNavigate);
+    }
+
+    /**
+     * A report's single chart, as its screen's view-model: which component draws it, the fixed
+     * half of the {@code /stats} query it asks for (the filter bar appends its values), and the
+     * headings of the totals table beneath it.
+     */
+    private static void putChart(Map<String, Object> pv, PageDefinition.Chart chart, Map<String, Object> ev) {
+        Map<String, Object> fv = fieldOf(ev, chart.groupBy());
+        boolean overTime = chart.bucket() != null;
+        pv.put("chartIsLine", overTime);
+        pv.put("chartIsBar", !overTime);
+        pv.put("chartGroupBy", chart.groupBy());
+        pv.put("chartGroupLabelExpr", tsString((String) fv.get("label")));
+        Object enumType = Boolean.TRUE.equals(fv.get("isEnum")) ? fv.get("enumTypeName") : null;
+        pv.put("chartHasLabels", enumType != null);
+        pv.put("chartLabelsRef", enumType == null ? null : enumType + "Labels");
+        boolean reduces = chart.agg() != PageDefinition.Agg.COUNT;
+        pv.put("chartHasValueColumn", reduces);
+        pv.put("chartValueHeaderExpr", reduces
+                ? aggTitleExpr(chart.agg(), (String) fieldOf(ev, chart.field()).get("label"))
+                : null);
+        StringBuilder query = new StringBuilder("groupBy=").append(chart.groupBy());
+        if (overTime) query.append("&bucket=").append(chart.bucket().wire());
+        if (reduces) query.append("&agg=").append(chart.agg().wire()).append("&field=").append(chart.field());
+        pv.put("rollupQuery", query.toString());
+    }
+
+    /** One field of an entity view-model, by its wire name. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> fieldOf(Map<String, Object> entityView, String name) {
+        return ((List<Map<String, Object>>) entityView.get("fields")).stream()
+                .filter(f -> name.equals(f.get("name"))).findFirst().orElseThrow();
+    }
+
+    /** {@code t('aggSum', { x: 'Amount' })} — what a reducing tile or chart is called when the
+     *  request gave it no title of its own. */
+    private static String aggTitle(PageDefinition.Widget w, Map<String, Object> entityView) {
+        return aggTitleExpr(w.agg(), (String) fieldOf(entityView, w.field()).get("label"));
+    }
+
+    private static String aggTitleExpr(PageDefinition.Agg agg, String fieldLabel) {
+        String key = "agg" + agg.wire().substring(0, 1).toUpperCase(Locale.ROOT) + agg.wire().substring(1);
+        return "t('" + key + "', { x: " + tsString(fieldLabel) + " })";
+    }
+
+    /** One entry of a {@code /stats} whitelist: enough to splice the column into the generated
+     *  {@code switch} and to label it. */
+    private static Map<String, Object> statsField(Map<String, Object> fv) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("name", fv.get("name"));
+        out.put("Name", fv.get("Name"));
+        out.put("label", fv.get("label"));
+        out.put("javaType", fv.get("javaType"));
+        return out;
     }
 
     /** {@code {status=OPEN}} → {@code { status: 'OPEN' }}; values are validated constants/booleans. */
@@ -786,6 +885,40 @@ public final class EntityScaffoldContext {
         // The per-entity enum type whose `...Labels` const the dashboard chart reads (null for a
         // boolean breakdown, whose two values need no label map).
         view.put("breakdownEnumTypeName", breakdownIsEnum ? breakdown.get("enumTypeName") : null);
+
+        // Aggregation endpoint (GET /api/x/stats): the columns it may group by, bucket over and
+        // reduce. Derived from the entity alone — deliberately not from the page layout, because the
+        // backend render context never sees `pages` (putPageContext is frontend-only), and the two
+        // render paths have to agree on whether the endpoint exists.
+        List<Map<String, Object>> statsGroupByFields = new ArrayList<>();
+        List<Map<String, Object>> statsDateFields = new ArrayList<>();
+        List<Map<String, Object>> statsNumericFields = new ArrayList<>();
+        for (Map<String, Object> fv : fieldViews) {
+            boolean isPk = Boolean.TRUE.equals(fv.get("isPrimaryKey"));
+            if (Boolean.TRUE.equals(fv.get("isEnum")) || Boolean.TRUE.equals(fv.get("isBoolean"))) {
+                // Primary keys included on purpose: `hasBreakdown` above charts the first enum
+                // whether or not it is the key, and this whitelist has to be able to answer it.
+                statsGroupByFields.add(statsField(fv));
+            } else if (!isPk && Boolean.TRUE.equals(fv.get("isTemporal"))) {
+                statsDateFields.add(statsField(fv));
+            } else if (!isPk && Boolean.TRUE.equals(fv.get("isNumeric"))) {
+                statsNumericFields.add(statsField(fv));
+            }
+        }
+        view.put("statsGroupByFields", statsGroupByFields);
+        view.put("hasStatsGroupByFields", !statsGroupByFields.isEmpty());
+        view.put("statsDateFields", statsDateFields);
+        view.put("hasStatsDateFields", !statsDateFields.isEmpty());
+        view.put("statsNumericFields", statsNumericFields);
+        view.put("hasStatsNumericFields", !statsNumericFields.isEmpty());
+        // Nothing to group, bucket or reduce means the endpoint could only answer a bare count,
+        // which the list endpoint's page metadata (?size=1) already gives — so it is not emitted.
+        view.put("statsApplicable", !statsGroupByFields.isEmpty() || !statsDateFields.isEmpty()
+                || !statsNumericFields.isEmpty());
+        // Exposed so a per-page report screen can resolve this entity's Export button: a page
+        // context is project context + page view-model and never runs through buildEntityContext,
+        // where the opt overrides are normally applied. null = inherit the project flag.
+        view.put("csvExportOverride", entity.opts().get("csvExport"));
 
         // Kanban board view (listView == "kanban"): reuse the breakdown field as the grouping
         // column and turn its distinct values into lanes. Dragging a card writes the new lane value

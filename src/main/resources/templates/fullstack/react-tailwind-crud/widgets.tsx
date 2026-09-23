@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { api } from '@shared/api'
 import { t } from '../i18n'
+import { aggQuery, formatStat, statLabel, statsQuery, useStats, type StatsResponse } from './stats'
 
-// Dashboard widgets for the generated screens (src/app/screens). Each reads the entity's regular
-// list endpoint — no extra API: a count from the page metadata, a breakdown grouped client-side
-// from a sample page, the latest rows sorted by key.
+// Dashboard widgets for the generated screens (src/app/screens). Counts come from the list
+// endpoint's page metadata; every breakdown, trend and aggregate comes from the entity's
+// /stats rollup, so a chart is exact rather than a sample of the first page.
 
 const card = 'rounded-2xl border border-border bg-surface p-5 shadow-sm'
 
@@ -35,24 +36,104 @@ function WidgetHeader({ title, onOpen }: { title: string; onOpen?: () => void })
   )
 }
 
-/** Total record count of `path`, read from the page metadata (size=1). */
-export function KpiTile({ title, path, onOpen }: { title: string; path: string; onOpen?: () => void }) {
-  const [count, setCount] = useState<number | null>(null)
+/** Horizontal bars scaled to the largest value. Shared by the breakdown widget and the report
+ *  screen, which draw the same chart from the same rollup. */
+export function BarRows({ data }: { data: { label: string; value: number }[] }) {
+  const max = data.reduce((m, d) => Math.max(m, d.value), 0) || 1
+  return (
+    <div className="space-y-2">
+      {data.map(d => (
+        <div key={d.label} className="flex items-center gap-3 text-sm">
+          <div className="w-28 shrink-0 truncate text-muted" title={d.label}>{d.label}</div>
+          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+            <div className="h-full rounded-full bg-brand" style={{ width: `${(d.value / max) * 100}%` }} />
+          </div>
+          <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(d.value)}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const CHART_W = 320
+const CHART_H = 110
+const CHART_PAD = 8
+
+/** A time series as plain SVG — the generated app ships no charting library. The viewBox scales
+ *  with the container, so the stroke and the dots keep their proportions at any width. */
+export function LineChart({ data }: { data: { label: string; value: number }[] }) {
+  if (data.length === 0) return null
+  const values = data.map(d => d.value)
+  const max = Math.max(...values, 0)
+  const min = Math.min(...values, 0)
+  const span = max - min || 1
+  const step = data.length > 1 ? (CHART_W - CHART_PAD * 2) / (data.length - 1) : 0
+  const points = data.map((d, i) => [
+    CHART_PAD + i * step,
+    CHART_H - CHART_PAD - ((d.value - min) / span) * (CHART_H - CHART_PAD * 2),
+  ] as const)
+  const line = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
+  const last = points[points.length - 1]
+  const area = `${line} L${last[0].toFixed(1)} ${CHART_H - CHART_PAD} L${points[0][0].toFixed(1)} ${CHART_H - CHART_PAD} Z`
+
+  return (
+    <div>
+      <svg
+        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+        className="h-auto w-full"
+        role="img"
+        aria-label={data.map(d => `${d.label}: ${formatStat(d.value)}`).join(', ')}
+      >
+        {data.length > 1 && <path d={area} className="fill-brand/10" />}
+        <path
+          d={line}
+          className="stroke-brand"
+          fill="none"
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {points.map(([x, y], i) => (
+          <circle key={data[i].label} cx={x} cy={y} r={2.5} className="fill-brand">
+            <title>{`${data[i].label}: ${formatStat(data[i].value)}`}</title>
+          </circle>
+        ))}
+      </svg>
+      <div className="mt-1 flex justify-between text-[11px] tabular-nums text-muted">
+        <span>{data[0].label}</span>
+        {data.length > 1 && <span>{data[data.length - 1].label}</span>}
+      </div>
+    </div>
+  )
+}
+
+/** A single number: the record count, or an aggregate of one numeric column. */
+export function KpiTile({ title, path, agg, field, onOpen }: {
+  title: string
+  path: string
+  /** sum/avg/min/max over `field`; omitted counts records. */
+  agg?: string
+  field?: string
+  onOpen?: () => void
+}) {
+  const [value, setValue] = useState<number | null>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let active = true
-    api.get<{ totalElements: number }>(`${path}?size=1`)
-      .then(p => { if (active) setCount(p.totalElements) })
-      .catch(() => { if (active) setFailed(true) })
+    // A plain count is already exact from the page metadata, and one row crosses the wire.
+    const pending = agg && agg !== 'count'
+      ? api.get<StatsResponse>(`${path}/stats?${aggQuery(agg, field)}`).then(s => s.total)
+      : api.get<{ totalElements: number }>(`${path}?size=1`).then(p => p.totalElements)
+    pending.then(v => { if (active) setValue(v) }).catch(() => { if (active) setFailed(true) })
     return () => { active = false }
-  }, [path])
+  }, [path, agg, field])
 
   const body = (
     <>
       <div className="text-sm text-muted">{title}</div>
       <div className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-fg">
-        {failed ? '—' : count == null ? <span className="text-muted">…</span> : count}
+        {failed ? '—' : value == null ? <span className="text-muted">…</span> : formatStat(value)}
       </div>
     </>
   )
@@ -69,68 +150,51 @@ export function KpiTile({ title, path, onOpen }: { title: string; path: string; 
   )
 }
 
-const BREAKDOWN_SAMPLE = 200
-
-/** Record count per value of `field` (an enum or boolean column), from the first
- *  BREAKDOWN_SAMPLE records — the card says so when the table is larger. */
-export function BreakdownCard({ title, path, field, labels, onOpen }: {
+/** Records grouped by `field` (an enum or boolean column), rolled up by the backend. */
+export function BreakdownCard({ title, path, field, agg, valueField, labels, onOpen }: {
   title: string
   path: string
   field: string
+  /** sum/avg/min/max over `valueField`; omitted counts records. */
+  agg?: string
+  valueField?: string
   /** Enum breakdowns: display label per constant. */
   labels?: Record<string, string>
   onOpen?: () => void
 }) {
-  const [data, setData] = useState<{ label: string; count: number }[] | null>(null)
-  const [sampled, setSampled] = useState<{ shown: number; total: number } | null>(null)
-  const [failed, setFailed] = useState(false)
+  const { stats, failed } = useStats(path, statsQuery(`groupBy=${field}`, aggQuery(agg, valueField)))
+  // Largest first: a breakdown is read by size, not by key order.
+  const data = (stats?.buckets ?? [])
+    .map(b => ({ label: statLabel(b, labels), value: b.value ?? 0 }))
+    .sort((a, b) => b.value - a.value)
 
-  useEffect(() => {
-    let active = true
-    api.get<{ content: Record<string, unknown>[]; totalElements: number }>(`${path}?size=${BREAKDOWN_SAMPLE}`)
-      .then(p => {
-        if (!active) return
-        const rows = p.content ?? []
-        setSampled({ shown: rows.length, total: p.totalElements ?? rows.length })
-        const counts = new Map<string, number>()
-        for (const row of rows) {
-          const raw = row[field] == null ? '—' : String(row[field])
-          const key = labels?.[raw] ?? raw
-          counts.set(key, (counts.get(key) ?? 0) + 1)
-        }
-        setData(Array.from(counts, ([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count))
-      })
-      .catch(() => { if (active) setFailed(true) })
-    return () => { active = false }
-    // `labels` is a module-level constant in the generated screens, so it never changes identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, field])
-
-  const max = (data ?? []).reduce((m, d) => Math.max(m, d.count), 0) || 1
   return (
     <div className={card}>
       <WidgetHeader title={title} onOpen={onOpen} />
-      <Status failed={failed} loading={data == null} empty={data?.length === 0} />
-      {data && data.length > 0 && !failed && (
-        <>
-          <div className="space-y-2">
-            {data.map(d => (
-              <div key={d.label} className="flex items-center gap-3 text-sm">
-                <div className="w-28 shrink-0 truncate text-muted" title={d.label}>{d.label}</div>
-                <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
-                  <div className="h-full rounded-full bg-brand" style={{ width: `${(d.count / max) * 100}%` }} />
-                </div>
-                <div className="w-8 shrink-0 text-end tabular-nums text-fg">{d.count}</div>
-              </div>
-            ))}
-          </div>
-          {sampled && sampled.total > sampled.shown && (
-            <div className="mt-3 text-xs text-muted">
-              {t('basedOnSample', { shown: sampled.shown, total: sampled.total })}
-            </div>
-          )}
-        </>
-      )}
+      <Status failed={failed} loading={stats == null} empty={data.length === 0} />
+      {data.length > 0 && !failed && <BarRows data={data} />}
+    </div>
+  )
+}
+
+/** A time series of `agg` over the temporal column `on`, bucketed by day/month/year. */
+export function TrendCard({ title, path, on, bucket, agg, field, onOpen }: {
+  title: string
+  path: string
+  on: string
+  bucket: string
+  agg?: string
+  field?: string
+  onOpen?: () => void
+}) {
+  const { stats, failed } = useStats(path, statsQuery(`groupBy=${on}`, `bucket=${bucket}`, aggQuery(agg, field)))
+  const data = (stats?.buckets ?? []).map(b => ({ label: b.key === '' ? '—' : b.key, value: b.value ?? 0 }))
+
+  return (
+    <div className={card}>
+      <WidgetHeader title={title} onOpen={onOpen} />
+      <Status failed={failed} loading={stats == null} empty={data.length === 0} />
+      {data.length > 0 && !failed && <LineChart data={data} />}
     </div>
   )
 }

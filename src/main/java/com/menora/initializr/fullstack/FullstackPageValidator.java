@@ -35,7 +35,7 @@ public final class FullstackPageValidator {
     static final int DEFAULT_RECENT_LIMIT = 5;
 
     /** Page types reserved for a later release: named so the error says "not yet", not "unknown". */
-    private static final Set<String> PLANNED_TYPES = Set.of("report", "wizard");
+    private static final Set<String> PLANNED_TYPES = Set.of("wizard");
 
     private FullstackPageValidator() {}
 
@@ -103,7 +103,13 @@ public final class FullstackPageValidator {
                     requireSinglePk(prefix, parent);
                     String via = via(prefix, child, parent, trimToNull(p.via()));
                     yield new PageDefinition(id, type, title, description, hidden, null, null, null, null,
-                            parent.name(), child.name(), via, null);
+                            parent.name(), child.name(), via, null, null);
+                }
+                case REPORT -> {
+                    String prefix = "Page '" + id + "' (report)";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    yield new PageDefinition(id, type, title, description, hidden, entity.name(),
+                            presetFilter(id, entity, p.presetFilter()), chart(prefix, entity, p.chart()));
                 }
                 case RECORD -> {
                     String prefix = "Page '" + id + "' (record)";
@@ -115,7 +121,8 @@ public final class FullstackPageValidator {
                                 + " already has a record page ('" + previous + "')");
                     }
                     yield new PageDefinition(id, type, title, description, true, entity.name(), null, null, null,
-                            null, null, null, childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower));
+                            null, null, null, childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower),
+                            null);
                 }
             });
         }
@@ -134,18 +141,22 @@ public final class FullstackPageValidator {
             throw new WizardArgumentException("Page '" + id + "': type '" + t + "' is not supported yet");
         }
         throw new WizardArgumentException("Page '" + id + "': unknown type '" + t
-                + "' (expected entity-list, dashboard, tabs, master-detail or record)");
+                + "' (expected entity-list, dashboard, tabs, master-detail, record or report)");
     }
 
     /** A property that belongs to another page type is a mistake worth reporting, not ignoring. */
     private static void rejectForeignProps(String id, PageDefinition.Type type, PageDefinitionDto p) {
         String prefix = "Page '" + id + "' (" + type.wire() + ") ";
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.RECORD
-                && trimToNull(p.entity()) != null) {
+                && type != PageDefinition.Type.REPORT && trimToNull(p.entity()) != null) {
             throw new WizardArgumentException(prefix + "does not take 'entity'");
         }
-        if (type != PageDefinition.Type.ENTITY_LIST && p.presetFilter() != null && !p.presetFilter().isEmpty()) {
+        if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.REPORT
+                && p.presetFilter() != null && !p.presetFilter().isEmpty()) {
             throw new WizardArgumentException(prefix + "does not take 'presetFilter'");
+        }
+        if (type != PageDefinition.Type.REPORT && p.chart() != null) {
+            throw new WizardArgumentException(prefix + "does not take 'chart'");
         }
         if (type != PageDefinition.Type.MASTER_DETAIL) {
             if (trimToNull(p.parent()) != null) throw new WizardArgumentException(prefix + "does not take 'parent'");
@@ -213,16 +224,36 @@ public final class FullstackPageValidator {
             PageDefinition.WidgetKind kind = parseKind(prefix, w.kind());
             EntityDefinition entity = requireEntity(entitiesByLower, w.entity(), prefix);
             String title = checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title");
-            String agg = trimToNull(w.agg());
-            if (agg != null && !(kind == PageDefinition.WidgetKind.KPI && agg.equalsIgnoreCase("count"))) {
-                throw new WizardArgumentException(prefix + ": agg '" + agg
-                        + "' is not supported yet (a kpi widget counts records)");
+            boolean reduces = kind != PageDefinition.WidgetKind.RECENT;
+            PageDefinition.Agg agg = null;
+            String field = null;
+            if (reduces) {
+                agg = parseAgg(prefix, w.agg());
+                field = aggField(prefix, entity, agg, trimToNull(w.field()));
+            } else {
+                if (trimToNull(w.agg()) != null) {
+                    throw new WizardArgumentException(prefix + ": a recent widget lists rows, so it takes no 'agg'");
+                }
+                if (trimToNull(w.field()) != null) {
+                    throw new WizardArgumentException(prefix + ": a recent widget lists rows, so it takes no 'field'");
+                }
             }
             String groupBy = null;
-            if (kind == PageDefinition.WidgetKind.BAR) {
-                groupBy = groupBy(prefix, entity, trimToNull(w.groupBy()));
-            } else if (trimToNull(w.groupBy()) != null) {
-                throw new WizardArgumentException(prefix + ": only a bar widget takes 'groupBy'");
+            PageDefinition.Bucket bucket = null;
+            switch (kind) {
+                case BAR -> groupBy = groupBy(prefix, entity, trimToNull(w.groupBy()));
+                case LINE -> {
+                    groupBy = dateGroupBy(prefix, entity, trimToNull(w.groupBy()));
+                    bucket = parseBucket(prefix, w.bucket());
+                }
+                default -> {
+                    if (trimToNull(w.groupBy()) != null) {
+                        throw new WizardArgumentException(prefix + ": only a bar or line widget takes 'groupBy'");
+                    }
+                }
+            }
+            if (kind != PageDefinition.WidgetKind.LINE && trimToNull(w.bucket()) != null) {
+                throw new WizardArgumentException(prefix + ": only a line widget takes 'bucket'");
             }
             int limit = 0;
             if (kind == PageDefinition.WidgetKind.RECENT) {
@@ -233,7 +264,7 @@ public final class FullstackPageValidator {
             } else if (w.limit() != null) {
                 throw new WizardArgumentException(prefix + ": only a recent widget takes 'limit'");
             }
-            out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit));
+            out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit, agg, field, bucket));
         }
         return out;
     }
@@ -244,7 +275,113 @@ public final class FullstackPageValidator {
         for (PageDefinition.WidgetKind kind : PageDefinition.WidgetKind.values()) {
             if (kind.wire().equalsIgnoreCase(k)) return kind;
         }
-        throw new WizardArgumentException(prefix + ": unknown widget kind '" + k + "' (expected kpi, bar or recent)");
+        throw new WizardArgumentException(prefix + ": unknown widget kind '" + k
+                + "' (expected kpi, bar, line or recent)");
+    }
+
+    /** How a tile or chart reduces its rows. Absent means {@code count}. */
+    private static PageDefinition.Agg parseAgg(String prefix, String rawAgg) {
+        String a = trimToNull(rawAgg);
+        if (a == null) return PageDefinition.Agg.COUNT;
+        for (PageDefinition.Agg agg : PageDefinition.Agg.values()) {
+            if (agg.wire().equalsIgnoreCase(a)) return agg;
+        }
+        throw new WizardArgumentException(prefix + ": unknown agg '" + a + "' (expected count, sum, avg, min or max)");
+    }
+
+    /** The numeric column an agg reduces: required for everything but {@code count}, which takes none. */
+    private static String aggField(String prefix, EntityDefinition entity, PageDefinition.Agg agg, String requested) {
+        if (agg == PageDefinition.Agg.COUNT) {
+            if (requested != null) {
+                throw new WizardArgumentException(prefix + ": agg 'count' counts records, so it takes no 'field'");
+            }
+            return null;
+        }
+        if (requested == null) {
+            throw new WizardArgumentException(prefix + ": agg '" + agg.wire()
+                    + "' needs a numeric 'field' of " + entity.name() + " to reduce");
+        }
+        FieldDefinition field = entity.fields().stream()
+                .filter(f -> f.name().equals(requested))
+                .findFirst()
+                .orElseThrow(() -> new WizardArgumentException(prefix + ": field '" + requested
+                        + "' is not a field of " + entity.name()));
+        if (field.primaryKey() || !field.type().isNumeric()) {
+            throw new WizardArgumentException(prefix + ": field '" + requested
+                    + "' must be a non-key numeric field to be aggregated");
+        }
+        return field.name();
+    }
+
+    /** A line's bucket granularity. Absent means {@code month}. */
+    private static PageDefinition.Bucket parseBucket(String prefix, String rawBucket) {
+        String b = trimToNull(rawBucket);
+        if (b == null) return PageDefinition.Bucket.MONTH;
+        for (PageDefinition.Bucket bucket : PageDefinition.Bucket.values()) {
+            if (bucket.wire().equalsIgnoreCase(b)) return bucket;
+        }
+        throw new WizardArgumentException(prefix + ": unknown bucket '" + b + "' (expected day, month or year)");
+    }
+
+    /** A line plots a temporal field over time — the entity's first, when omitted. */
+    private static String dateGroupBy(String prefix, EntityDefinition entity, String requested) {
+        if (requested == null) {
+            return entity.fields().stream().filter(f -> !f.primaryKey() && f.type().isTemporal()).findFirst()
+                    .map(FieldDefinition::name)
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
+                            + " has no date field to plot over time"));
+        }
+        FieldDefinition field = entity.fields().stream()
+                .filter(f -> f.name().equals(requested))
+                .findFirst()
+                .orElseThrow(() -> new WizardArgumentException(prefix + ": groupBy '" + requested
+                        + "' is not a field of " + entity.name()));
+        if (field.primaryKey() || !field.type().isTemporal()) {
+            throw new WizardArgumentException(prefix + ": groupBy '" + requested
+                    + "' must be a non-key date field to plot over time");
+        }
+        return field.name();
+    }
+
+    /**
+     * A report's chart. {@code groupBy} decides its shape: an enum/boolean field draws a bar, a
+     * temporal one draws a line bucketed by day/month/year. Omitted, it falls back to the entity's
+     * first enum/boolean field, else its first date.
+     */
+    private static PageDefinition.Chart chart(String prefix, EntityDefinition entity,
+                                              FullstackStarterRequest.ChartDto raw) {
+        if (raw == null) {
+            throw new WizardArgumentException(prefix + ": a report needs a 'chart'");
+        }
+        String requested = trimToNull(raw.groupBy());
+        FieldDefinition field = null;
+        if (requested != null) {
+            field = entity.fields().stream()
+                    .filter(f -> f.name().equals(requested))
+                    .findFirst()
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": groupBy '" + requested
+                            + "' is not a field of " + entity.name()));
+            if (field.primaryKey()
+                    || !(field.type().isEnum() || field.type().isBoolean() || field.type().isTemporal())) {
+                throw new WizardArgumentException(prefix + ": groupBy '" + requested
+                        + "' must be a non-key enum, boolean or date field");
+            }
+        } else {
+            field = entity.fields().stream()
+                    .filter(f -> !f.primaryKey() && (f.type().isEnum() || f.type().isBoolean()))
+                    .findFirst()
+                    .or(() -> entity.fields().stream().filter(f -> !f.primaryKey() && f.type().isTemporal()).findFirst())
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
+                            + " has no enum, boolean or date field to group by"));
+        }
+        boolean overTime = field.type().isTemporal();
+        if (!overTime && trimToNull(raw.bucket()) != null) {
+            throw new WizardArgumentException(prefix + ": 'bucket' applies to a date groupBy, and '"
+                    + field.name() + "' is not one");
+        }
+        PageDefinition.Agg agg = parseAgg(prefix, raw.agg());
+        return new PageDefinition.Chart(field.name(), overTime ? parseBucket(prefix, raw.bucket()) : null,
+                agg, aggField(prefix, entity, agg, trimToNull(raw.field())));
     }
 
     /** A bar groups by a non-PK enum/boolean field — the first enum, else the first boolean, when omitted. */

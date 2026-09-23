@@ -171,6 +171,28 @@ class GeneratedFrontendBuildSmokeTests {
         runPnpm(project, "run", "build");
     }
 
+    @Test
+    void fullstackFrontendReportLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Sales reporting layout: aggregate tiles, a reducing breakdown, the hand-rolled SVG
+        // trend chart and the report screen (filter bar + chart + totals + CSV export).
+        Path project = postAndExtractFrontend(workDir,
+                FullstackPagesIntegrationTests.exampleBody("reporting", "react-tailwind-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraReportLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same layout on the Menora set, which borrows the report screen and the widgets but
+        // renders them against its own FilterBar.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackPagesIntegrationTests.exampleBody("reporting", "react-menora-digital-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**

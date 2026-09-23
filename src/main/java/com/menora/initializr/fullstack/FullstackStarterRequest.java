@@ -183,8 +183,9 @@ public record FullstackStarterRequest(
     }
 
     /**
-     * One page of the generated frontend. {@code type} is {@code entity-list}, {@code dashboard} or
-     * {@code tabs}; which of the other properties apply depends on it (see FullstackPageValidator).
+     * One page of the generated frontend. {@code type} is {@code entity-list}, {@code dashboard},
+     * {@code tabs}, {@code master-detail}, {@code record} or {@code report}; which of the other
+     * properties apply depends on it (see FullstackPageValidator).
      */
     public record PageDefinitionDto(
             String id,
@@ -208,25 +209,41 @@ public record FullstackStarterRequest(
             String via,
             // record: the child entities shown as tabs under the record (default: every entity
             // with a MANY_TO_ONE to it). The record entity itself goes in `entity`.
-            List<String> childTabs) {
+            List<String> childTabs,
+            // report: the single chart the page is built around. Its entity and opening filters
+            // are the shared `entity` / `presetFilter`.
+            ChartDto chart) {
 
-        /** Back-compat constructor for the phase-1 page types (no master-detail/record props). */
+        /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
                                  String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
                                  List<TabDto> tabs) {
-            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, null, null, null, null);
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
+                    null, null, null, null, null);
         }
     }
 
-    /** A dashboard widget: {@code kpi} (record count), {@code bar} (count by an enum/boolean
-     *  field) or {@code recent} (the latest rows). */
+    /** A dashboard widget: {@code kpi} (one number), {@code bar} (grouped by an enum/boolean
+     *  field), {@code line} (a time series over a temporal field) or {@code recent} (the latest
+     *  rows). {@code agg}/{@code field} reduce a numeric column — {@code count} (the default)
+     *  takes no field; {@code bucket} applies to {@code line}. */
     public record WidgetDto(
             String kind,
             String entity,
             String title,
             String agg,
             String groupBy,
-            Integer limit) {}
+            Integer limit,
+            String field,
+            String bucket) {}
+
+    /** A report page's chart: rows grouped by an enum/boolean field (a bar) or a temporal one
+     *  (a line, bucketed by {@code day}/{@code month}/{@code year}), reduced by {@code agg}. */
+    public record ChartDto(
+            String groupBy,
+            String bucket,
+            String agg,
+            String field) {}
 
     /** One tab of a {@code tabs} page, embedding another (non-tabs) page by id. */
     public record TabDto(String title, String page) {}

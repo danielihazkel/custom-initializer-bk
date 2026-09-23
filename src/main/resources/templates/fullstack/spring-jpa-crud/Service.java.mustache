@@ -13,7 +13,17 @@ import org.springframework.data.domain.Pageable;
 import java.util.List;
 {{#imports}}import {{name}};
 {{/imports}}{{#fields}}{{#isEnum}}import {{entityPackage}}.{{EntityName}}.{{enumTypeName}};
-{{/isEnum}}{{/fields}}{{/hasFilters}}import org.springframework.stereotype.Service;
+{{/isEnum}}{{/fields}}{{/hasFilters}}{{#statsApplicable}}import jakarta.persistence.EntityManager;
+import jakarta.persistence.Tuple;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.Path;
+{{#needsSpecification}}import jakarta.persistence.criteria.Predicate;
+{{/needsSpecification}}import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Selection;
+{{#hasStatsDateFields}}import java.time.temporal.TemporalAccessor;
+{{/hasStatsDateFields}}import org.hibernate.query.criteria.HibernateCriteriaBuilder;
+{{/statsApplicable}}import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -21,10 +31,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class {{EntityName}}Service {
 
     private final {{EntityName}}Repository repository;
-
-    public {{EntityName}}Service({{EntityName}}Repository repository) {
+{{#statsApplicable}}    private final EntityManager entityManager;
+{{/statsApplicable}}
+    public {{EntityName}}Service({{EntityName}}Repository repository{{#statsApplicable}}, EntityManager entityManager{{/statsApplicable}}) {
         this.repository = repository;
-    }
+{{#statsApplicable}}        this.entityManager = entityManager;
+{{/statsApplicable}}    }
 {{#hasFilters}}
     /** Type-aware filter parameters bound from the request query string. Null fields are ignored. */
     public record Filters(
@@ -33,6 +45,13 @@ public class {{EntityName}}Service {
 
     @Transactional(readOnly = true)
     public Page<{{EntityName}}> findAll(String q, Filters filters, Pageable pageable) {
+        Specification<{{EntityName}}> spec = specOf(q, filters);
+        return spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
+    }
+
+    /** The search + filter predicate the list, the CSV export and the stats endpoint all share;
+     *  null when the request asked for neither. */
+    private Specification<{{EntityName}}> specOf(String q, Filters filters) {
         List<Specification<{{EntityName}}>> specs = new ArrayList<>();
 {{#hasStringFields}}        if (q != null && !q.isBlank()) {
             String like = "%" + escapeLike(q.toLowerCase(Locale.ROOT)) + "%";
@@ -47,24 +66,171 @@ public class {{EntityName}}Service {
 {{/isNumericFilter}}{{#isTemporalFilter}}        if (filters.{{name}}From() != null) specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}From()));
         if (filters.{{name}}To() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}To()));
 {{/isTemporalFilter}}{{#isRelationFilter}}        if (filters.{{name}}() != null) specs.add((root, query, cb) -> cb.equal(root.get("{{relationField}}").get("{{targetPkName}}"), filters.{{name}}()));
-{{/isRelationFilter}}{{/filterFields}}        if (specs.isEmpty()) return repository.findAll(pageable);
+{{/isRelationFilter}}{{/filterFields}}        if (specs.isEmpty()) return null;
         Specification<{{EntityName}}> combined = specs.get(0);
         for (int i = 1; i < specs.size(); i++) combined = combined.and(specs.get(i));
-        return repository.findAll(combined, pageable);
+        return combined;
     }
 {{/hasFilters}}{{^hasFilters}}
     @Transactional(readOnly = true)
     public Page<{{EntityName}}> findAll(String q, Pageable pageable) {
-{{#hasStringFields}}        if (q != null && !q.isBlank()) {
-            String like = "%" + escapeLike(q.toLowerCase(Locale.ROOT)) + "%";
-            Specification<{{EntityName}}> spec = (root, query, cb) -> cb.or(
-{{#stringFields}}                    cb.like(cb.lower(root.get("{{name}}")), like, '\\'){{^lastString}},{{/lastString}}
-{{/stringFields}}            );
-            return repository.findAll(spec, pageable);
-        }
+{{#hasStringFields}}        Specification<{{EntityName}}> spec = specOf(q);
+        if (spec != null) return repository.findAll(spec, pageable);
 {{/hasStringFields}}        return repository.findAll(pageable);
     }
-{{/hasFilters}}
+{{#hasStringFields}}
+    /** The search predicate the list, the CSV export and the stats endpoint all share; null when
+     *  nothing was searched for. */
+    private Specification<{{EntityName}}> specOf(String q) {
+        if (q == null || q.isBlank()) return null;
+        String like = "%" + escapeLike(q.toLowerCase(Locale.ROOT)) + "%";
+        return (root, query, cb) -> cb.or(
+{{#stringFields}}                cb.like(cb.lower(root.get("{{name}}")), like, '\\'){{^lastString}},{{/lastString}}
+{{/stringFields}}        );
+    }
+{{/hasStringFields}}{{/hasFilters}}
+{{#statsApplicable}}
+    /** One group of a {@link #stats} result: the group's key (an enum constant, {@code true}/
+     *  {@code false}, a date bucket like {@code 2026-09}, or empty when nothing is grouped) and
+     *  the aggregate over its rows. */
+    public record StatsBucket(String key, java.math.BigDecimal value) {}
+
+    /**
+     * Aggregates the rows the dashboard charts and report pages draw, honouring the same search
+     * and filters as the list — so a chart always agrees with the table beneath it.
+     *
+     * @param groupBy a groupable or date column, or null/blank for a single total
+     * @param bucket  {@code day}/{@code month}/{@code year} when {@code groupBy} is a date column
+     * @param agg     {@code count} (the default) or {@code sum}/{@code avg}/{@code min}/{@code max}
+     *                over {@code field}
+     */
+    @Transactional(readOnly = true)
+    public java.util.List<StatsBucket> stats(String q, {{#hasFilters}}Filters filters, {{/hasFilters}}String groupBy,
+                                             String bucket, String agg, String field) {
+        // Hibernate's builder rather than the JPA one, for the date parts below: cb.year(x) lowers
+        // to `extract(year from x)`, which every dialect renders for itself. The portable-looking
+        // cb.function("year", ...) would emit a raw SQL year() that only some databases have.
+        HibernateCriteriaBuilder cb = (HibernateCriteriaBuilder) entityManager.getCriteriaBuilder();
+        CriteriaQuery<Tuple> query = cb.createTupleQuery();
+        Root<{{EntityName}}> root = query.from({{EntityName}}.class);
+
+        java.util.List<Selection<?>> selections = new java.util.ArrayList<>();
+        java.util.List<Expression<?>> groups = new java.util.ArrayList<>();
+        boolean grouped = groupBy != null && !groupBy.isBlank();
+        boolean overTime = grouped && isDateGroup(groupBy);
+        if (overTime) {
+{{#hasStatsDateFields}}            String unit = bucketUnit(bucket);
+            Expression<? extends TemporalAccessor> when = datePath(root, groupBy);
+            groups.add(cb.year(when));
+            if (!"year".equals(unit)) groups.add(cb.month(when));
+            if ("day".equals(unit)) groups.add(cb.day(when));
+            selections.addAll(groups);
+{{/hasStatsDateFields}}        } else if (grouped) {
+            Path<?> path = groupPath(root, groupBy);
+            groups.add(path);
+            selections.add(path);
+        }
+        selections.add(aggregate(cb, root, agg, field));
+        query.multiselect(selections);
+{{#needsSpecification}}        Specification<{{EntityName}}> spec = specOf(q{{#hasFilters}}, filters{{/hasFilters}});
+        if (spec != null) {
+            Predicate predicate = spec.toPredicate(root, query, cb);
+            if (predicate != null) query.where(predicate);
+        }
+{{/needsSpecification}}        if (!groups.isEmpty()) {
+            // Ordered by the key, so a time series arrives oldest first and a breakdown is stable.
+            // The Order type is spelled out: an entity called Order would shadow a plain import.
+            java.util.List<jakarta.persistence.criteria.Order> ascending = new java.util.ArrayList<>();
+            for (Expression<?> group : groups) ascending.add(cb.asc(group));
+            query.groupBy(groups);
+            query.orderBy(ascending);
+        }
+
+        java.util.List<Tuple> rows = entityManager.createQuery(query).getResultList();
+        java.util.List<StatsBucket> out = new java.util.ArrayList<>(rows.size());
+        for (Tuple row : rows) {
+            Object value = row.get(groups.size());
+            out.add(new StatsBucket(keyOf(row, groups.size(), overTime),
+                    value == null ? null : new java.math.BigDecimal(value.toString())));
+        }
+        return out;
+    }
+
+    /** The reduction applied to each group. {@code count} counts rows; the rest cast the column to
+     *  a decimal first, so one code path covers Long, Integer and BigDecimal alike. */
+    private static Expression<? extends Number> aggregate(HibernateCriteriaBuilder cb, Root<{{EntityName}}> root,
+                                                          String agg, String field) {
+        String reduction = agg == null || agg.isBlank() ? "count" : agg.toLowerCase(java.util.Locale.ROOT);
+        if (reduction.equals("count")) return cb.count(root);
+        Expression<java.math.BigDecimal> value = cb.toBigDecimal(numericPath(root, field));
+        return switch (reduction) {
+            case "sum" -> cb.sum(value);
+            case "avg" -> cb.avg(value);
+            case "min" -> cb.min(value);
+            case "max" -> cb.max(value);
+            default -> throw new IllegalArgumentException("Unknown agg: " + agg);
+        };
+    }
+
+    /** Whitelist of groupable columns — anything else is a 400, never a query. */
+    private static Path<?> groupPath(Root<{{EntityName}}> root, String groupBy) {
+{{#hasStatsGroupByFields}}        return switch (groupBy) {
+{{#statsGroupByFields}}            case "{{name}}" -> root.get("{{name}}");
+{{/statsGroupByFields}}            default -> throw new IllegalArgumentException("Not a groupable field: " + groupBy);
+        };
+{{/hasStatsGroupByFields}}{{^hasStatsGroupByFields}}        throw new IllegalArgumentException("Not a groupable field: " + groupBy);
+{{/hasStatsGroupByFields}}    }
+{{#hasStatsDateFields}}
+    /** Whitelist of date columns a time series may bucket over. */
+    private static Expression<? extends TemporalAccessor> datePath(Root<{{EntityName}}> root, String groupBy) {
+        return switch (groupBy) {
+{{#statsDateFields}}            case "{{name}}" -> root.<{{javaType}}>get("{{name}}");
+{{/statsDateFields}}            default -> throw new IllegalArgumentException("Not a date field: " + groupBy);
+        };
+    }
+
+    /** Date buckets group by whole date parts rather than a dialect-specific truncation, so the
+     *  same query runs on every database the project might be pointed at. */
+    private static String bucketUnit(String bucket) {
+        String unit = bucket == null || bucket.isBlank() ? "month" : bucket.toLowerCase(java.util.Locale.ROOT);
+        return switch (unit) {
+            case "day", "month", "year" -> unit;
+            default -> throw new IllegalArgumentException("Unknown bucket: " + bucket);
+        };
+    }
+{{/hasStatsDateFields}}
+    /** Whitelist of aggregatable columns. */
+    private static Expression<? extends Number> numericPath(Root<{{EntityName}}> root, String field) {
+        if (field == null || field.isBlank()) {
+            throw new IllegalArgumentException("This aggregate needs a numeric field");
+        }
+{{#hasStatsNumericFields}}        return switch (field) {
+{{#statsNumericFields}}            case "{{name}}" -> root.<{{javaType}}>get("{{name}}");
+{{/statsNumericFields}}            default -> throw new IllegalArgumentException("Not an aggregatable field: " + field);
+        };
+{{/hasStatsNumericFields}}{{^hasStatsNumericFields}}        throw new IllegalArgumentException("Not an aggregatable field: " + field);
+{{/hasStatsNumericFields}}    }
+
+    private static boolean isDateGroup(String groupBy) {
+        return {{#statsDateFields}}groupBy.equals("{{name}}") || {{/statsDateFields}}false;
+    }
+
+    /** {@code 2026}, {@code 2026-09} or {@code 2026-09-22} for a date group; the raw value otherwise. */
+    private static String keyOf(Tuple row, int parts, boolean overTime) {
+        if (parts == 0) return "";
+        if (!overTime) {
+            Object value = row.get(0);
+            return value == null ? "" : String.valueOf(value);
+        }
+        StringBuilder key = new StringBuilder();
+        for (int i = 0; i < parts; i++) {
+            Number part = (Number) row.get(i);
+            if (part == null) return "";
+            key.append(i == 0 ? String.format("%04d", part.intValue()) : String.format("-%02d", part.intValue()));
+        }
+        return key.toString();
+    }
+{{/statsApplicable}}
     @Transactional(readOnly = true)
     public {{EntityName}} findById({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
         return repository.findById(id).orElseThrow(() ->

@@ -47,29 +47,24 @@ function useCount(path: string) {
   return { count, failed }
 }
 
-const BREAKDOWN_SAMPLE = 200
-
-/** Fetches the first BREAKDOWN_SAMPLE records and groups them by `field` — client-side, no extra
- *  API. `sampled` reports how many of the total records the chart is based on. */
+/** Groups the records by `field` through the entity's /stats rollup — one request, exact totals,
+ *  and no page of rows crossing the wire. */
 function useBreakdown(path: string, field: string, labels?: Record<string, string>) {
   const [data, setData] = useState<{ label: string; count: number }[] | null>(null)
-  const [sampled, setSampled] = useState<{ shown: number; total: number } | null>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let active = true
-    api.get<{ content: Record<string, unknown>[]; totalElements: number }>(`${path}?size=${BREAKDOWN_SAMPLE}`)
-      .then(p => {
+    api.get<{ buckets: { key: string; value: number | null }[] }>(`${path}/stats?groupBy=${field}`)
+      .then(s => {
         if (!active) return
-        const rows = p.content ?? []
-        setSampled({ shown: rows.length, total: p.totalElements ?? rows.length })
-        const counts = new Map<string, number>()
-        for (const row of rows) {
-          const raw = row[field] == null ? '—' : String(row[field])
-          const key = labels?.[raw] ?? raw
-          counts.set(key, (counts.get(key) ?? 0) + 1)
-        }
-        setData(Array.from(counts, ([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count))
+        const buckets = s.buckets ?? []
+        setData(buckets
+          .map(b => {
+            const raw = b.key === '' ? '—' : b.key
+            return { label: labels?.[raw] ?? raw, count: b.value ?? 0 }
+          })
+          .sort((a, b) => b.count - a.count))
       })
       .catch(() => { if (active) setFailed(true) })
     return () => { active = false }
@@ -77,7 +72,7 @@ function useBreakdown(path: string, field: string, labels?: Record<string, strin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, field])
 
-  return { data, failed, sampled }
+  return { data, failed }
 }
 
 function BarChart({ data }: { data: { label: string; count: number }[] }) {
@@ -98,7 +93,7 @@ function BarChart({ data }: { data: { label: string; count: number }[] }) {
 }
 
 function ChartCard({ chart }: { chart: ChartDef }) {
-  const { data, failed, sampled } = useBreakdown(chart.path, chart.field, chart.labels)
+  const { data, failed } = useBreakdown(chart.path, chart.field, chart.labels)
   return (
     <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
       <div className="mb-4 text-sm font-semibold text-fg">{chart.label}</div>
@@ -109,14 +104,7 @@ function ChartCard({ chart }: { chart: ChartDef }) {
       ) : data.length === 0 ? (
         <div className="text-sm text-muted">{t('noRecordsYetDot')}</div>
       ) : (
-        <>
-          <BarChart data={data} />
-          {sampled && sampled.total > sampled.shown && (
-            <div className="mt-3 text-xs text-muted">
-              {t('basedOnSample', { shown: sampled.shown, total: sampled.total })}
-            </div>
-          )}
-        </>
+        <BarChart data={data} />
       )}
     </div>
   )

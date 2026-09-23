@@ -829,7 +829,7 @@
   {
     "exampleId": "reporting",
     "name": "Sales reporting",
-    "description": "Sales rows plus a read-only SELECT view that rolls them up per month — a @Subselect entity with no writes.",
+    "description": "Sales rows plus a read-only SELECT view that rolls them up per month. Shows the aggregate widgets and a report page with filters, a chart and a CSV export.",
     "icon": "monitoring",
     "sortOrder": 5,
     "entities": [
@@ -884,10 +884,10 @@
           "table",
           "cards"
         ],
-        "viewQuery": "SELECT SUBSTRING(CAST(s.sold_on AS VARCHAR), 1, 7) AS month, SUM(s.amount) AS total, COUNT(*) AS sales FROM sale s GROUP BY SUBSTRING(CAST(s.sold_on AS VARCHAR), 1, 7)",
+        "viewQuery": "SELECT SUBSTRING(CAST(s.sold_on AS VARCHAR), 1, 7) AS period, SUM(s.amount) AS total, COUNT(*) AS sales FROM sales s GROUP BY SUBSTRING(CAST(s.sold_on AS VARCHAR), 1, 7)",
         "fields": [
           {
-            "name": "month",
+            "name": "period",
             "type": "STRING",
             "primaryKey": true
           },
@@ -907,6 +907,7 @@
         "id": "report",
         "type": "dashboard",
         "title": "Sales report",
+        "description": "Revenue at a glance: totals, the split by region and the trend per month.",
         "widgets": [
           {
             "kind": "kpi",
@@ -915,13 +916,34 @@
           },
           {
             "kind": "kpi",
-            "entity": "MonthlySales",
-            "title": "Months reported"
+            "entity": "Sale",
+            "title": "Total revenue",
+            "agg": "sum",
+            "field": "amount"
+          },
+          {
+            "kind": "kpi",
+            "entity": "Sale",
+            "title": "Average sale",
+            "agg": "avg",
+            "field": "amount"
           },
           {
             "kind": "bar",
             "entity": "Sale",
-            "groupBy": "region"
+            "title": "Revenue by region",
+            "groupBy": "region",
+            "agg": "sum",
+            "field": "amount"
+          },
+          {
+            "kind": "line",
+            "entity": "Sale",
+            "title": "Revenue per month",
+            "groupBy": "soldOn",
+            "bucket": "month",
+            "agg": "sum",
+            "field": "amount"
           },
           {
             "kind": "recent",
@@ -935,6 +957,18 @@
         "id": "sales",
         "type": "entity-list",
         "entity": "Sale"
+      },
+      {
+        "id": "revenue",
+        "type": "report",
+        "title": "Revenue analysis",
+        "description": "Filter the sales and read the totals per region — Export CSV gives exactly what you filtered.",
+        "entity": "Sale",
+        "chart": {
+          "groupBy": "region",
+          "agg": "sum",
+          "field": "amount"
+        }
       },
       {
         "id": "monthly",

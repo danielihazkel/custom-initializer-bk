@@ -276,6 +276,8 @@ Per-entity derived flag (set in `buildEntityContext`):
 | `initialView` | String | the first enabled view — the `useState` seed for `viewMode` |
 | `viewModeType` | String | the TS union of enabled views the template seeds `useState` with, e.g. `'table' \| 'kanban'` |
 | `hasBreakdown`, `breakdownField`, `breakdownLabel`, `breakdownIsEnum`, `breakdownEnumTypeName` | boolean / String | the first ENUM (else BOOLEAN) field, surfaced as a grouped bar chart on the dashboard; null when the entity has neither. `breakdownEnumTypeName` (null for a boolean) is the enum type whose `…Labels` const the chart reads |
+| `statsApplicable`, `statsGroupByFields`, `statsDateFields`, `statsNumericFields` (+ `hasStats…` each) | boolean / list | the generated `GET /api/x/stats` rollup and its whitelists: the enum/boolean columns it may group by (primary keys included — `hasBreakdown` charts the first enum whether or not it is the key), the date columns it may bucket over, and the numeric columns it may reduce. Derived from the entity alone, never from the page layout: `putPageContext` is frontend-only, and both render paths have to agree on whether the endpoint exists |
+| `csvExportOverride` | Boolean | this entity's `opts.csvExport` override (null = inherit). Exposed so a per-page report screen can resolve its Export button — a page context never runs through `buildEntityContext` |
 | `kanbanField`, `kanbanLabel`, `kanbanIsEnum`, `kanbanColumns` | String / boolean / List | board-view grouping (used when `viewKanban`): the breakdown field is the grouping column; `kanbanColumns` is `{ value, label, labelExpr, last }` per lane (enum constants with their display label, or `true`/`false` for a boolean); `labelExpr` is the TS heading expression — a quoted literal, or `t('trueLabel')`/`t('falseLabel')` — and `kanbanEnumTypeName` names the enum type behind an enum board |
 | `calendarField`, `calendarLabel` | String | calendar-view date field (used when `viewCalendar`): the first LOCAL_DATE / LOCAL_DATE_TIME field records are placed by |
 | `filterFields`, `hasFilters` | List / boolean | one entry per non-PK enum/boolean/temporal/numeric field, each with `name`, `Name`, `javaType`, kind flags (`isEnumFilter`/`isBooleanFilter`/`isTemporalFilter`/`isNumericFilter`/`isRelationFilter`), `isDate`/`isDateTime`, `enumValues`, `enumTypeName`, `last` — drives the FE `FilterBar` and the BE filter `Specification`. Relation entries (one per `MANY_TO_ONE`, appended after the scalar ones) are keyed by the FK `<field>Id` and add `relationField`, `targetPkName`, `targetEntityKebabPlural`, `targetLabelField`/`hasTargetLabel` |
@@ -379,21 +381,22 @@ too, or it is unreachable from the editor.
 Only when the request carries `pages`. Project context: `hasPages` (always set, false for the classic
 shell), `pages` (every page), `navPages` (visible ones, declaration order), `initialPageId`,
 `routePages` (nav pages + record pages — everything the shell can show), `recordPages`,
-`navUsesTable2`/`navUsesLayoutDashboard`/`navUsesLayers`/`navUsesPanelLeft` (lucide imports),
-`hasDashboardPages`, `hasTabsPages`, `hasRecordPages` (the shell keeps a `routeArg`) and
-`hasNavigatingScreens` (it declares `goView`). Files with `perPage=true` render once per `pages`
+`navUsesTable2`/`navUsesLayoutDashboard`/`navUsesLayers`/`navUsesPanelLeft`/`navUsesBarChart3` (lucide imports),
+`hasDashboardPages`, `hasTabsPages`, `hasReportPages`, `hasWidgets` (`widgets.tsx` backs both dashboards and a report's
+chart), `hasRecordPages` (the shell keeps a `routeArg`) and `hasNavigatingScreens` (it declares `goView`). Files with `perPage=true` render once per `pages`
 entry with that entry merged over the project context:
 
 | Key | Meaning |
 |---|---|
 | `pageId`, `PageName` | slug and its PascalCase (`tickets-open` → `TicketsOpen`) |
-| `pageIsEntityList` / `pageIsDashboard` / `pageIsTabs` / `pageIsMasterDetail` / `pageIsRecord` | the type — use as the file's `gatedBy` |
+| `pageIsEntityList` / `pageIsDashboard` / `pageIsTabs` / `pageIsMasterDetail` / `pageIsRecord` / `pageIsReport` | the type — use as the file's `gatedBy` |
 | `pageTitleExpr`, `pageDescriptionExpr` | ready TS expressions (`'Escaped text'` or `t('dashboard')`) — splice unquoted |
 | `hidden`, `navIcon`, `needsNavigate`, `usesT` | nav flags; `needsNavigate`/`usesT` gate the `onNavigate` prop and the `t` import |
 | `EntityName`, `entityNameKebab`, `hasPresetFilter`, `presetFilterTs`, `hasRecordPage`, `recordPageId`, `recordPk` | entity-list |
-| `widgets[]` (`widgetIsKpi/Bar/Recent`, `titleExpr`, `path`, `hasTarget`, `targetPageId`, `groupBy`, `labelsRef`, `limit`, `sortField`, `displayField`), `usesKpi/Bar/Recent`, `labelImports[]` (`entityNameKebab`, `labelsRefs`) | dashboard |
+| `widgets[]` (`widgetIsKpi/Bar/Line/Recent`, `titleExpr`, `path`, `hasTarget`, `targetPageId`, `groupBy`, `labelsRef`, `limit`, `sortField`, `displayField`, plus `hasAgg`/`agg`/`aggField`/`bucket` for a reducing tile, chart or trend), `usesKpi/Bar/Line/Recent`, `labelImports[]` (`entityNameKebab`, `labelsRefs`) | dashboard |
 | `tabs[]` (`tabIndex`, `tabId`, `tabTitleExpr`, `TargetName`, `targetNeedsNavigate`) | tabs |
 | `parentEntityName`/`parentEntityNameKebab`/`parentPkName`/`parentLabelField`/`parentHasLabel`/`parentSearchable`/`parentLabelPluralExpr`, `childEntityName`/`childEntityNameKebab`/`childLabelPluralExpr`, `viaParam` (`<via>Id`), `parentHasRecordPage`/`parentRecordPageId`/`parentRecordPk` (and the `child…` trio) | master-detail |
+| `EntityName`, `entityNameKebab`, `entityNamePluralKebab`, `filterFields` (copied from the entity, so the screen builds the same `FilterDescriptor[]` as `EntityPage` without touching it), `hasFilters`, `hasPresetFilter`/`presetFilterTs`, `reportHasExport`, `chartIsBar`/`chartIsLine`, `chartGroupBy`, `chartGroupLabelExpr`, `chartHasLabels`/`chartLabelsRef`, `chartHasValueColumn`/`chartValueHeaderExpr`, `rollupQuery` (the fixed half of the `/stats` query; the filter bar appends its values) | report |
 | `EntityName`, `entityNameKebab`, `entityNamePluralKebab`, `pkName`, `labelField`/`hasLabel`, `entityLabelExpr`, `hasBack`/`backPageId`, `childTabs[]` (`tabIndex` from 1, `tabId`, `childEntityName`, `childEntityNameKebab`, `viaParam`, `tabTitleExpr`, `childHasRecordPage`/`childRecordPageId`/`childRecordPk`), `hasChildTabs` | record |
 
 A per-entity companion flag, `pageScopeable` (`hasPages` and the entity has relations, set in

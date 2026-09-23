@@ -1,4 +1,4 @@
-import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#usesRecent}}RecentList, {{/usesRecent}}} from '@shared/ui/widgets'
+import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}} from '@shared/ui/widgets'
 {{#usesT}}
 import { t } from '@shared/i18n'
 {{/usesT}}
@@ -27,17 +27,42 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
         <KpiTile
           title={ {{titleExpr}} }
           path="{{path}}"
+{{#hasAgg}}
+          agg="{{agg}}"
+          field="{{aggField}}"
+{{/hasAgg}}
 {{#hasTarget}}
           onOpen={() => onNavigate('{{targetPageId}}')}
 {{/hasTarget}}
         />
 {{/widgetIsKpi}}
+{{#widgetIsLine}}
+        <div className="sm:col-span-2">
+          <TrendCard
+            title={ {{titleExpr}} }
+            path="{{path}}"
+            on="{{groupBy}}"
+            bucket="{{bucket}}"
+{{#hasAgg}}
+            agg="{{agg}}"
+            field="{{aggField}}"
+{{/hasAgg}}
+{{#hasTarget}}
+            onOpen={() => onNavigate('{{targetPageId}}')}
+{{/hasTarget}}
+          />
+        </div>
+{{/widgetIsLine}}
 {{#widgetIsBar}}
         <div className="sm:col-span-2">
           <BreakdownCard
             title={ {{titleExpr}} }
             path="{{path}}"
             field="{{groupBy}}"
+{{#hasAgg}}
+            agg="{{agg}}"
+            valueField="{{aggField}}"
+{{/hasAgg}}
 {{#hasLabels}}
             labels={ {{labelsRef}} }
 {{/hasLabels}}

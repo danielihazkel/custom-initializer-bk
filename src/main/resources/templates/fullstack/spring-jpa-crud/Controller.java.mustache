@@ -50,6 +50,29 @@ public class {{EntityName}}Controller {
         return service.findAll(q, filters, effective).map({{EntityName}}Dto::from);
 {{/hasFilters}}{{^hasFilters}}        return service.findAll(q, effective).map({{EntityName}}Dto::from);
 {{/hasFilters}}    }
+{{#statsApplicable}}
+{{#optScaffoldOpenApi}}    @Operation(summary = "Aggregate {{EntityName}} records (honors `q` and filters)")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
+{{/optScaffoldSecured}}    @GetMapping("/stats")
+    public StatsResponse stats(
+            @RequestParam(required = false) String q,
+{{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isRelationFilter}},
+{{/filterFields}}            @RequestParam(required = false) String groupBy,
+            @RequestParam(required = false) String bucket,
+            @RequestParam(required = false) String agg,
+            @RequestParam(required = false) String field) {
+{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
+{{/hasFilters}}        List<{{EntityName}}Service.StatsBucket> buckets =
+                service.stats(q, {{#hasFilters}}filters, {{/hasFilters}}groupBy, bucket, agg, field);
+        java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+        for ({{EntityName}}Service.StatsBucket bucketed : buckets) total = total.add(bucketed.value());
+        return new StatsResponse(buckets, total);
+    }
+
+    /** What the dashboard widgets and report pages read: one entry per group, plus the sum of
+     *  their values (meaningful for count and sum; the caller ignores it for avg/min/max). */
+    public record StatsResponse(List<{{EntityName}}Service.StatsBucket> buckets, java.math.BigDecimal total) {}
+{{/statsApplicable}}
 {{#optScaffoldCsvExport}}
 {{#optScaffoldOpenApi}}    @Operation(summary = "Export {{EntityName}} records as CSV (honors `q`, filters, and sort)")
 {{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
