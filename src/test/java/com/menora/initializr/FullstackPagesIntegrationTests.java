@@ -364,20 +364,27 @@ class FullstackPagesIntegrationTests {
         body.put("opts", Map.of("scaffold", List.of("csvExport")));
         Map<String, String> files = generate(body);
 
-        // The report screen: a filter bar, the bar chart of the rollup, and the totals table.
+        // The report screen: a filter bar, then its two charts — the first with the totals table,
+        // the second titled, in a grid — each drilling into the sales list with the filters on.
         String report = files.get(FE + "src/app/screens/RevenueScreen.tsx");
         assertThat(report)
                 .contains("const PATH = '/api/sales'")
-                .contains("const ROLLUP = 'groupBy=region&agg=sum&field=amount'")
-                .contains("import { BarRows } from '@shared/ui/widgets'")
-                .contains("import { formatStat, statLabel, statsQuery, useStats } from '@shared/ui/stats'")
+                .contains("import { ReportChart } from '@shared/ui/widgets'")
+                .contains("import { bucketRange } from '@shared/ui/stats'")
                 .contains("import { SaleRegionTypeLabels } from '@entities/sale'")
                 .contains("const filterDescriptors: FilterDescriptor[] = [")
                 .contains("<FilterBar filters={filterDescriptors} values={filters} onChange={setFilters} />")
-                .contains("<BarRows data={rows} />")
-                .contains("{t('total')}")
-                .contains("{ t('aggSum', { x: 'Amount' }) }")
-                .doesNotContain("<LineChart");
+                .contains("export function RevenueScreen({ onNavigate }: Props) {")
+                .contains("      <ReportChart\n        title={ t('xByY', { x: t('aggSum', { x: 'Amount' }), y: 'Region' }) }\n"
+                        + "        path={PATH}\n        rollup=\"groupBy=region&agg=sum&field=amount\"\n")
+                .contains("        valueLabel={ t('aggSum', { x: 'Amount' }) }\n        table\n"
+                        + "        onSelect={key => onNavigate('sales', undefined, { ...filters, region: key })}\n")
+                .contains("<div className=\"grid grid-cols-1 gap-4 lg:grid-cols-2\">")
+                .contains("rollup=\"groupBy=soldOn&bucket=month&agg=sum&field=amount\"\n          search={search}\n          line\n")
+                .contains("onSelect={key => onNavigate('sales', undefined, { ...filters, ...bucketRange('soldOn', key, false) })}");
+        assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
+                .contains("export function ReportChart(")
+                .contains("<td className=\"py-2\">{t('total')}</td>");
 
         // csvExport is on for this example, so the report offers the same filters as a download.
         assertThat(report)
@@ -389,8 +396,16 @@ class FullstackPagesIntegrationTests {
         String dashboard = files.get(FE + "src/app/screens/ReportScreen.tsx");
         assertThat(dashboard)
                 .contains("import { useState } from 'react'")
-                .contains("import { BreakdownCard, KpiTile, PeriodSelect, TrendCard, RecentList, } from '@shared/ui/widgets'")
-                .contains("import { rangeParams, statsQuery, type Period } from '@shared/ui/stats'")
+                .contains("import { BreakdownCard, KpiTile, PeriodSelect, ProgressTile, TrendCard, RecentList, } from '@shared/ui/widgets'")
+                .contains("import { bucketRange, queryOf, rangeParams, statsQuery, type Period } from '@shared/ui/stats'")
+                // A compared tile asks for the previous period too; "all time" has none.
+                .contains("compareParams={ period === 'all' ? undefined : rangeParams('soldOn', false, period, true) }")
+                .contains("<ProgressTile\n          title={ 'Revenue target' }")
+                .contains("target={ 250000 }")
+                // "View all" opens the list with the widget's own filters; a bar drills into its region.
+                .contains("onOpen={() => onNavigate('sales', undefined, queryOf(statsQuery('region=NORTH', rangeParams('soldOn', false, period))))}")
+                .contains("onSelect={key => onNavigate('sales', undefined, { ...queryOf(rangeParams('soldOn', false, period)), region: key })}")
+                .contains("onSelect={key => onNavigate('sales', undefined, { ...queryOf(rangeParams('soldOn', false, period)), ...bucketRange('soldOn', key, false) })}")
                 .contains("const [period, setPeriod] = useState<Period>('12m')")
                 .contains("<PeriodSelect value={period} onChange={setPeriod} />")
                 .contains("title={ 'Sales' }\n          path=\"/api/sales\"\n          params={ rangeParams('soldOn', false, period) }\n")
@@ -425,20 +440,20 @@ class FullstackPagesIntegrationTests {
     void fullstackEndpoint_reportOverTimeDrawsALineAndCountsRows() throws Exception {
         Map<String, Object> body = exampleBody("reporting", "react-tailwind-crud");
         List<Map<String, Object>> pages = pages(body);
-        // Same page, grouped over the date column and counting rather than reducing.
+        // Same page, one chart (the `chart` spelling), grouped over the date column and counting
+        // rather than reducing.
+        pages.get(2).remove("charts");
         pages.get(2).put("chart", Map.of("groupBy", "soldOn", "bucket", "month"));
         Map<String, String> files = generate(body);
 
         assertThat(files.get(FE + "src/app/screens/RevenueScreen.tsx"))
-                .contains("const ROLLUP = 'groupBy=soldOn&bucket=month'")
-                .contains("import { LineChart } from '@shared/ui/widgets'")
-                // Counting over a date: no enum labels, so statLabel is not imported either.
-                .contains("import { formatStat, statsQuery, useStats } from '@shared/ui/stats'")
-                .contains("<LineChart data={rows} />")
+                .contains("rollup=\"groupBy=soldOn&bucket=month\"\n        search={search}\n        line\n")
                 // Counting rows, so the value column is headed "Rows" and no labels are imported.
-                .contains("{ t('rows') }")
-                .doesNotContain("@entities/sale")
-                .doesNotContain("<BarRows");
+                .contains("valueLabel={ t('rows') }")
+                // One chart: no title, no grid.
+                .doesNotContain("title=")
+                .doesNotContain("lg:grid-cols-2")
+                .doesNotContain("@entities/sale");
     }
 
     @Test
@@ -479,7 +494,7 @@ class FullstackPagesIntegrationTests {
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "agg", "median"))),
                 "unknown agg 'median' (expected count, sum, avg, min or max)");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "pie", "entity", "Ticket"))),
-                "unknown widget kind 'pie' (expected kpi, bar, line or recent)");
+                "unknown widget kind 'pie' (expected kpi, bar, line, recent, top or progress)");
         // line widgets plot a temporal field, bucketed
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "line", "entity", "Team"))),
                 "Team has no date field to plot over time");
@@ -572,6 +587,33 @@ class FullstackPagesIntegrationTests {
             p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Team")));
         }, "has a dateRange, but none of its widgets counts an entity with a filterable date field");
         assertRejected(p -> p.get(5).put("dateRange", "30d"), "(entity-list) does not take 'dateRange'");
+        // New widget kinds, compare, report charts
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "progress", "entity", "Ticket"))),
+                "a progress widget needs a 'target'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "progress", "entity", "Ticket", "target", "-3"))),
+                "target must be greater than 0");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "target", "3"))),
+                "only a progress widget takes 'target'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "top", "entity", "Team"))),
+                "Team has no enum, boolean or relation to rank by");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "top", "entity", "Ticket", "groupBy", "subject"))),
+                "groupBy 'subject' must be a non-key enum or boolean field");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "compare", true))),
+                "'compare' needs the dashboard's dateRange and a filterable date field on Ticket");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "bar", "entity", "Ticket", "compare", true))),
+                "only a kpi widget takes 'compare'");
+        assertRejected(p -> {
+            Map<String, Object> page = reportPage("by-status", "Ticket", Map.of("groupBy", "status"));
+            page.put("charts", List.of(Map.of("groupBy", "priority")));
+            p.add(page);
+        }, "give either 'chart' or 'charts', not both");
+        assertRejected(p -> {
+            Map<String, Object> page = reportPage("by-status", "Ticket", null);
+            page.remove("chart");
+            page.put("charts", List.of(Map.of(), Map.of(), Map.of(), Map.of(), Map.of()));
+            p.add(page);
+        }, "at most 4 charts are allowed");
+        assertRejected(p -> p.get(0).put("charts", List.of(Map.of("groupBy", "status"))), "(dashboard) does not take 'charts'");
     }
 
     @Test

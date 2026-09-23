@@ -60,13 +60,18 @@ public class {{EntityName}}Controller {
 {{/filterFields}}            @RequestParam(required = false) String groupBy,
             @RequestParam(required = false) String bucket,
             @RequestParam(required = false) String agg,
-            @RequestParam(required = false) String field) {
+            @RequestParam(required = false) String field,
+            @RequestParam(required = false) Integer top) {
 {{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
 {{/hasFilters}}        List<{{EntityName}}Service.StatsBucket> buckets =
-                service.stats(q, {{#hasFilters}}filters, {{/hasFilters}}groupBy, bucket, agg, field);
-        java.math.BigDecimal total = java.math.BigDecimal.ZERO;
-        for ({{EntityName}}Service.StatsBucket bucketed : buckets) total = total.add(bucketed.value());
-        return new StatsResponse(buckets, total);
+                service.stats(q, {{#hasFilters}}filters, {{/hasFilters}}groupBy, bucket, agg, field, top);
+        // An empty group (avg/min/max over no rows) has no value: it adds nothing, and a total made
+        // only of such groups is null too, which the client shows as a dash.
+        java.math.BigDecimal total = null;
+        for ({{EntityName}}Service.StatsBucket bucketed : buckets) {
+            if (bucketed.value() != null) total = total == null ? bucketed.value() : total.add(bucketed.value());
+        }
+        return new StatsResponse(buckets, total == null && buckets.isEmpty() ? java.math.BigDecimal.ZERO : total);
     }
 
     /** What the dashboard widgets and report pages read: one entry per group, plus the sum of

@@ -1,9 +1,9 @@
 {{#hasDateRange}}
 import { useState } from 'react'
 {{/hasDateRange}}
-import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}} from '@shared/ui/widgets'
+import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}} from '@shared/ui/widgets'
 {{#usesStatsHelpers}}
-import { {{#usesRangeParams}}rangeParams, {{/usesRangeParams}}{{#usesStatsQuery}}statsQuery, {{/usesStatsQuery}}type Period } from '@shared/ui/stats'
+import { {{#usesBucketRange}}bucketRange, {{/usesBucketRange}}{{#usesQueryOf}}queryOf, {{/usesQueryOf}}{{#usesRangeParams}}rangeParams, {{/usesRangeParams}}{{#usesStatsQuery}}statsQuery, {{/usesStatsQuery}}{{#hasDateRange}}type Period {{/hasDateRange}}} from '@shared/ui/stats'
 {{/usesStatsHelpers}}
 {{#usesT}}
 import { t } from '@shared/i18n'
@@ -57,14 +57,37 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
 {{#hasParams}}
           params={ {{paramsExpr}} }
 {{/hasParams}}
+{{#hasCompare}}
+          compareParams={ period === 'all' ? undefined : {{compareParamsExpr}} }
+{{/hasCompare}}
 {{#hasSpanClass}}
           className="{{spanClass}}"
 {{/hasSpanClass}}
 {{#hasTarget}}
-          onOpen={() => onNavigate('{{targetPageId}}')}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
 {{/hasTarget}}
         />
 {{/widgetIsKpi}}
+{{#widgetIsProgress}}
+        <ProgressTile
+          title={ {{titleExpr}} }
+          path="{{path}}"
+{{#hasAgg}}
+          agg="{{agg}}"
+          field="{{aggField}}"
+{{/hasAgg}}
+          target={ {{target}} }
+{{#hasParams}}
+          params={ {{paramsExpr}} }
+{{/hasParams}}
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+{{#hasTarget}}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
+{{/hasTarget}}
+        />
+{{/widgetIsProgress}}
 {{#widgetIsLine}}
         <TrendCard
           title={ {{titleExpr}} }
@@ -81,8 +104,11 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
 {{#hasSpanClass}}
           className="{{spanClass}}"
 {{/hasSpanClass}}
+{{#hasDrill}}
+          onSelect={key => onNavigate('{{drillPageId}}', undefined, { {{drillBase}}...bucketRange('{{groupBy}}', key, {{groupByIsDateTime}}) })}
+{{/hasDrill}}
 {{#hasTarget}}
-          onOpen={() => onNavigate('{{targetPageId}}')}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
 {{/hasTarget}}
         />
 {{/widgetIsLine}}
@@ -104,11 +130,48 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
 {{#hasSpanClass}}
           className="{{spanClass}}"
 {{/hasSpanClass}}
+{{#hasDrill}}
+          onSelect={key => onNavigate('{{drillPageId}}', undefined, { {{drillBase}}{{drillKey}}: key })}
+{{/hasDrill}}
 {{#hasTarget}}
-          onOpen={() => onNavigate('{{targetPageId}}')}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
 {{/hasTarget}}
         />
 {{/widgetIsBar}}
+{{#widgetIsTop}}
+        <TopList
+          title={ {{titleExpr}} }
+          path="{{path}}"
+          by="{{groupBy}}"
+{{#hasAgg}}
+          agg="{{agg}}"
+          valueField="{{aggField}}"
+{{/hasAgg}}
+          limit={ {{limit}} }
+{{#hasLabels}}
+          labels={ {{labelsRef}} }
+{{/hasLabels}}
+{{#isRelationRank}}
+          optionsPath="{{optionsPath}}"
+          optionValue="{{optionValue}}"
+{{#hasOptionLabel}}
+          optionLabel="{{optionLabel}}"
+{{/hasOptionLabel}}
+{{/isRelationRank}}
+{{#hasParams}}
+          params={ {{paramsExpr}} }
+{{/hasParams}}
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+{{#hasDrill}}
+          onSelect={key => onNavigate('{{drillPageId}}', undefined, { {{drillBase}}{{drillKey}}: key })}
+{{/hasDrill}}
+{{#hasTarget}}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
+{{/hasTarget}}
+        />
+{{/widgetIsTop}}
 {{#widgetIsRecent}}
         <RecentList
           title={ {{titleExpr}} }
@@ -129,7 +192,7 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
           onOpenRow={r => onNavigate('{{recordPageId}}', String(r['{{recordPk}}']))}
 {{/hasRecordPage}}
 {{#hasTarget}}
-          onOpen={() => onNavigate('{{targetPageId}}')}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
 {{/hasTarget}}
         />
 {{/widgetIsRecent}}

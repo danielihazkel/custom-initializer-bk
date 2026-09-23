@@ -17,7 +17,7 @@ import java.util.Map;
  * @param child        {@link Type#MASTER_DETAIL} only — the entity listed for the selected parent
  * @param via          {@link Type#MASTER_DETAIL} only — the child's MANY_TO_ONE field to the parent
  * @param childTabs    {@link Type#RECORD} only — the related lists shown under the record
- * @param chart        {@link Type#REPORT} only — the single chart the report is built around
+ * @param charts       {@link Type#REPORT} only — its charts (1–4); the first also gets the totals table
  * @param group        visible pages only — the nav section the page is listed under (null: ungrouped)
  * @param icon         visible pages only — the lucide icon the nav shows (null: the type's default)
  * @param dateRange    {@link Type#DASHBOARD} only — the period its picker opens on (null: no picker)
@@ -36,7 +36,7 @@ public record PageDefinition(
         String child,
         String via,
         List<ChildTab> childTabs,
-        Chart chart,
+        List<Chart> charts,
         String group,
         String icon,
         DateRange dateRange) {
@@ -46,6 +46,12 @@ public record PageDefinition(
         widgets = widgets == null ? List.of() : List.copyOf(widgets);
         tabs = tabs == null ? List.of() : List.copyOf(tabs);
         childTabs = childTabs == null ? List.of() : List.copyOf(childTabs);
+        charts = charts == null ? List.of() : List.copyOf(charts);
+    }
+
+    /** A report's first chart — the one its totals table follows; null for any other page. */
+    public Chart chart() {
+        return charts.isEmpty() ? null : charts.get(0);
     }
 
     /** Phase-1 page types (no master-detail/record/report props). */
@@ -55,23 +61,23 @@ public record PageDefinition(
                 null, null, null);
     }
 
-    /** A {@link Type#REPORT} page: one entity, the filters it opens with, and its chart. */
+    /** A {@link Type#REPORT} page: one entity, the filters it opens with, and its charts. */
     public PageDefinition(String id, Type type, String title, String description, boolean hidden, String entity,
-                          Map<String, String> presetFilter, Chart chart) {
-        this(id, type, title, description, hidden, entity, presetFilter, null, null, null, null, null, null, chart,
+                          Map<String, String> presetFilter, List<Chart> charts) {
+        this(id, type, title, description, hidden, entity, presetFilter, null, null, null, null, null, null, charts,
                 null, null, null);
     }
 
     /** The same page placed in a nav section and given an icon. */
     public PageDefinition withNav(String group, String icon) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                parent, child, via, childTabs, chart, group, icon, dateRange);
+                parent, child, via, childTabs, charts, group, icon, dateRange);
     }
 
     /** The same dashboard with a period picker opening on {@code range}. */
     public PageDefinition withDateRange(DateRange range) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                parent, child, via, childTabs, chart, group, icon, range);
+                parent, child, via, childTabs, charts, group, icon, range);
     }
 
     public enum Type {
@@ -100,7 +106,11 @@ public record PageDefinition(
         /** A time series over a temporal field, bucketed by day/month/year. */
         LINE("line"),
         /** The latest rows, newest first. */
-        RECENT("recent");
+        RECENT("recent"),
+        /** The largest groups of an enum/boolean field or a relation, ranked. */
+        TOP("top"),
+        /** One number against a target, as a bar. */
+        PROGRESS("progress");
 
         private final String wire;
 
@@ -157,10 +167,12 @@ public record PageDefinition(
      *                     (null: the primary key)
      * @param dateField    the date column the dashboard's period picker limits (null: the widget
      *                     is not limited, because the dashboard has no picker or the entity no date)
+     * @param compare      {@link WidgetKind#KPI} only — also show the change against the previous period
+     * @param target       {@link WidgetKind#PROGRESS} only — the value the bar fills up to
      */
     public record Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
                          Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
-                         String sortBy, String dateField) {
+                         String sortBy, String dateField, boolean compare, java.math.BigDecimal target) {
 
         public Widget {
             presetFilter = presetFilter == null ? Map.of() : Map.copyOf(presetFilter);
@@ -169,12 +181,13 @@ public record PageDefinition(
         /** A widget with the default span of its kind and no filter, sort or date field. */
         public Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
                       Agg agg, String field, Bucket bucket) {
-            this(kind, entity, title, groupBy, limit, agg, field, bucket, defaultSpan(kind), null, null, null);
+            this(kind, entity, title, groupBy, limit, agg, field, bucket, defaultSpan(kind), null, null, null,
+                    false, null);
         }
 
-        /** A number tile takes one grid column; charts and lists take two. */
+        /** A number tile (plain or against a target) takes one grid column; charts and lists two. */
         public static int defaultSpan(WidgetKind kind) {
-            return kind == WidgetKind.KPI ? 1 : 2;
+            return kind == WidgetKind.KPI || kind == WidgetKind.PROGRESS ? 1 : 2;
         }
     }
 

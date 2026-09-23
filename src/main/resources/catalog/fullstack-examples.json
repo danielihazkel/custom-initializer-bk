@@ -320,6 +320,15 @@
             "groupBy": "status"
           },
           {
+            "kind": "top",
+            "entity": "Order",
+            "title": "Top customers",
+            "groupBy": "customer",
+            "agg": "sum",
+            "field": "total",
+            "limit": 5
+          },
+          {
             "kind": "recent",
             "entity": "Order",
             "limit": 6
@@ -926,7 +935,8 @@
           {
             "kind": "kpi",
             "entity": "Sale",
-            "title": "Sales"
+            "title": "Sales",
+            "compare": true
           },
           {
             "kind": "kpi",
@@ -951,6 +961,15 @@
             "presetFilter": {
               "region": "NORTH"
             }
+          },
+          {
+            "kind": "progress",
+            "entity": "Sale",
+            "title": "Revenue target",
+            "agg": "sum",
+            "field": "amount",
+            "target": "250000",
+            "span": 2
           },
           {
             "kind": "bar",
@@ -990,11 +1009,19 @@
         "title": "Revenue analysis",
         "description": "Filter the sales and read the totals per region — Export CSV gives exactly what you filtered.",
         "entity": "Sale",
-        "chart": {
-          "groupBy": "region",
-          "agg": "sum",
-          "field": "amount"
-        }
+        "charts": [
+          {
+            "groupBy": "region",
+            "agg": "sum",
+            "field": "amount"
+          },
+          {
+            "groupBy": "soldOn",
+            "bucket": "month",
+            "agg": "sum",
+            "field": "amount"
+          }
+        ]
       },
       {
         "id": "monthly",

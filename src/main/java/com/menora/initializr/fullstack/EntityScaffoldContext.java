@@ -178,7 +178,7 @@ public final class EntityScaffoldContext {
                     Object csvOverride = ev.get("csvExportOverride");
                     pv.put("reportHasExport", csvOverride != null ? Boolean.TRUE.equals(csvOverride)
                             : Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport")));
-                    putChart(pv, p.chart(), ev);
+                    putCharts(pv, p, ev, links);
                     pv.put("navIcon", "BarChart3");
                     defaultTitleExpr = "t('xReport', { x: " + tsString((String) ev.get("entityLabelPlural")) + " })";
                 }
@@ -385,7 +385,8 @@ public final class EntityScaffoldContext {
      * "home" — the first visible list page, else a visible master-detail page listing it as the
      * parent, else a visible tabs page embedding one of its list pages.
      */
-    private record PageLinks(Map<String, String> recordPageByEntity, Map<String, String> homeByEntity) {
+    private record PageLinks(Map<String, String> recordPageByEntity, Map<String, String> homeByEntity,
+                             Map<String, String> listPageByEntity) {
 
         static PageLinks of(List<PageDefinition> pages) {
             Map<String, String> records = new LinkedHashMap<>();
@@ -396,6 +397,7 @@ public final class EntityScaffoldContext {
                 if (p.type() == PageDefinition.Type.RECORD) records.put(p.entity(), p.id());
                 if (p.type() == PageDefinition.Type.ENTITY_LIST && !p.hidden()) homes.putIfAbsent(p.entity(), p.id());
             }
+            Map<String, String> lists = new LinkedHashMap<>(homes);
             for (PageDefinition p : pages) {
                 if (p.type() == PageDefinition.Type.MASTER_DETAIL && !p.hidden()) homes.putIfAbsent(p.parent(), p.id());
             }
@@ -407,10 +409,13 @@ public final class EntityScaffoldContext {
                     if (target.type() == PageDefinition.Type.MASTER_DETAIL) homes.putIfAbsent(target.parent(), p.id());
                 }
             }
-            return new PageLinks(records, homes);
+            return new PageLinks(records, homes, lists);
         }
 
         String recordPageOf(String entity) { return recordPageByEntity.get(entity); }
+
+        /** The entity's first visible list page — what a drill-down opens, filtered — or null. */
+        String listPageOf(String entity) { return listPageByEntity.get(entity); }
 
         String homeOf(String entity) { return homeByEntity.get(entity); }
     }
@@ -439,6 +444,8 @@ public final class EntityScaffoldContext {
         boolean needsNavigate = false;
         boolean usesRange = false;
         boolean usesStatsQuery = false;
+        boolean usesQueryOf = false;
+        boolean usesBucketRange = false;
         for (int i = 0; i < p.widgets().size(); i++) {
             PageDefinition.Widget w = p.widgets().get(i);
             Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
@@ -450,6 +457,8 @@ public final class EntityScaffoldContext {
             wv.put("widgetIsBar", w.kind() == PageDefinition.WidgetKind.BAR);
             wv.put("widgetIsLine", w.kind() == PageDefinition.WidgetKind.LINE);
             wv.put("widgetIsRecent", w.kind() == PageDefinition.WidgetKind.RECENT);
+            wv.put("widgetIsTop", w.kind() == PageDefinition.WidgetKind.TOP);
+            wv.put("widgetIsProgress", w.kind() == PageDefinition.WidgetKind.PROGRESS);
             // `count` is the default everywhere, so only a real reduction reaches the props.
             boolean reduces = w.agg() != null && w.agg() != PageDefinition.Agg.COUNT;
             wv.put("hasAgg", reduces);
@@ -463,47 +472,59 @@ public final class EntityScaffoldContext {
             // The filter params the widget's queries carry: its fixed preset, then the dashboard
             // period over its date field (a TS expression, since the period is screen state).
             String preset = presetQuery(w.presetFilter());
-            String range = null;
-            if (w.dateField() != null) {
-                Map<String, Object> df = fieldOf(ev, w.dateField());
-                range = "rangeParams('" + w.dateField() + "', "
-                        + Boolean.TRUE.equals(df.get("isDateTime")) + ", period)";
-                usesRange = true;
-            }
-            String paramsExpr = preset == null ? range
-                    : range == null ? tsString(preset)
-                    : "statsQuery(" + tsString(preset) + ", " + range + ")";
-            usesStatsQuery |= preset != null && range != null;
+            String paramsExpr = params(preset, rangeExpr(ev, w.dateField(), false));
+            usesRange |= w.dateField() != null;
+            usesStatsQuery |= preset != null && w.dateField() != null;
             wv.put("hasParams", paramsExpr != null);
             wv.put("paramsExpr", paramsExpr);
+            // A kpi's change against the previous period: the same params, one period back. The
+            // picker's "all time" has no previous period, so the tile then shows no change.
+            wv.put("hasCompare", w.compare());
+            wv.put("compareParamsExpr", w.compare() ? params(preset, rangeExpr(ev, w.dateField(), true)) : null);
+            wv.put("target", w.target() == null ? null : w.target().toPlainString());
             String target = links.homeOf(w.entity());
             wv.put("hasTarget", target != null);
             wv.put("targetPageId", target);
+            // "View all" on a filtered widget opens the list with the same filters, when its home is
+            // a list page that takes them from the route.
+            boolean openWithQuery = paramsExpr != null && target != null && target.equals(links.listPageOf(w.entity()))
+                    && Boolean.TRUE.equals(ev.get("hasFilters"));
+            wv.put("openWithQuery", openWithQuery);
+            usesQueryOf |= openWithQuery;
             needsNavigate |= target != null;
             String defaultTitle;
             switch (w.kind()) {
                 // A reducing tile is titled by what it reduces ("Total Amount"), a counting one by
                 // what it counts.
-                case KPI -> defaultTitle = reduces ? aggTitle(w, ev) : entityLabels;
+                case KPI, PROGRESS -> defaultTitle = reduces ? aggTitle(w, ev) : entityLabels;
                 case LINE -> {
                     wv.put("groupBy", w.groupBy());
+                    Map<String, Object> fv = fieldOf(ev, w.groupBy());
+                    wv.put("groupByIsDateTime", Boolean.TRUE.equals(fv.get("isDateTime")));
+                    // A point opens the list over its day/month/year.
+                    boolean drill = putDrill(wv, ev, w.entity(), links, w.groupBy(), paramsExpr);
+                    usesBucketRange |= drill;
+                    usesQueryOf |= drill && paramsExpr != null;
+                    needsNavigate |= drill;
                     defaultTitle = "t('xOverTime', { x: "
                             + (reduces ? aggTitle(w, ev) : entityLabels) + " })";
                 }
-                case BAR -> {
-                    Map<String, Object> fv = ((List<Map<String, Object>>) ev.get("fields")).stream()
-                            .filter(f -> w.groupBy().equals(f.get("name"))).findFirst().orElseThrow();
-                    wv.put("groupBy", w.groupBy());
-                    Object enumType = Boolean.TRUE.equals(fv.get("isEnum")) ? fv.get("enumTypeName") : null;
-                    wv.put("hasLabels", enumType != null);
-                    wv.put("labelsRef", enumType == null ? null : enumType + "Labels");
-                    if (enumType != null) {
+                case BAR, TOP -> {
+                    Map<String, Object> rank = rankView(ev, w.groupBy());
+                    wv.putAll(rank);
+                    String labelsRef = (String) rank.get("labelsRef");
+                    if (labelsRef != null) {
                         labelRefsByModule.computeIfAbsent((String) ev.get("entityNameKebab"), k -> new LinkedHashSet<>())
-                                .add(enumType + "Labels");
+                                .add(labelsRef);
                     }
-                    defaultTitle = reduces
-                            ? "t('xByY', { x: " + aggTitle(w, ev) + ", y: " + tsString((String) fv.get("label")) + " })"
-                            : "t('xByY', { x: " + entityLabels + ", y: " + tsString((String) fv.get("label")) + " })";
+                    // A bar or a ranked row opens the list filtered to that group.
+                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr);
+                    usesQueryOf |= drill && paramsExpr != null;
+                    needsNavigate |= drill;
+                    if (w.kind() == PageDefinition.WidgetKind.TOP) wv.put("limit", w.limit());
+                    String measured = reduces ? aggTitle(w, ev) : entityLabels;
+                    defaultTitle = "t('" + (w.kind() == PageDefinition.WidgetKind.TOP ? "topXByY" : "xByY")
+                            + "', { x: " + measured + ", y: " + rank.get("groupLabelExpr") + " })";
                 }
                 default -> {
                     wv.put("limit", w.limit());
@@ -523,10 +544,11 @@ public final class EntityScaffoldContext {
             widgetViews.add(wv);
         }
         pv.put("widgets", widgetViews);
-        pv.put("usesKpi", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsKpi"))));
-        pv.put("usesBar", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsBar"))));
-        pv.put("usesLine", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsLine"))));
-        pv.put("usesRecent", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIsRecent"))));
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress")) {
+            pv.put("uses" + kind, widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIs" + kind))));
+        }
+        usesStatsQuery |= widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasCompare"))
+                && ((String) v.get("compareParamsExpr")).startsWith("statsQuery("));
         List<Map<String, Object>> labelImports = new ArrayList<>();
         labelRefsByModule.forEach((kebab, refs) ->
                 labelImports.add(Map.of("entityNameKebab", kebab, "labelsRefs", String.join(", ", refs))));
@@ -534,11 +556,83 @@ public final class EntityScaffoldContext {
         pv.put("needsNavigate", needsNavigate);
         pv.put("hasDateRange", p.dateRange() != null);
         pv.put("dateRangeDefault", p.dateRange() == null ? null : p.dateRange().wire());
-        // stats.ts helpers the screen imports: the period type and its params when the picker
-        // limits some widget, statsQuery when a widget also carries a preset.
+        // stats.ts helpers the screen imports.
         pv.put("usesRangeParams", usesRange);
         pv.put("usesStatsQuery", usesStatsQuery);
-        pv.put("usesStatsHelpers", p.dateRange() != null);
+        pv.put("usesQueryOf", usesQueryOf);
+        pv.put("usesBucketRange", usesBucketRange);
+        pv.put("usesStatsHelpers", p.dateRange() != null || usesStatsQuery || usesQueryOf || usesBucketRange);
+    }
+
+    /** The widget's filter params as a TS expression: its preset, the period, or both; null for none. */
+    private static String params(String preset, String range) {
+        if (preset == null) return range;
+        if (range == null) return tsString(preset);
+        return "statsQuery(" + tsString(preset) + ", " + range + ")";
+    }
+
+    /** {@code rangeParams('soldOn', false, period)} (the previous period with {@code previous}), or
+     *  null when the widget has no period date. */
+    private static String rangeExpr(Map<String, Object> ev, String dateField, boolean previous) {
+        if (dateField == null) return null;
+        Map<String, Object> df = fieldOf(ev, dateField);
+        return "rangeParams('" + dateField + "', " + Boolean.TRUE.equals(df.get("isDateTime")) + ", period"
+                + (previous ? ", true" : "") + ")";
+    }
+
+    /**
+     * What a bar chart or top list groups by, for its screen: the {@code /stats} key, how a group is
+     * labelled (an enum's labels, or — for a relation — the target's rows by id), the heading of the
+     * column, and the list filter a group drills into.
+     */
+    private static Map<String, Object> rankView(Map<String, Object> ev, String groupBy) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> rel = ((List<Map<String, Object>>) ev.get("relations")).stream()
+                .filter(r -> groupBy.equalsIgnoreCase((String) r.get("fieldName"))).findFirst().orElse(null);
+        if (rel != null) {
+            String name = (String) rel.get("fieldName");
+            out.put("groupBy", name);
+            out.put("hasLabels", false);
+            out.put("labelsRef", null);
+            out.put("isRelationRank", true);
+            out.put("optionsPath", "/api/" + rel.get("targetEntityKebabPlural"));
+            out.put("optionValue", rel.get("targetPkName"));
+            out.put("hasOptionLabel", rel.get("targetLabelField") != null);
+            out.put("optionLabel", rel.get("targetLabelField"));
+            out.put("groupLabelExpr", tsString(Naming.toPascalCase(name)));
+            out.put("drillKey", rel.get("fkFieldName"));
+            return out;
+        }
+        Map<String, Object> fv = fieldOf(ev, groupBy);
+        Object enumType = Boolean.TRUE.equals(fv.get("isEnum")) ? fv.get("enumTypeName") : null;
+        out.put("groupBy", groupBy);
+        out.put("hasLabels", enumType != null);
+        out.put("labelsRef", enumType == null ? null : enumType + "Labels");
+        out.put("isRelationRank", false);
+        out.put("groupLabelExpr", tsString((String) fv.get("label")));
+        out.put("drillKey", groupBy);
+        return out;
+    }
+
+    /**
+     * Drill-down: a click on a group (a bar, a ranked row, a point in time) opens the entity's list
+     * page filtered to it. Only when the entity has a visible list page and the list can filter by
+     * {@code filterKey} — a filter it does not have would be silently dropped, showing every row.
+     * Sets {@code hasDrill}/{@code drillPageId}/{@code drillKey}.
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean putDrill(Map<String, Object> view, Map<String, Object> ev, String entity, PageLinks links,
+                                    String filterKey, String paramsExpr) {
+        String listPage = links.listPageOf(entity);
+        boolean filterable = ((List<Map<String, Object>>) ev.getOrDefault("filterFields", List.of())).stream()
+                .anyMatch(f -> filterKey.equals(f.get("name")));
+        boolean drill = listPage != null && filterable;
+        view.put("hasDrill", drill);
+        view.put("drillPageId", drill ? listPage : null);
+        view.put("drillKey", filterKey);
+        view.put("drillBase", drill && paramsExpr != null ? "...queryOf(" + paramsExpr + "), " : "");
+        return drill;
     }
 
     /** Grid classes per widget span (1–4 columns of the dashboard's sm:2 / lg:4 grid). Literal
@@ -559,29 +653,57 @@ public final class EntityScaffoldContext {
     }
 
     /**
-     * A report's single chart, as its screen's view-model: which component draws it, the fixed
-     * half of the {@code /stats} query it asks for (the filter bar appends its values), and the
-     * headings of the totals table beneath it.
+     * A report's charts, as its screen's view-model: for each, which component draws it, the fixed
+     * half of the {@code /stats} query it asks for (the filter bar appends its values), the headings
+     * of its values, and where a click on a group drills to. The first chart also gets the totals
+     * table.
      */
-    private static void putChart(Map<String, Object> pv, PageDefinition.Chart chart, Map<String, Object> ev) {
-        Map<String, Object> fv = fieldOf(ev, chart.groupBy());
-        boolean overTime = chart.bucket() != null;
-        pv.put("chartIsLine", overTime);
-        pv.put("chartIsBar", !overTime);
-        pv.put("chartGroupBy", chart.groupBy());
-        pv.put("chartGroupLabelExpr", tsString((String) fv.get("label")));
-        Object enumType = Boolean.TRUE.equals(fv.get("isEnum")) ? fv.get("enumTypeName") : null;
-        pv.put("chartHasLabels", enumType != null);
-        pv.put("chartLabelsRef", enumType == null ? null : enumType + "Labels");
-        boolean reduces = chart.agg() != PageDefinition.Agg.COUNT;
-        pv.put("chartHasValueColumn", reduces);
-        pv.put("chartValueHeaderExpr", reduces
-                ? aggTitleExpr(chart.agg(), (String) fieldOf(ev, chart.field()).get("label"))
-                : null);
-        StringBuilder query = new StringBuilder("groupBy=").append(chart.groupBy());
-        if (overTime) query.append("&bucket=").append(chart.bucket().wire());
-        if (reduces) query.append("&agg=").append(chart.agg().wire()).append("&field=").append(chart.field());
-        pv.put("rollupQuery", query.toString());
+    private static void putCharts(Map<String, Object> pv, PageDefinition p, Map<String, Object> ev, PageLinks links) {
+        List<Map<String, Object>> charts = new ArrayList<>();
+        Set<String> labelRefs = new LinkedHashSet<>();
+        boolean drills = false;
+        boolean usesBucketRange = false;
+        for (int i = 0; i < p.charts().size(); i++) {
+            PageDefinition.Chart chart = p.charts().get(i);
+            Map<String, Object> cv = new LinkedHashMap<>();
+            Map<String, Object> fv = fieldOf(ev, chart.groupBy());
+            boolean overTime = chart.bucket() != null;
+            cv.put("chartIsLine", overTime);
+            cv.put("chartIsBar", !overTime);
+            cv.put("chartGroupBy", chart.groupBy());
+            cv.put("chartGroupLabelExpr", tsString((String) fv.get("label")));
+            Object enumType = Boolean.TRUE.equals(fv.get("isEnum")) ? fv.get("enumTypeName") : null;
+            cv.put("chartHasLabels", enumType != null);
+            cv.put("chartLabelsRef", enumType == null ? null : enumType + "Labels");
+            if (enumType != null) labelRefs.add(enumType + "Labels");
+            boolean reduces = chart.agg() != PageDefinition.Agg.COUNT;
+            String measure = reduces ? aggTitleExpr(chart.agg(), (String) fieldOf(ev, chart.field()).get("label")) : null;
+            cv.put("chartValueHeaderExpr", reduces ? measure : "t('rows')");
+            cv.put("chartTitleExpr", "t('" + (overTime ? "xOverTime" : "xByY") + "', { x: "
+                    + (reduces ? measure : tsString((String) ev.get("entityLabelPlural")))
+                    + (overTime ? "" : ", y: " + tsString((String) fv.get("label"))) + " })");
+            cv.put("chartIsFirst", i == 0);
+            StringBuilder query = new StringBuilder("groupBy=").append(chart.groupBy());
+            if (overTime) query.append("&bucket=").append(chart.bucket().wire());
+            if (reduces) query.append("&agg=").append(chart.agg().wire()).append("&field=").append(chart.field());
+            cv.put("rollupQuery", query.toString());
+            // A bar opens the list on its value; a point in time on its day/month/year.
+            boolean drill = putDrill(cv, ev, p.entity(), links, chart.groupBy(), null);
+            cv.put("drillExpr", overTime
+                    ? "...bucketRange('" + chart.groupBy() + "', key, " + Boolean.TRUE.equals(fv.get("isDateTime")) + ")"
+                    : chart.groupBy() + ": key");
+            drills |= drill;
+            usesBucketRange |= drill && overTime;
+            charts.add(cv);
+        }
+        pv.put("charts", charts);
+        pv.put("hasManyCharts", charts.size() > 1);
+        pv.put("firstChart", charts.subList(0, 1));
+        pv.put("moreCharts", charts.subList(1, charts.size()));
+        pv.put("chartLabelsRefs", String.join(", ", labelRefs));
+        pv.put("hasChartLabels", !labelRefs.isEmpty());
+        pv.put("usesBucketRange", usesBucketRange);
+        pv.put("needsNavigate", drills);
     }
 
     /** One field of an entity view-model, by its wire name. */
@@ -1014,12 +1136,26 @@ public final class EntityScaffoldContext {
             if (Boolean.TRUE.equals(fv.get("isEnum")) || Boolean.TRUE.equals(fv.get("isBoolean"))) {
                 // Primary keys included on purpose: `hasBreakdown` above charts the first enum
                 // whether or not it is the key, and this whitelist has to be able to answer it.
-                statsGroupByFields.add(statsField(fv));
+                Map<String, Object> sf = statsField(fv);
+                sf.put("isRelation", false);
+                statsGroupByFields.add(sf);
             } else if (!isPk && Boolean.TRUE.equals(fv.get("isTemporal"))) {
                 statsDateFields.add(statsField(fv));
             } else if (!isPk && Boolean.TRUE.equals(fv.get("isNumeric"))) {
                 statsNumericFields.add(statsField(fv));
             }
+        }
+        // A MANY_TO_ONE groups by the id it points at: "top customers by revenue". The key is the
+        // Java field name, which is also what the frontend sends (and its filter param minus "Id").
+        for (RelationDefinition rel : entity.relations()) {
+            if (rel.type() != RelationType.MANY_TO_ONE) continue;
+            Map<String, Object> target = summaries == null ? null
+                    : summaries.get(rel.targetEntity().toLowerCase(Locale.ROOT));
+            Map<String, Object> sf = new LinkedHashMap<>();
+            sf.put("name", Naming.toCamelCase(rel.fieldName()));
+            sf.put("isRelation", true);
+            sf.put("targetPkName", target != null ? target.get("pkName") : "id");
+            statsGroupByFields.add(sf);
         }
         view.put("statsGroupByFields", statsGroupByFields);
         view.put("hasStatsGroupByFields", !statsGroupByFields.isEmpty());

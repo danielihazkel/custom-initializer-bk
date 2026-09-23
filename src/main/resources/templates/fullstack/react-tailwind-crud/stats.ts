@@ -121,3 +121,20 @@ export function rangeParams(field: string, dateTime: boolean, period: Period, pr
   const to = isoDay(range.to) + (dateTime ? 'T23:59:59' : '')
   return `${field}From=${from}&${field}To=${to}`
 }
+
+/** Params as a filter object — what a list page opens with when a widget drills into it. */
+export function queryOf(params: string): Record<string, string> {
+  return Object.fromEntries(new URLSearchParams(params))
+}
+
+/** The list filters that cover one bucket of a time series ('2026', '2026-09' or '2026-09-22') on
+ *  the date column `field`; a date-time column gets whole days. */
+export function bucketRange(field: string, key: string, dateTime: boolean): Record<string, string> {
+  const [year, month, day] = key.split('-').map(Number)
+  const from = new Date(year, month ? month - 1 : 0, day || 1)
+  const to = day ? from : month ? new Date(year, month, 0) : new Date(year, 11, 31)
+  return {
+    [`${field}From`]: isoDay(from) + (dateTime ? 'T00:00:00' : ''),
+    [`${field}To`]: isoDay(to) + (dateTime ? 'T23:59:59' : ''),
+  }
+}

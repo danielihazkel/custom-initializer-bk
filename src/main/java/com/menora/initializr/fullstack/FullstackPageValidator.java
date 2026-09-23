@@ -36,6 +36,7 @@ public final class FullstackPageValidator {
 
     static final int MAX_GROUP = 40;
     static final int MAX_SPAN = 4;
+    static final int MAX_CHARTS = 4;
 
     /** The lucide icons a page may put in the nav. The shell imports exactly the ones in use, so the
      *  list is a whitelist rather than "any lucide name": a typo would otherwise fail the build of the
@@ -130,7 +131,7 @@ public final class FullstackPageValidator {
                     String prefix = "Page '" + id + "' (report)";
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
                     yield new PageDefinition(id, type, title, description, hidden, entity.name(),
-                            presetFilter("Page '" + id + "'", entity, p.presetFilter()), chart(prefix, entity, p.chart()));
+                            presetFilter("Page '" + id + "'", entity, p.presetFilter()), charts(prefix, entity, p));
                 }
                 case RECORD -> {
                     String prefix = "Page '" + id + "' (record)";
@@ -198,6 +199,9 @@ public final class FullstackPageValidator {
         }
         if (type != PageDefinition.Type.REPORT && p.chart() != null) {
             throw new WizardArgumentException(prefix + "does not take 'chart'");
+        }
+        if (type != PageDefinition.Type.REPORT && p.charts() != null && !p.charts().isEmpty()) {
+            throw new WizardArgumentException(prefix + "does not take 'charts'");
         }
         if (type != PageDefinition.Type.MASTER_DETAIL) {
             if (trimToNull(p.parent()) != null) throw new WizardArgumentException(prefix + "does not take 'parent'");
@@ -282,6 +286,13 @@ public final class FullstackPageValidator {
             EntityDefinition entity = requireEntity(entitiesByLower, w.entity(), prefix);
             String title = checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title");
             boolean reduces = kind != PageDefinition.WidgetKind.RECENT;
+            // A tile against a target: the same reduction as a kpi, and the target it fills up to.
+            java.math.BigDecimal target = null;
+            if (kind == PageDefinition.WidgetKind.PROGRESS) {
+                target = progressTarget(prefix, trimToNull(w.target()));
+            } else if (trimToNull(w.target()) != null) {
+                throw new WizardArgumentException(prefix + ": only a progress widget takes 'target'");
+            }
             PageDefinition.Agg agg = null;
             String field = null;
             if (reduces) {
@@ -299,13 +310,14 @@ public final class FullstackPageValidator {
             PageDefinition.Bucket bucket = null;
             switch (kind) {
                 case BAR -> groupBy = groupBy(prefix, entity, trimToNull(w.groupBy()));
+                case TOP -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()));
                 case LINE -> {
                     groupBy = dateGroupBy(prefix, entity, trimToNull(w.groupBy()));
                     bucket = parseBucket(prefix, w.bucket());
                 }
                 default -> {
                     if (trimToNull(w.groupBy()) != null) {
-                        throw new WizardArgumentException(prefix + ": only a bar or line widget takes 'groupBy'");
+                        throw new WizardArgumentException(prefix + ": only a bar, line or top widget takes 'groupBy'");
                     }
                 }
             }
@@ -313,13 +325,13 @@ public final class FullstackPageValidator {
                 throw new WizardArgumentException(prefix + ": only a line widget takes 'bucket'");
             }
             int limit = 0;
-            if (kind == PageDefinition.WidgetKind.RECENT) {
+            if (kind == PageDefinition.WidgetKind.RECENT || kind == PageDefinition.WidgetKind.TOP) {
                 limit = w.limit() == null ? DEFAULT_RECENT_LIMIT : w.limit();
                 if (limit < 1 || limit > MAX_RECENT_LIMIT) {
                     throw new WizardArgumentException(prefix + ": limit must be between 1 and " + MAX_RECENT_LIMIT);
                 }
             } else if (w.limit() != null) {
-                throw new WizardArgumentException(prefix + ": only a recent widget takes 'limit'");
+                throw new WizardArgumentException(prefix + ": only a recent or top widget takes 'limit'");
             }
             int span = w.span() == null ? PageDefinition.Widget.defaultSpan(kind) : w.span();
             if (span < 1 || span > MAX_SPAN) {
@@ -331,11 +343,58 @@ public final class FullstackPageValidator {
             } else if (trimToNull(w.sortBy()) != null) {
                 throw new WizardArgumentException(prefix + ": only a recent widget takes 'sortBy'");
             }
+            String dateField = dateField(prefix, entity, trimToNull(w.dateField()), hasDateRange);
+            boolean compare = Boolean.TRUE.equals(w.compare());
+            if (compare) {
+                if (kind != PageDefinition.WidgetKind.KPI) {
+                    throw new WizardArgumentException(prefix + ": only a kpi widget takes 'compare'");
+                }
+                // The previous period is the picker's, over the widget's date.
+                if (dateField == null) {
+                    throw new WizardArgumentException(prefix + ": 'compare' needs the dashboard's dateRange and a"
+                            + " filterable date field on " + entity.name() + " to compare periods by");
+                }
+            }
             out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit, agg, field, bucket, span,
-                    presetFilter(prefix, entity, w.presetFilter()), sortBy,
-                    dateField(prefix, entity, trimToNull(w.dateField()), hasDateRange)));
+                    presetFilter(prefix, entity, w.presetFilter()), sortBy, dateField, compare, target));
         }
         return out;
+    }
+
+    /** A progress widget's target: a positive number, kept as written (it lands in the screen as a
+     *  literal). */
+    private static java.math.BigDecimal progressTarget(String prefix, String raw) {
+        if (raw == null) throw new WizardArgumentException(prefix + ": a progress widget needs a 'target'");
+        java.math.BigDecimal value;
+        try {
+            value = new java.math.BigDecimal(raw);
+        } catch (NumberFormatException e) {
+            throw new WizardArgumentException(prefix + ": target '" + raw + "' is not a number");
+        }
+        if (value.signum() <= 0) throw new WizardArgumentException(prefix + ": target must be greater than 0");
+        return value.stripTrailingZeros();
+    }
+
+    /**
+     * What a top list ranks: the groups of an enum/boolean field, or the rows a MANY_TO_ONE points
+     * at (the relation's field name). Omitted: the first enum, else the first boolean, else the
+     * first relation.
+     */
+    private static String rankBy(String prefix, EntityDefinition entity, String requested) {
+        List<String> relations = entity.relations().stream()
+                .filter(r -> r.type() == RelationType.MANY_TO_ONE).map(RelationDefinition::fieldName).toList();
+        if (requested == null) {
+            return entity.fields().stream().filter(f -> !f.primaryKey() && f.type().isEnum()).findFirst()
+                    .or(() -> entity.fields().stream().filter(f -> !f.primaryKey() && f.type().isBoolean()).findFirst())
+                    .map(FieldDefinition::name)
+                    .or(() -> relations.stream().findFirst())
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
+                            + " has no enum, boolean or relation to rank by"));
+        }
+        for (String relation : relations) {
+            if (relation.equalsIgnoreCase(requested)) return relation;
+        }
+        return groupBy(prefix, entity, requested);
     }
 
     /** What a recent list orders by: any column of the entity (the list endpoint sorts by every
@@ -385,7 +444,7 @@ public final class FullstackPageValidator {
             if (kind.wire().equalsIgnoreCase(k)) return kind;
         }
         throw new WizardArgumentException(prefix + ": unknown widget kind '" + k
-                + "' (expected kpi, bar, line or recent)");
+                + "' (expected kpi, bar, line, recent, top or progress)");
     }
 
     /** How a tile or chart reduces its rows. Absent means {@code count}. */
@@ -450,6 +509,23 @@ public final class FullstackPageValidator {
                     + "' must be a non-key date field to plot over time");
         }
         return field.name();
+    }
+
+    /** A report's charts: {@code charts} (1–4), or the one-chart spelling {@code chart}. */
+    private static List<PageDefinition.Chart> charts(String prefix, EntityDefinition entity, PageDefinitionDto p) {
+        boolean many = p.charts() != null && !p.charts().isEmpty();
+        if (many && p.chart() != null) {
+            throw new WizardArgumentException(prefix + ": give either 'chart' or 'charts', not both");
+        }
+        if (!many) return List.of(chart(prefix, entity, p.chart()));
+        if (p.charts().size() > MAX_CHARTS) {
+            throw new WizardArgumentException(prefix + ": at most " + MAX_CHARTS + " charts are allowed");
+        }
+        List<PageDefinition.Chart> out = new ArrayList<>();
+        for (int i = 0; i < p.charts().size(); i++) {
+            out.add(chart(prefix + " charts[" + i + "]", entity, p.charts().get(i)));
+        }
+        return out;
     }
 
     /**

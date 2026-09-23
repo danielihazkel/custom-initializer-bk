@@ -720,7 +720,9 @@ class FullstackStarterIntegrationTests {
                 .contains("@GetMapping(\"/stats\")")
                 .contains("public StatsResponse stats(")
                 .contains("@RequestParam(required = false) String groupBy")
-                .contains("service.stats(q, filters, groupBy, bucket, agg, field)")
+                .contains("service.stats(q, filters, groupBy, bucket, agg, field, top)")
+                // An empty group (avg over no rows) adds nothing to the total rather than throwing.
+                .contains("if (bucketed.value() != null) total = total == null ? bucketed.value() : total.add(bucketed.value());")
                 .contains("public record StatsResponse(List<SaleService.StatsBucket> buckets, java.math.BigDecimal total) {}");
 
         // Nothing to group, bucket or reduce → no endpoint, and no EntityManager to inject.

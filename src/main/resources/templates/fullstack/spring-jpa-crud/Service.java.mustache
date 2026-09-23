@@ -103,10 +103,12 @@ public class {{EntityName}}Service {
      * @param bucket  {@code day}/{@code month}/{@code year} when {@code groupBy} is a date column
      * @param agg     {@code count} (the default) or {@code sum}/{@code avg}/{@code min}/{@code max}
      *                over {@code field}
+     * @param top     the largest {@code top} groups only (1–100), biggest first — a ranking rather
+     *                than a breakdown; null keeps every group, ordered by key
      */
     @Transactional(readOnly = true)
     public java.util.List<StatsBucket> stats(String q, {{#hasFilters}}Filters filters, {{/hasFilters}}String groupBy,
-                                             String bucket, String agg, String field) {
+                                             String bucket, String agg, String field, Integer top) {
         // Hibernate's builder rather than the JPA one, for the date parts below: cb.year(x) lowers
         // to `extract(year from x)`, which every dialect renders for itself. The portable-looking
         // cb.function("year", ...) would emit a raw SQL year() that only some databases have.
@@ -118,6 +120,10 @@ public class {{EntityName}}Service {
         java.util.List<Expression<?>> groups = new java.util.ArrayList<>();
         boolean grouped = groupBy != null && !groupBy.isBlank();
         boolean overTime = grouped && isDateGroup(groupBy);
+        if (top != null) {
+            if (top < 1 || top > 100) throw new IllegalArgumentException("top must be between 1 and 100");
+            if (!grouped || overTime) throw new IllegalArgumentException("top ranks groups, so it needs a groupBy that is not a date");
+        }
         if (overTime) {
 {{#hasStatsDateFields}}            String unit = bucketUnit(bucket);
             Expression<? extends TemporalAccessor> when = datePath(root, groupBy);
@@ -130,7 +136,8 @@ public class {{EntityName}}Service {
             groups.add(path);
             selections.add(path);
         }
-        selections.add(aggregate(cb, root, agg, field));
+        Expression<? extends Number> measure = aggregate(cb, root, agg, field);
+        selections.add(measure);
         query.multiselect(selections);
 {{#needsSpecification}}        Specification<{{EntityName}}> spec = specOf(q{{#hasFilters}}, filters{{/hasFilters}});
         if (spec != null) {
@@ -138,15 +145,21 @@ public class {{EntityName}}Service {
             if (predicate != null) query.where(predicate);
         }
 {{/needsSpecification}}        if (!groups.isEmpty()) {
-            // Ordered by the key, so a time series arrives oldest first and a breakdown is stable.
-            // The Order type is spelled out: an entity called Order would shadow a plain import.
-            java.util.List<jakarta.persistence.criteria.Order> ascending = new java.util.ArrayList<>();
-            for (Expression<?> group : groups) ascending.add(cb.asc(group));
             query.groupBy(groups);
-            query.orderBy(ascending);
+            if (top != null) {
+                query.orderBy(cb.desc(measure));
+            } else {
+                // Ordered by the key, so a time series arrives oldest first and a breakdown is stable.
+                // The Order type is spelled out: an entity called Order would shadow a plain import.
+                java.util.List<jakarta.persistence.criteria.Order> ascending = new java.util.ArrayList<>();
+                for (Expression<?> group : groups) ascending.add(cb.asc(group));
+                query.orderBy(ascending);
+            }
         }
 
-        java.util.List<Tuple> rows = entityManager.createQuery(query).getResultList();
+        jakarta.persistence.TypedQuery<Tuple> typed = entityManager.createQuery(query);
+        if (top != null) typed.setMaxResults(top);
+        java.util.List<Tuple> rows = typed.getResultList();
         java.util.List<StatsBucket> out = new java.util.ArrayList<>(rows.size());
         for (Tuple row : rows) {
             Object value = row.get(groups.size());
@@ -172,10 +185,11 @@ public class {{EntityName}}Service {
         };
     }
 
-    /** Whitelist of groupable columns — anything else is a 400, never a query. */
+    /** Whitelist of groupable columns — anything else is a 400, never a query. A relation groups by
+     *  the id it points at (the foreign key column itself, so no join). */
     private static Path<?> groupPath(Root<{{EntityName}}> root, String groupBy) {
 {{#hasStatsGroupByFields}}        return switch (groupBy) {
-{{#statsGroupByFields}}            case "{{name}}" -> root.get("{{name}}");
+{{#statsGroupByFields}}            case "{{name}}" -> root.get("{{name}}"){{#isRelation}}.get("{{targetPkName}}"){{/isRelation}};
 {{/statsGroupByFields}}            default -> throw new IllegalArgumentException("Not a groupable field: " + groupBy);
         };
 {{/hasStatsGroupByFields}}{{^hasStatsGroupByFields}}        throw new IllegalArgumentException("Not a groupable field: " + groupBy);

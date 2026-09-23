@@ -220,20 +220,25 @@ public record FullstackStarterRequest(
             String icon,
             // dashboard: a period picker over the widgets' date fields, opening on this period
             // (all, 7d, 30d, 90d, ytd or 12m). Absent: no picker, every widget covers all rows.
-            String dateRange) {
+            String dateRange,
+            // report: up to four charts (the first also gets the totals table). `chart` is the
+            // one-chart spelling; a page gives one or the other.
+            List<ChartDto> charts) {
 
         /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
                                  String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
                                  List<TabDto> tabs) {
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                    null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null);
         }
     }
 
     /** A dashboard widget: {@code kpi} (one number), {@code bar} (grouped by an enum/boolean
-     *  field), {@code line} (a time series over a temporal field) or {@code recent} (the latest
-     *  rows). {@code agg}/{@code field} reduce a numeric column — {@code count} (the default)
+     *  field), {@code line} (a time series over a temporal field), {@code recent} (the latest
+     *  rows), {@code top} (the largest groups of an enum/boolean field or a relation, ranked) or
+     *  {@code progress} (one number against a {@code target}). A kpi with {@code compare} also
+     *  shows the change against the previous period of the dashboard's picker. {@code agg}/{@code field} reduce a numeric column — {@code count} (the default)
      *  takes no field; {@code bucket} applies to {@code line}. {@code span} is the grid columns
      *  (1–4) it takes, {@code presetFilter} the enum/boolean values it counts only, {@code sortBy}
      *  what a recent list orders by (newest first) and {@code dateField} the date the dashboard's
@@ -250,12 +255,14 @@ public record FullstackStarterRequest(
             Integer span,
             Map<String, String> presetFilter,
             String sortBy,
-            String dateField) {
+            String dateField,
+            Boolean compare,
+            String target) {
 
         /** The widget as phase-1 layouts spell it (no span, filter, sort or date field). */
         public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
                          String field, String bucket) {
-            this(kind, entity, title, agg, groupBy, limit, field, bucket, null, null, null, null);
+            this(kind, entity, title, agg, groupBy, limit, field, bucket, null, null, null, null, null, null);
         }
     }
 

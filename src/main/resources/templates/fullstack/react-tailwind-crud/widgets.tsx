@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { api } from '@shared/api'
 import { LOCALE, t, type StringKey } from '../i18n'
@@ -68,20 +68,35 @@ function WidgetHeader({ title, onOpen }: { title: string; onOpen?: () => void })
 }
 
 /** Horizontal bars scaled to the largest value. Shared by the breakdown widget and the report
- *  screen, which draw the same chart from the same rollup. */
-export function BarRows({ data }: { data: { label: string; value: number }[] }) {
+ *  screen, which draw the same chart from the same rollup. With `onSelect` each bar is a button
+ *  (a drill-down into the list). */
+export function BarRows({ data, onSelect }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void }) {
   const max = data.reduce((m, d) => Math.max(m, d.value), 0) || 1
   return (
     <div className="space-y-2">
-      {data.map(d => (
-        <div key={d.label} className="flex items-center gap-3 text-sm">
-          <div className="w-28 shrink-0 truncate text-muted" title={d.label}>{d.label}</div>
-          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
-            <div className="h-full rounded-full bg-brand" style={{ width: `${(d.value / max) * 100}%` }} />
-          </div>
-          <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(d.value)}</div>
-        </div>
-      ))}
+      {data.map((d, i) => {
+        const row = (
+          <>
+            <div className="w-28 shrink-0 truncate text-muted" title={d.label}>{d.label}</div>
+            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+              <div className="h-full rounded-full bg-brand" style={{ width: `${(d.value / max) * 100}%` }} />
+            </div>
+            <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(d.value)}</div>
+          </>
+        )
+        return onSelect ? (
+          <button
+            key={d.label}
+            type="button"
+            onClick={() => onSelect(i)}
+            className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-lg px-1 text-start text-sm transition-colors hover:bg-surface-2"
+          >
+            {row}
+          </button>
+        ) : (
+          <div key={d.label} className="flex items-center gap-3 text-sm">{row}</div>
+        )
+      })}
     </div>
   )
 }
@@ -91,8 +106,9 @@ const CHART_H = 110
 const CHART_PAD = 8
 
 /** A time series as plain SVG — the generated app ships no charting library. The viewBox scales
- *  with the container, so the stroke and the dots keep their proportions at any width. */
-export function LineChart({ data }: { data: { label: string; value: number }[] }) {
+ *  with the container, so the stroke and the dots keep their proportions at any width. With
+ *  `onSelect` each point is a button (a drill-down into its day/month/year). */
+export function LineChart({ data, onSelect }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void }) {
   if (data.length === 0) return null
   const values = data.map(d => d.value)
   const max = Math.max(...values, 0)
@@ -129,6 +145,25 @@ export function LineChart({ data }: { data: { label: string; value: number }[] }
             <title>{`${data[i].label}: ${formatStat(data[i].value)}`}</title>
           </circle>
         ))}
+        {onSelect && points.map(([x, y], i) => (
+          <circle
+            key={`hit-${data[i].label}`}
+            cx={x}
+            cy={y}
+            r={9}
+            className="cursor-pointer fill-transparent hover:fill-brand/20 focus:fill-brand/20 focus:outline-none"
+            role="button"
+            tabIndex={0}
+            aria-label={`${data[i].label}: ${formatStat(data[i].value)}`}
+            onClick={() => onSelect(i)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSelect(i)
+              }
+            }}
+          />
+        ))}
       </svg>
       <div className="mt-1 flex justify-between text-[11px] tabular-nums text-muted">
         <span>{data[0].label}</span>
@@ -138,23 +173,14 @@ export function LineChart({ data }: { data: { label: string; value: number }[] }
   )
 }
 
-/** A single number: the record count, or an aggregate of one numeric column. */
-export function KpiTile({ title, path, agg, field, params = '', onOpen, className = '' }: {
-  title: string
-  path: string
-  /** sum/avg/min/max over `field`; omitted counts records. */
-  agg?: string
-  field?: string
-  /** List filter params the number is limited to (a preset, the dashboard period). */
-  params?: string
-  onOpen?: () => void
-  /** Grid placement (the widget's span). */
-  className?: string
-}) {
+/** One number from the backend: the record count (from the list's page metadata, which is
+ *  exact), or an aggregate of one numeric column. `params` null skips the fetch. */
+function useNumber(path: string, agg: string | undefined, field: string | undefined, params: string | null) {
   const [value, setValue] = useState<number | null>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
+    if (params == null) return
     let active = true
     // A plain count is already exact from the page metadata, and one row crosses the wire.
     const pending = agg && agg !== 'count'
@@ -166,29 +192,101 @@ export function KpiTile({ title, path, agg, field, params = '', onOpen, classNam
     return () => { active = false }
   }, [path, agg, field, params])
 
-  const body = (
-    <>
-      <div className="text-sm text-muted">{title}</div>
-      <div className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-fg">
-        {failed ? '—' : value == null ? <span className="text-muted">…</span> : formatStat(value)}
-      </div>
-    </>
-  )
+  return { value, failed }
+}
+
+/** A tile's frame: a button when it opens the list, a plain card otherwise. */
+function Tile({ onOpen, className, children }: { onOpen?: () => void; className: string; children: ReactNode }) {
   return onOpen ? (
     <button
       type="button"
       onClick={onOpen}
       className={`${card} group w-full text-start transition-all hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-md ${className}`}
     >
-      {body}
+      {children}
     </button>
   ) : (
-    <div className={`${card} ${className}`}>{body}</div>
+    <div className={`${card} ${className}`}>{children}</div>
+  )
+}
+
+/** A single number: the record count, or an aggregate of one numeric column — optionally with the
+ *  change against the previous period. */
+export function KpiTile({ title, path, agg, field, params = '', compareParams, onOpen, className = '' }: {
+  title: string
+  path: string
+  /** sum/avg/min/max over `field`; omitted counts records. */
+  agg?: string
+  field?: string
+  /** List filter params the number is limited to (a preset, the dashboard period). */
+  params?: string
+  /** The same params over the previous period; given, the tile shows the change against it. */
+  compareParams?: string
+  onOpen?: () => void
+  /** Grid placement (the widget's span). */
+  className?: string
+}) {
+  const { value, failed } = useNumber(path, agg, field, params)
+  const previous = useNumber(path, agg, field, compareParams ?? null)
+  const change = compareParams != null && value != null && previous.value != null && previous.value !== 0
+    ? ((value - previous.value) / Math.abs(previous.value)) * 100
+    : null
+
+  return (
+    <Tile onOpen={onOpen} className={className}>
+      <div className="text-sm text-muted">{title}</div>
+      <div className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-fg">
+        {failed ? '—' : value == null ? <span className="text-muted">…</span> : formatStat(value)}
+      </div>
+      {change != null && (
+        <div className={`mt-1 text-xs font-medium tabular-nums ${change > 0 ? 'text-success' : change < 0 ? 'text-danger' : 'text-muted'}`}>
+          {change > 0 ? '▲' : change < 0 ? '▼' : '–'} {formatStat(Math.abs(change))}%{' '}
+          <span className="font-normal text-muted">{t('vsPrevious')}</span>
+        </div>
+      )}
+    </Tile>
+  )
+}
+
+/** A single number against a target, as a filling bar. */
+export function ProgressTile({ title, path, agg, field, target, params = '', onOpen, className = '' }: {
+  title: string
+  path: string
+  agg?: string
+  field?: string
+  target: number
+  params?: string
+  onOpen?: () => void
+  className?: string
+}) {
+  const { value, failed } = useNumber(path, agg, field, params)
+  const percent = value == null ? 0 : Math.max(0, (value / target) * 100)
+
+  return (
+    <Tile onOpen={onOpen} className={className}>
+      <div className="text-sm text-muted">{title}</div>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className="text-3xl font-semibold tabular-nums tracking-tight text-fg">
+          {failed ? '—' : value == null ? <span className="text-muted">…</span> : formatStat(value)}
+        </span>
+        <span className="text-sm tabular-nums text-muted">/ {formatStat(target)}</span>
+      </div>
+      <div
+        className="mt-3 h-2.5 overflow-hidden rounded-full bg-surface-2"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(percent)}
+      >
+        <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(percent, 100)}%` }} />
+      </div>
+      <div className="mt-1 text-xs tabular-nums text-muted">{t('percentOfTarget', { x: formatStat(Math.round(percent)) })}</div>
+    </Tile>
   )
 }
 
 /** Records grouped by `field` (an enum or boolean column), rolled up by the backend. */
-export function BreakdownCard({ title, path, field, agg, valueField, labels, params = '', onOpen, className = '' }: {
+export function BreakdownCard({ title, path, field, agg, valueField, labels, params = '', onSelect, onOpen, className = '' }: {
   title: string
   path: string
   field: string
@@ -199,6 +297,8 @@ export function BreakdownCard({ title, path, field, agg, valueField, labels, par
   labels?: Record<string, string>
   /** List filter params the chart is limited to (a preset, the dashboard period). */
   params?: string
+  /** A click on a bar, with its group's key (the list filter value). */
+  onSelect?: (key: string) => void
   onOpen?: () => void
   /** Grid placement (the widget's span). */
   className?: string
@@ -206,20 +306,22 @@ export function BreakdownCard({ title, path, field, agg, valueField, labels, par
   const { stats, failed } = useStats(path, statsQuery(`groupBy=${field}`, aggQuery(agg, valueField), params))
   // Largest first: a breakdown is read by size, not by key order.
   const data = (stats?.buckets ?? [])
-    .map(b => ({ label: statLabel(b, labels), value: b.value ?? 0 }))
+    .map(b => ({ key: b.key, label: statLabel(b, labels), value: b.value ?? 0 }))
     .sort((a, b) => b.value - a.value)
 
   return (
     <div className={`${card} ${className}`}>
       <WidgetHeader title={title} onOpen={onOpen} />
       <Status failed={failed} loading={stats == null} empty={data.length === 0} />
-      {data.length > 0 && !failed && <BarRows data={data} />}
+      {data.length > 0 && !failed && (
+        <BarRows data={data} onSelect={onSelect && (i => { if (data[i].key !== '') onSelect(data[i].key) })} />
+      )}
     </div>
   )
 }
 
 /** A time series of `agg` over the temporal column `on`, bucketed by day/month/year. */
-export function TrendCard({ title, path, on, bucket, agg, field, params = '', onOpen, className = '' }: {
+export function TrendCard({ title, path, on, bucket, agg, field, params = '', onSelect, onOpen, className = '' }: {
   title: string
   path: string
   on: string
@@ -228,18 +330,101 @@ export function TrendCard({ title, path, on, bucket, agg, field, params = '', on
   field?: string
   /** List filter params the series is limited to (a preset, the dashboard period). */
   params?: string
+  /** A click on a point, with its bucket's key ('2026-09'). */
+  onSelect?: (key: string) => void
   onOpen?: () => void
   /** Grid placement (the widget's span). */
   className?: string
 }) {
   const { stats, failed } = useStats(path, statsQuery(`groupBy=${on}`, `bucket=${bucket}`, aggQuery(agg, field), params))
-  const data = (stats?.buckets ?? []).map(b => ({ label: b.key === '' ? '—' : b.key, value: b.value ?? 0 }))
+  const data = (stats?.buckets ?? []).map(b => ({ key: b.key, label: b.key === '' ? '—' : b.key, value: b.value ?? 0 }))
 
   return (
     <div className={`${card} ${className}`}>
       <WidgetHeader title={title} onOpen={onOpen} />
       <Status failed={failed} loading={stats == null} empty={data.length === 0} />
-      {data.length > 0 && !failed && <LineChart data={data} />}
+      {data.length > 0 && !failed && (
+        <LineChart data={data} onSelect={onSelect && (i => { if (data[i].key !== '') onSelect(data[i].key) })} />
+      )}
+    </div>
+  )
+}
+
+/** The largest `limit` groups of `by` — an enum/boolean column, or a relation whose ids are named
+ *  from its target's list (`optionsPath`) — ranked by the backend. */
+export function TopList({ title, path, by, agg, valueField, limit, labels, optionsPath, optionValue = 'id', optionLabel, params = '', onSelect, onOpen, className = '' }: {
+  title: string
+  path: string
+  by: string
+  agg?: string
+  valueField?: string
+  limit: number
+  /** Enum ranks: display label per constant. */
+  labels?: Record<string, string>
+  /** Relation ranks: the target's list endpoint, its key and its label column. */
+  optionsPath?: string
+  optionValue?: string
+  optionLabel?: string
+  params?: string
+  /** A click on a row, with its group's key (the list filter value). */
+  onSelect?: (key: string) => void
+  onOpen?: () => void
+  className?: string
+}) {
+  const { stats, failed } = useStats(path, statsQuery(`groupBy=${by}`, aggQuery(agg, valueField), `top=${limit}`, params))
+  const [names, setNames] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!optionsPath) return
+    let active = true
+    api.get<{ content: Record<string, unknown>[] }>(`${optionsPath}?size=1000`)
+      .then(page => {
+        if (!active) return
+        const next: Record<string, string> = {}
+        for (const row of page.content ?? []) {
+          const id = String(row[optionValue])
+          next[id] = optionLabel && row[optionLabel] != null ? String(row[optionLabel]) : `#${id}`
+        }
+        setNames(next)
+      })
+      .catch(() => { if (active) setNames({}) })
+    return () => { active = false }
+  }, [optionsPath, optionValue, optionLabel])
+
+  const rows = (stats?.buckets ?? []).map(b => ({
+    key: b.key,
+    label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : statLabel(b, labels),
+    value: b.value ?? 0,
+  }))
+
+  return (
+    <div className={`${card} ${className}`}>
+      <WidgetHeader title={title} onOpen={onOpen} />
+      <Status failed={failed} loading={stats == null} empty={rows.length === 0} />
+      {rows.length > 0 && !failed && (
+        <ol className="divide-y divide-border">
+          {rows.map((row, i) => {
+            const body = (
+              <>
+                <span className="w-5 shrink-0 tabular-nums text-muted">{i + 1}</span>
+                <span className={`min-w-0 flex-1 truncate ${onSelect && row.key !== '' ? 'font-medium text-brand' : 'text-fg'}`}>{row.label}</span>
+                <span className="shrink-0 tabular-nums font-medium text-fg">{formatStat(row.value)}</span>
+              </>
+            )
+            return (
+              <li key={row.key}>
+                {onSelect && row.key !== '' ? (
+                  <button type="button" onClick={() => onSelect(row.key)} className="flex w-full items-center gap-3 py-2 text-start text-sm hover:underline">
+                    {body}
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-3 py-2 text-sm">{body}</div>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      )}
     </div>
   )
 }
@@ -310,6 +495,74 @@ export function RecentList({ title, path, sortField, keyField, displayField, lim
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  )
+}
+
+/** One chart of a report page: bars (an enum/boolean group) or a line (a date, bucketed) from the
+ *  rollup of the filtered rows, and — for the page's first chart — the totals table beneath it. */
+export function ReportChart({ title, path, rollup, search, line = false, labels, groupLabel, valueLabel, table = false, onSelect }: {
+  /** Shown when the page has more than one chart. */
+  title?: string
+  path: string
+  /** The fixed half of the /stats query. */
+  rollup: string
+  /** The filter bar's values, as list params. */
+  search: string
+  line?: boolean
+  labels?: Record<string, string>
+  groupLabel: string
+  valueLabel: string
+  table?: boolean
+  /** A click on a bar or a point, with its group's key. */
+  onSelect?: (key: string) => void
+}) {
+  const { stats, failed } = useStats(path, statsQuery(rollup, search))
+  const rows = (stats?.buckets ?? []).map(b => ({
+    key: b.key,
+    label: line ? (b.key === '' ? '—' : b.key) : statLabel(b, labels),
+    value: b.value ?? 0,
+  }))
+  const select = onSelect && ((i: number) => { if (rows[i].key !== '') onSelect(rows[i].key) })
+
+  return (
+    <div className={card}>
+      {title && <div className="mb-4 text-sm font-semibold text-fg">{title}</div>}
+      {failed ? (
+        <div className="text-sm text-muted">{t('couldNotLoad')}</div>
+      ) : stats == null ? (
+        <div className="text-sm text-muted">…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-sm text-muted">{t('noMatchingRecords')}</div>
+      ) : (
+        <>
+          {line ? <LineChart data={rows} onSelect={select} /> : <BarRows data={rows} onSelect={select} />}
+          {table && (
+            <table className="mt-5 w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted">
+                  <th className="py-2 text-start font-semibold">{groupLabel}</th>
+                  <th className="py-2 text-end font-semibold">{valueLabel}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {rows.map(row => (
+                  <tr key={row.label}>
+                    <td className="py-2 text-fg">{row.label}</td>
+                    <td className="py-2 text-end tabular-nums text-fg">{formatStat(row.value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border font-semibold text-fg">
+                  <td className="py-2">{t('total')}</td>
+                  <td className="py-2 text-end tabular-nums">{formatStat(stats.total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </>
       )}
     </div>
   )
