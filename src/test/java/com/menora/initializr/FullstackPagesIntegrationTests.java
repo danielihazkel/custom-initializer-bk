@@ -66,7 +66,8 @@ class FullstackPagesIntegrationTests {
                 // The route hands a tabs page its open tab, and a filterable list its filters.
                 .contains("{view === 'queue' && <QueueScreen tab={route.arg} onTabChange={tab => go('queue', tab)} />}")
                 .contains("{view === 'agents' && <AgentsScreen filters={route.query} />}")
-                .contains("{view === 'teams' && <TeamsScreen />}")
+                // A master-detail page keeps its selected parent in the route (#/teams/3).
+                .contains("{view === 'teams' && <TeamsScreen selectedId={route.arg} onSelect={id => go('teams', id)} />}")
                 .doesNotContain("DashboardPage")
                 .doesNotContain("TicketsOpenScreen")
                 .doesNotContain("RECORD_TITLES");
@@ -155,10 +156,10 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/app/screens/TeamsScreen.tsx"))
                 .contains("import { useTeam } from '@entities/team'")
                 .contains("import { TicketPage } from '@pages/ticket'")
-                .contains("export function TeamsScreen() {")
+                .contains("export function TeamsScreen({ selectedId: routeId, onSelect }: Props) {")
                 .contains("useTeam({ page, size: PAGE_SIZE, sort: null, q })")
                 .contains("row.name == null || row.name === '' ? '#' + String(row.id) : String(row.name)")
-                .contains("scope={ { param: 'teamId', value: selected.id as string | number } }")
+                .contains("scope={ { param: 'teamId', value: Number(selectedId) } }")
                 .contains("hint={t('pickXToSeeY', { x: 'Teams', y: 'Tickets' })}")
                 .doesNotContain("onNavigate")
                 .doesNotContain("ArrowUpRight");
@@ -270,8 +271,11 @@ class FullstackPagesIntegrationTests {
         // Master-detail: customers, and the selected customer's orders (which open their record page).
         assertThat(files.get(FE + "src/app/screens/CustomersScreen.tsx"))
                 .contains("import { useEffect, useState } from 'react'")
-                .contains("export function CustomersScreen({ onNavigate }: Props) {")
-                .contains("scope={ { param: 'customerId', value: selected.id as string | number } }")
+                .contains("export function CustomersScreen({ selectedId: routeId, onSelect, onNavigate }: Props) {")
+                .contains("const selectedId = onSelect ? routeId : localId")
+                .contains("const active = selectedId === String(row.id)")
+                .contains("scope={ { param: 'customerId', value: Number(selectedId) } }")
+                .contains("<button type=\"button\" onClick={() => { void reload() }} className=\"font-medium underline\">{t('retry')}</button>")
                 .contains("onOpenRecord={r => onNavigate('order', String(r.id))}")
                 .contains("{ 'Pick a customer to see and add their orders.' }")
                 .doesNotContain("ArrowUpRight");
@@ -279,12 +283,19 @@ class FullstackPagesIntegrationTests {
         // Record page: fetched by id, details tab + one tab per related list, back to the list.
         String record = files.get(FE + "src/app/screens/OrderScreen.tsx");
         assertThat(record)
-                .contains("import { ArrowLeft } from 'lucide-react'")
+                .contains("import { ArrowLeft, Pencil, Trash2, } from 'lucide-react'")
                 .contains("import type { Order } from '@entities/order'")
-                .contains("import { OrderDetail } from '@features/order-form'")
+                .contains("import { OrderDetail, OrderForm, validateOrder } from '@features/order-form'")
+                // A writable record edits in a drawer and deletes, then goes back to its list.
+                .contains("const saved = await api.put<Order>(PATH + encodeURIComponent(recordId), editing)")
+                .contains("await api.del(PATH + encodeURIComponent(recordId))")
+                .contains("      setConfirming(false)\n      onNavigate('orders')\n")
+                .contains("<OrderForm\n")
+                .contains("<button type=\"button\" onClick={() => setAttempt(a => a + 1)} className=\"font-medium underline\">")
                 .contains("import { OrderLinePage } from '@pages/order-line'")
                 .contains("export function OrderScreen({ recordId, onNavigate }: Props) {")
-                .contains("api.get<Order>('/api/orders/' + encodeURIComponent(recordId))")
+                .contains("const PATH = '/api/orders/'")
+                .contains("api.get<Order>(PATH + encodeURIComponent(recordId))")
                 .contains("{ id: 'details', label: t('xDetails', { x: 'Order' }) },")
                 .contains("{ id: 'order-line', label: 'OrderLines' },")
                 .contains(": record.reference == null || record.reference === '' ? '#' + String(record.id) : String(record.reference)")
@@ -320,9 +331,12 @@ class FullstackPagesIntegrationTests {
         assertThat(record)
                 .contains("export function AgentScreen({ recordId }: Props) {")
                 .contains("<AgentDetail value={record} />")
+                // Editable even without a home page: a delete steps back in the browser history.
+                .contains("import { Pencil, Trash2, } from 'lucide-react'")
+                .contains("      setConfirming(false)\n      window.history.back()\n")
                 .doesNotContain("TABS")
                 .doesNotContain("onNavigate")
-                .doesNotContain("lucide-react");
+                .doesNotContain("ArrowLeft");
         assertThat(files.get(FE + "src/app/App.tsx"))
                 .contains("{view === 'agent' && route.arg && <AgentScreen key={route.arg} recordId={route.arg} />}");
         // A record page needs an id: without one the route falls back to the start page.
@@ -339,7 +353,7 @@ class FullstackPagesIntegrationTests {
         Map<String, String> files = generate(body);
 
         assertThat(files.get(FE + "src/app/screens/ByReporterScreen.tsx"))
-                .contains("scope={ { param: 'reporterId', value: selected.id as string | number } }")
+                .contains("scope={ { param: 'reporterId', value: Number(selectedId) } }")
                 .contains("{ 'Agents' }");
     }
 

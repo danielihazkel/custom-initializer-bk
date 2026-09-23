@@ -195,6 +195,8 @@ public final class EntityScaffoldContext {
                     pv.put("parentEntityName", parent.get("EntityName"));
                     pv.put("parentEntityNameKebab", parent.get("entityNameKebab"));
                     pv.put("parentPkName", parentSummary.get("pkName"));
+                    // The selected parent travels in the URL as a string; a numeric key is parsed back.
+                    pv.put("parentPkIsNumber", "number".equals(parentSummary.get("pkTsType")));
                     pv.put("parentLabelField", parentSummary.get("labelField"));
                     pv.put("parentHasLabel", parentSummary.get("labelField") != null);
                     pv.put("parentSearchable", parent.get("hasStringFields"));
@@ -224,6 +226,10 @@ public final class EntityScaffoldContext {
                     String back = links.homeOf(p.entity());
                     pv.put("hasBack", back != null);
                     pv.put("backPageId", back);
+                    // A writable entity's record page edits (form drawer) and deletes the row itself.
+                    boolean recordMutable = Boolean.TRUE.equals(ev.get("mutable"));
+                    pv.put("recordMutable", recordMutable);
+                    pv.put("recordHasIcons", back != null || recordMutable);
                     List<Map<String, Object>> tabViews = new ArrayList<>();
                     boolean navigates = back != null;
                     for (int i = 0; i < p.childTabs().size(); i++) {
@@ -297,6 +303,9 @@ public final class EntityScaffoldContext {
             String routeProps = "";
             if (Boolean.TRUE.equals(pv.get("pageIsTabs"))) {
                 routeProps = " tab={route.arg} onTabChange={tab => go('" + pv.get("pageId") + "', tab)}";
+            } else if (Boolean.TRUE.equals(pv.get("pageIsMasterDetail"))) {
+                // The selected parent is the route arg (#/customers/42).
+                routeProps = " selectedId={route.arg} onSelect={id => go('" + pv.get("pageId") + "', id)}";
             } else if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) {
                 routeProps = " filters={route.query}";
             }

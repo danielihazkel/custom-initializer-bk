@@ -24,6 +24,8 @@ export interface StatsResponse {
 export function useStats(path: string, query: string) {
   const [stats, setStats] = useState<StatsResponse | null>(null)
   const [failed, setFailed] = useState(false)
+  // Bumped by retry() to run the same request again.
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -33,9 +35,9 @@ export function useStats(path: string, query: string) {
       .then(s => { if (active) setStats(s) })
       .catch(() => { if (active) setFailed(true) })
     return () => { active = false }
-  }, [path, query])
+  }, [path, query, attempt])
 
-  return { stats, failed }
+  return { stats, failed, retry: () => setAttempt(a => a + 1) }
 }
 
 const NUMBER = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2 })

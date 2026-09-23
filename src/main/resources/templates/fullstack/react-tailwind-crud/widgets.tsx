@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { api } from '@shared/api'
 import { LOCALE, t, type StringKey } from '../i18n'
+import { Skeleton } from './Skeleton'
 import { PERIODS, aggQuery, formatStat, statLabel, statsQuery, useStats, type Period, type StatsResponse } from './stats'
 
 // Dashboard widgets for the generated screens (src/app/screens). Counts come from the list
@@ -41,11 +42,60 @@ export function PeriodSelect({ value, onChange }: { value: Period; onChange: (pe
   )
 }
 
+/** A failed fetch: what happened, and a way to run it again. */
+function Failed({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-muted" role="alert">
+      <span>{t('couldNotLoad')}</span>
+      {onRetry && (
+        <button type="button" onClick={onRetry} className="font-medium text-brand hover:underline">
+          {t('retry')}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** The small "try again" under a tile whose number failed to load. */
+function RetryLink({ onRetry }: { onRetry: () => void }) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={e => { e.stopPropagation(); onRetry() }}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          e.stopPropagation()
+          onRetry()
+        }
+      }}
+      className="mt-1 inline-block cursor-pointer text-xs font-medium text-brand hover:underline"
+    >
+      {t('couldNotLoad')} {t('retry')}
+    </span>
+  )
+}
+
 /** Loading / failed / empty states shared by the list-shaped widgets. */
-function Status({ failed, loading, empty }: { failed: boolean; loading: boolean; empty: boolean }) {
-  if (failed) return <div className="text-sm text-muted">{t('couldNotLoad')}</div>
-  if (loading) return <div className="text-sm text-muted">…</div>
-  if (empty) return <div className="text-sm text-muted">{t('noRecordsYetDot')}</div>
+function Status({ failed, loading, empty, onRetry, emptyText }: {
+  failed: boolean
+  loading: boolean
+  empty: boolean
+  onRetry?: () => void
+  emptyText?: string
+}) {
+  if (failed) return <Failed onRetry={onRetry} />
+  if (loading) {
+    return (
+      <div className="space-y-2.5" aria-busy="true">
+        <Skeleton className="h-3.5 w-11/12" />
+        <Skeleton className="h-3.5 w-3/4" />
+        <Skeleton className="h-3.5 w-5/6" />
+      </div>
+    )
+  }
+  if (empty) return <div className="text-sm text-muted">{emptyText ?? t('noRecordsYetDot')}</div>
   return null
 }
 
@@ -178,6 +228,7 @@ export function LineChart({ data, onSelect }: { data: { label: string; value: nu
 function useNumber(path: string, agg: string | undefined, field: string | undefined, params: string | null) {
   const [value, setValue] = useState<number | null>(null)
   const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     if (params == null) return
@@ -190,9 +241,9 @@ function useNumber(path: string, agg: string | undefined, field: string | undefi
     setFailed(false)
     pending.then(v => { if (active) setValue(v) }).catch(() => { if (active) setFailed(true) })
     return () => { active = false }
-  }, [path, agg, field, params])
+  }, [path, agg, field, params, attempt])
 
-  return { value, failed }
+  return { value, failed, retry: () => setAttempt(a => a + 1) }
 }
 
 /** A tile's frame: a button when it opens the list, a plain card otherwise. */
@@ -226,7 +277,7 @@ export function KpiTile({ title, path, agg, field, params = '', compareParams, o
   /** Grid placement (the widget's span). */
   className?: string
 }) {
-  const { value, failed } = useNumber(path, agg, field, params)
+  const { value, failed, retry } = useNumber(path, agg, field, params)
   const previous = useNumber(path, agg, field, compareParams ?? null)
   const change = compareParams != null && value != null && previous.value != null && previous.value !== 0
     ? ((value - previous.value) / Math.abs(previous.value)) * 100
@@ -236,8 +287,9 @@ export function KpiTile({ title, path, agg, field, params = '', compareParams, o
     <Tile onOpen={onOpen} className={className}>
       <div className="text-sm text-muted">{title}</div>
       <div className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-fg">
-        {failed ? '—' : value == null ? <span className="text-muted">…</span> : formatStat(value)}
+        {failed ? '—' : value == null ? <Skeleton className="h-9 w-24" /> : formatStat(value)}
       </div>
+      {failed && <RetryLink onRetry={retry} />}
       {change != null && (
         <div className={`mt-1 text-xs font-medium tabular-nums ${change > 0 ? 'text-success' : change < 0 ? 'text-danger' : 'text-muted'}`}>
           {change > 0 ? '▲' : change < 0 ? '▼' : '–'} {formatStat(Math.abs(change))}%{' '}
@@ -259,7 +311,7 @@ export function ProgressTile({ title, path, agg, field, target, params = '', onO
   onOpen?: () => void
   className?: string
 }) {
-  const { value, failed } = useNumber(path, agg, field, params)
+  const { value, failed, retry } = useNumber(path, agg, field, params)
   const percent = value == null ? 0 : Math.max(0, (value / target) * 100)
 
   return (
@@ -267,7 +319,7 @@ export function ProgressTile({ title, path, agg, field, target, params = '', onO
       <div className="text-sm text-muted">{title}</div>
       <div className="mt-2 flex items-baseline gap-2">
         <span className="text-3xl font-semibold tabular-nums tracking-tight text-fg">
-          {failed ? '—' : value == null ? <span className="text-muted">…</span> : formatStat(value)}
+          {failed ? '—' : value == null ? <Skeleton className="inline-block h-9 w-24 align-middle" /> : formatStat(value)}
         </span>
         <span className="text-sm tabular-nums text-muted">/ {formatStat(target)}</span>
       </div>
@@ -280,7 +332,9 @@ export function ProgressTile({ title, path, agg, field, target, params = '', onO
       >
         <div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(percent, 100)}%` }} />
       </div>
-      <div className="mt-1 text-xs tabular-nums text-muted">{t('percentOfTarget', { x: formatStat(Math.round(percent)) })}</div>
+      {failed
+        ? <RetryLink onRetry={retry} />
+        : <div className="mt-1 text-xs tabular-nums text-muted">{t('percentOfTarget', { x: formatStat(Math.round(percent)) })}</div>}
     </Tile>
   )
 }
@@ -303,7 +357,7 @@ export function BreakdownCard({ title, path, field, agg, valueField, labels, par
   /** Grid placement (the widget's span). */
   className?: string
 }) {
-  const { stats, failed } = useStats(path, statsQuery(`groupBy=${field}`, aggQuery(agg, valueField), params))
+  const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${field}`, aggQuery(agg, valueField), params))
   // Largest first: a breakdown is read by size, not by key order.
   const data = (stats?.buckets ?? [])
     .map(b => ({ key: b.key, label: statLabel(b, labels), value: b.value ?? 0 }))
@@ -312,7 +366,7 @@ export function BreakdownCard({ title, path, field, agg, valueField, labels, par
   return (
     <div className={`${card} ${className}`}>
       <WidgetHeader title={title} onOpen={onOpen} />
-      <Status failed={failed} loading={stats == null} empty={data.length === 0} />
+      <Status failed={failed} loading={stats == null} empty={data.length === 0} onRetry={retry} />
       {data.length > 0 && !failed && (
         <BarRows data={data} onSelect={onSelect && (i => { if (data[i].key !== '') onSelect(data[i].key) })} />
       )}
@@ -336,13 +390,13 @@ export function TrendCard({ title, path, on, bucket, agg, field, params = '', on
   /** Grid placement (the widget's span). */
   className?: string
 }) {
-  const { stats, failed } = useStats(path, statsQuery(`groupBy=${on}`, `bucket=${bucket}`, aggQuery(agg, field), params))
+  const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${on}`, `bucket=${bucket}`, aggQuery(agg, field), params))
   const data = (stats?.buckets ?? []).map(b => ({ key: b.key, label: b.key === '' ? '—' : b.key, value: b.value ?? 0 }))
 
   return (
     <div className={`${card} ${className}`}>
       <WidgetHeader title={title} onOpen={onOpen} />
-      <Status failed={failed} loading={stats == null} empty={data.length === 0} />
+      <Status failed={failed} loading={stats == null} empty={data.length === 0} onRetry={retry} />
       {data.length > 0 && !failed && (
         <LineChart data={data} onSelect={onSelect && (i => { if (data[i].key !== '') onSelect(data[i].key) })} />
       )}
@@ -371,7 +425,7 @@ export function TopList({ title, path, by, agg, valueField, limit, labels, optio
   onOpen?: () => void
   className?: string
 }) {
-  const { stats, failed } = useStats(path, statsQuery(`groupBy=${by}`, aggQuery(agg, valueField), `top=${limit}`, params))
+  const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${by}`, aggQuery(agg, valueField), `top=${limit}`, params))
   const [names, setNames] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -400,7 +454,7 @@ export function TopList({ title, path, by, agg, valueField, limit, labels, optio
   return (
     <div className={`${card} ${className}`}>
       <WidgetHeader title={title} onOpen={onOpen} />
-      <Status failed={failed} loading={stats == null} empty={rows.length === 0} />
+      <Status failed={failed} loading={stats == null} empty={rows.length === 0} onRetry={retry} />
       {rows.length > 0 && !failed && (
         <ol className="divide-y divide-border">
           {rows.map((row, i) => {
@@ -448,6 +502,7 @@ export function RecentList({ title, path, sortField, keyField, displayField, lim
 }) {
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -457,7 +512,7 @@ export function RecentList({ title, path, sortField, keyField, displayField, lim
       .then(p => { if (active) setRows(p.content ?? []) })
       .catch(() => { if (active) setFailed(true) })
     return () => { active = false }
-  }, [path, sortField, limit, params])
+  }, [path, sortField, limit, params, attempt])
 
   // The key reads as "#12"; any other sort column shows its value (a date in the app's locale).
   const sortValue = (row: Record<string, unknown>) => {
@@ -473,11 +528,11 @@ export function RecentList({ title, path, sortField, keyField, displayField, lim
   return (
     <div className={`${card} ${className}`}>
       <WidgetHeader title={title} onOpen={onOpen} />
-      <Status failed={failed} loading={rows == null} empty={rows?.length === 0} />
+      <Status failed={failed} loading={rows == null} empty={rows?.length === 0} onRetry={() => setAttempt(a => a + 1)} />
       {rows && rows.length > 0 && !failed && (
         <ul className="divide-y divide-border">
           {rows.map((row, i) => (
-            <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
+            <li key={String(row[keyField ?? sortField] ?? i)} className="flex items-center justify-between gap-3 py-2 text-sm">
               {onOpenRow ? (
                 <button
                   type="button"
@@ -518,7 +573,7 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
   /** A click on a bar or a point, with its group's key. */
   onSelect?: (key: string) => void
 }) {
-  const { stats, failed } = useStats(path, statsQuery(rollup, search))
+  const { stats, failed, retry } = useStats(path, statsQuery(rollup, search))
   const rows = (stats?.buckets ?? []).map(b => ({
     key: b.key,
     label: line ? (b.key === '' ? '—' : b.key) : statLabel(b, labels),
@@ -529,12 +584,8 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
   return (
     <div className={card}>
       {title && <div className="mb-4 text-sm font-semibold text-fg">{title}</div>}
-      {failed ? (
-        <div className="text-sm text-muted">{t('couldNotLoad')}</div>
-      ) : stats == null ? (
-        <div className="text-sm text-muted">…</div>
-      ) : rows.length === 0 ? (
-        <div className="text-sm text-muted">{t('noMatchingRecords')}</div>
+      {failed || stats == null || rows.length === 0 ? (
+        <Status failed={failed} loading={stats == null} empty={rows.length === 0} onRetry={retry} emptyText={t('noMatchingRecords')} />
       ) : (
         <>
           {line ? <LineChart data={rows} onSelect={select} /> : <BarRows data={rows} onSelect={select} />}

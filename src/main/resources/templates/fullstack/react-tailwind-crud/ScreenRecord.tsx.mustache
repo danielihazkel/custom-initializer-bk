@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
-{{#hasBack}}
-import { ArrowLeft } from 'lucide-react'
-{{/hasBack}}
-import { api } from '@shared/api'
-import { Alert } from '@shared/ui'
+{{#recordHasIcons}}
+import { {{#hasBack}}ArrowLeft, {{/hasBack}}{{#recordMutable}}Pencil, Trash2, {{/recordMutable}}} from 'lucide-react'
+{{/recordHasIcons}}
+{{#recordMutable}}
+import { toast } from 'sonner'
+{{/recordMutable}}
+import { api{{#recordMutable}}, ApiError{{/recordMutable}} } from '@shared/api'
+import { Alert, Skeleton{{#recordMutable}}, FormDrawer, ConfirmDialog{{/recordMutable}} } from '@shared/ui'
 {{#hasHeaderStats}}
 import { KpiTile } from '@shared/ui/widgets'
 {{/hasHeaderStats}}
 import { t } from '@shared/i18n'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
-import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
+import { {{EntityName}}Detail{{#recordMutable}}, {{EntityName}}Form, validate{{EntityName}}{{/recordMutable}} } from '@features/{{entityNameKebab}}-form'
 {{#childTabs}}
 import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
 {{/childTabs}}
@@ -31,21 +34,33 @@ const TABS = [
 ]
 {{/hasChildTabs}}
 
+const PATH = '/api/{{entityNamePluralKebab}}/'
+
 export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
   const [record, setRecord] = useState<{{EntityName}} | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Bumped by "Try again" to fetch the record once more.
+  const [attempt, setAttempt] = useState(0)
 {{#hasChildTabs}}
   const [active, setActive] = useState(0)
 {{/hasChildTabs}}
+{{#recordMutable}}
+  const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+{{/recordMutable}}
 
-  // The shell remounts this screen for every record id, so one fetch per mount is enough.
+  // The shell remounts this screen for every record id, so one fetch per mount (and retry) is enough.
   useEffect(() => {
     let current = true
-    api.get<{{EntityName}}>('/api/{{entityNamePluralKebab}}/' + encodeURIComponent(recordId))
+    setError(null)
+    api.get<{{EntityName}}>(PATH + encodeURIComponent(recordId))
       .then(r => { if (current) setRecord(r) })
       .catch(e => { if (current) setError(e instanceof Error ? e.message : String(e)) })
     return () => { current = false }
-  }, [recordId])
+  }, [recordId, attempt])
 
   const heading = record == null
     ? {{entityLabelExpr}}
@@ -55,6 +70,55 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
 {{^hasLabel}}
     : {{entityLabelExpr}} + ' #' + String(record.{{pkName}})
 {{/hasLabel}}
+{{#recordMutable}}
+
+  async function save() {
+    if (!editing) return
+    const clientErrors = validate{{EntityName}}(editing)
+    if (Object.keys(clientErrors).length > 0) {
+      setFormErrors(clientErrors)
+      toast.error(t('fixHighlighted'))
+      return
+    }
+    setSaving(true)
+    setFormErrors({})
+    try {
+      const saved = await api.put<{{EntityName}}>(PATH + encodeURIComponent(recordId), editing)
+      setRecord(saved)
+      setEditing(null)
+      toast.success(t('xUpdated', { x: {{entityLabelExpr}} }))
+    } catch (e) {
+      // A 400 carries per-field messages — show them inline; anything else is a toast.
+      if (e instanceof ApiError && e.fieldErrors) {
+        setFormErrors(e.fieldErrors)
+        toast.error(t('fixHighlighted'))
+      } else {
+        toast.error(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function remove() {
+    setDeleting(true)
+    try {
+      await api.del(PATH + encodeURIComponent(recordId))
+      toast.success(t('xDeleted', { x: {{entityLabelExpr}} }))
+      setConfirming(false)
+{{#hasBack}}
+      onNavigate('{{backPageId}}')
+{{/hasBack}}
+{{^hasBack}}
+      window.history.back()
+{{/hasBack}}
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDeleting(false)
+    }
+  }
+{{/recordMutable}}
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">
@@ -68,12 +132,38 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
         {t('back')}
       </button>
 {{/hasBack}}
-      <div className="mb-6">
-        <div className="text-xs font-medium uppercase tracking-wider text-muted">{ {{pageTitleExpr}} }</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-fg">{heading}</h1>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="text-xs font-medium uppercase tracking-wider text-muted">{ {{pageTitleExpr}} }</div>
+          {record == null && !error
+            ? <Skeleton className="mt-1 h-8 w-56" />
+            : <h1 className="mt-1 text-2xl font-semibold tracking-tight text-fg">{heading}</h1>}
 {{#hasPageDescription}}
-        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
 {{/hasPageDescription}}
+        </div>
+{{#recordMutable}}
+        {record && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/5"
+            >
+              <Trash2 className="h-4 w-4" />
+              {t('delete')}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEditing({ ...record }); setFormErrors({}) }}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
+            >
+              <Pencil className="h-4 w-4" />
+              {t('edit')}
+            </button>
+          </div>
+        )}
+{{/recordMutable}}
       </div>
 {{#hasHeaderStats}}
       {/* Numbers over the record's related rows; a tile opens its list's tab. */}
@@ -94,8 +184,21 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
 {{/headerStats}}
       </div>
 {{/hasHeaderStats}}
-      {error && <Alert>{error}</Alert>}
-      {!error && record == null && <div className="text-sm text-muted">{t('loading')}</div>}
+      {error && (
+        <Alert>
+          {error}{' '}
+          <button type="button" onClick={() => setAttempt(a => a + 1)} className="font-medium underline">
+            {t('retry')}
+          </button>
+        </Alert>
+      )}
+      {!error && record == null && (
+        <div className="space-y-3 rounded-2xl border border-border bg-surface p-5 shadow-sm" aria-busy="true">
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-4 w-2/5" />
+        </div>
+      )}
       {record && (
 {{#hasChildTabs}}
         <>
@@ -142,6 +245,49 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
         </div>
 {{/hasChildTabs}}
       )}
+{{#recordMutable}}
+
+      <FormDrawer
+        open={editing !== null}
+        title={t('editX', { x: {{entityLabelExpr}} })}
+        subtitle={t('updateXBlurb', { x: {{entityLabelExpr}} })}
+        onClose={() => setEditing(null)}
+        onSave={save}
+        saving={saving}
+        dirty={editing !== null && JSON.stringify(editing) !== JSON.stringify(record)}
+      >
+        {editing && (
+          <{{EntityName}}Form
+            value={editing}
+            onChange={next => {
+              // Clear the message of a field as soon as it is edited.
+              const before = editing as Record<string, unknown>
+              const after = next as Record<string, unknown>
+              const changed = Object.keys(after).filter(k => after[k] !== before[k] && k in formErrors)
+              if (changed.length > 0) {
+                setFormErrors(prev => {
+                  const copy = { ...prev }
+                  for (const k of changed) delete copy[k]
+                  return copy
+                })
+              }
+              setEditing(next)
+            }}
+            errors={formErrors}
+            isNew={false}
+          />
+        )}
+      </FormDrawer>
+
+      <ConfirmDialog
+        open={confirming}
+        title={t('deleteX', { x: {{entityLabelExpr}} })}
+        message={t('cannotUndo')}
+        busy={deleting}
+        onConfirm={remove}
+        onCancel={() => setConfirming(false)}
+      />
+{{/recordMutable}}
     </div>
   )
 }
