@@ -61,3 +61,63 @@ export function aggQuery(agg?: string, field?: string): string {
 export function statsQuery(...parts: string[]): string {
   return parts.filter(Boolean).join('&')
 }
+
+/** The periods a dashboard's picker offers, each ending today. */
+export type Period = 'all' | '7d' | '30d' | '90d' | 'ytd' | '12m'
+export const PERIODS: readonly Period[] = ['all', '7d', '30d', '90d', 'ytd', '12m']
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+function addDays(d: Date, days: number): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days)
+}
+
+/** The first and last day a period covers (both inclusive), or null for all time. `previous`
+ *  gives the equal-length period just before it — for "this year", the same dates a year back. */
+export function periodRange(period: Period, previous = false, today = new Date()): { from: Date; to: Date } | null {
+  const end = startOfDay(today)
+  let from: Date
+  switch (period) {
+    case 'all':
+      return null
+    case '7d':
+      from = addDays(end, -6)
+      break
+    case '30d':
+      from = addDays(end, -29)
+      break
+    case '90d':
+      from = addDays(end, -89)
+      break
+    case 'ytd':
+      from = new Date(end.getFullYear(), 0, 1)
+      if (previous) {
+        return { from: new Date(end.getFullYear() - 1, 0, 1), to: new Date(end.getFullYear() - 1, end.getMonth(), end.getDate()) }
+      }
+      break
+    case '12m':
+      from = addDays(new Date(end.getFullYear() - 1, end.getMonth(), end.getDate()), 1)
+      break
+  }
+  if (!previous) return { from, to: end }
+  const days = Math.round((end.getTime() - from.getTime()) / DAY_MS) + 1
+  return { from: addDays(from, -days), to: addDays(from, -1) }
+}
+
+function isoDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** The list filter params that limit the date column `field` to a period ('' for all time). A
+ *  date-time column gets whole days: midnight on the first to the last second of the last. */
+export function rangeParams(field: string, dateTime: boolean, period: Period, previous = false): string {
+  const range = periodRange(period, previous)
+  if (!range) return ''
+  const from = isoDay(range.from) + (dateTime ? 'T00:00:00' : '')
+  const to = isoDay(range.to) + (dateTime ? 'T23:59:59' : '')
+  return `${field}From=${from}&${field}To=${to}`
+}

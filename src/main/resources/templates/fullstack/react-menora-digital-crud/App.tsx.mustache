@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Menu, X } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { t } from '@shared/i18n'
-import { NavLinks, ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'
+import { {{#hasNavGroups}}DropdownMenu, {{/hasNavGroups}}NavLinks, ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'
 {{^hasPages}}
 import { DashboardPage } from '@pages/dashboard'
 {{#entities}}
@@ -17,19 +17,99 @@ const NAV: { id: View; label: string }[] = [
   { id: '{{entityNameKebab}}', label: '{{entityLabelPlural}}' },
 {{/entities}}
 ]
+
+/**
+ * Menora Digital shell: a white top header on the #f8f8f8 page ground (logo chip, the design system's
+ * NavLinks row with the current item in brand purple, the outlined ThemeToggle), the content, and the
+ * dark Footer band. No floating chat launcher — that is the marketing site's contact control, not an
+ * admin app's. Logical utilities (start/end, rtl:) keep it mirror-correct.
+ */
+export default function App() {
+  const [view, setView] = useState<View>('dashboard')
+  const [navOpen, setNavOpen] = useState(false)
+  const { isDark } = useMenoraTheme()
+  const current = NAV.find(n => n.id === view)
+
+  const go = (id: View) => {
+    setView(id)
+    setNavOpen(false)
+  }
+
+  const navItems = NAV.map(({ id, label }) => ({ label, current: view === id, onClick: () => go(id) }))
+
+  return (
+    <div className="flex min-h-full flex-col bg-canvas text-fg">
+      <header className="rounded-b-xl bg-surface shadow-menu">
+        <div className="mx-auto flex max-w-[1283px] flex-wrap items-center justify-between gap-4 px-4 py-3 md:px-6">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setNavOpen(o => !o)}
+              className="-ms-1 rounded-lg p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg md:hidden"
+              aria-label={navOpen ? t('closeNav') : t('openNav')}
+              aria-expanded={navOpen}
+            >
+              {navOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+            {/* The supplied mark is dark purple: keep it on a white chip so it survives dark mode. */}
+            <span className="mn-logo-chip">
+              <img src="/menora-mivtachim-logo.png" alt="{{artifactId}}" className="h-auto w-[88px]" />
+            </span>
+            <div className="hidden leading-tight sm:block">
+              <div className="text-[11px] uppercase tracking-wider text-muted">{{artifactId}}</div>
+              <h1 className="text-sm font-semibold text-fg">{current?.label ?? t('dashboard')}</h1>
+            </div>
+          </div>
+
+          {/* Static nav row (tablet and up) */}
+          <div className="hidden md:block">
+            <NavLinks ariaLabel={t('main')} items={navItems} />
+          </div>
+
+          <ThemeToggle darkLabel={t('switchToDark')} lightLabel={t('switchToLight')} />
+        </div>
+
+        {/* Collapsible nav (mobile) */}
+        {navOpen && (
+          <div className="border-t border-border px-4 py-3 md:hidden">
+            <NavLinks ariaLabel={t('main')} items={navItems} stacked />
+          </div>
+        )}
+      </header>
+
+      <main className="flex-1 overflow-auto">
+        {view === 'dashboard' && <DashboardPage onNavigate={v => go(v as View)} />}
+{{#entities}}
+        {view === '{{entityNameKebab}}' && <{{EntityName}}Page />}
+{{/entities}}
+      </main>
+
+      <Footer legal="{{artifactId}} · v0.0.1" />
+
+      <Toaster richColors position={ {{#isRtl}}'top-left'{{/isRtl}}{{^isRtl}}'top-right'{{/isRtl}} } theme={isDark ? 'dark' : 'light'} />
+    </div>
+  )
+}
 {{/hasPages}}
 {{#hasPages}}
+import { useRoute, type View } from '@app/route'
 {{#routePages}}
 import { {{PageName}}Screen } from '@app/screens/{{PageName}}Screen'
 {{/routePages}}
 
-type View = {{#routePages}}{{^-first}} | {{/-first}}'{{pageId}}'{{/routePages}}
-
-const NAV: { id: View; label: string }[] = [
-{{#navPages}}
-  { id: '{{pageId}}', label: {{pageTitleExpr}} },
-{{/navPages}}
+// The nav, section by section: a labelled section is a group, drawn as a caret item that opens a menu.
+const NAV_SECTIONS: { label: string; items: { id: View; label: string }[] }[] = [
+{{#navGroups}}
+  {
+    label: {{groupLabelExpr}},
+    items: [
+{{#items}}
+      { id: '{{pageId}}', label: {{pageTitleExpr}} },
+{{/items}}
+    ],
+  },
+{{/navGroups}}
 ]
+const NAV = NAV_SECTIONS.flatMap(section => section.items)
 {{#hasRecordPages}}
 
 // Record pages open from a row (with its id) and stay out of the nav; the header still names them.
@@ -39,38 +119,36 @@ const RECORD_TITLES: Partial<Record<View, string>> = {
 {{/recordPages}}
 }
 {{/hasRecordPages}}
-{{/hasPages}}
 
 /**
  * Menora Digital shell: a white top header on the #f8f8f8 page ground (logo chip, the design system's
  * NavLinks row with the current item in brand purple, the outlined ThemeToggle), the content, and the
  * dark Footer band. No floating chat launcher — that is the marketing site's contact control, not an
- * admin app's. Logical utilities (start/end, rtl:) keep it mirror-correct.
+ * admin app's. Logical utilities (start/end, rtl:) keep it mirror-correct. The page lives in the URL
+ * hash (see route.ts).
  */
 export default function App() {
-  const [view, setView] = useState<View>('{{#hasPages}}{{initialPageId}}{{/hasPages}}{{^hasPages}}dashboard{{/hasPages}}')
+  const [route, navigate] = useRoute()
   const [navOpen, setNavOpen] = useState(false)
-{{#hasRecordPages}}
-  // The record id a record page was opened with.
-  const [routeArg, setRouteArg] = useState<string | undefined>(undefined)
-{{/hasRecordPages}}
   const { isDark } = useMenoraTheme()
+  const { view } = route
   const current = NAV.find(n => n.id === view)
 
-  const go = (id: View{{#hasRecordPages}}, arg?: string{{/hasRecordPages}}) => {
-    setView(id)
-{{#hasRecordPages}}
-    setRouteArg(arg)
-{{/hasRecordPages}}
+  const go = (id: View, arg?: string, query: Record<string, string> = {}) => {
+    navigate({ view: id, arg, query })
     setNavOpen(false)
   }
 {{#hasNavigatingScreens}}
 
-  // Screens navigate by page id (a record page also takes the record's key).
-  const goView = (v: string{{#hasRecordPages}}, arg?: string{{/hasRecordPages}}) => go(v as View{{#hasRecordPages}}, arg{{/hasRecordPages}})
+  // Screens navigate by page id; a record page also takes the record's key, a list page its filters.
+  const goView = (v: string, arg?: string, query?: Record<string, string>) => go(v as View, arg, query)
 {{/hasNavigatingScreens}}
 
-  const navItems = NAV.map(({ id, label }) => ({ label, current: view === id, onClick: () => go(id) }))
+  const linksOf = (items: { id: View; label: string }[]) =>
+    items.map(({ id, label }) => ({ label, href: `#/${id}`, current: view === id, onClick: () => go(id) }))
+{{^hasNavGroups}}
+  const navItems = linksOf(NAV)
+{{/hasNavGroups}}
 
   return (
     <div className="flex min-h-full flex-col bg-canvas text-fg">
@@ -97,7 +175,51 @@ export default function App() {
 
           {/* Static nav row (tablet and up) */}
           <div className="hidden md:block">
+{{^hasNavGroups}}
             <NavLinks ariaLabel={t('main')} items={navItems} />
+{{/hasNavGroups}}
+{{#hasNavGroups}}
+            <nav className="mn mn-nav" aria-label={t('main')}>
+              {NAV_SECTIONS.map((section, i) =>
+                section.label ? (
+                  <DropdownMenu
+                    key={i}
+                    ariaLabel={section.label}
+                    groups={[{ items: section.items.map(({ id, label }) => ({ label, href: `#/${id}` })) }]}
+                    trigger={({ props }) => (
+                      <a
+                        href="#"
+                        role="button"
+                        {...props}
+                        aria-current={section.items.some(n => n.id === view) ? 'page' : undefined}
+                        onClick={e => {
+                          e.preventDefault()
+                          props.onClick()
+                        }}
+                      >
+                        {section.label}
+                        <span className="mn-caret" aria-hidden="true" />
+                      </a>
+                    )}
+                  />
+                ) : (
+                  section.items.map(({ id, label }) => (
+                    <a
+                      key={id}
+                      href={`#/${id}`}
+                      aria-current={view === id ? 'page' : undefined}
+                      onClick={e => {
+                        e.preventDefault()
+                        go(id)
+                      }}
+                    >
+                      {label}
+                    </a>
+                  ))
+                ),
+              )}
+            </nav>
+{{/hasNavGroups}}
           </div>
 
           <ThemeToggle darkLabel={t('switchToDark')} lightLabel={t('switchToLight')} />
@@ -106,24 +228,28 @@ export default function App() {
         {/* Collapsible nav (mobile) */}
         {navOpen && (
           <div className="border-t border-border px-4 py-3 md:hidden">
+{{^hasNavGroups}}
             <NavLinks ariaLabel={t('main')} items={navItems} stacked />
+{{/hasNavGroups}}
+{{#hasNavGroups}}
+            {NAV_SECTIONS.map((section, i) => (
+              <div key={i}>
+                {section.label && <div className="px-2.5 pt-3 text-xs font-semibold uppercase tracking-wider text-muted">{section.label}</div>}
+                <NavLinks ariaLabel={section.label || t('main')} items={linksOf(section.items)} stacked />
+              </div>
+            ))}
+{{/hasNavGroups}}
           </div>
         )}
       </header>
 
       <main className="flex-1 overflow-auto">
-{{^hasPages}}
-        {view === 'dashboard' && <DashboardPage onNavigate={v => go(v as View)} />}
-{{#entities}}
-        {view === '{{entityNameKebab}}' && <{{EntityName}}Page />}
-{{/entities}}
-{{/hasPages}}
 {{#routePages}}
 {{^pageIsRecord}}
-        {view === '{{pageId}}' && <{{PageName}}Screen{{#needsNavigate}} onNavigate={goView}{{/needsNavigate}} />}
+        {view === '{{pageId}}' && <{{PageName}}Screen{{routeProps}}{{#needsNavigate}} onNavigate={goView}{{/needsNavigate}} />}
 {{/pageIsRecord}}
 {{#pageIsRecord}}
-        {view === '{{pageId}}' && routeArg && <{{PageName}}Screen key={routeArg} recordId={routeArg}{{#needsNavigate}} onNavigate={goView}{{/needsNavigate}} />}
+        {view === '{{pageId}}' && route.arg && <{{PageName}}Screen key={route.arg} recordId={route.arg}{{#needsNavigate}} onNavigate={goView}{{/needsNavigate}} />}
 {{/pageIsRecord}}
 {{/routePages}}
       </main>
@@ -134,3 +260,4 @@ export default function App() {
     </div>
   )
 }
+{{/hasPages}}

@@ -212,21 +212,32 @@ public record FullstackStarterRequest(
             List<String> childTabs,
             // report: the single chart the page is built around. Its entity and opening filters
             // are the shared `entity` / `presetFilter`.
-            ChartDto chart) {
+            ChartDto chart,
+            // any visible page: the nav section it sits in (pages sharing a group are listed
+            // together, under the group's name) and its nav icon (one of the lucide names in
+            // FullstackPageValidator.NAV_ICONS; default: the page type's own icon).
+            String group,
+            String icon,
+            // dashboard: a period picker over the widgets' date fields, opening on this period
+            // (all, 7d, 30d, 90d, ytd or 12m). Absent: no picker, every widget covers all rows.
+            String dateRange) {
 
         /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
                                  String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
                                  List<TabDto> tabs) {
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                    null, null, null, null, null);
+                    null, null, null, null, null, null, null, null);
         }
     }
 
     /** A dashboard widget: {@code kpi} (one number), {@code bar} (grouped by an enum/boolean
      *  field), {@code line} (a time series over a temporal field) or {@code recent} (the latest
      *  rows). {@code agg}/{@code field} reduce a numeric column — {@code count} (the default)
-     *  takes no field; {@code bucket} applies to {@code line}. */
+     *  takes no field; {@code bucket} applies to {@code line}. {@code span} is the grid columns
+     *  (1–4) it takes, {@code presetFilter} the enum/boolean values it counts only, {@code sortBy}
+     *  what a recent list orders by (newest first) and {@code dateField} the date the dashboard's
+     *  period picker limits. */
     public record WidgetDto(
             String kind,
             String entity,
@@ -235,7 +246,18 @@ public record FullstackStarterRequest(
             String groupBy,
             Integer limit,
             String field,
-            String bucket) {}
+            String bucket,
+            Integer span,
+            Map<String, String> presetFilter,
+            String sortBy,
+            String dateField) {
+
+        /** The widget as phase-1 layouts spell it (no span, filter, sort or date field). */
+        public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
+                         String field, String bucket) {
+            this(kind, entity, title, agg, groupBy, limit, field, bucket, null, null, null, null);
+        }
+    }
 
     /** A report page's chart: rows grouped by an enum/boolean field (a bar) or a temporal one
      *  (a line, bucketed by {@code day}/{@code month}/{@code year}), reduced by {@code agg}. */

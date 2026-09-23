@@ -329,11 +329,15 @@
       {
         "id": "orders",
         "type": "entity-list",
+        "group": "Sales",
+        "icon": "ShoppingCart",
         "entity": "Order"
       },
       {
         "id": "customers",
         "type": "master-detail",
+        "group": "Sales",
+        "icon": "Users",
         "title": "Customers",
         "description": "Pick a customer to see and add their orders.",
         "parent": "Customer",
@@ -342,12 +346,16 @@
       {
         "id": "order-lines",
         "type": "entity-list",
+        "group": "Catalog",
+        "icon": "ListChecks",
         "entity": "OrderLine",
         "title": "Order lines"
       },
       {
         "id": "products",
         "type": "entity-list",
+        "group": "Catalog",
+        "icon": "Package",
         "entity": "Product"
       },
       {
@@ -537,6 +545,8 @@
       {
         "id": "queue",
         "type": "tabs",
+        "group": "Work",
+        "icon": "Inbox",
         "title": "Ticket queue",
         "tabs": [
           {
@@ -580,11 +590,14 @@
       {
         "id": "agents",
         "type": "entity-list",
+        "group": "People",
+        "icon": "Users",
         "entity": "Agent"
       },
       {
         "id": "teams",
         "type": "master-detail",
+        "group": "People",
         "title": "Teams",
         "parent": "Team",
         "child": "Ticket",
@@ -908,6 +921,7 @@
         "type": "dashboard",
         "title": "Sales report",
         "description": "Revenue at a glance: totals, the split by region and the trend per month.",
+        "dateRange": "12m",
         "widgets": [
           {
             "kind": "kpi",
@@ -929,6 +943,16 @@
             "field": "amount"
           },
           {
+            "kind": "kpi",
+            "entity": "Sale",
+            "title": "North revenue",
+            "agg": "sum",
+            "field": "amount",
+            "presetFilter": {
+              "region": "NORTH"
+            }
+          },
+          {
             "kind": "bar",
             "entity": "Sale",
             "title": "Revenue by region",
@@ -943,13 +967,15 @@
             "groupBy": "soldOn",
             "bucket": "month",
             "agg": "sum",
-            "field": "amount"
+            "field": "amount",
+            "span": 4
           },
           {
             "kind": "recent",
             "entity": "Sale",
             "title": "Latest sales",
-            "limit": 8
+            "limit": 8,
+            "sortBy": "soldOn"
           }
         ]
       },

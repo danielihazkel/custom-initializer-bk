@@ -34,6 +34,17 @@ public final class FullstackPageValidator {
     static final int MAX_RECENT_LIMIT = 20;
     static final int DEFAULT_RECENT_LIMIT = 5;
 
+    static final int MAX_GROUP = 40;
+    static final int MAX_SPAN = 4;
+
+    /** The lucide icons a page may put in the nav. The shell imports exactly the ones in use, so the
+     *  list is a whitelist rather than "any lucide name": a typo would otherwise fail the build of the
+     *  generated project instead of the request. */
+    static final List<String> NAV_ICONS = List.of(
+            "BarChart3", "Building2", "Calendar", "FileText", "Inbox", "Layers", "LayoutDashboard", "ListChecks",
+            "Package", "PanelLeft", "Settings", "ShoppingCart", "Star", "Table2", "Tag", "Ticket", "Truck", "Users",
+            "Wallet", "Wand2");
+
     /** Page types reserved for a later release: named so the error says "not yet", not "unknown". */
     private static final Set<String> PLANNED_TYPES = Set.of("wizard");
 
@@ -82,14 +93,24 @@ public final class FullstackPageValidator {
             }
             anyVisible |= !hidden;
             rejectForeignProps(id, type, p);
-            pages.add(switch (type) {
+            String group = navGroup(id, hidden, p.group());
+            String icon = navIcon(id, hidden, p.icon());
+            PageDefinition page = switch (type) {
                 case ENTITY_LIST -> {
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), "Page '" + id + "'");
                     yield new PageDefinition(id, type, title, description, hidden, entity.name(),
-                            presetFilter(id, entity, p.presetFilter()), null, null);
+                            presetFilter("Page '" + id + "'", entity, p.presetFilter()), null, null);
                 }
-                case DASHBOARD -> new PageDefinition(id, type, title, description, hidden, null, null,
-                        widgets(id, p.widgets(), entitiesByLower), null);
+                case DASHBOARD -> {
+                    PageDefinition.DateRange range = parseDateRange(id, p.dateRange());
+                    List<PageDefinition.Widget> widgets = widgets(id, p.widgets(), entitiesByLower, range != null);
+                    if (range != null && widgets.stream().allMatch(w -> w.dateField() == null)) {
+                        throw new WizardArgumentException("Page '" + id + "' has a dateRange, but none of its widgets"
+                                + " counts an entity with a filterable date field for it to limit");
+                    }
+                    yield new PageDefinition(id, type, title, description, hidden, null, null, widgets, null)
+                            .withDateRange(range);
+                }
                 case TABS -> {
                     // No entity to borrow a name from, so the nav label has to be given.
                     if (title == null) throw new WizardArgumentException("Page '" + id + "' (tabs) needs a title");
@@ -103,13 +124,13 @@ public final class FullstackPageValidator {
                     requireSinglePk(prefix, parent);
                     String via = via(prefix, child, parent, trimToNull(p.via()));
                     yield new PageDefinition(id, type, title, description, hidden, null, null, null, null,
-                            parent.name(), child.name(), via, null, null);
+                            parent.name(), child.name(), via, null, null, null, null, null);
                 }
                 case REPORT -> {
                     String prefix = "Page '" + id + "' (report)";
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
                     yield new PageDefinition(id, type, title, description, hidden, entity.name(),
-                            presetFilter(id, entity, p.presetFilter()), chart(prefix, entity, p.chart()));
+                            presetFilter("Page '" + id + "'", entity, p.presetFilter()), chart(prefix, entity, p.chart()));
                 }
                 case RECORD -> {
                     String prefix = "Page '" + id + "' (record)";
@@ -122,9 +143,10 @@ public final class FullstackPageValidator {
                     }
                     yield new PageDefinition(id, type, title, description, true, entity.name(), null, null, null,
                             null, null, null, childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower),
-                            null);
+                            null, null, null, null);
                 }
-            });
+            };
+            pages.add(page.withNav(group, icon));
         }
         if (!anyVisible) throw new WizardArgumentException("At least one page must be visible in the navigation");
         return pages;
@@ -142,6 +164,25 @@ public final class FullstackPageValidator {
         }
         throw new WizardArgumentException("Page '" + id + "': unknown type '" + t
                 + "' (expected entity-list, dashboard, tabs, master-detail, record or report)");
+    }
+
+    /** A nav section name. Only a page that is in the nav can sit in a section of it. */
+    private static String navGroup(String id, boolean hidden, String raw) {
+        String group = checkLength(trimToNull(raw), MAX_GROUP, "Page '" + id + "' group");
+        if (group != null && hidden) {
+            throw new WizardArgumentException("Page '" + id + "' is hidden, so it takes no nav 'group'");
+        }
+        return group;
+    }
+
+    /** A nav icon: one of {@link #NAV_ICONS}, matched ignoring case and returned as declared. */
+    private static String navIcon(String id, boolean hidden, String raw) {
+        String icon = trimToNull(raw);
+        if (icon == null) return null;
+        if (hidden) throw new WizardArgumentException("Page '" + id + "' is hidden, so it takes no nav 'icon'");
+        return NAV_ICONS.stream().filter(i -> i.equalsIgnoreCase(icon)).findFirst()
+                .orElseThrow(() -> new WizardArgumentException("Page '" + id + "': unknown icon '" + icon
+                        + "' (expected one of " + String.join(", ", NAV_ICONS) + ")"));
     }
 
     /** A property that belongs to another page type is a mistake worth reporting, not ignoring. */
@@ -172,15 +213,19 @@ public final class FullstackPageValidator {
         if (type != PageDefinition.Type.TABS && p.tabs() != null && !p.tabs().isEmpty()) {
             throw new WizardArgumentException(prefix + "does not take 'tabs'");
         }
+        if (type != PageDefinition.Type.DASHBOARD && trimToNull(p.dateRange()) != null) {
+            throw new WizardArgumentException(prefix + "does not take 'dateRange'");
+        }
     }
 
     /** Preset filters are equality filters on non-PK, filterable enum/boolean fields. Enum values
-     *  are canonicalized to the declared constant (case-insensitive match). */
-    private static Map<String, String> presetFilter(String id, EntityDefinition entity, Map<String, String> raw) {
+     *  are canonicalized to the declared constant (case-insensitive match). {@code owner} names the
+     *  page or widget in the error. */
+    private static Map<String, String> presetFilter(String owner, EntityDefinition entity, Map<String, String> raw) {
         if (raw == null || raw.isEmpty()) return Map.of();
         Map<String, String> out = new LinkedHashMap<>();
         for (Map.Entry<String, String> en : raw.entrySet()) {
-            String prefix = "Page '" + id + "' presetFilter '" + en.getKey() + "'";
+            String prefix = owner + " presetFilter '" + en.getKey() + "'";
             FieldDefinition field = entity.fields().stream()
                     .filter(f -> f.name().equals(en.getKey()))
                     .findFirst()
@@ -208,8 +253,20 @@ public final class FullstackPageValidator {
         return out;
     }
 
+    /** A dashboard's period picker: absent (no picker), or the period it opens on. */
+    private static PageDefinition.DateRange parseDateRange(String id, String raw) {
+        String r = trimToNull(raw);
+        if (r == null) return null;
+        for (PageDefinition.DateRange range : PageDefinition.DateRange.values()) {
+            if (range.wire().equalsIgnoreCase(r)) return range;
+        }
+        throw new WizardArgumentException("Page '" + id + "': unknown dateRange '" + r
+                + "' (expected all, 7d, 30d, 90d, ytd or 12m)");
+    }
+
     private static List<PageDefinition.Widget> widgets(String id, List<WidgetDto> raw,
-                                                       Map<String, EntityDefinition> entitiesByLower) {
+                                                       Map<String, EntityDefinition> entitiesByLower,
+                                                       boolean hasDateRange) {
         if (raw == null || raw.isEmpty()) {
             throw new WizardArgumentException("Page '" + id + "' (dashboard) needs at least one widget");
         }
@@ -264,9 +321,61 @@ public final class FullstackPageValidator {
             } else if (w.limit() != null) {
                 throw new WizardArgumentException(prefix + ": only a recent widget takes 'limit'");
             }
-            out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit, agg, field, bucket));
+            int span = w.span() == null ? PageDefinition.Widget.defaultSpan(kind) : w.span();
+            if (span < 1 || span > MAX_SPAN) {
+                throw new WizardArgumentException(prefix + ": span must be between 1 and " + MAX_SPAN);
+            }
+            String sortBy = null;
+            if (kind == PageDefinition.WidgetKind.RECENT) {
+                sortBy = sortBy(prefix, entity, trimToNull(w.sortBy()));
+            } else if (trimToNull(w.sortBy()) != null) {
+                throw new WizardArgumentException(prefix + ": only a recent widget takes 'sortBy'");
+            }
+            out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit, agg, field, bucket, span,
+                    presetFilter(prefix, entity, w.presetFilter()), sortBy,
+                    dateField(prefix, entity, trimToNull(w.dateField()), hasDateRange)));
         }
         return out;
+    }
+
+    /** What a recent list orders by: any column of the entity (the list endpoint sorts by every
+     *  scalar DTO column), newest first. Null keeps the primary key. */
+    private static String sortBy(String prefix, EntityDefinition entity, String requested) {
+        if (requested == null) return null;
+        FieldDefinition field = entity.fields().stream()
+                .filter(f -> f.name().equals(requested))
+                .findFirst()
+                .orElseThrow(() -> new WizardArgumentException(prefix + ": sortBy '" + requested
+                        + "' is not a field of " + entity.name()));
+        return field.primaryKey() ? null : field.name();
+    }
+
+    /**
+     * The date a dashboard's period picker limits a widget by: the named field, else the entity's
+     * first filterable date. Only the list's own date filters can narrow the rows (the picker sends
+     * them as {@code <field>From}/{@code <field>To}), so the field must be filterable. Null when the
+     * dashboard has no picker, or the entity has no such date — that widget then covers all rows.
+     */
+    private static String dateField(String prefix, EntityDefinition entity, String requested, boolean hasDateRange) {
+        if (requested == null) {
+            if (!hasDateRange) return null;
+            return entity.fields().stream()
+                    .filter(f -> !f.primaryKey() && f.filterable() && f.type().isTemporal())
+                    .findFirst().map(FieldDefinition::name).orElse(null);
+        }
+        if (!hasDateRange) {
+            throw new WizardArgumentException(prefix + ": 'dateField' applies to the dashboard's dateRange, which is not set");
+        }
+        FieldDefinition field = entity.fields().stream()
+                .filter(f -> f.name().equals(requested))
+                .findFirst()
+                .orElseThrow(() -> new WizardArgumentException(prefix + ": dateField '" + requested
+                        + "' is not a field of " + entity.name()));
+        if (field.primaryKey() || !field.filterable() || !field.type().isTemporal()) {
+            throw new WizardArgumentException(prefix + ": dateField '" + requested
+                    + "' must be a filterable, non-key date field");
+        }
+        return field.name();
     }
 
     private static PageDefinition.WidgetKind parseKind(String prefix, String rawKind) {

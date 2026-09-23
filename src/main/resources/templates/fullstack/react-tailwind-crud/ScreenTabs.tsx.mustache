@@ -1,4 +1,3 @@
-import { useState } from 'react'
 {{#usesT}}
 import { t } from '@shared/i18n'
 {{/usesT}}
@@ -11,15 +10,19 @@ const TABS = [
   { id: '{{tabId}}', label: {{tabTitleExpr}} },
 {{/tabs}}
 ]
-{{#needsNavigate}}
 
 interface Props {
-  onNavigate: (view: string, arg?: string) => void
-}
+  /** The open tab's id, from the route (default: the first tab). */
+  tab?: string
+  onTabChange: (tab: string) => void
+{{#needsNavigate}}
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
 {{/needsNavigate}}
+}
 
-export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
-  const [active, setActive] = useState(0)
+export function {{PageName}}Screen({ tab: openTab, onTabChange{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
+  const active = Math.max(0, TABS.findIndex(x => x.id === openTab))
+  const setActive = (i: number) => onTabChange(TABS[i].id)
   return (
     <div>
       <div

@@ -146,8 +146,13 @@ public final class EntityScaffoldContext {
                     pv.put("entityNameKebab", ev.get("entityNameKebab"));
                     pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
                     pv.put("presetFilterTs", presetFilterTs(p.presetFilter()));
+                    String presetTs = presetFilterTs(p.presetFilter());
+                    // The same object without its braces, to merge the route's filters into.
+                    pv.put("presetFilterEntriesTs", presetTs == null ? null : presetTs.substring(2, presetTs.length() - 2));
                     putRecordLink(pv, "", p.entity(), links, summaries);
                     pv.put("needsNavigate", pv.get("hasRecordPage"));
+                    // A filterable list also opens with the filters in its route (#/orders?status=OPEN).
+                    pv.put("listTakesQuery", Boolean.TRUE.equals(ev.get("hasFilters")));
                     pv.put("navIcon", "Table2");
                     defaultTitleExpr = tsString((String) ev.get("entityLabelPlural"));
                 }
@@ -243,6 +248,8 @@ public final class EntityScaffoldContext {
                 }
             }
             pv.put("pageTitleExpr", p.title() != null ? tsString(p.title()) : defaultTitleExpr);
+            if (p.icon() != null) pv.put("navIcon", p.icon());
+            pv.put("navGroup", p.group());
             viewById.put(p.id(), pv);
         }
 
@@ -269,6 +276,20 @@ public final class EntityScaffoldContext {
             }
             pv.put("tabs", tabViews);
             pv.put("needsNavigate", needsNavigate);
+        }
+
+        // What the shell hands a screen from its route: a tabs page its open tab (and a way to change
+        // it), a filterable list page the filters in the hash. Record pages get their id separately.
+        for (Map<String, Object> pv : viewById.values()) {
+            String routeProps = "";
+            if (Boolean.TRUE.equals(pv.get("pageIsTabs"))) {
+                routeProps = " tab={route.arg} onTabChange={tab => go('" + pv.get("pageId") + "', tab)}";
+            } else if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) {
+                routeProps = " filters={route.query}";
+            }
+            pv.put("routeProps", routeProps);
+            pv.put("hasScreenProps", Boolean.TRUE.equals(pv.get("listTakesQuery"))
+                    || Boolean.TRUE.equals(pv.get("needsNavigate")));
         }
 
         // Screens import the i18n `t` only when one of their label expressions calls it — the
@@ -301,15 +322,62 @@ public final class EntityScaffoldContext {
         // The shell declares its `goView` helper only when some screen takes onNavigate.
         ctx.put("hasNavigatingScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("needsNavigate"))));
         ctx.put("initialPageId", nav.get(0).get("pageId"));
-        for (String icon : List.of("Table2", "LayoutDashboard", "Layers", "PanelLeft", "BarChart3")) {
-            ctx.put("navUses" + icon, nav.stream().anyMatch(v -> icon.equals(v.get("navIcon"))));
-        }
+        // The lucide names the shell imports: the nav icons in use plus its own chrome, sorted.
+        Set<String> icons = new TreeSet<>(List.of("Menu", "Moon", "Sun"));
+        nav.forEach(v -> icons.add((String) v.get("navIcon")));
+        ctx.put("navIconImports", String.join(", ", icons));
+        putNavGroups(ctx, nav);
         ctx.put("hasDashboardPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsDashboard"))));
         ctx.put("hasReportPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsReport"))));
         // widgets.tsx backs both the dashboard screens and the report screen's chart.
         ctx.put("hasWidgets", Boolean.TRUE.equals(ctx.get("hasDashboardPages"))
                 || Boolean.TRUE.equals(ctx.get("hasReportPages")));
         ctx.put("hasTabsPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTabs"))));
+    }
+
+    /**
+     * The nav as sections: pages sharing a {@code group} are listed together under its name, in the
+     * order the group first appears; ungrouped pages form label-less sections of their own between
+     * them. Without any group the whole nav is one section labelled "Main", as it always was.
+     */
+    private static void putNavGroups(Map<String, Object> ctx, List<Map<String, Object>> nav) {
+        boolean grouped = nav.stream().anyMatch(v -> v.get("navGroup") != null);
+        List<Map<String, Object>> sections = new ArrayList<>();
+        Map<String, List<Map<String, Object>>> itemsByGroup = new LinkedHashMap<>();
+        List<Map<String, Object>> loose = null;
+        for (Map<String, Object> v : nav) {
+            String group = (String) v.get("navGroup");
+            if (group == null) {
+                if (loose == null) {
+                    loose = new ArrayList<>();
+                    Map<String, Object> section = new LinkedHashMap<>();
+                    section.put("hasGroupLabel", !grouped);
+                    section.put("isGroup", false);
+                    section.put("groupLabelExpr", grouped ? "''" : "t('main')");
+                    section.put("items", loose);
+                    sections.add(section);
+                }
+                loose.add(v);
+                continue;
+            }
+            // A group interrupts a run of ungrouped pages; the next ungrouped page starts a new one.
+            loose = null;
+            List<Map<String, Object>> items = itemsByGroup.get(group);
+            if (items == null) {
+                items = new ArrayList<>();
+                itemsByGroup.put(group, items);
+                Map<String, Object> section = new LinkedHashMap<>();
+                section.put("hasGroupLabel", true);
+                section.put("isGroup", true);
+                section.put("groupLabelExpr", tsString(group));
+                section.put("items", items);
+                sections.add(section);
+            }
+            items.add(v);
+        }
+        for (int i = 0; i < sections.size(); i++) sections.get(i).put("sectionIndex", i);
+        ctx.put("navGroups", sections);
+        ctx.put("hasNavGroups", grouped);
     }
 
     /**
@@ -369,6 +437,8 @@ public final class EntityScaffoldContext {
         // (deduped, declaration order).
         Map<String, Set<String>> labelRefsByModule = new LinkedHashMap<>();
         boolean needsNavigate = false;
+        boolean usesRange = false;
+        boolean usesStatsQuery = false;
         for (int i = 0; i < p.widgets().size(); i++) {
             PageDefinition.Widget w = p.widgets().get(i);
             Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
@@ -387,6 +457,25 @@ public final class EntityScaffoldContext {
             wv.put("aggField", w.field());
             wv.put("bucket", w.bucket() == null ? null : w.bucket().wire());
             wv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
+            String spanClass = SPAN_CLASSES.get(w.span() - 1);
+            wv.put("hasSpanClass", !spanClass.isEmpty());
+            wv.put("spanClass", spanClass);
+            // The filter params the widget's queries carry: its fixed preset, then the dashboard
+            // period over its date field (a TS expression, since the period is screen state).
+            String preset = presetQuery(w.presetFilter());
+            String range = null;
+            if (w.dateField() != null) {
+                Map<String, Object> df = fieldOf(ev, w.dateField());
+                range = "rangeParams('" + w.dateField() + "', "
+                        + Boolean.TRUE.equals(df.get("isDateTime")) + ", period)";
+                usesRange = true;
+            }
+            String paramsExpr = preset == null ? range
+                    : range == null ? tsString(preset)
+                    : "statsQuery(" + tsString(preset) + ", " + range + ")";
+            usesStatsQuery |= preset != null && range != null;
+            wv.put("hasParams", paramsExpr != null);
+            wv.put("paramsExpr", paramsExpr);
             String target = links.homeOf(w.entity());
             wv.put("hasTarget", target != null);
             wv.put("targetPageId", target);
@@ -418,7 +507,10 @@ public final class EntityScaffoldContext {
                 }
                 default -> {
                     wv.put("limit", w.limit());
-                    wv.put("sortField", summary.get("pkName"));
+                    // Newest first by the chosen column; the key column reads as "#12".
+                    wv.put("sortField", w.sortBy() != null ? w.sortBy() : summary.get("pkName"));
+                    wv.put("hasKeyField", w.sortBy() != null);
+                    wv.put("keyField", summary.get("pkName"));
                     Object labelField = summary.get("labelField");
                     wv.put("displayField", labelField != null ? labelField : summary.get("pkName"));
                     // A recent row opens its record page, when the entity has one.
@@ -440,6 +532,30 @@ public final class EntityScaffoldContext {
                 labelImports.add(Map.of("entityNameKebab", kebab, "labelsRefs", String.join(", ", refs))));
         pv.put("labelImports", labelImports);
         pv.put("needsNavigate", needsNavigate);
+        pv.put("hasDateRange", p.dateRange() != null);
+        pv.put("dateRangeDefault", p.dateRange() == null ? null : p.dateRange().wire());
+        // stats.ts helpers the screen imports: the period type and its params when the picker
+        // limits some widget, statsQuery when a widget also carries a preset.
+        pv.put("usesRangeParams", usesRange);
+        pv.put("usesStatsQuery", usesStatsQuery);
+        pv.put("usesStatsHelpers", p.dateRange() != null);
+    }
+
+    /** Grid classes per widget span (1–4 columns of the dashboard's sm:2 / lg:4 grid). Literal
+     *  strings in the generated screen, so Tailwind's scanner sees them. */
+    private static final List<String> SPAN_CLASSES = List.of(
+            "", "sm:col-span-2", "sm:col-span-2 lg:col-span-3", "sm:col-span-2 lg:col-span-4");
+
+    /** {@code {status=OPEN, paid=true}} → {@code paid=true&status=OPEN} (sorted); null when empty.
+     *  Values are validated constants/booleans, so nothing needs URL-encoding. */
+    private static String presetQuery(Map<String, String> filter) {
+        if (filter.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> en : new java.util.TreeMap<>(filter).entrySet()) {
+            if (sb.length() > 0) sb.append('&');
+            sb.append(en.getKey()).append('=').append(en.getValue());
+        }
+        return sb.toString();
     }
 
     /**

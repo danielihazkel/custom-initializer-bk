@@ -1,0 +1,59 @@
+import { useEffect, useState } from 'react'
+
+/** Every page the shell can show: the nav pages, plus record pages (opened with an id). */
+export type View = {{#routePages}}{{^-first}} | {{/-first}}'{{pageId}}'{{/routePages}}
+
+const VIEWS: readonly View[] = [{{#routePages}}{{^-first}}, {{/-first}}'{{pageId}}'{{/routePages}}]
+{{#hasRecordPages}}
+const RECORD_VIEWS: readonly View[] = [{{#recordPages}}{{^-first}}, {{/-first}}'{{pageId}}'{{/recordPages}}]
+{{/hasRecordPages}}
+
+/** Where the app is, as the URL hash spells it: #/<page>[/<arg>][?<field>=<value>&…]. */
+export interface Route {
+  view: View
+  /** A record page's record id, or the open tab of a tabs page. */
+  arg?: string
+  /** The filters a list page opens with. */
+  query: Record<string, string>
+}
+
+function decode(part: string): string {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return part
+  }
+}
+
+/** An unknown page{{#hasRecordPages}} (or a record page without an id){{/hasRecordPages}} falls back to the start page. */
+export function parseRoute(hash: string): Route {
+  const [path, search = ''] = hash.replace(/^#\/?/, '').split('?')
+  const [id, ...rest] = path.split('/')
+  const view = VIEWS.find(v => v === decode(id))
+  const arg = rest.join('/') !== '' ? decode(rest.join('/')) : undefined
+  if (!view{{#hasRecordPages}} || (RECORD_VIEWS.includes(view) && !arg){{/hasRecordPages}}) return { view: '{{initialPageId}}', query: {} }
+  return { view, arg, query: Object.fromEntries(new URLSearchParams(search)) }
+}
+
+export function toHash({ view, arg, query }: Route): string {
+  const search = new URLSearchParams(query).toString()
+  return `#/${view}${arg ? `/${encodeURIComponent(arg)}` : ''}${search ? `?${search}` : ''}`
+}
+
+/**
+ * The current route, kept in step with the URL hash — so Back/Forward, a reload and a bookmark all
+ * land on the page they name — and a way to move to another.
+ */
+export function useRoute(): [Route, (next: Route) => void] {
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash))
+  useEffect(() => {
+    const onHashChange = () => setRoute(parseRoute(window.location.hash))
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+  const navigate = (next: Route) => {
+    window.location.hash = toHash(next)
+    setRoute(next)
+  }
+  return [route, navigate]
+}

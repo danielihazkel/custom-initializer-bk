@@ -1,11 +1,32 @@
 import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
-{{#needsNavigate}}
+{{#listTakesQuery}}
+import type { FilterValues } from '@shared/ui'
+{{/listTakesQuery}}
+{{#hasScreenProps}}
 
 interface Props {
-  onNavigate: (view: string, arg?: string) => void
-}
+{{#listTakesQuery}}
+  /** Filters from the route (#/<page>?<field>=<value>), on top of the page's own preset. */
+  filters?: FilterValues
+{{/listTakesQuery}}
+{{#needsNavigate}}
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
 {{/needsNavigate}}
+}
+{{/hasScreenProps}}
 
-export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+export function {{PageName}}Screen({{#hasScreenProps}}{ {{#listTakesQuery}}filters{{#needsNavigate}}, {{/needsNavigate}}{{/listTakesQuery}}{{#needsNavigate}}onNavigate{{/needsNavigate}} }: Props{{/hasScreenProps}}) {
+{{^listTakesQuery}}
   return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#hasRecordPage}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}} />
+{{/listTakesQuery}}
+{{#listTakesQuery}}
+  // A different filter set in the route is a fresh list, not an edit of the open one.
+  return (
+    <{{EntityName}}Page
+      key={JSON.stringify(filters ?? {})}
+      initialFilters={{#hasPresetFilter}}{ { {{presetFilterEntriesTs}}, ...filters } }{{/hasPresetFilter}}{{^hasPresetFilter}}{filters}{{/hasPresetFilter}}{{#hasRecordPage}}
+      onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}}
+    />
+  )
+{{/listTakesQuery}}
 }
