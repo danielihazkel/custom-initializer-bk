@@ -10,10 +10,17 @@ interface Props {
   onChange: (next: Partial<{{EntityName}}>) => void
   errors?: Record<string, string>
   isNew: boolean
+{{#formHasSteps}}
+  /** Only these fields (and relation pickers, by relation name) — one step of a wizard. */
+  only?: readonly string[]
+{{/formHasSteps}}
 }
 
-export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
+export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSteps}}, only{{/formHasSteps}} }: Props) {
   const set = (k: keyof {{EntityName}}, v: unknown) => onChange({ ...value, [k]: v })
+{{#formHasSteps}}
+  const show = (name: string) => !only || only.includes(name)
+{{/formHasSteps}}
 {{#relations}}  const {{fieldName}}Options = useOptions<Record<string, unknown>>('/api/{{targetEntityKebabPlural}}')
 {{/relations}}
   return (
@@ -28,7 +35,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           />
         </Field>
       )}
-{{/isGenerated}}{{^isGenerated}}      <Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{/isGenerated}}{{^isGenerated}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <input
           className={isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -36,9 +43,9 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           {{#isNumeric}}type="number"{{/isNumeric}}{{^isNumeric}}type="text"{{/isNumeric}}
           disabled={!isNew}
         />
-      </Field>
+      </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/isGenerated}}{{/isPrimaryKey}}
-{{^isPrimaryKey}}{{#isBoolean}}      <Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{^isPrimaryKey}}{{#isBoolean}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <select
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -49,8 +56,8 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           <option value="true">{t('trueLabel')}</option>
           <option value="false">{t('falseLabel')}</option>
         </select>
-      </Field>
-{{/isBoolean}}{{#isEnum}}      <Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+      </Field>{{#formHasSteps}})}{{/formHasSteps}}
+{{/isBoolean}}{{#isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <select
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           value={(value.{{name}} as string | null | undefined) ?? ''}
@@ -60,8 +67,8 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           <option value="">—</option>
           { {{enumTypeName}}Options.map(o => <option key={o.value} value={o.value}>{o.label}</option>) }
         </select>
-      </Field>
-{{/isEnum}}{{^isBoolean}}{{^isEnum}}      <Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+      </Field>{{#formHasSteps}})}{{/formHasSteps}}
+{{/isEnum}}{{^isBoolean}}{{^isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
 {{#isText}}        <textarea
           className={{#isReadOnly}}{isNew ? `${inputClass} min-h-[96px] resize-y` : `${inputClass} min-h-[96px] resize-y cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{`${inputClass} min-h-[96px] resize-y`}{{/isReadOnly}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -75,11 +82,11 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
           onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}})}
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         />
-{{/isText}}      </Field>
+{{/isText}}      </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}
 {{/fields}}
 {{#relations}}
-      <Field label="{{FieldName}}"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>
+      {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{FieldName}}"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>
         <select
           className={inputClass}
           value={value.{{fkFieldName}} == null ? '' : String(value.{{fkFieldName}})}
@@ -92,7 +99,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew }: Props) {
             </option>
           )) }
         </select>
-      </Field>
+      </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/relations}}
     </>
   )

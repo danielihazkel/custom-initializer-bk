@@ -223,14 +223,20 @@ public record FullstackStarterRequest(
             String dateRange,
             // report: up to four charts (the first also gets the totals table). `chart` is the
             // one-chart spelling; a page gives one or the other.
-            List<ChartDto> charts) {
+            List<ChartDto> charts,
+            // wizard: the create form split into steps (field and relation names); default: the
+            // form's fields four to a step, relations last.
+            List<StepDto> steps,
+            // record: number tiles over its related lists above the tabs (default: one row count
+            // per related list; an empty list: none).
+            List<HeaderStatDto> headerStats) {
 
         /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
                                  String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
                                  List<TabDto> tabs) {
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                    null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null);
         }
     }
 
@@ -273,6 +279,13 @@ public record FullstackStarterRequest(
             String bucket,
             String agg,
             String field) {}
+
+    /** One step of a {@code wizard} page: its heading and the form fields it asks for. */
+    public record StepDto(String title, List<String> fields) {}
+
+    /** A number tile above a {@code record} page's tabs: {@code agg} over the {@code child} rows of
+     *  the record ({@code count} by default). */
+    public record HeaderStatDto(String child, String agg, String field, String title) {}
 
     /** One tab of a {@code tabs} page, embedding another (non-tabs) page by id. */
     public record TabDto(String title, String page) {}

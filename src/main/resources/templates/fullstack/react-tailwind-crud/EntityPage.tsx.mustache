@@ -47,10 +47,14 @@ interface {{EntityName}}PageProps {
 {{/pageScopeable}}
   /** Opens a row on its record page instead of the quick-look drawer. */
   onOpenRecord?: (row: {{EntityName}}) => void
+{{#hasWizardPage}}
+  /** New opens the entity's wizard page instead of the form drawer. */
+  onCreate?: () => void
+{{/hasWizardPage}}
 }
 
 {{/hasPages}}
-export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord{{#hasWizardPage}}, onCreate{{/hasWizardPage}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
   const [page, setPage] = useState(0)
   const [size, setSize] = useState(20)
   const [sort, setSort] = useState<SortSpec | null>(null)
@@ -318,7 +322,7 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
             {t('export')}
           </button>
 {{/optScaffoldCsvExport}}{{#mutable}}          <button
-            onClick={openNew}
+            {{^hasWizardPage}}onClick={openNew}{{/hasWizardPage}}{{#hasWizardPage}}onClick={onCreate ?? openNew}{{/hasWizardPage}}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
           >
             <Plus className="h-4 w-4" />

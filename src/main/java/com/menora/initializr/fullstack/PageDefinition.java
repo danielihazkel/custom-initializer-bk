@@ -21,6 +21,8 @@ import java.util.Map;
  * @param group        visible pages only — the nav section the page is listed under (null: ungrouped)
  * @param icon         visible pages only — the lucide icon the nav shows (null: the type's default)
  * @param dateRange    {@link Type#DASHBOARD} only — the period its picker opens on (null: no picker)
+ * @param steps        {@link Type#WIZARD} only — the create form, step by step
+ * @param headerStats  {@link Type#RECORD} only — the number tiles above its tabs
  */
 public record PageDefinition(
         String id,
@@ -39,7 +41,9 @@ public record PageDefinition(
         List<Chart> charts,
         String group,
         String icon,
-        DateRange dateRange) {
+        DateRange dateRange,
+        List<Step> steps,
+        List<HeaderStat> headerStats) {
 
     public PageDefinition {
         presetFilter = presetFilter == null ? Map.of() : Map.copyOf(presetFilter);
@@ -47,6 +51,8 @@ public record PageDefinition(
         tabs = tabs == null ? List.of() : List.copyOf(tabs);
         childTabs = childTabs == null ? List.of() : List.copyOf(childTabs);
         charts = charts == null ? List.of() : List.copyOf(charts);
+        steps = steps == null ? List.of() : List.copyOf(steps);
+        headerStats = headerStats == null ? List.of() : List.copyOf(headerStats);
     }
 
     /** A report's first chart — the one its totals table follows; null for any other page. */
@@ -58,26 +64,33 @@ public record PageDefinition(
     public PageDefinition(String id, Type type, String title, String description, boolean hidden, String entity,
                           Map<String, String> presetFilter, List<Widget> widgets, List<Tab> tabs) {
         this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, null, null, null, null, null,
-                null, null, null);
+                null, null, null, null, null);
     }
 
     /** A {@link Type#REPORT} page: one entity, the filters it opens with, and its charts. */
     public PageDefinition(String id, Type type, String title, String description, boolean hidden, String entity,
                           Map<String, String> presetFilter, List<Chart> charts) {
         this(id, type, title, description, hidden, entity, presetFilter, null, null, null, null, null, null, charts,
-                null, null, null);
+                null, null, null, null, null);
     }
 
     /** The same page placed in a nav section and given an icon. */
     public PageDefinition withNav(String group, String icon) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                parent, child, via, childTabs, charts, group, icon, dateRange);
+                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats);
     }
 
     /** The same dashboard with a period picker opening on {@code range}. */
     public PageDefinition withDateRange(DateRange range) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                parent, child, via, childTabs, charts, group, icon, range);
+                parent, child, via, childTabs, charts, group, icon, range, steps, headerStats);
+    }
+
+    /** A {@link Type#WIZARD} page: the entity it creates, step by step. */
+    public static PageDefinition wizard(String id, String title, String description, boolean hidden, String entity,
+                                        List<Step> steps) {
+        return new PageDefinition(id, Type.WIZARD, title, description, hidden, entity, null, null, null, null, null,
+                null, null, null, null, null, null, steps, null);
     }
 
     public enum Type {
@@ -89,7 +102,9 @@ public record PageDefinition(
         /** One record (opened by id, never in the navigation) with its related lists as tabs. */
         RECORD("record"),
         /** One entity's filter bar, chart and grouped totals, with a CSV export. */
-        REPORT("report");
+        REPORT("report"),
+        /** A create form for one entity, split into steps, with a review before saving. */
+        WIZARD("wizard");
 
         private final String wire;
 
@@ -193,6 +208,22 @@ public record PageDefinition(
 
     /** @param page id of the embedded page (never a {@link Type#TABS} or {@link Type#RECORD} page) */
     public record Tab(String title, String page) {}
+
+    /**
+     * One step of a wizard.
+     *
+     * @param fields the form fields it asks for — field names, and relation field names for the
+     *               relation pickers — in the order the form lays them out
+     */
+    public record Step(String title, List<String> fields) {
+        public Step {
+            fields = fields == null ? List.of() : List.copyOf(fields);
+        }
+    }
+
+    /** A number tile above a record page's tabs: {@code agg} (over {@code field}) of the
+     *  {@code child} rows whose {@code via} relation points at the record. */
+    public record HeaderStat(String child, String via, Agg agg, String field, String title) {}
 
     /** A related list under a record page: {@code entity} rows whose {@code via} relation points at the record. */
     public record ChildTab(String entity, String via) {}

@@ -54,6 +54,7 @@
     { "source": "ScreenMasterDetail.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 163, "gatedBy": "pageIsMasterDetail" },
     { "source": "ScreenRecord.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 164, "gatedBy": "pageIsRecord" },
     { "source": "ScreenReport.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 165, "gatedBy": "pageIsReport" },
+    { "source": "ScreenWizard.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 166, "gatedBy": "pageIsWizard" },
 
     { "source": "EntityType.ts.mustache", "path": "src/entities/{{entityNameKebab}}/model/types.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 200 },
     { "source": "useEntity.ts.mustache", "path": "src/entities/{{entityNameKebab}}/api/use{{EntityName}}.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 210 },

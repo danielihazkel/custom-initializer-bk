@@ -53,10 +53,14 @@ interface {{EntityName}}PageProps {
 {{/pageScopeable}}
   /** Opens a row on its record page instead of the quick-look drawer. */
   onOpenRecord?: (row: {{EntityName}}) => void
+{{#hasWizardPage}}
+  /** New opens the entity's wizard page instead of the form drawer. */
+  onCreate?: () => void
+{{/hasWizardPage}}
 }
 
 {{/hasPages}}
-export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord{{#hasWizardPage}}, onCreate{{/hasWizardPage}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
   const [page, setPage] = useState(0)
   const [size, setSize] = useState(20)
   const [sort, setSort] = useState<SortSpec | null>(null)
@@ -287,7 +291,7 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
 {{/isView}}        </div>
         <div className="flex items-center gap-2">
 {{#optScaffoldCsvExport}}          <Button variant="outlined" className="mn-btn--compact" label={t('export')} onClick={() => exportCsv('{{entityNamePluralKebab}}.csv')} />
-{{/optScaffoldCsvExport}}{{#mutable}}          <Button variant="primary" className="mn-btn--compact" label={t('newX', { x: '{{entityLabel}}' })} onClick={openNew} />
+{{/optScaffoldCsvExport}}{{#mutable}}          <Button variant="primary" className="mn-btn--compact" label={t('newX', { x: '{{entityLabel}}' })} {{^hasWizardPage}}onClick={openNew}{{/hasWizardPage}}{{#hasWizardPage}}onClick={onCreate ?? openNew}{{/hasWizardPage}} />
 {{/mutable}}        </div>
       </div>
 

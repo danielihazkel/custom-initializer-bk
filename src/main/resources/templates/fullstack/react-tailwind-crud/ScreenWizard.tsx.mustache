@@ -1,0 +1,160 @@
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { api, ApiError } from '@shared/api'
+import { t } from '@shared/i18n'
+import { {{EntityName}}Detail, {{EntityName}}Form, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+
+/** The create form, step by step: the fields each step shows, and the validation keys it owns
+ *  (a relation's picker reports under `<relation>Id`). */
+const STEPS: { title: string; fields: readonly string[]; keys: readonly string[] }[] = [
+{{#steps}}
+  { title: {{stepTitleExpr}}, fields: [{{fieldsTs}}], keys: [{{keysTs}}] },
+{{/steps}}
+]
+
+const INITIAL: Partial<{{EntityName}}> = {{initialTs}}
+
+/** The messages of `all` that belong to step `index`. */
+function errorsOf(index: number, all: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(all).filter(([key]) => STEPS[index].keys.includes(key)))
+}
+
+/** The first step with a message in `all`, or -1. */
+function firstStepWith(all: Record<string, string>): number {
+  return STEPS.findIndex((_, i) => Object.keys(errorsOf(i, all)).length > 0)
+}
+{{#needsNavigate}}
+
+interface Props {
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+}
+{{/needsNavigate}}
+
+export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+  // STEPS.length is the review step.
+  const [step, setStep] = useState(0)
+  const [value, setValue] = useState<Partial<{{EntityName}}>>(INITIAL)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const reviewing = step === STEPS.length
+
+  // Editing a field clears its message, as the entity page's form does.
+  const edit = (next: Partial<{{EntityName}}>) => {
+    setErrors(prev => Object.fromEntries(Object.entries(prev).filter(
+      ([key]) => next[key as keyof {{EntityName}}] === value[key as keyof {{EntityName}}])))
+    setValue(next)
+  }
+
+  function forward() {
+    const found = errorsOf(step, validate{{EntityName}}(value))
+    setErrors(found)
+    if (Object.keys(found).length === 0) setStep(step + 1)
+  }
+
+  async function finish() {
+    const all = validate{{EntityName}}(value)
+    const broken = firstStepWith(all)
+    if (broken >= 0) {
+      setErrors(errorsOf(broken, all))
+      setStep(broken)
+      return
+    }
+    setSaving(true)
+    try {
+      {{#hasRecordPage}}const created = {{/hasRecordPage}}await api.post<{{EntityName}}>('/api/{{entityNamePluralKebab}}', value)
+      toast.success(t('xCreated', { x: {{entityLabelExpr}} }))
+{{#hasRecordPage}}
+      onNavigate('{{recordPageId}}', String(created.{{recordPk}}))
+{{/hasRecordPage}}
+{{^hasRecordPage}}
+{{#hasBack}}
+      onNavigate('{{backPageId}}')
+{{/hasBack}}
+{{^hasBack}}
+      setValue(INITIAL)
+      setStep(0)
+{{/hasBack}}
+{{/hasRecordPage}}
+    } catch (e) {
+      // The server's own checks (unique keys, relations) land on the step that owns the field.
+      const fieldErrors = e instanceof ApiError ? e.fieldErrors : undefined
+      const owner = fieldErrors ? firstStepWith(fieldErrors) : -1
+      if (fieldErrors && owner >= 0) {
+        setErrors(errorsOf(owner, fieldErrors))
+        setStep(owner)
+      } else {
+        toast.error(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      </div>
+
+      <ol className="flex flex-wrap gap-2" aria-label={t('stepXOfY', { x: Math.min(step + 1, STEPS.length + 1), y: STEPS.length + 1 })}>
+        {[...STEPS.map(s => s.title), t('review')].map((title, i) => (
+          <li
+            key={i}
+            aria-current={i === step ? 'step' : undefined}
+            className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${
+              i === step
+                ? 'border-brand bg-brand/10 text-brand'
+                : i < step
+                  ? 'border-border bg-surface text-fg'
+                  : 'border-border bg-surface text-muted'
+            }`}
+          >
+            <span className="tabular-nums">{i + 1}</span>
+            {title}
+          </li>
+        ))}
+      </ol>
+
+      <form
+        noValidate
+        onSubmit={e => {
+          e.preventDefault()
+          if (reviewing) void finish()
+          else forward()
+        }}
+        className="space-y-5 rounded-2xl border border-border bg-surface p-5 shadow-sm"
+      >
+        {reviewing ? (
+          <{{EntityName}}Detail value={value as {{EntityName}}} />
+        ) : (
+          <{{EntityName}}Form value={value} onChange={edit} errors={errors} isNew only={STEPS[step].fields} />
+        )}
+        <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+          <button
+            type="button"
+            onClick={() => {
+              setErrors({})
+              setStep(step - 1)
+            }}
+            disabled={step === 0 || saving}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-2 disabled:opacity-40"
+          >
+            {t('back')}
+          </button>
+          <span className="text-xs tabular-nums text-muted">{t('stepXOfY', { x: step + 1, y: STEPS.length + 1 })}</span>
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary shadow-sm transition-colors hover:bg-primary-deep disabled:opacity-60"
+          >
+            {reviewing ? (saving ? t('saving') : t('finish')) : t('next')}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}

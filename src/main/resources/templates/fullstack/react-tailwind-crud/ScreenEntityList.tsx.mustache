@@ -17,7 +17,7 @@ interface Props {
 
 export function {{PageName}}Screen({{#hasScreenProps}}{ {{#listTakesQuery}}filters{{#needsNavigate}}, {{/needsNavigate}}{{/listTakesQuery}}{{#needsNavigate}}onNavigate{{/needsNavigate}} }: Props{{/hasScreenProps}}) {
 {{^listTakesQuery}}
-  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#hasRecordPage}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}} />
+  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#hasRecordPage}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}}{{#hasWizard}} onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}} />
 {{/listTakesQuery}}
 {{#listTakesQuery}}
   // A different filter set in the route is a fresh list, not an edit of the open one.
@@ -25,7 +25,8 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{#listTakesQuery}}filte
     <{{EntityName}}Page
       key={JSON.stringify(filters ?? {})}
       initialFilters={{#hasPresetFilter}}{ { {{presetFilterEntriesTs}}, ...filters } }{{/hasPresetFilter}}{{^hasPresetFilter}}{filters}{{/hasPresetFilter}}{{#hasRecordPage}}
-      onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}}
+      onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}}{{#hasWizard}}
+      onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}}
     />
   )
 {{/listTakesQuery}}

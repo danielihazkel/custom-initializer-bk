@@ -353,6 +353,31 @@
         "child": "Order"
       },
       {
+        "id": "new-order",
+        "type": "wizard",
+        "title": "New order",
+        "description": "Who orders what, then the order itself.",
+        "entity": "Order",
+        "group": "Sales",
+        "steps": [
+          {
+            "title": "Customer",
+            "fields": [
+              "reference",
+              "customer"
+            ]
+          },
+          {
+            "title": "Order",
+            "fields": [
+              "status",
+              "placedAt",
+              "total"
+            ]
+          }
+        ]
+      },
+      {
         "id": "order-lines",
         "type": "entity-list",
         "group": "Catalog",

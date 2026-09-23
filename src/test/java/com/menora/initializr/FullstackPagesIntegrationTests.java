@@ -240,7 +240,7 @@ class FullstackPagesIntegrationTests {
         String app = files.get(FE + "src/app/App.tsx");
         assertThat(app)
                 .contains("import { OrderScreen } from '@app/screens/OrderScreen'")
-                .contains("import { LayoutDashboard, ListChecks, Menu, Moon, Package, ShoppingCart, Sun, Users } from 'lucide-react'")
+                .contains("import { LayoutDashboard, ListChecks, Menu, Moon, Package, ShoppingCart, Sun, Users, Wand2 } from 'lucide-react'")
                 .contains("{ id: 'customers', label: 'Customers', icon: Users },")
                 .contains("const RECORD_TITLES: Partial<Record<View, string>> = {\n  'order': 'Order',\n}")
                 .contains("const go = (id: View, arg?: string, query: Record<string, string> = {}) => {\n"
@@ -251,7 +251,7 @@ class FullstackPagesIntegrationTests {
                 .contains("{current?.label ?? RECORD_TITLES[view] ?? t('dashboard')}")
                 .doesNotContain("{ id: 'order',");
         assertThat(files.get(FE + "src/app/route.ts"))
-                .contains("export type View = 'desk' | 'orders' | 'customers' | 'order-lines' | 'products' | 'order'")
+                .contains("export type View = 'desk' | 'orders' | 'customers' | 'new-order' | 'order-lines' | 'products' | 'order'")
                 .contains("const RECORD_VIEWS: readonly View[] = ['order']");
 
         // Rows of an entity with a record page open it; its dashboard recents link there too.
@@ -472,7 +472,6 @@ class FullstackPagesIntegrationTests {
 
     @Test
     void fullstackEndpoint_rejectsInvalidPages() {
-        assertRejected(p -> p.get(0).put("type", "wizard"), "type 'wizard' is not supported yet");
         assertRejected(p -> p.get(0).put("type", "gallery"), "unknown type 'gallery'");
         assertRejected(p -> p.get(0).put("id", "Overview"), "Page id 'Overview' must be lower-case");
         assertRejected(p -> p.get(5).put("id", "overview"), "Duplicate page id 'overview'");
@@ -614,6 +613,32 @@ class FullstackPagesIntegrationTests {
             p.add(page);
         }, "at most 4 charts are allowed");
         assertRejected(p -> p.get(0).put("charts", List.of(Map.of("groupBy", "status"))), "(dashboard) does not take 'charts'");
+        // Wizard pages and record header stats
+        assertRejected(p -> p.add(wizardPage("new-ticket", "Ticket", List.of(Map.of("fields", List.of("subject"))))),
+                "Page 'new-ticket' (wizard): the required field");
+        assertRejected(p -> p.add(wizardPage("new-ticket", "Ticket", List.of(Map.of("fields", List.of("subject", "nope"))))),
+                "'nope' is not a field of the Ticket form");
+        assertRejected(p -> p.add(wizardPage("new-ticket", "Ticket",
+                        List.of(Map.of("fields", List.of("subject")), Map.of("fields", List.of("subject"))))),
+                "'subject' is already asked for");
+        assertRejected(p -> p.add(wizardPage("new-ticket", "Ticket", List.of(Map.of("fields", List.of())))),
+                "a step needs at least one field");
+        assertRejected(p -> {
+            p.add(wizardPage("new-ticket", "Ticket", null));
+            p.add(wizardPage("another-ticket", "Ticket", null));
+        }, "Ticket already has a wizard page ('new-ticket')");
+        assertRejected(p -> p.get(0).put("steps", List.of(Map.of("fields", List.of("subject")))), "(dashboard) does not take 'steps'");
+        assertRejected(p -> {
+            Map<String, Object> page = recordPage("team", "Team", null);
+            page.put("headerStats", List.of(Map.of("child", "Team")));
+            p.add(page);
+        }, "headerStats[0]: Team has no relation to Team");
+        assertRejected(p -> {
+            Map<String, Object> page = recordPage("team", "Team", null);
+            page.put("headerStats", List.of(Map.of("child", "Ticket", "agg", "sum")));
+            p.add(page);
+        }, "agg 'sum' needs a numeric 'field' of Ticket to reduce");
+        assertRejected(p -> p.get(0).put("headerStats", List.of()), "(dashboard) does not take 'headerStats'");
     }
 
     @Test
@@ -665,6 +690,60 @@ class FullstackPagesIntegrationTests {
                 .contains("periodYtd: 'מתחילת השנה',");
     }
 
+    @Test
+    void fullstackEndpoint_rendersAWizardPageAndRecordHeaderStats() throws Exception {
+        Map<String, String> files = generate(exampleBody("orders", "react-tailwind-crud"));
+
+        // The wizard: one step per group of fields (a relation by its field name; its message
+        // arrives under customerId), a review, and the new order's record page afterwards.
+        String wizard = files.get(FE + "src/app/screens/NewOrderScreen.tsx");
+        assertThat(wizard)
+                .contains("import { OrderDetail, OrderForm, validateOrder } from '@features/order-form'")
+                .contains("  { title: 'Customer', fields: ['reference', 'customer'], keys: ['reference', 'customerId'] },\n"
+                        + "  { title: 'Order', fields: ['status', 'placedAt', 'total'], keys: ['status', 'placedAt', 'total'] },\n")
+                .contains("const created = await api.post<Order>('/api/orders', value)")
+                .contains("onNavigate('order', String(created.id))")
+                .contains("<OrderForm value={value} onChange={edit} errors={errors} isNew only={STEPS[step].fields} />")
+                .contains("<OrderDetail value={value as Order} />");
+        // Only an entity with a wizard gets the stepped form and the list page's onCreate.
+        assertThat(files.get(FE + "src/features/order-form/ui/OrderForm.tsx"))
+                .contains("export function OrderForm({ value, onChange, errors, isNew, only }: Props) {")
+                .contains("{show('customer') && (<Field label=\"Customer\" required error={errors?.customerId}>");
+        assertThat(files.get(FE + "src/features/customer-form/ui/CustomerForm.tsx"))
+                .contains("export function CustomerForm({ value, onChange, errors, isNew }: Props) {")
+                .doesNotContain("show(");
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx")).contains("onClick={onCreate ?? openNew}");
+        assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx"))
+                .contains("onClick={openNew}")
+                .doesNotContain("onCreate");
+        assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx")).contains("onCreate={() => onNavigate('new-order')}");
+        assertThat(files.get(FE + "src/app/App.tsx")).contains("{ id: 'new-order', label: 'New order', icon: Wand2 },");
+        assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("stepXOfY: 'Step {x} of {y}',");
+
+        // The record page counts its order lines by default; the tile opens that tab.
+        assertThat(files.get(FE + "src/app/screens/OrderScreen.tsx"))
+                .contains("import { KpiTile } from '@shared/ui/widgets'")
+                .contains("params={`orderId=${encodeURIComponent(recordId)}`}\n          onOpen={() => setActive(1)}");
+    }
+
+    @Test
+    void fullstackEndpoint_hiddenWizardIsARouteAndDefaultsItsSteps() throws Exception {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> wizard = wizardPage("new-ticket", "ticket", null);
+        wizard.put("hidden", true);
+        pages(body).add(wizard);
+        Map<String, String> files = generate(body);
+
+        // Four fields to a step, relations last; no record page and no visible list, so a saved
+        // ticket goes back to its home (the tabs page).
+        assertThat(files.get(FE + "src/app/screens/NewTicketScreen.tsx"))
+                .contains("{ title: t('stepX', { x: 1 }), fields: ['subject', 'details', 'priority', 'status'],")
+                .contains("{ title: t('stepX', { x: 2 }), fields: ['dueAt', 'team', 'assignee'],")
+                .contains("onNavigate('queue')");
+        assertThat(files.get(FE + "src/app/route.ts")).contains("'new-ticket'");
+        assertThat(files.get(FE + "src/app/App.tsx")).doesNotContain("{ id: 'new-ticket'");
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private void assertRejected(Consumer<List<Map<String, Object>>> mutator, String expectedMessage) {
@@ -697,6 +776,12 @@ class FullstackPagesIntegrationTests {
     }
 
     /** A report page over {@code entity}; a null {@code chart} leaves the property off entirely. */
+    private static Map<String, Object> wizardPage(String id, String entity, List<Map<String, Object>> steps) {
+        Map<String, Object> page = new LinkedHashMap<>(Map.of("id", id, "type", "wizard", "entity", entity));
+        if (steps != null) page.put("steps", steps);
+        return page;
+    }
+
     private static Map<String, Object> reportPage(String id, String entity, Map<String, String> chart) {
         Map<String, Object> page = new LinkedHashMap<>(Map.of("id", id, "type", "report", "entity", entity));
         if (chart != null) page.put("chart", chart);

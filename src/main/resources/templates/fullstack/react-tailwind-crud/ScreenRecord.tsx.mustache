@@ -4,6 +4,9 @@ import { ArrowLeft } from 'lucide-react'
 {{/hasBack}}
 import { api } from '@shared/api'
 import { Alert } from '@shared/ui'
+{{#hasHeaderStats}}
+import { KpiTile } from '@shared/ui/widgets'
+{{/hasHeaderStats}}
 import { t } from '@shared/i18n'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
@@ -72,6 +75,25 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
         <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
 {{/hasPageDescription}}
       </div>
+{{#hasHeaderStats}}
+      {/* Numbers over the record's related rows; a tile opens its list's tab. */}
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+{{#headerStats}}
+        <KpiTile
+          title={ {{titleExpr}} }
+          path="{{path}}"
+{{#hasAgg}}
+          agg="{{agg}}"
+          field="{{aggField}}"
+{{/hasAgg}}
+          params={`{{viaParam}}=${encodeURIComponent(recordId)}`}
+{{#hasTab}}
+          onOpen={() => setActive({{tabIndex}})}
+{{/hasTab}}
+        />
+{{/headerStats}}
+      </div>
+{{/hasHeaderStats}}
       {error && <Alert>{error}</Alert>}
       {!error && record == null && <div className="text-sm text-muted">{t('loading')}</div>}
       {record && (

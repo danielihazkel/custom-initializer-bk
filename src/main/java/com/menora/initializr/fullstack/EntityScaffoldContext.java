@@ -135,6 +135,7 @@ public final class EntityScaffoldContext {
             pv.put("pageIsMasterDetail", p.type() == PageDefinition.Type.MASTER_DETAIL);
             pv.put("pageIsRecord", p.type() == PageDefinition.Type.RECORD);
             pv.put("pageIsReport", p.type() == PageDefinition.Type.REPORT);
+            pv.put("pageIsWizard", p.type() == PageDefinition.Type.WIZARD);
             pv.put("hasPageDescription", p.description() != null);
             pv.put("pageDescriptionExpr", p.description() == null ? null : tsString(p.description()));
             pv.put("needsNavigate", false);
@@ -153,6 +154,11 @@ public final class EntityScaffoldContext {
                     pv.put("needsNavigate", pv.get("hasRecordPage"));
                     // A filterable list also opens with the filters in its route (#/orders?status=OPEN).
                     pv.put("listTakesQuery", Boolean.TRUE.equals(ev.get("hasFilters")));
+                    // New opens the entity's wizard page, when it has one.
+                    String wizard = links.wizardPageOf(p.entity());
+                    pv.put("hasWizard", wizard != null);
+                    pv.put("wizardPageId", wizard);
+                    if (wizard != null) pv.put("needsNavigate", true);
                     pv.put("navIcon", "Table2");
                     defaultTitleExpr = tsString((String) ev.get("entityLabelPlural"));
                 }
@@ -238,8 +244,15 @@ public final class EntityScaffoldContext {
                     pv.put("childTabs", tabViews);
                     pv.put("hasChildTabs", !tabViews.isEmpty());
                     pv.put("needsNavigate", navigates);
+                    putHeaderStats(pv, p, entityByPascal, tabViews);
                     pv.put("navIcon", "Table2");
                     defaultTitleExpr = tsString((String) ev.get("entityLabel"));
+                }
+                case WIZARD -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    putWizard(pv, p, ev, links, summaries);
+                    pv.put("navIcon", "Wand2");
+                    defaultTitleExpr = "t('newX', { x: " + tsString((String) ev.get("entityLabel")) + " })";
                 }
                 default -> {
                     pv.put("navIcon", "Layers");
@@ -304,7 +317,7 @@ public final class EntityScaffoldContext {
                 }
             }
             pv.put("usesT", Boolean.TRUE.equals(pv.get("pageIsMasterDetail")) || Boolean.TRUE.equals(pv.get("pageIsRecord"))
-                    || Boolean.TRUE.equals(pv.get("pageIsReport"))
+                    || Boolean.TRUE.equals(pv.get("pageIsReport")) || Boolean.TRUE.equals(pv.get("pageIsWizard"))
                     || exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
         }
 
@@ -313,6 +326,9 @@ public final class EntityScaffoldContext {
         List<Map<String, Object>> records = all.stream().filter(v -> Boolean.TRUE.equals(v.get("pageIsRecord"))).toList();
         List<Map<String, Object>> routes = new ArrayList<>(nav);
         routes.addAll(records);
+        // A hidden wizard is still a route: a list page's New opens it.
+        all.stream().filter(v -> Boolean.TRUE.equals(v.get("pageIsWizard")) && Boolean.TRUE.equals(v.get("hidden")))
+                .forEach(routes::add);
         ctx.put("pages", all);
         ctx.put("navPages", nav);
         // Everything the shell can show: the nav pages, plus record pages (opened with an id).
@@ -331,7 +347,11 @@ public final class EntityScaffoldContext {
         ctx.put("hasReportPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsReport"))));
         // widgets.tsx backs both the dashboard screens and the report screen's chart.
         ctx.put("hasWidgets", Boolean.TRUE.equals(ctx.get("hasDashboardPages"))
-                || Boolean.TRUE.equals(ctx.get("hasReportPages")));
+                || Boolean.TRUE.equals(ctx.get("hasReportPages"))
+                || all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasHeaderStats"))));
+        // Per-entity contexts read this: an entity with a wizard gets the stepped form and the
+        // list page's onCreate.
+        ctx.put(WIZARD_PAGES_KEY, links.wizardPageByEntity());
         ctx.put("hasTabsPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTabs"))));
     }
 
@@ -386,7 +406,7 @@ public final class EntityScaffoldContext {
      * parent, else a visible tabs page embedding one of its list pages.
      */
     private record PageLinks(Map<String, String> recordPageByEntity, Map<String, String> homeByEntity,
-                             Map<String, String> listPageByEntity) {
+                             Map<String, String> listPageByEntity, Map<String, String> wizardPageByEntity) {
 
         static PageLinks of(List<PageDefinition> pages) {
             Map<String, String> records = new LinkedHashMap<>();
@@ -409,13 +429,20 @@ public final class EntityScaffoldContext {
                     if (target.type() == PageDefinition.Type.MASTER_DETAIL) homes.putIfAbsent(target.parent(), p.id());
                 }
             }
-            return new PageLinks(records, homes, lists);
+            Map<String, String> wizards = new LinkedHashMap<>();
+            for (PageDefinition p : pages) {
+                if (p.type() == PageDefinition.Type.WIZARD) wizards.put(p.entity(), p.id());
+            }
+            return new PageLinks(records, homes, lists, wizards);
         }
 
         String recordPageOf(String entity) { return recordPageByEntity.get(entity); }
 
         /** The entity's first visible list page — what a drill-down opens, filtered — or null. */
         String listPageOf(String entity) { return listPageByEntity.get(entity); }
+
+        /** The entity's wizard page — where its list page's New goes — or null. */
+        String wizardPageOf(String entity) { return wizardPageByEntity.get(entity); }
 
         String homeOf(String entity) { return homeByEntity.get(entity); }
     }
@@ -635,6 +662,82 @@ public final class EntityScaffoldContext {
         return drill;
     }
 
+    /**
+     * A wizard page: its steps (the fields each shows and the validation keys it owns — a relation
+     * reports under {@code <relation>Id}), the defaults the form starts from, and where a saved
+     * record goes (its record page, else the entity's home, else a fresh wizard).
+     */
+    @SuppressWarnings("unchecked")
+    private static void putWizard(Map<String, Object> pv, PageDefinition p, Map<String, Object> ev, PageLinks links,
+                                  Map<String, Map<String, Object>> summaries) {
+        pv.put("EntityName", ev.get("EntityName"));
+        pv.put("entityNameKebab", ev.get("entityNameKebab"));
+        pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
+        pv.put("entityLabelExpr", tsString((String) ev.get("entityLabel")));
+        Set<String> relationNames = new java.util.HashSet<>();
+        for (Map<String, Object> rv : (List<Map<String, Object>>) ev.get("relations")) {
+            relationNames.add((String) rv.get("fieldName"));
+        }
+        List<Map<String, Object>> steps = new ArrayList<>();
+        for (int i = 0; i < p.steps().size(); i++) {
+            PageDefinition.Step step = p.steps().get(i);
+            List<String> fields = new ArrayList<>();
+            List<String> keys = new ArrayList<>();
+            for (String name : step.fields()) {
+                String camel = Naming.toCamelCase(name);
+                boolean relation = relationNames.contains(camel);
+                String field = relation ? camel : name;
+                fields.add(tsString(field));
+                keys.add(tsString(relation ? camel + "Id" : name));
+            }
+            Map<String, Object> sv = new LinkedHashMap<>();
+            sv.put("stepTitleExpr", step.title() != null ? tsString(step.title()) : "t('stepX', { x: " + (i + 1) + " })");
+            sv.put("fieldsTs", String.join(", ", fields));
+            sv.put("keysTs", String.join(", ", keys));
+            steps.add(sv);
+        }
+        pv.put("steps", steps);
+        // The form starts from the fields' defaults, as the entity page's New does.
+        List<String> defaults = new ArrayList<>();
+        for (Map<String, Object> fv : (List<Map<String, Object>>) ev.get("fields")) {
+            if (Boolean.TRUE.equals(fv.get("hasDefault"))) defaults.add(fv.get("name") + ": " + fv.get("defaultTs"));
+        }
+        pv.put("initialTs", defaults.isEmpty() ? "{}" : "{ " + String.join(", ", defaults) + " }");
+        putRecordLink(pv, "", p.entity(), links, summaries);
+        String home = links.homeOf(p.entity());
+        pv.put("hasBack", home != null);
+        pv.put("backPageId", home);
+        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")) || home != null);
+    }
+
+    /** A record page's header tiles: a count (or aggregate) of each related list's rows for the
+     *  record, through the list's filter param; a tile whose list is a tab opens that tab. */
+    private static void putHeaderStats(Map<String, Object> pv, PageDefinition p,
+                                       Map<String, Map<String, Object>> entityByPascal,
+                                       List<Map<String, Object>> tabViews) {
+        List<Map<String, Object>> stats = new ArrayList<>();
+        for (PageDefinition.HeaderStat s : p.headerStats()) {
+            Map<String, Object> cv = entityByPascal.get(Naming.toPascalCase(s.child()));
+            Map<String, Object> sv = new LinkedHashMap<>();
+            boolean reduces = s.agg() != PageDefinition.Agg.COUNT;
+            sv.put("path", "/api/" + cv.get("entityNamePluralKebab"));
+            sv.put("hasAgg", reduces);
+            sv.put("agg", s.agg().wire());
+            sv.put("aggField", s.field());
+            sv.put("viaParam", Naming.toCamelCase(s.via()) + "Id");
+            String label = (String) cv.get("entityLabelPlural");
+            sv.put("titleExpr", s.title() != null ? tsString(s.title())
+                    : reduces ? aggTitleExpr(s.agg(), (String) fieldOf(cv, s.field()).get("label")) : tsString(label));
+            Map<String, Object> tab = tabViews.stream()
+                    .filter(tv -> cv.get("EntityName").equals(tv.get("childEntityName"))).findFirst().orElse(null);
+            sv.put("hasTab", tab != null);
+            sv.put("tabIndex", tab == null ? null : tab.get("tabIndex"));
+            stats.add(sv);
+        }
+        pv.put("headerStats", stats);
+        pv.put("hasHeaderStats", !stats.isEmpty());
+    }
+
     /** Grid classes per widget span (1–4 columns of the dashboard's sm:2 / lg:4 grid). Literal
      *  strings in the generated screen, so Tailwind's scanner sees them. */
     private static final List<String> SPAN_CLASSES = List.of(
@@ -752,6 +855,10 @@ public final class EntityScaffoldContext {
     static String tsString(String s) {
         return "'" + escapeTsSingleQuoted(s).replace("\r", "").replace("\n", "\\n") + "'";
     }
+
+    /** Internal key under which the entity → wizard page lookup rides in the (frontend) project
+     *  context, for {@link #buildEntityContext}. Not referenced by any template. */
+    private static final String WIZARD_PAGES_KEY = "__wizardPages";
 
     /** Internal key under which the entity-summary lookup rides in the project context.
      *  Not referenced by any template. */
@@ -918,6 +1025,12 @@ public final class EntityScaffoldContext {
         // Page layouts only: the list page can be scoped to one parent through a relation filter
         // (master-detail and record pages), so it takes a `scope` prop.
         ctx.put("pageScopeable", Boolean.TRUE.equals(projectContext.get("hasPages")) && !entity.relations().isEmpty());
+        // An entity with a wizard page: its form takes `only` (one step's fields) and its list page
+        // takes `onCreate` (New opens the wizard instead of the drawer).
+        Map<String, String> wizards = (Map<String, String>) projectContext.get(WIZARD_PAGES_KEY);
+        boolean hasWizard = wizards != null && wizards.containsKey(entity.name());
+        ctx.put("hasWizardPage", hasWizard);
+        ctx.put("formHasSteps", hasWizard);
         // Per-entity scaffold-opt overrides: resolve `override ?? projectOpt` for every overridable
         // option and store it under the same optScaffold<X> key, so it shadows the project-level
         // value for this entity only. Both the per-entity templates ({{#optScaffoldCsvExport}} ...)

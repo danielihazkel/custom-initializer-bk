@@ -37,6 +37,9 @@ public final class FullstackPageValidator {
     static final int MAX_GROUP = 40;
     static final int MAX_SPAN = 4;
     static final int MAX_CHARTS = 4;
+    static final int MAX_STEPS = 8;
+    static final int DEFAULT_STEP_SIZE = 4;
+    static final int MAX_HEADER_STATS = 4;
 
     /** The lucide icons a page may put in the nav. The shell imports exactly the ones in use, so the
      *  list is a whitelist rather than "any lucide name": a typo would otherwise fail the build of the
@@ -45,9 +48,6 @@ public final class FullstackPageValidator {
             "BarChart3", "Building2", "Calendar", "FileText", "Inbox", "Layers", "LayoutDashboard", "ListChecks",
             "Package", "PanelLeft", "Settings", "ShoppingCart", "Star", "Table2", "Tag", "Ticket", "Truck", "Users",
             "Wallet", "Wand2");
-
-    /** Page types reserved for a later release: named so the error says "not yet", not "unknown". */
-    private static final Set<String> PLANNED_TYPES = Set.of("wizard");
 
     private FullstackPageValidator() {}
 
@@ -76,6 +76,7 @@ public final class FullstackPageValidator {
 
         List<PageDefinition> pages = new ArrayList<>(raw.size());
         Map<String, String> recordPageByEntity = new HashMap<>();
+        Map<String, String> wizardPageByEntity = new HashMap<>();
         boolean anyVisible = false;
         for (PageDefinitionDto p : raw) {
             String id = p.id().trim();
@@ -125,7 +126,7 @@ public final class FullstackPageValidator {
                     requireSinglePk(prefix, parent);
                     String via = via(prefix, child, parent, trimToNull(p.via()));
                     yield new PageDefinition(id, type, title, description, hidden, null, null, null, null,
-                            parent.name(), child.name(), via, null, null, null, null, null);
+                            parent.name(), child.name(), via, null, null, null, null, null, null, null);
                 }
                 case REPORT -> {
                     String prefix = "Page '" + id + "' (report)";
@@ -142,9 +143,25 @@ public final class FullstackPageValidator {
                         throw new WizardArgumentException(prefix + ": " + entity.name()
                                 + " already has a record page ('" + previous + "')");
                     }
+                    List<PageDefinition.ChildTab> childTabs = childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower);
                     yield new PageDefinition(id, type, title, description, true, entity.name(), null, null, null,
-                            null, null, null, childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower),
-                            null, null, null, null);
+                            null, null, null, childTabs, null, null, null, null, null,
+                            headerStats(prefix, entity, p.headerStats(), childTabs, entitiesByLower));
+                }
+                case WIZARD -> {
+                    String prefix = "Page '" + id + "' (wizard)";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    if (entity.readOnly()) {
+                        throw new WizardArgumentException(prefix + ": " + entity.name()
+                                + " is read-only, so there is nothing to create");
+                    }
+                    String previous = wizardPageByEntity.putIfAbsent(entity.name(), id);
+                    if (previous != null) {
+                        throw new WizardArgumentException(prefix + ": " + entity.name()
+                                + " already has a wizard page ('" + previous + "')");
+                    }
+                    yield PageDefinition.wizard(id, title, description, hidden, entity.name(),
+                            steps(prefix, entity, p.steps()));
                 }
             };
             pages.add(page.withNav(group, icon));
@@ -160,11 +177,8 @@ public final class FullstackPageValidator {
         for (PageDefinition.Type type : PageDefinition.Type.values()) {
             if (type.wire().equals(lower)) return type;
         }
-        if (PLANNED_TYPES.contains(lower)) {
-            throw new WizardArgumentException("Page '" + id + "': type '" + t + "' is not supported yet");
-        }
         throw new WizardArgumentException("Page '" + id + "': unknown type '" + t
-                + "' (expected entity-list, dashboard, tabs, master-detail, record or report)");
+                + "' (expected entity-list, dashboard, tabs, master-detail, record, report or wizard)");
     }
 
     /** A nav section name. Only a page that is in the nav can sit in a section of it. */
@@ -190,7 +204,8 @@ public final class FullstackPageValidator {
     private static void rejectForeignProps(String id, PageDefinition.Type type, PageDefinitionDto p) {
         String prefix = "Page '" + id + "' (" + type.wire() + ") ";
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.RECORD
-                && type != PageDefinition.Type.REPORT && trimToNull(p.entity()) != null) {
+                && type != PageDefinition.Type.REPORT && type != PageDefinition.Type.WIZARD
+                && trimToNull(p.entity()) != null) {
             throw new WizardArgumentException(prefix + "does not take 'entity'");
         }
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.REPORT
@@ -219,6 +234,12 @@ public final class FullstackPageValidator {
         }
         if (type != PageDefinition.Type.DASHBOARD && trimToNull(p.dateRange()) != null) {
             throw new WizardArgumentException(prefix + "does not take 'dateRange'");
+        }
+        if (type != PageDefinition.Type.WIZARD && p.steps() != null && !p.steps().isEmpty()) {
+            throw new WizardArgumentException(prefix + "does not take 'steps'");
+        }
+        if (type != PageDefinition.Type.RECORD && p.headerStats() != null) {
+            throw new WizardArgumentException(prefix + "does not take 'headerStats'");
         }
     }
 
@@ -613,6 +634,108 @@ public final class FullstackPageValidator {
             }
             if (!seen.add(target)) throw new WizardArgumentException(prefix + ": page '" + target + "' is already a tab");
             out.add(new PageDefinition.Tab(checkLength(trimToNull(t.title()), MAX_TITLE, prefix + " title"), target));
+        }
+        return out;
+    }
+
+    /**
+     * A wizard's steps. Each names form fields: the entity's fields — all but a generated key —
+     * and its relations by field name. Every field and relation the form requires has to be asked
+     * for somewhere, and nothing twice. Omitted: the fields in declaration order, then the
+     * relations, {@value #DEFAULT_STEP_SIZE} to a step.
+     */
+    private static List<PageDefinition.Step> steps(String prefix, EntityDefinition entity,
+                                                   List<FullstackStarterRequest.StepDto> raw) {
+        Map<String, String> askable = new LinkedHashMap<>();
+        List<String> required = new ArrayList<>();
+        for (FieldDefinition f : entity.fields()) {
+            if (f.primaryKey() && f.generated()) continue;
+            askable.put(f.name().toLowerCase(Locale.ROOT), f.name());
+            if (f.required() || f.primaryKey()) required.add(f.name());
+        }
+        for (RelationDefinition r : entity.relations()) {
+            if (r.type() != RelationType.MANY_TO_ONE) continue;
+            askable.put(r.fieldName().toLowerCase(Locale.ROOT), r.fieldName());
+            if (r.required()) required.add(r.fieldName());
+        }
+        if (askable.isEmpty()) {
+            throw new WizardArgumentException(prefix + ": " + entity.name() + " has no field to ask for");
+        }
+        if (raw == null || raw.isEmpty()) {
+            List<String> all = new ArrayList<>(askable.values());
+            List<PageDefinition.Step> out = new ArrayList<>();
+            for (int i = 0; i < all.size(); i += DEFAULT_STEP_SIZE) {
+                out.add(new PageDefinition.Step(null, all.subList(i, Math.min(all.size(), i + DEFAULT_STEP_SIZE))));
+            }
+            return out;
+        }
+        if (raw.size() > MAX_STEPS) {
+            throw new WizardArgumentException(prefix + ": at most " + MAX_STEPS + " steps are allowed");
+        }
+        Set<String> seen = new HashSet<>();
+        List<PageDefinition.Step> out = new ArrayList<>();
+        for (int si = 0; si < raw.size(); si++) {
+            FullstackStarterRequest.StepDto step = raw.get(si);
+            String stepPrefix = prefix + " steps[" + si + "]";
+            if (step == null || step.fields() == null || step.fields().isEmpty()) {
+                throw new WizardArgumentException(stepPrefix + ": a step needs at least one field");
+            }
+            List<String> fields = new ArrayList<>();
+            for (String name : step.fields()) {
+                String canonical = name == null ? null : askable.get(name.trim().toLowerCase(Locale.ROOT));
+                if (canonical == null) {
+                    throw new WizardArgumentException(stepPrefix + ": '" + name + "' is not a field of the "
+                            + entity.name() + " form");
+                }
+                if (!seen.add(canonical)) {
+                    throw new WizardArgumentException(stepPrefix + ": '" + canonical + "' is already asked for");
+                }
+                fields.add(canonical);
+            }
+            out.add(new PageDefinition.Step(checkLength(trimToNull(step.title()), MAX_TITLE, stepPrefix + " title"),
+                    fields));
+        }
+        for (String name : required) {
+            if (!seen.contains(name)) {
+                throw new WizardArgumentException(prefix + ": the required field '" + name
+                        + "' is not asked for in any step");
+            }
+        }
+        return out;
+    }
+
+    /**
+     * A record page's header tiles: the named aggregates over related lists, else one row count per
+     * related list tab. Each goes through the child's first relation to the record entity.
+     */
+    private static List<PageDefinition.HeaderStat> headerStats(String prefix, EntityDefinition entity,
+                                                               List<FullstackStarterRequest.HeaderStatDto> raw,
+                                                               List<PageDefinition.ChildTab> childTabs,
+                                                               Map<String, EntityDefinition> entitiesByLower) {
+        List<PageDefinition.HeaderStat> out = new ArrayList<>();
+        if (raw == null) {
+            for (PageDefinition.ChildTab tab : childTabs) {
+                if (out.size() == MAX_HEADER_STATS) break;
+                out.add(new PageDefinition.HeaderStat(tab.entity(), tab.via(), PageDefinition.Agg.COUNT, null, null));
+            }
+            return out;
+        }
+        if (raw.size() > MAX_HEADER_STATS) {
+            throw new WizardArgumentException(prefix + ": at most " + MAX_HEADER_STATS + " header stats are allowed");
+        }
+        for (int i = 0; i < raw.size(); i++) {
+            FullstackStarterRequest.HeaderStatDto s = raw.get(i);
+            String statPrefix = prefix + " headerStats[" + i + "]";
+            if (s == null) throw new WizardArgumentException(statPrefix + " is null");
+            EntityDefinition child = requireEntity(entitiesByLower, s.child(), statPrefix);
+            List<String> rels = relationsTo(child, entity);
+            if (rels.isEmpty()) {
+                throw new WizardArgumentException(statPrefix + ": " + child.name() + " has no relation to " + entity.name());
+            }
+            PageDefinition.Agg agg = parseAgg(statPrefix, s.agg());
+            out.add(new PageDefinition.HeaderStat(child.name(), rels.get(0), agg,
+                    aggField(statPrefix, child, agg, trimToNull(s.field())),
+                    checkLength(trimToNull(s.title()), MAX_TITLE, statPrefix + " title")));
         }
         return out;
     }
