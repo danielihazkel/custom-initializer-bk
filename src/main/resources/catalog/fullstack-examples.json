@@ -122,7 +122,111 @@
           }
         ]
       }
-    ]
+    ],
+    "pages": [
+      {
+        "id": "home",
+        "type": "dashboard",
+        "title": "Blog overview",
+        "description": "What was published lately, and what still waits for moderation.",
+        "widgets": [
+          {
+            "kind": "kpi",
+            "entity": "Post",
+            "title": "Posts"
+          },
+          {
+            "kind": "kpi",
+            "entity": "Comment",
+            "title": "Comments"
+          },
+          {
+            "kind": "kpi",
+            "entity": "Comment",
+            "title": "Awaiting approval",
+            "presetFilter": {
+              "approved": "false"
+            }
+          },
+          {
+            "kind": "kpi",
+            "entity": "Author",
+            "title": "Authors"
+          },
+          {
+            "kind": "donut",
+            "entity": "Post",
+            "title": "Posts by status",
+            "groupBy": "status"
+          },
+          {
+            "kind": "line",
+            "entity": "Post",
+            "title": "Posts per month",
+            "groupBy": "publishedAt",
+            "bucket": "month"
+          },
+          {
+            "kind": "top",
+            "entity": "Post",
+            "title": "Most active authors",
+            "groupBy": "author",
+            "limit": 5
+          },
+          {
+            "kind": "recent",
+            "entity": "Post",
+            "title": "Latest posts",
+            "sortBy": "publishedAt",
+            "limit": 6
+          }
+        ]
+      },
+      {
+        "id": "posts",
+        "type": "entity-list",
+        "group": "Content",
+        "icon": "FileText",
+        "entity": "Post"
+      },
+      {
+        "id": "authors",
+        "type": "master-detail",
+        "group": "Content",
+        "title": "Authors",
+        "parent": "Author",
+        "child": "Post"
+      },
+      {
+        "id": "moderation",
+        "type": "entity-list",
+        "group": "Community",
+        "icon": "Inbox",
+        "title": "Moderation queue",
+        "description": "Comments not approved yet.",
+        "entity": "Comment",
+        "presetFilter": {
+          "approved": "false"
+        }
+      },
+      {
+        "id": "post",
+        "type": "record",
+        "entity": "Post",
+        "hidden": true,
+        "childTabs": [
+          {
+            "entity": "Comment",
+            "via": "post"
+          }
+        ]
+      }
+    ],
+    "settings": {
+      "scaffold": [
+        "audit"
+      ]
+    }
   },
   {
     "exampleId": "orders",
@@ -573,6 +677,32 @@
             "kind": "recent",
             "entity": "Ticket",
             "limit": 5
+          },
+          {
+            "kind": "donut",
+            "entity": "Ticket",
+            "title": "Status share",
+            "groupBy": "status"
+          },
+          {
+            "kind": "stacked",
+            "entity": "Ticket",
+            "title": "Priority by status",
+            "groupBy": "priority",
+            "series": "status"
+          },
+          {
+            "kind": "top",
+            "entity": "Ticket",
+            "title": "Busiest agents",
+            "groupBy": "assignee",
+            "limit": 5
+          },
+          {
+            "kind": "text",
+            "title": "How we triage",
+            "span": 4,
+            "text": "Urgent tickets are picked up within the hour; high ones the same day.\n\nAssign a ticket before you start on it, and resolve it once the reporter confirms."
           }
         ]
       },
@@ -766,7 +896,126 @@
           }
         ]
       }
-    ]
+    ],
+    "pages": [
+      {
+        "id": "stock",
+        "type": "dashboard",
+        "title": "Stock overview",
+        "dateRange": "30d",
+        "widgets": [
+          {
+            "kind": "kpi",
+            "entity": "Item",
+            "title": "Items"
+          },
+          {
+            "kind": "kpi",
+            "entity": "Warehouse",
+            "title": "Warehouses"
+          },
+          {
+            "kind": "kpi",
+            "entity": "StockMovement",
+            "title": "Movements",
+            "compare": true
+          },
+          {
+            "kind": "kpi",
+            "entity": "StockMovement",
+            "title": "Units moved",
+            "agg": "sum",
+            "field": "quantity"
+          },
+          {
+            "kind": "bar",
+            "entity": "StockMovement",
+            "title": "Units by movement kind",
+            "groupBy": "kind",
+            "agg": "sum",
+            "field": "quantity"
+          },
+          {
+            "kind": "top",
+            "entity": "StockMovement",
+            "title": "Busiest warehouses",
+            "groupBy": "warehouse",
+            "limit": 5
+          },
+          {
+            "kind": "line",
+            "entity": "StockMovement",
+            "title": "Movements per day",
+            "groupBy": "movedOn",
+            "bucket": "day",
+            "span": 4
+          },
+          {
+            "kind": "text",
+            "title": "Reorder rule",
+            "span": 4,
+            "text": "An item is reordered when its stock falls below its reorder level.\n\nCount a warehouse before closing the month, and log the difference as an ADJUSTMENT movement."
+          }
+        ]
+      },
+      {
+        "id": "items",
+        "type": "entity-list",
+        "group": "Catalog",
+        "icon": "Package",
+        "entity": "Item"
+      },
+      {
+        "id": "warehouses",
+        "type": "entity-list",
+        "group": "Catalog",
+        "icon": "Building2",
+        "entity": "Warehouse"
+      },
+      {
+        "id": "movements",
+        "type": "report",
+        "group": "Reports",
+        "title": "Movement analysis",
+        "entity": "StockMovement",
+        "charts": [
+          {
+            "groupBy": "kind",
+            "agg": "sum",
+            "field": "quantity"
+          },
+          {
+            "groupBy": "movedOn",
+            "bucket": "month",
+            "agg": "sum",
+            "field": "quantity"
+          }
+        ]
+      },
+      {
+        "id": "warehouse",
+        "type": "record",
+        "entity": "Warehouse",
+        "hidden": true,
+        "headerStats": [
+          {
+            "child": "StockMovement",
+            "title": "Movements"
+          },
+          {
+            "child": "StockMovement",
+            "agg": "sum",
+            "field": "quantity",
+            "title": "Units moved"
+          }
+        ]
+      }
+    ],
+    "settings": {
+      "scaffold": [
+        "csvExport"
+      ]
+    }
   },
   {
     "exampleId": "enrolments",
@@ -1047,6 +1296,23 @@
             "field": "amount"
           }
         ]
+      },
+      {
+        "id": "north",
+        "type": "report",
+        "group": "Regions",
+        "title": "North region",
+        "description": "Revenue of the north region only.",
+        "entity": "Sale",
+        "presetFilter": {
+          "region": "NORTH"
+        },
+        "chart": {
+          "groupBy": "soldOn",
+          "bucket": "month",
+          "agg": "sum",
+          "field": "amount"
+        }
       },
       {
         "id": "monthly",

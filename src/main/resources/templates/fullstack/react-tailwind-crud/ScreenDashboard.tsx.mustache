@@ -1,7 +1,7 @@
 {{#hasDateRange}}
 import { useState } from 'react'
 {{/hasDateRange}}
-import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}} from '@shared/ui/widgets'
+import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesText}}TextCard, {{/usesText}}} from '@shared/ui/widgets'
 {{#usesStatsHelpers}}
 import { {{#usesBucketRange}}bucketRange, {{/usesBucketRange}}{{#usesQueryOf}}queryOf, {{/usesQueryOf}}{{#usesRangeParams}}rangeParams, {{/usesRangeParams}}{{#usesStatsQuery}}statsQuery, {{/usesStatsQuery}}{{#hasDateRange}}type Period {{/hasDateRange}}} from '@shared/ui/stats'
 {{/usesStatsHelpers}}
@@ -127,6 +127,9 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
 {{#hasParams}}
           params={ {{paramsExpr}} }
 {{/hasParams}}
+{{#isDonut}}
+          donut
+{{/isDonut}}
 {{#hasSpanClass}}
           className="{{spanClass}}"
 {{/hasSpanClass}}
@@ -138,6 +141,47 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
 {{/hasTarget}}
         />
 {{/widgetIsBar}}
+{{#widgetIsStacked}}
+        <StackedCard
+          title={ {{titleExpr}} }
+          path="{{path}}"
+          field="{{groupBy}}"
+          series="{{seriesField}}"
+{{#hasAgg}}
+          agg="{{agg}}"
+          valueField="{{aggField}}"
+{{/hasAgg}}
+{{#hasLabels}}
+          labels={ {{labelsRef}} }
+{{/hasLabels}}
+{{#hasSeriesLabels}}
+          seriesLabels={ {{seriesLabelsRef}} }
+{{/hasSeriesLabels}}
+{{#hasParams}}
+          params={ {{paramsExpr}} }
+{{/hasParams}}
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+{{#hasDrill}}
+          onSelect={key => onNavigate('{{drillPageId}}', undefined, { {{drillBase}}{{drillKey}}: key })}
+{{/hasDrill}}
+{{#hasTarget}}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
+{{/hasTarget}}
+        />
+{{/widgetIsStacked}}
+{{#widgetIsText}}
+        <TextCard
+{{#hasTitle}}
+          title={ {{titleExpr}} }
+{{/hasTitle}}
+          paragraphs={ [{{#paragraphs}}{{^-first}}, {{/-first}}{{textExpr}}{{/paragraphs}}] }
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+        />
+{{/widgetIsText}}
 {{#widgetIsTop}}
         <TopList
           title={ {{titleExpr}} }

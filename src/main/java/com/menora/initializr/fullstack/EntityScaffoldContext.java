@@ -228,10 +228,15 @@ public final class EntityScaffoldContext {
                     pv.put("backPageId", back);
                     // A writable entity's record page edits (form drawer) and deletes the row itself.
                     boolean recordMutable = Boolean.TRUE.equals(ev.get("mutable"));
+                    // With a wizard page, Edit reopens the row in the wizard's steps instead.
+                    String editWizard = recordMutable ? links.wizardPageOf(p.entity()) : null;
                     pv.put("recordMutable", recordMutable);
+                    pv.put("recordEditsInWizard", editWizard != null);
+                    pv.put("recordEditsInDrawer", recordMutable && editWizard == null);
+                    pv.put("wizardPageId", editWizard);
                     pv.put("recordHasIcons", back != null || recordMutable);
                     List<Map<String, Object>> tabViews = new ArrayList<>();
-                    boolean navigates = back != null;
+                    boolean navigates = back != null || editWizard != null;
                     for (int i = 0; i < p.childTabs().size(); i++) {
                         PageDefinition.ChildTab tab = p.childTabs().get(i);
                         Map<String, Object> cv = entityByPascal.get(Naming.toPascalCase(tab.entity()));
@@ -303,6 +308,9 @@ public final class EntityScaffoldContext {
             String routeProps = "";
             if (Boolean.TRUE.equals(pv.get("pageIsTabs"))) {
                 routeProps = " tab={route.arg} onTabChange={tab => go('" + pv.get("pageId") + "', tab)}";
+            } else if (Boolean.TRUE.equals(pv.get("wizardEditable"))) {
+                // #/<wizard>/<id> edits that row; a new id is a fresh wizard.
+                routeProps = " key={route.arg ?? ''} editId={route.arg}";
             } else if (Boolean.TRUE.equals(pv.get("pageIsMasterDetail"))) {
                 // The selected parent is the route arg (#/customers/42).
                 routeProps = " selectedId={route.arg} onSelect={id => go('" + pv.get("pageId") + "', id)}";
@@ -484,13 +492,21 @@ public final class EntityScaffoldContext {
         boolean usesBucketRange = false;
         for (int i = 0; i < p.widgets().size(); i++) {
             PageDefinition.Widget w = p.widgets().get(i);
+            if (w.kind() == PageDefinition.WidgetKind.TEXT) {
+                widgetViews.add(textWidgetView(w, i));
+                continue;
+            }
             Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
             Map<String, Object> summary = summaries.get(w.entity().toLowerCase(Locale.ROOT));
             String entityLabels = tsString((String) ev.get("entityLabelPlural"));
             Map<String, Object> wv = new LinkedHashMap<>();
             wv.put("widgetKey", "w" + i);
             wv.put("widgetIsKpi", w.kind() == PageDefinition.WidgetKind.KPI);
-            wv.put("widgetIsBar", w.kind() == PageDefinition.WidgetKind.BAR);
+            // A donut is a breakdown drawn as a ring: the same card, with `donut`.
+            wv.put("widgetIsBar", w.kind() == PageDefinition.WidgetKind.BAR || w.kind() == PageDefinition.WidgetKind.DONUT);
+            wv.put("isDonut", w.kind() == PageDefinition.WidgetKind.DONUT);
+            wv.put("widgetIsStacked", w.kind() == PageDefinition.WidgetKind.STACKED);
+            wv.put("widgetIsText", false);
             wv.put("widgetIsLine", w.kind() == PageDefinition.WidgetKind.LINE);
             wv.put("widgetIsRecent", w.kind() == PageDefinition.WidgetKind.RECENT);
             wv.put("widgetIsTop", w.kind() == PageDefinition.WidgetKind.TOP);
@@ -545,7 +561,26 @@ public final class EntityScaffoldContext {
                     defaultTitle = "t('xOverTime', { x: "
                             + (reduces ? aggTitle(w, ev) : entityLabels) + " })";
                 }
-                case BAR, TOP -> {
+                case STACKED -> {
+                    Map<String, Object> rank = rankView(ev, w.groupBy());
+                    wv.putAll(rank);
+                    Map<String, Object> split = rankView(ev, w.series());
+                    wv.put("seriesField", w.series());
+                    wv.put("hasSeriesLabels", split.get("hasLabels"));
+                    wv.put("seriesLabelsRef", split.get("labelsRef"));
+                    for (Object ref : new Object[] {rank.get("labelsRef"), split.get("labelsRef")}) {
+                        if (ref != null) {
+                            labelRefsByModule.computeIfAbsent((String) ev.get("entityNameKebab"), k -> new LinkedHashSet<>())
+                                    .add((String) ref);
+                        }
+                    }
+                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr);
+                    usesQueryOf |= drill && paramsExpr != null;
+                    needsNavigate |= drill;
+                    defaultTitle = "t('xByYAndZ', { x: " + (reduces ? aggTitle(w, ev) : entityLabels)
+                            + ", y: " + rank.get("groupLabelExpr") + ", z: " + split.get("groupLabelExpr") + " })";
+                }
+                case BAR, TOP, DONUT -> {
                     Map<String, Object> rank = rankView(ev, w.groupBy());
                     wv.putAll(rank);
                     String labelsRef = (String) rank.get("labelsRef");
@@ -580,7 +615,7 @@ public final class EntityScaffoldContext {
             widgetViews.add(wv);
         }
         pv.put("widgets", widgetViews);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text")) {
             pv.put("uses" + kind, widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIs" + kind))));
         }
         usesStatsQuery |= widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasCompare"))
@@ -621,6 +656,30 @@ public final class EntityScaffoldContext {
      * labelled (an enum's labels, or — for a relation — the target's rows by id), the heading of the
      * column, and the list filter a group drills into.
      */
+    /** A text widget's view: its title (if any) and paragraphs as TS string literals. */
+    private static Map<String, Object> textWidgetView(PageDefinition.Widget w, int index) {
+        Map<String, Object> wv = new LinkedHashMap<>();
+        wv.put("widgetKey", "w" + index);
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked")) {
+            wv.put("widgetIs" + kind, false);
+        }
+        wv.put("widgetIsText", true);
+        wv.put("hasTitle", w.title() != null);
+        wv.put("titleExpr", w.title() == null ? null : tsString(w.title()));
+        List<Map<String, Object>> paragraphs = new ArrayList<>();
+        for (String para : w.text().split("\\n\\s*\\n")) {
+            String trimmed = para.strip();
+            if (!trimmed.isEmpty()) paragraphs.add(Map.of("textExpr", tsString(trimmed)));
+        }
+        wv.put("paragraphs", paragraphs);
+        String spanClass = SPAN_CLASSES.get(w.span() - 1);
+        wv.put("hasSpanClass", !spanClass.isEmpty());
+        wv.put("spanClass", spanClass);
+        wv.put("hasParams", false);
+        wv.put("hasCompare", false);
+        return wv;
+    }
+
     private static Map<String, Object> rankView(Map<String, Object> ev, String groupBy) {
         Map<String, Object> out = new LinkedHashMap<>();
         @SuppressWarnings("unchecked")
@@ -717,6 +776,10 @@ public final class EntityScaffoldContext {
         pv.put("hasBack", home != null);
         pv.put("backPageId", home);
         pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")) || home != null);
+        // A single-key entity's wizard also edits: #/<wizard>/<id> loads the row and saves it with a PUT.
+        boolean editable = !Boolean.TRUE.equals(ev.get("hasCompositePk"));
+        pv.put("wizardEditable", editable);
+        pv.put("wizardHasProps", editable || Boolean.TRUE.equals(pv.get("needsNavigate")));
     }
 
     /** A record page's header tiles: a count (or aggregate) of each related list's rows for the

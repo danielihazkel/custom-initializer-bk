@@ -703,7 +703,8 @@ class FullstackStarterIntegrationTests {
         String saleService = contentEndingWith(entries, "/service/SaleService.java");
         assertThat(saleService)
                 .contains("public java.util.List<StatsBucket> stats(")
-                .contains("public record StatsBucket(String key, java.math.BigDecimal value) {}")
+                .contains("public record StatsBucket(String key, java.math.BigDecimal value, String series) {")
+                .contains("Object seriesValue = split ? row.get(1) : null;")
                 // Hibernate's builder, so the date parts become extract(<unit> from x) per dialect.
                 .contains("HibernateCriteriaBuilder cb = (HibernateCriteriaBuilder) entityManager.getCriteriaBuilder()")
                 .contains("groups.add(cb.year(when))")
@@ -720,7 +721,7 @@ class FullstackStarterIntegrationTests {
                 .contains("@GetMapping(\"/stats\")")
                 .contains("public StatsResponse stats(")
                 .contains("@RequestParam(required = false) String groupBy")
-                .contains("service.stats(q, filters, groupBy, bucket, agg, field, top)")
+                .contains("service.stats(q, filters, groupBy, bucket, agg, field, top, series)")
                 // An empty group (avg over no rows) adds nothing to the total rather than throwing.
                 .contains("if (bucketed.value() != null) total = total == null ? bucketed.value() : total.add(bucketed.value());")
                 .contains("public record StatsResponse(List<SaleService.StatsBucket> buckets, java.math.BigDecimal total) {}");

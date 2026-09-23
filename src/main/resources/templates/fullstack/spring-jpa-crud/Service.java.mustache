@@ -91,9 +91,16 @@ public class {{EntityName}}Service {
 {{/hasStringFields}}{{/hasFilters}}
 {{#statsApplicable}}
     /** One group of a {@link #stats} result: the group's key (an enum constant, {@code true}/
-     *  {@code false}, a date bucket like {@code 2026-09}, or empty when nothing is grouped) and
-     *  the aggregate over its rows. */
-    public record StatsBucket(String key, java.math.BigDecimal value) {}
+     *  {@code false}, a date bucket like {@code 2026-09}, or empty when nothing is grouped), the
+     *  aggregate over its rows, and — split by a {@code series} column — the series value (left out
+     *  of the JSON otherwise). */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    public record StatsBucket(String key, java.math.BigDecimal value, String series) {
+
+        public StatsBucket(String key, java.math.BigDecimal value) {
+            this(key, value, null);
+        }
+    }
 
     /**
      * Aggregates the rows the dashboard charts and report pages draw, honouring the same search
@@ -105,10 +112,12 @@ public class {{EntityName}}Service {
      *                over {@code field}
      * @param top     the largest {@code top} groups only (1–100), biggest first — a ranking rather
      *                than a breakdown; null keeps every group, ordered by key
+     * @param series  a second groupable column that splits every group (a stacked bar); one bucket
+     *                per (group, series) pair
      */
     @Transactional(readOnly = true)
     public java.util.List<StatsBucket> stats(String q, {{#hasFilters}}Filters filters, {{/hasFilters}}String groupBy,
-                                             String bucket, String agg, String field, Integer top) {
+                                             String bucket, String agg, String field, Integer top, String series) {
         // Hibernate's builder rather than the JPA one, for the date parts below: cb.year(x) lowers
         // to `extract(year from x)`, which every dialect renders for itself. The portable-looking
         // cb.function("year", ...) would emit a raw SQL year() that only some databases have.
@@ -124,6 +133,12 @@ public class {{EntityName}}Service {
             if (top < 1 || top > 100) throw new IllegalArgumentException("top must be between 1 and 100");
             if (!grouped || overTime) throw new IllegalArgumentException("top ranks groups, so it needs a groupBy that is not a date");
         }
+        boolean split = series != null && !series.isBlank();
+        if (split) {
+            if (!grouped || overTime) throw new IllegalArgumentException("series splits groups, so it needs a groupBy that is not a date");
+            if (top != null) throw new IllegalArgumentException("top and series cannot be combined");
+            if (series.equals(groupBy)) throw new IllegalArgumentException("series must differ from groupBy");
+        }
         if (overTime) {
 {{#hasStatsDateFields}}            String unit = bucketUnit(bucket);
             Expression<? extends TemporalAccessor> when = datePath(root, groupBy);
@@ -135,6 +150,11 @@ public class {{EntityName}}Service {
             Path<?> path = groupPath(root, groupBy);
             groups.add(path);
             selections.add(path);
+            if (split) {
+                Path<?> seriesPath = groupPath(root, series);
+                groups.add(seriesPath);
+                selections.add(seriesPath);
+            }
         }
         Expression<? extends Number> measure = aggregate(cb, root, agg, field);
         selections.add(measure);
@@ -163,8 +183,11 @@ public class {{EntityName}}Service {
         java.util.List<StatsBucket> out = new java.util.ArrayList<>(rows.size());
         for (Tuple row : rows) {
             Object value = row.get(groups.size());
-            out.add(new StatsBucket(keyOf(row, groups.size(), overTime),
-                    value == null ? null : new java.math.BigDecimal(value.toString())));
+            // A split row carries its series value right after the group key.
+            Object seriesValue = split ? row.get(1) : null;
+            out.add(new StatsBucket(keyOf(row, split ? 1 : groups.size(), overTime),
+                    value == null ? null : new java.math.BigDecimal(value.toString()),
+                    split ? (seriesValue == null ? "" : String.valueOf(seriesValue)) : null));
         }
         return out;
     }

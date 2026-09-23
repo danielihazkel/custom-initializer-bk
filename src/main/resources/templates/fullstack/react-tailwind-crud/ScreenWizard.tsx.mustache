@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { {{#wizardEditable}}useEffect, {{/wizardEditable}}useState } from 'react'
 import { toast } from 'sonner'
 import { api, ApiError } from '@shared/api'
 import { t } from '@shared/i18n'
@@ -24,20 +24,48 @@ function errorsOf(index: number, all: Record<string, string>): Record<string, st
 function firstStepWith(all: Record<string, string>): number {
   return STEPS.findIndex((_, i) => Object.keys(errorsOf(i, all)).length > 0)
 }
-{{#needsNavigate}}
+{{#wizardHasProps}}
 
 interface Props {
+{{#wizardEditable}}
+  /** The key of the row to edit (#/<page>/<id>); absent, the wizard creates a new one. */
+  editId?: string
+{{/wizardEditable}}
+{{#needsNavigate}}
   onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
-}
 {{/needsNavigate}}
+}
+{{/wizardHasProps}}
+{{#wizardEditable}}
 
-export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+const PATH = '/api/{{entityNamePluralKebab}}'
+{{/wizardEditable}}
+
+export function {{PageName}}Screen({{#wizardHasProps}}{ {{#wizardEditable}}editId{{#needsNavigate}}, {{/needsNavigate}}{{/wizardEditable}}{{#needsNavigate}}onNavigate{{/needsNavigate}} }: Props{{/wizardHasProps}}) {
   // STEPS.length is the review step.
   const [step, setStep] = useState(0)
   const [value, setValue] = useState<Partial<{{EntityName}}>>(INITIAL)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const reviewing = step === STEPS.length
+{{#wizardEditable}}
+  // Editing: the row is loaded first, and the same steps save it back with a PUT.
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(editId == null)
+
+  useEffect(() => {
+    if (editId == null) return
+    let current = true
+    api.get<{{EntityName}}>(PATH + '/' + encodeURIComponent(editId))
+      .then(row => {
+        if (!current) return
+        setValue(row)
+        setLoaded(true)
+      })
+      .catch(e => { if (current) setLoadError(e instanceof Error ? e.message : String(e)) })
+    return () => { current = false }
+  }, [editId])
+{{/wizardEditable}}
 
   // Editing a field clears its message, as the entity page's form does.
   const edit = (next: Partial<{{EntityName}}>) => {
@@ -62,6 +90,19 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
     }
     setSaving(true)
     try {
+{{#wizardEditable}}
+      if (editId != null) {
+        await api.put<{{EntityName}}>(PATH + '/' + encodeURIComponent(editId), value)
+        toast.success(t('xUpdated', { x: {{entityLabelExpr}} }))
+{{#hasRecordPage}}
+        onNavigate('{{recordPageId}}', editId)
+{{/hasRecordPage}}
+{{^hasRecordPage}}
+        window.history.back()
+{{/hasRecordPage}}
+        return
+      }
+{{/wizardEditable}}
       {{#hasRecordPage}}const created = {{/hasRecordPage}}await api.post<{{EntityName}}>('/api/{{entityNamePluralKebab}}', value)
       toast.success(t('xCreated', { x: {{entityLabelExpr}} }))
 {{#hasRecordPage}}
@@ -94,7 +135,7 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-8">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{{#wizardEditable}}{editId != null ? t('editX', { x: {{entityLabelExpr}} }) : {{pageTitleExpr}} }{{/wizardEditable}}{{^wizardEditable}}{ {{pageTitleExpr}} }{{/wizardEditable}}</h1>
 {{#hasPageDescription}}
         <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
 {{/hasPageDescription}}
@@ -119,6 +160,10 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
         ))}
       </ol>
 
+{{#wizardEditable}}
+      {loadError && <div role="alert" className="rounded-lg border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">{loadError}</div>}
+      {loaded && (
+{{/wizardEditable}}
       <form
         noValidate
         onSubmit={e => {
@@ -131,7 +176,7 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
         {reviewing ? (
           <{{EntityName}}Detail value={value as {{EntityName}}} />
         ) : (
-          <{{EntityName}}Form value={value} onChange={edit} errors={errors} isNew only={STEPS[step].fields} />
+          <{{EntityName}}Form value={value} onChange={edit} errors={errors} isNew={ {{#wizardEditable}}editId == null{{/wizardEditable}}{{^wizardEditable}}true{{/wizardEditable}} } only={STEPS[step].fields} />
         )}
         <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
           <button
@@ -155,6 +200,9 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
           </button>
         </div>
       </form>
+{{#wizardEditable}}
+      )}
+{{/wizardEditable}}
     </div>
   )
 }

@@ -78,10 +78,11 @@ class FullstackExampleTests {
                     .isNotBlank();
         }
         assertThat(withPages).as("examples that showcase page layouts").isGreaterThanOrEqualTo(3);
-        // The classic examples stay layout-free: that is the generator's default shell.
-        JsonNode blog = list.get(0);
-        assertThat(blog.get("pages").isNull()).isTrue();
-        assertThat(blog.get("settings").isNull()).isTrue();
+        // One example stays layout-free, to show the generator's default shell.
+        JsonNode enrolments = list.get(4);
+        assertThat(enrolments.get("id").asText()).isEqualTo("enrolments");
+        assertThat(enrolments.get("pages").isNull()).isTrue();
+        assertThat(enrolments.get("settings").isNull()).isTrue();
     }
 
     @Test

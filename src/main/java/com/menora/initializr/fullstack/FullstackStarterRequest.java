@@ -1,6 +1,8 @@
 package com.menora.initializr.fullstack;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -208,8 +210,9 @@ public record FullstackStarterRequest(
             String child,
             String via,
             // record: the child entities shown as tabs under the record (default: every entity
-            // with a MANY_TO_ONE to it). The record entity itself goes in `entity`.
-            List<String> childTabs,
+            // with a MANY_TO_ONE to it). The record entity itself goes in `entity`. An entry is an
+            // entity name, or {entity, via} to pick which of several relations links it.
+            List<ChildTabDto> childTabs,
             // report: the single chart the page is built around. Its entity and opening filters
             // are the shared `entity` / `presetFilter`.
             ChartDto chart,
@@ -263,12 +266,24 @@ public record FullstackStarterRequest(
             String sortBy,
             String dateField,
             Boolean compare,
-            String target) {
+            String target,
+            // stacked: the enum/boolean field each bar is split by (default: the entity's next one).
+            String series,
+            // text: the widget's content, plain text; a blank line starts a new paragraph.
+            String text) {
 
         /** The widget as phase-1 layouts spell it (no span, filter, sort or date field). */
         public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
                          String field, String bucket) {
-            this(kind, entity, title, agg, groupBy, limit, field, bucket, null, null, null, null, null, null);
+            this(kind, entity, title, agg, groupBy, limit, field, bucket, null, null, null, null, null, null, null, null);
+        }
+
+        /** The widget as layouts before donut/stacked/text spell it. */
+        public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
+                         String field, String bucket, Integer span, Map<String, String> presetFilter,
+                         String sortBy, String dateField, Boolean compare, String target) {
+            this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, null, null);
         }
     }
 
@@ -284,8 +299,32 @@ public record FullstackStarterRequest(
     public record StepDto(String title, List<String> fields) {}
 
     /** A number tile above a {@code record} page's tabs: {@code agg} over the {@code child} rows of
-     *  the record ({@code count} by default). */
-    public record HeaderStatDto(String child, String agg, String field, String title) {}
+     *  the record ({@code count} by default), linked through the child's {@code via} relation (default:
+     *  the one its tab uses, else its first relation to the record entity). */
+    public record HeaderStatDto(String child, String agg, String field, String title, String via) {
+
+        /** The tile as layouts before {@code via} spell it. */
+        public HeaderStatDto(String child, String agg, String field, String title) {
+            this(child, agg, field, title, null);
+        }
+    }
+
+    /** One related-list tab of a {@code record} page: the child entity, and the child's relation to
+     *  the record entity that links them (optional unless it has several). A bare string in the
+     *  JSON is the entity alone. */
+    public record ChildTabDto(String entity, String via) {
+
+        @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
+        public ChildTabDto(@JsonProperty("entity") String entity, @JsonProperty("via") String via) {
+            this.entity = entity;
+            this.via = via;
+        }
+
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        public static ChildTabDto of(String entity) {
+            return new ChildTabDto(entity, null);
+        }
+    }
 
     /** One tab of a {@code tabs} page, embedding another (non-tabs) page by id. */
     public record TabDto(String title, String page) {}

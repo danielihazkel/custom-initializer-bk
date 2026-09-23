@@ -125,7 +125,13 @@ public record PageDefinition(
         /** The largest groups of an enum/boolean field or a relation, ranked. */
         TOP("top"),
         /** One number against a target, as a bar. */
-        PROGRESS("progress");
+        PROGRESS("progress"),
+        /** Records grouped by an enum/boolean field, as shares of a ring. */
+        DONUT("donut"),
+        /** Records grouped by an enum/boolean field, each bar split by a second one ({@code series}). */
+        STACKED("stacked"),
+        /** Static text: a note, a how-to, links spelled out — no entity, no query. */
+        TEXT("text");
 
         private final String wire;
 
@@ -187,10 +193,19 @@ public record PageDefinition(
      */
     public record Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
                          Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
-                         String sortBy, String dateField, boolean compare, java.math.BigDecimal target) {
+                         String sortBy, String dateField, boolean compare, java.math.BigDecimal target,
+                         String series, String text) {
 
         public Widget {
             presetFilter = presetFilter == null ? Map.of() : Map.copyOf(presetFilter);
+        }
+
+        /** A widget of the kinds before donut/stacked/text (no series, no text). */
+        public Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
+                      Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
+                      String sortBy, String dateField, boolean compare, java.math.BigDecimal target) {
+            this(kind, entity, title, groupBy, limit, agg, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, null, null);
         }
 
         /** A widget with the default span of its kind and no filter, sort or date field. */

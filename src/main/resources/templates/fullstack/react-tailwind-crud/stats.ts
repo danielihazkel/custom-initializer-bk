@@ -11,6 +11,8 @@ export interface StatsBucket {
   /** The enum constant, 'true'/'false', a date bucket like '2026-09', or '' when ungrouped. */
   key: string
   value: number | null
+  /** With `series=` in the query: the value of the column that splits the group. */
+  series?: string
 }
 
 /** The rollup response — see the generated <Entity>Controller.StatsResponse. */
@@ -65,8 +67,27 @@ export function statsQuery(...parts: string[]): string {
 }
 
 /** The periods a dashboard's picker offers, each ending today. */
-export type Period = 'all' | '7d' | '30d' | '90d' | 'ytd' | '12m'
-export const PERIODS: readonly Period[] = ['all', '7d', '30d', '90d', 'ytd', '12m']
+export type PresetPeriod = 'all' | '7d' | '30d' | '90d' | 'ytd' | '12m'
+export const PERIODS: readonly PresetPeriod[] = ['all', '7d', '30d', '90d', 'ytd', '12m']
+
+/** A preset, or a range the user picked: `custom:<from>:<to>` (ISO days, both inclusive). */
+export type Period = PresetPeriod | `custom:${string}:${string}`
+
+/** A picked range as a period value. */
+export function customPeriod(from: string, to: string): Period {
+  return `custom:${from}:${to}`
+}
+
+/** The two ISO days of a custom period, or null for a preset (or a malformed value). */
+export function customRange(period: Period): { from: string; to: string } | null {
+  const m = /^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/.exec(period)
+  return m ? { from: m[1], to: m[2] } : null
+}
+
+function parseDay(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -81,6 +102,14 @@ function addDays(d: Date, days: number): Date {
 /** The first and last day a period covers (both inclusive), or null for all time. `previous`
  *  gives the equal-length period just before it — for "this year", the same dates a year back. */
 export function periodRange(period: Period, previous = false, today = new Date()): { from: Date; to: Date } | null {
+  const custom = customRange(period)
+  if (custom) {
+    // Two picked days, in either order; `previous` is the equal-length stretch just before.
+    const [a, b] = [parseDay(custom.from), parseDay(custom.to)].sort((x, y) => x.getTime() - y.getTime())
+    if (!previous) return { from: a, to: b }
+    const days = Math.round((b.getTime() - a.getTime()) / DAY_MS) + 1
+    return { from: addDays(a, -days), to: addDays(a, -1) }
+  }
   const end = startOfDay(today)
   let from: Date
   switch (period) {
@@ -104,6 +133,8 @@ export function periodRange(period: Period, previous = false, today = new Date()
     case '12m':
       from = addDays(new Date(end.getFullYear() - 1, end.getMonth(), end.getDate()), 1)
       break
+    default:
+      return null
   }
   if (!previous) return { from, to: end }
   const days = Math.round((end.getTime() - from.getTime()) / DAY_MS) + 1

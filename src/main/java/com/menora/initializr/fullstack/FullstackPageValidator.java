@@ -29,6 +29,8 @@ public final class FullstackPageValidator {
     static final int MAX_WIDGETS = 24;
     static final int MIN_TABS = 2;
     static final int MAX_TABS = 6;
+    /** A text widget's content. */
+    static final int MAX_TEXT = 2000;
     static final int MAX_TITLE = 80;
     static final int MAX_DESCRIPTION = 300;
     static final int MAX_RECENT_LIMIT = 20;
@@ -304,6 +306,13 @@ public final class FullstackPageValidator {
             String prefix = "Page '" + id + "' widgets[" + wi + "]";
             if (w == null) throw new WizardArgumentException(prefix + " is null");
             PageDefinition.WidgetKind kind = parseKind(prefix, w.kind());
+            if (kind == PageDefinition.WidgetKind.TEXT) {
+                out.add(textWidget(prefix, w));
+                continue;
+            }
+            if (trimToNull(w.text()) != null) {
+                throw new WizardArgumentException(prefix + ": only a text widget takes 'text'");
+            }
             EntityDefinition entity = requireEntity(entitiesByLower, w.entity(), prefix);
             String title = checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title");
             boolean reduces = kind != PageDefinition.WidgetKind.RECENT;
@@ -328,9 +337,14 @@ public final class FullstackPageValidator {
                 }
             }
             String groupBy = null;
+            String series = null;
             PageDefinition.Bucket bucket = null;
             switch (kind) {
-                case BAR -> groupBy = groupBy(prefix, entity, trimToNull(w.groupBy()));
+                case BAR, DONUT -> groupBy = groupBy(prefix, entity, trimToNull(w.groupBy()));
+                case STACKED -> {
+                    groupBy = groupBy(prefix, entity, trimToNull(w.groupBy()));
+                    series = series(prefix, entity, groupBy, trimToNull(w.series()));
+                }
                 case TOP -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()));
                 case LINE -> {
                     groupBy = dateGroupBy(prefix, entity, trimToNull(w.groupBy()));
@@ -338,9 +352,12 @@ public final class FullstackPageValidator {
                 }
                 default -> {
                     if (trimToNull(w.groupBy()) != null) {
-                        throw new WizardArgumentException(prefix + ": only a bar, line or top widget takes 'groupBy'");
+                        throw new WizardArgumentException(prefix + ": only a bar, donut, stacked, line or top widget takes 'groupBy'");
                     }
                 }
+            }
+            if (kind != PageDefinition.WidgetKind.STACKED && trimToNull(w.series()) != null) {
+                throw new WizardArgumentException(prefix + ": only a stacked widget takes 'series'");
             }
             if (kind != PageDefinition.WidgetKind.LINE && trimToNull(w.bucket()) != null) {
                 throw new WizardArgumentException(prefix + ": only a line widget takes 'bucket'");
@@ -377,9 +394,47 @@ public final class FullstackPageValidator {
                 }
             }
             out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit, agg, field, bucket, span,
-                    presetFilter(prefix, entity, w.presetFilter()), sortBy, dateField, compare, target));
+                    presetFilter(prefix, entity, w.presetFilter()), sortBy, dateField, compare, target, series, null));
         }
         return out;
+    }
+
+    /** A text widget: its content and optional title and width — nothing that queries an entity. */
+    private static PageDefinition.Widget textWidget(String prefix, WidgetDto w) {
+        String text = trimToNull(w.text());
+        if (text == null) throw new WizardArgumentException(prefix + ": a text widget needs 'text'");
+        text = checkLength(text.replace("\r\n", "\n"), MAX_TEXT, prefix + " text");
+        if (trimToNull(w.entity()) != null || trimToNull(w.agg()) != null || trimToNull(w.field()) != null
+                || trimToNull(w.groupBy()) != null || trimToNull(w.bucket()) != null || w.limit() != null
+                || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
+                || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
+                || trimToNull(w.series()) != null) {
+            throw new WizardArgumentException(prefix + ": a text widget takes only 'text', 'title' and 'span'");
+        }
+        int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.TEXT) : w.span();
+        if (span < 1 || span > MAX_SPAN) {
+            throw new WizardArgumentException(prefix + ": span must be between 1 and " + MAX_SPAN);
+        }
+        return new PageDefinition.Widget(PageDefinition.WidgetKind.TEXT, null,
+                checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title"), null, 0, null, null, null, span,
+                null, null, null, false, null, null, text);
+    }
+
+    /** What a stacked bar splits each group by: another enum/boolean field — the entity's next one
+     *  after {@code groupBy}, when omitted. */
+    private static String series(String prefix, EntityDefinition entity, String groupBy, String requested) {
+        if (requested == null) {
+            return entity.fields().stream()
+                    .filter(f -> !f.primaryKey() && !f.name().equals(groupBy) && (f.type().isEnum() || f.type().isBoolean()))
+                    .findFirst().map(FieldDefinition::name)
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
+                            + " needs a second enum or boolean field to split the bars by"));
+        }
+        String field = groupBy(prefix, entity, requested);
+        if (field.equals(groupBy)) {
+            throw new WizardArgumentException(prefix + ": series '" + requested + "' must be an enum or boolean field other than groupBy");
+        }
+        return field;
     }
 
     /** A progress widget's target: a positive number, kept as written (it lands in the screen as a
@@ -465,7 +520,7 @@ public final class FullstackPageValidator {
             if (kind.wire().equalsIgnoreCase(k)) return kind;
         }
         throw new WizardArgumentException(prefix + ": unknown widget kind '" + k
-                + "' (expected kpi, bar, line, recent, top or progress)");
+                + "' (expected kpi, bar, donut, stacked, line, recent, top, progress or text)");
     }
 
     /** How a tile or chart reduces its rows. Absent means {@code count}. */
@@ -728,12 +783,13 @@ public final class FullstackPageValidator {
             String statPrefix = prefix + " headerStats[" + i + "]";
             if (s == null) throw new WizardArgumentException(statPrefix + " is null");
             EntityDefinition child = requireEntity(entitiesByLower, s.child(), statPrefix);
-            List<String> rels = relationsTo(child, entity);
-            if (rels.isEmpty()) {
-                throw new WizardArgumentException(statPrefix + ": " + child.name() + " has no relation to " + entity.name());
-            }
+            // An unnamed link follows the child's tab, so a tile counts exactly what its tab lists.
+            String requested = trimToNull(s.via());
+            String viaRel = requested != null ? linkVia(statPrefix, child, entity, requested)
+                    : childTabs.stream().filter(t -> t.entity().equals(child.name())).map(PageDefinition.ChildTab::via)
+                        .findFirst().orElseGet(() -> linkVia(statPrefix, child, entity, null));
             PageDefinition.Agg agg = parseAgg(statPrefix, s.agg());
-            out.add(new PageDefinition.HeaderStat(child.name(), rels.get(0), agg,
+            out.add(new PageDefinition.HeaderStat(child.name(), viaRel, agg,
                     aggField(statPrefix, child, agg, trimToNull(s.field())),
                     checkLength(trimToNull(s.title()), MAX_TITLE, statPrefix + " title")));
         }
@@ -775,9 +831,19 @@ public final class FullstackPageValidator {
         return candidates.get(0);
     }
 
+    /** A record page's link to a related entity: the named relation, else the child's first one. */
+    private static String linkVia(String prefix, EntityDefinition child, EntityDefinition parent, String requested) {
+        List<String> rels = relationsTo(child, parent);
+        if (rels.isEmpty()) {
+            throw new WizardArgumentException(prefix + ": " + child.name() + " has no relation to " + parent.name());
+        }
+        return requested == null ? rels.get(0) : via(prefix, child, parent, requested);
+    }
+
     /** A record page's related lists: the named entities, else every entity with a relation to it.
-     *  Each links through its first relation to the record entity. */
-    private static List<PageDefinition.ChildTab> childTabs(String prefix, EntityDefinition entity, List<String> raw,
+     *  Each links through its named relation, else its first one to the record entity. */
+    private static List<PageDefinition.ChildTab> childTabs(String prefix, EntityDefinition entity,
+                                                          List<FullstackStarterRequest.ChildTabDto> raw,
                                                           List<EntityDefinition> entities,
                                                           Map<String, EntityDefinition> entitiesByLower) {
         List<PageDefinition.ChildTab> out = new ArrayList<>();
@@ -792,15 +858,14 @@ public final class FullstackPageValidator {
             Set<String> seen = new HashSet<>();
             for (int i = 0; i < raw.size(); i++) {
                 String itemPrefix = prefix + " childTabs[" + i + "]";
-                EntityDefinition child = requireEntity(entitiesByLower, raw.get(i), itemPrefix);
-                List<String> rels = relationsTo(child, entity);
-                if (rels.isEmpty()) {
-                    throw new WizardArgumentException(itemPrefix + ": " + child.name() + " has no relation to " + entity.name());
-                }
+                FullstackStarterRequest.ChildTabDto item = raw.get(i);
+                if (item == null) throw new WizardArgumentException(itemPrefix + " is null");
+                EntityDefinition child = requireEntity(entitiesByLower, item.entity(), itemPrefix);
+                String viaRel = linkVia(itemPrefix, child, entity, trimToNull(item.via()));
                 if (!seen.add(child.name())) {
                     throw new WizardArgumentException(itemPrefix + ": " + child.name() + " is already a tab");
                 }
-                out.add(new PageDefinition.ChildTab(child.name(), rels.get(0)));
+                out.add(new PageDefinition.ChildTab(child.name(), viaRel));
             }
         }
         if (out.size() > MAX_TABS - 1) {

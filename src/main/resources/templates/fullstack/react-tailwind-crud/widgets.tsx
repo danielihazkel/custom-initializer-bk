@@ -3,7 +3,7 @@ import { ArrowRight } from 'lucide-react'
 import { api } from '@shared/api'
 import { LOCALE, t, type StringKey } from '../i18n'
 import { Skeleton } from './Skeleton'
-import { PERIODS, aggQuery, formatStat, statLabel, statsQuery, useStats, type Period, type StatsResponse } from './stats'
+import { PERIODS, aggQuery, customPeriod, customRange, formatStat, statLabel, statsQuery, useStats, type Period, type PresetPeriod, type StatsResponse } from './stats'
 
 // Dashboard widgets for the generated screens (src/app/screens). Counts come from the list
 // endpoint's page metadata; every breakdown, trend and aggregate comes from the entity's
@@ -11,7 +11,7 @@ import { PERIODS, aggQuery, formatStat, statLabel, statsQuery, useStats, type Pe
 
 const card = 'rounded-2xl border border-border bg-surface p-5 shadow-sm'
 
-const PERIOD_LABELS: Record<Period, StringKey> = {
+const PERIOD_LABELS: Record<PresetPeriod, StringKey> = {
   all: 'periodAll',
   '7d': 'period7d',
   '30d': 'period30d',
@@ -20,24 +20,68 @@ const PERIOD_LABELS: Record<Period, StringKey> = {
   '12m': 'period12m',
 }
 
-/** The dashboard's period picker: every widget with a date column follows it. */
+/** The dashboard's period picker: every widget with a date column follows it. Besides the presets,
+ *  "Custom" opens two date inputs; the range applies once both are set. */
 export function PeriodSelect({ value, onChange }: { value: Period; onChange: (period: Period) => void }) {
+  const picked = customRange(value)
+  const [custom, setCustom] = useState(picked != null)
+  const [from, setFrom] = useState(picked?.from ?? '')
+  const [to, setTo] = useState(picked?.to ?? '')
+  const pick = (nextFrom: string, nextTo: string) => {
+    setFrom(nextFrom)
+    setTo(nextTo)
+    if (nextFrom && nextTo) onChange(customPeriod(nextFrom, nextTo))
+  }
+  const chip = (on: boolean) => `rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+    on ? 'bg-brand text-white' : 'text-muted hover:bg-surface-2 hover:text-fg'
+  }`
+
   return (
-    <div role="radiogroup" aria-label={t('period')} className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-surface p-1">
-      {PERIODS.map(p => (
-        <button
-          key={p}
-          type="button"
-          role="radio"
-          aria-checked={value === p}
-          onClick={() => onChange(p)}
-          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-            value === p ? 'bg-brand text-white' : 'text-muted hover:bg-surface-2 hover:text-fg'
-          }`}
-        >
-          {t(PERIOD_LABELS[p])}
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <div role="radiogroup" aria-label={t('period')} className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-surface p-1">
+        {PERIODS.map(p => (
+          <button
+            key={p}
+            type="button"
+            role="radio"
+            aria-checked={!custom && value === p}
+            onClick={() => {
+              setCustom(false)
+              onChange(p)
+            }}
+            className={chip(!custom && value === p)}
+          >
+            {t(PERIOD_LABELS[p])}
+          </button>
+        ))}
+        <button type="button" role="radio" aria-checked={custom} onClick={() => setCustom(true)} className={chip(custom)}>
+          {t('periodCustom')}
         </button>
-      ))}
+      </div>
+      {custom && (
+        <div className="flex items-center gap-2 text-xs text-muted">
+          <label className="flex items-center gap-1.5">
+            {t('periodFrom')}
+            <input
+              type="date"
+              value={from}
+              max={to || undefined}
+              onChange={e => pick(e.target.value, to)}
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-fg"
+            />
+          </label>
+          <label className="flex items-center gap-1.5">
+            {t('periodTo')}
+            <input
+              type="date"
+              value={to}
+              min={from || undefined}
+              onChange={e => pick(from, e.target.value)}
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-fg"
+            />
+          </label>
+        </div>
+      )}
     </div>
   )
 }
@@ -339,8 +383,89 @@ export function ProgressTile({ title, path, agg, field, target, params = '', onO
   )
 }
 
-/** Records grouped by `field` (an enum or boolean column), rolled up by the backend. */
-export function BreakdownCard({ title, path, field, agg, valueField, labels, params = '', onSelect, onOpen, className = '' }: {
+/** The colours series and slices take in turn: the brand and its tints, then neutrals — never the
+ *  accent, so a chart does not compete with the page's one call to action. */
+const SERIES_COLORS = [
+  'var(--color-brand)',
+  'color-mix(in srgb, var(--color-brand) 55%, var(--color-surface))',
+  'var(--color-fg)',
+  'color-mix(in srgb, var(--color-brand) 28%, var(--color-surface))',
+  'var(--color-muted)',
+  'color-mix(in srgb, var(--color-fg) 45%, var(--color-surface))',
+]
+const seriesColor = (i: number) => SERIES_COLORS[i % SERIES_COLORS.length]
+
+/** A legend row: a colour swatch per label. */
+function Legend({ items }: { items: { label: string; value?: number }[] }) {
+  return (
+    <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
+      {items.map((item, i) => (
+        <li key={item.label} className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: seriesColor(i) }} />
+          <span className="truncate">{item.label}</span>
+          {item.value != null && <span className="tabular-nums text-fg">{formatStat(item.value)}</span>}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+const RING_R = 42
+const RING_C = 2 * Math.PI * RING_R
+
+/** Shares of a whole as a ring, the total in its middle. With `onSelect` each slice is a button. */
+export function DonutChart({ data, onSelect }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void }) {
+  const total = data.reduce((sum, d) => sum + Math.max(d.value, 0), 0)
+  let offset = 0
+  return (
+    <div className="flex flex-wrap items-center gap-5">
+      <svg viewBox="0 0 100 100" className="h-32 w-32 shrink-0 -rotate-90" role="img"
+        aria-label={data.map(d => `${d.label}: ${formatStat(d.value)}`).join(', ')}>
+        <circle cx={50} cy={50} r={RING_R} fill="none" strokeWidth={14} className="stroke-surface-2" />
+        {total > 0 && data.map((d, i) => {
+          const length = (Math.max(d.value, 0) / total) * RING_C
+          const slice = (
+            <circle
+              key={d.label}
+              cx={50}
+              cy={50}
+              r={RING_R}
+              fill="none"
+              strokeWidth={14}
+              stroke={seriesColor(i)}
+              strokeDasharray={`${length} ${RING_C - length}`}
+              strokeDashoffset={-offset}
+              className={onSelect ? 'cursor-pointer transition-opacity hover:opacity-80 focus:opacity-80 focus:outline-none' : undefined}
+              role={onSelect ? 'button' : undefined}
+              tabIndex={onSelect ? 0 : undefined}
+              aria-label={onSelect ? `${d.label}: ${formatStat(d.value)}` : undefined}
+              onClick={onSelect && (() => onSelect(i))}
+              onKeyDown={onSelect && (e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelect(i)
+                }
+              })}
+            >
+              <title>{`${d.label}: ${formatStat(d.value)}`}</title>
+            </circle>
+          )
+          offset += length
+          return slice
+        })}
+        <text x={50} y={50} textAnchor="middle" dominantBaseline="central" transform="rotate(90 50 50)"
+          className="fill-fg text-[15px] font-semibold tabular-nums">{formatStat(total)}</text>
+      </svg>
+      <div className="min-w-0 flex-1">
+        <Legend items={data} />
+      </div>
+    </div>
+  )
+}
+
+/** Records grouped by `field` (an enum or boolean column), rolled up by the backend — as bars, or
+ *  with `donut` as shares of a ring. */
+export function BreakdownCard({ title, path, field, agg, valueField, labels, params = '', donut = false, onSelect, onOpen, className = '' }: {
   title: string
   path: string
   field: string
@@ -351,6 +476,8 @@ export function BreakdownCard({ title, path, field, agg, valueField, labels, par
   labels?: Record<string, string>
   /** List filter params the chart is limited to (a preset, the dashboard period). */
   params?: string
+  /** Draw a ring of shares instead of bars. */
+  donut?: boolean
   /** A click on a bar, with its group's key (the list filter value). */
   onSelect?: (key: string) => void
   onOpen?: () => void
@@ -367,9 +494,95 @@ export function BreakdownCard({ title, path, field, agg, valueField, labels, par
     <div className={`${card} ${className}`}>
       <WidgetHeader title={title} onOpen={onOpen} />
       <Status failed={failed} loading={stats == null} empty={data.length === 0} onRetry={retry} />
-      {data.length > 0 && !failed && (
-        <BarRows data={data} onSelect={onSelect && (i => { if (data[i].key !== '') onSelect(data[i].key) })} />
+      {data.length > 0 && !failed && (() => {
+        const select = onSelect && ((i: number) => { if (data[i].key !== '') onSelect(data[i].key) })
+        return donut ? <DonutChart data={data} onSelect={select} /> : <BarRows data={data} onSelect={select} />
+      })()}
+    </div>
+  )
+}
+
+/** Records grouped by `field`, each group's bar split by the `series` column — one stacked bar
+ *  per group, largest first, with a legend of the series. */
+export function StackedCard({ title, path, field, series, agg, valueField, labels, seriesLabels, params = '', onSelect, onOpen, className = '' }: {
+  title: string
+  path: string
+  field: string
+  series: string
+  agg?: string
+  valueField?: string
+  labels?: Record<string, string>
+  seriesLabels?: Record<string, string>
+  params?: string
+  /** A click on a bar, with its group's key (the list filter value). */
+  onSelect?: (key: string) => void
+  onOpen?: () => void
+  className?: string
+}) {
+  const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${field}`, `series=${series}`, aggQuery(agg, valueField), params))
+  const buckets = stats?.buckets ?? []
+  // Series in first-seen order, so the colours stay put as the numbers change.
+  const seriesKeys = [...new Set(buckets.map(b => b.series ?? ''))]
+  const groups = [...new Set(buckets.map(b => b.key))].map(key => {
+    const parts = seriesKeys.map(s => buckets.find(b => b.key === key && (b.series ?? '') === s)?.value ?? 0)
+    return { key, label: statLabel({ key, value: null }, labels), parts, total: parts.reduce((a, b) => a + b, 0) }
+  }).sort((a, b) => b.total - a.total)
+  const max = groups.reduce((m, g) => Math.max(m, g.total), 0) || 1
+  const seriesLabel = (s: string) => statLabel({ key: s, value: null }, seriesLabels)
+
+  return (
+    <div className={`${card} ${className}`}>
+      <WidgetHeader title={title} onOpen={onOpen} />
+      <Status failed={failed} loading={stats == null} empty={groups.length === 0} onRetry={retry} />
+      {groups.length > 0 && !failed && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            {groups.map(g => {
+              const bar = (
+                <>
+                  <div className="w-28 shrink-0 truncate text-muted" title={g.label}>{g.label}</div>
+                  <div className="flex h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+                    {g.parts.map((v, i) => (
+                      <div
+                        key={seriesKeys[i]}
+                        className="h-full"
+                        style={{ width: `${(v / max) * 100}%`, background: seriesColor(i) }}
+                        title={`${seriesLabel(seriesKeys[i])}: ${formatStat(v)}`}
+                      />
+                    ))}
+                  </div>
+                  <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(g.total)}</div>
+                </>
+              )
+              return onSelect && g.key !== '' ? (
+                <button
+                  key={g.key}
+                  type="button"
+                  onClick={() => onSelect(g.key)}
+                  className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-lg px-1 text-start text-sm transition-colors hover:bg-surface-2"
+                >
+                  {bar}
+                </button>
+              ) : (
+                <div key={g.key} className="flex items-center gap-3 text-sm">{bar}</div>
+              )
+            })}
+          </div>
+          <Legend items={seriesKeys.map(s => ({ label: seriesLabel(s) }))} />
+        </div>
       )}
+    </div>
+  )
+}
+
+/** A note on the dashboard: a heading and paragraphs of plain text, no query behind it. */
+export function TextCard({ title, paragraphs, className = '' }: { title?: string; paragraphs: string[]; className?: string }) {
+  return (
+    <div className={`${card} ${className}`}>
+      {title && <div className="mb-3 text-sm font-semibold text-fg">{title}</div>}
+      <div className="space-y-2 text-sm leading-relaxed text-muted">
+        {paragraphs.map((text, i) => <p key={i} className="whitespace-pre-line">{text}</p>)}
+      </div>
     </div>
   )
 }

@@ -93,7 +93,7 @@ class FullstackPagesIntegrationTests {
         // tabs page; Team's home is its master-detail page.
         String overview = files.get(FE + "src/app/screens/OverviewScreen.tsx");
         assertThat(overview)
-                .contains("import { BreakdownCard, KpiTile, RecentList, } from '@shared/ui/widgets'")
+                .contains("import { BreakdownCard, KpiTile, TopList, RecentList, StackedCard, TextCard, } from '@shared/ui/widgets'")
                 .contains("import { t } from '@shared/i18n'")
                 .contains("import { TicketStatusTypeLabels, TicketPriorityTypeLabels } from '@entities/ticket'")
                 .contains("export function OverviewScreen({ onNavigate }: Props)")
@@ -285,12 +285,12 @@ class FullstackPagesIntegrationTests {
         assertThat(record)
                 .contains("import { ArrowLeft, Pencil, Trash2, } from 'lucide-react'")
                 .contains("import type { Order } from '@entities/order'")
-                .contains("import { OrderDetail, OrderForm, validateOrder } from '@features/order-form'")
-                // A writable record edits in a drawer and deletes, then goes back to its list.
-                .contains("const saved = await api.put<Order>(PATH + encodeURIComponent(recordId), editing)")
+                // Order has a wizard page, so Edit reopens the row in it; Delete goes back to the list.
+                .contains("import { OrderDetail } from '@features/order-form'")
+                .contains("onClick={() => onNavigate('new-order', recordId) }")
+                .doesNotContain("FormDrawer")
                 .contains("await api.del(PATH + encodeURIComponent(recordId))")
                 .contains("      setConfirming(false)\n      onNavigate('orders')\n")
-                .contains("<OrderForm\n")
                 .contains("<button type=\"button\" onClick={() => setAttempt(a => a + 1)} className=\"font-medium underline\">")
                 .contains("import { OrderLinePage } from '@pages/order-line'")
                 .contains("export function OrderScreen({ recordId, onNavigate }: Props) {")
@@ -331,6 +331,10 @@ class FullstackPagesIntegrationTests {
         assertThat(record)
                 .contains("export function AgentScreen({ recordId }: Props) {")
                 .contains("<AgentDetail value={record} />")
+                // No wizard: Edit opens the form drawer and saves with a PUT.
+                .contains("import { AgentDetail, AgentForm, validateAgent } from '@features/agent-form'")
+                .contains("const saved = await api.put<Agent>(PATH + encodeURIComponent(recordId), editing)")
+                .contains("onClick={() => { setEditing({ ...record }); setFormErrors({}) } }")
                 // Editable even without a home page: a delete steps back in the browser history.
                 .contains("import { Pencil, Trash2, } from 'lucide-react'")
                 .contains("      setConfirming(false)\n      window.history.back()\n")
@@ -507,7 +511,7 @@ class FullstackPagesIntegrationTests {
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "agg", "median"))),
                 "unknown agg 'median' (expected count, sum, avg, min or max)");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "pie", "entity", "Ticket"))),
-                "unknown widget kind 'pie' (expected kpi, bar, line, recent, top or progress)");
+                "unknown widget kind 'pie' (expected kpi, bar, donut, stacked, line, recent, top, progress or text)");
         // line widgets plot a temporal field, bucketed
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "line", "entity", "Team"))),
                 "Team has no date field to plot over time");
@@ -717,7 +721,12 @@ class FullstackPagesIntegrationTests {
                         + "  { title: 'Order', fields: ['status', 'placedAt', 'total'], keys: ['status', 'placedAt', 'total'] },\n")
                 .contains("const created = await api.post<Order>('/api/orders', value)")
                 .contains("onNavigate('order', String(created.id))")
-                .contains("<OrderForm value={value} onChange={edit} errors={errors} isNew only={STEPS[step].fields} />")
+                .contains("<OrderForm value={value} onChange={edit} errors={errors} isNew={ editId == null } only={STEPS[step].fields} />")
+                // #/new-order/<id> edits that order: loaded first, saved with a PUT, back on its record page.
+                .contains("export function NewOrderScreen({ editId, onNavigate }: Props) {")
+                .contains("api.get<Order>(PATH + '/' + encodeURIComponent(editId))")
+                .contains("await api.put<Order>(PATH + '/' + encodeURIComponent(editId), value)")
+                .contains("        onNavigate('order', editId)\n")
                 .contains("<OrderDetail value={value as Order} />");
         // Only an entity with a wizard gets the stepped form and the list page's onCreate.
         assertThat(files.get(FE + "src/features/order-form/ui/OrderForm.tsx"))
@@ -756,6 +765,72 @@ class FullstackPagesIntegrationTests {
                 .contains("onNavigate('queue')");
         assertThat(files.get(FE + "src/app/route.ts")).contains("'new-ticket'");
         assertThat(files.get(FE + "src/app/App.tsx")).doesNotContain("{ id: 'new-ticket'");
+    }
+
+    @Test
+    void fullstackEndpoint_rendersDonutStackedAndTextWidgets() throws Exception {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "insights", "type", "dashboard", "widgets", List.of(
+                Map.of("kind", "donut", "entity", "Ticket", "groupBy", "status"),
+                Map.of("kind", "stacked", "entity", "Ticket", "groupBy", "priority", "series", "status"),
+                Map.of("kind", "text", "title", "How to triage", "text", "Start with urgent tickets.\n\nThen the rest.", "span", 4)))));
+        Map<String, String> files = generate(body);
+
+        String screen = files.get(FE + "src/app/screens/InsightsScreen.tsx");
+        assertThat(screen)
+                .contains("import { BreakdownCard, StackedCard, TextCard, } from '@shared/ui/widgets'")
+                .contains("          field=\"status\"\n")
+                .contains("          donut\n")
+                .contains("<StackedCard\n")
+                .contains("          field=\"priority\"\n          series=\"status\"\n")
+                .contains("          labels={ TicketPriorityTypeLabels }\n          seriesLabels={ TicketStatusTypeLabels }\n")
+                .contains("title={ t('xByYAndZ', { x: 'Tickets', y: 'Priority', z: 'Status' }) }")
+                .contains("title={ 'How to triage' }")
+                .contains("paragraphs={ ['Start with urgent tickets.', 'Then the rest.'] }")
+                .contains("className=\"sm:col-span-2 lg:col-span-4\"");
+        assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
+                .contains("export function DonutChart(")
+                .contains("export function StackedCard(")
+                .contains("export function TextCard(");
+        // The rollup splits a group by the series column.
+        assertThat(files.get("support/backend/src/main/java/com/menora/support/service/TicketService.java"))
+                .contains("Path<?> seriesPath = groupPath(root, series);");
+    }
+
+    @Test
+    void fullstackEndpoint_recordTabsAndTilesLinkThroughTheNamedRelation() throws Exception {
+        Map<String, Object> body = withTicketReporter(exampleBody("tickets", "react-tailwind-crud"));
+        Map<String, Object> record = recordPage("agent", "Agent", null);
+        record.put("childTabs", List.of(Map.of("entity", "Ticket", "via", "reporter")));
+        record.put("headerStats", List.of(Map.of("child", "Ticket")));
+        pages(body).add(record);
+        Map<String, String> files = generate(body);
+
+        assertThat(files.get(FE + "src/app/screens/AgentScreen.tsx"))
+                .contains("scope={ { param: 'reporterId', value: record.id as string | number } }")
+                // The tile follows its tab's link.
+                .contains("params={`reporterId=${encodeURIComponent(recordId)}`}");
+
+        Map<String, Object> wrong = withTicketReporter(exampleBody("tickets", "react-tailwind-crud"));
+        Map<String, Object> bad = recordPage("agent", "Agent", null);
+        bad.put("childTabs", List.of(Map.of("entity", "Ticket", "via", "watcher")));
+        pages(wrong).add(bad);
+        assertBadRequest(wrong, "via 'watcher' is not a relation of Ticket to Agent");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsInvalidNewWidgets() {
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "stacked", "entity", "Ticket",
+                "groupBy", "status", "series", "status"))),
+                "series 'status' must be an enum or boolean field other than groupBy");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "bar", "entity", "Ticket", "series", "status"))),
+                "only a stacked widget takes 'series'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "text", "entity", "Ticket", "text", "Hi"))),
+                "a text widget takes only 'text', 'title' and 'span'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "text"))),
+                "a text widget needs 'text'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "text", "Hi"))),
+                "only a text widget takes 'text'");
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

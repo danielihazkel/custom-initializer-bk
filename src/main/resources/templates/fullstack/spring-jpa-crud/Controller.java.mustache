@@ -61,10 +61,11 @@ public class {{EntityName}}Controller {
             @RequestParam(required = false) String bucket,
             @RequestParam(required = false) String agg,
             @RequestParam(required = false) String field,
-            @RequestParam(required = false) Integer top) {
+            @RequestParam(required = false) Integer top,
+            @RequestParam(required = false) String series) {
 {{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
 {{/hasFilters}}        List<{{EntityName}}Service.StatsBucket> buckets =
-                service.stats(q, {{#hasFilters}}filters, {{/hasFilters}}groupBy, bucket, agg, field, top);
+                service.stats(q, {{#hasFilters}}filters, {{/hasFilters}}groupBy, bucket, agg, field, top, series);
         // An empty group (avg/min/max over no rows) has no value: it adds nothing, and a total made
         // only of such groups is null too, which the client shows as a dash.
         java.math.BigDecimal total = null;

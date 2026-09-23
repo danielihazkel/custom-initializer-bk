@@ -5,14 +5,14 @@ import { {{#hasBack}}ArrowLeft, {{/hasBack}}{{#recordMutable}}Pencil, Trash2, {{
 {{#recordMutable}}
 import { toast } from 'sonner'
 {{/recordMutable}}
-import { api{{#recordMutable}}, ApiError{{/recordMutable}} } from '@shared/api'
-import { Alert, Skeleton{{#recordMutable}}, FormDrawer, ConfirmDialog{{/recordMutable}} } from '@shared/ui'
+import { api{{#recordEditsInDrawer}}, ApiError{{/recordEditsInDrawer}} } from '@shared/api'
+import { Alert, Skeleton{{#recordEditsInDrawer}}, FormDrawer{{/recordEditsInDrawer}}{{#recordMutable}}, ConfirmDialog{{/recordMutable}} } from '@shared/ui'
 {{#hasHeaderStats}}
 import { KpiTile } from '@shared/ui/widgets'
 {{/hasHeaderStats}}
 import { t } from '@shared/i18n'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
-import { {{EntityName}}Detail{{#recordMutable}}, {{EntityName}}Form, validate{{EntityName}}{{/recordMutable}} } from '@features/{{entityNameKebab}}-form'
+import { {{EntityName}}Detail{{#recordEditsInDrawer}}, {{EntityName}}Form, validate{{EntityName}}{{/recordEditsInDrawer}} } from '@features/{{entityNameKebab}}-form'
 {{#childTabs}}
 import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
 {{/childTabs}}
@@ -44,10 +44,12 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
 {{#hasChildTabs}}
   const [active, setActive] = useState(0)
 {{/hasChildTabs}}
-{{#recordMutable}}
+{{#recordEditsInDrawer}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+{{/recordEditsInDrawer}}
+{{#recordMutable}}
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
 {{/recordMutable}}
@@ -70,7 +72,7 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
 {{^hasLabel}}
     : {{entityLabelExpr}} + ' #' + String(record.{{pkName}})
 {{/hasLabel}}
-{{#recordMutable}}
+{{#recordEditsInDrawer}}
 
   async function save() {
     if (!editing) return
@@ -99,6 +101,8 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
       setSaving(false)
     }
   }
+{{/recordEditsInDrawer}}
+{{#recordMutable}}
 
   async function remove() {
     setDeleting(true)
@@ -155,7 +159,7 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
             </button>
             <button
               type="button"
-              onClick={() => { setEditing({ ...record }); setFormErrors({}) }}
+              onClick={() => {{#recordEditsInWizard}}onNavigate('{{wizardPageId}}', recordId){{/recordEditsInWizard}}{{#recordEditsInDrawer}}{ setEditing({ ...record }); setFormErrors({}) }{{/recordEditsInDrawer}} }
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
             >
               <Pencil className="h-4 w-4" />
@@ -245,7 +249,7 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
         </div>
 {{/hasChildTabs}}
       )}
-{{#recordMutable}}
+{{#recordEditsInDrawer}}
 
       <FormDrawer
         open={editing !== null}
@@ -278,6 +282,8 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
           />
         )}
       </FormDrawer>
+{{/recordEditsInDrawer}}
+{{#recordMutable}}
 
       <ConfirmDialog
         open={confirming}
