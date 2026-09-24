@@ -349,6 +349,29 @@ public final class EntityScaffoldContext {
             pv.put("needsNavigate", needsNavigate);
         }
 
+        // Links widgets last too: a tile's label and icon are the nav entry of the page it opens.
+        for (Map<String, Object> pv : viewById.values()) {
+            if (!Boolean.TRUE.equals(pv.get("usesLinks"))) continue;
+            Set<String> icons = new TreeSet<>();
+            for (Map<String, Object> wv : (List<Map<String, Object>>) pv.get("widgets")) {
+                if (!Boolean.TRUE.equals(wv.get("widgetIsLinks"))) continue;
+                List<Map<String, Object>> items = new ArrayList<>();
+                for (String id : (List<String>) wv.get("linkIds")) {
+                    Map<String, Object> target = viewById.get(id);
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("pageId", id);
+                    item.put("labelExpr", target.get("pageTitleExpr"));
+                    item.put("navIcon", target.get("navIcon"));
+                    icons.add((String) target.get("navIcon"));
+                    items.add(item);
+                }
+                wv.put("links", items);
+            }
+            pv.put("linkIcons", String.join(", ", icons));
+            pv.put("hasLinkIcons", !icons.isEmpty());
+            pv.put("needsNavigate", true);
+        }
+
         // What the shell hands a screen from its route: a tabs page its open tab (and a way to change
         // it), a filterable list page the filters in the hash. Record pages get their id separately.
         for (Map<String, Object> pv : viewById.values()) {
@@ -396,6 +419,9 @@ public final class EntityScaffoldContext {
                 for (Map<String, Object> item : (List<Map<String, Object>>) pv.getOrDefault(listKey, List.of())) {
                     exprs.add(item.get("titleExpr"));
                     exprs.add(item.get("tabTitleExpr"));
+                    for (Map<String, Object> link : (List<Map<String, Object>>) item.getOrDefault("links", List.of())) {
+                        exprs.add(link.get("labelExpr"));
+                    }
                 }
             }
             pv.put("usesT", Boolean.TRUE.equals(pv.get("pageIsMasterDetail")) || Boolean.TRUE.equals(pv.get("pageIsRecord"))
@@ -442,6 +468,8 @@ public final class EntityScaffoldContext {
         ctx.put("hasWidgets", Boolean.TRUE.equals(ctx.get("hasDashboardPages"))
                 || Boolean.TRUE.equals(ctx.get("hasReportPages"))
                 || all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasHeaderStats"))));
+        // links.tsx (the launcher tiles) only for a dashboard that has a links widget.
+        ctx.put("hasLinksWidgets", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("usesLinks"))));
         // Per-entity contexts read this: an entity with a wizard gets the stepped form and the
         // list page's onCreate.
         ctx.put(WIZARD_PAGES_KEY, links.wizardPageByEntity());
@@ -581,6 +609,10 @@ public final class EntityScaffoldContext {
                 widgetViews.add(textWidgetView(w, i));
                 continue;
             }
+            if (w.kind() == PageDefinition.WidgetKind.LINKS) {
+                widgetViews.add(linksWidgetView(w, i));
+                continue;
+            }
             Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
             Map<String, Object> summary = summaries.get(w.entity().toLowerCase(Locale.ROOT));
             String entityLabels = tsString((String) ev.get("entityLabelPlural"));
@@ -700,7 +732,7 @@ public final class EntityScaffoldContext {
             widgetViews.add(wv);
         }
         pv.put("widgets", widgetViews);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "Links")) {
             pv.put("uses" + kind, widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIs" + kind))));
         }
         usesStatsQuery |= widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasCompare"))
@@ -741,11 +773,31 @@ public final class EntityScaffoldContext {
      * labelled (an enum's labels, or — for a relation — the target's rows by id), the heading of the
      * column, and the list filter a group drills into.
      */
+    /** A links widget's view before its tiles are resolved (a target may be declared later): the
+     *  page ids, and the title and width like a text card. */
+    private static Map<String, Object> linksWidgetView(PageDefinition.Widget w, int index) {
+        Map<String, Object> wv = new LinkedHashMap<>();
+        wv.put("widgetKey", "w" + index);
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text")) {
+            wv.put("widgetIs" + kind, false);
+        }
+        wv.put("widgetIsLinks", true);
+        wv.put("hasTitle", w.title() != null);
+        wv.put("titleExpr", w.title() == null ? null : tsString(w.title()));
+        wv.put("linkIds", w.pages());
+        String spanClass = SPAN_CLASSES.get(w.span() - 1);
+        wv.put("hasSpanClass", !spanClass.isEmpty());
+        wv.put("spanClass", spanClass);
+        wv.put("hasParams", false);
+        wv.put("hasCompare", false);
+        return wv;
+    }
+
     /** A text widget's view: its title (if any) and paragraphs as TS string literals. */
     private static Map<String, Object> textWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Links")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsText", true);

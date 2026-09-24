@@ -304,7 +304,18 @@ public record FullstackStarterRequest(
             // stacked: the enum/boolean field each bar is split by (default: the entity's next one).
             String series,
             // text: the widget's content, plain text; a blank line starts a new paragraph.
-            String text) {
+            String text,
+            // links: the ids of the pages its tiles open (1–8; never a record page, nor a hidden
+            // page that is not a wizard).
+            List<String> pages) {
+
+        /** The widget as layouts before links spell it. */
+        public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
+                         String field, String bucket, Integer span, Map<String, String> presetFilter,
+                         String sortBy, String dateField, Boolean compare, String target, String series, String text) {
+            this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, series, text, null);
+        }
 
         /** The widget as phase-1 layouts spell it (no span, filter, sort or date field). */
         public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,

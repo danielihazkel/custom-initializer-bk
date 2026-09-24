@@ -711,6 +711,41 @@ class FullstackPagesIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_rendersALinksWidget() throws Exception {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> wizard = wizardPage("new-ticket", "Ticket", null);
+        wizard.put("hidden", true);
+        pages(body).add(wizard);
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "start", "type", "dashboard", "widgets", List.of(
+                Map.of("kind", "links", "title", "Go to", "pages", List.of("queue", "agents", "new-ticket"))))));
+        Map<String, String> files = generate(body);
+
+        // One tile per page, labelled and iconed like its nav entry (a hidden wizard is a route of
+        // its own, so it can be opened); the card takes the whole row by default.
+        assertThat(files.get(FE + "src/app/screens/StartScreen.tsx"))
+                .contains("import { LinksCard } from '@shared/ui/links'")
+                .contains("import { Inbox, Users, Wand2 } from 'lucide-react'")
+                .contains("export function StartScreen({ onNavigate }: Props) {")
+                .contains("        <LinksCard\n          title={ 'Go to' }\n"
+                        + "          items={ [{ id: 'queue', label: 'Ticket queue', icon: Inbox }, { id: 'agents', label: 'Agents', icon: Users }, { id: 'new-ticket', label: t('newX', { x: 'Ticket' }), icon: Wand2 }] }\n"
+                        + "          onOpen={id => onNavigate(id)}\n"
+                        + "          className=\"sm:col-span-2 lg:col-span-4\"\n")
+                .contains("import { t } from '@shared/i18n'");
+        assertThat(files.get(FE + "src/shared/ui/links.tsx")).contains("export function LinksCard(").doesNotContain("ActionPanel");
+
+        // The Menora set's tiles are the site's ActionPanel discs.
+        Map<String, Object> menora = exampleBody("tickets", "react-menora-digital-crud");
+        pages(menora).add(new LinkedHashMap<>(Map.of("id", "start", "type", "dashboard", "widgets", List.of(
+                Map.of("kind", "links", "pages", List.of("queue"))))));
+        assertThat(generate(menora).get(FE + "src/shared/ui/links.tsx"))
+                .contains("import { ActionPanel } from '@shared/ui/menora'")
+                .contains("export function LinksCard(");
+
+        // Without a links widget the file is not shipped.
+        assertThat(generate(exampleBody("orders", "react-tailwind-crud"))).doesNotContainKey(FE + "src/shared/ui/links.tsx");
+    }
+
+    @Test
     void fullstackEndpoint_shipsWidgetsForAReportWithoutADashboard() throws Exception {
         Map<String, Object> body = exampleBody("reporting", "react-tailwind-crud");
         List<Map<String, Object>> pages = pages(body);
@@ -747,7 +782,7 @@ class FullstackPagesIntegrationTests {
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "agg", "median"))),
                 "unknown agg 'median' (expected count, sum, avg, min or max)");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "pie", "entity", "Ticket"))),
-                "unknown widget kind 'pie' (expected kpi, bar, donut, stacked, line, recent, top, progress or text)");
+                "unknown widget kind 'pie' (expected kpi, bar, donut, stacked, line, recent, top, progress, text or links)");
         // line widgets plot a temporal field, bucketed
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "line", "entity", "Team"))),
                 "Team has no date field to plot over time");
@@ -1088,6 +1123,21 @@ class FullstackPagesIntegrationTests {
                 "a text widget needs 'text'");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "text", "Hi"))),
                 "only a text widget takes 'text'");
+        // Links widgets: their pages must exist and be openable from a link.
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "links"))),
+                "a links widget needs 'pages' (1–8 page ids)");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "links", "pages", List.of("nope")))),
+                "no page with id 'nope'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "links", "pages", List.of("tickets-open")))),
+                "page 'tickets-open' is hidden and not a wizard, so nothing can open it");
+        assertRejected(p -> { p.add(recordPage("agent", "Agent", null)); p.get(0).put("widgets", List.of(Map.of("kind", "links", "pages", List.of("agent")))); },
+                "a links widget cannot link to a record page ('agent') — it opens from a row");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "links", "pages", List.of("queue", "queue")))),
+                "page 'queue' is listed twice");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "links", "entity", "Ticket", "pages", List.of("queue")))),
+                "a links widget takes only 'pages', 'title' and 'span'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "pages", List.of("queue")))),
+                "only a links widget takes 'pages'");
     }
 
     @Test

@@ -703,6 +703,12 @@
             "title": "How we triage",
             "span": 4,
             "text": "Urgent tickets are picked up within the hour; high ones the same day.\n\nAssign a ticket before you start on it, and resolve it once the reporter confirms."
+          },
+          {
+            "kind": "links",
+            "title": "Go to",
+            "pages": ["queue", "teams"],
+            "span": 4
           }
         ]
       },

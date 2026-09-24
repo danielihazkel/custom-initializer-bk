@@ -27,6 +27,8 @@ public final class FullstackPageValidator {
     static final Pattern PAGE_ID = Pattern.compile("^[a-z][a-z0-9]*(-[a-z0-9]+)*$");
     static final int MAX_PAGES = 30;
     static final int MAX_WIDGETS = 24;
+    /** The pages one links widget can open. */
+    static final int MAX_LINKS = 8;
     static final int MIN_TABS = 2;
     static final int MAX_TABS = 6;
     /** A text widget's content. */
@@ -78,8 +80,9 @@ public final class FullstackPageValidator {
         Map<String, EntityDefinition> entitiesByLower = new HashMap<>();
         for (EntityDefinition e : entities) entitiesByLower.put(e.name().toLowerCase(Locale.ROOT), e);
 
-        // Pass 1: ids + types, so tabs can reference pages declared after them.
+        // Pass 1: ids + types, so tabs (and links widgets) can reference pages declared after them.
         Map<String, PageDefinition.Type> typeById = new LinkedHashMap<>();
+        Map<String, Boolean> hiddenById = new LinkedHashMap<>();
         for (int pi = 0; pi < raw.size(); pi++) {
             PageDefinitionDto p = raw.get(pi);
             if (p == null) throw new WizardArgumentException("pages[" + pi + "] is null");
@@ -91,6 +94,12 @@ public final class FullstackPageValidator {
             }
             if (typeById.containsKey(id)) throw new WizardArgumentException("Duplicate page id '" + id + "'");
             typeById.put(id, parseType(id, p.type()));
+            hiddenById.put(id, Boolean.TRUE.equals(p.hidden()) || typeById.get(id) == PageDefinition.Type.RECORD);
+        }
+        // Decided here, before any page is checked in depth: a layout with nothing in the nav gets
+        // this message rather than one about a widget that happens to point at a hidden page.
+        if (hiddenById.values().stream().allMatch(Boolean::booleanValue)) {
+            throw new WizardArgumentException("At least one page must be visible in the navigation");
         }
 
         List<PageDefinition> pages = new ArrayList<>(raw.size());
@@ -129,7 +138,8 @@ public final class FullstackPageValidator {
                 }
                 case DASHBOARD -> {
                     PageDefinition.DateRange range = parseDateRange(id, p.dateRange());
-                    List<PageDefinition.Widget> widgets = widgets(id, p.widgets(), entitiesByLower, range != null);
+                    List<PageDefinition.Widget> widgets = widgets(id, p.widgets(), entitiesByLower, range != null,
+                            typeById, hiddenById);
                     if (range != null && widgets.stream().allMatch(w -> w.dateField() == null)) {
                         throw new WizardArgumentException("Page '" + id + "' has a dateRange, but none of its widgets"
                                 + " counts an entity with a filterable date field for it to limit");
@@ -473,7 +483,9 @@ public final class FullstackPageValidator {
 
     private static List<PageDefinition.Widget> widgets(String id, List<WidgetDto> raw,
                                                        Map<String, EntityDefinition> entitiesByLower,
-                                                       boolean hasDateRange) {
+                                                       boolean hasDateRange,
+                                                       Map<String, PageDefinition.Type> typeById,
+                                                       Map<String, Boolean> hiddenById) {
         if (raw == null || raw.isEmpty()) {
             throw new WizardArgumentException("Page '" + id + "' (dashboard) needs at least one widget");
         }
@@ -490,8 +502,15 @@ public final class FullstackPageValidator {
                 out.add(textWidget(prefix, w));
                 continue;
             }
+            if (kind == PageDefinition.WidgetKind.LINKS) {
+                out.add(linksWidget(prefix, w, typeById, hiddenById));
+                continue;
+            }
             if (trimToNull(w.text()) != null) {
                 throw new WizardArgumentException(prefix + ": only a text widget takes 'text'");
+            }
+            if (w.pages() != null && !w.pages().isEmpty()) {
+                throw new WizardArgumentException(prefix + ": only a links widget takes 'pages'");
             }
             EntityDefinition entity = requireEntity(entitiesByLower, w.entity(), prefix);
             String title = checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title");
@@ -588,7 +607,7 @@ public final class FullstackPageValidator {
                 || trimToNull(w.groupBy()) != null || trimToNull(w.bucket()) != null || w.limit() != null
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
-                || trimToNull(w.series()) != null) {
+                || trimToNull(w.series()) != null || (w.pages() != null && !w.pages().isEmpty())) {
             throw new WizardArgumentException(prefix + ": a text widget takes only 'text', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.TEXT) : w.span();
@@ -598,6 +617,50 @@ public final class FullstackPageValidator {
         return new PageDefinition.Widget(PageDefinition.WidgetKind.TEXT, null,
                 checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title"), null, 0, null, null, null, span,
                 null, null, null, false, null, null, text);
+    }
+
+    /** A links widget: the pages its tiles open — each a page of the layout that can be opened
+     *  from a link (not a record page, which needs a row; not a hidden page, unless it is a wizard,
+     *  which is a route of its own) — plus an optional title and width. */
+    private static PageDefinition.Widget linksWidget(String prefix, WidgetDto w,
+                                                     Map<String, PageDefinition.Type> typeById,
+                                                     Map<String, Boolean> hiddenById) {
+        if (w.pages() == null || w.pages().isEmpty()) {
+            throw new WizardArgumentException(prefix + ": a links widget needs 'pages' (1–" + MAX_LINKS + " page ids)");
+        }
+        if (w.pages().size() > MAX_LINKS) {
+            throw new WizardArgumentException(prefix + ": at most " + MAX_LINKS + " pages are allowed");
+        }
+        List<String> pages = new ArrayList<>();
+        for (String raw : w.pages()) {
+            String id = trimToNull(raw);
+            if (id == null) throw new WizardArgumentException(prefix + ": a page id is blank");
+            PageDefinition.Type type = typeById.get(id);
+            if (type == null) throw new WizardArgumentException(prefix + ": no page with id '" + id + "'");
+            if (type == PageDefinition.Type.RECORD) {
+                throw new WizardArgumentException(prefix + ": a links widget cannot link to a record page ('" + id
+                        + "') — it opens from a row");
+            }
+            if (Boolean.TRUE.equals(hiddenById.get(id)) && type != PageDefinition.Type.WIZARD) {
+                throw new WizardArgumentException(prefix + ": page '" + id + "' is hidden and not a wizard, so nothing can open it");
+            }
+            if (pages.contains(id)) throw new WizardArgumentException(prefix + ": page '" + id + "' is listed twice");
+            pages.add(id);
+        }
+        if (trimToNull(w.entity()) != null || trimToNull(w.agg()) != null || trimToNull(w.field()) != null
+                || trimToNull(w.groupBy()) != null || trimToNull(w.bucket()) != null || w.limit() != null
+                || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
+                || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
+                || trimToNull(w.series()) != null || trimToNull(w.text()) != null) {
+            throw new WizardArgumentException(prefix + ": a links widget takes only 'pages', 'title' and 'span'");
+        }
+        int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.LINKS) : w.span();
+        if (span < 1 || span > MAX_SPAN) {
+            throw new WizardArgumentException(prefix + ": span must be between 1 and " + MAX_SPAN);
+        }
+        return new PageDefinition.Widget(PageDefinition.WidgetKind.LINKS, null,
+                checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title"), null, 0, null, null, null, span,
+                null, null, null, false, null, null, null, pages);
     }
 
     /** What a stacked bar splits each group by: another enum/boolean field — the entity's next one
@@ -692,7 +755,7 @@ public final class FullstackPageValidator {
             if (kind.wire().equalsIgnoreCase(k)) return kind;
         }
         throw new WizardArgumentException(prefix + ": unknown widget kind '" + k
-                + "' (expected kpi, bar, donut, stacked, line, recent, top, progress or text)");
+                + "' (expected kpi, bar, donut, stacked, line, recent, top, progress, text or links)");
     }
 
     /** How a tile or chart reduces its rows. Absent means {@code count}. */

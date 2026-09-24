@@ -2,6 +2,12 @@
 import { useState } from 'react'
 {{/hasDateRange}}
 import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesText}}TextCard, {{/usesText}}} from '@shared/ui/widgets'
+{{#usesLinks}}
+import { LinksCard } from '@shared/ui/links'
+{{/usesLinks}}
+{{#hasLinkIcons}}
+import { {{linkIcons}} } from 'lucide-react'
+{{/hasLinkIcons}}
 {{#usesStatsHelpers}}
 import { {{#usesBucketRange}}bucketRange, {{/usesBucketRange}}{{#hasDateRange}}parsePeriod, {{/hasDateRange}}{{#usesQueryOf}}queryOf, {{/usesQueryOf}}{{#usesRangeParams}}rangeParams, {{/usesRangeParams}}{{#usesStatsQuery}}statsQuery, {{/usesStatsQuery}}{{#hasDateRange}}type Period {{/hasDateRange}}} from '@shared/ui/stats'
 {{/usesStatsHelpers}}
@@ -192,6 +198,18 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{/hasSpanClass}}
         />
 {{/widgetIsText}}
+{{#widgetIsLinks}}
+        <LinksCard
+{{#hasTitle}}
+          title={ {{titleExpr}} }
+{{/hasTitle}}
+          items={ [{{#links}}{{^-first}}, {{/-first}}{ id: '{{pageId}}', label: {{labelExpr}}, icon: {{navIcon}} }{{/links}}] }
+          onOpen={id => onNavigate(id)}
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+        />
+{{/widgetIsLinks}}
 {{#widgetIsTop}}
         <TopList
           title={ {{titleExpr}} }
