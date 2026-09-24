@@ -220,7 +220,14 @@ public final class EntityScaffoldContext {
                     Map<String, Object> parentSummary = summaries.get(p.parent().toLowerCase(Locale.ROOT));
                     pv.put("parentEntityName", parent.get("EntityName"));
                     pv.put("parentEntityNameKebab", parent.get("entityNameKebab"));
+                    pv.put("parentEntityNamePluralKebab", parent.get("entityNamePluralKebab"));
                     pv.put("parentPkName", parentSummary.get("pkName"));
+                    // The selected parent's own details above its rows; Edit for a writable parent.
+                    boolean showParent = p.showParent();
+                    boolean parentMutable = Boolean.TRUE.equals(parent.get("mutable"));
+                    pv.put("showParent", showParent);
+                    pv.put("showParentEdit", showParent && parentMutable);
+                    pv.put("usesEffect", Boolean.TRUE.equals(parent.get("hasStringFields")) || showParent);
                     // The selected parent travels in the URL as a string; a numeric key is parsed back.
                     pv.put("parentPkIsNumber", "number".equals(parentSummary.get("pkTsType")));
                     pv.put("parentLabelField", parentSummary.get("labelField"));

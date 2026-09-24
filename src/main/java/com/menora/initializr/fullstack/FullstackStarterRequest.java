@@ -248,7 +248,23 @@ public record FullstackStarterRequest(
             // entity-list: where a row opens — `drawer` (the quick-look drawer), `side` (a pane
             // beside the rows, the open row in the route) or `record` (its record page). Absent:
             // the record page when the entity has one, else the drawer.
-            String detail) {
+            String detail,
+            // master-detail: show the selected parent's own details (and Edit, for a writable
+            // parent) above its child rows. Absent: false.
+            Boolean showParent) {
+
+        /** Every property but {@code showParent}. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize, String detail) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, detail, null);
+        }
 
         /** Every property but {@code detail}. */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
@@ -260,7 +276,7 @@ public record FullstackStarterRequest(
                                  SortDto sort, String view, Integer pageSize) {
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
                     childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
-                    pageSize, null);
+                    pageSize, null, null);
         }
 
         /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */

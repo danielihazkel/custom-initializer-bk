@@ -166,7 +166,8 @@ public final class FullstackPageValidator {
                     requireSinglePk(prefix, parent);
                     String via = via(prefix, child, parent, trimToNull(p.via()));
                     yield new PageDefinition(id, type, title, description, hidden, null, null, null, null,
-                            parent.name(), child.name(), via, null, null, null, null, null, null, null);
+                            parent.name(), child.name(), via, null, null, null, null, null, null, null)
+                            .withShowParent(Boolean.TRUE.equals(p.showParent()));
                 }
                 case REPORT -> {
                     String prefix = "Page '" + id + "' (report)";
@@ -304,6 +305,7 @@ public final class FullstackPageValidator {
             if (trimToNull(p.parent()) != null) throw new WizardArgumentException(prefix + "does not take 'parent'");
             if (trimToNull(p.child()) != null) throw new WizardArgumentException(prefix + "does not take 'child'");
             if (trimToNull(p.via()) != null) throw new WizardArgumentException(prefix + "does not take 'via'");
+            if (p.showParent() != null) throw new WizardArgumentException(prefix + "does not take 'showParent'");
         }
         if (type != PageDefinition.Type.RECORD && p.childTabs() != null && !p.childTabs().isEmpty()) {
             throw new WizardArgumentException(prefix + "does not take 'childTabs'");

@@ -467,7 +467,8 @@
         "title": "Customers",
         "description": "Pick a customer to see and add their orders.",
         "parent": "Customer",
-        "child": "Order"
+        "child": "Order",
+        "showParent": true
       },
       {
         "id": "new-order",

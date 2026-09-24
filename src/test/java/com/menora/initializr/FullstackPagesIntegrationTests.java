@@ -72,7 +72,7 @@ class FullstackPagesIntegrationTests {
                 .contains("{view === 'overview' && <OverviewScreen onNavigate={goView} />}")
                 // The route hands a tabs page its open tab, and a filterable list its filters.
                 .contains("{view === 'queue' && <QueueScreen tab={route.arg} onTabChange={tab => go('queue', tab)} />}")
-                .contains("{view === 'agents' && <AgentsScreen filters={route.query} />}")
+                .contains("{view === 'agents' && <AgentsScreen selectedId={route.arg} onSelect={id => go('agents', id)} filters={route.query} />}")
                 // A master-detail page keeps its selected parent in the route (#/teams/3).
                 .contains("{view === 'teams' && <TeamsScreen selectedId={route.arg} onSelect={id => go('teams', id)} />}")
                 .doesNotContain("DashboardPage")
@@ -168,8 +168,8 @@ class FullstackPagesIntegrationTests {
         // A list page with its own title passes it (and its description) to the entity page; a
         // list that is not a tab target takes no `embedded`.
         assertThat(files.get(FE + "src/app/screens/AgentsScreen.tsx"))
-                .contains("export function AgentsScreen({ filters }: Props) {")
-                .contains("      initialFilters={filters}\n      title={ 'Support agents' }\n      description={ 'Everyone on the desk.' }\n    />")
+                .contains("export function AgentsScreen({ selectedId, onSelect, filters }: Props) {")
+                .contains("      initialFilters={filters}\n      sidePane\n      selectedId={selectedId}\n      onSelect={onSelect}\n      title={ 'Support agents' }\n      description={ 'Everyone on the desk.' }\n    />")
                 .doesNotContain("embedded");
         assertThat(files.get(FE + "src/pages/ticket/ui/TicketPage.tsx"))
                 .contains("export function TicketPage({ initialFilters, scope, onOpenRecord, title, description, embedded }: TicketPageProps = {}) {")
@@ -708,6 +708,37 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
                 .contains("function useOptionNames(optionsPath: string | undefined, optionValue: string, optionLabel: string | undefined): Record<string, string> {")
                 .contains("const names = useOptionNames(optionsPath, optionValue, optionLabel)\n  const rows = (stats?.buckets ?? []).map(b => ({\n    key: b.key,\n    label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ?");
+    }
+
+    @Test
+    void fullstackEndpoint_masterDetailShowsTheParent() throws Exception {
+        // The Orders example's customers page shows the selected customer above their orders.
+        Map<String, String> files = generate(exampleBody("orders", "react-tailwind-crud"));
+        String screen = files.get(FE + "src/app/screens/CustomersScreen.tsx");
+        assertThat(screen)
+                .contains("import { useEffect, useState } from 'react'")
+                .contains("import { Pencil } from 'lucide-react'")
+                .contains("import { api, ApiError } from '@shared/api'")
+                .contains("import { CustomerDetail, CustomerForm, validateCustomer } from '@features/customer-form'")
+                .contains("import { Alert, EmptyState, Skeleton, FormDrawer } from '@shared/ui'")
+                .contains("api.get<Customer>(`/api/customers/${encodeURIComponent(selectedId)}`)")
+                .contains("<div className=\"border-b border-border p-5\" data-parent-card>")
+                .contains("{parent ? <CustomerDetail value={parent} /> : <Skeleton className=\"h-4 w-1/2\" />}")
+                .contains("const saved = await api.put<Customer>(`/api/customers/${encodeURIComponent(selectedId)}`, editing)")
+                .contains("title={t('editX', { x: 'Customer' })}");
+
+        // Without the flag the screen keeps its bytes; a read-only parent shows the card without Edit.
+        Map<String, Object> plain = exampleBody("orders", "react-tailwind-crud");
+        page(plain, "customers").remove("showParent");
+        String plainScreen = generate(plain).get(FE + "src/app/screens/CustomersScreen.tsx");
+        assertThat(plainScreen).doesNotContain("data-parent-card").doesNotContain("@shared/api").doesNotContain("FormDrawer");
+        Map<String, Object> readOnly = exampleBody("orders", "react-tailwind-crud");
+        entities(readOnly).stream().filter(e -> "Customer".equals(e.get("name"))).forEach(e -> e.put("readOnly", true));
+        assertThat(generate(readOnly).get(FE + "src/app/screens/CustomersScreen.tsx"))
+                .contains("data-parent-card")
+                .doesNotContain("Pencil")
+                .doesNotContain("FormDrawer");
+        assertOrdersRejected(p -> p.put("showParent", true), "(entity-list) does not take 'showParent'");
     }
 
     @Test

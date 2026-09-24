@@ -1,11 +1,25 @@
-import { {{#parentSearchable}}useEffect, {{/parentSearchable}}useState } from 'react'
+import { {{#usesEffect}}useEffect, {{/usesEffect}}useState } from 'react'
 {{#parentHasRecordPage}}
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight{{#showParentEdit}}, Pencil{{/showParentEdit}} } from 'lucide-react'
 {{/parentHasRecordPage}}
+{{^parentHasRecordPage}}
+{{#showParentEdit}}
+import { Pencil } from 'lucide-react'
+{{/showParentEdit}}
+{{/parentHasRecordPage}}
+{{#showParentEdit}}
+import { toast } from 'sonner'
+{{/showParentEdit}}
+{{#showParent}}
+import { api{{#showParentEdit}}, ApiError{{/showParentEdit}} } from '@shared/api'
+{{/showParent}}
 import { use{{parentEntityName}} } from '@entities/{{parentEntityNameKebab}}'
 import type { {{parentEntityName}} } from '@entities/{{parentEntityNameKebab}}'
+{{#showParent}}
+import { {{parentEntityName}}Detail{{#showParentEdit}}, {{parentEntityName}}Form, validate{{parentEntityName}}{{/showParentEdit}} } from '@features/{{parentEntityNameKebab}}-form'
+{{/showParent}}
 import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
-import { Alert, EmptyState, Skeleton } from '@shared/ui'
+import { Alert, EmptyState, Skeleton{{#showParentEdit}}, FormDrawer{{/showParentEdit}} } from '@shared/ui'
 import { t } from '@shared/i18n'
 
 interface Props {
@@ -52,6 +66,54 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
 
   const { items, totalPages, pageNumber, loading, error, reload } =
     use{{parentEntityName}}({ page, size: PAGE_SIZE, sort: null, {{#parentSearchable}}q{{/parentSearchable}}{{^parentSearchable}}q: ''{{/parentSearchable}} })
+{{#showParent}}
+  // The selected parent's own details: from the loaded list page, else fetched by id (a reload, a link).
+  const [fetchedParent, setFetchedParent] = useState<{{parentEntityName}} | null>(null)
+  const parent = selectedId == null ? null
+    : items.find(r => String(r.{{parentPkName}}) === selectedId) ?? (fetchedParent && String(fetchedParent.{{parentPkName}}) === selectedId ? fetchedParent : null)
+  useEffect(() => {
+    if (selectedId == null || items.some(r => String(r.{{parentPkName}}) === selectedId)) return
+    let current = true
+    api.get<{{parentEntityName}}>(`/api/{{parentEntityNamePluralKebab}}/${encodeURIComponent(selectedId)}`)
+      .then(r => { if (current) setFetchedParent(r) })
+      .catch(() => { if (current) setFetchedParent(null) })
+    return () => { current = false }
+  }, [selectedId, items])
+{{#showParentEdit}}
+  const [editing, setEditing] = useState<Partial<{{parentEntityName}}> | null>(null)
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+
+  async function saveParent() {
+    if (!editing || selectedId == null) return
+    const clientErrors = validate{{parentEntityName}}(editing)
+    if (Object.keys(clientErrors).length > 0) {
+      setFormErrors(clientErrors)
+      toast.error(t('fixHighlighted'))
+      return
+    }
+    setSaving(true)
+    setFormErrors({})
+    try {
+      const saved = await api.put<{{parentEntityName}}>(`/api/{{parentEntityNamePluralKebab}}/${encodeURIComponent(selectedId)}`, editing)
+      setFetchedParent(saved)
+      setEditing(null)
+      toast.success(t('xUpdated', { x: {{parentLabelExpr}} }))
+      void reload()
+    } catch (e) {
+      // A 400 carries per-field messages — show them inline; anything else is a toast.
+      if (e instanceof ApiError && e.fieldErrors) {
+        setFormErrors(e.fieldErrors)
+        toast.error(t('fixHighlighted'))
+      } else {
+        toast.error(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+{{/showParentEdit}}
+{{/showParent}}
 
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-8">
@@ -148,6 +210,27 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
         </aside>
         <section className="min-w-0 rounded-2xl border border-border bg-surface shadow-sm">
           {selectedId ? (
+{{#showParent}}
+            <>
+              <div className="border-b border-border p-5" data-parent-card>
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <h2 className="text-sm font-semibold text-fg">{parent ? parentLabel(parent) : { {{parentLabelExpr}} }}</h2>
+{{#showParentEdit}}
+                  {parent && (
+                    <button
+                      type="button"
+                      onClick={() => { setFormErrors({}); setEditing({ ...parent }) }}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      {t('edit')}
+                    </button>
+                  )}
+{{/showParentEdit}}
+                </div>
+                {parent ? <{{parentEntityName}}Detail value={parent} /> : <Skeleton className="h-4 w-1/2" />}
+              </div>
+{{/showParent}}
             <{{childEntityName}}Page
               key={selectedId}
               embedded
@@ -156,6 +239,9 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
               onOpenRecord={r => onNavigate('{{childRecordPageId}}', String(r.{{childRecordPk}}))}
 {{/childHasRecordPage}}
             />
+{{#showParent}}
+            </>
+{{/showParent}}
           ) : (
             <EmptyState
               title={ {{parentLabelPluralExpr}} }
@@ -164,6 +250,39 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
           )}
         </section>
       </div>
+{{#showParentEdit}}
+      <FormDrawer
+        open={editing !== null}
+        title={t('editX', { x: {{parentLabelExpr}} })}
+        subtitle={t('updateXBlurb', { x: {{parentLabelExpr}} })}
+        onClose={() => setEditing(null)}
+        onSave={saveParent}
+        saving={saving}
+        dirty={editing !== null && JSON.stringify(editing) !== JSON.stringify(parent)}
+      >
+        {editing && (
+          <{{parentEntityName}}Form
+            value={editing}
+            onChange={next => {
+              // Clear the message of a field as soon as it is edited.
+              const before = editing as Record<string, unknown>
+              const after = next as Record<string, unknown>
+              const changed = Object.keys(after).filter(k => after[k] !== before[k] && k in formErrors)
+              if (changed.length > 0) {
+                setFormErrors(prev => {
+                  const copy = { ...prev }
+                  for (const k of changed) delete copy[k]
+                  return copy
+                })
+              }
+              setEditing(next)
+            }}
+            errors={formErrors}
+            isNew={false}
+          />
+        )}
+      </FormDrawer>
+{{/showParentEdit}}
     </div>
   )
 }
