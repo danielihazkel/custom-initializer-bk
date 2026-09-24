@@ -55,7 +55,8 @@ public record PageDefinition(
         List<String> columns,
         ListSort sort,
         String view,
-        Integer pageSize) {
+        Integer pageSize,
+        Detail detail) {
 
     public PageDefinition {
         roles = roles == null ? List.of() : List.copyOf(roles);
@@ -76,7 +77,7 @@ public record PageDefinition(
                           String icon, DateRange dateRange, List<Step> steps, List<HeaderStat> headerStats,
                           List<String> roles) {
         this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via, childTabs,
-                charts, group, icon, dateRange, steps, headerStats, roles, null, null, null, null);
+                charts, group, icon, dateRange, steps, headerStats, roles, null, null, null, null, null);
     }
 
     /** Every page property but {@code roles} (open to everyone). */
@@ -111,28 +112,51 @@ public record PageDefinition(
     public PageDefinition withNav(String group, String icon) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize);
+                columns, sort, view, pageSize, detail);
     }
 
     /** The same page, open only to users holding one of {@code roles}. */
     public PageDefinition withRoles(List<String> roles) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize);
+                columns, sort, view, pageSize, detail);
     }
 
     /** The same dashboard with a period picker opening on {@code range}. */
     public PageDefinition withDateRange(DateRange range) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, range, steps, headerStats, roles,
-                columns, sort, view, pageSize);
+                columns, sort, view, pageSize, detail);
     }
 
     /** The same list page opening with these columns, sort, view and page size (each null/empty: the default). */
     public PageDefinition withListPresentation(List<String> columns, ListSort sort, String view, Integer pageSize) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize);
+                columns, sort, view, pageSize, detail);
+    }
+
+    /** The same list page opening its rows as {@code detail} says (null: the default). */
+    public PageDefinition withDetail(Detail detail) {
+        return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
+                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
+                columns, sort, view, pageSize, detail);
+    }
+
+    /** Where an entity-list page opens a row. */
+    public enum Detail {
+        /** The quick-look drawer over the list. */
+        DRAWER("drawer"),
+        /** A pane beside the rows, the open row in the route. */
+        SIDE("side"),
+        /** The entity's record page. */
+        RECORD("record");
+
+        private final String wire;
+
+        Detail(String wire) { this.wire = wire; }
+
+        public String wire() { return wire; }
     }
 
     /** Whether any of the list presentation properties is set. */

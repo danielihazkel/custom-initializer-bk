@@ -15,6 +15,11 @@ interface Props {
 {{#needsNavigate}}
   onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
 {{/needsNavigate}}
+{{#detailSide}}
+  /** The row open in the side pane, from the route (#/<page>/<id>); undefined closes it. */
+  selectedId?: string
+  onSelect?: (id?: string) => void
+{{/detailSide}}
 {{#isTabTarget}}
   /** Set by the tabs page embedding this list: the tab strip is its heading. */
   embedded?: boolean
@@ -24,15 +29,18 @@ interface Props {
 
 export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Props{{/hasScreenProps}}) {
 {{^listTakesQuery}}
-  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#hasRecordPage}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}}{{#hasWizard}} onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}}{{#hasColumns}} columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}} initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}} initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}} initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasPageTitle}} title={ {{pageTitleExpr}} }{{/hasPageTitle}}{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}}{{#isTabTarget}} embedded={embedded}{{/isTabTarget}} />
+  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#opensRecord}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/opensRecord}}{{#detailSide}} sidePane selectedId={selectedId} onSelect={onSelect}{{/detailSide}}{{#hasWizard}} onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}}{{#hasColumns}} columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}} initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}} initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}} initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasPageTitle}} title={ {{pageTitleExpr}} }{{/hasPageTitle}}{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}}{{#isTabTarget}} embedded={embedded}{{/isTabTarget}} />
 {{/listTakesQuery}}
 {{#listTakesQuery}}
   // A different filter set in the route is a fresh list, not an edit of the open one.
   return (
     <{{EntityName}}Page
       key={JSON.stringify(filters ?? {})}
-      initialFilters={{#hasPresetFilter}}{ { {{presetFilterEntriesTs}}, ...filters } }{{/hasPresetFilter}}{{^hasPresetFilter}}{filters}{{/hasPresetFilter}}{{#hasRecordPage}}
-      onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}}{{#hasWizard}}
+      initialFilters={{#hasPresetFilter}}{ { {{presetFilterEntriesTs}}, ...filters } }{{/hasPresetFilter}}{{^hasPresetFilter}}{filters}{{/hasPresetFilter}}{{#opensRecord}}
+      onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/opensRecord}}{{#detailSide}}
+      sidePane
+      selectedId={selectedId}
+      onSelect={onSelect}{{/detailSide}}{{#hasWizard}}
       onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}}{{#hasColumns}}
       columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}}
       initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}}

@@ -244,7 +244,24 @@ public record FullstackStarterRequest(
             List<String> columns,
             SortDto sort,
             String view,
-            Integer pageSize) {
+            Integer pageSize,
+            // entity-list: where a row opens — `drawer` (the quick-look drawer), `side` (a pane
+            // beside the rows, the open row in the route) or `record` (its record page). Absent:
+            // the record page when the entity has one, else the drawer.
+            String detail) {
+
+        /** Every property but {@code detail}. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, null);
+        }
 
         /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,

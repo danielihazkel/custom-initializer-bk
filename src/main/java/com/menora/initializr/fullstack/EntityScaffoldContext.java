@@ -154,7 +154,13 @@ public final class EntityScaffoldContext {
                     // The same object without its braces, to merge the route's filters into.
                     pv.put("presetFilterEntriesTs", presetTs == null ? null : presetTs.substring(2, presetTs.length() - 2));
                     putRecordLink(pv, "", p.entity(), links, summaries);
-                    pv.put("needsNavigate", pv.get("hasRecordPage"));
+                    // Where a row opens: the record page when there is one, unless the page says the
+                    // drawer or a side pane; a side pane keeps the open row in the route.
+                    boolean opensRecord = Boolean.TRUE.equals(pv.get("hasRecordPage"))
+                            && p.detail() != PageDefinition.Detail.DRAWER && p.detail() != PageDefinition.Detail.SIDE;
+                    pv.put("opensRecord", opensRecord);
+                    pv.put("detailSide", p.detail() == PageDefinition.Detail.SIDE);
+                    pv.put("needsNavigate", opensRecord);
                     // A filterable list also opens with the filters in its route (#/orders?status=OPEN).
                     pv.put("listTakesQuery", Boolean.TRUE.equals(ev.get("hasFilters")));
                     // New opens the entity's wizard page, when it has one.
@@ -396,6 +402,10 @@ public final class EntityScaffoldContext {
             } else if (Boolean.TRUE.equals(pv.get("pageIsMasterDetail"))) {
                 // The selected parent is the route arg (#/customers/42).
                 routeProps = " selectedId={route.arg} onSelect={id => go('" + pv.get("pageId") + "', id)}";
+            } else if (Boolean.TRUE.equals(pv.get("detailSide"))) {
+                // The row open in the side pane likewise (#/tickets/42), with any route filters.
+                routeProps = " selectedId={route.arg} onSelect={id => go('" + pv.get("pageId") + "', id)}"
+                        + (Boolean.TRUE.equals(pv.get("listTakesQuery")) ? " filters={route.query}" : "");
             } else if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) {
                 routeProps = " filters={route.query}";
             } else if (Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"))) {
@@ -412,6 +422,7 @@ public final class EntityScaffoldContext {
             boolean dashboardPeriod = Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"));
             boolean reportQuery = Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"));
             List<String> screenParams = new ArrayList<>();
+            if (Boolean.TRUE.equals(pv.get("detailSide"))) screenParams.addAll(List.of("selectedId", "onSelect"));
             if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) screenParams.add("filters");
             if (dashboardPeriod) screenParams.addAll(List.of("period: routePeriod", "onPeriodChange"));
             if (reportQuery) screenParams.addAll(List.of("query", "onQueryChange"));
@@ -503,6 +514,13 @@ public final class EntityScaffoldContext {
             }
         }
         ctx.put(LIST_PRESENTATION_KEY, listConfigured);
+        // Per-entity contexts read this too: only an entity with a side-pane list page gets the
+        // pane and its props.
+        Set<String> sideDetail = new LinkedHashSet<>();
+        for (PageDefinition p : pages) {
+            if (p.type() == PageDefinition.Type.ENTITY_LIST && p.detail() == PageDefinition.Detail.SIDE) sideDetail.add(p.entity());
+        }
+        ctx.put(SIDE_DETAIL_KEY, sideDetail);
         ctx.put("hasTabsPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTabs"))));
     }
 
@@ -1215,6 +1233,8 @@ public final class EntityScaffoldContext {
      *  (columns / sort / view / pageSize) ride in the (frontend) project context, for
      *  {@link #buildEntityContext}'s {@code listConfigurable}. Not referenced by any template. */
     private static final String LIST_PRESENTATION_KEY = "__listPresentationEntities";
+    /** Entities with a list page whose rows open in a side pane. */
+    private static final String SIDE_DETAIL_KEY = "__sideDetailEntities";
 
     /** Internal key under which the entity-summary lookup rides in the project context.
      *  Not referenced by any template. */
@@ -1409,6 +1429,8 @@ public final class EntityScaffoldContext {
         // initialView / initialPageSize props (false in backend contexts and for every other entity).
         Set<String> listConfigured = (Set<String>) projectContext.get(LIST_PRESENTATION_KEY);
         ctx.put("listConfigurable", listConfigured != null && listConfigured.contains(entity.name()));
+        Set<String> sideDetail = (Set<String>) projectContext.get(SIDE_DETAIL_KEY);
+        ctx.put("listSideDetail", sideDetail != null && sideDetail.contains(entity.name()));
         // Per-entity scaffold-opt overrides: resolve `override ?? projectOpt` for every overridable
         // option and store it under the same optScaffold<X> key, so it shadows the project-level
         // value for this entity only. Both the per-entity templates ({{#optScaffoldCsvExport}} ...)

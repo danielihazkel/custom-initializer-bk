@@ -132,11 +132,15 @@ public final class FullstackPageValidator {
                     String prefix = "Page '" + id + "'";
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
                     boolean audit = auditApplies(entity, scaffoldOpts);
+                    PageDefinition.Detail detail = detail(prefix, p.detail());
+                    // A side pane addresses its row by one key in the route.
+                    if (detail == PageDefinition.Detail.SIDE) requireSinglePk(prefix, entity);
                     yield new PageDefinition(id, type, title, description, hidden, entity.name(),
                             presetFilter(prefix, entity, p.presetFilter()), null, null)
                             .withListPresentation(columns(prefix, entity, p.columns(), audit),
                                     sort(prefix, entity, p.sort(), audit), view(prefix, entity, p.view()),
-                                    pageSize(prefix, p.pageSize()));
+                                    pageSize(prefix, p.pageSize()))
+                            .withDetail(detail);
                 }
                 case DASHBOARD -> {
                     PageDefinition.DateRange range = parseDateRange(id, p.dateRange());
@@ -203,6 +207,13 @@ public final class FullstackPageValidator {
             pages.add(page.withNav(group, icon).withRoles(roles(id, p.roles())));
         }
         if (!anyVisible) throw new WizardArgumentException("At least one page must be visible in the navigation");
+        // A list that opens rows on the record page needs one for its entity.
+        for (PageDefinition page : pages) {
+            if (page.detail() == PageDefinition.Detail.RECORD && !recordPageByEntity.containsKey(page.entity())) {
+                throw new WizardArgumentException("Page '" + page.id() + "' opens rows on a record page, but "
+                        + page.entity() + " has none");
+            }
+        }
         // The app opens on the first nav page, so everyone must be allowed there.
         pages.stream().filter(q -> !q.hidden()).findFirst().filter(q -> !q.roles().isEmpty()).ifPresent(q -> {
             throw new WizardArgumentException("Page '" + q.id() + "' is the start page, so it takes no 'roles'"
@@ -317,6 +328,7 @@ public final class FullstackPageValidator {
             if (p.sort() != null) throw new WizardArgumentException(prefix + "does not take 'sort'");
             if (trimToNull(p.view()) != null) throw new WizardArgumentException(prefix + "does not take 'view'");
             if (p.pageSize() != null) throw new WizardArgumentException(prefix + "does not take 'pageSize'");
+            if (trimToNull(p.detail()) != null) throw new WizardArgumentException(prefix + "does not take 'detail'");
         }
     }
 
@@ -408,6 +420,17 @@ public final class FullstackPageValidator {
         else if (dir.equalsIgnoreCase("desc")) desc = true;
         else throw new WizardArgumentException(prefix + " sort: dir must be asc or desc, got '" + dir + "'");
         return new PageDefinition.ListSort(canonical, desc);
+    }
+
+    /** Where a list page opens a row: absent keeps the default (the record page when there is one,
+     *  else the quick-look drawer). */
+    private static PageDefinition.Detail detail(String prefix, String raw) {
+        String d = trimToNull(raw);
+        if (d == null) return null;
+        for (PageDefinition.Detail detail : PageDefinition.Detail.values()) {
+            if (detail.wire().equalsIgnoreCase(d)) return detail;
+        }
+        throw new WizardArgumentException(prefix + ": unknown detail '" + d + "' (expected drawer, side or record)");
     }
 
     /** The view a list page opens in: one the entity's list actually offers (its enabled listViews,

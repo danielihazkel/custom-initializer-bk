@@ -12,6 +12,8 @@ import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 {{#mutable}}import { {{EntityName}}Form, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
 {{/mutable}}
+{{#listSideDetail}}import { api } from '@shared/api'
+{{/listSideDetail}}
 {{#listConfigurable}}/** A column with the key a list page's `columns` prop picks it by. */
 type ListColumn = Column<{{EntityName}}> & { key: string }
 
@@ -56,6 +58,13 @@ interface {{EntityName}}PageProps {
   description?: string
   /** Embedded in another screen (a tab, a record's related list): no heading of its own. */
   embedded?: boolean
+{{#listSideDetail}}
+  /** Rows open in a pane beside the list (a list page with `detail: side`) instead of the drawer. */
+  sidePane?: boolean
+  /** The pane's row, from the route (#/<page>/<id>); `onSelect` changes it (undefined closes the pane). */
+  selectedId?: string
+  onSelect?: (id?: string) => void
+{{/listSideDetail}}
 {{#hasWizardPage}}
   /** New opens the entity's wizard page instead of the form drawer. */
   onCreate?: () => void
@@ -73,7 +82,7 @@ interface {{EntityName}}PageProps {
 }
 
 {{/hasPages}}
-export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
   const [page, setPage] = useState(0)
   const [size, setSize] = useState({{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20)
   const [sort, setSort] = useState<SortSpec | null>({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
@@ -88,7 +97,13 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
 {{/listConfigurable}}
 {{#hasPages}}
   // A layout with a record page for this entity opens rows there instead of in the drawer.
+{{#listSideDetail}}
+  // ...or, on a side-pane page, in the pane: the open row rides in the route.
+  const openRow = sidePane && onSelect ? (r: {{EntityName}}) => onSelect(String(rowKey(r))) : onOpenRecord ?? setDetailRow
+{{/listSideDetail}}
+{{^listSideDetail}}
   const openRow = onOpenRecord ?? setDetailRow
+{{/listSideDetail}}
 {{/hasPages}}
 {{#hasFilters}}  const [filters, setFilters] = useState<FilterValues>({{#hasPages}}initialFilters ?? {}{{/hasPages}}{{^hasPages}}{}{{/hasPages}})
 {{/hasFilters}}
@@ -110,6 +125,21 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
     items, totalElements, totalPages, pageNumber, pageSize,
     loading, error,{{#viewKanban}} reload,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
   } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/hasFilters}} })
+{{#listSideDetail}}
+  // The pane's row: from the loaded page when it is there, else fetched by id (a reload, a link).
+  const [fetchedRow, setFetchedRow] = useState<{{EntityName}} | null>(null)
+  const selectedRow = sidePane && selectedId != null
+    ? items.find(r => String(rowKey(r)) === selectedId) ?? (fetchedRow && String(rowKey(fetchedRow)) === selectedId ? fetchedRow : null)
+    : null
+  useEffect(() => {
+    if (!sidePane || selectedId == null || items.some(r => String(rowKey(r)) === selectedId)) return
+    let current = true
+    api.get<{{EntityName}}>(`/api/{{entityNamePluralKebab}}/${encodeURIComponent(selectedId)}`)
+      .then(r => { if (current) setFetchedRow(r) })
+      .catch(() => { if (current) setFetchedRow(null) })
+    return () => { current = false }
+  }, [sidePane, selectedId, items])
+{{/listSideDetail}}
 {{#mutable}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
   const [initial, setInitial] = useState<Partial<{{EntityName}}>>({})
@@ -418,6 +448,10 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
         </div>
       )}
 {{/viewTable}}{{/bulkSelectApplicable}}
+{{#listSideDetail}}
+      <div className={sidePane ? 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
+      <div className="min-w-0">
+{{/listSideDetail}}
       {
 {{#viewCards}}      viewMode === 'cards' ? (
         <CardGrid
@@ -479,6 +513,31 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
 {{/bulkSelectApplicable}}          pagination={pagination}
         />
       ) : {{/viewTable}}null}
+{{#listSideDetail}}
+      </div>
+      {sidePane && (
+        <aside className="self-start rounded-2xl border border-border bg-surface p-5 shadow-sm" data-side-pane>
+          {selectedRow ? (
+            <>
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <h2 className="text-sm font-semibold text-fg">{t('xDetails', { x: '{{entityLabel}}' })}</h2>
+                <div className="flex items-center gap-3">
+{{#mutable}}
+                  <button type="button" onClick={() => openEdit(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('edit')}</button>
+                  <button type="button" onClick={() => setPendingDelete(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('delete')}</button>
+{{/mutable}}
+                  <button type="button" onClick={() => onSelect?.(undefined)} className="text-xs font-medium text-muted hover:text-fg" aria-label={t('close')}>×</button>
+                </div>
+              </div>
+              <{{EntityName}}Detail value={selectedRow} />
+            </>
+          ) : (
+            <p className="text-sm text-muted">{t('selectARow')}</p>
+          )}
+        </aside>
+      )}
+      </div>
+{{/listSideDetail}}
 {{#mutable}}
       <FormDrawer
         open={drawerOpen}

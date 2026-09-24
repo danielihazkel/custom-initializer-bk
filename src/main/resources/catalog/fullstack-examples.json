@@ -775,7 +775,8 @@
         "type": "entity-list",
         "group": "People",
         "icon": "Users",
-        "entity": "Agent"
+        "entity": "Agent",
+        "detail": "side"
       },
       {
         "id": "teams",

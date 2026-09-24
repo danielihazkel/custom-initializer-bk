@@ -711,6 +711,43 @@ class FullstackPagesIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_listOpensRowsInASidePane() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        page(body, "orders").put("detail", "side");
+        page(body, "products").put("detail", "drawer");
+        Map<String, String> files = generate(body);
+
+        // The screen keeps the open row in the route and hands the page the pane; the products
+        // list, told to use the drawer, no longer opens its (record-less) rows anywhere else.
+        assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx"))
+                .contains("  selectedId?: string\n  onSelect?: (id?: string) => void\n")
+                .contains("      sidePane\n      selectedId={selectedId}\n      onSelect={onSelect}\n")
+                .doesNotContain("onOpenRecord");
+        assertThat(files.get(FE + "src/app/App.tsx"))
+                .contains("<OrdersScreen selectedId={route.arg} onSelect={id => go('orders', id)} filters={route.query} onNavigate={goView} />");
+        // Only the entity with a side-pane page gets the pane and its props.
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx"))
+                .contains("  sidePane?: boolean\n")
+                .contains("const openRow = sidePane && onSelect ? (r: Order) => onSelect(String(rowKey(r))) : onOpenRecord ?? setDetailRow")
+                .contains("api.get<Order>(`/api/orders/${encodeURIComponent(selectedId)}`)")
+                .contains("<aside className=\"self-start rounded-2xl border border-border bg-surface p-5 shadow-sm\" data-side-pane>")
+                .contains("<p className=\"text-sm text-muted\">{t('selectARow')}</p>");
+        assertThat(files.get(FE + "src/pages/product/ui/ProductPage.tsx")).doesNotContain("sidePane");
+        assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("selectARow: 'Select a row to see its details.',");
+
+        // The Menora set's page carries the same pane.
+        Map<String, Object> menora = exampleBody("orders", "react-menora-digital-crud");
+        page(menora, "orders").put("detail", "side");
+        assertThat(generate(menora).get(FE + "src/pages/order/ui/OrderPage.tsx")).contains("data-side-pane");
+
+        assertOrdersRejected(p -> p.put("detail", "popup"), "unknown detail 'popup' (expected drawer, side or record)");
+        assertRejected(p -> p.get(0).put("detail", "side"), "(dashboard) does not take 'detail'");
+        Map<String, Object> noRecord = exampleBody("orders", "react-tailwind-crud");
+        page(noRecord, "products").put("detail", "record");
+        assertBadRequest(noRecord, "Page 'products' opens rows on a record page, but Product has none");
+    }
+
+    @Test
     void fullstackEndpoint_presetsDateAndNumberRanges() throws Exception {
         Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
         // A period ending today, an open-ended number range and an enum, on the orders list; a
