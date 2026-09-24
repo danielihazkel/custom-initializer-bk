@@ -76,14 +76,19 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/backend/pom.xml"));
         String pom = entries.get("shop/backend/pom.xml");
         // No `dependencies` field in request → set defaults are applied
-        // (data-jpa, web, h2, validation, actuator, ldap-auth per spring-jpa-crud manifest).
+        // (data-jpa, web, h2, validation, actuator, ldap-auth-rest per spring-jpa-crud manifest).
         assertThat(pom).contains("spring-boot-starter-data-jpa");
         assertThat(pom).contains("spring-boot-starter-web");
         assertThat(pom).contains("spring-boot-starter-validation");
         assertThat(pom).contains("spring-boot-starter-actuator");
-        // ldap-auth is a fullstack default → its Maven coords + AOP starter are wired in.
-        assertThat(pom).contains("lts.ldap.util");
+        // ldap-auth-rest is the fullstack default: groups come from the LDAP REST service, so the
+        // AOP starter is wired in but the direct-bind lts.ldap.util library is not.
         assertThat(pom).contains("spring-boot-starter-aop");
+        assertThat(pom).doesNotContain("lts.ldap.util");
+        assertThat(entries.get("shop/backend/src/main/resources/application.yaml")).contains("ldap-rest:");
+        assertThat(contentEndingWith(entries, "/security/LdapService.java")).contains("RestClient");
+        // Page roles and the generated /api/me/roles work with it like with the direct-bind variant.
+        assertThat(contentEndingWith(entries, "/web/MeController.java")).contains("@GetMapping(\"/roles\")");
 
         // Per-entity backend files for both entities
         assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/User.java"));
@@ -1335,8 +1340,8 @@ class FullstackStarterIntegrationTests {
     @Test
     void fullstackEndpoint_securesEndpointsWhenOptedIn() throws Exception {
         // opts.scaffold=[secured] scaffolds @RequiresPermission on CRUD methods (reads → USER,
-        // writes → ADMIN) but COMMENTED OUT, so the user opts in per-endpoint later. ldap-auth is
-        // a set default, so the security.* classes referenced by the commented hints exist.
+        // writes → ADMIN) but COMMENTED OUT, so the user opts in per-endpoint later. ldap-auth-rest
+        // is a set default, so the security.* classes referenced by the commented hints exist.
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("artifactId", "demo");
         body.put("packageName", "com.menora.demo");

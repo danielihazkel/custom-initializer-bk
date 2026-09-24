@@ -234,7 +234,7 @@ public record FullstackStarterRequest(
             // per related list; an empty list: none).
             List<HeaderStatDto> headerStats,
             // any page: the roles (ADMIN, USER) of which a user needs one to see and open it; needs
-            // an ldap-auth dependency. Absent: everyone.
+            // ldap-auth-rest (the sets' default) or ldap-auth. Absent: everyone.
             List<String> roles) {
 
         /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */

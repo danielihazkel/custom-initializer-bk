@@ -517,7 +517,7 @@ class DataSeederTest {
                     .map(d -> d.getDepId()).toList();
             assertThat(deps)
                     .as("default deps for %s", setKey)
-                    .containsExactly("data-jpa", "web", "h2", "validation", "actuator", "ldap-auth");
+                    .containsExactly("data-jpa", "web", "h2", "validation", "actuator", "ldap-auth-rest");
         }
     }
 }

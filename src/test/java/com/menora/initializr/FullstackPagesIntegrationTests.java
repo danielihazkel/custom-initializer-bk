@@ -852,7 +852,7 @@ class FullstackPagesIntegrationTests {
                 .contains("@GetMapping(\"/roles\")")
                 .contains("permissionService.mapRoleToGroup(role)");
 
-        // Without roles: no access module, no guard (ldap-auth, a set default, still answers /api/me/roles).
+        // Without roles: no access module, no guard (ldap-auth-rest, a set default, still answers /api/me/roles).
         Map<String, String> open = generate(exampleBody("tickets", "react-tailwind-crud"));
         assertThat(open).doesNotContainKey(FE + "src/app/access.ts");
         assertThat(open.get(FE + "src/app/App.tsx"))

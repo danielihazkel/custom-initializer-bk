@@ -10,7 +10,7 @@
     "h2",
     "validation",
     "actuator",
-    "ldap-auth"
+    "ldap-auth-rest"
   ],
   "files": [
     {
