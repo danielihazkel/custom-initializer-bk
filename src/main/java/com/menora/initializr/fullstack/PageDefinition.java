@@ -151,6 +151,19 @@ public record PageDefinition(
                 columns, sort, view, pageSize, detail, showParent);
     }
 
+    /** The generated shell's navigation, for a layout: its style and whether sections fold. */
+    public record Nav(NavStyle style, boolean collapsibleGroups) {}
+
+    public enum NavStyle {
+        SIDEBAR("sidebar"), TOPBAR("topbar");
+
+        private final String wire;
+
+        NavStyle(String wire) { this.wire = wire; }
+
+        public String wire() { return wire; }
+    }
+
     /** Where an entity-list page opens a row. */
     public enum Detail {
         /** The quick-look drawer over the list. */

@@ -176,6 +176,7 @@ public class FullstackStarterController {
     private WebProjectRequest buildArtifacts(FullstackStarterRequest body, Path tempDir) throws IOException {
         List<EntityDefinition> entities = FullstackRequestValidator.validateAndConvert(body);
         List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), entities, scaffoldOptsOf(body));
+        PageDefinition.Nav nav = FullstackPageValidator.validateNav(body.nav(), pages);
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
 
@@ -231,7 +232,7 @@ public class FullstackStarterController {
         }
 
         // Frontend — rendered inline outside the Initializr pipeline.
-        renderFrontend(frontendSet, request, entities, pages, domainPackage, body.colorPalette(),
+        renderFrontend(frontendSet, request, entities, pages, nav, domainPackage, body.colorPalette(),
                 body.dashboardTitle(), body.dashboardOverview(), locale, tempDir.resolve("frontend"));
 
         // Root files
@@ -377,7 +378,7 @@ public class FullstackStarterController {
      * </ol>
      */
     private void renderFrontend(EntityTemplateSetEntity set, WebProjectRequest request,
-                                List<EntityDefinition> entities, List<PageDefinition> pages,
+                                List<EntityDefinition> entities, List<PageDefinition> pages, PageDefinition.Nav nav,
                                 String domainPackage, String colorPaletteId, String dashboardTitle, String dashboardOverview,
                                 String locale, Path targetDir) throws IOException {
         // 1. Substrate — reuse the standalone frontend generator.
@@ -443,7 +444,7 @@ public class FullstackStarterController {
         // Page layout (dashboards / list pages / tabs / master-detail / record / report). No pages
         // → hasPages=false, the classic shell. Runs last: a report screen resolves its Export
         // button from optScaffoldCsvExport, which is only in the context by this point.
-        EntityScaffoldContext.putPageContext(projectCtx, pages);
+        EntityScaffoldContext.putPageContext(projectCtx, pages, nav);
         log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());

@@ -202,7 +202,9 @@ function PageNotice({ title, hint, action, onAction }: { title: string; hint: st
 
 export default function App() {
   const [route, navigate{{#hasQueryScreens}}, replace{{/hasQueryScreens}}] = useRoute()
+{{^navTopbar}}
   const [navOpen, setNavOpen] = useState(false)
+{{/navTopbar}}
   const { isDark, toggle } = useTheme()
   const { view } = route
   const current = NAV.find(n => n.id === view)
@@ -235,6 +237,7 @@ export default function App() {
   const setQuery = (query: Record<string, string>) => replace({ ...route, query })
 {{/hasQueryScreens}}
 
+{{^navTopbar}}
   const sidebar = (
     <>
       <div className="flex items-center gap-2.5 border-b border-white/10 px-5 py-5">
@@ -247,6 +250,7 @@ export default function App() {
         </div>
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
+{{^navCollapsibleGroups}}
         {sections.map((section, i) => (
           <div key={i} className="space-y-0.5">
             {section.label && (
@@ -276,15 +280,53 @@ export default function App() {
             })}
           </div>
         ))}
+{{/navCollapsibleGroups}}
+{{#navCollapsibleGroups}}
+        {sections.map((section, i) => {
+          // A labelled section folds; a run of ungrouped pages has nothing to fold under.
+          const links = section.items.map(({ id, label, icon: Icon }) => {
+            const active = view === id
+            return (
+              <a
+                key={id}
+                href={`#/${id}`}
+                onClick={e => {
+                  e.preventDefault()
+                  go(id)
+                }}
+                aria-current={active ? 'page' : undefined}
+                className={`flex w-full items-center gap-3 rounded-lg border-s-2 px-3 py-2 text-sm transition-colors ${
+                  active
+                    ? 'border-gold bg-ink-soft font-medium text-white'
+                    : 'border-transparent text-slate-300 hover:bg-ink-soft hover:text-white'
+                }`}
+              >
+                <Icon className={`h-4 w-4 ${active ? 'text-gold' : ''}`} />
+                {label}
+              </a>
+            )
+          })
+          return section.label ? (
+            <details key={i} open className="space-y-0.5">
+              <summary className="cursor-pointer select-none px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</summary>
+              {links}
+            </details>
+          ) : (
+            <div key={i} className="space-y-0.5">{links}</div>
+          )
+        })}
+{{/navCollapsibleGroups}}
       </nav>
       <div className="border-t border-white/10 px-5 py-3 text-[11px] text-white/70">
         v0.0.1
       </div>
     </>
   )
+{{/navTopbar}}
 
   return (
     <div className="flex h-full bg-canvas text-fg">
+{{^navTopbar}}
       {/* Static sidebar (tablet and up) */}
       <aside className="hidden w-64 flex-col bg-app-shell text-slate-100 md:flex">
         {sidebar}
@@ -306,10 +348,54 @@ export default function App() {
           {sidebar}
         </aside>
       </div>
+{{/navTopbar}}
 
       <div className="flex flex-1 flex-col overflow-hidden">
+{{#navTopbar}}
+        {/* Top bar: the brand, then every nav section in a row that scrolls sideways on a phone. */}
+        <div className="bg-app-shell text-slate-100">
+          <div className="flex items-center gap-4 px-4 md:px-8">
+            <div className="flex shrink-0 items-center gap-2.5 py-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white p-1 shadow-sm">
+                <img src="/logo.png" alt="{{artifactId}}" className="h-full w-auto" />
+              </div>
+              <div className="font-semibold tracking-tight">{{artifactId}}</div>
+            </div>
+            <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto" aria-label={t('navigation')}>
+              {sections.map((section, i) => (
+                <div key={i} className="flex items-stretch gap-1">
+                  {section.label && (
+                    <span className="self-center whitespace-nowrap ps-2 pe-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</span>
+                  )}
+                  {section.items.map(({ id, label, icon: Icon }) => {
+                    const active = view === id
+                    return (
+                      <a
+                        key={id}
+                        href={`#/${id}`}
+                        onClick={e => {
+                          e.preventDefault()
+                          go(id)
+                        }}
+                        aria-current={active ? 'page' : undefined}
+                        className={`flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-3 text-sm transition-colors ${
+                          active ? 'border-gold font-medium text-white' : 'border-transparent text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        <Icon className={`h-4 w-4 ${active ? 'text-gold' : ''}`} />
+                        {label}
+                      </a>
+                    )
+                  })}
+                </div>
+              ))}
+            </nav>
+          </div>
+        </div>
+{{/navTopbar}}
         <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3.5 md:px-8">
           <div className="flex items-center gap-3">
+{{^navTopbar}}
             <button
               onClick={() => setNavOpen(true)}
               className="-ms-1 rounded-lg p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg md:hidden"
@@ -317,6 +403,7 @@ export default function App() {
             >
               <Menu className="h-5 w-5" />
             </button>
+{{/navTopbar}}
             <div>
 {{#hasBreadcrumbs}}
               {crumb ? (

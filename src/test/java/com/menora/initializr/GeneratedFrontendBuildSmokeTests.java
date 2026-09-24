@@ -156,6 +156,8 @@ class GeneratedFrontendBuildSmokeTests {
         // Soft delete is on, so the record page's Delete toast carries the Undo (restore) path too.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
         body.put("opts", Map.of("scaffold", List.of("csvExport", "softDelete")));
+        // The tailwind shell's other navigation: a top bar with folding sections.
+        body.put("nav", Map.of("style", "topbar", "collapsibleGroups", true));
         Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);

@@ -711,6 +711,46 @@ class FullstackPagesIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_rendersATopbarNav() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        body.put("nav", Map.of("style", "topbar", "collapsibleGroups", true));
+        String topbar = generate(body).get(FE + "src/app/App.tsx");
+        assertThat(topbar)
+                .contains("import { LayoutDashboard, ListChecks, Moon, Package, ShoppingCart, Sun, Users, Wand2 } from 'lucide-react'")
+                .contains("<nav className=\"flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto\" aria-label={t('navigation')}>")
+                .doesNotContain("setNavOpen")
+                .doesNotContain("const sidebar = (")
+                .doesNotContain("<details");
+
+        // A sidebar with folding sections keeps the off-canvas menu and folds the labelled groups.
+        body.put("nav", Map.of("collapsibleGroups", true));
+        String folding = generate(body).get(FE + "src/app/App.tsx");
+        assertThat(folding)
+                .contains("import { LayoutDashboard, ListChecks, Menu, Moon, Package, ShoppingCart, Sun, Users, Wand2 } from 'lucide-react'")
+                .contains("<details key={i} open className=\"space-y-0.5\">")
+                .contains("const sidebar = (");
+
+        // Absent (or the defaults spelled out), the shell is the one it always was.
+        body.remove("nav");
+        String plain = generate(body).get(FE + "src/app/App.tsx");
+        assertThat(plain).doesNotContain("<details").doesNotContain("t('navigation')").contains("const [navOpen, setNavOpen] = useState(false)");
+        body.put("nav", Map.of("style", "sidebar"));
+        assertThat(generate(body).get(FE + "src/app/App.tsx")).isEqualTo(plain);
+        assertThat(files(body).get(FE + "src/shared/i18n/strings.ts")).contains("navigation: 'Navigation',");
+
+        body.put("nav", Map.of("style", "left"));
+        assertBadRequest(body, "nav.style must be sidebar or topbar, got 'left'");
+        body.put("nav", Map.of("style", "topbar"));
+        body.remove("pages");
+        assertBadRequest(body, "'nav' needs a page layout (pages)");
+    }
+
+    /** {@link #generate}, for a body whose files are asserted more than once. */
+    private Map<String, String> files(Map<String, Object> body) throws Exception {
+        return generate(body);
+    }
+
+    @Test
     void fullstackEndpoint_masterDetailShowsTheParent() throws Exception {
         // The Orders example's customers page shows the selected customer above their orders.
         Map<String, String> files = generate(exampleBody("orders", "react-tailwind-crud"));

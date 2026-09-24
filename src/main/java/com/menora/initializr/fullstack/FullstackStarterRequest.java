@@ -49,7 +49,28 @@ public record FullstackStarterRequest(
         List<EntityDefinitionDto> entities,
         // Optional frontend page layout (dashboards, entity lists, tabbed pages). Null/empty keeps
         // the classic shell: one dashboard plus one list page per entity. See FullstackPageValidator.
-        List<PageDefinitionDto> pages) {
+        List<PageDefinitionDto> pages,
+        // The generated shell's navigation, for a page layout: `style` sidebar (the default) or
+        // topbar, and `collapsibleGroups` for nav sections that fold. Needs `pages`; the Menora
+        // set, a top bar already, ignores it.
+        NavDto nav) {
+
+    /** Every property but {@code nav}. */
+    public FullstackStarterRequest(
+            String groupId, String artifactId, String name, String description, String packageName,
+            String domainPackage, String type, String language, String bootVersion, String packaging,
+            String javaVersion, String version, String configurationFileFormat, List<String> dependencies,
+            Map<String, List<String>> opts, String backendTemplateSet, String frontendTemplateSet,
+            String colorPalette, String dashboardTitle, String dashboardOverview, String locale,
+            String department, List<EntityDefinitionDto> entities, List<PageDefinitionDto> pages) {
+        this(groupId, artifactId, name, description, packageName, domainPackage, type, language,
+                bootVersion, packaging, javaVersion, version, configurationFileFormat, dependencies,
+                opts, backendTemplateSet, frontendTemplateSet, colorPalette, dashboardTitle,
+                dashboardOverview, locale, department, entities, pages, null);
+    }
+
+    /** The generated shell's navigation: {@code style} sidebar/topbar, {@code collapsibleGroups}. */
+    public record NavDto(String style, Boolean collapsibleGroups) {}
 
     /** Back-compat constructor without {@code pages} (the classic one-page-per-entity layout). */
     public FullstackStarterRequest(

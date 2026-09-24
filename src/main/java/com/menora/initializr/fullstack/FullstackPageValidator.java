@@ -341,6 +341,25 @@ public final class FullstackPageValidator {
      * {@code audit} override, else the project's {@code audit} scaffold opt, and only for a writable
      * entity (EntityScaffoldContext.auditApplicable).
      */
+    /** The request's {@code nav}, checked against the layout: absent is null (the default shell);
+     *  given, it needs a page layout, a known style (sidebar by default) and a boolean flag. */
+    public static PageDefinition.Nav validateNav(FullstackStarterRequest.NavDto raw, List<PageDefinition> pages) {
+        if (raw == null) return null;
+        if (pages == null || pages.isEmpty()) {
+            throw new WizardArgumentException("'nav' needs a page layout (pages) — the classic shell has its own navigation");
+        }
+        String style = trimToNull(raw.style());
+        PageDefinition.NavStyle navStyle = PageDefinition.NavStyle.SIDEBAR;
+        if (style != null) {
+            navStyle = null;
+            for (PageDefinition.NavStyle s : PageDefinition.NavStyle.values()) {
+                if (s.wire().equalsIgnoreCase(style)) navStyle = s;
+            }
+            if (navStyle == null) throw new WizardArgumentException("nav.style must be sidebar or topbar, got '" + style + "'");
+        }
+        return new PageDefinition.Nav(navStyle, Boolean.TRUE.equals(raw.collapsibleGroups()));
+    }
+
     static boolean auditApplies(EntityDefinition entity, Set<String> scaffoldOpts) {
         if (entity.readOnly()) return false;
         Boolean override = entity.opts().get("audit");

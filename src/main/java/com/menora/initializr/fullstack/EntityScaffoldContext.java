@@ -113,7 +113,16 @@ public final class EntityScaffoldContext {
      */
     @SuppressWarnings("unchecked")
     public static void putPageContext(Map<String, Object> ctx, List<PageDefinition> pages) {
+        putPageContext(ctx, pages, null);
+    }
+
+    /** As above, with the shell's navigation settings (null: a sidebar whose sections do not fold). */
+    public static void putPageContext(Map<String, Object> ctx, List<PageDefinition> pages, PageDefinition.Nav navSettings) {
         ctx.put("hasPages", !pages.isEmpty());
+        // The tailwind shell's nav variants; the Menora shell is a top bar already and ignores them.
+        boolean navTopbar = navSettings != null && navSettings.style() == PageDefinition.NavStyle.TOPBAR;
+        ctx.put("navTopbar", navTopbar);
+        ctx.put("navCollapsibleGroups", navSettings != null && navSettings.collapsibleGroups());
         if (pages.isEmpty()) return;
 
         Map<String, Map<String, Object>> entityByPascal = new LinkedHashMap<>();
@@ -488,7 +497,8 @@ public final class EntityScaffoldContext {
         ctx.put("hasQueryScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("takesQuery"))));
         ctx.put("initialPageId", nav.get(0).get("pageId"));
         // The lucide names the shell imports: the nav icons in use plus its own chrome, sorted.
-        Set<String> icons = new TreeSet<>(List.of("Menu", "Moon", "Sun"));
+        // A top bar has no off-canvas menu to open, so it imports no Menu icon.
+        Set<String> icons = new TreeSet<>(navTopbar ? List.of("Moon", "Sun") : List.of("Menu", "Moon", "Sun"));
         nav.forEach(v -> icons.add((String) v.get("navIcon")));
         ctx.put("navIconImports", String.join(", ", icons));
         putNavGroups(ctx, nav);
