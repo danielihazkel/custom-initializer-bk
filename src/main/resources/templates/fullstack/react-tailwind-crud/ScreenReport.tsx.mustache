@@ -9,9 +9,9 @@ import { api } from '@shared/api'
 import { FilterBar, type FilterDescriptor, type FilterValues } from '@shared/ui'
 {{/hasFilters}}
 import { ReportChart } from '@shared/ui/widgets'
-{{#usesBucketRange}}
-import { bucketRange } from '@shared/ui/stats'
-{{/usesBucketRange}}
+{{#usesStatsImport}}
+import { {{#usesBucketRange}}bucketRange{{/usesBucketRange}}{{#usesBucketRange}}{{#presetUsesPeriod}}, {{/presetUsesPeriod}}{{/usesBucketRange}}{{#presetUsesPeriod}}queryOf, rangeParams{{/presetUsesPeriod}} } from '@shared/ui/stats'
+{{/usesStatsImport}}
 import { t } from '@shared/i18n'
 {{#hasChartLabels}}
 import { {{chartLabelsRefs}} } from '@entities/{{entityNameKebab}}'

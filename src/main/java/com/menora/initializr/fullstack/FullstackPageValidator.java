@@ -437,9 +437,16 @@ public final class FullstackPageValidator {
         return raw;
     }
 
-    /** Preset filters are equality filters on non-PK, filterable enum/boolean fields. Enum values
-     *  are canonicalized to the declared constant (case-insensitive match). {@code owner} names the
-     *  page or widget in the error. */
+    /**
+     * Preset filters: equality on a filterable enum/boolean field (the enum constant canonicalized,
+     * matched ignoring case), a range on a filterable date or number field ({@code 2026-01-01..2026-03-31},
+     * {@code 100..500}, either side optional) or a period ending on the day the app is opened on a
+     * date field ({@code last:7d}, {@code last:30d}, {@code last:90d}, {@code ytd}, {@code 12m}).
+     * The result maps list params to literals — a range becomes {@code <field>From}/{@code <field>To}
+     * or {@code <field>Min}/{@code <field>Max} — except a period, kept under the field's own name as
+     * {@code @<period>} for the renderer to turn into a {@code rangeParams(...)} call (it depends on
+     * today's date). {@code owner} names the page or widget in the error.
+     */
     private static Map<String, String> presetFilter(String owner, EntityDefinition entity, Map<String, String> raw) {
         if (raw == null || raw.isEmpty()) return Map.of();
         Map<String, String> out = new LinkedHashMap<>();
@@ -449,27 +456,98 @@ public final class FullstackPageValidator {
                     .filter(f -> f.name().equalsIgnoreCase(en.getKey()))
                     .findFirst()
                     .orElseThrow(() -> new WizardArgumentException(prefix + ": no such field on " + entity.name()));
-            if (field.primaryKey() || !field.filterable() || !(field.type().isEnum() || field.type().isBoolean())) {
-                throw new WizardArgumentException(prefix + ": only filterable enum or boolean fields can be preset");
+            FieldType type = field.type();
+            if (field.primaryKey() || !field.filterable()
+                    || !(type.isEnum() || type.isBoolean() || type.isTemporal() || type.isNumeric())) {
+                throw new WizardArgumentException(prefix + ": only filterable enum, boolean, date or number fields can be preset");
             }
             String value = trimToNull(en.getValue());
             if (value == null) throw new WizardArgumentException(prefix + ": value is required");
-            if (field.type().isBoolean()) {
+            if (type.isBoolean()) {
                 String lower = value.toLowerCase(Locale.ROOT);
                 if (!lower.equals("true") && !lower.equals("false")) {
                     throw new WizardArgumentException(prefix + ": expected true or false, got '" + value + "'");
                 }
                 out.put(field.name(), lower);
-            } else {
+            } else if (type.isEnum()) {
                 String constant = field.enumValues().stream()
                         .filter(c -> c.equalsIgnoreCase(value))
                         .findFirst()
                         .orElseThrow(() -> new WizardArgumentException(prefix + ": '" + value
                                 + "' is not one of " + field.enumValues()));
                 out.put(field.name(), constant);
+            } else if (type.isTemporal()) {
+                String period = presetPeriod(value);
+                if (period != null) {
+                    out.put(field.name(), "@" + period);
+                    continue;
+                }
+                String[] range = presetRange(prefix, value,
+                        "a date range (2026-01-01..2026-03-31, either side optional) or a period (last:7d, last:30d, last:90d, ytd, 12m)");
+                boolean dateTime = type == FieldType.LOCAL_DATE_TIME;
+                String from = range[0] == null ? null : isoDate(prefix, range[0], dateTime, false);
+                String to = range[1] == null ? null : isoDate(prefix, range[1], dateTime, true);
+                if (from != null && to != null && from.compareTo(to) > 0) {
+                    throw new WizardArgumentException(prefix + ": from '" + range[0] + "' is after to '" + range[1] + "'");
+                }
+                if (from != null) out.put(field.name() + "From", from);
+                if (to != null) out.put(field.name() + "To", to);
+            } else {
+                String[] range = presetRange(prefix, value, "a number range (100..500, either side optional)");
+                java.math.BigDecimal min = range[0] == null ? null : number(prefix, range[0], "min");
+                java.math.BigDecimal max = range[1] == null ? null : number(prefix, range[1], "max");
+                if (min != null && max != null && min.compareTo(max) > 0) {
+                    throw new WizardArgumentException(prefix + ": min " + min.toPlainString() + " is above max " + max.toPlainString());
+                }
+                if (min != null) out.put(field.name() + "Min", min.toPlainString());
+                if (max != null) out.put(field.name() + "Max", max.toPlainString());
             }
         }
         return out;
+    }
+
+    private static final Set<String> PRESET_PERIODS = Set.of("7d", "30d", "90d", "ytd", "12m");
+
+    /** The wire id of a period preset ({@code last:30d} → {@code 30d}, {@code ytd}), or null for anything else. */
+    private static String presetPeriod(String value) {
+        String v = value.toLowerCase(Locale.ROOT);
+        if (v.startsWith("last:")) v = v.substring(5);
+        return PRESET_PERIODS.contains(v) ? v : null;
+    }
+
+    /** The two halves of {@code a..b}, either blank (null); anything without {@code ..} is rejected. */
+    private static String[] presetRange(String prefix, String value, String expected) {
+        int at = value.indexOf("..");
+        if (at < 0) throw new WizardArgumentException(prefix + ": expected " + expected + ", got '" + value + "'");
+        String from = trimToNull(value.substring(0, at));
+        String to = trimToNull(value.substring(at + 2));
+        if (from == null && to == null) throw new WizardArgumentException(prefix + ": a range needs a from or a to");
+        return new String[] {from, to};
+    }
+
+    /** An ISO day, or a date-time on a date-time column; a day on one is widened to its start or end,
+     *  as the generated period picker does. */
+    private static String isoDate(String prefix, String raw, boolean dateTime, boolean end) {
+        try {
+            if (raw.length() == 10) {
+                java.time.LocalDate.parse(raw);
+                return dateTime ? raw + (end ? "T23:59:59" : "T00:00:00") : raw;
+            }
+            if (!dateTime) throw new WizardArgumentException(prefix + ": expected a day (yyyy-MM-dd), got '" + raw + "'");
+            java.time.LocalDateTime.parse(raw);
+            return raw;
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new WizardArgumentException(prefix + ": '" + raw + "' is not an ISO date"
+                    + (dateTime ? "-time (yyyy-MM-dd or yyyy-MM-ddTHH:mm:ss)" : " (yyyy-MM-dd)"));
+        }
+    }
+
+    private static java.math.BigDecimal number(String prefix, String raw, String what) {
+        try {
+            return new java.math.BigDecimal(raw);
+        } catch (NumberFormatException e) {
+            throw new WizardArgumentException(prefix + ": " + what + " '" + raw + "' is not a number");
+        }
     }
 
     /** A dashboard's period picker: absent (no picker), or the period it opens on. */

@@ -147,8 +147,10 @@ public final class EntityScaffoldContext {
                     pv.put("entityNameKebab", ev.get("entityNameKebab"));
                     pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
                     pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
-                    pv.put("presetFilterTs", presetFilterTs(p.presetFilter()));
-                    String presetTs = presetFilterTs(p.presetFilter());
+                    pv.put("presetFilterTs", presetFilterTs(p.presetFilter(), ev));
+                    String presetTs = presetFilterTs(p.presetFilter(), ev);
+                    // A period preset is computed when the screen loads: the screen imports the helpers.
+                    pv.put("presetUsesPeriod", presetHasPeriod(p.presetFilter()));
                     // The same object without its braces, to merge the route's filters into.
                     pv.put("presetFilterEntriesTs", presetTs == null ? null : presetTs.substring(2, presetTs.length() - 2));
                     putRecordLink(pv, "", p.entity(), links, summaries);
@@ -194,13 +196,15 @@ public final class EntityScaffoldContext {
                     pv.put("filterFields", ev.get("filterFields"));
                     pv.put("hasFilters", ev.get("hasFilters"));
                     pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
-                    pv.put("presetFilterTs", presetFilterTs(p.presetFilter()));
+                    pv.put("presetFilterTs", presetFilterTs(p.presetFilter(), ev));
+                    pv.put("presetUsesPeriod", presetHasPeriod(p.presetFilter()));
                     // A per-page screen never runs through buildEntityContext, so the entity's own
                     // csvExport override has to be resolved against the project opt here.
                     Object csvOverride = ev.get("csvExportOverride");
                     pv.put("reportHasExport", csvOverride != null ? Boolean.TRUE.equals(csvOverride)
                             : Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport")));
                     putCharts(pv, p, ev, links);
+                    pv.put("usesStatsImport", Boolean.TRUE.equals(pv.get("usesBucketRange")) || presetHasPeriod(p.presetFilter()));
                     pv.put("navIcon", "BarChart3");
                     defaultTitleExpr = "t('xReport', { x: " + tsString((String) ev.get("entityLabelPlural")) + " })";
                 }
@@ -315,6 +319,8 @@ public final class EntityScaffoldContext {
             List<Map<String, Object>> tabViews = new ArrayList<>();
             boolean needsNavigate = false;
             boolean hasTabCounts = false;
+            boolean tabsUseRangeParams = false;
+            boolean tabsUseStatsQuery = false;
             for (int i = 0; i < p.tabs().size(); i++) {
                 PageDefinition.Tab tab = p.tabs().get(i);
                 Map<String, Object> target = viewById.get(tab.page());
@@ -335,9 +341,13 @@ public final class EntityScaffoldContext {
                 // constants, so they are spliced verbatim (triple-stash: `&` must not be escaped).
                 tv.put("tabCounted", targetIsList);
                 if (targetIsList) {
-                    String preset = presetQuery(pageById.get(tab.page()).presetFilter());
+                    PageDefinition listPage = pageById.get(tab.page());
+                    String preset = presetQueryExpr(listPage.presetFilter(),
+                            entityByPascal.get(Naming.toPascalCase(listPage.entity())));
                     tv.put("countPath", "/api/" + target.get("entityNamePluralKebab"));
-                    tv.put("countParams", preset == null ? "" : preset);
+                    tv.put("countParamsExpr", preset == null ? "''" : preset);
+                    tabsUseRangeParams |= presetHasPeriod(listPage.presetFilter());
+                    tabsUseStatsQuery |= preset != null && preset.startsWith("statsQuery(");
                     hasTabCounts = true;
                 }
                 tv.put("first", i == 0);
@@ -346,6 +356,8 @@ public final class EntityScaffoldContext {
             }
             pv.put("tabs", tabViews);
             pv.put("hasTabCounts", hasTabCounts);
+            pv.put("tabsUseRangeParams", tabsUseRangeParams);
+            pv.put("tabsUseStatsQuery", tabsUseStatsQuery);
             pv.put("needsNavigate", needsNavigate);
         }
 
@@ -467,7 +479,10 @@ public final class EntityScaffoldContext {
         // widgets.tsx backs both the dashboard screens and the report screen's chart.
         ctx.put("hasWidgets", Boolean.TRUE.equals(ctx.get("hasDashboardPages"))
                 || Boolean.TRUE.equals(ctx.get("hasReportPages"))
-                || all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasHeaderStats"))));
+                || all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasHeaderStats")))
+                // ...and for a period preset (rangeParams lives in stats.ts) on a list or a tab count.
+                || all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("presetUsesPeriod"))
+                        || Boolean.TRUE.equals(v.get("tabsUseRangeParams"))));
         // links.tsx (the launcher tiles) only for a dashboard that has a links widget.
         ctx.put("hasLinksWidgets", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("usesLinks"))));
         // Per-entity contexts read this: an entity with a wizard gets the stepped form and the
@@ -622,6 +637,9 @@ public final class EntityScaffoldContext {
             if (w.kind() == PageDefinition.WidgetKind.LIST) {
                 Map<String, Object> lv = listWidgetView(w, i, entityByPascal, summaries, links);
                 needsNavigate |= Boolean.TRUE.equals(lv.get("needsNavigate"));
+                // A period preset on the embedded list: the screen spreads a rangeParams() call in.
+                usesQueryOf |= presetHasPeriod(w.presetFilter());
+                usesRange |= presetHasPeriod(w.presetFilter());
                 widgetViews.add(lv);
                 continue;
             }
@@ -652,10 +670,10 @@ public final class EntityScaffoldContext {
             wv.put("spanClass", spanClass);
             // The filter params the widget's queries carry: its fixed preset, then the dashboard
             // period over its date field (a TS expression, since the period is screen state).
-            String preset = presetQuery(w.presetFilter());
+            String preset = presetQueryExpr(w.presetFilter(), ev);
             String paramsExpr = params(preset, rangeExpr(ev, w.dateField(), false));
-            usesRange |= w.dateField() != null;
-            usesStatsQuery |= preset != null && w.dateField() != null;
+            usesRange |= w.dateField() != null || presetHasPeriod(w.presetFilter());
+            usesStatsQuery |= (preset != null && w.dateField() != null) || (preset != null && preset.startsWith("statsQuery("));
             wv.put("hasParams", paramsExpr != null);
             wv.put("paramsExpr", paramsExpr);
             // A kpi's change against the previous period: the same params, one period back. The
@@ -770,14 +788,15 @@ public final class EntityScaffoldContext {
         pv.put("usesStatsQuery", usesStatsQuery);
         pv.put("usesQueryOf", usesQueryOf);
         pv.put("usesBucketRange", usesBucketRange);
-        pv.put("usesStatsHelpers", p.dateRange() != null || usesStatsQuery || usesQueryOf || usesBucketRange);
+        pv.put("usesStatsHelpers", p.dateRange() != null || usesStatsQuery || usesQueryOf || usesBucketRange || usesRange);
     }
 
-    /** The widget's filter params as a TS expression: its preset, the period, or both; null for none. */
+    /** The widget's filter params as a TS expression: its preset (already an expression), the
+     *  period, or both; null for none. */
     private static String params(String preset, String range) {
         if (preset == null) return range;
-        if (range == null) return tsString(preset);
-        return "statsQuery(" + tsString(preset) + ", " + range + ")";
+        if (range == null) return preset;
+        return "statsQuery(" + preset + ", " + range + ")";
     }
 
     /** {@code rangeParams('soldOn', false, period)} (the previous period with {@code previous}), or
@@ -811,7 +830,7 @@ public final class EntityScaffoldContext {
         wv.put("entityNameKebab", ev.get("entityNameKebab"));
         wv.put("titleExpr", w.title() != null ? tsString(w.title()) : tsString((String) ev.get("entityLabelPlural")));
         wv.put("limit", w.limit());
-        String presetTs = presetFilterTs(w.presetFilter());
+        String presetTs = presetFilterTs(w.presetFilter(), ev);
         wv.put("hasPresetFilter", presetTs != null);
         wv.put("presetFilterTs", presetTs);
         wv.put("hasColumns", !w.columns().isEmpty());
@@ -1014,14 +1033,36 @@ public final class EntityScaffoldContext {
 
     /** {@code {status=OPEN, paid=true}} → {@code paid=true&status=OPEN} (sorted); null when empty.
      *  Values are validated constants/booleans, so nothing needs URL-encoding. */
-    private static String presetQuery(Map<String, String> filter) {
+    /** Whether a validated preset carries a period ({@code @30d}): those are computed at runtime. */
+    private static boolean presetHasPeriod(Map<String, String> filter) {
+        return filter.values().stream().anyMatch(v -> v.startsWith("@"));
+    }
+
+    /** {@code rangeParams('placedAt', false, '30d')} — the list params of a period preset on {@code field}. */
+    private static String periodExpr(Map<String, Object> ev, String field, String value) {
+        Map<String, Object> fv = fieldOf(ev, field);
+        return "rangeParams('" + field + "', " + Boolean.TRUE.equals(fv.get("isDateTime")) + ", '" + value.substring(1) + "')";
+    }
+
+    /**
+     * A preset as the query-string half of a request, as a TS expression: the literal params
+     * ({@code 'status=OPEN&totalMin=100'}), a period's {@code rangeParams(...)} call, or both joined by
+     * {@code statsQuery(...)}; null for an empty preset.
+     */
+    private static String presetQueryExpr(Map<String, String> filter, Map<String, Object> ev) {
         if (filter.isEmpty()) return null;
-        StringBuilder sb = new StringBuilder();
+        StringBuilder literal = new StringBuilder();
+        List<String> parts = new ArrayList<>();
         for (Map.Entry<String, String> en : new java.util.TreeMap<>(filter).entrySet()) {
-            if (sb.length() > 0) sb.append('&');
-            sb.append(en.getKey()).append('=').append(en.getValue());
+            if (en.getValue().startsWith("@")) {
+                parts.add(periodExpr(ev, en.getKey(), en.getValue()));
+                continue;
+            }
+            if (literal.length() > 0) literal.append('&');
+            literal.append(en.getKey()).append('=').append(en.getValue());
         }
-        return sb.toString();
+        if (literal.length() > 0) parts.add(0, tsString(literal.toString()));
+        return parts.size() == 1 ? parts.get(0) : "statsQuery(" + String.join(", ", parts) + ")";
     }
 
     /**
@@ -1120,13 +1161,15 @@ public final class EntityScaffoldContext {
     }
 
     /** {@code {status=OPEN}} → {@code { status: 'OPEN' }}; values are validated constants/booleans. */
-    private static String presetFilterTs(Map<String, String> filter) {
+    private static String presetFilterTs(Map<String, String> filter, Map<String, Object> ev) {
         if (filter.isEmpty()) return null;
         StringBuilder sb = new StringBuilder("{ ");
         int i = 0;
         for (Map.Entry<String, String> en : new java.util.TreeMap<>(filter).entrySet()) {
             if (i++ > 0) sb.append(", ");
-            sb.append(en.getKey()).append(": ").append(tsString(en.getValue()));
+            // A period preset spreads the params it resolves to when the screen loads.
+            if (en.getValue().startsWith("@")) sb.append("...queryOf(").append(periodExpr(ev, en.getKey(), en.getValue())).append(")");
+            else sb.append(en.getKey()).append(": ").append(tsString(en.getValue()));
         }
         return sb.append(" }").toString();
     }

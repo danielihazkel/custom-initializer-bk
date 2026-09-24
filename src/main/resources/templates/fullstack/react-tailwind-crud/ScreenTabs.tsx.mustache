@@ -7,6 +7,9 @@ import { t } from '@shared/i18n'
 {{#hasTabCounts}}
 import { api } from '@shared/api'
 {{/hasTabCounts}}
+{{#tabsUseRangeParams}}
+import { rangeParams{{#tabsUseStatsQuery}}, statsQuery{{/tabsUseStatsQuery}} } from '@shared/ui/stats'
+{{/tabsUseRangeParams}}
 {{#tabs}}
 import { {{TargetName}}Screen } from './{{TargetName}}Screen'
 {{/tabs}}
@@ -22,7 +25,7 @@ const TABS = [
 const COUNTED = [
 {{#tabs}}
 {{#tabCounted}}
-  { id: '{{tabId}}', path: '{{countPath}}', params: '{{{countParams}}}' },
+  { id: '{{tabId}}', path: '{{countPath}}', params: {{{countParamsExpr}}} },
 {{/tabCounted}}
 {{/tabs}}
 ]

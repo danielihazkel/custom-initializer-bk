@@ -711,6 +711,47 @@ class FullstackPagesIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_presetsDateAndNumberRanges() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        // A period ending today, an open-ended number range and an enum, on the orders list; a
+        // fixed date range on a hidden second list embedded in a tabs page; no dashboard at all.
+        page(body, "orders").put("presetFilter", Map.of("placedAt", "last:30d", "total", "100..", "status", "open"));
+        Map<String, Object> older = new LinkedHashMap<>(Map.of("id", "older", "type", "entity-list", "entity", "Order",
+                "hidden", true, "presetFilter", Map.of("placedAt", "2026-01-01..2026-03-31")));
+        pages(body).add(older);
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "queue", "type", "tabs", "title", "Queue",
+                "tabs", List.of(Map.of("page", "orders"), Map.of("page", "older")))));
+        pages(body).removeIf(p -> "desk".equals(p.get("id")));
+        Map<String, String> files = generate(body);
+
+        // The period is computed when the screen loads; the ranges are the list's own From/To and Min/Max params.
+        assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx"))
+                .contains("import { queryOf, rangeParams } from '@shared/ui/stats'")
+                .contains("initialFilters={ { ...queryOf(rangeParams('placedAt', false, '30d')), status: 'OPEN', totalMin: '100', ...filters } }");
+        assertThat(files.get(FE + "src/app/screens/OlderScreen.tsx"))
+                .doesNotContain("@shared/ui/stats")
+                .contains("initialFilters={ { placedAtFrom: '2026-01-01', placedAtTo: '2026-03-31', ...filters } }");
+        // The tab counts carry the same params, as expressions.
+        assertThat(files.get(FE + "src/app/screens/QueueScreen.tsx"))
+                .contains("import { rangeParams, statsQuery } from '@shared/ui/stats'")
+                .contains("{ id: 'orders', path: '/api/orders', params: statsQuery('status=OPEN&totalMin=100', rangeParams('placedAt', false, '30d')) },")
+                .contains("{ id: 'older', path: '/api/orders', params: 'placedAtFrom=2026-01-01&placedAtTo=2026-03-31' },");
+        // stats.ts ships for the helpers even though no page has a widget.
+        assertThat(files).containsKey(FE + "src/shared/ui/stats.ts");
+        assertThat(files.keySet()).noneMatch(k -> k.endsWith("widgets.tsx") && !k.contains("shared/ui/"));
+
+        // What a range must look like, per field type.
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("total", "abc..5")), "presetFilter 'total': min 'abc' is not a number");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("total", "50..5")), "presetFilter 'total': min 50 is above max 5");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("total", "..")), "presetFilter 'total': a range needs a from or a to");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("placedAt", "2026-13-01..")), "presetFilter 'placedAt': '2026-13-01' is not an ISO date (yyyy-MM-dd)");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("placedAt", "last:5d")),
+                "presetFilter 'placedAt': expected a date range (2026-01-01..2026-03-31, either side optional) or a period (last:7d, last:30d, last:90d, ytd, 12m), got 'last:5d'");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("placedAt", "2026-03-31..2026-01-01")), "presetFilter 'placedAt': from '2026-03-31' is after to '2026-01-01'");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("reference", "x")), "presetFilter 'reference': only filterable enum, boolean, date or number fields can be preset");
+    }
+
+    @Test
     void fullstackEndpoint_rendersAListWidget() throws Exception {
         // The Orders example's desk ends with an "Open orders" list widget.
         Map<String, String> files = generate(exampleBody("orders", "react-tailwind-crud"));
@@ -829,7 +870,7 @@ class FullstackPagesIntegrationTests {
         assertRejected(p -> p.get(1).remove("title"), "Page 'queue' (tabs) needs a title");
         assertRejected(p -> p.get(2).put("presetFilter", Map.of("status", "LOST")), "'LOST' is not one of");
         assertRejected(p -> p.get(2).put("presetFilter", Map.of("subject", "x")),
-                "only filterable enum or boolean fields can be preset");
+                "only filterable enum, boolean, date or number fields can be preset");
         assertRejected(p -> p.forEach(page -> {
             page.put("hidden", true);
             page.remove("group");

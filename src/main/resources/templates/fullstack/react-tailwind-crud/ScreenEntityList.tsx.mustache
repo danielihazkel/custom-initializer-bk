@@ -2,6 +2,9 @@ import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
 {{#listTakesQuery}}
 import type { FilterValues } from '@shared/ui'
 {{/listTakesQuery}}
+{{#presetUsesPeriod}}
+import { queryOf, rangeParams } from '@shared/ui/stats'
+{{/presetUsesPeriod}}
 {{#hasScreenProps}}
 
 interface Props {
