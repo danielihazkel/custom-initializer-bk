@@ -801,6 +801,10 @@ class FullstackPagesIntegrationTests {
         assertRejected(p -> p.get(0).put("icon", "Rocket"), "Page 'overview': unknown icon 'Rocket' (expected one of BarChart3,");
         assertRejected(p -> p.get(2).put("icon", "Inbox"), "Page 'tickets-open' is hidden, so it takes no nav 'icon'");
         assertRejected(p -> p.get(2).put("group", "Work"), "Page 'tickets-open' is hidden, so it takes no nav 'group'");
+        assertRejected(p -> { p.add(recordPage("agent", "Agent", null)); p.get(7).put("group", "Work"); },
+                "Page 'agent' (record) opens from a row of its entity, so it takes no nav 'group'");
+        assertRejected(p -> { p.add(recordPage("agent", "Agent", null)); p.get(7).put("icon", "Users"); },
+                "Page 'agent' (record) opens from a row of its entity, so it takes no nav 'icon'");
         assertRejected(p -> p.get(0).put("group", "x".repeat(41)), "Page 'overview' group must be at most 40 characters");
         // Dashboard layout and filters
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "span", 5))),
@@ -896,11 +900,25 @@ class FullstackPagesIntegrationTests {
         Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
         List<Map<String, Object>> pages = pages(body);
         pages.get(2).put("entity", "ticket");
-        pages.get(2).put("presetFilter", Map.of("status", "open"));
+        pages.get(2).put("presetFilter", Map.of("STATUS", "open"));
+        // Field names are matched ignoring case everywhere a page names one, and the generated
+        // code carries the entity's own spelling.
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> widgets = (List<Map<String, Object>>) pages.get(0).get("widgets");
+        widgets.get(3).put("groupBy", "Status");
+        widgets.get(5).put("sortBy", "DueAt");
+        widgets.get(7).put("series", "STATUS");
         Map<String, String> files = generate(body);
 
         assertThat(files.get(FE + "src/app/screens/TicketsOpenScreen.tsx"))
                 .contains("initialFilters={ { status: 'OPEN', ...filters } }");
+        assertThat(files.get(FE + "src/app/screens/OverviewScreen.tsx"))
+                .contains("field=\"status\"")
+                .contains("sortField=\"dueAt\"")
+                .contains("series=\"status\"")
+                .doesNotContain("\"Status\"")
+                .doesNotContain("\"STATUS\"")
+                .doesNotContain("DueAt");
     }
 
     @Test

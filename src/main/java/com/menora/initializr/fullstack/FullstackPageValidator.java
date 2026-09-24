@@ -114,8 +114,8 @@ public final class FullstackPageValidator {
             }
             anyVisible |= !hidden;
             rejectForeignProps(id, type, p);
-            String group = navGroup(id, hidden, p.group());
-            String icon = navIcon(id, hidden, p.icon());
+            String group = navGroup(id, type, hidden, p.group());
+            String icon = navIcon(id, type, hidden, p.icon());
             PageDefinition page = switch (type) {
                 case ENTITY_LIST -> {
                     String prefix = "Page '" + id + "'";
@@ -235,19 +235,25 @@ public final class FullstackPageValidator {
     }
 
     /** A nav section name. Only a page that is in the nav can sit in a section of it. */
-    private static String navGroup(String id, boolean hidden, String raw) {
+    private static String navGroup(String id, PageDefinition.Type type, boolean hidden, String raw) {
         String group = checkLength(trimToNull(raw), MAX_GROUP, "Page '" + id + "' group");
-        if (group != null && hidden) {
-            throw new WizardArgumentException("Page '" + id + "' is hidden, so it takes no nav 'group'");
-        }
+        if (group != null && hidden) throw new WizardArgumentException(offNav(id, type) + "'group'");
         return group;
     }
 
+    /** Why a page takes no nav group/icon: a record page is never in the nav, any other hidden page
+     *  was hidden on purpose. */
+    private static String offNav(String id, PageDefinition.Type type) {
+        return type == PageDefinition.Type.RECORD
+                ? "Page '" + id + "' (record) opens from a row of its entity, so it takes no nav "
+                : "Page '" + id + "' is hidden, so it takes no nav ";
+    }
+
     /** A nav icon: one of {@link #NAV_ICONS}, matched ignoring case and returned as declared. */
-    private static String navIcon(String id, boolean hidden, String raw) {
+    private static String navIcon(String id, PageDefinition.Type type, boolean hidden, String raw) {
         String icon = trimToNull(raw);
         if (icon == null) return null;
-        if (hidden) throw new WizardArgumentException("Page '" + id + "' is hidden, so it takes no nav 'icon'");
+        if (hidden) throw new WizardArgumentException(offNav(id, type) + "'icon'");
         return NAV_ICONS.stream().filter(i -> i.equalsIgnoreCase(icon)).findFirst()
                 .orElseThrow(() -> new WizardArgumentException("Page '" + id + "': unknown icon '" + icon
                         + "' (expected one of " + String.join(", ", NAV_ICONS) + ")"));
@@ -428,7 +434,7 @@ public final class FullstackPageValidator {
         for (Map.Entry<String, String> en : raw.entrySet()) {
             String prefix = owner + " presetFilter '" + en.getKey() + "'";
             FieldDefinition field = entity.fields().stream()
-                    .filter(f -> f.name().equals(en.getKey()))
+                    .filter(f -> f.name().equalsIgnoreCase(en.getKey()))
                     .findFirst()
                     .orElseThrow(() -> new WizardArgumentException(prefix + ": no such field on " + entity.name()));
             if (field.primaryKey() || !field.filterable() || !(field.type().isEnum() || field.type().isBoolean())) {
@@ -651,11 +657,7 @@ public final class FullstackPageValidator {
      *  scalar DTO column), newest first. Null keeps the primary key. */
     private static String sortBy(String prefix, EntityDefinition entity, String requested) {
         if (requested == null) return null;
-        FieldDefinition field = entity.fields().stream()
-                .filter(f -> f.name().equals(requested))
-                .findFirst()
-                .orElseThrow(() -> new WizardArgumentException(prefix + ": sortBy '" + requested
-                        + "' is not a field of " + entity.name()));
+        FieldDefinition field = fieldOf(prefix, entity, requested, "sortBy");
         return field.primaryKey() ? null : field.name();
     }
 
@@ -675,11 +677,7 @@ public final class FullstackPageValidator {
         if (!hasDateRange) {
             throw new WizardArgumentException(prefix + ": 'dateField' applies to the dashboard's dateRange, which is not set");
         }
-        FieldDefinition field = entity.fields().stream()
-                .filter(f -> f.name().equals(requested))
-                .findFirst()
-                .orElseThrow(() -> new WizardArgumentException(prefix + ": dateField '" + requested
-                        + "' is not a field of " + entity.name()));
+        FieldDefinition field = fieldOf(prefix, entity, requested, "dateField");
         if (field.primaryKey() || !field.filterable() || !field.type().isTemporal()) {
             throw new WizardArgumentException(prefix + ": dateField '" + requested
                     + "' must be a filterable, non-key date field");
@@ -719,11 +717,7 @@ public final class FullstackPageValidator {
             throw new WizardArgumentException(prefix + ": agg '" + agg.wire()
                     + "' needs a numeric 'field' of " + entity.name() + " to reduce");
         }
-        FieldDefinition field = entity.fields().stream()
-                .filter(f -> f.name().equals(requested))
-                .findFirst()
-                .orElseThrow(() -> new WizardArgumentException(prefix + ": field '" + requested
-                        + "' is not a field of " + entity.name()));
+        FieldDefinition field = fieldOf(prefix, entity, requested, "field");
         if (field.primaryKey() || !field.type().isNumeric()) {
             throw new WizardArgumentException(prefix + ": field '" + requested
                     + "' must be a non-key numeric field to be aggregated");
@@ -749,11 +743,7 @@ public final class FullstackPageValidator {
                     .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
                             + " has no date field to plot over time"));
         }
-        FieldDefinition field = entity.fields().stream()
-                .filter(f -> f.name().equals(requested))
-                .findFirst()
-                .orElseThrow(() -> new WizardArgumentException(prefix + ": groupBy '" + requested
-                        + "' is not a field of " + entity.name()));
+        FieldDefinition field = fieldOf(prefix, entity, requested, "groupBy");
         if (field.primaryKey() || !field.type().isTemporal()) {
             throw new WizardArgumentException(prefix + ": groupBy '" + requested
                     + "' must be a non-key date field to plot over time");
@@ -791,11 +781,7 @@ public final class FullstackPageValidator {
         String requested = trimToNull(raw.groupBy());
         FieldDefinition field = null;
         if (requested != null) {
-            field = entity.fields().stream()
-                    .filter(f -> f.name().equals(requested))
-                    .findFirst()
-                    .orElseThrow(() -> new WizardArgumentException(prefix + ": groupBy '" + requested
-                            + "' is not a field of " + entity.name()));
+            field = fieldOf(prefix, entity, requested, "groupBy");
             if (field.primaryKey()
                     || !(field.type().isEnum() || field.type().isBoolean() || field.type().isTemporal())) {
                 throw new WizardArgumentException(prefix + ": groupBy '" + requested
@@ -828,11 +814,7 @@ public final class FullstackPageValidator {
                     .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
                             + " has no enum or boolean field to group by"));
         }
-        FieldDefinition field = entity.fields().stream()
-                .filter(f -> f.name().equals(requested))
-                .findFirst()
-                .orElseThrow(() -> new WizardArgumentException(prefix + ": groupBy '" + requested
-                        + "' is not a field of " + entity.name()));
+        FieldDefinition field = fieldOf(prefix, entity, requested, "groupBy");
         if (field.primaryKey() || !(field.type().isEnum() || field.type().isBoolean())) {
             throw new WizardArgumentException(prefix + ": groupBy '" + requested + "' must be a non-key enum or boolean field");
         }
@@ -1046,6 +1028,16 @@ public final class FullstackPageValidator {
             throw new WizardArgumentException(prefix + ": at most " + (MAX_TABS - 1) + " related lists are allowed");
         }
         return out;
+    }
+
+    /** The entity's field named {@code requested}, matched ignoring case (so a hand-typed
+     *  {@code "Status"} finds {@code status}); the returned field carries the declared spelling. */
+    private static FieldDefinition fieldOf(String prefix, EntityDefinition entity, String requested, String what) {
+        return entity.fields().stream()
+                .filter(f -> f.name().equalsIgnoreCase(requested))
+                .findFirst()
+                .orElseThrow(() -> new WizardArgumentException(prefix + ": " + what + " '" + requested
+                        + "' is not a field of " + entity.name()));
     }
 
     private static EntityDefinition requireEntity(Map<String, EntityDefinition> byLower, String raw, String prefix) {
