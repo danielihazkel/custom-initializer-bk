@@ -781,11 +781,24 @@ public final class FullstackPageValidator {
         String requested = trimToNull(raw.groupBy());
         FieldDefinition field = null;
         if (requested != null) {
+            // A MANY_TO_ONE relation groups by the id it points at, like a top widget; bars are
+            // named from the target's list. It has no bucket.
+            for (RelationDefinition r : entity.relations()) {
+                if (r.type() == RelationType.MANY_TO_ONE && r.fieldName().equalsIgnoreCase(requested)) {
+                    if (trimToNull(raw.bucket()) != null) {
+                        throw new WizardArgumentException(prefix + ": 'bucket' applies to a date groupBy, and '"
+                                + r.fieldName() + "' is not one");
+                    }
+                    PageDefinition.Agg agg = parseAgg(prefix, raw.agg());
+                    return new PageDefinition.Chart(r.fieldName(), null, agg,
+                            aggField(prefix, entity, agg, trimToNull(raw.field())));
+                }
+            }
             field = fieldOf(prefix, entity, requested, "groupBy");
             if (field.primaryKey()
                     || !(field.type().isEnum() || field.type().isBoolean() || field.type().isTemporal())) {
                 throw new WizardArgumentException(prefix + ": groupBy '" + requested
-                        + "' must be a non-key enum, boolean or date field");
+                        + "' must be a non-key enum, boolean or date field, or a relation");
             }
         } else {
             field = entity.fields().stream()

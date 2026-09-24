@@ -692,6 +692,25 @@ class FullstackPagesIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_reportGroupsByARelation() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        pages(body).add(reportPage("by-customer", "Order", Map.of("groupBy", "Customer", "agg", "sum", "field", "total")));
+        Map<String, String> files = generate(body);
+
+        // The bars are the customers' ids, named from the customers list like a top widget's rows;
+        // a click drills into the orders list on the relation's filter param.
+        assertThat(files.get(FE + "src/app/screens/ByCustomerScreen.tsx"))
+                .contains("rollup=\"groupBy=customer&agg=sum&field=total\"")
+                .contains("        optionsPath=\"/api/customers\"\n        optionValue=\"id\"\n        optionLabel=\"name\"\n        groupLabel={ 'Customer' }\n")
+                .contains("valueLabel={ t('aggSum', { x: 'Total' }) }")
+                .contains("onSelect={key => onNavigate('orders', undefined, { ...filters, customerId: key })}")
+                .doesNotContain("@entities/order'");
+        assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
+                .contains("function useOptionNames(optionsPath: string | undefined, optionValue: string, optionLabel: string | undefined): Record<string, string> {")
+                .contains("const names = useOptionNames(optionsPath, optionValue, optionLabel)\n  const rows = (stats?.buckets ?? []).map(b => ({\n    key: b.key,\n    label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ?");
+    }
+
+    @Test
     void fullstackEndpoint_shipsWidgetsForAReportWithoutADashboard() throws Exception {
         Map<String, Object> body = exampleBody("reporting", "react-tailwind-crud");
         List<Map<String, Object>> pages = pages(body);
@@ -795,6 +814,8 @@ class FullstackPagesIntegrationTests {
                 "Team has no enum, boolean or date field to group by");
         assertRejected(p -> p.add(reportPage("by-status", "Ticket", Map.of("groupBy", "status", "bucket", "month"))),
                 "'bucket' applies to a date groupBy, and 'status' is not one");
+        assertRejected(p -> p.add(reportPage("by-agent", "Ticket", Map.of("groupBy", "assignee", "bucket", "month"))),
+                "'bucket' applies to a date groupBy, and 'assignee' is not one");
         assertRejected(p -> p.get(0).put("chart", Map.of("groupBy", "status")),
                 "(dashboard) does not take 'chart'");
         // Nav sections and icons

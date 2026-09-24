@@ -639,24 +639,7 @@ export function TopList({ title, path, by, agg, valueField, limit, labels, optio
   className?: string
 }) {
   const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${by}`, aggQuery(agg, valueField), `top=${limit}`, params))
-  const [names, setNames] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    if (!optionsPath) return
-    let active = true
-    api.get<{ content: Record<string, unknown>[] }>(`${optionsPath}?size=1000`)
-      .then(page => {
-        if (!active) return
-        const next: Record<string, string> = {}
-        for (const row of page.content ?? []) {
-          const id = String(row[optionValue])
-          next[id] = optionLabel && row[optionLabel] != null ? String(row[optionLabel]) : `#${id}`
-        }
-        setNames(next)
-      })
-      .catch(() => { if (active) setNames({}) })
-    return () => { active = false }
-  }, [optionsPath, optionValue, optionLabel])
+  const names = useOptionNames(optionsPath, optionValue, optionLabel)
 
   const rows = (stats?.buckets ?? []).map(b => ({
     key: b.key,
@@ -770,7 +753,32 @@ export function RecentList({ title, path, sortField, keyField, displayField, lim
 
 /** One chart of a report page: bars (an enum/boolean group) or a line (a date, bucketed) from the
  *  rollup of the filtered rows, and — for the page's first chart — the totals table beneath it. */
-export function ReportChart({ title, path, rollup, search, line = false, labels, groupLabel, valueLabel, table = false, onSelect }: {
+/** The display names of a relation's targets by key (`#id` without a label column) — what a
+ *  rank or a chart grouped by a relation names its rows with. Empty without `optionsPath`. */
+function useOptionNames(optionsPath: string | undefined, optionValue: string, optionLabel: string | undefined): Record<string, string> {
+  const [names, setNames] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!optionsPath) return
+    let active = true
+    api.get<{ content: Record<string, unknown>[] }>(`${optionsPath}?size=1000`)
+      .then(page => {
+        if (!active) return
+        const next: Record<string, string> = {}
+        for (const row of page.content ?? []) {
+          const id = String(row[optionValue])
+          next[id] = optionLabel && row[optionLabel] != null ? String(row[optionLabel]) : `#${id}`
+        }
+        setNames(next)
+      })
+      .catch(() => { if (active) setNames({}) })
+    return () => { active = false }
+  }, [optionsPath, optionValue, optionLabel])
+
+  return names
+}
+
+export function ReportChart({ title, path, rollup, search, line = false, labels, optionsPath, optionValue = 'id', optionLabel, groupLabel, valueLabel, table = false, onSelect }: {
   /** Shown when the page has more than one chart. */
   title?: string
   path: string
@@ -780,6 +788,10 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
   search: string
   line?: boolean
   labels?: Record<string, string>
+  /** Grouped by a relation: the target's list endpoint, its key and its label column. */
+  optionsPath?: string
+  optionValue?: string
+  optionLabel?: string
   groupLabel: string
   valueLabel: string
   table?: boolean
@@ -787,9 +799,10 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
   onSelect?: (key: string) => void
 }) {
   const { stats, failed, retry } = useStats(path, statsQuery(rollup, search))
+  const names = useOptionNames(optionsPath, optionValue, optionLabel)
   const rows = (stats?.buckets ?? []).map(b => ({
     key: b.key,
-    label: line ? (b.key === '' ? '—' : b.key) : statLabel(b, labels),
+    label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ? (b.key === '' ? '—' : b.key) : statLabel(b, labels),
     value: b.value ?? 0,
   }))
   const select = onSelect && ((i: number) => { if (rows[i].key !== '') onSelect(rows[i].key) })

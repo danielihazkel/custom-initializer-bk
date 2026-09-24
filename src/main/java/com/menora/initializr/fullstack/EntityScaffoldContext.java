@@ -926,32 +926,44 @@ public final class EntityScaffoldContext {
         for (int i = 0; i < p.charts().size(); i++) {
             PageDefinition.Chart chart = p.charts().get(i);
             Map<String, Object> cv = new LinkedHashMap<>();
-            Map<String, Object> fv = fieldOf(ev, chart.groupBy());
+            // The grouping as a top widget sees it: an enum's labels, or a relation's target list
+            // (bars named from it, the drill key being the FK filter param).
+            Map<String, Object> rank = rankView(ev, chart.groupBy());
+            boolean relation = Boolean.TRUE.equals(rank.get("isRelationRank"));
+            Map<String, Object> fv = relation ? null : fieldOf(ev, chart.groupBy());
             boolean overTime = chart.bucket() != null;
             cv.put("chartIsLine", overTime);
             cv.put("chartIsBar", !overTime);
             cv.put("chartGroupBy", chart.groupBy());
-            cv.put("chartGroupLabelExpr", tsString((String) fv.get("label")));
-            Object enumType = Boolean.TRUE.equals(fv.get("isEnum")) ? fv.get("enumTypeName") : null;
-            cv.put("chartHasLabels", enumType != null);
-            cv.put("chartLabelsRef", enumType == null ? null : enumType + "Labels");
-            if (enumType != null) labelRefs.add(enumType + "Labels");
+            cv.put("chartIsRelation", relation);
+            if (relation) {
+                cv.put("optionsPath", rank.get("optionsPath"));
+                cv.put("optionValue", rank.get("optionValue"));
+                cv.put("hasOptionLabel", rank.get("hasOptionLabel"));
+                cv.put("optionLabel", rank.get("optionLabel"));
+            }
+            String groupLabelExpr = (String) rank.get("groupLabelExpr");
+            cv.put("chartGroupLabelExpr", groupLabelExpr);
+            String labelsRef = (String) rank.get("labelsRef");
+            cv.put("chartHasLabels", labelsRef != null);
+            cv.put("chartLabelsRef", labelsRef);
+            if (labelsRef != null) labelRefs.add(labelsRef);
             boolean reduces = chart.agg() != PageDefinition.Agg.COUNT;
             String measure = reduces ? aggTitleExpr(chart.agg(), (String) fieldOf(ev, chart.field()).get("label")) : null;
             cv.put("chartValueHeaderExpr", reduces ? measure : "t('rows')");
             cv.put("chartTitleExpr", "t('" + (overTime ? "xOverTime" : "xByY") + "', { x: "
                     + (reduces ? measure : tsString((String) ev.get("entityLabelPlural")))
-                    + (overTime ? "" : ", y: " + tsString((String) fv.get("label"))) + " })");
+                    + (overTime ? "" : ", y: " + groupLabelExpr) + " })");
             cv.put("chartIsFirst", i == 0);
             StringBuilder query = new StringBuilder("groupBy=").append(chart.groupBy());
             if (overTime) query.append("&bucket=").append(chart.bucket().wire());
             if (reduces) query.append("&agg=").append(chart.agg().wire()).append("&field=").append(chart.field());
             cv.put("rollupQuery", query.toString());
-            // A bar opens the list on its value; a point in time on its day/month/year.
-            boolean drill = putDrill(cv, ev, p.entity(), links, chart.groupBy(), null);
+            // A bar opens the list on its value (a relation's on its id); a point in time on its day/month/year.
+            boolean drill = putDrill(cv, ev, p.entity(), links, (String) rank.get("drillKey"), null);
             cv.put("drillExpr", overTime
                     ? "...bucketRange('" + chart.groupBy() + "', key, " + Boolean.TRUE.equals(fv.get("isDateTime")) + ")"
-                    : chart.groupBy() + ": key");
+                    : rank.get("drillKey") + ": key");
             drills |= drill;
             usesBucketRange |= drill && overTime;
             charts.add(cv);

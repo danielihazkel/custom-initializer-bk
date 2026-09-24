@@ -105,6 +105,13 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{#chartHasLabels}}
         labels={ {{chartLabelsRef}} }
 {{/chartHasLabels}}
+{{#chartIsRelation}}
+        optionsPath="{{optionsPath}}"
+        optionValue="{{optionValue}}"
+{{#hasOptionLabel}}
+        optionLabel="{{optionLabel}}"
+{{/hasOptionLabel}}
+{{/chartIsRelation}}
         groupLabel={ {{chartGroupLabelExpr}} }
         valueLabel={ {{chartValueHeaderExpr}} }
         table
@@ -127,6 +134,13 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{#chartHasLabels}}
           labels={ {{chartLabelsRef}} }
 {{/chartHasLabels}}
+{{#chartIsRelation}}
+          optionsPath="{{optionsPath}}"
+          optionValue="{{optionValue}}"
+{{#hasOptionLabel}}
+          optionLabel="{{optionLabel}}"
+{{/hasOptionLabel}}
+{{/chartIsRelation}}
           groupLabel={ {{chartGroupLabelExpr}} }
           valueLabel={ {{chartValueHeaderExpr}} }
 {{#hasDrill}}
