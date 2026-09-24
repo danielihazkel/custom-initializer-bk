@@ -480,6 +480,12 @@ public final class EntityScaffoldContext {
         Set<String> listConfigured = new LinkedHashSet<>();
         for (PageDefinition p : pages) {
             if (p.type() == PageDefinition.Type.ENTITY_LIST && p.hasListPresentation()) listConfigured.add(p.entity());
+            // A list widget always hands its page a page size, so its entity takes the props too.
+            if (p.type() == PageDefinition.Type.DASHBOARD) {
+                for (PageDefinition.Widget w : p.widgets()) {
+                    if (w.kind() == PageDefinition.WidgetKind.LIST) listConfigured.add(w.entity());
+                }
+            }
         }
         ctx.put(LIST_PRESENTATION_KEY, listConfigured);
         ctx.put("hasTabsPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTabs"))));
@@ -613,6 +619,12 @@ public final class EntityScaffoldContext {
                 widgetViews.add(linksWidgetView(w, i));
                 continue;
             }
+            if (w.kind() == PageDefinition.WidgetKind.LIST) {
+                Map<String, Object> lv = listWidgetView(w, i, entityByPascal, summaries, links);
+                needsNavigate |= Boolean.TRUE.equals(lv.get("needsNavigate"));
+                widgetViews.add(lv);
+                continue;
+            }
             Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
             Map<String, Object> summary = summaries.get(w.entity().toLowerCase(Locale.ROOT));
             String entityLabels = tsString((String) ev.get("entityLabelPlural"));
@@ -732,9 +744,18 @@ public final class EntityScaffoldContext {
             widgetViews.add(wv);
         }
         pv.put("widgets", widgetViews);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "Links")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "Links", "List")) {
             pv.put("uses" + kind, widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIs" + kind))));
         }
+        // The entity pages the list widgets embed: one import per entity module.
+        Map<String, Map<String, Object>> listModules = new LinkedHashMap<>();
+        for (Map<String, Object> v : widgetViews) {
+            if (Boolean.TRUE.equals(v.get("widgetIsList"))) {
+                listModules.putIfAbsent((String) v.get("entityNameKebab"),
+                        Map.of("EntityName", v.get("EntityName"), "entityNameKebab", v.get("entityNameKebab")));
+            }
+        }
+        pv.put("listImports", new ArrayList<>(listModules.values()));
         usesStatsQuery |= widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasCompare"))
                 && ((String) v.get("compareParamsExpr")).startsWith("statsQuery("));
         List<Map<String, Object>> labelImports = new ArrayList<>();
@@ -773,12 +794,51 @@ public final class EntityScaffoldContext {
      * labelled (an enum's labels, or — for a relation — the target's rows by id), the heading of the
      * column, and the list filter a group drills into.
      */
+    /** A list widget's view: the entity page it embeds and the literal props it hands it (the same
+     *  ones an entity-list page's screen passes), a record link for its rows and its home for
+     *  "View all". */
+    private static Map<String, Object> listWidgetView(PageDefinition.Widget w, int index,
+                                                      Map<String, Map<String, Object>> entityByPascal,
+                                                      Map<String, Map<String, Object>> summaries, PageLinks links) {
+        Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
+        Map<String, Object> wv = new LinkedHashMap<>();
+        wv.put("widgetKey", "w" + index);
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "Links")) {
+            wv.put("widgetIs" + kind, false);
+        }
+        wv.put("widgetIsList", true);
+        wv.put("EntityName", ev.get("EntityName"));
+        wv.put("entityNameKebab", ev.get("entityNameKebab"));
+        wv.put("titleExpr", w.title() != null ? tsString(w.title()) : tsString((String) ev.get("entityLabelPlural")));
+        wv.put("limit", w.limit());
+        String presetTs = presetFilterTs(w.presetFilter());
+        wv.put("hasPresetFilter", presetTs != null);
+        wv.put("presetFilterTs", presetTs);
+        wv.put("hasColumns", !w.columns().isEmpty());
+        wv.put("columnsTs", w.columns().isEmpty() ? null
+                : "[" + String.join(", ", w.columns().stream().map(EntityScaffoldContext::tsString).toList()) + "]");
+        wv.put("hasSort", w.sort() != null);
+        wv.put("sortTs", w.sort() == null ? null
+                : "{ field: " + tsString(w.sort().field()) + ", direction: '" + (w.sort().desc() ? "desc" : "asc") + "' }");
+        String spanClass = SPAN_CLASSES.get(w.span() - 1);
+        wv.put("hasSpanClass", !spanClass.isEmpty());
+        wv.put("spanClass", spanClass);
+        putRecordLink(wv, "", w.entity(), links, summaries);
+        String target = links.homeOf(w.entity());
+        wv.put("hasTarget", target != null);
+        wv.put("targetPageId", target);
+        wv.put("needsNavigate", target != null || Boolean.TRUE.equals(wv.get("hasRecordPage")));
+        wv.put("hasParams", false);
+        wv.put("hasCompare", false);
+        return wv;
+    }
+
     /** A links widget's view before its tiles are resolved (a target may be declared later): the
      *  page ids, and the title and width like a text card. */
     private static Map<String, Object> linksWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsLinks", true);
@@ -797,7 +857,7 @@ public final class EntityScaffoldContext {
     private static Map<String, Object> textWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Links")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Links", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsText", true);

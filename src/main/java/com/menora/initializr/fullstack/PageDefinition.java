@@ -187,7 +187,9 @@ public record PageDefinition(
         /** Static text: a note, a how-to, links spelled out — no entity, no query. */
         TEXT("text"),
         /** Tiles that open other pages of the app — a launcher. No entity, no query. */
-        LINKS("links");
+        LINKS("links"),
+        /** An entity's rows in a card: its list page embedded, with chosen columns, a sort and a filter. */
+        LIST("list");
 
         private final String wire;
 
@@ -250,20 +252,21 @@ public record PageDefinition(
     public record Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
                          Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
                          String sortBy, String dateField, boolean compare, java.math.BigDecimal target,
-                         String series, String text, List<String> pages) {
+                         String series, String text, List<String> pages, List<String> columns, ListSort sort) {
 
         public Widget {
             presetFilter = presetFilter == null ? Map.of() : Map.copyOf(presetFilter);
             pages = pages == null ? List.of() : List.copyOf(pages);
+            columns = columns == null ? List.of() : List.copyOf(columns);
         }
 
-        /** A widget of the kinds before links (no page ids). */
+        /** A widget of the kinds before links and lists (no page ids, columns or sort). */
         public Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
                       Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
                       String sortBy, String dateField, boolean compare, java.math.BigDecimal target,
                       String series, String text) {
             this(kind, entity, title, groupBy, limit, agg, field, bucket, span, presetFilter, sortBy, dateField,
-                    compare, target, series, text, null);
+                    compare, target, series, text, null, null, null);
         }
 
         /** A widget of the kinds before donut/stacked/text (no series, no text). */
@@ -284,7 +287,8 @@ public record PageDefinition(
         /** A number tile (plain or against a target) takes one grid column; charts and lists two;
          *  a launcher the whole row. */
         public static int defaultSpan(WidgetKind kind) {
-            return kind == WidgetKind.KPI || kind == WidgetKind.PROGRESS ? 1 : kind == WidgetKind.LINKS ? 4 : 2;
+            return kind == WidgetKind.KPI || kind == WidgetKind.PROGRESS ? 1
+                    : kind == WidgetKind.LINKS || kind == WidgetKind.LIST ? 4 : 2;
         }
     }
 

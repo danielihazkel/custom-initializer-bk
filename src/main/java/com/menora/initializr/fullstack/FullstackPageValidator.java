@@ -29,6 +29,8 @@ public final class FullstackPageValidator {
     static final int MAX_WIDGETS = 24;
     /** The pages one links widget can open. */
     static final int MAX_LINKS = 8;
+    /** A list widget's rows per page when it names none. */
+    static final int DEFAULT_LIST_LIMIT = 10;
     static final int MIN_TABS = 2;
     static final int MAX_TABS = 6;
     /** A text widget's content. */
@@ -139,7 +141,7 @@ public final class FullstackPageValidator {
                 case DASHBOARD -> {
                     PageDefinition.DateRange range = parseDateRange(id, p.dateRange());
                     List<PageDefinition.Widget> widgets = widgets(id, p.widgets(), entitiesByLower, range != null,
-                            typeById, hiddenById);
+                            typeById, hiddenById, scaffoldOpts);
                     if (range != null && widgets.stream().allMatch(w -> w.dateField() == null)) {
                         throw new WizardArgumentException("Page '" + id + "' has a dateRange, but none of its widgets"
                                 + " counts an entity with a filterable date field for it to limit");
@@ -485,7 +487,8 @@ public final class FullstackPageValidator {
                                                        Map<String, EntityDefinition> entitiesByLower,
                                                        boolean hasDateRange,
                                                        Map<String, PageDefinition.Type> typeById,
-                                                       Map<String, Boolean> hiddenById) {
+                                                       Map<String, Boolean> hiddenById,
+                                                       Set<String> scaffoldOpts) {
         if (raw == null || raw.isEmpty()) {
             throw new WizardArgumentException("Page '" + id + "' (dashboard) needs at least one widget");
         }
@@ -506,11 +509,18 @@ public final class FullstackPageValidator {
                 out.add(linksWidget(prefix, w, typeById, hiddenById));
                 continue;
             }
+            if (kind == PageDefinition.WidgetKind.LIST) {
+                out.add(listWidget(prefix, w, entitiesByLower, scaffoldOpts));
+                continue;
+            }
             if (trimToNull(w.text()) != null) {
                 throw new WizardArgumentException(prefix + ": only a text widget takes 'text'");
             }
             if (w.pages() != null && !w.pages().isEmpty()) {
                 throw new WizardArgumentException(prefix + ": only a links widget takes 'pages'");
+            }
+            if ((w.columns() != null && !w.columns().isEmpty()) || w.sort() != null) {
+                throw new WizardArgumentException(prefix + ": only a list widget takes 'columns' and 'sort'");
             }
             EntityDefinition entity = requireEntity(entitiesByLower, w.entity(), prefix);
             String title = checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title");
@@ -607,7 +617,8 @@ public final class FullstackPageValidator {
                 || trimToNull(w.groupBy()) != null || trimToNull(w.bucket()) != null || w.limit() != null
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
-                || trimToNull(w.series()) != null || (w.pages() != null && !w.pages().isEmpty())) {
+                || trimToNull(w.series()) != null || (w.pages() != null && !w.pages().isEmpty())
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null) {
             throw new WizardArgumentException(prefix + ": a text widget takes only 'text', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.TEXT) : w.span();
@@ -651,7 +662,8 @@ public final class FullstackPageValidator {
                 || trimToNull(w.groupBy()) != null || trimToNull(w.bucket()) != null || w.limit() != null
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
-                || trimToNull(w.series()) != null || trimToNull(w.text()) != null) {
+                || trimToNull(w.series()) != null || trimToNull(w.text()) != null
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null) {
             throw new WizardArgumentException(prefix + ": a links widget takes only 'pages', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.LINKS) : w.span();
@@ -660,7 +672,37 @@ public final class FullstackPageValidator {
         }
         return new PageDefinition.Widget(PageDefinition.WidgetKind.LINKS, null,
                 checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title"), null, 0, null, null, null, span,
-                null, null, null, false, null, null, null, pages);
+                null, null, null, false, null, null, null, pages, null, null);
+    }
+
+    /** A list widget: an entity's list page in a card, opening with the same columns, sort and
+     *  filter an entity-list page can name, and a page size of 10 or 20 rows (the pager's sizes, so
+     *  the embedded pager stays consistent). */
+    private static PageDefinition.Widget listWidget(String prefix, WidgetDto w,
+                                                    Map<String, EntityDefinition> entitiesByLower,
+                                                    Set<String> scaffoldOpts) {
+        EntityDefinition entity = requireEntity(entitiesByLower, w.entity(), prefix);
+        if (trimToNull(w.agg()) != null || trimToNull(w.field()) != null || trimToNull(w.groupBy()) != null
+                || trimToNull(w.bucket()) != null || trimToNull(w.sortBy()) != null || trimToNull(w.dateField()) != null
+                || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null || trimToNull(w.series()) != null
+                || trimToNull(w.text()) != null || (w.pages() != null && !w.pages().isEmpty())) {
+            throw new WizardArgumentException(prefix
+                    + ": a list widget takes only 'entity', 'columns', 'sort', 'presetFilter', 'limit', 'title' and 'span'");
+        }
+        boolean audit = auditApplies(entity, scaffoldOpts);
+        List<String> columns = columns(prefix, entity, w.columns(), audit);
+        PageDefinition.ListSort sort = sort(prefix, entity, w.sort(), audit);
+        int limit = w.limit() == null ? DEFAULT_LIST_LIMIT : w.limit();
+        if (limit != 10 && limit != 20) {
+            throw new WizardArgumentException(prefix + ": limit must be 10 or 20 (the list pager's sizes)");
+        }
+        int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.LIST) : w.span();
+        if (span < 1 || span > MAX_SPAN) {
+            throw new WizardArgumentException(prefix + ": span must be between 1 and " + MAX_SPAN);
+        }
+        return new PageDefinition.Widget(PageDefinition.WidgetKind.LIST, entity.name(),
+                checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title"), null, limit, null, null, null, span,
+                presetFilter(prefix, entity, w.presetFilter()), null, null, false, null, null, null, null, columns, sort);
     }
 
     /** What a stacked bar splits each group by: another enum/boolean field — the entity's next one
@@ -755,7 +797,7 @@ public final class FullstackPageValidator {
             if (kind.wire().equalsIgnoreCase(k)) return kind;
         }
         throw new WizardArgumentException(prefix + ": unknown widget kind '" + k
-                + "' (expected kpi, bar, donut, stacked, line, recent, top, progress, text or links)");
+                + "' (expected kpi, bar, donut, stacked, line, recent, top, progress, text, links or list)");
     }
 
     /** How a tile or chart reduces its rows. Absent means {@code count}. */

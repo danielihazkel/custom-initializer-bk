@@ -711,6 +711,27 @@ class FullstackPagesIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_rendersAListWidget() throws Exception {
+        // The Orders example's desk ends with an "Open orders" list widget.
+        Map<String, String> files = generate(exampleBody("orders", "react-tailwind-crud"));
+
+        // The card embeds the entity page with the same literal props a list page's screen passes,
+        // ten rows a page, its rows opening the record page and "View all" the orders list.
+        assertThat(files.get(FE + "src/app/screens/DeskScreen.tsx"))
+                .contains("RecentList, ListCard, } from '@shared/ui/widgets'")
+                .contains("import { OrderPage } from '@pages/order'")
+                .contains("        <ListCard\n          title={ 'Open orders' }\n          className=\"sm:col-span-2 lg:col-span-4\"\n"
+                        + "          onOpen={() => onNavigate('orders')}\n        >\n"
+                        + "          <OrderPage embedded initialPageSize={ 10 } initialFilters={ { status: 'OPEN' } }"
+                        + " columns={ ['reference', 'customer', 'total'] } initialSort={ { field: 'placedAt', direction: 'desc' } }"
+                        + " onOpenRecord={r => onNavigate('order', String(r.id))} />\n        </ListCard>\n");
+        // Only the embedded entity's page takes the presentation props.
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx")).contains(", columns: columnKeys, initialSort, initialView, initialPageSize }: OrderPageProps = {}");
+        assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx")).doesNotContain("initialPageSize");
+        assertThat(files.get(FE + "src/shared/ui/widgets.tsx")).contains("export function ListCard(");
+    }
+
+    @Test
     void fullstackEndpoint_rendersALinksWidget() throws Exception {
         Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
         Map<String, Object> wizard = wizardPage("new-ticket", "Ticket", null);
@@ -782,7 +803,7 @@ class FullstackPagesIntegrationTests {
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "agg", "median"))),
                 "unknown agg 'median' (expected count, sum, avg, min or max)");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "pie", "entity", "Ticket"))),
-                "unknown widget kind 'pie' (expected kpi, bar, donut, stacked, line, recent, top, progress, text or links)");
+                "unknown widget kind 'pie' (expected kpi, bar, donut, stacked, line, recent, top, progress, text, links or list)");
         // line widgets plot a temporal field, bucketed
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "line", "entity", "Team"))),
                 "Team has no date field to plot over time");
@@ -1138,6 +1159,15 @@ class FullstackPagesIntegrationTests {
                 "a links widget takes only 'pages', 'title' and 'span'");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "pages", List.of("queue")))),
                 "only a links widget takes 'pages'");
+        // List widgets: an entity-list page's presentation, at the pager's own sizes.
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "list", "entity", "Ticket", "limit", 15))),
+                "limit must be 10 or 20 (the list pager's sizes)");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "list", "entity", "Ticket", "groupBy", "status"))),
+                "a list widget takes only 'entity', 'columns', 'sort', 'presetFilter', 'limit', 'title' and 'span'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "list", "entity", "Ticket", "columns", List.of("nope")))),
+                "columns: 'nope' is not a column of Ticket");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "columns", List.of("subject")))),
+                "only a list widget takes 'columns' and 'sort'");
     }
 
     @Test

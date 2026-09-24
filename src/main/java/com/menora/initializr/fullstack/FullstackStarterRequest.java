@@ -307,14 +307,18 @@ public record FullstackStarterRequest(
             String text,
             // links: the ids of the pages its tiles open (1–8; never a record page, nor a hidden
             // page that is not a wizard).
-            List<String> pages) {
+            List<String> pages,
+            // list: the entity's rows in a card — the columns it shows and the sort it opens with,
+            // as on an entity-list page; `limit` (10 or 20, the pager's sizes) is its page size.
+            List<String> columns,
+            SortDto sort) {
 
-        /** The widget as layouts before links spell it. */
+        /** The widget as layouts before links and lists spell it. */
         public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
                          String field, String bucket, Integer span, Map<String, String> presetFilter,
                          String sortBy, String dateField, Boolean compare, String target, String series, String text) {
             this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
-                    compare, target, series, text, null);
+                    compare, target, series, text, null, null, null);
         }
 
         /** The widget as phase-1 layouts spell it (no span, filter, sort or date field). */

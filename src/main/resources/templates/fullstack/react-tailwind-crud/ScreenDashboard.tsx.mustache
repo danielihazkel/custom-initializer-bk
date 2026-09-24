@@ -1,7 +1,10 @@
 {{#hasDateRange}}
 import { useState } from 'react'
 {{/hasDateRange}}
-import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesText}}TextCard, {{/usesText}}} from '@shared/ui/widgets'
+import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesText}}TextCard, {{/usesText}}{{#usesList}}ListCard, {{/usesList}}} from '@shared/ui/widgets'
+{{#listImports}}
+import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
+{{/listImports}}
 {{#usesLinks}}
 import { LinksCard } from '@shared/ui/links'
 {{/usesLinks}}
@@ -210,6 +213,19 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{/hasSpanClass}}
         />
 {{/widgetIsLinks}}
+{{#widgetIsList}}
+        <ListCard
+          title={ {{titleExpr}} }
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+{{#hasTarget}}
+          onOpen={() => onNavigate('{{targetPageId}}')}
+{{/hasTarget}}
+        >
+          <{{EntityName}}Page embedded initialPageSize={ {{limit}} }{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#hasColumns}} columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}} initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasRecordPage}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}} />
+        </ListCard>
+{{/widgetIsList}}
 {{#widgetIsTop}}
         <TopList
           title={ {{titleExpr}} }

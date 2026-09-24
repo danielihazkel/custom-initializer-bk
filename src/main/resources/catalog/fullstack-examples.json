@@ -436,6 +436,19 @@
             "kind": "recent",
             "entity": "Order",
             "limit": 6
+          },
+          {
+            "kind": "list",
+            "entity": "Order",
+            "title": "Open orders",
+            "presetFilter": {
+              "status": "OPEN"
+            },
+            "columns": ["reference", "customer", "total"],
+            "sort": {
+              "field": "placedAt",
+              "dir": "desc"
+            }
           }
         ]
       },

@@ -587,6 +587,17 @@ export function TextCard({ title, paragraphs, className = '' }: { title?: string
   )
 }
 
+/** An entity's list embedded in a dashboard card: the screen passes the entity page itself as
+ *  children, so the card owns only the heading and the "View all" link. */
+export function ListCard({ title, onOpen, className = '', children }: { title: string; onOpen?: () => void; className?: string; children: ReactNode }) {
+  return (
+    <div className={`${card} ${className}`}>
+      <WidgetHeader title={title} onOpen={onOpen} />
+      {children}
+    </div>
+  )
+}
+
 /** A time series of `agg` over the temporal column `on`, bucketed by day/month/year. */
 export function TrendCard({ title, path, on, bucket, agg, field, params = '', onSelect, onOpen, className = '' }: {
   title: string
