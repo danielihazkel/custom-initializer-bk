@@ -47,7 +47,11 @@ class FullstackPagesIntegrationTests {
 
     @Test
     void fullstackEndpoint_rendersPageTypes() throws Exception {
-        Map<String, String> files = generate(exampleBody("tickets", "react-tailwind-crud"));
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        // A list page's own title and description replace the entity page's heading.
+        page(body, "agents").put("title", "Support agents");
+        page(body, "agents").put("description", "Everyone on the desk.");
+        Map<String, String> files = generate(body);
 
         // Shell: nav over the visible pages only, grouped into the example's sections (a section
         // gathers its pages where the group first appears), with their icons.
@@ -59,9 +63,12 @@ class FullstackPagesIntegrationTests {
                 .contains("import { QueueScreen } from '@app/screens/QueueScreen'")
                 .contains("  {\n    label: '',\n    items: [\n      { id: 'overview', label: 'Support overview', icon: LayoutDashboard },\n    ],\n  },")
                 .contains("  {\n    label: 'Work',\n    items: [\n      { id: 'queue', label: 'Ticket queue', icon: Inbox },\n    ],\n  },")
-                .contains("    label: 'People',\n    items: [\n      { id: 'agents', label: 'Agents', icon: Users },\n"
+                // The agents page carries its own title in this test, so the nav shows it.
+                .contains("    label: 'People',\n    items: [\n      { id: 'agents', label: 'Support agents', icon: Users },\n"
                         + "      { id: 'teams', label: 'Teams', icon: PanelLeft },\n    ],")
+                // No routed screen keeps state in the hash here: no `replace`, no `setQuery`.
                 .contains("const [route, navigate] = useRoute()")
+                .doesNotContain("setQuery")
                 .contains("{view === 'overview' && <OverviewScreen onNavigate={goView} />}")
                 // The route hands a tabs page its open tab, and a filterable list its filters.
                 .contains("{view === 'queue' && <QueueScreen tab={route.arg} onTabChange={tab => go('queue', tab)} />}")
@@ -83,7 +90,15 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/app/screens/QueueScreen.tsx"))
                 .contains("export function QueueScreen({ tab: openTab, onTabChange }: Props) {")
                 .contains("const active = Math.max(0, TABS.findIndex(x => x.id === openTab))")
-                .doesNotContain("useState");
+                // Each tab over a list shows that list's row count, its preset applied.
+                .contains("import { api } from '@shared/api'")
+                .contains("{ id: 'tickets-open', path: '/api/tickets', params: 'status=OPEN' },")
+                .contains("{ id: 'tickets-in-progress', path: '/api/tickets', params: 'status=IN_PROGRESS' },")
+                .contains("{ id: 'tickets-all', path: '/api/tickets', params: '' },")
+                .contains("function useTabCounts(active: number): Record<string, number> {")
+                .contains("api.get<{ totalElements: number }>(`${c.path}?size=1${c.params ? '&' + c.params : ''}`)")
+                .contains("const counts = useTabCounts(active)")
+                .contains("{counts[tab.id] != null && (");
         // A preset list merges the route's filters over its own.
         assertThat(files.get(FE + "src/app/screens/TicketsOpenScreen.tsx"))
                 .contains("key={JSON.stringify(filters ?? {})}")
@@ -123,8 +138,10 @@ class FullstackPagesIntegrationTests {
                 .contains("import { TicketsOpenScreen } from './TicketsOpenScreen'")
                 .contains("{ id: 'tickets-in-progress', label: 'In progress' },")
                 .contains("aria-label={ 'Ticket queue' }")
+                // The tabs page's title heads it; the embedded lists drop their own heading.
+                .contains("<h1 className=\"text-2xl font-semibold tracking-tight text-fg\">{ 'Ticket queue' }</h1>")
                 .contains("{active === 2 && (")
-                .contains("<TicketsAllScreen />")
+                .contains("<TicketsAllScreen embedded />")
                 .doesNotContain("onNavigate")
                 .doesNotContain("@shared/i18n");
         assertThat(files.get(FE + "src/app/screens/TicketsOpenScreen.tsx"))
@@ -133,24 +150,35 @@ class FullstackPagesIntegrationTests {
                         + "interface Props {\n"
                         + "  /** Filters from the route (#/<page>?<field>=<value>), on top of the page's own preset. */\n"
                         + "  filters?: FilterValues\n"
+                        + "  /** Set by the tabs page embedding this list: the tab strip is its heading. */\n"
+                        + "  embedded?: boolean\n"
                         + "}\n\n"
-                        + "export function TicketsOpenScreen({ filters }: Props) {\n"
+                        + "export function TicketsOpenScreen({ filters, embedded }: Props) {\n"
                         + "  // A different filter set in the route is a fresh list, not an edit of the open one.\n"
                         + "  return (\n"
                         + "    <TicketPage\n"
                         + "      key={JSON.stringify(filters ?? {})}\n"
                         + "      initialFilters={ { status: 'OPEN', ...filters } }\n"
+                        + "      embedded={embedded}\n"
                         + "    />\n"
                         + "  )\n"
                         + "}\n");
         assertThat(files.get(FE + "src/app/screens/TicketsAllScreen.tsx"))
                 .contains("initialFilters={filters}");
+        // A list page with its own title passes it (and its description) to the entity page; a
+        // list that is not a tab target takes no `embedded`.
+        assertThat(files.get(FE + "src/app/screens/AgentsScreen.tsx"))
+                .contains("export function AgentsScreen({ filters }: Props) {")
+                .contains("      initialFilters={filters}\n      title={ 'Support agents' }\n      description={ 'Everyone on the desk.' }\n    />")
+                .doesNotContain("embedded");
         assertThat(files.get(FE + "src/pages/ticket/ui/TicketPage.tsx"))
-                .contains("export function TicketPage({ initialFilters, scope, onOpenRecord }: TicketPageProps = {}) {")
-                .contains("useState<FilterValues>(initialFilters ?? {})");
+                .contains("export function TicketPage({ initialFilters, scope, onOpenRecord, title, description, embedded }: TicketPageProps = {}) {")
+                .contains("useState<FilterValues>(initialFilters ?? {})")
+                .contains("{!embedded && <h1 className=\"text-2xl font-semibold tracking-tight text-fg\">{title ?? 'Tickets'}</h1>}")
+                .contains("{description && <p className=\"mt-1 max-w-2xl text-sm text-muted\">{description}</p>}");
         // An entity without relations takes neither filters nor a scope.
         assertThat(files.get(FE + "src/pages/team/ui/TeamPage.tsx"))
-                .contains("export function TeamPage({ onOpenRecord }: TeamPageProps = {}) {")
+                .contains("export function TeamPage({ onOpenRecord, title, description, embedded }: TeamPageProps = {}) {")
                 .doesNotContain("scope");
 
         // Master-detail: teams on the left, the selected team's tickets on the right.
@@ -161,6 +189,8 @@ class FullstackPagesIntegrationTests {
                 .contains("useTeam({ page, size: PAGE_SIZE, sort: null, q })")
                 .contains("row.name == null || row.name === '' ? '#' + String(row.id) : String(row.name)")
                 .contains("scope={ { param: 'teamId', value: Number(selectedId) } }")
+                // The child list sits under the parent's name, so it drops its own heading.
+                .contains("<TicketPage\n              key={selectedId}\n              embedded\n")
                 .contains("hint={t('pickXToSeeY', { x: 'Teams', y: 'Tickets' })}")
                 .doesNotContain("onNavigate")
                 .doesNotContain("ArrowUpRight");
@@ -320,9 +350,16 @@ class FullstackPagesIntegrationTests {
     void fullstackEndpoint_menoraSetSkinsTabsPagesAndBorrowsTheRest() throws Exception {
         Map<String, String> tickets = generate(exampleBody("tickets", "react-menora-digital-crud"));
         assertThat(tickets.get(FE + "src/app/screens/QueueScreen.tsx"))
-                .contains("import { Tabs } from '@shared/ui/menora'")
+                .contains("import { SectionHeader, Tabs } from '@shared/ui/menora'")
                 .contains("{ id: 'tickets-open', label: 'Open', panelId: 'tickets-open-panel' },")
-                .contains("<Tabs items={TABS} activeIndex={active} onChange={setActive} ariaLabel={ 'Ticket queue' } bare />");
+                .contains("<SectionHeader title={ 'Ticket queue' } align=\"start\" />")
+                // The Menora Tabs port takes string labels, so the tab counts ride inside them.
+                .contains("{ id: 'tickets-open', path: '/api/tickets', params: 'status=OPEN' },")
+                .contains("const items = TABS.map(x => counts[x.id] == null ? x : { ...x, label: `${x.label} (${counts[x.id]})` })")
+                .contains("<Tabs items={items} activeIndex={active} onChange={setActive} ariaLabel={ 'Ticket queue' } bare />")
+                .contains("<TicketsOpenScreen embedded />");
+        assertThat(tickets.get(FE + "src/pages/ticket/ui/TicketPage.tsx"))
+                .contains("{!embedded && <SectionHeader title={title ?? 'Tickets'} align=\"start\" />}");
         // Grouped nav: a group is a caret item opening a DropdownMenu of its pages' links.
         assertThat(tickets.get(FE + "src/app/App.tsx"))
                 .contains("import { DropdownMenu, NavLinks, ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'")
@@ -350,6 +387,9 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx"))
                 .contains("scope?: { param: string; value: string | number }")
                 .contains("onView={openRow}");
+        // …and links a relation to the target's record page like the default set.
+        assertThat(files.get(FE + "src/pages/order-line/ui/OrderLinePage.tsx"))
+                .contains("<a href={`#/order/${encodeURIComponent(String(r.orderId))}`}");
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx")).contains("export function KpiTile(");
     }
 
@@ -410,6 +450,9 @@ class FullstackPagesIntegrationTests {
                 .contains("onClick={() => onNavigate('new-order', recordId) }")
                 .doesNotContain("FormDrawer")
                 .contains("await api.del(PATH + encodeURIComponent(recordId))")
+                // No soft delete on this build: a hard delete offers no Undo.
+                .contains("message={t('cannotUndo')}")
+                .doesNotContain("/restore")
                 .contains("      setConfirming(false)\n      onNavigate('orders')\n")
                 .contains("<button type=\"button\" onClick={() => setAttempt(a => a + 1)} className=\"font-medium underline\">")
                 .contains("import { OrderLinePage } from '@pages/order-line'")
@@ -421,7 +464,7 @@ class FullstackPagesIntegrationTests {
                 .contains(": record.reference == null || record.reference === '' ? '#' + String(record.id) : String(record.reference)")
                 .contains("onClick={() => onNavigate('orders')}")
                 .contains("{active === 1 && (")
-                .contains("scope={ { param: 'orderId', value: record.id as string | number } }");
+                .contains("<OrderLinePage\n                embedded\n                scope={ { param: 'orderId', value: record.id as string | number } }");
 
         // The child entity page in page mode: pinned relation filter, pre-filled on New.
         String orderLines = files.get(FE + "src/pages/order-line/ui/OrderLinePage.tsx");
@@ -434,10 +477,41 @@ class FullstackPagesIntegrationTests {
                 .contains("<FilterBar filters={visibleFilters} values={filters} onChange={setFilters} />")
                 .contains("if (scope) record[scope.param] = scope.value")
                 .contains("setEditing(newRecord())")
-                .contains("onView={openRow}");
+                .contains("onView={openRow}")
+                // Order has a record page, so the relation cell links there; Product has none.
+                .contains("label: 'Order', render: r => r.orderId == null ? '—' : <a href={`#/order/${encodeURIComponent(String(r.orderId))}`} onClick={e => e.stopPropagation()} className=\"font-medium text-brand hover:underline\">{ r.orderLabel ?? '#' + String(r.orderId)}</a> },")
+                .contains("label: 'Product', render: r => r.productLabel ?? (r.productId == null ? '—' : '#' + String(r.productId)) },");
+        assertThat(files.get(FE + "src/features/order-line-form/ui/OrderLineDetail.tsx"))
+                .contains("<Row label=\"Order\">{ value.orderId == null ? empty : <a href={`#/order/${encodeURIComponent(String(value.orderId))}`} onClick={e => e.stopPropagation()} className=\"font-medium text-brand hover:underline\">{ value.orderLabel ?? '#' + String(value.orderId)}</a> }</Row>")
+                .contains("<Row label=\"Product\">{ value.productLabel ?? (value.productId == null ? empty : '#' + String(value.productId)) }</Row>");
+        // Customer has no record page, so Order's relation stays plain text.
+        assertThat(files.get(FE + "src/features/order-form/ui/OrderDetail.tsx")).doesNotContain("href=");
         assertThat(files.get(FE + "src/shared/i18n/strings.ts"))
                 .contains("pickXToSeeY: 'Pick one of the {x} to see its {y}.'")
                 .contains("back: 'חזרה'");
+    }
+
+    @Test
+    void fullstackEndpoint_recordPageOffersUndoAfterASoftDelete() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "softDelete")));
+        Map<String, String> files = generate(body);
+
+        // The record page's Delete toast restores the row (same id) and reopens it, like the list page.
+        assertThat(files.get(FE + "src/app/screens/OrderScreen.tsx"))
+                .contains("api.post<Order>(PATH + encodeURIComponent(recordId) + '/restore', undefined)")
+                .contains("toast.success(t('xRestored', { x: 'Order' }))\n                onNavigate('order', recordId)\n")
+                .contains("label: t('undo'),")
+                .contains("message={t('undoHint')}")
+                .doesNotContain("cannotUndo");
+
+        // The entity's own override wins over the project opt (Order opts out → hard delete again).
+        Map<String, Object> order = entities(body).stream()
+                .filter(e -> "Order".equals(e.get("name"))).findFirst().orElseThrow();
+        order.put("opts", Map.of("softDelete", false));
+        assertThat(generate(body).get(FE + "src/app/screens/OrderScreen.tsx"))
+                .contains("message={t('cannotUndo')}")
+                .doesNotContain("/restore");
     }
 
     @Test
@@ -512,7 +586,12 @@ class FullstackPagesIntegrationTests {
                 .contains("import { SaleRegionTypeLabels } from '@entities/sale'")
                 .contains("const filterDescriptors: FilterDescriptor[] = [")
                 .contains("<FilterBar filters={filterDescriptors} values={filters} onChange={setFilters} />")
-                .contains("export function RevenueScreen({ onNavigate }: Props) {")
+                // Routed, the filters live in the hash (#/revenue?region=NORTH); embedded, in state.
+                .contains("export function RevenueScreen({ query, onQueryChange, onNavigate }: Props) {")
+                .contains("const [localFilters, setLocalFilters] = useState<FilterValues>({})")
+                .contains("const filters = useMemo<FilterValues>(() => (onQueryChange ? { ...query } : localFilters), [onQueryChange, query, localFilters])")
+                .contains("onQueryChange(Object.fromEntries(Object.entries(next).filter(([, value]) => value !== '')))")
+                .doesNotContain("PRESET")
                 .contains("      <ReportChart\n        title={ t('xByY', { x: t('aggSum', { x: 'Amount' }), y: 'Region' }) }\n"
                         + "        path={PATH}\n        rollup=\"groupBy=region&agg=sum&field=amount\"\n")
                 .contains("        valueLabel={ t('aggSum', { x: 'Amount' }) }\n        table\n"
@@ -523,6 +602,20 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
                 .contains("export function ReportChart(")
                 .contains("<td className=\"py-2\">{t('total')}</td>");
+        // A preset report keeps a cleared preset field in the route, so it stays cleared.
+        assertThat(files.get(FE + "src/app/screens/NorthScreen.tsx"))
+                .contains("const PRESET: FilterValues = { region: 'NORTH' }")
+                .contains("const filters = useMemo<FilterValues>(() => (onQueryChange ? { ...PRESET, ...query } : localFilters), [onQueryChange, query, localFilters])")
+                .contains(".filter(([name, value]) => value !== '' || name in PRESET)");
+        // The shell rewrites the current entry for that state, and hands each screen its part.
+        assertThat(files.get(FE + "src/app/App.tsx"))
+                .contains("const [route, navigate, replace] = useRoute()")
+                .contains("const setQuery = (query: Record<string, string>) => replace({ ...route, query })")
+                .contains("<ReportScreen period={route.query.period} onPeriodChange={period => setQuery({ period })} onNavigate={goView} />")
+                .contains("<RevenueScreen query={route.query} onQueryChange={setQuery} onNavigate={goView} />");
+        assertThat(files.get(FE + "src/app/route.ts"))
+                .contains("export function useRoute(): [Route, (next: Route) => void, (next: Route) => void] {")
+                .contains("window.history.replaceState(null, '', toHash(next))");
 
         // csvExport is on for this example, so the report offers the same filters as a download.
         assertThat(report)
@@ -535,7 +628,8 @@ class FullstackPagesIntegrationTests {
         assertThat(dashboard)
                 .contains("import { useState } from 'react'")
                 .contains("import { BreakdownCard, KpiTile, PeriodSelect, ProgressTile, TrendCard, RecentList, } from '@shared/ui/widgets'")
-                .contains("import { bucketRange, queryOf, rangeParams, statsQuery, type Period } from '@shared/ui/stats'")
+                .contains("import { bucketRange, parsePeriod, queryOf, rangeParams, statsQuery, type Period } from '@shared/ui/stats'")
+                .contains("export function ReportScreen({ period: routePeriod, onPeriodChange, onNavigate }: Props) {")
                 // A compared tile asks for the previous period too; "all time" has none.
                 .contains("compareParams={ period === 'all' ? undefined : rangeParams('soldOn', false, period, true) }")
                 .contains("<ProgressTile\n          title={ 'Revenue target' }")
@@ -544,7 +638,10 @@ class FullstackPagesIntegrationTests {
                 .contains("onOpen={() => onNavigate('sales', undefined, queryOf(statsQuery('region=NORTH', rangeParams('soldOn', false, period))))}")
                 .contains("onSelect={key => onNavigate('sales', undefined, { ...queryOf(rangeParams('soldOn', false, period)), region: key })}")
                 .contains("onSelect={key => onNavigate('sales', undefined, { ...queryOf(rangeParams('soldOn', false, period)), ...bucketRange('soldOn', key, false) })}")
-                .contains("const [period, setPeriod] = useState<Period>('12m')")
+                // Routed, the period lives in the hash; embedded as a tab, it is local state.
+                .contains("const [localPeriod, setLocalPeriod] = useState<Period>('12m')")
+                .contains("const period = onPeriodChange ? parsePeriod(routePeriod, '12m') : localPeriod")
+                .contains("const setPeriod = onPeriodChange ?? setLocalPeriod")
                 .contains("<PeriodSelect value={period} onChange={setPeriod} />")
                 .contains("title={ 'Sales' }\n          path=\"/api/sales\"\n          params={ rangeParams('soldOn', false, period) }\n")
                 .contains("params={ statsQuery('region=NORTH', rangeParams('soldOn', false, period)) }")
@@ -815,8 +912,9 @@ class FullstackPagesIntegrationTests {
         // Ticket's date is a date-time, so the period covers whole days; Agent and Team have no
         // date, so their tiles stay unlimited.
         assertThat(files.get(FE + "src/app/screens/OverviewScreen.tsx"))
-                .contains("const [period, setPeriod] = useState<Period>('ytd')")
-                .contains("import { rangeParams, type Period } from '@shared/ui/stats'")
+                .contains("const [localPeriod, setLocalPeriod] = useState<Period>('ytd')")
+                .contains("const period = onPeriodChange ? parsePeriod(routePeriod, 'ytd') : localPeriod")
+                .contains("import { parsePeriod, rangeParams, type Period } from '@shared/ui/stats'")
                 .contains("title={ 'Tickets' }\n          path=\"/api/tickets\"\n          params={ rangeParams('dueAt', true, period) }")
                 .contains("title={ 'Agents' }\n          path=\"/api/agents\"\n          onOpen=")
                 .doesNotContain("statsQuery");

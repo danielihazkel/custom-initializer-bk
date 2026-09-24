@@ -84,6 +84,13 @@ export function customRange(period: Period): { from: string; to: string } | null
   return m ? { from: m[1], to: m[2] } : null
 }
 
+/** A period as the URL spells it (#/desk?period=30d), or the fallback when absent or malformed. */
+export function parsePeriod(value: string | undefined, fallback: Period): Period {
+  if (value == null) return fallback
+  if ((PERIODS as readonly string[]).includes(value)) return value as PresetPeriod
+  return customRange(value as Period) ? (value as Period) : fallback
+}
+
 function parseDay(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y, m - 1, d)

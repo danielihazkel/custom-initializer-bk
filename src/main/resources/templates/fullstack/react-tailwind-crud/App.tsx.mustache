@@ -201,7 +201,7 @@ function PageNotice({ title, hint, action, onAction }: { title: string; hint: st
 }
 
 export default function App() {
-  const [route, navigate] = useRoute()
+  const [route, navigate{{#hasQueryScreens}}, replace{{/hasQueryScreens}}] = useRoute()
   const [navOpen, setNavOpen] = useState(false)
   const { isDark, toggle } = useTheme()
   const { view } = route
@@ -228,6 +228,12 @@ export default function App() {
   // Screens navigate by page id; a record page also takes the record's key, a list page its filters.
   const goView = (v: string, arg?: string, query?: Record<string, string>) => go(v as View, arg, query)
 {{/hasNavigatingScreens}}
+{{#hasQueryScreens}}
+
+  // A screen's own state that belongs in the URL (a dashboard's period, a report's filters)
+  // rewrites the current entry rather than adding one, so Back still leaves the page.
+  const setQuery = (query: Record<string, string>) => replace({ ...route, query })
+{{/hasQueryScreens}}
 
   const sidebar = (
     <>

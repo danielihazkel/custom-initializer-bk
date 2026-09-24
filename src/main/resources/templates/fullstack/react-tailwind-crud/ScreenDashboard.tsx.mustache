@@ -3,7 +3,7 @@ import { useState } from 'react'
 {{/hasDateRange}}
 import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesText}}TextCard, {{/usesText}}} from '@shared/ui/widgets'
 {{#usesStatsHelpers}}
-import { {{#usesBucketRange}}bucketRange, {{/usesBucketRange}}{{#usesQueryOf}}queryOf, {{/usesQueryOf}}{{#usesRangeParams}}rangeParams, {{/usesRangeParams}}{{#usesStatsQuery}}statsQuery, {{/usesStatsQuery}}{{#hasDateRange}}type Period {{/hasDateRange}}} from '@shared/ui/stats'
+import { {{#usesBucketRange}}bucketRange, {{/usesBucketRange}}{{#hasDateRange}}parsePeriod, {{/hasDateRange}}{{#usesQueryOf}}queryOf, {{/usesQueryOf}}{{#usesRangeParams}}rangeParams, {{/usesRangeParams}}{{#usesStatsQuery}}statsQuery, {{/usesStatsQuery}}{{#hasDateRange}}type Period {{/hasDateRange}}} from '@shared/ui/stats'
 {{/usesStatsHelpers}}
 {{#usesT}}
 import { t } from '@shared/i18n'
@@ -11,17 +11,27 @@ import { t } from '@shared/i18n'
 {{#labelImports}}
 import { {{labelsRefs}} } from '@entities/{{entityNameKebab}}'
 {{/labelImports}}
-{{#needsNavigate}}
+{{#hasScreenProps}}
 
 interface Props {
-  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
-}
-{{/needsNavigate}}
-
-export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
 {{#hasDateRange}}
-  // The period every widget with a date column is limited to.
-  const [period, setPeriod] = useState<Period>('{{dateRangeDefault}}')
+  /** The period from the route (#/<page>?period=30d); absent (a tab), the screen keeps its own. */
+  period?: string
+  onPeriodChange?: (period: Period) => void
+{{/hasDateRange}}
+{{#needsNavigate}}
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+{{/needsNavigate}}
+}
+{{/hasScreenProps}}
+
+export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Props{{/hasScreenProps}}) {
+{{#hasDateRange}}
+  const [localPeriod, setLocalPeriod] = useState<Period>('{{dateRangeDefault}}')
+  // The period every widget with a date column is limited to. Routed, it lives in the URL, so a
+  // reload or bookmark keeps it; embedded as a tab, it is local state.
+  const period = onPeriodChange ? parsePeriod(routePeriod, '{{dateRangeDefault}}') : localPeriod
+  const setPeriod = onPeriodChange ?? setLocalPeriod
 {{/hasDateRange}}
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">

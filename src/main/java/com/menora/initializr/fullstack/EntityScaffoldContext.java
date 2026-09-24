@@ -145,6 +145,7 @@ public final class EntityScaffoldContext {
                     Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
                     pv.put("EntityName", ev.get("EntityName"));
                     pv.put("entityNameKebab", ev.get("entityNameKebab"));
+                    pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
                     pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
                     pv.put("presetFilterTs", presetFilterTs(p.presetFilter()));
                     String presetTs = presetFilterTs(p.presetFilter());
@@ -172,6 +173,8 @@ public final class EntityScaffoldContext {
                     pv.put("hasPageSize", p.pageSize() != null);
                     pv.put("pageSize", p.pageSize());
                     pv.put("hasListPresentation", p.hasListPresentation());
+                    // A page title replaces the entity page's own heading (its plural label).
+                    pv.put("hasPageTitle", p.title() != null);
                     pv.put("navIcon", "Table2");
                     defaultTitleExpr = tsString((String) ev.get("entityLabelPlural"));
                 }
@@ -248,8 +251,18 @@ public final class EntityScaffoldContext {
                     pv.put("recordEditsInDrawer", recordMutable && editWizard == null);
                     pv.put("wizardPageId", editWizard);
                     pv.put("recordHasIcons", back != null || recordMutable);
+                    // With soft delete the page's Delete toast offers Undo (POST /restore, then the
+                    // restored row is reopened). Like csvExport, the entity's own override is
+                    // resolved against the project opt here, because a page context never runs
+                    // through buildEntityContext. A record page always has a single key, so the
+                    // composite-key exclusion of softDeleteApplicable never applies.
+                    Object softDeleteOverride = ev.get("softDeleteOverride");
+                    boolean recordSoftDeletes = recordMutable && (softDeleteOverride != null
+                            ? Boolean.TRUE.equals(softDeleteOverride)
+                            : Boolean.TRUE.equals(ctx.get("optScaffoldSoftDelete")));
+                    pv.put("recordSoftDeletes", recordSoftDeletes);
                     List<Map<String, Object>> tabViews = new ArrayList<>();
-                    boolean navigates = back != null || editWizard != null;
+                    boolean navigates = back != null || editWizard != null || recordSoftDeletes;
                     for (int i = 0; i < p.childTabs().size(); i++) {
                         PageDefinition.ChildTab tab = p.childTabs().get(i);
                         Map<String, Object> cv = entityByPascal.get(Naming.toPascalCase(tab.entity()));
@@ -294,11 +307,14 @@ public final class EntityScaffoldContext {
         }
 
         // Tabs last: a tab's label and onNavigate plumbing come from the page it embeds.
+        Map<String, PageDefinition> pageById = new LinkedHashMap<>();
+        for (PageDefinition p : pages) pageById.put(p.id(), p);
         for (PageDefinition p : pages) {
             if (p.type() != PageDefinition.Type.TABS) continue;
             Map<String, Object> pv = viewById.get(p.id());
             List<Map<String, Object>> tabViews = new ArrayList<>();
             boolean needsNavigate = false;
+            boolean hasTabCounts = false;
             for (int i = 0; i < p.tabs().size(); i++) {
                 PageDefinition.Tab tab = p.tabs().get(i);
                 Map<String, Object> target = viewById.get(tab.page());
@@ -310,11 +326,26 @@ public final class EntityScaffoldContext {
                 tv.put("tabTitleExpr", tab.title() != null ? tsString(tab.title()) : target.get("pageTitleExpr"));
                 tv.put("TargetName", target.get("PageName"));
                 tv.put("targetNeedsNavigate", targetNavigates);
+                // An embedded list page drops its own heading: the tab strip is its heading.
+                boolean targetIsList = Boolean.TRUE.equals(target.get("pageIsEntityList"));
+                tv.put("tabTargetIsList", targetIsList);
+                if (targetIsList) target.put("isTabTarget", true);
+                // A tab over a list page shows the list's row count (its own preset applied): the
+                // list endpoint's page metadata, asked for one row. The params are validated
+                // constants, so they are spliced verbatim (triple-stash: `&` must not be escaped).
+                tv.put("tabCounted", targetIsList);
+                if (targetIsList) {
+                    String preset = presetQuery(pageById.get(tab.page()).presetFilter());
+                    tv.put("countPath", "/api/" + target.get("entityNamePluralKebab"));
+                    tv.put("countParams", preset == null ? "" : preset);
+                    hasTabCounts = true;
+                }
                 tv.put("first", i == 0);
                 tv.put("last", i == p.tabs().size() - 1);
                 tabViews.add(tv);
             }
             pv.put("tabs", tabViews);
+            pv.put("hasTabCounts", hasTabCounts);
             pv.put("needsNavigate", needsNavigate);
         }
 
@@ -332,10 +363,28 @@ public final class EntityScaffoldContext {
                 routeProps = " selectedId={route.arg} onSelect={id => go('" + pv.get("pageId") + "', id)}";
             } else if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) {
                 routeProps = " filters={route.query}";
+            } else if (Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"))) {
+                // The period picker's choice rides in the hash (#/desk?period=30d), rewritten in place.
+                routeProps = " period={route.query.period} onPeriodChange={period => setQuery({ period })}";
+            } else if (Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"))) {
+                // The report's filter bar likewise (#/revenue?region=NORTH).
+                routeProps = " query={route.query} onQueryChange={setQuery}";
             }
             pv.put("routeProps", routeProps);
-            pv.put("hasScreenProps", Boolean.TRUE.equals(pv.get("listTakesQuery"))
-                    || Boolean.TRUE.equals(pv.get("needsNavigate")));
+            // The screen's destructured props, in a fixed order. A dashboard with a period picker
+            // and a filterable report take their route state as optional props (absent when the
+            // screen is embedded as a tab, where they keep local state instead).
+            boolean dashboardPeriod = Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"));
+            boolean reportQuery = Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"));
+            List<String> screenParams = new ArrayList<>();
+            if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) screenParams.add("filters");
+            if (dashboardPeriod) screenParams.addAll(List.of("period: routePeriod", "onPeriodChange"));
+            if (reportQuery) screenParams.addAll(List.of("query", "onQueryChange"));
+            if (Boolean.TRUE.equals(pv.get("needsNavigate"))) screenParams.add("onNavigate");
+            if (Boolean.TRUE.equals(pv.get("isTabTarget"))) screenParams.add("embedded");
+            pv.put("screenParams", String.join(", ", screenParams));
+            pv.put("hasScreenProps", !screenParams.isEmpty());
+            pv.put("takesQuery", dashboardPeriod || reportQuery);
         }
 
         // Screens import the i18n `t` only when one of their label expressions calls it — the
@@ -379,6 +428,8 @@ public final class EntityScaffoldContext {
         ctx.put("hasPageRoles", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasRoles"))));
         // The shell declares its `goView` helper only when some screen takes onNavigate.
         ctx.put("hasNavigatingScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("needsNavigate"))));
+        // ...and its `setQuery` (a route rewrite) only when a routed screen keeps state in the hash.
+        ctx.put("hasQueryScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("takesQuery"))));
         ctx.put("initialPageId", nav.get(0).get("pageId"));
         // The lucide names the shell imports: the nav icons in use plus its own chrome, sorted.
         Set<String> icons = new TreeSet<>(List.of("Menu", "Moon", "Sun"));
@@ -394,6 +445,8 @@ public final class EntityScaffoldContext {
         // Per-entity contexts read this: an entity with a wizard gets the stepped form and the
         // list page's onCreate.
         ctx.put(WIZARD_PAGES_KEY, links.wizardPageByEntity());
+        // Per-entity contexts read this too: a relation to an entity with a record page links there.
+        ctx.put(RECORD_PAGES_KEY, links.recordPageByEntity());
         // Per-entity contexts read this too: only an entity whose list page sets columns / sort /
         // view / pageSize gets the props for them, so every other EntityPage keeps its bytes.
         Set<String> listConfigured = new LinkedHashSet<>();
@@ -986,6 +1039,11 @@ public final class EntityScaffoldContext {
      *  context, for {@link #buildEntityContext}. Not referenced by any template. */
     private static final String WIZARD_PAGES_KEY = "__wizardPages";
 
+    /** Internal key under which the entity → record page lookup rides in the (frontend) project
+     *  context: a relation whose target has a record page renders as a link to it. Not referenced
+     *  by any template. */
+    private static final String RECORD_PAGES_KEY = "__recordPages";
+
     /** Internal key under which the names of the entities whose list pages set a presentation
      *  (columns / sort / view / pageSize) ride in the (frontend) project context, for
      *  {@link #buildEntityContext}'s {@code listConfigurable}. Not referenced by any template. */
@@ -1153,6 +1211,24 @@ public final class EntityScaffoldContext {
                 (Map<String, List<Map<String, Object>>>) projectContext.get(INVERSE_RELATIONS_KEY);
         ctx.putAll(entityViewModel(entity, summaries == null ? Map.of() : summaries,
                 inverses == null ? Map.of() : inverses));
+        // Page layouts only: a relation whose target has a record page renders as a link to it
+        // (table cell and detail row). Backend contexts and layout-free frontends never carry the
+        // lookup, so their relation view-models — and generated bytes — are untouched.
+        Map<String, String> recordPages = (Map<String, String>) projectContext.get(RECORD_PAGES_KEY);
+        if (recordPages != null && !recordPages.isEmpty()) {
+            List<Map<String, Object>> linked = new ArrayList<>();
+            for (Map<String, Object> rel : (List<Map<String, Object>>) ctx.get("relations")) {
+                Map<String, Object> rc = new LinkedHashMap<>(rel);
+                String target = String.valueOf(rel.get("targetEntity")).toLowerCase(Locale.ROOT);
+                String recordPage = recordPages.entrySet().stream()
+                        .filter(e -> e.getKey().toLowerCase(Locale.ROOT).equals(target))
+                        .map(Map.Entry::getValue).findFirst().orElse(null);
+                rc.put("targetHasRecordPage", recordPage != null);
+                rc.put("targetRecordPageId", recordPage);
+                linked.add(rc);
+            }
+            ctx.put("relations", linked);
+        }
         // Page layouts only: the list page can be scoped to one parent through a relation filter
         // (master-detail and record pages), so it takes a `scope` prop.
         ctx.put("pageScopeable", Boolean.TRUE.equals(projectContext.get("hasPages")) && !entity.relations().isEmpty());
@@ -1419,6 +1495,7 @@ public final class EntityScaffoldContext {
         // context is project context + page view-model and never runs through buildEntityContext,
         // where the opt overrides are normally applied. null = inherit the project flag.
         view.put("csvExportOverride", entity.opts().get("csvExport"));
+        view.put("softDeleteOverride", entity.opts().get("softDelete"));
 
         // Kanban board view (listView == "kanban"): reuse the breakdown field as the grouping
         // column and turn its distinct values into lanes. Dragging a card writes the new lane value

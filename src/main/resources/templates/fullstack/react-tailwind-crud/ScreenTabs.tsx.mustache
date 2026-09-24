@@ -1,6 +1,12 @@
+{{#hasTabCounts}}
+import { useEffect, useState } from 'react'
+{{/hasTabCounts}}
 {{#usesT}}
 import { t } from '@shared/i18n'
 {{/usesT}}
+{{#hasTabCounts}}
+import { api } from '@shared/api'
+{{/hasTabCounts}}
 {{#tabs}}
 import { {{TargetName}}Screen } from './{{TargetName}}Screen'
 {{/tabs}}
@@ -10,6 +16,35 @@ const TABS = [
   { id: '{{tabId}}', label: {{tabTitleExpr}} },
 {{/tabs}}
 ]
+{{#hasTabCounts}}
+
+/** The lists behind the tabs: each shows its row count, with the list's own preset applied. */
+const COUNTED = [
+{{#tabs}}
+{{#tabCounted}}
+  { id: '{{tabId}}', path: '{{countPath}}', params: '{{{countParams}}}' },
+{{/tabCounted}}
+{{/tabs}}
+]
+
+/** One count per listed tab, fetched again whenever the open tab changes — an edit in the open
+ *  tab may have moved rows between the others. A count that fails leaves its chip out. */
+function useTabCounts(active: number): Record<string, number> {
+  const [counts, setCounts] = useState<Record<string, number>>({})
+  useEffect(() => {
+    let current = true
+    Promise.all(COUNTED.map(c =>
+      api.get<{ totalElements: number }>(`${c.path}?size=1${c.params ? '&' + c.params : ''}`)
+        .then(p => [c.id, p.totalElements] as const)
+        .catch(() => null),
+    )).then(entries => {
+      if (current) setCounts(Object.fromEntries(entries.filter((e): e is readonly [string, number] => e != null)))
+    })
+    return () => { current = false }
+  }, [active])
+  return counts
+}
+{{/hasTabCounts}}
 
 interface Props {
   /** The open tab's id, from the route (default: the first tab). */
@@ -23,12 +58,21 @@ interface Props {
 export function {{PageName}}Screen({ tab: openTab, onTabChange{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
   const active = Math.max(0, TABS.findIndex(x => x.id === openTab))
   const setActive = (i: number) => onTabChange(TABS[i].id)
+{{#hasTabCounts}}
+  const counts = useTabCounts(active)
+{{/hasTabCounts}}
   return (
     <div>
+      <div className="px-4 pt-4 md:px-8 md:pt-8">
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      </div>
       <div
         role="tablist"
         aria-label={ {{pageTitleExpr}} }
-        className="flex gap-1 overflow-x-auto border-b border-border bg-surface px-4 md:px-8"
+        className="mt-4 flex gap-1 overflow-x-auto border-b border-border bg-surface px-4 md:px-8"
       >
         {TABS.map((tab, i) => (
           <button
@@ -44,13 +88,18 @@ export function {{PageName}}Screen({ tab: openTab, onTabChange{{#needsNavigate}}
             }`}
           >
             {tab.label}
+{{#hasTabCounts}}
+            {counts[tab.id] != null && (
+              <span className="ms-1.5 rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] tabular-nums text-muted">{counts[tab.id]}</span>
+            )}
+{{/hasTabCounts}}
           </button>
         ))}
       </div>
 {{#tabs}}
       {active === {{tabIndex}} && (
         <div role="tabpanel" id="{{tabId}}-panel" aria-labelledby="{{tabId}}-tab">
-          <{{TargetName}}Screen{{#targetNeedsNavigate}} onNavigate={onNavigate}{{/targetNeedsNavigate}} />
+          <{{TargetName}}Screen{{#targetNeedsNavigate}} onNavigate={onNavigate}{{/targetNeedsNavigate}}{{#tabTargetIsList}} embedded{{/tabTargetIsList}} />
         </div>
       )}
 {{/tabs}}

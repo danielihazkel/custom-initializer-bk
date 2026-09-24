@@ -108,7 +108,25 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
     setDeleting(true)
     try {
       await api.del(PATH + encodeURIComponent(recordId))
+{{#recordSoftDeletes}}
+      // Soft delete: the row is only flagged, so Undo really restores it (same id, same data) and reopens it.
+      toast.success(t('xDeleted', { x: {{entityLabelExpr}} }), {
+        action: {
+          label: t('undo'),
+          onClick: () => {
+            api.post<{{EntityName}}>(PATH + encodeURIComponent(recordId) + '/restore', undefined)
+              .then(() => {
+                toast.success(t('xRestored', { x: {{entityLabelExpr}} }))
+                onNavigate('{{pageId}}', recordId)
+              })
+              .catch(err => toast.error(err instanceof Error ? err.message : String(err)))
+          },
+        },
+      })
+{{/recordSoftDeletes}}
+{{^recordSoftDeletes}}
       toast.success(t('xDeleted', { x: {{entityLabelExpr}} }))
+{{/recordSoftDeletes}}
       setConfirming(false)
 {{#hasBack}}
       onNavigate('{{backPageId}}')
@@ -233,6 +251,7 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
           {active === {{tabIndex}} && (
             <div role="tabpanel" id="{{tabId}}-panel" aria-labelledby="{{tabId}}-tab">
               <{{childEntityName}}Page
+                embedded
                 scope={ { param: '{{viaParam}}', value: record.{{pkName}} as string | number } }
 {{#childHasRecordPage}}
                 onOpenRecord={r => onNavigate('{{childRecordPageId}}', String(r.{{childRecordPk}}))}
@@ -288,7 +307,12 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
       <ConfirmDialog
         open={confirming}
         title={t('deleteX', { x: {{entityLabelExpr}} })}
+{{#recordSoftDeletes}}
+        message={t('undoHint')}
+{{/recordSoftDeletes}}
+{{^recordSoftDeletes}}
         message={t('cannotUndo')}
+{{/recordSoftDeletes}}
         busy={deleting}
         onConfirm={remove}
         onCancel={() => setConfirming(false)}

@@ -21,21 +21,41 @@ import { {{chartLabelsRefs}} } from '@entities/{{entityNameKebab}}'
  *  they always describe exactly the same rows. */
 const PATH = '/api/{{entityNamePluralKebab}}'
 {{#hasFilters}}
+{{#hasPresetFilter}}
+
+/** The filters the report opens with. A cleared preset field stays in the route, cleared. */
+const PRESET: FilterValues = {{presetFilterTs}}
+{{/hasPresetFilter}}
 
 const filterDescriptors: FilterDescriptor[] = [
 {{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{/isRelationFilter}} },
 {{/filterFields}}]
 {{/hasFilters}}
-{{#needsNavigate}}
+{{#hasScreenProps}}
 
 interface Props {
-  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
-}
-{{/needsNavigate}}
-
-export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
 {{#hasFilters}}
-  const [filters, setFilters] = useState<FilterValues>({{#hasPresetFilter}}{{presetFilterTs}}{{/hasPresetFilter}}{{^hasPresetFilter}}{}{{/hasPresetFilter}})
+  /** The filters from the route (#/<page>?<field>=<value>); absent (a tab), the screen keeps its own. */
+  query?: Record<string, string>
+  onQueryChange?: (query: Record<string, string>) => void
+{{/hasFilters}}
+{{#needsNavigate}}
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+{{/needsNavigate}}
+}
+{{/hasScreenProps}}
+
+export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Props{{/hasScreenProps}}) {
+{{#hasFilters}}
+  const [localFilters, setLocalFilters] = useState<FilterValues>({{#hasPresetFilter}}PRESET{{/hasPresetFilter}}{{^hasPresetFilter}}{}{{/hasPresetFilter}})
+  // Routed, the filters live in the URL, so a reload or bookmark keeps them; embedded as a tab,
+  // they are local state. Memoized: the rollups below key on this object.
+  const filters = useMemo<FilterValues>(() => (onQueryChange ? { {{#hasPresetFilter}}...PRESET, {{/hasPresetFilter}}...query } : localFilters), [onQueryChange, query, localFilters])
+  const setFilters = (next: FilterValues) => {
+    if (!onQueryChange) return setLocalFilters(next)
+    // Empties leave the route{{#hasPresetFilter}} — except a cleared preset field, which has to stay cleared{{/hasPresetFilter}}.
+    onQueryChange(Object.fromEntries(Object.entries(next).filter({{#hasPresetFilter}}([name, value]) => value !== '' || name in PRESET{{/hasPresetFilter}}{{^hasPresetFilter}}([, value]) => value !== ''{{/hasPresetFilter}})))
+  }
   // A string, so the rollups only refetch when a filter actually changes.
   const search = useMemo(() => {
     const params = new URLSearchParams()

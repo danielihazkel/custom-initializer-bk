@@ -150,6 +150,7 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
           {selectedId ? (
             <{{childEntityName}}Page
               key={selectedId}
+              embedded
               scope={ { param: '{{viaParam}}', value: {{#parentPkIsNumber}}Number(selectedId){{/parentPkIsNumber}}{{^parentPkIsNumber}}selectedId{{/parentPkIsNumber}} } }
 {{#childHasRecordPage}}
               onOpenRecord={r => onNavigate('{{childRecordPageId}}', String(r.{{childRecordPk}}))}

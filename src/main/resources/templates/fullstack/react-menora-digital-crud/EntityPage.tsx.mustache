@@ -20,7 +20,7 @@ type ListColumn = Column<{{EntityName}}> & { key: string }
 
 {{/listConfigurable}}const columns: {{#listConfigurable}}ListColumn[]{{/listConfigurable}}{{^listConfigurable}}Column<{{EntityName}}>[]{{/listConfigurable}} = [
 {{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{label}}', sortKey: '{{name}}'{{#isNumeric}}, numeric: true{{/isNumeric}}{{#isTemporal}}, numeric: true{{/isTemporal}}{{#isUuid}}, numeric: true{{/isUuid}}{{#isEnum}}, chip: true{{/isEnum}}{{#isBoolean}}, chip: true{{/isBoolean}}, render: r => r.{{name}} == null ? '—' : {{#isEnum}}{{enumTypeName}}Labels[r.{{name}}]{{/isEnum}}{{^isEnum}}String(r.{{name}}){{/isEnum}} },
-{{/fields}}{{#relations}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => {{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} },
+{{/fields}}{{#relations}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => {{#targetHasRecordPage}}r.{{fkFieldName}} == null ? '—' : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(r.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}r.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(r.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} },
 {{/relations}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', numeric: true, render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
   { {{#listConfigurable}}key: 'updatedAt', {{/listConfigurable}}label: t('updated'), sortKey: 'updatedAt', numeric: true, render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
 {{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{CollectionField}}', numeric: true, render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
@@ -56,6 +56,12 @@ interface {{EntityName}}PageProps {
 {{/pageScopeable}}
   /** Opens a row on its record page instead of the quick-look drawer. */
   onOpenRecord?: (row: {{EntityName}}) => void
+  /** The heading (default: the entity's plural label) — a list page's own title. */
+  title?: string
+  /** Shown under the heading — a list page's description. */
+  description?: string
+  /** Embedded in another screen (a tab, a record's related list): no heading of its own. */
+  embedded?: boolean
 {{#hasWizardPage}}
   /** New opens the entity's wizard page instead of the form drawer. */
   onCreate?: () => void
@@ -73,7 +79,7 @@ interface {{EntityName}}PageProps {
 }
 
 {{/hasPages}}
-export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
   const [page, setPage] = useState(0)
   const [size, setSize] = useState({{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20)
   const [sort, setSort] = useState<SortSpec | null>({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
@@ -291,7 +297,13 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
   return (
     <div className="mx-auto w-full max-w-[1283px] px-4 py-5 md:px-6 md:py-8">
       <div className="mb-4">
+{{#hasPages}}
+        {!embedded && <SectionHeader title={title ?? '{{entityLabelPlural}}'} align="start" />}
+        {description && <p className="mt-2 max-w-2xl text-sm text-muted">{description}</p>}
+{{/hasPages}}
+{{^hasPages}}
         <SectionHeader title="{{entityLabelPlural}}" align="start" />
+{{/hasPages}}
       </div>
       {/* Toolbar: view switcher + record count on the start side, the one yellow action on the end side. */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

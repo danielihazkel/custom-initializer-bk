@@ -12,12 +12,16 @@ interface Props {
 {{#needsNavigate}}
   onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
 {{/needsNavigate}}
+{{#isTabTarget}}
+  /** Set by the tabs page embedding this list: the tab strip is its heading. */
+  embedded?: boolean
+{{/isTabTarget}}
 }
 {{/hasScreenProps}}
 
-export function {{PageName}}Screen({{#hasScreenProps}}{ {{#listTakesQuery}}filters{{#needsNavigate}}, {{/needsNavigate}}{{/listTakesQuery}}{{#needsNavigate}}onNavigate{{/needsNavigate}} }: Props{{/hasScreenProps}}) {
+export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Props{{/hasScreenProps}}) {
 {{^listTakesQuery}}
-  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#hasRecordPage}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}}{{#hasWizard}} onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}}{{#hasColumns}} columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}} initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}} initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}} initialPageSize={ {{pageSize}} }{{/hasPageSize}} />
+  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#hasRecordPage}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}}{{#hasWizard}} onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}}{{#hasColumns}} columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}} initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}} initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}} initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasPageTitle}} title={ {{pageTitleExpr}} }{{/hasPageTitle}}{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}}{{#isTabTarget}} embedded={embedded}{{/isTabTarget}} />
 {{/listTakesQuery}}
 {{#listTakesQuery}}
   // A different filter set in the route is a fresh list, not an edit of the open one.
@@ -30,7 +34,10 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{#listTakesQuery}}filte
       columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}}
       initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}}
       initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}}
-      initialPageSize={ {{pageSize}} }{{/hasPageSize}}
+      initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasPageTitle}}
+      title={ {{pageTitleExpr}} }{{/hasPageTitle}}{{#hasPageDescription}}
+      description={ {{pageDescriptionExpr}} }{{/hasPageDescription}}{{#isTabTarget}}
+      embedded={embedded}{{/isTabTarget}}
     />
   )
 {{/listTakesQuery}}

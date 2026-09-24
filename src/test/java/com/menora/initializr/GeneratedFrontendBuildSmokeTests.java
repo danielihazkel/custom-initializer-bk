@@ -153,8 +153,10 @@ class GeneratedFrontendBuildSmokeTests {
     void fullstackFrontendPageLayoutsInstallAndBuild(@TempDir Path workDir) throws Exception {
         // The Orders example's page layout: a dashboard with every widget kind, plain list pages,
         // a master-detail page and a record page with a related list (the two id-driven screens).
-        Path project = postAndExtractFrontend(workDir,
-                FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud"));
+        // Soft delete is on, so the record page's Delete toast carries the Undo (restore) path too.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "softDelete")));
+        Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
         runPnpm(project, "run", "build");
