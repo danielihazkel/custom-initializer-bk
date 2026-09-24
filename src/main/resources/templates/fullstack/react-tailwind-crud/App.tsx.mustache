@@ -223,7 +223,9 @@ export default function App() {
 
   const go = (id: View, arg?: string, query: Record<string, string> = {}) => {
     navigate({ view: id, arg, query })
+{{^navTopbar}}
     setNavOpen(false)
+{{/navTopbar}}
   }
 {{#hasNavigatingScreens}}
 

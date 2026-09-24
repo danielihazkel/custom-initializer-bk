@@ -106,9 +106,9 @@ class FullstackExampleTests {
         // The shell's navigation rides in the settings too, checked for its two keys.
         Map<String, Object> badNav = example("bad-nav", validEntities(), true);
         badNav.put("settings", Map.of("nav", Map.of("style", "left")));
-        ResponseEntity<JsonNode> bad3 = exchange(HttpMethod.POST, ADMIN, badNav, auth);
-        assertThat(bad3.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(bad3.getBody().get("detail").asText()).contains("settings.nav.style must be sidebar or topbar");
+        ResponseEntity<JsonNode> badNavResponse = exchange(HttpMethod.POST, ADMIN, badNav, auth);
+        assertThat(badNavResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(badNavResponse.getBody().get("detail").asText()).contains("settings.nav.style must be sidebar or topbar");
 
         // A list page's presentation is checked against the entity — and its settings: the audit
         // columns exist only with the audit scaffold option on.
