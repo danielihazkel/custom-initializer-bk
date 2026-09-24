@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -124,7 +125,7 @@ public class FullstackExampleAdminController {
         e.setDescription(description);
         e.setIcon(icon);
         e.setEntities(validateEntities(body.entities(), objectMapper));
-        e.setPages(validatePages(body.entities(), body.pages(), objectMapper));
+        e.setPages(validatePages(body.entities(), body.pages(), body.settings(), objectMapper));
         e.setSettings(validateSettings(body.settings(), objectMapper));
         e.setSortOrder(body.sortOrder() == null ? 0 : body.sortOrder());
         e.setEnabled(body.enabled() == null || body.enabled());
@@ -168,9 +169,10 @@ public class FullstackExampleAdminController {
     /**
      * Checks {@code pages} is a page layout the generator accepts for {@code entities} (which must
      * already have passed {@link #validateEntities}) and returns it as compact JSON text, or null
-     * when absent/empty (the classic layout).
+     * when absent/empty (the classic layout). {@code settings} supplies the example's scaffold opts
+     * (a list page may show the audit columns only with {@code audit} on).
      */
-    public static String validatePages(JsonNode entities, JsonNode pages, ObjectMapper objectMapper) {
+    public static String validatePages(JsonNode entities, JsonNode pages, JsonNode settings, ObjectMapper objectMapper) {
         if (pages == null || pages.isNull() || (pages.isArray() && pages.isEmpty())) return null;
         if (!pages.isArray()) throw new InvalidExampleException("pages must be a JSON array");
         List<PageDefinitionDto> dtos;
@@ -184,11 +186,21 @@ public class FullstackExampleAdminController {
                     null, null, null, null, null, null, null, null, null, null, null, null, null,
                     null, null, null, null, null,
                     objectMapper.convertValue(entities, new TypeReference<List<EntityDefinitionDto>>() {})));
-            FullstackPageValidator.validateAndConvert(dtos, converted);
+            FullstackPageValidator.validateAndConvert(dtos, converted, scaffoldOptsOf(settings));
         } catch (WizardArgumentException ex) {
             throw new InvalidExampleException(ex.getMessage());
         }
         return toJson(pages, "pages", objectMapper);
+    }
+
+    /** The {@code scaffold} names of an example's settings (an array of strings; anything else: none). */
+    private static Set<String> scaffoldOptsOf(JsonNode settings) {
+        if (settings == null || !settings.isObject() || !settings.path("scaffold").isArray()) return Set.of();
+        Set<String> out = new LinkedHashSet<>();
+        for (JsonNode n : settings.get("scaffold")) {
+            if (n.isTextual()) out.add(n.asText());
+        }
+        return out;
     }
 
     /**

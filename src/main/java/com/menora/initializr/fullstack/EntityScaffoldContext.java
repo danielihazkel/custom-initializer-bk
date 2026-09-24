@@ -159,6 +159,19 @@ public final class EntityScaffoldContext {
                     pv.put("hasWizard", wizard != null);
                     pv.put("wizardPageId", wizard);
                     if (wizard != null) pv.put("needsNavigate", true);
+                    // How the list opens (each absent: the EntityPage default). Column and field
+                    // names are validated identifiers; the sort object matches the generated SortSpec.
+                    pv.put("hasColumns", !p.columns().isEmpty());
+                    pv.put("columnsTs", p.columns().isEmpty() ? null
+                            : "[" + String.join(", ", p.columns().stream().map(EntityScaffoldContext::tsString).toList()) + "]");
+                    pv.put("hasSort", p.sort() != null);
+                    pv.put("sortTs", p.sort() == null ? null
+                            : "{ field: " + tsString(p.sort().field()) + ", direction: '" + (p.sort().desc() ? "desc" : "asc") + "' }");
+                    pv.put("hasInitialView", p.view() != null);
+                    pv.put("initialViewOverride", p.view());
+                    pv.put("hasPageSize", p.pageSize() != null);
+                    pv.put("pageSize", p.pageSize());
+                    pv.put("hasListPresentation", p.hasListPresentation());
                     pv.put("navIcon", "Table2");
                     defaultTitleExpr = tsString((String) ev.get("entityLabelPlural"));
                 }
@@ -381,6 +394,13 @@ public final class EntityScaffoldContext {
         // Per-entity contexts read this: an entity with a wizard gets the stepped form and the
         // list page's onCreate.
         ctx.put(WIZARD_PAGES_KEY, links.wizardPageByEntity());
+        // Per-entity contexts read this too: only an entity whose list page sets columns / sort /
+        // view / pageSize gets the props for them, so every other EntityPage keeps its bytes.
+        Set<String> listConfigured = new LinkedHashSet<>();
+        for (PageDefinition p : pages) {
+            if (p.type() == PageDefinition.Type.ENTITY_LIST && p.hasListPresentation()) listConfigured.add(p.entity());
+        }
+        ctx.put(LIST_PRESENTATION_KEY, listConfigured);
         ctx.put("hasTabsPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTabs"))));
     }
 
@@ -934,6 +954,28 @@ public final class EntityScaffoldContext {
         return sb.append(" }").toString();
     }
 
+    /**
+     * The list views the generated page of {@code entity} actually offers: the requested
+     * {@code listViews}, intersected with what its fields support — table and cards always, kanban
+     * needs a breakdown field (the first enum, else the first boolean) on a writable entity, calendar
+     * a temporal field — in the fixed table/cards/kanban/calendar order; {@code [table]} when nothing
+     * requested fits. Derived from the entity model alone and shared with
+     * {@link FullstackPageValidator}, so a list page's {@code view} is checked against exactly what
+     * renders.
+     */
+    static List<String> emittedListViews(EntityDefinition entity) {
+        Set<String> requested = new LinkedHashSet<>(entity.listViews());
+        boolean breakdown = entity.fields().stream().anyMatch(f -> f.type().isEnum() || f.type().isBoolean());
+        boolean temporal = entity.fields().stream().anyMatch(f -> f.type().isTemporal());
+        List<String> emitted = new ArrayList<>();
+        if (requested.contains("table")) emitted.add("table");
+        if (requested.contains("cards")) emitted.add("cards");
+        if (requested.contains("kanban") && breakdown && !entity.readOnly()) emitted.add("kanban");
+        if (requested.contains("calendar") && temporal) emitted.add("calendar");
+        if (emitted.isEmpty()) emitted.add("table");
+        return emitted;
+    }
+
     /** A user-supplied string as a single-quoted TS literal (apostrophes, backslashes and line
      *  breaks escaped). */
     static String tsString(String s) {
@@ -943,6 +985,11 @@ public final class EntityScaffoldContext {
     /** Internal key under which the entity → wizard page lookup rides in the (frontend) project
      *  context, for {@link #buildEntityContext}. Not referenced by any template. */
     private static final String WIZARD_PAGES_KEY = "__wizardPages";
+
+    /** Internal key under which the names of the entities whose list pages set a presentation
+     *  (columns / sort / view / pageSize) ride in the (frontend) project context, for
+     *  {@link #buildEntityContext}'s {@code listConfigurable}. Not referenced by any template. */
+    private static final String LIST_PRESENTATION_KEY = "__listPresentationEntities";
 
     /** Internal key under which the entity-summary lookup rides in the project context.
      *  Not referenced by any template. */
@@ -1115,6 +1162,10 @@ public final class EntityScaffoldContext {
         boolean hasWizard = wizards != null && wizards.containsKey(entity.name());
         ctx.put("hasWizardPage", hasWizard);
         ctx.put("formHasSteps", hasWizard);
+        // An entity whose list page sets a presentation: its page takes columns / initialSort /
+        // initialView / initialPageSize props (false in backend contexts and for every other entity).
+        Set<String> listConfigured = (Set<String>) projectContext.get(LIST_PRESENTATION_KEY);
+        ctx.put("listConfigurable", listConfigured != null && listConfigured.contains(entity.name()));
         // Per-entity scaffold-opt overrides: resolve `override ?? projectOpt` for every overridable
         // option and store it under the same optScaffold<X> key, so it shadows the project-level
         // value for this entity only. Both the per-entity templates ({{#optScaffoldCsvExport}} ...)
@@ -1447,13 +1498,7 @@ public final class EntityScaffoldContext {
         // + a writable entity; calendar needs a temporal field), order preserved. Falls back to
         // [table] if nothing requested is supported. A runtime toggle is emitted only for 2+ views;
         // initialView is the first. viewModeType is the TS union the template seeds useState with.
-        Set<String> requested = new LinkedHashSet<>(entity.listViews());
-        List<String> emitted = new ArrayList<>();
-        if (requested.contains("table")) emitted.add("table");
-        if (requested.contains("cards")) emitted.add("cards");
-        if (requested.contains("kanban") && kanbanApplicable) emitted.add("kanban");
-        if (requested.contains("calendar") && calendarApplicable) emitted.add("calendar");
-        if (emitted.isEmpty()) emitted.add("table");
+        List<String> emitted = emittedListViews(entity);
         view.put("viewTable", emitted.contains("table"));
         view.put("viewCards", emitted.contains("cards"));
         view.put("viewKanban", emitted.contains("kanban"));

@@ -44,6 +44,10 @@ public final class FullstackPageValidator {
     static final int MAX_STEPS = 8;
     static final int DEFAULT_STEP_SIZE = 4;
     static final int MAX_HEADER_STATS = 4;
+    /** The rows-per-page choices the generated list's pager offers — a list page may open on one. */
+    static final List<Integer> LIST_PAGE_SIZES = List.of(10, 20, 50, 100);
+    /** The list views an entity can enable (EntityDefinition.listViews). */
+    static final List<String> LIST_VIEWS = List.of("table", "cards", "kanban", "calendar");
 
     /** The lucide icons a page may put in the nav. The shell imports exactly the ones in use, so the
      *  list is a whitelist rather than "any lucide name": a typo would otherwise fail the build of the
@@ -55,7 +59,18 @@ public final class FullstackPageValidator {
 
     private FullstackPageValidator() {}
 
+    /** As {@link #validateAndConvert(List, List, Set)} with no scaffold opts (no audit columns). */
     public static List<PageDefinition> validateAndConvert(List<PageDefinitionDto> raw, List<EntityDefinition> entities) {
+        return validateAndConvert(raw, entities, Set.of());
+    }
+
+    /**
+     * @param scaffoldOpts the request's {@code opts.scaffold} names — a list page may only show or
+     *                     sort by {@code createdAt}/{@code updatedAt} when {@code audit} is among
+     *                     them (or overridden on the entity)
+     */
+    public static List<PageDefinition> validateAndConvert(List<PageDefinitionDto> raw, List<EntityDefinition> entities,
+                                                          Set<String> scaffoldOpts) {
         if (raw == null || raw.isEmpty()) return List.of();
         if (raw.size() > MAX_PAGES) {
             throw new WizardArgumentException("At most " + MAX_PAGES + " pages are allowed");
@@ -103,9 +118,14 @@ public final class FullstackPageValidator {
             String icon = navIcon(id, hidden, p.icon());
             PageDefinition page = switch (type) {
                 case ENTITY_LIST -> {
-                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), "Page '" + id + "'");
+                    String prefix = "Page '" + id + "'";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    boolean audit = auditApplies(entity, scaffoldOpts);
                     yield new PageDefinition(id, type, title, description, hidden, entity.name(),
-                            presetFilter("Page '" + id + "'", entity, p.presetFilter()), null, null);
+                            presetFilter(prefix, entity, p.presetFilter()), null, null)
+                            .withListPresentation(columns(prefix, entity, p.columns(), audit),
+                                    sort(prefix, entity, p.sort(), audit), view(prefix, entity, p.view()),
+                                    pageSize(prefix, p.pageSize()));
                 }
                 case DASHBOARD -> {
                     PageDefinition.DateRange range = parseDateRange(id, p.dateRange());
@@ -274,6 +294,129 @@ public final class FullstackPageValidator {
         if (type != PageDefinition.Type.RECORD && p.headerStats() != null) {
             throw new WizardArgumentException(prefix + "does not take 'headerStats'");
         }
+        if (type != PageDefinition.Type.ENTITY_LIST) {
+            if (p.columns() != null) throw new WizardArgumentException(prefix + "does not take 'columns'");
+            if (p.sort() != null) throw new WizardArgumentException(prefix + "does not take 'sort'");
+            if (trimToNull(p.view()) != null) throw new WizardArgumentException(prefix + "does not take 'view'");
+            if (p.pageSize() != null) throw new WizardArgumentException(prefix + "does not take 'pageSize'");
+        }
+    }
+
+    // ── List presentation (entity-list pages) ───────────────────────────────
+
+    /**
+     * Whether the generated list of {@code entity} carries the audit columns: the entity's own
+     * {@code audit} override, else the project's {@code audit} scaffold opt, and only for a writable
+     * entity (EntityScaffoldContext.auditApplicable).
+     */
+    static boolean auditApplies(EntityDefinition entity, Set<String> scaffoldOpts) {
+        if (entity.readOnly()) return false;
+        Boolean override = entity.opts().get("audit");
+        return override != null ? override : scaffoldOpts.contains("audit");
+    }
+
+    /** The columns a list can show — lower-cased → as declared: every field, every MANY_TO_ONE
+     *  relation (by field name) and, with audit, {@code createdAt}/{@code updatedAt}. */
+    private static Map<String, String> listColumns(EntityDefinition entity, boolean audit) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (FieldDefinition f : entity.fields()) out.put(f.name().toLowerCase(Locale.ROOT), f.name());
+        for (RelationDefinition r : entity.relations()) {
+            if (r.type() == RelationType.MANY_TO_ONE) out.put(r.fieldName().toLowerCase(Locale.ROOT), r.fieldName());
+        }
+        if (audit) {
+            out.put("createdat", "createdAt");
+            out.put("updatedat", "updatedAt");
+        }
+        return out;
+    }
+
+    /** The columns the generated list endpoint sorts by (its SORTABLE whitelist): every field and,
+     *  with audit, the audit pair. Relations are shown but never sorted. */
+    private static Map<String, String> sortableColumns(EntityDefinition entity, boolean audit) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (FieldDefinition f : entity.fields()) out.put(f.name().toLowerCase(Locale.ROOT), f.name());
+        if (audit) {
+            out.put("createdat", "createdAt");
+            out.put("updatedat", "updatedAt");
+        }
+        return out;
+    }
+
+    private static boolean isAuditColumn(String name) {
+        return name.equalsIgnoreCase("createdAt") || name.equalsIgnoreCase("updatedAt");
+    }
+
+    /** The ordered subset of columns a list page shows: each a known column, none twice, canonicalized. */
+    private static List<String> columns(String prefix, EntityDefinition entity, List<String> raw, boolean audit) {
+        if (raw == null) return List.of();
+        if (raw.isEmpty()) throw new WizardArgumentException(prefix + ": 'columns' needs at least one column when given");
+        Map<String, String> known = listColumns(entity, audit);
+        Set<String> seen = new HashSet<>();
+        List<String> out = new ArrayList<>(raw.size());
+        for (String name : raw) {
+            String canonical = trimToNull(name) == null ? null : known.get(name.trim().toLowerCase(Locale.ROOT));
+            if (canonical == null) {
+                String hint = name != null && isAuditColumn(name.trim()) && !audit
+                        ? " — the audit scaffold option is off, so " + entity.name() + " has no audit columns"
+                        : " (expected one of " + new ArrayList<>(known.values()) + ")";
+                throw new WizardArgumentException(prefix + " columns: '" + name + "' is not a column of "
+                        + entity.name() + hint);
+            }
+            if (!seen.add(canonical)) {
+                throw new WizardArgumentException(prefix + " columns: '" + canonical + "' is listed twice");
+            }
+            out.add(canonical);
+        }
+        return out;
+    }
+
+    /** The column a list page opens sorted by: a sortable one, {@code asc} (default) or {@code desc}. */
+    private static PageDefinition.ListSort sort(String prefix, EntityDefinition entity,
+                                                FullstackStarterRequest.SortDto raw, boolean audit) {
+        if (raw == null) return null;
+        String field = trimToNull(raw.field());
+        if (field == null) throw new WizardArgumentException(prefix + " sort: 'field' is required");
+        Map<String, String> sortable = sortableColumns(entity, audit);
+        String canonical = sortable.get(field.toLowerCase(Locale.ROOT));
+        if (canonical == null) {
+            String hint = isAuditColumn(field) && !audit
+                    ? " — the audit scaffold option is off, so " + entity.name() + " has no audit columns"
+                    : " (sortable: " + new ArrayList<>(sortable.values()) + ")";
+            throw new WizardArgumentException(prefix + " sort: '" + field + "' is not sortable on " + entity.name() + hint);
+        }
+        String dir = trimToNull(raw.dir());
+        boolean desc;
+        if (dir == null || dir.equalsIgnoreCase("asc")) desc = false;
+        else if (dir.equalsIgnoreCase("desc")) desc = true;
+        else throw new WizardArgumentException(prefix + " sort: dir must be asc or desc, got '" + dir + "'");
+        return new PageDefinition.ListSort(canonical, desc);
+    }
+
+    /** The view a list page opens in: one the entity's list actually offers (its enabled listViews,
+     *  minus the ones its fields cannot support — see EntityScaffoldContext.emittedListViews). */
+    private static String view(String prefix, EntityDefinition entity, String raw) {
+        String v = trimToNull(raw);
+        if (v == null) return null;
+        String lower = v.toLowerCase(Locale.ROOT);
+        if (!LIST_VIEWS.contains(lower)) {
+            throw new WizardArgumentException(prefix + ": unknown view '" + v + "' (expected table, cards, kanban or calendar)");
+        }
+        List<String> emitted = EntityScaffoldContext.emittedListViews(entity);
+        if (!emitted.contains(lower)) {
+            throw new WizardArgumentException(prefix + ": view '" + lower + "' is not enabled on " + entity.name()
+                    + " (its list views are " + emitted + "; enable it on the entity — kanban needs an enum or"
+                    + " boolean field on a writable entity, calendar a date field)");
+        }
+        return lower;
+    }
+
+    /** The rows per page a list opens with: one of the pager's choices. */
+    private static Integer pageSize(String prefix, Integer raw) {
+        if (raw == null) return null;
+        if (!LIST_PAGE_SIZES.contains(raw)) {
+            throw new WizardArgumentException(prefix + ": pageSize must be one of 10, 20, 50 or 100, got " + raw);
+        }
+        return raw;
     }
 
     /** Preset filters are equality filters on non-PK, filterable enum/boolean fields. Enum values

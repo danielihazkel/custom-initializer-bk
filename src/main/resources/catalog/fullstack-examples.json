@@ -963,7 +963,18 @@
         "type": "entity-list",
         "group": "Catalog",
         "icon": "Package",
-        "entity": "Item"
+        "entity": "Item",
+        "columns": [
+          "sku",
+          "name",
+          "unitCost",
+          "reorderLevel"
+        ],
+        "sort": {
+          "field": "name"
+        },
+        "view": "cards",
+        "pageSize": 50
       },
       {
         "id": "warehouses",

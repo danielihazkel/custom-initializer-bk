@@ -186,8 +186,8 @@ public record FullstackStarterRequest(
 
     /**
      * One page of the generated frontend. {@code type} is {@code entity-list}, {@code dashboard},
-     * {@code tabs}, {@code master-detail}, {@code record} or {@code report}; which of the other
-     * properties apply depends on it (see FullstackPageValidator).
+     * {@code tabs}, {@code master-detail}, {@code record}, {@code report} or {@code wizard}; which
+     * of the other properties apply depends on it (see FullstackPageValidator).
      */
     public record PageDefinitionDto(
             String id,
@@ -235,7 +235,16 @@ public record FullstackStarterRequest(
             List<HeaderStatDto> headerStats,
             // any page: the roles (ADMIN, USER) of which a user needs one to see and open it; needs
             // ldap-auth-rest (the sets' default) or ldap-auth. Absent: everyone.
-            List<String> roles) {
+            List<String> roles,
+            // entity-list: how the list opens. `columns` is the ordered subset of columns it shows
+            // (field names, relation field names, and createdAt/updatedAt with the audit opt;
+            // absent: every column), `sort` the column it is sorted by and its direction, `view`
+            // one of the entity's list views (table, cards, kanban, calendar) and `pageSize` the
+            // rows per page (10, 20, 50 or 100).
+            List<String> columns,
+            SortDto sort,
+            String view,
+            Integer pageSize) {
 
         /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
@@ -243,6 +252,17 @@ public record FullstackStarterRequest(
                                  List<TabDto> tabs) {
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                     null, null, null, null, null, null, null, null, null, null, null, null);
+        }
+
+        /** Every property but the list presentation. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, null, null, null, null);
         }
 
         /** Every property but {@code roles}. */
@@ -311,6 +331,9 @@ public record FullstackStarterRequest(
 
     /** One step of a {@code wizard} page: its heading and the form fields it asks for. */
     public record StepDto(String title, List<String> fields) {}
+
+    /** How an {@code entity-list} page opens sorted: a sortable column and {@code asc} (default) or {@code desc}. */
+    public record SortDto(String field, String dir) {}
 
     /** A number tile above a {@code record} page's tabs: {@code agg} over the {@code child} rows of
      *  the record ({@code count} by default), linked through the child's {@code via} relation (default:

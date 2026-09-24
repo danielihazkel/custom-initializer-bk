@@ -172,6 +172,27 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendListPresentationInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Inventory layout: its items list opens as cards with a column subset, a sort and a
+        // page size, so the keyed-column type and the seeded props are type-checked and linted.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackPagesIntegrationTests.exampleBody("inventory", "react-tailwind-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraListPresentationInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same layout on the Menora set, whose own entity page carries the same props.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackPagesIntegrationTests.exampleBody("inventory", "react-menora-digital-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendReportLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // The Sales reporting layout: aggregate tiles, a reducing breakdown, the hand-rolled SVG
         // trend chart and the report screen (filter bar + chart + totals + CSV export).

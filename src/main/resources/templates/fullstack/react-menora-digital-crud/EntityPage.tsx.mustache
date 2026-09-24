@@ -15,12 +15,15 @@ import { ApiError } from '@shared/api'
 {{/mutable}}
 // `numeric` columns render LTR with tabular figures (numbers, dates, ids); `chip` columns render
 // their value as a lavender Chip (enums, booleans) — see the Menora Table.
-const columns: Column<{{EntityName}}>[] = [
-{{#fields}}  { label: '{{label}}', sortKey: '{{name}}'{{#isNumeric}}, numeric: true{{/isNumeric}}{{#isTemporal}}, numeric: true{{/isTemporal}}{{#isUuid}}, numeric: true{{/isUuid}}{{#isEnum}}, chip: true{{/isEnum}}{{#isBoolean}}, chip: true{{/isBoolean}}, render: r => r.{{name}} == null ? '—' : {{#isEnum}}{{enumTypeName}}Labels[r.{{name}}]{{/isEnum}}{{^isEnum}}String(r.{{name}}){{/isEnum}} },
-{{/fields}}{{#relations}}  { label: '{{FieldName}}', render: r => {{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} },
-{{/relations}}{{#auditApplicable}}  { label: t('created'), sortKey: 'createdAt', numeric: true, render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
-  { label: t('updated'), sortKey: 'updatedAt', numeric: true, render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
-{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { label: '{{CollectionField}}', numeric: true, render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
+{{#listConfigurable}}/** A column with the key a list page's `columns` prop picks it by. */
+type ListColumn = Column<{{EntityName}}> & { key: string }
+
+{{/listConfigurable}}const columns: {{#listConfigurable}}ListColumn[]{{/listConfigurable}}{{^listConfigurable}}Column<{{EntityName}}>[]{{/listConfigurable}} = [
+{{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{label}}', sortKey: '{{name}}'{{#isNumeric}}, numeric: true{{/isNumeric}}{{#isTemporal}}, numeric: true{{/isTemporal}}{{#isUuid}}, numeric: true{{/isUuid}}{{#isEnum}}, chip: true{{/isEnum}}{{#isBoolean}}, chip: true{{/isBoolean}}, render: r => r.{{name}} == null ? '—' : {{#isEnum}}{{enumTypeName}}Labels[r.{{name}}]{{/isEnum}}{{^isEnum}}String(r.{{name}}){{/isEnum}} },
+{{/fields}}{{#relations}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => {{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} },
+{{/relations}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', numeric: true, render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
+  { {{#listConfigurable}}key: 'updatedAt', {{/listConfigurable}}label: t('updated'), sortKey: 'updatedAt', numeric: true, render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
+{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{CollectionField}}', numeric: true, render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
 {{/inverseRelations}}{{/optScaffoldInverse}}]
 {{#hasViewToggle}}
 // The enabled list views, in order; drives the toolbar Tabs (a view switcher, so `bare`).
@@ -57,18 +60,32 @@ interface {{EntityName}}PageProps {
   /** New opens the entity's wizard page instead of the form drawer. */
   onCreate?: () => void
 {{/hasWizardPage}}
+{{#listConfigurable}}
+  /** The columns to show, by key, in this order (default: every column). */
+  columns?: string[]
+  /** The sort the list opens with (default: the primary key). */
+  initialSort?: SortSpec
+  /** The view the list opens in (default: the first enabled view). */
+  initialView?: {{viewModeType}}
+  /** Rows per page the list opens with (default: 20). */
+  initialPageSize?: number
+{{/listConfigurable}}
 }
 
 {{/hasPages}}
-export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord{{#hasWizardPage}}, onCreate{{/hasWizardPage}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
   const [page, setPage] = useState(0)
-  const [size, setSize] = useState(20)
-  const [sort, setSort] = useState<SortSpec | null>(null)
+  const [size, setSize] = useState({{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20)
+  const [sort, setSort] = useState<SortSpec | null>({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
-  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>('{{initialView}}')
+  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>({{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}')
   const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
+{{#listConfigurable}}
+  // A list page may show an ordered subset of the columns.
+  const shown = columnKeys ? columnKeys.flatMap(k => columns.filter(c => c.key === k)) : columns
+{{/listConfigurable}}
 {{#hasPages}}
   // A layout with a record page for this entity opens rows there instead of in the drawer.
   const openRow = onOpenRecord ?? setDetailRow
@@ -358,7 +375,7 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
       {
 {{#viewCards}}      viewMode === 'cards' ? (
         <CardGrid
-          columns={columns}
+          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
           rows={items}
           rowKey={rowKey}
           loading={loading}
@@ -373,7 +390,7 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
         />
       ) : {{/viewCards}}{{#viewKanban}}viewMode === 'kanban' ? (
         <KanbanBoard
-          columns={columns}
+          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
           rows={items}
           rowKey={rowKey}
           loading={loading}
@@ -386,7 +403,7 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
         />
       ) : {{/viewKanban}}{{#viewCalendar}}viewMode === 'calendar' ? (
         <CalendarView
-          columns={columns}
+          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
           rows={items}
           rowKey={rowKey}
           loading={loading}
@@ -396,7 +413,7 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
       ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
         <Table
           caption="{{entityLabelPlural}}"
-          columns={columns}
+          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
           rows={items}
           rowKey={rowKey}
           loading={loading}

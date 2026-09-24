@@ -194,7 +194,126 @@ class FullstackPagesIntegrationTests {
                 .contains("<FilterBar filters={filterDescriptors} values={filters} onChange={setFilters} />")
                 .contains("onView={setDetailRow}")
                 .doesNotContain("scope")
-                .doesNotContain("openRow");
+                .doesNotContain("openRow")
+                .doesNotContain("ListColumn")
+                .doesNotContain("initialSort");
+    }
+
+    @Test
+    void fullstackEndpoint_listPagePresentationSeedsColumnsSortViewAndPageSize() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("audit")));
+        Map<String, Object> orders = page(body, "orders");
+        orders.put("columns", List.of("reference", "status", "customer", "createdAt"));
+        orders.put("sort", Map.of("field", "placedAt", "dir", "desc"));
+        orders.put("view", "kanban");
+        orders.put("pageSize", 50);
+        Map<String, String> files = generate(body);
+
+        // The screen hands the page its presentation as literal props.
+        assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx"))
+                .contains("      columns={ ['reference', 'status', 'customer', 'createdAt'] }\n"
+                        + "      initialSort={ { field: 'placedAt', direction: 'desc' } }\n"
+                        + "      initialView=\"kanban\"\n"
+                        + "      initialPageSize={ 50 }\n");
+        // Only the configured entity's page takes them: keyed columns, seeded state, the picked subset.
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx"))
+                .contains("type ListColumn = Column<Order> & { key: string }")
+                .contains("const columns: ListColumn[] = [")
+                .contains("{ key: 'customer', label: 'Customer', render:")
+                .contains("{ key: 'createdAt', label: t('created'), sortKey: 'createdAt'")
+                .contains("  columns?: string[]\n")
+                .contains("initialView?: 'table' | 'kanban' | 'calendar'")
+                .contains(", columns: columnKeys, initialSort, initialView, initialPageSize }: OrderPageProps = {}")
+                .contains("useState(initialPageSize ?? 20)")
+                .contains("useState<SortSpec | null>(initialSort ?? null)")
+                .contains("useState<'table' | 'kanban' | 'calendar'>(initialView ?? 'table')")
+                .contains("const shown = columnKeys ? columnKeys.flatMap(k => columns.filter(c => c.key === k)) : columns")
+                .contains("columns={shown}")
+                .doesNotContain("columns={columns}");
+        assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx"))
+                .contains("const columns: Column<Customer>[] = [")
+                .contains("useState(20)")
+                .contains("useState<SortSpec | null>(null)")
+                .contains("columns={columns}")
+                .doesNotContain("ListColumn")
+                .doesNotContain("initialSort");
+        // The other list pages of the layout pass nothing, so their lists open as before.
+        assertThat(files.get(FE + "src/app/screens/ProductsScreen.tsx"))
+                .doesNotContain("columns=").doesNotContain("initialSort").doesNotContain("initialView").doesNotContain("initialPageSize");
+    }
+
+    @Test
+    void fullstackEndpoint_menoraListPagePresentation() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-menora-digital-crud");
+        Map<String, Object> orders = page(body, "orders");
+        orders.put("columns", List.of("reference", "status", "total"));
+        orders.put("sort", Map.of("field", "total"));
+        orders.put("view", "calendar");
+        Map<String, String> files = generate(body);
+
+        assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx"))
+                .contains("      columns={ ['reference', 'status', 'total'] }\n"
+                        + "      initialSort={ { field: 'total', direction: 'asc' } }\n"
+                        + "      initialView=\"calendar\"\n")
+                .doesNotContain("initialPageSize");
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx"))
+                .contains("type ListColumn = Column<Order> & { key: string }")
+                .contains("{ key: 'reference', label:")
+                .contains("{ key: 'status', label: 'Status', sortKey: 'status', chip: true")
+                .contains("useState<'table' | 'kanban' | 'calendar'>(initialView ?? 'table')")
+                .contains("columns={shown}");
+        assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx")).doesNotContain("ListColumn");
+    }
+
+    @Test
+    void fullstackEndpoint_canonicalizesListColumnsAndView() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        Map<String, Object> orders = page(body, "orders");
+        orders.put("columns", List.of("Reference", "STATUS"));
+        orders.put("sort", Map.of("field", "PlacedAt", "dir", "DESC"));
+        orders.put("view", "KANBAN");
+        Map<String, String> files = generate(body);
+
+        assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx"))
+                .contains("columns={ ['reference', 'status'] }")
+                .contains("initialSort={ { field: 'placedAt', direction: 'desc' } }")
+                .contains("initialView=\"kanban\"");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsInvalidListPresentation() {
+        assertOrdersRejected(p -> p.put("columns", List.of("nope")),
+                "Page 'orders' columns: 'nope' is not a column of Order (expected one of [id, reference, status, placedAt, total, customer])");
+        assertOrdersRejected(p -> p.put("columns", List.of("status", "status")),
+                "Page 'orders' columns: 'status' is listed twice");
+        assertOrdersRejected(p -> p.put("columns", List.of()),
+                "Page 'orders': 'columns' needs at least one column when given");
+        assertOrdersRejected(p -> p.put("columns", List.of("createdAt")),
+                "Page 'orders' columns: 'createdAt' is not a column of Order — the audit scaffold option is off");
+        assertOrdersRejected(p -> p.put("sort", Map.of("field", "customer")),
+                "Page 'orders' sort: 'customer' is not sortable on Order (sortable: [id, reference, status, placedAt, total])");
+        assertOrdersRejected(p -> p.put("sort", Map.of("field", "total", "dir", "down")),
+                "Page 'orders' sort: dir must be asc or desc, got 'down'");
+        assertOrdersRejected(p -> p.put("sort", Map.of("dir", "asc")),
+                "Page 'orders' sort: 'field' is required");
+        assertOrdersRejected(p -> p.put("view", "cards"),
+                "Page 'orders': view 'cards' is not enabled on Order (its list views are [table, kanban, calendar];");
+        assertOrdersRejected(p -> p.put("view", "grid"),
+                "Page 'orders': unknown view 'grid' (expected table, cards, kanban or calendar)");
+        assertOrdersRejected(p -> p.put("pageSize", 25),
+                "Page 'orders': pageSize must be one of 10, 20, 50 or 100, got 25");
+        // Only a list page takes them.
+        Map<String, Object> dashboard = exampleBody("orders", "react-tailwind-crud");
+        page(dashboard, "desk").put("columns", List.of("reference"));
+        assertBadRequest(dashboard, "Page 'desk' (dashboard) does not take 'columns'");
+        Map<String, Object> record = exampleBody("orders", "react-tailwind-crud");
+        page(record, "order").put("view", "table");
+        assertBadRequest(record, "Page 'order' (record) does not take 'view'");
+        // Products keeps table/cards only and has no date, so a calendar is refused with the reason.
+        Map<String, Object> calendar = exampleBody("orders", "react-tailwind-crud");
+        page(calendar, "products").put("view", "calendar");
+        assertBadRequest(calendar, "Page 'products': view 'calendar' is not enabled on Product");
     }
 
     @Test
@@ -902,6 +1021,17 @@ class FullstackPagesIntegrationTests {
         assertBadRequest(body, expectedMessage);
     }
 
+    /** Mutates the Orders example's {@code orders} list page and expects a 400 naming the problem. */
+    private void assertOrdersRejected(Consumer<Map<String, Object>> mutator, String expectedMessage) {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        mutator.accept(page(body, "orders"));
+        assertBadRequest(body, expectedMessage);
+    }
+
+    private static Map<String, Object> page(Map<String, Object> body, String id) {
+        return pages(body).stream().filter(p -> id.equals(p.get("id"))).findFirst().orElseThrow();
+    }
+
     private void assertBadRequest(Map<String, Object> body, String expectedMessage) {
         ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip", HttpMethod.POST,
                 new HttpEntity<>(body, jsonHeaders()), String.class);
@@ -987,7 +1117,9 @@ class FullstackPagesIntegrationTests {
                 if (entry.isDirectory()) continue;
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 zin.transferTo(out);
-                result.put(entry.getName(), out.toString(StandardCharsets.UTF_8));
+                // The templates take the checkout's line endings (CRLF under git autocrlf on
+                // Windows); the assertions pin content, so compare with LF either way.
+                result.put(entry.getName(), out.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"));
             }
         }
         return result;

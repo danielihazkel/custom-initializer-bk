@@ -159,6 +159,13 @@ public class FullstackStarterController {
         }
     }
 
+    /** The request's {@code opts.scaffold} names, for the page validator: a list page may only show
+     *  the audit columns when the audit opt is on. */
+    private static Set<String> scaffoldOptsOf(FullstackStarterRequest body) {
+        List<String> scaffold = body.opts() == null ? null : body.opts().get("scaffold");
+        return scaffold == null ? Set.of() : new LinkedHashSet<>(scaffold);
+    }
+
     /**
      * Shared pipeline for {@link #generate} and {@link #preview}: validates the request,
      * resolves and kind-checks both template sets (fail-fast 400 on a bad key), then renders
@@ -168,7 +175,7 @@ public class FullstackStarterController {
      */
     private WebProjectRequest buildArtifacts(FullstackStarterRequest body, Path tempDir) throws IOException {
         List<EntityDefinition> entities = FullstackRequestValidator.validateAndConvert(body);
-        List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), entities);
+        List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), entities, scaffoldOptsOf(body));
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
 

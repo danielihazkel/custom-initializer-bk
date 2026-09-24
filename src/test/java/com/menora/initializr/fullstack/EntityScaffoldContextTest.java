@@ -68,6 +68,77 @@ class EntityScaffoldContextTest {
                 .containsExactly("audit", "softDelete", "csvExport", "bulkDelete", "bulkUpdate", "tests");
     }
 
+    @Test
+    void emittedListViews_mirrorsTheRenderRules() {
+        FieldDefinition id = new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true);
+        FieldDefinition status = new FieldDefinition("status", FieldType.ENUM, false, false, false, false, null, null, null, null, false, List.of("OPEN", "DONE"), true, true);
+        FieldDefinition dueOn = new FieldDefinition("dueOn", FieldType.LOCAL_DATE, false, false, false, false, null, null, null, null, false, List.of(), true, true);
+        FieldDefinition name = new FieldDefinition("name", FieldType.STRING, false, false, false, false, null, null, null, null, false, List.of(), true, true);
+        List<String> all = List.of("table", "cards", "kanban", "calendar");
+
+        EntityDefinition full = new EntityDefinition("Task", null, null, List.of(id, status, dueOn), List.of(),
+                false, null, null, all, null, null, Map.of());
+        assertThat(EntityScaffoldContext.emittedListViews(full)).containsExactly("table", "cards", "kanban", "calendar");
+        // Kanban writes the lane back, so a read-only entity loses it; calendar only reads.
+        EntityDefinition readOnly = new EntityDefinition("Task", null, null, List.of(id, status, dueOn), List.of(),
+                true, null, null, all, null, null, Map.of());
+        assertThat(EntityScaffoldContext.emittedListViews(readOnly)).containsExactly("table", "cards", "calendar");
+        // No date: no calendar. No enum/boolean: no kanban.
+        EntityDefinition noDate = new EntityDefinition("Task", null, null, List.of(id, status), List.of(),
+                false, null, null, all, null, null, Map.of());
+        assertThat(EntityScaffoldContext.emittedListViews(noDate)).containsExactly("table", "cards", "kanban");
+        EntityDefinition plain = new EntityDefinition("Task", null, null, List.of(id, name), List.of(),
+                false, null, null, List.of("kanban", "calendar"), null, null, Map.of());
+        assertThat(EntityScaffoldContext.emittedListViews(plain)).containsExactly("table");
+        // Only the requested views, in the fixed order.
+        EntityDefinition some = new EntityDefinition("Task", null, null, List.of(id, status, dueOn), List.of(),
+                false, null, null, List.of("calendar", "table"), null, null, Map.of());
+        assertThat(EntityScaffoldContext.emittedListViews(some)).containsExactly("table", "calendar");
+        // The entity view-model agrees with it.
+        Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(readOnly));
+        Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(project, readOnly);
+        assertThat(ctx).containsEntry("viewKanban", false).containsEntry("viewCalendar", true)
+                .containsEntry("viewModeType", "'table' | 'cards' | 'calendar'");
+    }
+
+    @Test
+    void buildEntityContext_listConfigurableFollowsTheConfiguredListPages() {
+        FieldDefinition id = new FieldDefinition("id", FieldType.LONG, true, true, false, false, null, null, null, null, false, List.of(), true, true);
+        FieldDefinition name = new FieldDefinition("name", FieldType.STRING, false, false, false, false, null, null, null, null, false, List.of(), true, true);
+        EntityDefinition order = new EntityDefinition("Order", null, List.of(id, name));
+        EntityDefinition customer = new EntityDefinition("Customer", null, List.of(id, name));
+        Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
+                "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(order, customer));
+
+        // No pages (the backend context, or the classic shell): nothing is configurable.
+        assertThat(EntityScaffoldContext.buildEntityContext(project, order)).containsEntry("listConfigurable", false);
+
+        PageDefinition plain = new PageDefinition("customers", PageDefinition.Type.ENTITY_LIST, null, null, false,
+                "Customer", null, null, null);
+        PageDefinition configured = new PageDefinition("orders", PageDefinition.Type.ENTITY_LIST, null, null, false,
+                "Order", null, null, null)
+                .withListPresentation(List.of("name"), new PageDefinition.ListSort("name", true), null, 50);
+        assertThat(plain.hasListPresentation()).isFalse();
+        assertThat(configured.hasListPresentation()).isTrue();
+        EntityScaffoldContext.putPageContext(project, List.of(plain, configured));
+
+        assertThat(EntityScaffoldContext.buildEntityContext(project, order)).containsEntry("listConfigurable", true);
+        assertThat(EntityScaffoldContext.buildEntityContext(project, customer)).containsEntry("listConfigurable", false);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> pages = (List<Map<String, Object>>) project.get("pages");
+        assertThat(pages.get(1))
+                .containsEntry("hasColumns", true)
+                .containsEntry("columnsTs", "['name']")
+                .containsEntry("hasSort", true)
+                .containsEntry("sortTs", "{ field: 'name', direction: 'desc' }")
+                .containsEntry("hasInitialView", false)
+                .containsEntry("hasPageSize", true)
+                .containsEntry("pageSize", 50)
+                .containsEntry("hasListPresentation", true);
+        assertThat(pages.get(0)).containsEntry("hasListPresentation", false).containsEntry("hasColumns", false);
+    }
+
     private static FieldDefinition withDefault(String name, FieldType type, boolean unique, List<String> enumValues, String dflt) {
         return new FieldDefinition(name, type, false, false, false, unique, null, null, null, null, false,
                 enumValues, true, true, null, false, dflt);

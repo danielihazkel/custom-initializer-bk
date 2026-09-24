@@ -24,6 +24,12 @@ import java.util.Map;
  * @param steps        {@link Type#WIZARD} only — the create form, step by step
  * @param headerStats  {@link Type#RECORD} only — the number tiles above its tabs
  * @param roles        the roles (any of) that may open the page; empty: everyone
+ * @param columns      {@link Type#ENTITY_LIST} only — the columns the list shows, in order (empty:
+ *                     every column)
+ * @param sort         {@link Type#ENTITY_LIST} only — the column the list opens sorted by (null: the key)
+ * @param view         {@link Type#ENTITY_LIST} only — the list view it opens in, one of the entity's
+ *                     emitted views (null: the entity's first)
+ * @param pageSize     {@link Type#ENTITY_LIST} only — rows per page it opens with (null: the default 20)
  */
 public record PageDefinition(
         String id,
@@ -45,10 +51,15 @@ public record PageDefinition(
         DateRange dateRange,
         List<Step> steps,
         List<HeaderStat> headerStats,
-        List<String> roles) {
+        List<String> roles,
+        List<String> columns,
+        ListSort sort,
+        String view,
+        Integer pageSize) {
 
     public PageDefinition {
         roles = roles == null ? List.of() : List.copyOf(roles);
+        columns = columns == null ? List.of() : List.copyOf(columns);
         presetFilter = presetFilter == null ? Map.of() : Map.copyOf(presetFilter);
         widgets = widgets == null ? List.of() : List.copyOf(widgets);
         tabs = tabs == null ? List.of() : List.copyOf(tabs);
@@ -56,6 +67,16 @@ public record PageDefinition(
         charts = charts == null ? List.of() : List.copyOf(charts);
         steps = steps == null ? List.of() : List.copyOf(steps);
         headerStats = headerStats == null ? List.of() : List.copyOf(headerStats);
+    }
+
+    /** Every page property but the list presentation (every column, default sort, view and page size). */
+    public PageDefinition(String id, Type type, String title, String description, boolean hidden, String entity,
+                          Map<String, String> presetFilter, List<Widget> widgets, List<Tab> tabs, String parent,
+                          String child, String via, List<ChildTab> childTabs, List<Chart> charts, String group,
+                          String icon, DateRange dateRange, List<Step> steps, List<HeaderStat> headerStats,
+                          List<String> roles) {
+        this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via, childTabs,
+                charts, group, icon, dateRange, steps, headerStats, roles, null, null, null, null);
     }
 
     /** Every page property but {@code roles} (open to everyone). */
@@ -89,19 +110,34 @@ public record PageDefinition(
     /** The same page placed in a nav section and given an icon. */
     public PageDefinition withNav(String group, String icon) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles);
+                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
+                columns, sort, view, pageSize);
     }
 
     /** The same page, open only to users holding one of {@code roles}. */
     public PageDefinition withRoles(List<String> roles) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles);
+                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
+                columns, sort, view, pageSize);
     }
 
     /** The same dashboard with a period picker opening on {@code range}. */
     public PageDefinition withDateRange(DateRange range) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
-                parent, child, via, childTabs, charts, group, icon, range, steps, headerStats, roles);
+                parent, child, via, childTabs, charts, group, icon, range, steps, headerStats, roles,
+                columns, sort, view, pageSize);
+    }
+
+    /** The same list page opening with these columns, sort, view and page size (each null/empty: the default). */
+    public PageDefinition withListPresentation(List<String> columns, ListSort sort, String view, Integer pageSize) {
+        return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
+                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
+                columns, sort, view, pageSize);
+    }
+
+    /** Whether any of the list presentation properties is set. */
+    public boolean hasListPresentation() {
+        return !columns.isEmpty() || sort != null || view != null || pageSize != null;
     }
 
     /** A {@link Type#WIZARD} page: the entity it creates, step by step. */
@@ -241,6 +277,9 @@ public record PageDefinition(
 
     /** @param page id of the embedded page (never a {@link Type#TABS} or {@link Type#RECORD} page) */
     public record Tab(String title, String page) {}
+
+    /** The column a list page opens sorted by, and whether descending. */
+    public record ListSort(String field, boolean desc) {}
 
     /**
      * One step of a wizard.

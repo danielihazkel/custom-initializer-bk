@@ -70,7 +70,7 @@ class FullstackExampleTests {
             JsonNode pages = example.get("pages");
             if (pages == null || pages.isNull()) continue;
             withPages++;
-            assertThat(FullstackExampleAdminController.validatePages(example.get("entities"), pages, json))
+            assertThat(FullstackExampleAdminController.validatePages(example.get("entities"), pages, example.get("settings"), json))
                     .as(example.get("id").asText())
                     .isNotBlank();
             assertThat(FullstackExampleAdminController.validateSettings(example.get("settings"), json))
@@ -102,6 +102,27 @@ class FullstackExampleTests {
         ResponseEntity<JsonNode> bad2 = exchange(HttpMethod.POST, ADMIN, badSettings, auth);
         assertThat(bad2.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(bad2.getBody().get("detail").asText()).contains("settings.theme is not a known setting");
+
+        // A list page's presentation is checked against the entity — and its settings: the audit
+        // columns exist only with the audit scaffold option on.
+        Map<String, Object> badView = example("bad-view", validEntities(), true);
+        badView.put("pages", List.of(Map.of("id", "things", "type", "entity-list", "entity", "Thing", "view", "kanban")));
+        ResponseEntity<JsonNode> bad3 = exchange(HttpMethod.POST, ADMIN, badView, auth);
+        assertThat(bad3.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(bad3.getBody().get("detail").asText()).contains("view 'kanban' is not enabled on Thing");
+        Map<String, Object> noAudit = example("no-audit", validEntities(), true);
+        noAudit.put("pages", List.of(Map.of("id", "things", "type", "entity-list", "entity", "Thing",
+                "columns", List.of("title", "createdAt"))));
+        ResponseEntity<JsonNode> bad4 = exchange(HttpMethod.POST, ADMIN, noAudit, auth);
+        assertThat(bad4.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(bad4.getBody().get("detail").asText()).contains("'createdAt' is not a column of Thing — the audit scaffold option is off");
+        Map<String, Object> withAudit = example("with-audit", validEntities(), true);
+        withAudit.put("pages", List.of(Map.of("id", "things", "type", "entity-list", "entity", "Thing",
+                "columns", List.of("title", "createdAt"), "sort", Map.of("field", "createdAt", "dir", "desc"))));
+        withAudit.put("settings", Map.of("scaffold", List.of("audit")));
+        ResponseEntity<JsonNode> ok = exchange(HttpMethod.POST, ADMIN, withAudit, auth);
+        assertThat(ok.getStatusCode()).as(String.valueOf(ok.getBody())).isEqualTo(HttpStatus.CREATED);
+        rest.exchange(ADMIN + "/" + ok.getBody().get("id").asLong(), HttpMethod.DELETE, new HttpEntity<>(auth), Void.class);
 
         // A valid layout + settings is stored and served on the public list as JSON.
         Map<String, Object> good = example("with-layout", validEntities(), true);
