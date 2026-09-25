@@ -443,6 +443,25 @@ export default function App() {
               <h1 className="text-sm font-semibold text-fg">{current?.label ?? {{#hasOffNavPages}}RECORD_TITLES[view] ?? {{/hasOffNavPages}}t('dashboard')}</h1>
             </div>
           </div>
+{{#hasShellSearch}}
+          <div className="flex items-center gap-2">
+            <form
+              role="search"
+              onSubmit={e => {
+                e.preventDefault()
+                const words = String(new FormData(e.currentTarget).get('q') ?? '').trim()
+                go('{{searchPageId}}', undefined, words ? { q: words } : {})
+              }}
+            >
+              <input
+                name="q"
+                type="search"
+                placeholder={t('searchEverything')}
+                aria-label={t('searchEverything')}
+                className="w-40 rounded-lg border border-border bg-canvas px-3 py-1.5 text-sm text-fg placeholder:text-muted focus:border-brand focus:outline-none sm:w-64"
+              />
+            </form>
+{{/hasShellSearch}}
           <button
             onClick={toggle}
             className="rounded-lg border border-border p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
@@ -451,6 +470,9 @@ export default function App() {
           >
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
+{{#hasShellSearch}}
+          </div>
+{{/hasShellSearch}}
         </header>
 
         <main ref={mainRef} className="flex-1 overflow-auto bg-canvas">

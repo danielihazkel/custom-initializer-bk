@@ -1382,5 +1382,290 @@
         "csvExport"
       ]
     }
+  },
+  {
+    "exampleId": "projects",
+    "name": "Project planning",
+    "description": "Tasks of projects, assigned to people. A task board with work-in-progress limits, a schedule (month, week, agenda, timeline), CSV import, search across everything and a help page.",
+    "icon": "view_kanban",
+    "sortOrder": 6,
+    "entities": [
+      {
+        "name": "Person",
+        "labelPlural": "People",
+        "fields": [
+          {
+            "name": "id",
+            "type": "LONG",
+            "primaryKey": true,
+            "generated": true
+          },
+          {
+            "name": "fullName",
+            "type": "STRING",
+            "required": true,
+            "length": 120
+          },
+          {
+            "name": "email",
+            "type": "STRING",
+            "required": true,
+            "unique": true,
+            "email": true,
+            "length": 200
+          }
+        ]
+      },
+      {
+        "name": "Project",
+        "fields": [
+          {
+            "name": "id",
+            "type": "LONG",
+            "primaryKey": true,
+            "generated": true
+          },
+          {
+            "name": "name",
+            "type": "STRING",
+            "required": true,
+            "unique": true,
+            "length": 120
+          },
+          {
+            "name": "status",
+            "type": "ENUM",
+            "enumValues": [
+              "ACTIVE",
+              "ON_HOLD",
+              "DONE"
+            ],
+            "required": true,
+            "defaultValue": "ACTIVE"
+          },
+          {
+            "name": "startsOn",
+            "type": "LOCAL_DATE"
+          },
+          {
+            "name": "endsOn",
+            "type": "LOCAL_DATE"
+          }
+        ],
+        "relations": [
+          {
+            "type": "MANY_TO_ONE",
+            "fieldName": "owner",
+            "targetEntity": "Person",
+            "required": false
+          }
+        ]
+      },
+      {
+        "name": "Task",
+        "fields": [
+          {
+            "name": "id",
+            "type": "LONG",
+            "primaryKey": true,
+            "generated": true
+          },
+          {
+            "name": "title",
+            "type": "STRING",
+            "required": true,
+            "length": 160
+          },
+          {
+            "name": "status",
+            "type": "ENUM",
+            "enumValues": [
+              "TODO",
+              "DOING",
+              "REVIEW",
+              "DONE"
+            ],
+            "required": true,
+            "defaultValue": "TODO",
+            "enumLabels": {
+              "TODO": "To do",
+              "DOING": "Doing"
+            }
+          },
+          {
+            "name": "priority",
+            "type": "ENUM",
+            "enumValues": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "defaultValue": "MEDIUM"
+          },
+          {
+            "name": "startsOn",
+            "type": "LOCAL_DATE"
+          },
+          {
+            "name": "dueOn",
+            "type": "LOCAL_DATE"
+          },
+          {
+            "name": "estimate",
+            "type": "INTEGER",
+            "min": 0,
+            "max": 100
+          },
+          {
+            "name": "notes",
+            "type": "TEXT"
+          }
+        ],
+        "relations": [
+          {
+            "type": "MANY_TO_ONE",
+            "fieldName": "project",
+            "targetEntity": "Project",
+            "required": true
+          },
+          {
+            "type": "MANY_TO_ONE",
+            "fieldName": "assignee",
+            "targetEntity": "Person",
+            "required": false
+          }
+        ]
+      }
+    ],
+    "pages": [
+      {
+        "id": "home",
+        "type": "dashboard",
+        "title": "Planning overview",
+        "widgets": [
+          {
+            "kind": "kpi",
+            "entity": "Task",
+            "title": "Tasks"
+          },
+          {
+            "kind": "kpi",
+            "entity": "Project",
+            "title": "Projects"
+          },
+          {
+            "kind": "bar",
+            "entity": "Task",
+            "groupBy": "status"
+          },
+          {
+            "kind": "recent",
+            "entity": "Task",
+            "limit": 5
+          },
+          {
+            "kind": "links",
+            "title": "Go to",
+            "pages": [
+              "board",
+              "schedule",
+              "find",
+              "help"
+            ],
+            "span": 4
+          }
+        ]
+      },
+      {
+        "id": "board",
+        "type": "board",
+        "title": "Task board",
+        "group": "Work",
+        "entity": "Task",
+        "laneField": "status",
+        "cardFields": [
+          "title",
+          "priority",
+          "dueOn",
+          "assignee"
+        ],
+        "wipLimits": {
+          "DOING": 5
+        },
+        "sort": {
+          "field": "dueOn",
+          "dir": "asc"
+        }
+      },
+      {
+        "id": "schedule",
+        "type": "calendar",
+        "title": "Schedule",
+        "group": "Work",
+        "entity": "Task",
+        "dateField": "startsOn",
+        "endField": "dueOn",
+        "modes": [
+          "month",
+          "week",
+          "agenda",
+          "timeline"
+        ]
+      },
+      {
+        "id": "tasks",
+        "type": "entity-list",
+        "group": "Work",
+        "entity": "Task"
+      },
+      {
+        "id": "projects",
+        "type": "entity-list",
+        "group": "Work",
+        "entity": "Project"
+      },
+      {
+        "id": "people",
+        "type": "entity-list",
+        "group": "Admin",
+        "entity": "Person"
+      },
+      {
+        "id": "import-tasks",
+        "type": "import",
+        "title": "Import tasks",
+        "group": "Admin",
+        "entity": "Task"
+      },
+      {
+        "id": "find",
+        "type": "search",
+        "title": "Search",
+        "entities": [
+          "Task",
+          "Project",
+          "Person"
+        ],
+        "perEntity": 5,
+        "shellSearch": true
+      },
+      {
+        "id": "help",
+        "type": "content",
+        "title": "How we plan",
+        "group": "Admin",
+        "body": "## The week\n\nEvery Monday we pull tasks into **Doing** on the [task board](#/board) — never more than five at a time.\n\n- Give every task a start and a due date, so it shows on the [schedule](#/schedule).\n- Import a backlog from a spreadsheet on [Import tasks](#/import-tasks).\n- Stuck? Say so in the task's *notes*.\n\n> Done means reviewed: move a task to `Review` first.\n\n---\n\nQuestions go to [the planning team](mailto:planning@example.com)."
+      },
+      {
+        "id": "task",
+        "type": "record",
+        "entity": "Task"
+      }
+    ],
+    "settings": {
+      "scaffold": [
+        "csvExport"
+      ]
+    }
   }
 ]

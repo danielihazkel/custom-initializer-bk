@@ -65,7 +65,7 @@ class EntityScaffoldContextTest {
         // The project context itself is never mutated by an entity override.
         assertThat(project).containsEntry("optScaffoldAudit", true);
         assertThat(EntityScaffoldContext.SCAFFOLD_OPT_FLAGS.keySet())
-                .containsExactly("audit", "softDelete", "csvExport", "bulkDelete", "bulkUpdate", "tests");
+                .containsExactly("audit", "softDelete", "csvExport", "bulkDelete", "bulkUpdate", "tests", "csvImport");
     }
 
     @Test

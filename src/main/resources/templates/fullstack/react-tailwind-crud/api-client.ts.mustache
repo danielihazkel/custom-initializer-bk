@@ -36,12 +36,16 @@ async function send(path: string, init: RequestInit): Promise<Response> {
 export class ApiError extends Error {
   readonly status: number
   readonly fieldErrors?: Record<string, string>
+  /** The response body, parsed — for an endpoint that answers with more than a problem detail
+   *  (a CSV import's per-row errors). */
+  readonly body?: unknown
 
-  constructor(status: number, message: string, fieldErrors?: Record<string, string>) {
+  constructor(status: number, message: string, fieldErrors?: Record<string, string>, body?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.fieldErrors = fieldErrors
+    this.body = body
   }
 }
 
@@ -79,7 +83,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     // `detail` is the problem-detail field; `error`/`message` cover non-scaffolded endpoints. The
     // bare `title` ("Bad Request") and a non-JSON body (an HTML error page) tell the user nothing.
     const detail = problem ? String(problem.detail || problem.error || problem.message || '') : ''
-    throw new ApiError(res.status, failureMessage(res.status, detail))
+    throw new ApiError(res.status, failureMessage(res.status, detail), undefined, parsed ?? undefined)
   }
   if (res.status === 204) return undefined as unknown as T
   // A misrouted /api (no proxy in front of a static build) answers with index.html and a 200;

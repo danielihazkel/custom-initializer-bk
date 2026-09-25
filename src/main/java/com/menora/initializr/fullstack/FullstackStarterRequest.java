@@ -292,7 +292,45 @@ public record FullstackStarterRequest(
             Boolean showParent,
             // dashboard: reload its widgets every so many seconds while the page is open (30, 60,
             // 300 or 900). Absent: only the Refresh button reloads them.
-            Integer refreshSeconds) {
+            Integer refreshSeconds,
+            // calendar: the date field rows are placed by (default: the entity's first filterable
+            // date), an optional end date (needed by the timeline) and the views it offers — month,
+            // week, agenda, timeline — the first one opening (default: month).
+            String dateField,
+            String endField,
+            List<String> modes,
+            // board: the enum/boolean field the lanes split by (default: the first), the lanes in
+            // order (default: every value), what a card shows (1–4 field or relation names, the first
+            // as its heading), the most cards a lane may hold (lane -> 1..999) and the cards a lane
+            // loads at a time (10, 20 or 50; default 20). `presetFilter` and `sort` apply too.
+            String laneField,
+            List<String> lanes,
+            List<String> cardFields,
+            Map<String, Integer> wipLimits,
+            Integer laneSize,
+            // content: the page's text, in a small Markdown subset (headings, lists, quotes, rules,
+            // **bold**, *em*, `code`, [links](#/page-id or https://…)).
+            String body,
+            // search: the entities searched (default: every entity with text to search, up to 8),
+            // the matches shown per entity (3–10, default 5) and whether the header gets a search box.
+            List<String> entities,
+            Integer perEntity,
+            Boolean shellSearch) {
+
+        /** Every property but the calendar, board, content and search settings. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize, String detail, Boolean showParent,
+                                 Integer refreshSeconds) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, detail, showParent, refreshSeconds, null, null, null, null, null, null, null, null,
+                    null, null, null, null);
+        }
 
         /** Every property but {@code refreshSeconds}. */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,

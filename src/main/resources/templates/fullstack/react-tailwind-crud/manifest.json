@@ -45,6 +45,11 @@
     { "source": "stats.ts", "path": "src/shared/ui/stats.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 148, "gatedBy": "hasWidgets" },
     { "source": "widgets.tsx", "path": "src/shared/ui/widgets.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 149, "gatedBy": "hasWidgets" },
     { "source": "links.tsx", "path": "src/shared/ui/links.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 149, "gatedBy": "hasLinksWidgets" },
+    { "source": "schedule.ts", "path": "src/shared/ui/schedule.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCalendarPages" },
+    { "source": "ScheduleView.tsx", "path": "src/shared/ui/ScheduleView.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCalendarPages" },
+    { "source": "BoardView.tsx", "path": "src/shared/ui/BoardView.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasBoardPages" },
+    { "source": "csv.ts", "path": "src/shared/ui/csv.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCsvImport" },
+    { "source": "CsvImport.tsx", "path": "src/shared/ui/CsvImport.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCsvImport" },
 
     { "source": "DashboardPage.tsx.mustache", "path": "src/pages/dashboard/ui/DashboardPage.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 150 },
     { "source": "dashboard-barrel.ts.mustache", "path": "src/pages/dashboard/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 152 },
@@ -58,6 +63,11 @@
     { "source": "ScreenRecord.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 164, "gatedBy": "pageIsRecord" },
     { "source": "ScreenReport.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 165, "gatedBy": "pageIsReport" },
     { "source": "ScreenWizard.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 166, "gatedBy": "pageIsWizard" },
+    { "source": "ScreenCalendar.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 167, "gatedBy": "pageIsCalendar" },
+    { "source": "ScreenBoard.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 168, "gatedBy": "pageIsBoard" },
+    { "source": "ScreenContent.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 169, "gatedBy": "pageIsContent" },
+    { "source": "ScreenImport.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 170, "gatedBy": "pageIsImport" },
+    { "source": "ScreenSearch.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 171, "gatedBy": "pageIsSearch" },
 
     { "source": "EntityType.ts.mustache", "path": "src/entities/{{entityNameKebab}}/model/types.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 200 },
     { "source": "useEntity.ts.mustache", "path": "src/entities/{{entityNameKebab}}/api/use{{EntityName}}.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 210 },
@@ -66,6 +76,7 @@
     { "source": "EntityDetail.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Detail.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 222 },
     { "source": "EntityValidate.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/model/validate.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 224 },
     { "source": "feature-barrel.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 225 },
+    { "source": "EntityImportFields.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/model/importFields.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 226, "gatedBy": "importApplicable" },
     { "source": "EntityPage.tsx.mustache", "path": "src/pages/{{entityNameKebab}}/ui/{{EntityName}}Page.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 230 },
     { "source": "page-barrel.ts.mustache", "path": "src/pages/{{entityNameKebab}}/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 235 }
   ]

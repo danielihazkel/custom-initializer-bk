@@ -13,7 +13,9 @@ import org.springframework.data.domain.Pageable;
 import java.util.List;
 {{#imports}}import {{name}};
 {{/imports}}{{#fields}}{{#isEnum}}import {{entityPackage}}.{{EntityName}}.{{enumTypeName}};
-{{/isEnum}}{{/fields}}{{/hasFilters}}{{#statsApplicable}}import jakarta.persistence.EntityManager;
+{{/isEnum}}{{/fields}}{{/hasFilters}}{{#importApplicable}}import {{dtoPackage}}.{{EntityName}}Dto;
+{{^statsApplicable}}import jakarta.persistence.EntityManager;
+{{/statsApplicable}}{{/importApplicable}}{{#statsApplicable}}import jakarta.persistence.EntityManager;
 import jakarta.persistence.Tuple;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Expression;
@@ -31,12 +33,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class {{EntityName}}Service {
 
     private final {{EntityName}}Repository repository;
-{{#statsApplicable}}    private final EntityManager entityManager;
-{{/statsApplicable}}
-    public {{EntityName}}Service({{EntityName}}Repository repository{{#statsApplicable}}, EntityManager entityManager{{/statsApplicable}}) {
+{{#usesEntityManager}}    private final EntityManager entityManager;
+{{/usesEntityManager}}{{#importValidates}}    private final jakarta.validation.Validator validator;
+{{/importValidates}}
+    public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#importValidates}},
+                                 jakarta.validation.Validator validator{{/importValidates}}) {
         this.repository = repository;
-{{#statsApplicable}}        this.entityManager = entityManager;
-{{/statsApplicable}}    }
+{{#usesEntityManager}}        this.entityManager = entityManager;
+{{/usesEntityManager}}{{#importValidates}}        this.validator = validator;
+{{/importValidates}}    }
 {{#hasFilters}}
     /** Type-aware filter parameters bound from the request query string. Null fields are ignored. */
     public record Filters(
@@ -283,6 +288,49 @@ public class {{EntityName}}Service {
         }
 {{/pkField.isGenerated}}        return repository.save(entity);
     }
+{{#importApplicable}}
+
+    /** One problem with one row of an import: the row (counted from 1), the field it is about
+     *  (null for the row as a whole) and what is wrong. */
+    public record ImportError(int row, String field, String message) {}
+
+    /**
+     * Creates every row of an import, or none. Each row is checked first — its values{{#importValidates}} (the
+     * same Bean Validation as a create){{/importValidates}}, {{^pkField.isGenerated}}a key already in the file or the table, {{/pkField.isGenerated}}and that its
+     * relations point at rows that exist — and nothing is saved while any row has a problem, so a
+     * corrected file can simply be sent again.
+     */
+    public java.util.List<ImportError> importAll(java.util.List<{{EntityName}}Dto> rows) {
+        java.util.List<ImportError> errors = new java.util.ArrayList<>();
+        java.util.List<{{EntityName}}> entities = new java.util.ArrayList<>(rows.size());
+{{^pkField.isGenerated}}        java.util.Set<Object> keys = new java.util.HashSet<>();
+{{/pkField.isGenerated}}        for (int i = 0; i < rows.size(); i++) {
+            int row = i + 1;
+            {{EntityName}}Dto dto = rows.get(i);
+            if (dto == null) {
+                errors.add(new ImportError(row, null, "is empty"));
+                continue;
+            }
+{{#importValidates}}            for (jakarta.validation.ConstraintViolation<{{EntityName}}Dto> violation : validator.validate(dto)) {
+                errors.add(new ImportError(row, violation.getPropertyPath().toString(), violation.getMessage()));
+            }
+{{/importValidates}}{{#relations}}            if (dto.{{fkFieldName}}() != null && entityManager.find({{entityPackage}}.{{targetEntity}}.class, dto.{{fkFieldName}}()) == null) {
+                errors.add(new ImportError(row, "{{fkFieldName}}", "no {{targetEntity}} " + dto.{{fkFieldName}}()));
+            }
+{{/relations}}            {{EntityName}} entity = dto.toEntity();
+{{#pkField.isGenerated}}            entity.set{{pkField.Name}}(null);
+{{/pkField.isGenerated}}{{^pkField.isGenerated}}            {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
+            if (id != null && !keys.add(id)) {
+                errors.add(new ImportError(row, null, "has the same key as an earlier row: " + id));
+            } else if (id != null && repository.existsById(id)) {
+                errors.add(new ImportError(row, null, "{{EntityName}} " + id + " already exists"));
+            }
+{{/pkField.isGenerated}}            entities.add(entity);
+        }
+        if (errors.isEmpty()) repository.saveAll(entities);
+        return errors;
+    }
+{{/importApplicable}}
 
     public {{EntityName}} update({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id, {{EntityName}} updated) {
         {{EntityName}} existing = findById(id);

@@ -59,9 +59,21 @@ public final class FullstackPageValidator {
      *  list is a whitelist rather than "any lucide name": a typo would otherwise fail the build of the
      *  generated project instead of the request. */
     static final List<String> NAV_ICONS = List.of(
-            "BarChart3", "Building2", "Calendar", "FileText", "Inbox", "Layers", "LayoutDashboard", "ListChecks",
-            "Package", "PanelLeft", "Settings", "ShoppingCart", "Star", "Table2", "Tag", "Ticket", "Truck", "Users",
-            "Wallet", "Wand2");
+            "BarChart3", "Building2", "Calendar", "Columns3", "FileText", "Inbox", "Layers", "LayoutDashboard",
+            "ListChecks", "Package", "PanelLeft", "Search", "Settings", "ShoppingCart", "Star", "Table2", "Tag",
+            "Ticket", "Truck", "Upload", "Users", "Wallet", "Wand2");
+    /** A content page's text. */
+    static final int MAX_BODY = 8000;
+    /** The cards a board lane may load at a time. */
+    static final List<Integer> LANE_SIZES = List.of(10, 20, 50);
+    static final int DEFAULT_LANE_SIZE = 20;
+    static final int MAX_CARD_FIELDS = 4;
+    static final int MAX_WIP_LIMIT = 999;
+    /** The entities one search page fans out to. */
+    static final int MAX_SEARCH_ENTITIES = 8;
+    static final int MIN_PER_ENTITY = 3;
+    static final int MAX_PER_ENTITY = 10;
+    static final int DEFAULT_PER_ENTITY = 5;
 
     private FullstackPageValidator() {}
 
@@ -109,6 +121,8 @@ public final class FullstackPageValidator {
         List<PageDefinition> pages = new ArrayList<>(raw.size());
         Map<String, String> recordPageByEntity = new HashMap<>();
         Map<String, String> wizardPageByEntity = new HashMap<>();
+        Map<String, String> importPageByEntity = new HashMap<>();
+        String searchPage = null;
         boolean anyVisible = false;
         for (PageDefinitionDto p : raw) {
             String id = p.id().trim();
@@ -220,6 +234,72 @@ public final class FullstackPageValidator {
                     yield PageDefinition.wizard(id, title, description, hidden, entity.name(),
                             steps(prefix, entity, p.steps()));
                 }
+                case CALENDAR -> {
+                    String prefix = "Page '" + id + "' (calendar)";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    PageDefinition.CalendarSpec spec = calendar(prefix, entity, p);
+                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter());
+                    for (String field : java.util.stream.Stream.of(spec.dateField(), spec.endField()).filter(java.util.Objects::nonNull).toList()) {
+                        if (preset.keySet().stream().anyMatch(k -> k.equals(field) || k.equals(field + "From") || k.equals(field + "To"))) {
+                            throw new WizardArgumentException(prefix + ": presetFilter cannot name '" + field
+                                    + "' — the calendar's own range sets it");
+                        }
+                    }
+                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), preset, null, null)
+                            .withSpec(spec);
+                }
+                case BOARD -> {
+                    String prefix = "Page '" + id + "' (board)";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    PageDefinition.BoardSpec spec = board(prefix, entity, p);
+                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter());
+                    if (preset.containsKey(spec.laneField())) {
+                        throw new WizardArgumentException(prefix + ": presetFilter cannot name '" + spec.laneField()
+                                + "' — the lanes already split by it");
+                    }
+                    PageDefinition.ListSort sort = sort(prefix, entity, p.sort(), auditApplies(entity, scaffoldOpts));
+                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), preset, null, null)
+                            .withListPresentation(null, sort, null, null)
+                            .withSpec(spec);
+                }
+                case CONTENT -> {
+                    String prefix = "Page '" + id + "' (content)";
+                    // No entity to borrow a name from, so the nav label has to be given.
+                    if (title == null) throw new WizardArgumentException(prefix + " needs a title");
+                    yield new PageDefinition(id, type, title, description, hidden, null, null, null, null)
+                            .withSpec(new PageDefinition.ContentSpec(body(prefix, p.body(), typeById, hiddenById)));
+                }
+                case IMPORT -> {
+                    String prefix = "Page '" + id + "' (import)";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    if (entity.readOnly()) {
+                        throw new WizardArgumentException(prefix + ": " + entity.name()
+                                + " is read-only, so there is nothing to import");
+                    }
+                    if (Boolean.FALSE.equals(entity.opts().get("csvImport"))) {
+                        throw new WizardArgumentException(prefix + " imports " + entity.name()
+                                + ", whose csvImport option is off");
+                    }
+                    String previous = importPageByEntity.putIfAbsent(entity.name(), id);
+                    if (previous != null) {
+                        throw new WizardArgumentException(prefix + ": " + entity.name()
+                                + " already has an import page ('" + previous + "')");
+                    }
+                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), null, null, null);
+                }
+                case SEARCH -> {
+                    String prefix = "Page '" + id + "' (search)";
+                    if (searchPage != null) {
+                        throw new WizardArgumentException(prefix + ": a layout has one search page ('" + searchPage
+                                + "' already is) — the header search box opens it");
+                    }
+                    searchPage = id;
+                    PageDefinition.SearchSpec spec = search(prefix, p, entities, entitiesByLower);
+                    if (hidden && !spec.shellSearch()) {
+                        throw new WizardArgumentException(prefix + " is hidden, so it needs shellSearch: nothing else opens it");
+                    }
+                    yield new PageDefinition(id, type, title, description, hidden, null, null, null, null).withSpec(spec);
+                }
             };
             pages.add(page.withNav(group, icon).withRoles(roles(id, p.roles())));
         }
@@ -248,6 +328,20 @@ public final class FullstackPageValidator {
         return pages;
     }
 
+    /**
+     * The entities as the pages need them: an entity with an import page gets the {@code csvImport}
+     * scaffold option switched on, so its backend grows the import endpoint and its frontend the
+     * import screen. Runs before either render path, which then see the same entity model.
+     */
+    public static List<EntityDefinition> applyPageImplications(List<EntityDefinition> entities, List<PageDefinition> pages) {
+        Set<String> imported = new HashSet<>();
+        for (PageDefinition p : pages) {
+            if (p.type() == PageDefinition.Type.IMPORT) imported.add(p.entity());
+        }
+        if (imported.isEmpty()) return entities;
+        return entities.stream().map(e -> imported.contains(e.name()) ? e.withOpt("csvImport", true) : e).toList();
+    }
+
     /** The roles a page is restricted to: the generated security's ADMIN / USER, upper-cased. */
     private static List<String> roles(String id, List<String> raw) {
         if (raw == null || raw.isEmpty()) return List.of();
@@ -271,7 +365,8 @@ public final class FullstackPageValidator {
             if (type.wire().equals(lower)) return type;
         }
         throw new WizardArgumentException("Page '" + id + "': unknown type '" + t
-                + "' (expected entity-list, dashboard, tabs, master-detail, record, report or wizard)");
+                + "' (expected entity-list, dashboard, tabs, master-detail, record, report, wizard, calendar,"
+                + " board, content, import or search)");
     }
 
     /** A nav section name. Only a page that is in the nav can sit in a section of it. */
@@ -304,10 +399,13 @@ public final class FullstackPageValidator {
         String prefix = "Page '" + id + "' (" + type.wire() + ") ";
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.RECORD
                 && type != PageDefinition.Type.REPORT && type != PageDefinition.Type.WIZARD
+                && type != PageDefinition.Type.CALENDAR && type != PageDefinition.Type.BOARD
+                && type != PageDefinition.Type.IMPORT
                 && trimToNull(p.entity()) != null) {
             throw new WizardArgumentException(prefix + "does not take 'entity'");
         }
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.REPORT
+                && type != PageDefinition.Type.CALENDAR && type != PageDefinition.Type.BOARD
                 && p.presetFilter() != null && !p.presetFilter().isEmpty()) {
             throw new WizardArgumentException(prefix + "does not take 'presetFilter'");
         }
@@ -346,7 +444,27 @@ public final class FullstackPageValidator {
         }
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.MASTER_DETAIL) {
             if (p.columns() != null) throw new WizardArgumentException(prefix + "does not take 'columns'");
-            if (p.sort() != null) throw new WizardArgumentException(prefix + "does not take 'sort'");
+            if (p.sort() != null && type != PageDefinition.Type.BOARD) throw new WizardArgumentException(prefix + "does not take 'sort'");
+        }
+        if (type != PageDefinition.Type.CALENDAR) {
+            if (trimToNull(p.dateField()) != null) throw new WizardArgumentException(prefix + "does not take 'dateField'");
+            if (trimToNull(p.endField()) != null) throw new WizardArgumentException(prefix + "does not take 'endField'");
+            if (p.modes() != null) throw new WizardArgumentException(prefix + "does not take 'modes'");
+        }
+        if (type != PageDefinition.Type.BOARD) {
+            if (trimToNull(p.laneField()) != null) throw new WizardArgumentException(prefix + "does not take 'laneField'");
+            if (p.lanes() != null) throw new WizardArgumentException(prefix + "does not take 'lanes'");
+            if (p.cardFields() != null) throw new WizardArgumentException(prefix + "does not take 'cardFields'");
+            if (p.wipLimits() != null) throw new WizardArgumentException(prefix + "does not take 'wipLimits'");
+            if (p.laneSize() != null) throw new WizardArgumentException(prefix + "does not take 'laneSize'");
+        }
+        if (type != PageDefinition.Type.CONTENT && p.body() != null) {
+            throw new WizardArgumentException(prefix + "does not take 'body'");
+        }
+        if (type != PageDefinition.Type.SEARCH) {
+            if (p.entities() != null) throw new WizardArgumentException(prefix + "does not take 'entities'");
+            if (p.perEntity() != null) throw new WizardArgumentException(prefix + "does not take 'perEntity'");
+            if (p.shellSearch() != null) throw new WizardArgumentException(prefix + "does not take 'shellSearch'");
         }
         if (type != PageDefinition.Type.ENTITY_LIST) {
             if (trimToNull(p.view()) != null) throw new WizardArgumentException(prefix + "does not take 'view'");
@@ -795,7 +913,10 @@ public final class FullstackPageValidator {
                 throw new WizardArgumentException(prefix + ": a links widget cannot link to a record page ('" + id
                         + "') — it opens from a row");
             }
-            if (Boolean.TRUE.equals(hiddenById.get(id)) && type != PageDefinition.Type.WIZARD) {
+            // A hidden wizard is still a route (New opens it), and so is a hidden search page (the
+            // header's search box opens it — a hidden one must have that box).
+            if (Boolean.TRUE.equals(hiddenById.get(id)) && type != PageDefinition.Type.WIZARD
+                    && type != PageDefinition.Type.SEARCH) {
                 throw new WizardArgumentException(prefix + ": page '" + id + "' is hidden and not a wizard, so nothing can open it");
             }
             if (pages.contains(id)) throw new WizardArgumentException(prefix + ": page '" + id + "' is listed twice");
@@ -1305,6 +1426,230 @@ public final class FullstackPageValidator {
             throw new WizardArgumentException(prefix + ": at most " + (MAX_TABS - 1) + " related lists are allowed");
         }
         return out;
+    }
+
+    // ── Calendar, board, content and search pages ───────────────────────────
+
+    /** A calendar page's date field(s) and views. Both dates must be filterable: the visible window
+     *  is fetched through the list's own {@code <field>From}/{@code <field>To} params. */
+    private static PageDefinition.CalendarSpec calendar(String prefix, EntityDefinition entity, PageDefinitionDto p) {
+        String requested = trimToNull(p.dateField());
+        FieldDefinition date;
+        if (requested == null) {
+            date = entity.fields().stream()
+                    .filter(f -> !f.primaryKey() && f.filterable() && f.type().isTemporal())
+                    .findFirst()
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
+                            + " has no filterable date field to place its rows by"));
+        } else {
+            date = calendarDate(prefix, entity, requested, "dateField");
+        }
+        String rawEnd = trimToNull(p.endField());
+        FieldDefinition end = rawEnd == null ? null : calendarDate(prefix, entity, rawEnd, "endField");
+        if (end != null && end.name().equals(date.name())) {
+            throw new WizardArgumentException(prefix + ": endField must differ from dateField ('" + date.name() + "')");
+        }
+        List<PageDefinition.CalendarMode> modes = new ArrayList<>();
+        if (p.modes() != null) {
+            if (p.modes().isEmpty()) throw new WizardArgumentException(prefix + ": 'modes' needs at least one view when given");
+            for (String raw : p.modes()) {
+                String m = trimToNull(raw);
+                PageDefinition.CalendarMode mode = null;
+                for (PageDefinition.CalendarMode candidate : PageDefinition.CalendarMode.values()) {
+                    if (candidate.wire().equalsIgnoreCase(m == null ? "" : m)) mode = candidate;
+                }
+                if (mode == null) {
+                    throw new WizardArgumentException(prefix + ": unknown mode '" + raw + "' (expected month, week, agenda or timeline)");
+                }
+                if (modes.contains(mode)) throw new WizardArgumentException(prefix + ": mode '" + mode.wire() + "' is listed twice");
+                modes.add(mode);
+            }
+        } else {
+            modes.add(PageDefinition.CalendarMode.MONTH);
+        }
+        if (modes.contains(PageDefinition.CalendarMode.TIMELINE) && end == null) {
+            throw new WizardArgumentException(prefix + ": the timeline mode needs an endField — a bar runs from dateField to it");
+        }
+        return new PageDefinition.CalendarSpec(date.name(), end == null ? null : end.name(), modes);
+    }
+
+    private static FieldDefinition calendarDate(String prefix, EntityDefinition entity, String requested, String what) {
+        FieldDefinition f = fieldOf(prefix, entity, requested, what);
+        if (f.primaryKey() || !f.filterable() || !f.type().isTemporal()) {
+            throw new WizardArgumentException(prefix + ": " + what + " '" + f.name()
+                    + "' must be a filterable, non-key date field of " + entity.name());
+        }
+        return f;
+    }
+
+    /** A board page's lanes and cards. The lane field must be filterable: each lane is its own
+     *  list call, filtered to the lane's value. */
+    private static PageDefinition.BoardSpec board(String prefix, EntityDefinition entity, PageDefinitionDto p) {
+        String requested = trimToNull(p.laneField());
+        FieldDefinition lane;
+        if (requested == null) {
+            List<FieldDefinition> candidates = entity.fields().stream()
+                    .filter(f -> !f.primaryKey() && f.filterable() && (f.type().isEnum() || f.type().isBoolean()))
+                    .toList();
+            lane = candidates.stream().filter(f -> f.type().isEnum()).findFirst()
+                    .or(() -> candidates.stream().findFirst())
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
+                            + " has no filterable enum or boolean field to split into lanes"));
+        } else {
+            lane = fieldOf(prefix, entity, requested, "laneField");
+            if (lane.primaryKey() || !lane.filterable() || !(lane.type().isEnum() || lane.type().isBoolean())) {
+                throw new WizardArgumentException(prefix + ": laneField '" + lane.name()
+                        + "' must be a filterable enum or boolean field of " + entity.name());
+            }
+        }
+        List<String> values = lane.type().isBoolean() ? List.of("true", "false") : lane.enumValues();
+        List<String> lanes = new ArrayList<>();
+        if (p.lanes() != null) {
+            if (p.lanes().isEmpty()) throw new WizardArgumentException(prefix + ": 'lanes' needs at least one lane when given");
+            for (String raw : p.lanes()) {
+                String v = trimToNull(raw);
+                String canonical = v == null ? null : values.stream().filter(c -> c.equalsIgnoreCase(v)).findFirst().orElse(null);
+                if (canonical == null) {
+                    throw new WizardArgumentException(prefix + ": lane '" + raw + "' is not one of " + values);
+                }
+                if (lanes.contains(canonical)) throw new WizardArgumentException(prefix + ": lane '" + canonical + "' is listed twice");
+                lanes.add(canonical);
+            }
+        } else {
+            lanes.addAll(values);
+        }
+        Map<String, String> known = new LinkedHashMap<>();
+        for (FieldDefinition f : entity.fields()) known.put(f.name().toLowerCase(Locale.ROOT), f.name());
+        for (RelationDefinition r : entity.relations()) {
+            if (r.type() == RelationType.MANY_TO_ONE) known.put(r.fieldName().toLowerCase(Locale.ROOT), r.fieldName());
+        }
+        List<String> cards = new ArrayList<>();
+        if (p.cardFields() != null) {
+            if (p.cardFields().isEmpty() || p.cardFields().size() > MAX_CARD_FIELDS) {
+                throw new WizardArgumentException(prefix + ": 'cardFields' takes 1 to " + MAX_CARD_FIELDS + " fields");
+            }
+            for (String raw : p.cardFields()) {
+                String canonical = trimToNull(raw) == null ? null : known.get(raw.trim().toLowerCase(Locale.ROOT));
+                if (canonical == null) {
+                    throw new WizardArgumentException(prefix + " cardFields: '" + raw + "' is not a field or relation of "
+                            + entity.name() + " (expected one of " + new ArrayList<>(known.values()) + ")");
+                }
+                if (cards.contains(canonical)) throw new WizardArgumentException(prefix + " cardFields: '" + canonical + "' is listed twice");
+                cards.add(canonical);
+            }
+        } else {
+            cards.addAll(defaultCardFields(entity, lane.name()));
+        }
+        Map<String, Integer> limits = new LinkedHashMap<>();
+        if (p.wipLimits() != null) {
+            for (Map.Entry<String, Integer> en : p.wipLimits().entrySet()) {
+                String canonical = lanes.stream().filter(l -> l.equalsIgnoreCase(en.getKey() == null ? "" : en.getKey().trim()))
+                        .findFirst()
+                        .orElseThrow(() -> new WizardArgumentException(prefix + " wipLimits: '" + en.getKey()
+                                + "' is not one of its lanes " + lanes));
+                Integer limit = en.getValue();
+                if (limit == null || limit < 1 || limit > MAX_WIP_LIMIT) {
+                    throw new WizardArgumentException(prefix + " wipLimits: lane '" + canonical + "' must hold 1 to "
+                            + MAX_WIP_LIMIT + " cards, got " + limit);
+                }
+                limits.put(canonical, limit);
+            }
+        }
+        Integer size = p.laneSize();
+        if (size != null && !LANE_SIZES.contains(size)) {
+            throw new WizardArgumentException(prefix + ": laneSize must be 10, 20 or 50, got " + size);
+        }
+        return new PageDefinition.BoardSpec(lane.name(), lanes, cards, limits, size == null ? DEFAULT_LANE_SIZE : size);
+    }
+
+    /** What a card shows when the page names nothing: a heading (the first text field, else the
+     *  key), then the next two fields other than the lane field and the first relation, up to four. */
+    static List<String> defaultCardFields(EntityDefinition entity, String laneField) {
+        List<String> out = new ArrayList<>();
+        FieldDefinition heading = entity.fields().stream()
+                .filter(f -> !f.primaryKey() && (f.type() == FieldType.STRING || f.type() == FieldType.TEXT))
+                .findFirst()
+                .orElseGet(() -> entity.fields().stream().filter(FieldDefinition::primaryKey).findFirst().orElse(entity.fields().get(0)));
+        out.add(heading.name());
+        for (FieldDefinition f : entity.fields()) {
+            if (out.size() >= 3) break;
+            if (f.primaryKey() || f.name().equals(laneField) || out.contains(f.name()) || f.type() == FieldType.TEXT) continue;
+            out.add(f.name());
+        }
+        entity.relations().stream().filter(r -> r.type() == RelationType.MANY_TO_ONE).findFirst()
+                .ifPresent(r -> out.add(r.fieldName()));
+        return out.size() > MAX_CARD_FIELDS ? out.subList(0, MAX_CARD_FIELDS) : out;
+    }
+
+    /** A content page's text: its length, and every link either another page anyone can open or an
+     *  http(s) / mailto address. */
+    private static String body(String prefix, String raw, Map<String, PageDefinition.Type> typeById,
+                               Map<String, Boolean> hiddenById) {
+        String body = raw == null ? null : raw.strip();
+        if (body == null || body.isEmpty()) throw new WizardArgumentException(prefix + " needs a body");
+        if (body.length() > MAX_BODY) {
+            throw new WizardArgumentException(prefix + " body must be at most " + MAX_BODY + " characters");
+        }
+        for (ContentMarkdown.Block block : ContentMarkdown.parse(body)) {
+            for (List<ContentMarkdown.Run> item : block.items()) {
+                for (ContentMarkdown.Run run : item) {
+                    if (run.kind() == ContentMarkdown.RunKind.LINK && !ContentMarkdown.isExternal(run.target())) {
+                        throw new WizardArgumentException(prefix + ": link '" + run.target()
+                                + "' must be an http(s) or mailto address, or a page (#/page-id)");
+                    }
+                    if (run.kind() != ContentMarkdown.RunKind.PAGE_LINK) continue;
+                    PageDefinition.Type type = typeById.get(run.target());
+                    if (type == null) throw new WizardArgumentException(prefix + ": links to no page '" + run.target() + "'");
+                    if (type == PageDefinition.Type.RECORD) {
+                        throw new WizardArgumentException(prefix + ": cannot link to the record page '" + run.target()
+                                + "' — it opens from a row");
+                    }
+                    if (Boolean.TRUE.equals(hiddenById.get(run.target())) && type != PageDefinition.Type.WIZARD
+                            && type != PageDefinition.Type.SEARCH) {
+                        throw new WizardArgumentException(prefix + ": page '" + run.target()
+                                + "' is hidden and not a wizard, so a link cannot open it");
+                    }
+                }
+            }
+        }
+        return body;
+    }
+
+    /** A search page's entities (each with text the list endpoint can search), matches per entity
+     *  and whether the header gets a search box. */
+    private static PageDefinition.SearchSpec search(String prefix, PageDefinitionDto p, List<EntityDefinition> entities,
+                                                    Map<String, EntityDefinition> entitiesByLower) {
+        List<String> names = new ArrayList<>();
+        if (p.entities() != null) {
+            if (p.entities().isEmpty() || p.entities().size() > MAX_SEARCH_ENTITIES) {
+                throw new WizardArgumentException(prefix + ": 'entities' takes 1 to " + MAX_SEARCH_ENTITIES + " entities");
+            }
+            for (String raw : p.entities()) {
+                EntityDefinition e = requireEntity(entitiesByLower, raw, prefix);
+                if (!searchable(e)) {
+                    throw new WizardArgumentException(prefix + ": " + e.name()
+                            + " has no searchable text field, so a search cannot find its rows");
+                }
+                if (names.contains(e.name())) throw new WizardArgumentException(prefix + ": " + e.name() + " is listed twice");
+                names.add(e.name());
+            }
+        } else {
+            entities.stream().filter(FullstackPageValidator::searchable).limit(MAX_SEARCH_ENTITIES).forEach(e -> names.add(e.name()));
+            if (names.isEmpty()) {
+                throw new WizardArgumentException(prefix + ": no entity has a searchable text field to search");
+            }
+        }
+        Integer per = p.perEntity();
+        if (per != null && (per < MIN_PER_ENTITY || per > MAX_PER_ENTITY)) {
+            throw new WizardArgumentException(prefix + ": perEntity must be between " + MIN_PER_ENTITY + " and "
+                    + MAX_PER_ENTITY + ", got " + per);
+        }
+        return new PageDefinition.SearchSpec(names, per == null ? DEFAULT_PER_ENTITY : per, Boolean.TRUE.equals(p.shellSearch()));
+    }
+
+    /** Whether the entity's list endpoint searches text ({@code ?q=}): some searchable STRING/TEXT field. */
+    static boolean searchable(EntityDefinition e) {
+        return e.fields().stream().anyMatch(f -> f.searchable() && (f.type() == FieldType.STRING || f.type() == FieldType.TEXT));
     }
 
     /** The entity's field named {@code requested}, matched ignoring case (so a hand-typed

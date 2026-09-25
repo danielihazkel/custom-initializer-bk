@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Menu, X } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { t } from '@shared/i18n'
-import { {{#hasNavGroups}}DropdownMenu, {{/hasNavGroups}}NavLinks, ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'
+import { {{#hasNavGroups}}DropdownMenu, {{/hasNavGroups}}NavLinks, {{#hasShellSearch}}SearchField, {{/hasShellSearch}}ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'
 {{^hasPages}}
 import { DashboardPage } from '@pages/dashboard'
 {{#entities}}
@@ -164,6 +164,10 @@ function PageNotice({ title, hint, action, onAction }: { title: string; hint: st
 export default function App() {
   const [route, navigate{{#hasQueryScreens}}, replace{{/hasQueryScreens}}] = useRoute()
   const [navOpen, setNavOpen] = useState(false)
+{{#hasShellSearch}}
+  // The header's search box: Enter opens the search page with the words.
+  const [shellQ, setShellQ] = useState('')
+{{/hasShellSearch}}
   const { isDark } = useMenoraTheme()
   const { view } = route
   // A new page starts at its top, not at the scroll offset the last one was left at.
@@ -301,7 +305,24 @@ export default function App() {
 {{/hasNavGroups}}
           </div>
 
+{{#hasShellSearch}}
+          <div className="flex items-center gap-3">
+            <SearchField
+              value={shellQ}
+              onInput={setShellQ}
+              label={t('searchEverything')}
+              placeholder={t('searchEverything')}
+              onSubmit={() => {
+                const words = shellQ.trim()
+                go('{{searchPageId}}', undefined, words ? { q: words } : {})
+              }}
+              className="hidden w-64 sm:block"
+            />
+{{/hasShellSearch}}
           <ThemeToggle darkLabel={t('switchToDark')} lightLabel={t('switchToLight')} />
+{{#hasShellSearch}}
+          </div>
+{{/hasShellSearch}}
         </div>
 
         {/* Collapsible nav (mobile) */}

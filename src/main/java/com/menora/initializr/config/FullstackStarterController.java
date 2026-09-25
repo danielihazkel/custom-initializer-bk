@@ -174,8 +174,10 @@ public class FullstackStarterController {
      * thread-local contexts in a {@code finally}.
      */
     private WebProjectRequest buildArtifacts(FullstackStarterRequest body, Path tempDir) throws IOException {
-        List<EntityDefinition> entities = FullstackRequestValidator.validateAndConvert(body);
-        List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), entities, scaffoldOptsOf(body));
+        List<EntityDefinition> validated = FullstackRequestValidator.validateAndConvert(body);
+        List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), validated, scaffoldOptsOf(body));
+        // An import page switches on its entity's csvImport option, for both render paths.
+        List<EntityDefinition> entities = FullstackPageValidator.applyPageImplications(validated, pages);
         PageDefinition.Nav nav = FullstackPageValidator.validateNav(body.nav(), pages);
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
@@ -429,6 +431,8 @@ public class FullstackStarterController {
         // page gates the Export button on optScaffoldCsvExport and the row checkboxes on the per-entity
         // bulkDeleteApplicable (derived in EntityScaffoldContext from optScaffoldBulkDelete).
         projectCtx.put("optScaffoldCsvExport", optionsContext.hasOption("scaffold", "csvExport"));
+        projectCtx.put("optScaffoldCsvImport", optionsContext.hasOption("scaffold", "csvImport"));
+        EntityScaffoldContext.putCsvImport(projectCtx, entities);
         projectCtx.put("optScaffoldBulkDelete", optionsContext.hasOption("scaffold", "bulkDelete"));
         // Bulk field-edit selection UI. Like bulkDelete, narrowed per entity in EntityScaffoldContext
         // (bulkUpdateApplicable) to writable, single-PK entities that have ≥1 editable non-PK field.

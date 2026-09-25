@@ -1,5 +1,5 @@
 import { {{#calendarRanged}}useCallback, {{/calendarRanged}}useEffect, useState } from 'react'
-import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}PencilLine, {{/viewTable}}{{/bulkUpdateApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
+import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#importApplicable}}Upload, {{/importApplicable}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}PencilLine, {{/viewTable}}{{/bulkUpdateApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
 {{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
@@ -9,10 +9,11 @@ import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
 import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
-{{#mutable}}import { {{EntityName}}Form, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
+{{#mutable}}import { {{EntityName}}Form, validate{{EntityName}}{{#importApplicable}}, {{EntityName}}ImportFields{{/importApplicable}} } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
 {{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
-{{/optScaffoldCsvExport}}
+{{/optScaffoldCsvExport}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
+{{/importApplicable}}
 {{#listSideDetail}}import { api } from '@shared/api'
 {{/listSideDetail}}
 {{#listConfigurable}}/** A column with the key a list page's `columns` prop picks it by. */
@@ -69,6 +70,10 @@ interface {{EntityName}}PageProps {
   selectedId?: string
   onSelect?: (id?: string) => void
 {{/listSideDetail}}
+{{#hasImportPage}}
+  /** Import opens the entity's import page instead of the import drawer. */
+  onImport?: () => void
+{{/hasImportPage}}
 {{#hasWizardPage}}
   /** New opens the entity's wizard page instead of the form drawer. */
   onCreate?: () => void
@@ -102,7 +107,7 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
 {{/isRelationFilter}}{{/filterFields}}  return record as Partial<{{EntityName}}>
 }
 
-{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
 {{#listUrlState}}
   // What the list opens with when the route says nothing — the parts it does not report back.
   const openingSize = {{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20
@@ -199,7 +204,8 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
     loading, error, reload,{{#viewKanban}} countBy,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
   } = use{{EntityName}}({ {{#wholeViews}}page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size{{/wholeViews}}{{^wholeViews}}page, size{{/wholeViews}}, sort, q: debouncedSearch{{#hasFilters}}, filters{{#calendarRanged}}: listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/calendarRanged}}{{/hasFilters}} })
 {{#optScaffoldCsvExport}}  const download = useDownload()
-{{/optScaffoldCsvExport}}
+{{/optScaffoldCsvExport}}{{#importApplicable}}  const [importing, setImporting] = useState(false)
+{{/importApplicable}}
   // Deleting the last row of the last page must not strand the list past its end.
   useEffect(() => {
     if (!loading && items.length === 0 && page > 0 && totalPages > 0) setPage(totalPages - 1)
@@ -501,7 +507,15 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
             <Download className="h-4 w-4" />
             {download.busy ? t('exporting') : t('export')}
           </button>
-{{/optScaffoldCsvExport}}{{#mutable}}          <button
+{{/optScaffoldCsvExport}}{{#importApplicable}}          <button
+            onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) }
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
+            title={t('importCsv')}
+          >
+            <Upload className="h-4 w-4" />
+            {t('import')}
+          </button>
+{{/importApplicable}}{{#mutable}}          <button
             {{^hasWizardPage}}onClick={openNew}{{/hasWizardPage}}{{#hasWizardPage}}onClick={onCreate ?? openNew}{{/hasWizardPage}}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
           >
@@ -717,6 +731,24 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
           />
         )}
       </FormDrawer>
+{{#importApplicable}}
+
+      <DetailDrawer open={importing} title={t('importX', { x: '{{entityLabelPlural}}' })} onClose={() => setImporting(false)}>
+        {importing && (
+          <CsvImport
+            fields={ {{EntityName}}ImportFields }
+            validate={value => validate{{EntityName}}(value as Partial<{{EntityName}}>)}
+            path="/api/{{entityNamePluralKebab}}"
+            label={'{{entityLabelPlural}}'}
+            onDone={n => {
+              setImporting(false)
+              toast.success(t('importDone', { n, x: '{{entityLabelPlural}}' }))
+              void reload()
+            }}
+          />
+        )}
+      </DetailDrawer>
+{{/importApplicable}}
 
       <ConfirmDialog
         open={pendingDelete !== null}

@@ -1,0 +1,195 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ArrowUpRight, Search } from 'lucide-react'
+{{#searchGroups}}
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{/searchGroups}}
+{{#drawerGroups}}
+import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
+{{/drawerGroups}}
+import { api } from '@shared/api'
+import { Alert, {{#searchUsesDrawer}}DetailDrawer, {{/searchUsesDrawer}}Skeleton } from '@shared/ui'
+import { t } from '@shared/i18n'
+
+/** The matches listed per entity; "See all" opens the entity's list with the same words. */
+const PER_ENTITY = {{perEntity}}
+/** Words shorter than this search nothing (every row would match). */
+const MIN_LENGTH = 2
+
+interface PageOf<T> {
+  content: T[]
+  totalElements: number
+}
+
+type Results = {
+{{#searchGroups}}
+  g{{groupIndex}}: PageOf<{{EntityName}}>
+{{/searchGroups}}
+}
+{{#searchUsesDrawer}}
+
+/** The match open in the quick-look drawer (an entity without a record page). */
+type Detail = {{#drawerGroups}}
+  | { group: 'g{{groupIndex}}'; row: {{EntityName}} }{{/drawerGroups}}
+{{/searchUsesDrawer}}
+
+/** One entity's matches: its name and total, each match a button, and a way to see them all. */
+function ResultGroup<T extends object>({ title, page, keyOf, labelOf, onOpen, onSeeAll }: {
+  title: string
+  page: PageOf<T>
+  keyOf: (row: T) => string
+  labelOf: (row: T) => ReactNode
+  onOpen: (row: T) => void
+  onSeeAll?: () => void
+}) {
+  if (page.totalElements === 0) return null
+  return (
+    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+        <h2 className="text-sm font-semibold text-fg">
+          {title} <span className="ms-1 text-xs font-normal text-muted">{page.totalElements}</span>
+        </h2>
+        {onSeeAll && page.totalElements > page.content.length && (
+          <button type="button" onClick={onSeeAll} className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
+            {t('seeAllN', { n: page.totalElements })}
+            <ArrowUpRight className="h-3.5 w-3.5 rtl:-scale-x-100" />
+          </button>
+        )}
+      </header>
+      <ul className="divide-y divide-border">
+        {page.content.map(row => (
+          <li key={keyOf(row)}>
+            <button type="button" onClick={() => onOpen(row)} className="block w-full px-4 py-2.5 text-start text-sm text-fg transition-colors hover:bg-surface-2">
+              {labelOf(row)}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+interface Props {
+  /** The words searched, from the route (#/<page>?q=…) — absent when embedded. */
+  query?: Record<string, string>
+  onQueryChange?: (query: Record<string, string>) => void
+{{#needsNavigate}}
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+{{/needsNavigate}}
+}
+
+export function {{PageName}}Screen({ query, onQueryChange{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
+  // Routed, the words live in the URL (the header's search box lands here with them); embedded,
+  // they are local state. The box follows the route on Back/Forward.
+  const [localQ, setLocalQ] = useState('')
+  const q = onQueryChange ? (query?.q ?? '') : localQ
+  const [text, setText] = useState(q)
+  const [shown, setShown] = useState(q)
+  if (shown !== q) {
+    setShown(q)
+    setText(q)
+  }
+  useEffect(() => {
+    if (text === q) return
+    const timer = setTimeout(() => (onQueryChange ? onQueryChange(text ? { q: text } : {}) : setLocalQ(text)), 300)
+    return () => clearTimeout(timer)
+  }, [text, q, onQueryChange])
+
+  const [results, setResults] = useState<Results | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+{{#searchUsesDrawer}}
+  const [detail, setDetail] = useState<Detail | null>(null)
+{{/searchUsesDrawer}}
+  // Every entity is asked at once; an answer to words no longer in the box is dropped.
+  const request = useRef(0)
+  useEffect(() => {
+    const words = q.trim()
+    const id = ++request.current
+    if (words.length < MIN_LENGTH) {
+      setResults(null)
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    setFailed(false)
+    const params = `q=${encodeURIComponent(words)}&page=0&size=${PER_ENTITY}`
+    Promise.all([
+{{#searchGroups}}
+      api.get<PageOf<{{EntityName}}>>(`/api/{{entityNamePluralKebab}}?${params}`),
+{{/searchGroups}}
+    ])
+      .then(([{{#searchGroups}}g{{groupIndex}}, {{/searchGroups}}]) => {
+        if (id === request.current) setResults({ {{#searchGroups}}g{{groupIndex}}, {{/searchGroups}}})
+      })
+      .catch(() => { if (id === request.current) setFailed(true) })
+      .finally(() => { if (id === request.current) setLoading(false) })
+  }, [q, attempt])
+
+  const found = results != null && [{{#searchGroups}}results.g{{groupIndex}}, {{/searchGroups}}].some(p => p.totalElements > 0)
+  return (
+    <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+        <p className="mt-1 text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      </div>
+      <div className="relative">
+        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+        <input
+          type="search"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder={t('searchEverything')}
+          aria-label={t('searchEverything')}
+          className="w-full rounded-xl border border-border bg-surface py-3 pe-4 ps-10 text-sm text-fg shadow-sm placeholder:text-muted focus:border-brand focus:outline-none"
+        />
+      </div>
+      {failed && (
+        <Alert>
+          {t('couldNotLoad')}{' '}
+          <button type="button" onClick={() => setAttempt(a => a + 1)} className="font-semibold underline underline-offset-2">{t('retry')}</button>
+        </Alert>
+      )}
+      {q.trim().length < MIN_LENGTH ? (
+        <p className="py-8 text-center text-sm text-muted">{t('typeToSearch')}</p>
+      ) : loading && results == null ? (
+        <div className="space-y-3">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : results != null && !found ? (
+        <p className="py-8 text-center text-sm text-muted">{t('nothingMatches', { q: q.trim() })}</p>
+      ) : results != null && (
+        <div className="space-y-4" aria-busy={loading}>
+{{#searchGroups}}
+          <ResultGroup
+            title={ {{{entityLabelPluralExpr}}} }
+            page={results.g{{groupIndex}}}
+            keyOf={(r: {{EntityName}}) => {{{rowKeyTs}}} }
+            labelOf={(r: {{EntityName}}) => {{{rowLabelTs}}} }
+{{#hasRecordPage}}
+            onOpen={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}
+{{/hasRecordPage}}
+{{^hasRecordPage}}
+            onOpen={row => setDetail({ group: 'g{{groupIndex}}', row })}
+{{/hasRecordPage}}
+{{#hasListPage}}
+            onSeeAll={() => onNavigate('{{listPageId}}', undefined, { _q: q.trim() })}
+{{/hasListPage}}
+          />
+{{/searchGroups}}
+        </div>
+      )}
+{{#searchUsesDrawer}}
+
+      <DetailDrawer open={detail !== null} title={t('details')} onClose={() => setDetail(null)}>
+{{#drawerGroups}}
+        {detail?.group === 'g{{groupIndex}}' && <{{EntityName}}Detail value={detail.row} />}
+{{/drawerGroups}}
+      </DetailDrawer>
+{{/searchUsesDrawer}}
+    </div>
+  )
+}

@@ -1,0 +1,195 @@
+import { useMemo, useState } from 'react'
+{{#calendarCreatesInDrawer}}
+import { toast } from 'sonner'
+{{/calendarCreatesInDrawer}}
+import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{^hasRecordPage}}
+import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
+{{/hasRecordPage}}
+{{#calendarCreatesInDrawer}}
+import { {{EntityName}}Form, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
+import { ApiError } from '@shared/api'
+{{/calendarCreatesInDrawer}}
+import { Alert{{^hasRecordPage}}, DetailDrawer{{/hasRecordPage}}{{#calendarCreatesInDrawer}}, FormDrawer{{/calendarCreatesInDrawer}} } from '@shared/ui'
+import { ScheduleView } from '@shared/ui/ScheduleView'
+import { isDayKey, todayKey, windowOf, type ScheduleMode } from '@shared/ui/schedule'
+{{#presetUsesPeriod}}
+import { rangeParams } from '@shared/ui/stats'
+{{/presetUsesPeriod}}
+import { t } from '@shared/i18n'
+
+/** The views this calendar offers, the first one opening. */
+const MODES: ScheduleMode[] = {{modesTs}}
+/** The most rows one period loads; the header says so when a period holds more. */
+const LIMIT = 500
+const SORT = { field: '{{calendarField}}', direction: 'asc' } as const
+{{#hasPresetFilter}}
+/** The rows the calendar is limited to. */
+const PRESET: Record<string, string> = {{{presetFilterOrEmptyTs}}}
+{{/hasPresetFilter}}
+
+/** The day a row starts on (yyyy-mm-dd), read from its date without any timezone. */
+const startOf = (r: {{EntityName}}) => (r.{{calendarField}} == null ? null : String(r.{{calendarField}}).slice(0, 10))
+{{#hasEndField}}
+const endOf = (r: {{EntityName}}) => (r.{{calendarEndField}} == null ? null : String(r.{{calendarEndField}}).slice(0, 10))
+{{/hasEndField}}
+{{#calendarIsDateTime}}
+const timeOf = (r: {{EntityName}}) => (r.{{calendarField}} == null ? null : String(r.{{calendarField}}).slice(11, 16) || null)
+{{/calendarIsDateTime}}
+const labelOf = (r: {{EntityName}}) => {{{rowLabelTs}}}
+const keyOf = (r: {{EntityName}}) => {{{rowKeyTs}}}
+
+interface Props {
+  /** The day and view on screen, from the route (#/<page>?_date=…&_mode=…) — absent when embedded. */
+  query?: Record<string, string>
+  onQueryChange?: (query: Record<string, string>) => void
+{{#needsNavigate}}
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+{{/needsNavigate}}
+}
+
+export function {{PageName}}Screen({ query, onQueryChange{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
+  // Routed, the day and view live in the URL, so a reload or a link reopens the same period;
+  // embedded as a tab, they are local state.
+  const [local, setLocal] = useState<{ date: string; mode: ScheduleMode }>(() => ({ date: todayKey(), mode: MODES[0] }))
+  const routeDate = query?._date
+  const routeMode = query?._mode
+  const date = onQueryChange ? (isDayKey(routeDate) ? routeDate : todayKey()) : local.date
+  const mode = onQueryChange ? (MODES.find(m => m === routeMode) ?? MODES[0]) : local.mode
+  const show = (next: { date: string; mode: ScheduleMode }) =>
+    onQueryChange ? onQueryChange({ _date: next.date, _mode: next.mode }) : setLocal(next)
+
+  // Only the period on screen is fetched, through the date's own list filter.
+  const { from, to } = windowOf(mode, date)
+  const filters = useMemo(() => ({
+{{#hasPresetFilter}}
+    ...PRESET,
+{{/hasPresetFilter}}
+{{^hasEndField}}
+    {{calendarField}}From: from{{#calendarIsDateTime}} + 'T00:00:00'{{/calendarIsDateTime}},
+    {{calendarField}}To: to{{#calendarIsDateTime}} + 'T23:59:59'{{/calendarIsDateTime}},
+{{/hasEndField}}
+{{#hasEndField}}
+    // A row shows when it overlaps the period: it starts before the period ends and ends after it starts.
+    {{calendarField}}To: to{{#calendarIsDateTime}} + 'T23:59:59'{{/calendarIsDateTime}},
+    {{calendarEndField}}From: from{{#endIsDateTime}} + 'T00:00:00'{{/endIsDateTime}},
+{{/hasEndField}}
+  }), [from, to])
+  const { items, totalElements, loading, error, reload{{#calendarCreatesInDrawer}}, create{{/calendarCreatesInDrawer}} } =
+    use{{EntityName}}({ page: 0, size: LIMIT, sort: SORT, q: '', filters })
+{{^hasRecordPage}}
+  const [detail, setDetail] = useState<{{EntityName}} | null>(null)
+{{/hasRecordPage}}
+{{#calendarCreatesInDrawer}}
+
+  // Creating on a day: the entity's own form, the day already filled in.
+  const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const createOn = (day: string) => {
+    setFormErrors({})
+    setEditing({ {{calendarField}}: day{{#calendarIsDateTime}} + 'T09:00'{{/calendarIsDateTime}} } as Partial<{{EntityName}}>)
+  }
+  async function save() {
+    if (!editing) return
+    const clientErrors = validate{{EntityName}}(editing)
+    if (Object.keys(clientErrors).length > 0) {
+      setFormErrors(clientErrors)
+      toast.error(t('fixHighlighted'))
+      return
+    }
+    setSaving(true)
+    setFormErrors({})
+    try {
+      await create(editing as Omit<{{EntityName}}, 'id'>)
+      toast.success(t('xCreated', { x: {{{entityLabelExpr}}} }))
+      setEditing(null)
+    } catch (e) {
+      // A 400 carries per-field messages — show them inline; anything else is a toast.
+      if (e instanceof ApiError && e.fieldErrors) {
+        setFormErrors(e.fieldErrors)
+        toast.error(t('fixHighlighted'))
+      } else {
+        toast.error(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+{{/calendarCreatesInDrawer}}
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      </div>
+      {error && (
+        <Alert>
+          {error}{' '}
+          <button type="button" onClick={() => { void reload() }} className="font-semibold underline underline-offset-2">{t('retry')}</button>
+        </Alert>
+      )}
+      <ScheduleView
+        rows={items}
+        rowKey={keyOf}
+        label={labelOf}
+        start={startOf}
+{{#hasEndField}}
+        end={endOf}
+{{/hasEndField}}
+{{#calendarIsDateTime}}
+        time={timeOf}
+{{/calendarIsDateTime}}
+        mode={mode}
+        modes={MODES}
+        onModeChange={m => show({ date, mode: m })}
+        cursor={date}
+        onCursorChange={day => show({ date: day, mode })}
+        loading={loading}
+        total={totalElements}
+{{#hasRecordPage}}
+        onOpen={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}
+{{/hasRecordPage}}
+{{^hasRecordPage}}
+        onOpen={setDetail}
+{{/hasRecordPage}}
+{{#calendarCreatesInWizard}}
+        onCreate={() => onNavigate('{{wizardPageId}}')}
+{{/calendarCreatesInWizard}}
+{{#calendarCreatesInDrawer}}
+        onCreate={createOn}
+{{/calendarCreatesInDrawer}}
+      />
+{{^hasRecordPage}}
+
+      <DetailDrawer open={detail !== null} title={t('xDetails', { x: {{{entityLabelExpr}}} })} onClose={() => setDetail(null)}>
+        {detail && <{{EntityName}}Detail value={detail} />}
+      </DetailDrawer>
+{{/hasRecordPage}}
+{{#calendarCreatesInDrawer}}
+
+      <FormDrawer
+        open={editing !== null}
+        title={t('newX', { x: {{{entityLabelExpr}}} })}
+        subtitle={t('createXBlurb', { x: {{{entityLabelExpr}}} })}
+        onClose={() => setEditing(null)}
+        onSave={save}
+        saving={saving}
+      >
+        {editing && (
+          <{{EntityName}}Form
+            value={editing}
+            onChange={setEditing}
+            errors={formErrors}
+            isNew
+          />
+        )}
+      </FormDrawer>
+{{/calendarCreatesInDrawer}}
+    </div>
+  )
+}

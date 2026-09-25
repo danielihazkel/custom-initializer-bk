@@ -1,0 +1,174 @@
+import { useCallback, useEffect, useState } from 'react'
+{{#boardMutable}}
+import { toast } from 'sonner'
+{{/boardMutable}}
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{#hasCardLabelImports}}
+import { {{cardLabelImports}} } from '@entities/{{entityNameKebab}}'
+{{/hasCardLabelImports}}
+{{^hasRecordPage}}
+import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
+import { DetailDrawer } from '@shared/ui'
+{{/hasRecordPage}}
+import { api } from '@shared/api'
+import { BoardView, type BoardLane } from '@shared/ui/BoardView'
+{{#presetUsesPeriod}}
+import { rangeParams } from '@shared/ui/stats'
+{{/presetUsesPeriod}}
+{{#boardUsesT}}
+import { t } from '@shared/i18n'
+{{/boardUsesT}}
+
+const PATH = '/api/{{entityNamePluralKebab}}'
+/** The cards a lane loads at a time. */
+const LANE_SIZE = {{laneSize}}
+/** The lanes, in order: a value of {{laneField}}, its label and the most cards it should hold. */
+const LANES: { value: string; label: string; limit?: number }[] = [
+{{#lanes}}
+  { value: '{{value}}', label: {{{labelExpr}}}{{#hasLimit}}, limit: {{limit}}{{/hasLimit}} },
+{{/lanes}}
+]
+const SORT: { field: string; direction: 'asc' | 'desc' } | null = {{{boardSortTs}}}
+{{#hasPresetFilter}}
+/** The rows the board is limited to. */
+const PRESET: Record<string, string> = {{{presetFilterOrEmptyTs}}}
+{{/hasPresetFilter}}
+
+const keyOf = (r: {{EntityName}}) => {{{rowKeyTs}}}
+const pathOf = (r: {{EntityName}}) => {{#hasCompositeKey}}{{{rowIdTs}}}.map(v => encodeURIComponent(String(v))).join('/'){{/hasCompositeKey}}{{^hasCompositeKey}}encodeURIComponent(String({{{rowIdTs}}})){{/hasCompositeKey}}
+
+/** What a card shows. */
+function Card({ r }: { r: {{EntityName}} }) {
+  return (
+    <>
+{{#cardFields}}
+{{#isHeading}}
+      <div className="font-medium text-fg">{ {{{renderTs}}} }</div>
+{{/isHeading}}
+{{/cardFields}}
+{{#hasCardDetails}}
+      <dl className="mt-1.5 space-y-0.5 text-xs">
+{{#cardFields}}
+{{^isHeading}}
+        <div className="flex gap-1.5">
+          <dt className="shrink-0 text-muted">{'{{labelTs}}'}</dt>
+          <dd className="truncate text-fg">{ {{{renderTs}}} }</dd>
+        </div>
+{{/isHeading}}
+{{/cardFields}}
+      </dl>
+{{/hasCardDetails}}
+    </>
+  )
+}
+
+interface PageOf<T> {
+  content: T[]
+  totalElements: number
+}
+
+type LaneState = Omit<BoardLane<{{EntityName}}>, 'value' | 'label' | 'limit'> & { page: number }
+const EMPTY: LaneState = { rows: [], total: 0, page: 0, loading: true, failed: false }
+
+{{#needsNavigate}}
+interface Props {
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+}
+
+{{/needsNavigate}}
+export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+  const [lanes, setLanes] = useState<Record<string, LaneState>>({})
+{{^hasRecordPage}}
+  const [detail, setDetail] = useState<{{EntityName}} | null>(null)
+{{/hasRecordPage}}
+
+  // Each lane is its own list call, filtered to its value: a lane shows its real total and loads
+  // more of its own cards, however the others are doing.
+  const loadLane = useCallback(async (value: string, page: number) => {
+    setLanes(s => ({ ...s, [value]: { ...(s[value] ?? EMPTY), loading: true, failed: false } }))
+    const params = new URLSearchParams({ {{#hasPresetFilter}}...PRESET, {{/hasPresetFilter}}{{laneField}}: value, page: String(page), size: String(LANE_SIZE) })
+    if (SORT) params.set('sort', `${SORT.field},${SORT.direction}`)
+    try {
+      const result = await api.get<PageOf<{{EntityName}}>>(`${PATH}?${params}`)
+      setLanes(s => ({
+        ...s,
+        [value]: {
+          rows: page === 0 ? result.content : [...(s[value]?.rows ?? []), ...result.content],
+          total: result.totalElements,
+          page,
+          loading: false,
+          failed: false,
+        },
+      }))
+    } catch {
+      setLanes(s => ({ ...s, [value]: { ...(s[value] ?? EMPTY), loading: false, failed: true } }))
+    }
+  }, [])
+
+  useEffect(() => {
+    for (const lane of LANES) void loadLane(lane.value, 0)
+  }, [loadLane])
+{{#boardMutable}}
+
+  // A move shows at once and is undone if the save fails. A lane at its limit takes no more cards.
+  async function move(row: {{EntityName}}, from: string, to: string) {
+    const target = LANES.find(l => l.value === to)
+    if (target?.limit != null && (lanes[to]?.total ?? 0) >= target.limit) {
+      toast.error(t('laneFull', { lane: target.label, n: target.limit }))
+      return
+    }
+    const moved = { ...row, {{laneField}}: {{#laneIsBoolean}}to === 'true'{{/laneIsBoolean}}{{^laneIsBoolean}}to{{/laneIsBoolean}} } as {{EntityName}}
+    setLanes(s => {
+      const source = s[from] ?? EMPTY
+      const dest = s[to] ?? EMPTY
+      return {
+        ...s,
+        [from]: { ...source, rows: source.rows.filter(r => keyOf(r) !== keyOf(row)), total: Math.max(0, source.total - 1) },
+        [to]: { ...dest, rows: [moved, ...dest.rows], total: dest.total + 1 },
+      }
+    })
+    try {
+      await api.put<{{EntityName}}>(`${PATH}/${pathOf(row)}`, moved)
+      toast.success(t('xMoved', { x: {{{entityLabelExpr}}} }))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+      void loadLane(from, 0)
+      void loadLane(to, 0)
+    }
+  }
+{{/boardMutable}}
+
+  const view: BoardLane<{{EntityName}}>[] = LANES.map(lane => ({ ...lane, ...(lanes[lane.value] ?? EMPTY) }))
+  return (
+    <div className="mx-auto max-w-[100rem] space-y-4 p-4 md:p-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      </div>
+      <BoardView
+        lanes={view}
+        rowKey={keyOf}
+        renderCard={r => <Card r={r} />}
+{{#hasRecordPage}}
+        onOpen={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}
+{{/hasRecordPage}}
+{{^hasRecordPage}}
+        onOpen={setDetail}
+{{/hasRecordPage}}
+{{#boardMutable}}
+        onMove={(row, from, to) => { void move(row, from, to) }}
+{{/boardMutable}}
+        onLoadMore={value => { void loadLane(value, (lanes[value]?.page ?? 0) + 1) }}
+        onRetry={value => { void loadLane(value, 0) }}
+      />
+{{^hasRecordPage}}
+
+      <DetailDrawer open={detail !== null} title={t('xDetails', { x: {{{entityLabelExpr}}} })} onClose={() => setDetail(null)}>
+        {detail && <{{EntityName}}Detail value={detail} />}
+      </DetailDrawer>
+{{/hasRecordPage}}
+    </div>
+  )
+}

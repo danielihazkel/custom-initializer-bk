@@ -218,6 +218,43 @@ class GeneratedFrontendBuildSmokeTests {
         runPnpm(project, "run", "build");
     }
 
+    @Test
+    void fullstackFrontendPlanningLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Project planning layout: a board, a calendar with every mode, a content page, a CSV
+        // import page and a search page with the header's search box — plus csvExport, so the list
+        // pages carry Export and Import side by side.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraPlanningLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same layout on the Menora set: it borrows the new screens and draws its own header
+        // search box (the SearchField port) and Import button.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-menora-digital-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendClassicCsvImportInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The csvImport opt without a page layout: every list page gets Import in a drawer.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-tailwind-crud");
+        body.put("pages", List.of());
+        body.put("opts", Map.of("scaffold", List.of("csvImport")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**

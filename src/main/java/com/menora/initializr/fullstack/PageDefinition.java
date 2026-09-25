@@ -59,7 +59,8 @@ public record PageDefinition(
         Integer pageSize,
         Detail detail,
         boolean showParent,
-        Integer refreshSeconds) {
+        Integer refreshSeconds,
+        Spec spec) {
 
     public PageDefinition {
         roles = roles == null ? List.of() : List.copyOf(roles);
@@ -71,6 +72,19 @@ public record PageDefinition(
         charts = charts == null ? List.of() : List.copyOf(charts);
         steps = steps == null ? List.of() : List.copyOf(steps);
         headerStats = headerStats == null ? List.of() : List.copyOf(headerStats);
+    }
+
+    /** Every page property but the type-specific {@link Spec} (the page types before calendar,
+     *  board, content, import and search). */
+    public PageDefinition(String id, Type type, String title, String description, boolean hidden, String entity,
+                          Map<String, String> presetFilter, List<Widget> widgets, List<Tab> tabs, String parent,
+                          String child, String via, List<ChildTab> childTabs, List<Chart> charts, String group,
+                          String icon, DateRange dateRange, List<Step> steps, List<HeaderStat> headerStats,
+                          List<String> roles, List<String> columns, ListSort sort, String view, Integer pageSize,
+                          Detail detail, boolean showParent, Integer refreshSeconds) {
+        this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via, childTabs,
+                charts, group, icon, dateRange, steps, headerStats, roles, columns, sort, view, pageSize, detail,
+                showParent, refreshSeconds, null);
     }
 
     /** Every page property but the list presentation (every column, default sort, view and page size). */
@@ -115,49 +129,122 @@ public record PageDefinition(
     public PageDefinition withNav(String group, String icon) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds, spec);
     }
 
     /** The same page, open only to users holding one of {@code roles}. */
     public PageDefinition withRoles(List<String> roles) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds, spec);
     }
 
     /** The same dashboard with a period picker opening on {@code range}. */
     public PageDefinition withDateRange(DateRange range) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, range, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds, spec);
     }
 
     /** The same list page opening with these columns, sort, view and page size (each null/empty: the default). */
     public PageDefinition withListPresentation(List<String> columns, ListSort sort, String view, Integer pageSize) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds, spec);
     }
 
     /** The same list page opening its rows as {@code detail} says (null: the default). */
     public PageDefinition withDetail(Detail detail) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds, spec);
     }
 
     /** The same master-detail page, with (or without) the selected parent's own details above its rows. */
     public PageDefinition withShowParent(boolean showParent) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds, spec);
     }
 
     /** The same dashboard, reloading its widgets every {@code seconds} (null: on request only). */
     public PageDefinition withRefreshSeconds(Integer seconds) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent, seconds);
+                columns, sort, view, pageSize, detail, showParent, seconds, spec);
+    }
+
+    /** The same page carrying its type's own settings. */
+    public PageDefinition withSpec(Spec spec) {
+        return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
+                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds, spec);
+    }
+
+    /** A {@link Type#CALENDAR} page's settings; null on any other page. */
+    public CalendarSpec calendar() { return spec instanceof CalendarSpec c ? c : null; }
+
+    /** A {@link Type#BOARD} page's settings; null on any other page. */
+    public BoardSpec board() { return spec instanceof BoardSpec b ? b : null; }
+
+    /** A {@link Type#CONTENT} page's text; null on any other page. */
+    public ContentSpec content() { return spec instanceof ContentSpec c ? c : null; }
+
+    /** A {@link Type#SEARCH} page's settings; null on any other page. */
+    public SearchSpec search() { return spec instanceof SearchSpec s ? s : null; }
+
+    /** The settings only one page type has, kept apart so the record does not grow a field per type. */
+    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec {}
+
+    /**
+     * @param dateField the date column rows are placed by (and the visible window is fetched through)
+     * @param endField  the date column a row ends on (null: rows are one day long); needed by the timeline
+     * @param modes     the views the page offers, the first one opening (month, week, agenda, timeline)
+     */
+    public record CalendarSpec(String dateField, String endField, List<CalendarMode> modes) implements Spec {
+        public CalendarSpec {
+            modes = List.copyOf(modes);
+        }
+    }
+
+    public enum CalendarMode {
+        MONTH("month"), WEEK("week"), AGENDA("agenda"), TIMELINE("timeline");
+
+        private final String wire;
+
+        CalendarMode(String wire) { this.wire = wire; }
+
+        public String wire() { return wire; }
+    }
+
+    /**
+     * @param laneField  the enum/boolean column the lanes split by
+     * @param lanes      the lanes, in order — the field's values
+     * @param cardFields what a card shows: field and relation names, the first as its heading
+     * @param wipLimits  lane value -> the most cards it may hold (absent: no limit)
+     * @param laneSize   the cards a lane loads at a time
+     */
+    public record BoardSpec(String laneField, List<String> lanes, List<String> cardFields,
+                            Map<String, Integer> wipLimits, int laneSize) implements Spec {
+        public BoardSpec {
+            lanes = List.copyOf(lanes);
+            cardFields = List.copyOf(cardFields);
+            wipLimits = wipLimits == null ? Map.of() : java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(wipLimits));
+        }
+    }
+
+    /** @param body the page's text in the Markdown subset {@link ContentMarkdown} reads */
+    public record ContentSpec(String body) implements Spec {}
+
+    /**
+     * @param entities    the entities searched, in the order their results are listed
+     * @param perEntity   the matches shown per entity
+     * @param shellSearch whether the shell's header has a search box opening this page
+     */
+    public record SearchSpec(List<String> entities, int perEntity, boolean shellSearch) implements Spec {
+        public SearchSpec {
+            entities = List.copyOf(entities);
+        }
     }
 
     /** The generated shell's navigation, for a layout: its style and whether sections fold. */
@@ -212,7 +299,17 @@ public record PageDefinition(
         /** One entity's filter bar, chart and grouped totals, with a CSV export. */
         REPORT("report"),
         /** A create form for one entity, split into steps, with a review before saving. */
-        WIZARD("wizard");
+        WIZARD("wizard"),
+        /** One entity's rows on a month / week / agenda / timeline by a date field. */
+        CALENDAR("calendar"),
+        /** One entity's rows as cards in lanes of an enum/boolean field, moved by dragging. */
+        BOARD("board"),
+        /** Static text — headings, lists, links to other pages — with no entity. */
+        CONTENT("content"),
+        /** A CSV upload that creates rows of one entity, checked before anything is saved. */
+        IMPORT("import"),
+        /** One search box over several entities, the matches grouped by entity. */
+        SEARCH("search");
 
         private final String wire;
 

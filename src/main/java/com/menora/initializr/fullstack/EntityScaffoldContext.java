@@ -45,6 +45,7 @@ public final class EntityScaffoldContext {
         m.put("bulkDelete", "optScaffoldBulkDelete");
         m.put("bulkUpdate", "optScaffoldBulkUpdate");
         m.put("tests", "optScaffoldTests");
+        m.put("csvImport", "optScaffoldCsvImport");
         SCAFFOLD_OPT_FLAGS = java.util.Collections.unmodifiableMap(m);
     }
 
@@ -146,6 +147,11 @@ public final class EntityScaffoldContext {
             pv.put("pageIsRecord", p.type() == PageDefinition.Type.RECORD);
             pv.put("pageIsReport", p.type() == PageDefinition.Type.REPORT);
             pv.put("pageIsWizard", p.type() == PageDefinition.Type.WIZARD);
+            pv.put("pageIsCalendar", p.type() == PageDefinition.Type.CALENDAR);
+            pv.put("pageIsBoard", p.type() == PageDefinition.Type.BOARD);
+            pv.put("pageIsContent", p.type() == PageDefinition.Type.CONTENT);
+            pv.put("pageIsImport", p.type() == PageDefinition.Type.IMPORT);
+            pv.put("pageIsSearch", p.type() == PageDefinition.Type.SEARCH);
             pv.put("hasPageDescription", p.description() != null);
             pv.put("pageDescriptionExpr", p.description() == null ? null : tsString(p.description()));
             pv.put("needsNavigate", false);
@@ -178,6 +184,11 @@ public final class EntityScaffoldContext {
                     // reload, Back from a record and a shared link reopen the same list.
                     pv.put("listKeepsState", !p.hidden());
                     pv.put("presetFilterOrEmptyTs", presetTs == null ? "{}" : presetTs);
+                    // Import opens the entity's import page, when it has one (else a drawer on the page).
+                    String importPage = links.importPageOf(p.entity());
+                    pv.put("hasImportPage", importPage != null);
+                    pv.put("importPageId", importPage);
+                    if (importPage != null) pv.put("needsNavigate", true);
                     // New opens the entity's wizard page, when it has one.
                     String wizard = links.wizardPageOf(p.entity());
                     pv.put("hasWizard", wizard != null);
@@ -347,6 +358,44 @@ public final class EntityScaffoldContext {
                     pv.put("navIcon", "Wand2");
                     defaultTitleExpr = "t('newX', { x: " + tsString((String) ev.get("entityLabel")) + " })";
                 }
+                case CALENDAR -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    putCalendar(pv, p, ctx, ev, links, summaries);
+                    pv.put("navIcon", "Calendar");
+                    defaultTitleExpr = tsString((String) ev.get("entityLabelPlural"));
+                }
+                case BOARD -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    putBoard(pv, p, ev, links, summaries);
+                    pv.put("navIcon", "Columns3");
+                    defaultTitleExpr = tsString((String) ev.get("entityLabelPlural"));
+                }
+                case CONTENT -> {
+                    List<ContentMarkdown.Block> blocks = ContentMarkdown.parse(p.content().body());
+                    pv.put("contentJsx", contentJsx(blocks));
+                    pv.put("needsNavigate", blocks.stream().flatMap(b -> b.items().stream()).flatMap(List::stream)
+                            .anyMatch(r -> r.kind() == ContentMarkdown.RunKind.PAGE_LINK));
+                    pv.put("navIcon", "FileText");
+                    defaultTitleExpr = tsString(p.id());
+                }
+                case IMPORT -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    pv.put("EntityName", ev.get("EntityName"));
+                    pv.put("entityNameKebab", ev.get("entityNameKebab"));
+                    pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
+                    pv.put("entityLabelPluralExpr", tsString((String) ev.get("entityLabelPlural")));
+                    String home = links.homeOf(p.entity());
+                    pv.put("hasBack", home != null);
+                    pv.put("backPageId", home);
+                    pv.put("needsNavigate", home != null);
+                    pv.put("navIcon", "Upload");
+                    defaultTitleExpr = "t('importX', { x: " + tsString((String) ev.get("entityLabelPlural")) + " })";
+                }
+                case SEARCH -> {
+                    putSearch(pv, p, entityByPascal, links, summaries);
+                    pv.put("navIcon", "Search");
+                    defaultTitleExpr = "t('search')";
+                }
                 default -> {
                     pv.put("navIcon", "Layers");
                     // The validator requires a tabs page title; this fallback is never used.
@@ -466,6 +515,10 @@ public final class EntityScaffoldContext {
             } else if (Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"))) {
                 // The report's filter bar likewise (#/revenue?region=NORTH).
                 routeProps = " query={route.query} onQueryChange={setQuery}";
+            } else if (Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))) {
+                // A calendar's day and view (#/schedule?_date=2026-09-01&_mode=week) and a search's
+                // words (#/find?q=acme) likewise.
+                routeProps = " query={route.query} onQueryChange={setQuery}";
             }
             pv.put("routeProps", routeProps);
             // The screen's destructured props, in a fixed order. A dashboard with a period picker
@@ -474,17 +527,18 @@ public final class EntityScaffoldContext {
             boolean dashboardPeriod = Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"));
             boolean reportQuery = Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"));
             boolean listState = Boolean.TRUE.equals(pv.get("listKeepsState"));
+            boolean ownQuery = Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"));
             List<String> screenParams = new ArrayList<>();
             if (Boolean.TRUE.equals(pv.get("detailSide"))) screenParams.addAll(List.of("selectedId", "onSelect"));
             if (listState) screenParams.addAll(List.of("query", "onQueryChange"));
             else if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) screenParams.add("filters");
             if (dashboardPeriod) screenParams.addAll(List.of("period: routePeriod", "onPeriodChange"));
-            if (reportQuery) screenParams.addAll(List.of("query", "onQueryChange"));
+            if (reportQuery || ownQuery) screenParams.addAll(List.of("query", "onQueryChange"));
             if (Boolean.TRUE.equals(pv.get("needsNavigate"))) screenParams.add("onNavigate");
             if (Boolean.TRUE.equals(pv.get("isTabTarget"))) screenParams.add("embedded");
             pv.put("screenParams", String.join(", ", screenParams));
             pv.put("hasScreenProps", !screenParams.isEmpty());
-            pv.put("takesQuery", dashboardPeriod || reportQuery || listState);
+            pv.put("takesQuery", dashboardPeriod || reportQuery || listState || ownQuery);
         }
 
         // Screens import the i18n `t` only when one of their label expressions calls it — the
@@ -503,6 +557,8 @@ public final class EntityScaffoldContext {
             }
             pv.put("usesT", Boolean.TRUE.equals(pv.get("pageIsMasterDetail")) || Boolean.TRUE.equals(pv.get("pageIsRecord"))
                     || Boolean.TRUE.equals(pv.get("pageIsReport")) || Boolean.TRUE.equals(pv.get("pageIsWizard"))
+                    || Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsBoard"))
+                    || Boolean.TRUE.equals(pv.get("pageIsImport")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))
                     || exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
         }
 
@@ -511,8 +567,10 @@ public final class EntityScaffoldContext {
         List<Map<String, Object>> records = all.stream().filter(v -> Boolean.TRUE.equals(v.get("pageIsRecord"))).toList();
         List<Map<String, Object>> routes = new ArrayList<>(nav);
         routes.addAll(records);
-        // A hidden wizard is still a route: a list page's New opens it.
-        all.stream().filter(v -> Boolean.TRUE.equals(v.get("pageIsWizard")) && Boolean.TRUE.equals(v.get("hidden")))
+        // A hidden wizard is still a route: a list page's New opens it. So is a hidden search page:
+        // the header's search box opens it.
+        all.stream().filter(v -> (Boolean.TRUE.equals(v.get("pageIsWizard")) || Boolean.TRUE.equals(v.get("pageIsSearch")))
+                        && Boolean.TRUE.equals(v.get("hidden")))
                 .forEach(routes::add);
         ctx.put("pages", all);
         ctx.put("navPages", nav);
@@ -591,6 +649,29 @@ public final class EntityScaffoldContext {
         ctx.put(LIST_STATE_KEY, listState);
         ctx.put("hasListStatePages", !listState.isEmpty());
         ctx.put("hasTabsPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTabs"))));
+        // The shared pieces the new page types bring, each only when a page uses it.
+        ctx.put("hasCalendarPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsCalendar"))));
+        ctx.put("hasBoardPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsBoard"))));
+        // The header's search box opens the search page, when that page asks for it.
+        PageDefinition searchPage = pages.stream().filter(p -> p.type() == PageDefinition.Type.SEARCH).findFirst().orElse(null);
+        boolean shellSearch = searchPage != null && searchPage.search().shellSearch();
+        ctx.put("hasShellSearch", shellSearch);
+        ctx.put("searchPageId", shellSearch ? searchPage.id() : null);
+        // Per-entity contexts read this: a list of an entity with an import page sends Import there.
+        ctx.put(IMPORT_PAGES_KEY, links.importPageByEntity());
+    }
+
+    /**
+     * {@code hasCsvImport} on a frontend project context: whether any entity imports CSV (the
+     * {@code csvImport} opt, per entity, on a writable entity — an import page switches it on), so
+     * the shared CSV reader and import panel ship. Computed with or without a page layout: the
+     * classic shell's list pages get the Import button too. Call after {@code optScaffoldCsvImport}
+     * is set.
+     */
+    public static void putCsvImport(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldCsvImport"));
+        ctx.put("hasCsvImport", entities.stream().anyMatch(e -> !e.readOnly()
+                && (e.opts().get("csvImport") != null ? e.opts().get("csvImport") : projectOpt)));
     }
 
     /**
@@ -644,7 +725,8 @@ public final class EntityScaffoldContext {
      * parent, else a visible tabs page embedding one of its list pages.
      */
     private record PageLinks(Map<String, String> recordPageByEntity, Map<String, String> homeByEntity,
-                             Map<String, String> listPageByEntity, Map<String, String> wizardPageByEntity) {
+                             Map<String, String> listPageByEntity, Map<String, String> wizardPageByEntity,
+                             Map<String, String> importPageByEntity) {
 
         static PageLinks of(List<PageDefinition> pages) {
             Map<String, String> records = new LinkedHashMap<>();
@@ -668,11 +750,16 @@ public final class EntityScaffoldContext {
                 }
             }
             Map<String, String> wizards = new LinkedHashMap<>();
+            Map<String, String> imports = new LinkedHashMap<>();
             for (PageDefinition p : pages) {
                 if (p.type() == PageDefinition.Type.WIZARD) wizards.put(p.entity(), p.id());
+                if (p.type() == PageDefinition.Type.IMPORT) imports.put(p.entity(), p.id());
             }
-            return new PageLinks(records, homes, lists, wizards);
+            return new PageLinks(records, homes, lists, wizards, imports);
         }
+
+        /** The entity's import page — where its list page's Import goes — or null. */
+        String importPageOf(String entity) { return importPageByEntity.get(entity); }
 
         String recordPageOf(String entity) { return recordPageByEntity.get(entity); }
 
@@ -683,6 +770,240 @@ public final class EntityScaffoldContext {
         String wizardPageOf(String entity) { return wizardPageByEntity.get(entity); }
 
         String homeOf(String entity) { return homeByEntity.get(entity); }
+    }
+
+    /** A calendar page: the entity, its date field(s), its views and what opens or creates a row. */
+    @SuppressWarnings("unchecked")
+    private static void putCalendar(Map<String, Object> pv, PageDefinition p, Map<String, Object> ctx,
+                                    Map<String, Object> ev, PageLinks links, Map<String, Map<String, Object>> summaries) {
+        PageDefinition.CalendarSpec spec = p.calendar();
+        Map<String, Object> summary = summaries.get(p.entity().toLowerCase(Locale.ROOT));
+        putEntityNames(pv, ev);
+        Map<String, Map<String, Object>> fields = new LinkedHashMap<>();
+        for (Map<String, Object> f : (List<Map<String, Object>>) ev.get("fields")) fields.put((String) f.get("name"), f);
+        boolean dateTime = Boolean.TRUE.equals(fields.get(spec.dateField()).get("isDateTime"));
+        pv.put("calendarField", spec.dateField());
+        pv.put("calendarIsDateTime", dateTime);
+        pv.put("hasEndField", spec.endField() != null);
+        pv.put("calendarEndField", spec.endField());
+        pv.put("endIsDateTime", spec.endField() != null && Boolean.TRUE.equals(fields.get(spec.endField()).get("isDateTime")));
+        pv.put("modesTs", "[" + String.join(", ", spec.modes().stream().map(m -> "'" + m.wire() + "'").toList()) + "]");
+        pv.put("hasModeToggle", spec.modes().size() > 1);
+        pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
+        pv.put("presetFilterOrEmptyTs", p.presetFilter().isEmpty() ? "{}" : presetFilterTs(p.presetFilter(), ev));
+        pv.put("presetUsesPeriod", presetHasPeriod(p.presetFilter()));
+        putRowNaming(pv, ev, summary);
+        putRecordLink(pv, "", p.entity(), links, summaries);
+        boolean mutable = Boolean.TRUE.equals(ev.get("mutable"));
+        String wizard = mutable ? links.wizardPageOf(p.entity()) : null;
+        pv.put("calendarCreates", mutable);
+        pv.put("calendarCreatesInWizard", wizard != null);
+        pv.put("calendarCreatesInDrawer", mutable && wizard == null);
+        pv.put("wizardPageId", wizard);
+        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")) || wizard != null);
+    }
+
+    /** A board page: its lanes (with their labels and limits) and what a card shows. */
+    @SuppressWarnings("unchecked")
+    private static void putBoard(Map<String, Object> pv, PageDefinition p, Map<String, Object> ev, PageLinks links,
+                                 Map<String, Map<String, Object>> summaries) {
+        PageDefinition.BoardSpec spec = p.board();
+        Map<String, Object> summary = summaries.get(p.entity().toLowerCase(Locale.ROOT));
+        putEntityNames(pv, ev);
+        Map<String, Map<String, Object>> fields = new LinkedHashMap<>();
+        for (Map<String, Object> f : (List<Map<String, Object>>) ev.get("fields")) fields.put((String) f.get("name"), f);
+        Map<String, Map<String, Object>> relations = new LinkedHashMap<>();
+        for (Map<String, Object> r : (List<Map<String, Object>>) ev.get("relations")) relations.put((String) r.get("fieldName"), r);
+        Map<String, Object> lane = fields.get(spec.laneField());
+        boolean laneIsBoolean = Boolean.TRUE.equals(lane.get("isBoolean"));
+        pv.put("laneField", spec.laneField());
+        pv.put("laneIsBoolean", laneIsBoolean);
+        Map<String, String> labelTs = new LinkedHashMap<>();
+        for (Map<String, Object> v : (List<Map<String, Object>>) lane.getOrDefault("enumValues", List.of())) {
+            labelTs.put((String) v.get("value"), (String) v.get("labelTs"));
+        }
+        List<Map<String, Object>> lanes = new ArrayList<>();
+        for (String value : spec.lanes()) {
+            Map<String, Object> lv = new LinkedHashMap<>();
+            lv.put("value", value);
+            lv.put("labelExpr", laneIsBoolean ? ("true".equals(value) ? "t('trueLabel')" : "t('falseLabel')") : "'" + labelTs.get(value) + "'");
+            Integer limit = spec.wipLimits().get(value);
+            lv.put("hasLimit", limit != null);
+            lv.put("limit", limit);
+            lanes.add(lv);
+        }
+        pv.put("lanes", lanes);
+        pv.put("laneSize", spec.laneSize());
+        pv.put("hasWipLimits", !spec.wipLimits().isEmpty());
+        // What a card shows, as TS expressions over its row `r`, the first as the heading.
+        List<Map<String, Object>> cards = new ArrayList<>();
+        Set<String> labelImports = new TreeSet<>();
+        for (int i = 0; i < spec.cardFields().size(); i++) {
+            String name = spec.cardFields().get(i);
+            Map<String, Object> cv = new LinkedHashMap<>();
+            Map<String, Object> f = fields.get(name);
+            String render;
+            String label;
+            if (f != null) {
+                label = (String) f.get("label");
+                String none = "r." + name + " == null ? '\u2014' : ";
+                if (Boolean.TRUE.equals(f.get("isEnum"))) {
+                    labelImports.add(f.get("enumTypeName") + "Labels");
+                    render = none + f.get("enumTypeName") + "Labels[r." + name + "]";
+                } else if (Boolean.TRUE.equals(f.get("isBoolean"))) {
+                    render = none + "r." + name + " ? t('trueLabel') : t('falseLabel')";
+                } else if (Boolean.TRUE.equals(f.get("isDateTime"))) {
+                    render = none + "String(r." + name + ").replace('T', ' ').slice(0, 16)";
+                } else {
+                    render = none + "String(r." + name + ")";
+                }
+            } else {
+                Map<String, Object> r = relations.get(name);
+                label = (String) r.get("FieldName");
+                String fk = "r." + r.get("fkFieldName");
+                String id = fk + " == null ? '\u2014' : '#' + String(" + fk + ")";
+                render = Boolean.TRUE.equals(r.get("hasTargetLabel")) ? "r." + name + "Label ?? (" + id + ")" : id;
+            }
+            cv.put("renderTs", render);
+            cv.put("labelTs", escapeTsSingleQuoted(label));
+            cv.put("isHeading", i == 0);
+            cards.add(cv);
+        }
+        pv.put("cardFields", cards);
+        pv.put("cardLabelImports", String.join(", ", labelImports));
+        pv.put("hasCardLabelImports", !labelImports.isEmpty());
+        pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
+        pv.put("presetFilterOrEmptyTs", p.presetFilter().isEmpty() ? "{}" : presetFilterTs(p.presetFilter(), ev));
+        pv.put("presetUsesPeriod", presetHasPeriod(p.presetFilter()));
+        pv.put("boardSortTs", p.sort() == null ? "null"
+                : "{ field: " + tsString(p.sort().field()) + ", direction: '" + (p.sort().desc() ? "desc" : "asc") + "' }");
+        putRowNaming(pv, ev, summary);
+        putRecordLink(pv, "", p.entity(), links, summaries);
+        pv.put("boardMutable", Boolean.TRUE.equals(ev.get("mutable")));
+        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")));
+        pv.put("hasCardDetails", cards.size() > 1);
+        // The screen imports `t` only when something calls it (the generated lint rejects an unused
+        // import): a move's messages, a boolean lane or card, the quick-look drawer's title.
+        pv.put("boardUsesT", Boolean.TRUE.equals(ev.get("mutable")) || laneIsBoolean
+                || !Boolean.TRUE.equals(pv.get("hasRecordPage"))
+                || cards.stream().anyMatch(c -> ((String) c.get("renderTs")).contains("t('")));
+    }
+
+    /** A search page: each entity it searches, how its matches are named and where one opens. */
+    @SuppressWarnings("unchecked")
+    private static void putSearch(Map<String, Object> pv, PageDefinition p, Map<String, Map<String, Object>> entityByPascal,
+                                  PageLinks links, Map<String, Map<String, Object>> summaries) {
+        PageDefinition.SearchSpec spec = p.search();
+        List<Map<String, Object>> groups = new ArrayList<>();
+        boolean navigates = false;
+        boolean drawers = false;
+        for (int i = 0; i < spec.entities().size(); i++) {
+            String entity = spec.entities().get(i);
+            Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(entity));
+            Map<String, Object> gv = new LinkedHashMap<>();
+            gv.put("groupIndex", i);
+            putEntityNames(gv, ev);
+            putRowNaming(gv, ev, summaries.get(entity.toLowerCase(Locale.ROOT)));
+            putRecordLink(gv, "", entity, links, summaries);
+            // "See all" opens the entity's list page in the nav with the same words searched.
+            String list = links.listPageOf(entity);
+            gv.put("hasListPage", list != null);
+            gv.put("listPageId", list);
+            navigates |= list != null || Boolean.TRUE.equals(gv.get("hasRecordPage"));
+            drawers |= !Boolean.TRUE.equals(gv.get("hasRecordPage"));
+            groups.add(gv);
+        }
+        pv.put("searchGroups", groups);
+        pv.put("perEntity", spec.perEntity());
+        pv.put("searchUsesDrawer", drawers);
+        pv.put("drawerGroups", groups.stream().filter(g -> !Boolean.TRUE.equals(g.get("hasRecordPage"))).toList());
+        pv.put("needsNavigate", navigates);
+    }
+
+    /** The names a screen over one entity imports its hooks, types and pages by. */
+    private static void putEntityNames(Map<String, Object> view, Map<String, Object> ev) {
+        view.put("EntityName", ev.get("EntityName"));
+        view.put("entityNameKebab", ev.get("entityNameKebab"));
+        view.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
+        view.put("entityLabelExpr", tsString((String) ev.get("entityLabel")));
+        view.put("entityLabelPluralExpr", tsString((String) ev.get("entityLabelPlural")));
+    }
+
+    /** How a row of an entity is named on a card, an event or a match — its label field, else its
+     *  key — and its key as a TS expression (an array for a composite key). */
+    @SuppressWarnings("unchecked")
+    private static void putRowNaming(Map<String, Object> view, Map<String, Object> ev, Map<String, Object> summary) {
+        String label = (String) summary.get("labelField");
+        List<Map<String, Object>> pks = (List<Map<String, Object>>) ev.get("pkFields");
+        boolean composite = pks.size() > 1;
+        String keyTs = composite
+                ? "[" + String.join(", ", pks.stream().map(k -> "r." + k.get("name")).toList()) + "]"
+                : "r." + pks.get(0).get("name");
+        String keyText = composite ? keyTs + ".join('/')" : "String(" + keyTs + ")";
+        view.put("rowIdTs", keyTs);
+        view.put("rowKeyTs", keyText);
+        view.put("rowLabelTs", label != null
+                ? "r." + label + " == null || r." + label + " === '' ? '#' + " + keyText + " : String(r." + label + ")"
+                : "'#' + " + keyText);
+        view.put("hasCompositeKey", composite);
+        view.put("pkName", pks.get(0).get("name"));
+    }
+
+    /** A content page's blocks as JSX: every piece of text a quoted string ({@link #tsString}), so
+     *  nothing the page's author wrote can become markup. */
+    static String contentJsx(List<ContentMarkdown.Block> blocks) {
+        StringBuilder out = new StringBuilder();
+        for (ContentMarkdown.Block b : blocks) {
+            String indent = "        ";
+            switch (b.kind()) {
+                case HEADING -> {
+                    String tag = "h" + (b.level() + 1);
+                    String size = b.level() == 1 ? "text-xl" : b.level() == 2 ? "text-lg" : "text-base";
+                    out.append(indent).append('<').append(tag).append(" className=\"").append(size)
+                            .append(" font-semibold tracking-tight text-fg\">").append(runsJsx(b.items().get(0)))
+                            .append("</").append(tag).append(">\n");
+                }
+                case PARAGRAPH -> out.append(indent).append("<p className=\"text-sm leading-relaxed text-fg\">")
+                        .append(runsJsx(b.items().get(0))).append("</p>\n");
+                case CALLOUT -> out.append(indent)
+                        .append("<aside role=\"note\" className=\"rounded-lg border-s-4 border-brand bg-brand/5 px-4 py-3 text-sm text-fg\">")
+                        .append(runsJsx(b.items().get(0))).append("</aside>\n");
+                case BULLETS, NUMBERS -> {
+                    String tag = b.kind() == ContentMarkdown.BlockKind.BULLETS ? "ul" : "ol";
+                    String list = b.kind() == ContentMarkdown.BlockKind.BULLETS ? "list-disc" : "list-decimal";
+                    out.append(indent).append('<').append(tag).append(" className=\"").append(list)
+                            .append(" space-y-1 ps-5 text-sm text-fg\">\n");
+                    for (List<ContentMarkdown.Run> item : b.items()) {
+                        out.append(indent).append("  <li>").append(runsJsx(item)).append("</li>\n");
+                    }
+                    out.append(indent).append("</").append(tag).append(">\n");
+                }
+                case RULE -> out.append(indent).append("<hr className=\"border-border\" />\n");
+            }
+        }
+        return out.toString();
+    }
+
+    private static String runsJsx(List<ContentMarkdown.Run> runs) {
+        StringBuilder out = new StringBuilder();
+        for (ContentMarkdown.Run r : runs) {
+            String text = "{" + tsString(r.text()) + "}";
+            switch (r.kind()) {
+                case TEXT -> out.append(text);
+                case BOLD -> out.append("<strong className=\"font-semibold\">").append(text).append("</strong>");
+                case EM -> out.append("<em>").append(text).append("</em>");
+                case CODE -> out.append("<code className=\"rounded bg-surface-2 px-1 py-0.5 text-[0.9em]\">").append(text).append("</code>");
+                case PAGE_LINK -> out.append("<a href=\"#/").append(r.target())
+                        .append("\" onClick={e => { e.preventDefault(); onNavigate('").append(r.target())
+                        .append("') }} className=\"font-medium text-brand hover:underline\">").append(text).append("</a>");
+                // A web address opens in a new tab; a mailto: hands over to the mail app.
+                case LINK -> out.append("<a href={").append(tsString(r.target())).append("}")
+                        .append(r.target().regionMatches(true, 0, "mailto:", 0, 7) ? "" : " target=\"_blank\" rel=\"noreferrer\"")
+                        .append(" className=\"font-medium text-brand hover:underline\">")
+                        .append(text).append("</a>");
+            }
+        }
+        return out.toString();
     }
 
     /** {@code <prefix>HasRecordPage}/{@code <prefix>RecordPageId}/{@code <prefix>RecordPk} (prefix ""
@@ -1321,6 +1642,10 @@ public final class EntityScaffoldContext {
      *  by any template. */
     private static final String RECORD_PAGES_KEY = "__recordPages";
 
+    /** Internal key under which the entity → import page lookup rides in the (frontend) project
+     *  context: a list page's Import goes to the entity's import page. Not referenced by any template. */
+    private static final String IMPORT_PAGES_KEY = "__importPages";
+
     /** Internal key under which the names of the entities whose list pages set a presentation
      *  (columns / sort / view / pageSize) ride in the (frontend) project context, for
      *  {@link #buildEntityContext}'s {@code listConfigurable}. Not referenced by any template. */
@@ -1532,6 +1857,10 @@ public final class EntityScaffoldContext {
         boolean hasWizard = wizards != null && wizards.containsKey(entity.name());
         ctx.put("hasWizardPage", hasWizard);
         ctx.put("formHasSteps", hasWizard);
+        // An entity with an import page: its list page takes `onImport` (Import opens that page
+        // instead of the drawer).
+        Map<String, String> imports = (Map<String, String>) projectContext.get(IMPORT_PAGES_KEY);
+        ctx.put("hasImportPage", imports != null && imports.containsKey(entity.name()));
         // An entity whose list page sets a presentation: its page takes columns / initialSort /
         // initialView / initialPageSize props (false in backend contexts and for every other entity).
         Set<String> listConfigured = (Set<String>) projectContext.get(LIST_PRESENTATION_KEY);
@@ -1568,6 +1897,13 @@ public final class EntityScaffoldContext {
         // a @Subselect view would have to project created_at/updated_at columns that may not exist.
         ctx.put("auditApplicable",
                 Boolean.TRUE.equals(ctx.get("optScaffoldAudit")) && mutable);
+        // CSV import (the csvImport opt, or an import page — which switches the opt on for its
+        // entity) creates rows, so it needs a writable entity. The import checks each row's
+        // relations through the EntityManager, which the stats rollup also uses.
+        boolean importApplicable = Boolean.TRUE.equals(ctx.get("optScaffoldCsvImport")) && mutable;
+        ctx.put("importApplicable", importApplicable);
+        ctx.put("importValidates", importApplicable && Boolean.TRUE.equals(ctx.get("hasValidation")));
+        ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable);
         // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
         // besides the audit rows — so it imports t / LOCALE exactly when one of them is drawn
         // (the generated lint rejects an unused import).

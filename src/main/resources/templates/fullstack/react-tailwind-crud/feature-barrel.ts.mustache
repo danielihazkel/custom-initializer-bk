@@ -1,3 +1,6 @@
 export { {{EntityName}}Form } from './ui/{{EntityName}}Form'
 export { validate{{EntityName}} } from './model/validate'
 export { {{EntityName}}Detail } from './ui/{{EntityName}}Detail'
+{{#importApplicable}}
+export { IMPORT_FIELDS as {{EntityName}}ImportFields } from './model/importFields'
+{{/importApplicable}}

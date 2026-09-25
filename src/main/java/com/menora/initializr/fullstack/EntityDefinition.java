@@ -96,6 +96,14 @@ public record EntityDefinition(
     }
 
     /** First enabled view — the generated page's initial mode. Back-compat for single-view readers. */
+    /** The same entity with one scaffold option overridden (a page that needs it switches it on). */
+    public EntityDefinition withOpt(String key, boolean value) {
+        Map<String, Boolean> next = new java.util.LinkedHashMap<>(opts);
+        next.put(key, value);
+        return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
+                listViews, label, labelPlural, next, formSections);
+    }
+
     public String listView() {
         return listViews.get(0);
     }
