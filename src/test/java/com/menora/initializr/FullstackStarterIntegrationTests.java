@@ -354,7 +354,12 @@ class FullstackStarterIntegrationTests {
 
         // The API client reads the problem-detail shape.
         assertThat(entries.get("shop/frontend/src/shared/api/client.ts"))
-                .contains("problem.errors").contains("problem.detail || problem.title");
+                .contains("problem.errors").contains("problem.detail || problem.error || problem.message")
+                // Errors reach the user in their language, never as "HTTP 500 on GET /api/…".
+                .contains("import { t } from '../i18n'")
+                .contains("throw new ApiError(0, t('errorOffline'))")
+                .contains("if (status === 403) return t('errorForbidden')")
+                .doesNotContain("HTTP ${res.status} on");
     }
 
     @Test
@@ -2291,9 +2296,30 @@ class FullstackStarterIntegrationTests {
                 .contains("if (!loading && items.length === 0 && page > 0 && totalPages > 0) setPage(totalPages - 1)")
                 // A new search or filter starts the bulk selection again.
                 .contains("if (selectionKey !== selectionFor) {");
+        assertThat(taskPage)
+                // A filtered board says nothing matches; an unfiltered one offers the first record.
+                .contains("          filtered={filtered}\n          emptyAction={emptyAction}\n")
+                // A failed load can be retried in place.
+                .contains("{t('retry')}</button>")
+                // A failed export is told, and the button says it is busy meanwhile.
+                .contains("  const download = useDownload()")
+                .contains("onClick={() => download.run(() => exportCsv('tasks.csv'))}");
         assertThat(entries.get("ops/frontend/src/shared/ui/KanbanBoard.tsx"))
                 .contains("if (loading && rows.length === 0) {")
-                .contains("t('nMoreShowInList', { n: hidden })");
+                .contains("t('nMoreShowInList', { n: hidden })")
+                .contains("? <EmptyState title={t('noMatchingRecords')} />");
+        // A date-only value is placed on its own day, not read as UTC midnight (the day before, west of UTC).
+        assertThat(entries.get("ops/frontend/src/shared/ui/CalendarView.tsx"))
+                .contains("const day = /^(\\d{4}-\\d{2}-\\d{2})/.exec(String(raw))")
+                .doesNotContain("new Date(String(raw))");
+        // Escape in a relation picker closes the picker, not the drawer or dialog around it.
+        for (String layer : List.of("FormDrawer", "DetailDrawer", "ConfirmDialog")) {
+            assertThat(entries.get("ops/frontend/src/shared/ui/" + layer + ".tsx"))
+                    .contains("if (e.key === 'Escape' && !e.defaultPrevented)");
+        }
+        assertThat(entries.get("ops/frontend/src/shared/api/useResource.ts"))
+                .contains("export function useDownload()")
+                .contains("toast.error(t('exportFailed',");
         assertThat(entries.get("ops/frontend/src/shared/api/useResource.ts"))
                 .contains("export const RefreshTick = createContext(0)")
                 .contains("}, [reload, tick])")
@@ -2621,8 +2647,11 @@ class FullstackStarterIntegrationTests {
         String page = entries.get("desk/frontend/src/pages/ticket/ui/TicketPage.tsx");
         assertThat(page)
                 .contains("const newDefaults = (): Partial<Ticket> => ({ status: 'draft', priority: 1, open: true, stage: 'ACTIVE', due: '2024-01-01', code: 'X', })")
-                .contains("setEditing(newDefaults())")
-                .contains("setInitial(newDefaults())")
+                // ...and with the list's one-value filters on top (an ACTIVE-filtered list makes ACTIVE rows).
+                .contains("setEditing({ ...newDefaults(), ...fromFilters(filters) })")
+                .contains("setInitial({ ...newDefaults(), ...fromFilters(filters) })")
+                .contains("  if (values['stage']) record['stage'] = values['stage']")
+                .contains("  if (values['open']) record['open'] = values['open'] === 'true'")
                 .doesNotContain("setEditing({})");
 
         // The Lombok set renders the same initializers.

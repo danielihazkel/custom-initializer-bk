@@ -155,6 +155,17 @@ const en = {
   atMost: 'Must be at most {n}',
   invalidFormat: 'Invalid format',
   invalidEmail: 'Must be a valid email address',
+  // API errors
+  errorOffline: 'Can’t reach the server. Check your connection and try again.',
+  errorUnauthorized: 'Your session has ended. Sign in again.',
+  errorForbidden: 'You don’t have permission to do that.',
+  errorNotFound: 'That record no longer exists.',
+  errorConflict: 'This clashes with an existing record.',
+  errorServer: 'Something went wrong on the server. Try again in a moment.',
+  errorRequest: 'The request failed ({status}).',
+  errorValidation: 'Some values are not valid.',
+  exportFailed: 'Export failed: {message}',
+  exporting: 'Exporting…',
 } as const
 
 const he: Record<keyof typeof en, string> = {
@@ -310,6 +321,17 @@ const he: Record<keyof typeof en, string> = {
   atMost: 'לכל היותר {n}',
   invalidFormat: 'פורמט לא תקין',
   invalidEmail: 'כתובת דוא״ל לא תקינה',
+  // API errors
+  errorOffline: 'אין חיבור לשרת. בדקו את החיבור ונסו שוב.',
+  errorUnauthorized: 'פג תוקף ההתחברות. התחברו מחדש.',
+  errorForbidden: 'אין לך הרשאה לפעולה הזו.',
+  errorNotFound: 'הרשומה כבר לא קיימת.',
+  errorConflict: 'הפעולה מתנגשת ברשומה קיימת.',
+  errorServer: 'משהו השתבש בשרת. נסו שוב בעוד רגע.',
+  errorRequest: 'הבקשה נכשלה ({status}).',
+  errorValidation: 'חלק מהערכים אינם תקינים.',
+  exportFailed: 'הייצוא נכשל: {message}',
+  exporting: 'מייצא…',
 }
 
 /** Both tables — for code that needs the other language. Exported so neither is an unused local

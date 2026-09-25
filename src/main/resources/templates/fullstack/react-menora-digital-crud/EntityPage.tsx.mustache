@@ -12,7 +12,8 @@ import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
 import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 {{#mutable}}import { {{EntityName}}Form, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
-{{/mutable}}
+{{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
+{{/optScaffoldCsvExport}}
 {{#listSideDetail}}import { api } from '@shared/api'
 {{/listSideDetail}}
 // `numeric` columns render LTR with tabular figures (numbers, dates, ids); `chip` columns render
@@ -97,7 +98,17 @@ interface {{EntityName}}PageProps {
 }
 
 {{/hasPages}}
-export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+{{#newFromFilters}}/** The list's one-value filters, as the fields of a new record: a record made from a list filtered
+ *  to "status = OPEN" is an open one, and so shows up in the list it was made from. */
+function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
+  const record: Record<string, unknown> = {}
+{{#filterFields}}{{#isEnumFilter}}  if (values['{{name}}']) record['{{name}}'] = values['{{name}}']
+{{/isEnumFilter}}{{#isBooleanFilter}}  if (values['{{name}}']) record['{{name}}'] = values['{{name}}'] === 'true'
+{{/isBooleanFilter}}{{#isRelationFilter}}  if (values['{{name}}']) record['{{name}}'] = {{#isTargetPkNumeric}}Number(values['{{name}}']){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}values['{{name}}']{{/isTargetPkNumeric}}
+{{/isRelationFilter}}{{/filterFields}}  return record as Partial<{{EntityName}}>
+}
+
+{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
 {{#listUrlState}}
   // What the list opens with when the route says nothing — the parts it does not report back.
   const openingSize = {{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20
@@ -191,9 +202,10 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
 {{/wholeViews}}
   const {
     items, totalElements, totalPages, pageNumber, pageSize,
-    loading, error,{{#viewKanban}} reload, countBy,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
+    loading, error, reload,{{#viewKanban}} countBy,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
   } = use{{EntityName}}({ {{#wholeViews}}page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size{{/wholeViews}}{{^wholeViews}}page, size{{/wholeViews}}, sort, q: debouncedSearch{{#hasFilters}}, filters{{#calendarRanged}}: listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/calendarRanged}}{{/hasFilters}} })
-
+{{#optScaffoldCsvExport}}  const download = useDownload()
+{{/optScaffoldCsvExport}}
   // Deleting the last row of the last page must not strand the list past its end.
   useEffect(() => {
     if (!loading && items.length === 0 && page > 0 && totalPages > 0) setPage(totalPages - 1)
@@ -264,8 +276,8 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
     return record as Partial<{{EntityName}}>
   }
 {{/pageScopeable}}  function openNew() {
-    setEditing({{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}})
-    setInitial({{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}})
+    setEditing({{#newFromFilters}}{ ...{{/newFromFilters}}{{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}}{{#newFromFilters}}, ...fromFilters(filters) }{{/newFromFilters}})
+    setInitial({{#newFromFilters}}{ ...{{/newFromFilters}}{{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}}{{#newFromFilters}}, ...fromFilters(filters) }{{/newFromFilters}})
     setIsNew(true)
     setFormErrors({})
     setDrawerOpen(true)
@@ -456,12 +468,17 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
 {{#isView}}          <Chip tone="outlined" label={t('readOnlyView')} />
 {{/isView}}        </div>
         <div className="flex items-center gap-2">
-{{#optScaffoldCsvExport}}          <Button variant="outlined" className="mn-btn--compact" label={t('export')} onClick={() => exportCsv('{{entityNamePluralKebab}}.csv')} />
+{{#optScaffoldCsvExport}}          <Button variant="outlined" className="mn-btn--compact" label={download.busy ? t('exporting') : t('export')} onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))} />
 {{/optScaffoldCsvExport}}{{#mutable}}          <Button variant="primary" className="mn-btn--compact" label={t('newX', { x: '{{entityLabel}}' })} {{^hasWizardPage}}onClick={openNew}{{/hasWizardPage}}{{#hasWizardPage}}onClick={onCreate ?? openNew}{{/hasWizardPage}} />
 {{/mutable}}        </div>
       </div>
 
-      {error && <Alert>{error}</Alert>}
+      {error && (
+        <Alert>
+          {error}{' '}
+          <button type="button" onClick={() => { void reload() }} className="font-semibold underline underline-offset-2">{t('retry')}</button>
+        </Alert>
+      )}
 {{#hasFilters}}
       <div className="mb-4">
         <FilterBar filters={{#pageScopeable}}{visibleFilters}{{/pageScopeable}}{{^pageScopeable}}{filterDescriptors}{{/pageScopeable}} values={filters} onChange={setFilters} />
@@ -556,6 +573,8 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
           onDelete={setPendingDelete}
           onMove={onKanbanMove}
           totals={laneTotals}
+          filtered={filtered}
+          emptyAction={emptyAction}
 {{#kanbanShowsLane}}
           onShowLane={value => { setFilters(f => ({ ...f, {{kanbanField}}: value })); setViewMode('table') }}
 {{/kanbanShowsLane}}
@@ -567,6 +586,7 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
           rowKey={rowKey}
           loading={loading}
           dateField="{{calendarField}}"
+          filtered={filtered}
           onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
 {{#calendarRanged}}
           onRangeChange={onCalendarRange}

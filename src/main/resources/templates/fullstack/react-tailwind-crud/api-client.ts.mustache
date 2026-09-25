@@ -1,8 +1,31 @@
+import { t } from '../i18n'
+
 // API origin. Empty (the default in both .env files) means same-origin `/api/...`: the Vite dev
 // server proxies it to the backend (vite.config.ts) and so does nginx in production
 // (nginx/nginx.conf, API_UPSTREAM). Set VITE_API_BASE_URL only to call a backend on another
 // origin — the backend must then allow this app via app.cors.allowed-origins.
 const BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '').replace(/\/+$/, '')
+
+/** What the user is told for a failed call: the server's own detail where it explains the problem
+ *  (a missing row, a clash, a bad value), a plain sentence where it would not help them. */
+function failureMessage(status: number, detail: string): string {
+  if (status === 401) return t('errorUnauthorized')
+  if (status === 403) return t('errorForbidden')
+  if (status === 404) return detail || t('errorNotFound')
+  if (status === 409) return detail || t('errorConflict')
+  if (status >= 500) return t('errorServer')
+  return detail || t('errorRequest', { status })
+}
+
+/** fetch, with a network failure (offline, server down, blocked) told as such rather than as the
+ *  browser's bare "Failed to fetch". */
+async function send(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(BASE + path, init)
+  } catch {
+    throw new ApiError(0, t('errorOffline'))
+  }
+}
 
 /**
  * Error thrown for non-2xx responses. The API answers with RFC-7807 problem details
@@ -34,7 +57,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'
   }
 {{/hasLdapAuth}}
-  const res = await fetch(BASE + path, {
+  const res = await send(path, {
     method,
     headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -51,11 +74,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       : undefined
     // A 400 carrying `errors` is bean validation: keep the field map for the form.
     if (res.status === 400 && errors) {
-      throw new ApiError(res.status, String(problem?.detail ?? 'Validation failed'), errors)
+      throw new ApiError(res.status, String(problem?.detail ?? t('errorValidation')), errors)
     }
-    // `detail`/`title` are the problem-detail fields; `error`/`message` cover non-scaffolded endpoints.
-    const message = (problem && (problem.detail || problem.title || problem.error || problem.message)) || text
-    throw new ApiError(res.status, `HTTP ${res.status} on ${method} ${path}: ${String(message)}`)
+    // `detail` is the problem-detail field; `error`/`message` cover non-scaffolded endpoints. The
+    // bare `title` ("Bad Request") and a non-JSON body (an HTML error page) tell the user nothing.
+    const detail = problem ? String(problem.detail || problem.error || problem.message || '') : ''
+    throw new ApiError(res.status, failureMessage(res.status, detail))
   }
   if (res.status === 204) return undefined as unknown as T
   // A misrouted /api (no proxy in front of a static build) answers with index.html and a 200;
@@ -77,8 +101,8 @@ async function download(path: string, filename: string): Promise<void> {
     headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'
   }
 {{/hasLdapAuth}}
-  const res = await fetch(BASE + path, { headers: Object.keys(headers).length > 0 ? headers : undefined })
-  if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status} on GET ${path}`)
+  const res = await send(path, { headers: Object.keys(headers).length > 0 ? headers : undefined })
+  if (!res.ok) throw new ApiError(res.status, failureMessage(res.status, ''))
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

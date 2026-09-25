@@ -2043,6 +2043,7 @@ public final class EntityScaffoldContext {
             ff.put("targetLabelField", rv.get("targetLabelField"));
             ff.put("hasTargetLabel", rv.get("hasTargetLabel"));
             ff.put("targetSearchable", rv.get("targetSearchable"));
+            ff.put("isTargetPkNumeric", rv.get("isTargetPkNumeric"));
             ff.put("enumValues", List.of());
             filterFieldViews.add(ff);
         }
@@ -2051,6 +2052,11 @@ public final class EntityScaffoldContext {
         }
         view.put("filterFields", filterFieldViews);
         view.put("hasFilters", !filterFieldViews.isEmpty());
+        // A new record made from a list filtered to one value (status = OPEN, customer 4) starts
+        // with that value, so it shows up in the list it was made from. Ranges are left out.
+        view.put("newFromFilters", !entity.readOnly() && filterFieldViews.stream().anyMatch(ff ->
+                Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isBooleanFilter"))
+                        || Boolean.TRUE.equals(ff.get("isRelationFilter"))));
         // The generated Service builds a JPA Specification when it has either text search or
         // type-aware filters — gates the Specification import / machinery in the template.
         view.put("needsSpecification", !stringFieldViews.isEmpty() || !filterFieldViews.isEmpty());

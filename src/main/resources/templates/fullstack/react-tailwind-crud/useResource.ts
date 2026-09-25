@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { api } from './client'
+import { t } from '../i18n'
 
 /** A resource key: a single value, or — for composite primary keys — the key parts in
  *  declared order (the backend addresses them as ordered path segments, e.g. /api/x/{a}/{b}). */
@@ -7,6 +9,23 @@ export type ResourceId = number | string | Array<number | string>
 
 function toPath(id: ResourceId): string {
   return Array.isArray(id) ? id.map(v => encodeURIComponent(String(v))).join('/') : encodeURIComponent(String(id))
+}
+
+/** Runs a download (a CSV export) with a busy flag, and tells the user when it fails — a failed
+ *  download otherwise ends silently, with no file and no message. */
+export function useDownload(): { busy: boolean; run: (start: () => Promise<void>) => void } {
+  const [busy, setBusy] = useState(false)
+  // A second click while one is running is ignored rather than starting a second download.
+  const running = useRef(false)
+  const run = useCallback((start: () => Promise<void>) => {
+    if (running.current) return
+    running.current = true
+    setBusy(true)
+    start()
+      .catch(e => { toast.error(t('exportFailed', { message: e instanceof Error ? e.message : String(e) })) })
+      .finally(() => { running.current = false; setBusy(false) })
+  }, [])
+  return { busy, run }
 }
 
 /** Bumped by a dashboard's Refresh (or its timer): every list and data widget under it reloads,

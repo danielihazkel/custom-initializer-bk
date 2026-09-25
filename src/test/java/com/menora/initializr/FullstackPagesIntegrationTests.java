@@ -479,7 +479,9 @@ class FullstackPagesIntegrationTests {
                 .contains("q: debouncedSearch, filters: scopedFilters })")
                 .contains("<FilterBar filters={visibleFilters} values={filters} onChange={setFilters} />")
                 .contains("if (scope) record[scope.param] = scope.value")
-                .contains("setEditing(newRecord())")
+                // New starts linked to the scope and with the list's one-value filters.
+                .contains("setEditing({ ...newRecord(), ...fromFilters(filters) })")
+                .contains("  if (values['orderId']) record['orderId'] = Number(values['orderId'])")
                 .contains("onView={openRow}")
                 // Order has a record page, so the relation cell links there; Product has none.
                 .contains("label: 'Order', render: r => r.orderId == null ? '—' : <a href={`#/order/${encodeURIComponent(String(r.orderId))}`} onClick={e => e.stopPropagation()} className=\"font-medium text-brand hover:underline\">{ r.orderLabel ?? '#' + String(r.orderId)}</a> },")
@@ -1592,11 +1594,16 @@ class FullstackPagesIntegrationTests {
                 .contains("hint={t('pageNotFoundHint', { x: route.notFound })}")
                 // The order record page sits under the orders list.
                 .contains("const RECORD_PARENTS: Partial<Record<View, View>> = {\n  'order': 'orders',\n}")
-                .contains("const crumb = parentId ? NAV.find(n => n.id === parentId) : undefined");
+                .contains("const crumb = parentId ? NAV.find(n => n.id === parentId) : undefined")
+                // A new page opens at its top.
+                .contains("  useEffect(() => {\n    mainRef.current?.scrollTo(0, 0)\n    window.scrollTo(0, 0)\n  }, [view])")
+                .contains("<main ref={mainRef} className=\"flex-1 overflow-auto bg-canvas\">");
         assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("pageNotFound: 'Page not found',");
 
         Map<String, String> menora = generate(exampleBody("orders", "react-menora-digital-crud"));
         assertThat(menora.get(FE + "src/app/App.tsx"))
+                .contains("import { useEffect, useRef, useState } from 'react'")
+                .contains("<main ref={mainRef} className=\"flex-1 overflow-auto\">")
                 .contains("{route.notFound != null ? (")
                 .contains("<nav aria-label={t('breadcrumb')}");
     }

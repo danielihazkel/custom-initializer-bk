@@ -18,6 +18,8 @@ interface Props<T extends object> {
   onRangeChange?: (from: string, to: string) => void
   /** How many records the month really holds, when that may be more than `rows`. */
   total?: number
+  /** A search or filter is on: an empty month then says nothing matches rather than looking bare. */
+  filtered?: boolean
 }
 
 // Weekday/month names follow the generated locale; the grid always starts on Sunday.
@@ -36,7 +38,7 @@ function dayKey(d: Date): string {
  * month; clicking a record opens its detail via `onView`. With `onRangeChange` the page loads the
  * month on screen; without it only the rows it was handed are placed.
  */
-export function CalendarView<T extends object>({ columns, rows, rowKey, dateField, loading, onView, onRangeChange, total }: Props<T>) {
+export function CalendarView<T extends object>({ columns, rows, rowKey, dateField, loading, onView, onRangeChange, total, filtered = false }: Props<T>) {
   const today = new Date()
   const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() })
   const heading = columns[0]
@@ -50,9 +52,11 @@ export function CalendarView<T extends object>({ columns, rows, rowKey, dateFiel
   for (const row of rows) {
     const raw = (row as Record<string, unknown>)[dateField]
     if (raw == null) continue
-    const d = new Date(String(raw))
-    if (Number.isNaN(d.getTime())) continue
-    const key = dayKey(d)
+    // A LOCAL_DATE / LOCAL_DATE_TIME carries no zone: its day is its first ten characters. Parsing
+    // "yyyy-mm-dd" with Date would read it as UTC midnight — the day before, west of UTC.
+    const day = /^(\d{4}-\d{2}-\d{2})/.exec(String(raw))
+    if (!day) continue
+    const key = day[1]
     const list = byDay.get(key)
     if (list) list.push(row); else byDay.set(key, [row])
   }
@@ -83,6 +87,9 @@ export function CalendarView<T extends object>({ columns, rows, rowKey, dateFiel
           <h2 className="text-sm font-semibold text-fg">{monthFormat.format(first)} {cursor.year}</h2>
           {total != null && total > rows.length && (
             <p className="mt-0.5 text-xs text-muted">{t('firstNOfM', { n: rows.length, m: total })}</p>
+          )}
+          {filtered && !loading && rows.length === 0 && (
+            <p className="mt-0.5 text-xs text-muted">{t('noMatchingRecords')}</p>
           )}
         </div>
         <div className="flex items-center gap-1">

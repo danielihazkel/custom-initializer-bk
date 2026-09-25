@@ -1,6 +1,9 @@
-{{^navTopbar}}
+{{^hasPages}}
 import { useState } from 'react'
-{{/navTopbar}}
+{{/hasPages}}
+{{#hasPages}}
+import { {{^navTopbar}}useState, {{/navTopbar}}useEffect, useRef } from 'react'
+{{/hasPages}}
 import type { LucideIcon } from 'lucide-react'
 {{^hasPages}}
 import { LayoutDashboard, Menu, Moon, Sun, Table2 } from 'lucide-react'
@@ -209,6 +212,12 @@ export default function App() {
 {{/navTopbar}}
   const { isDark, toggle } = useTheme()
   const { view } = route
+  // A new page starts at its top, not at the scroll offset the last one was left at.
+  const mainRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0)
+    window.scrollTo(0, 0)
+  }, [view])
   const current = NAV.find(n => n.id === view)
 {{#hasPageRoles}}
   // Pages restricted to roles leave the nav, and their route shows a notice, for other users.
@@ -444,7 +453,7 @@ export default function App() {
           </button>
         </header>
 
-        <main className="flex-1 overflow-auto bg-canvas">
+        <main ref={mainRef} className="flex-1 overflow-auto bg-canvas">
         {route.notFound != null ? (
           <PageNotice title={t('pageNotFound')} hint={t('pageNotFoundHint', { x: route.notFound })} action={t('goToStart')} onAction={() => go('{{initialPageId}}')} />
 {{#hasPageRoles}}

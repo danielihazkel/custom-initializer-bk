@@ -1,4 +1,9 @@
+{{^hasPages}}
 import { useState } from 'react'
+{{/hasPages}}
+{{#hasPages}}
+import { useEffect, useRef, useState } from 'react'
+{{/hasPages}}
 import { Menu, X } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { t } from '@shared/i18n'
@@ -161,6 +166,12 @@ export default function App() {
   const [navOpen, setNavOpen] = useState(false)
   const { isDark } = useMenoraTheme()
   const { view } = route
+  // A new page starts at its top, not at the scroll offset the last one was left at.
+  const mainRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0)
+    window.scrollTo(0, 0)
+  }, [view])
   const current = NAV.find(n => n.id === view)
 {{#hasPageRoles}}
   // Pages restricted to roles leave the nav, and their route shows a notice, for other users.
@@ -311,7 +322,7 @@ export default function App() {
         )}
       </header>
 
-      <main className="flex-1 overflow-auto">
+      <main ref={mainRef} className="flex-1 overflow-auto">
         {route.notFound != null ? (
           <PageNotice title={t('pageNotFound')} hint={t('pageNotFoundHint', { x: route.notFound })} action={t('goToStart')} onAction={() => go('{{initialPageId}}')} />
 {{#hasPageRoles}}
