@@ -1900,6 +1900,20 @@ public final class EntityScaffoldContext {
         }
         view.put("viewModeType", union.toString());
         view.put("viewModesTs", "[" + union.toString().replace(" | ", ", ") + "]");
+        // The board and the calendar load what they show, not one page of the list: the calendar
+        // asks for its month through the date field's own From/To filter (so that field has to be
+        // filterable), the board loads every matching row and takes its lane totals from /stats
+        // (its lane field is always a stats group). A lane with more rows than it shows opens them
+        // in the table, filtered to that lane, when the entity has both and the field is a filter.
+        Object calendarName = calendarFieldView == null ? null : calendarFieldView.get("name");
+        Object laneName = breakdown == null ? null : breakdown.get("name");
+        boolean calendarRanged = emitted.contains("calendar")
+                && filterFieldViews.stream().anyMatch(ff -> ff.get("name").equals(calendarName));
+        view.put("calendarRanged", calendarRanged);
+        view.put("calendarIsDateTime", calendarRanged && Boolean.TRUE.equals(calendarFieldView.get("isDateTime")));
+        view.put("wholeViews", calendarRanged || emitted.contains("kanban"));
+        view.put("kanbanShowsLane", emitted.contains("kanban") && emitted.contains("table")
+                && filterFieldViews.stream().anyMatch(ff -> ff.get("name").equals(laneName)));
 
         // Relations (MANY_TO_ONE foreign keys). Each resolves its target's PK type/name from the
         // summary lookup so the entity gets a typed @ManyToOne, the DTO exposes the key as

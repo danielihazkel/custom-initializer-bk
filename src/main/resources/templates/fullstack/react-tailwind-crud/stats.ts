@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { api } from '@shared/api'
+import { useContext, useEffect, useRef, useState } from 'react'
+import { api, RefreshTick } from '@shared/api'
 import { LOCALE } from '../i18n'
 
 // The client half of the generated backend's aggregation endpoint, GET /api/<entity>/stats.
@@ -21,9 +21,9 @@ export interface StatsResponse {
   total: number | null
 }
 
-/** Bumped by a dashboard's Refresh (or its timer): every data widget under it reloads, keeping
- *  what it shows until the new numbers arrive. */
-export const RefreshTick = createContext(0)
+// Bumped by a dashboard's Refresh (or its timer); it lives with useResource so the lists a
+// dashboard embeds reload with its widgets.
+export { RefreshTick }
 
 /** Reads an entity's rollup. `query` is a ready query string, so a fresh object literal at the
  *  call site can never retrigger the fetch. */

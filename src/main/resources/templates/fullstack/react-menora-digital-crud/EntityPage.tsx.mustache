@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { {{#calendarRanged}}useCallback, {{/calendarRanged}}useEffect, useState } from 'react'
 {{#bulkDeleteApplicable}}{{#viewTable}}import { Trash2 } from 'lucide-react'
 {{/viewTable}}{{/bulkDeleteApplicable}}{{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
@@ -42,7 +42,10 @@ const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?
 {{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
 {{/bulkUpdatableFields}}}
 {{/viewTable}}{{/bulkUpdateApplicable}}
-/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
+{{#wholeViews}}/** The most records the board or the calendar loads at once. */
+const WHOLE_VIEW_LIMIT = 500
+
+{{/wholeViews}}/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
 const rowKey = (row: {{EntityName}}) => {{#hasCompositePk}}[{{#pkFields}}String(row.{{name}}){{^last}}, {{/last}}{{/pkFields}}].join('/'){{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as string | number{{/hasCompositePk}}
 
 {{#hasPages}}
@@ -172,10 +175,42 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
   }, [debouncedSearch, sort, size{{#hasFilters}}, filters{{/hasFilters}}])
 {{/listUrlState}}
 
+{{#calendarRanged}}
+  // The calendar asks for the month it shows (through the date's own From/To filter) instead of
+  // placing whichever page of rows happened to load.
+  const [calendarRange, setCalendarRange] = useState<Record<string, string> | null>(null)
+  const onCalendarRange = useCallback((from: string, to: string) => setCalendarRange({
+    {{calendarField}}From: from{{#calendarIsDateTime}} + 'T00:00:00'{{/calendarIsDateTime}},
+    {{calendarField}}To: to{{#calendarIsDateTime}} + 'T23:59:59'{{/calendarIsDateTime}},
+  }), [])
+  const listFilters = viewMode === 'calendar' && calendarRange ? { ...{{#pageScopeable}}scopedFilters{{/pageScopeable}}{{^pageScopeable}}filters{{/pageScopeable}}, ...calendarRange } : {{#pageScopeable}}scopedFilters{{/pageScopeable}}{{^pageScopeable}}filters{{/pageScopeable}}
+{{/calendarRanged}}
+{{#wholeViews}}
+  // The board and the calendar show every matching record (up to WHOLE_VIEW_LIMIT), not one page.
+  const wholeView = {{#viewKanban}}viewMode === 'kanban'{{/viewKanban}}{{#viewKanban}}{{#calendarRanged}} || {{/calendarRanged}}{{/viewKanban}}{{#calendarRanged}}(viewMode === 'calendar' && calendarRange != null){{/calendarRanged}}
+{{/wholeViews}}
   const {
     items, totalElements, totalPages, pageNumber, pageSize,
-    loading, error,{{#viewKanban}} reload,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
-  } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/hasFilters}} })
+    loading, error,{{#viewKanban}} reload, countBy,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
+  } = use{{EntityName}}({ {{#wholeViews}}page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size{{/wholeViews}}{{^wholeViews}}page, size{{/wholeViews}}, sort, q: debouncedSearch{{#hasFilters}}, filters{{#calendarRanged}}: listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/calendarRanged}}{{/hasFilters}} })
+
+  // Deleting the last row of the last page must not strand the list past its end.
+  useEffect(() => {
+    if (!loading && items.length === 0 && page > 0 && totalPages > 0) setPage(totalPages - 1)
+  }, [loading, items.length, page, totalPages])
+{{#viewKanban}}
+  // The lanes' totals come from the stats rollup under the same search and filters, so a lane
+  // says how many records it really holds, not how many were loaded.
+  const [laneTotals, setLaneTotals] = useState<Record<string, number> | undefined>()
+  useEffect(() => {
+    if (viewMode !== 'kanban') return
+    let live = true
+    countBy('{{kanbanField}}')
+      .then(totals => { if (live) setLaneTotals(totals) })
+      .catch(() => { if (live) setLaneTotals(undefined) })
+    return () => { live = false }
+  }, [viewMode, countBy, items])
+{{/viewKanban}}
 {{#hasPages}}
 {{#entityHasRecordPage}}
   // A row opened on the record page takes its neighbours along, for the page's Previous / Next.
@@ -192,17 +227,20 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
 {{#listSideDetail}}
   // The pane's row: from the loaded page when it is there, else fetched by id (a reload, a link).
   const [fetchedRow, setFetchedRow] = useState<{{EntityName}} | null>(null)
+  const [paneFailed, setPaneFailed] = useState(false)
+  const [paneAttempt, setPaneAttempt] = useState(0)
   const selectedRow = sidePane && selectedId != null
     ? items.find(r => String(rowKey(r)) === selectedId) ?? (fetchedRow && String(rowKey(fetchedRow)) === selectedId ? fetchedRow : null)
     : null
   useEffect(() => {
     if (!sidePane || selectedId == null || items.some(r => String(rowKey(r)) === selectedId)) return
     let current = true
+    setPaneFailed(false)
     api.get<{{EntityName}}>(`/api/{{entityNamePluralKebab}}/${encodeURIComponent(selectedId)}`)
       .then(r => { if (current) setFetchedRow(r) })
-      .catch(() => { if (current) setFetchedRow(null) })
+      .catch(() => { if (current) { setFetchedRow(null); setPaneFailed(true) } })
     return () => { current = false }
-  }, [sidePane, selectedId, items])
+  }, [sidePane, selectedId, items, paneAttempt])
 {{/listSideDetail}}
 {{#mutable}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
@@ -324,6 +362,14 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
   // Bulk selection (table view only). Selected rows are tracked by primary-key value. Shared by
   // the bulk-delete and bulk-edit actions below.
   const [selected, setSelected] = useState<Array<number | string>>([])
+  // A new search or filter hides rows the selection may hold, so it starts again (a page change
+  // keeps it: rows can be picked across pages).
+  const selectionKey = JSON.stringify([debouncedSearch{{#hasFilters}}, filters{{/hasFilters}}])
+  const [selectionFor, setSelectionFor] = useState(selectionKey)
+  if (selectionKey !== selectionFor) {
+    setSelectionFor(selectionKey)
+    setSelected([])
+  }
   const pkOf = (row: {{EntityName}}) => row.{{pkField.name}} as number | string
   const isRowSelected = (row: {{EntityName}}) => selected.includes(pkOf(row))
   function toggleRow(row: {{EntityName}}) {
@@ -509,6 +555,10 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
           onEdit={openEdit}
           onDelete={setPendingDelete}
           onMove={onKanbanMove}
+          totals={laneTotals}
+{{#kanbanShowsLane}}
+          onShowLane={value => { setFilters(f => ({ ...f, {{kanbanField}}: value })); setViewMode('table') }}
+{{/kanbanShowsLane}}
         />
       ) : {{/viewKanban}}{{#viewCalendar}}viewMode === 'calendar' ? (
         <CalendarView
@@ -518,6 +568,10 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
           loading={loading}
           dateField="{{calendarField}}"
           onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
+{{#calendarRanged}}
+          onRangeChange={onCalendarRange}
+          total={calendarRange ? totalElements : undefined}
+{{/calendarRanged}}
         />
       ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
         <Table
@@ -563,8 +617,13 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
               </div>
               <{{EntityName}}Detail value={selectedRow} />
             </>
+          ) : selectedId != null && paneFailed ? (
+            <p className="text-sm text-muted" role="alert">
+              {t('couldNotLoad')}{' '}
+              <button type="button" onClick={() => setPaneAttempt(a => a + 1)} className="font-medium text-brand hover:underline">{t('retry')}</button>
+            </p>
           ) : (
-            <p className="text-sm text-muted">{t('selectARow')}</p>
+            <p className="text-sm text-muted">{selectedId != null ? t('loading') : t('selectARow')}</p>
           )}
         </aside>
       )}
@@ -607,7 +666,7 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
       <ConfirmDialog
         open={pendingDelete !== null}
         title={t('deleteX', { x: '{{entityLabel}}' })}
-        message={t('undoHint')}
+        message={t('{{#softDeleteApplicable}}undoHint{{/softDeleteApplicable}}{{^softDeleteApplicable}}cannotUndo{{/softDeleteApplicable}}')}
         busy={deleting}
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}

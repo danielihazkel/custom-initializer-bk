@@ -2274,7 +2274,30 @@ class FullstackStarterIntegrationTests {
                 .contains("async function onKanbanMove(row: Task, value: string)")
                 .contains("onMove={onKanbanMove}")
                 .contains("await reload()")
-                .contains(" reload,");
+                .contains(" reload,")
+                // The board loads every matching row (not one page) and takes its lane totals from
+                // /stats; a lane with more than it shows opens in the table, filtered to that lane.
+                .contains("const WHOLE_VIEW_LIMIT = 500")
+                .contains("const wholeView = viewMode === 'kanban'")
+                .doesNotContain("calendarRange")
+                .contains("useTask({ page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size, sort,")
+                .contains("countBy('status')")
+                .contains("totals={laneTotals}")
+                .contains("onShowLane={value => { setFilters(f => ({ ...f, status: value })); setViewMode('table') }}")
+                // Hard delete: the confirm promises no undo.
+                .contains("message={t('cannotUndo')}")
+                .doesNotContain("undoHint")
+                // Deleting the last row of the last page steps back a page.
+                .contains("if (!loading && items.length === 0 && page > 0 && totalPages > 0) setPage(totalPages - 1)")
+                // A new search or filter starts the bulk selection again.
+                .contains("if (selectionKey !== selectionFor) {");
+        assertThat(entries.get("ops/frontend/src/shared/ui/KanbanBoard.tsx"))
+                .contains("if (loading && rows.length === 0) {")
+                .contains("t('nMoreShowInList', { n: hidden })");
+        assertThat(entries.get("ops/frontend/src/shared/api/useResource.ts"))
+                .contains("export const RefreshTick = createContext(0)")
+                .contains("}, [reload, tick])")
+                .contains("`${basePath}/stats?groupBy=${encodeURIComponent(field)}${where ? `&${where}` : ''}`");
 
         // Event page: calendar-only — no toggle bar, no Table/CardGrid/KanbanBoard.
         String eventPage = entries.get("ops/frontend/src/pages/event/ui/EventPage.tsx");
@@ -2282,6 +2305,12 @@ class FullstackStarterIntegrationTests {
                 .contains("useState<'calendar'>('calendar')")
                 .contains("<CalendarView")
                 .contains("dateField=\"startsAt\"")
+                // The calendar loads the month on screen through the date's own filter (whole days).
+                .contains("startsAtFrom: from + 'T00:00:00',")
+                .contains("startsAtTo: to + 'T23:59:59',")
+                .contains("filters: listFilters })")
+                .contains("onRangeChange={onCalendarRange}")
+                .contains("const wholeView = (viewMode === 'calendar' && calendarRange != null)")
                 .doesNotContain("<Table")
                 .doesNotContain("aria-label={t('calendarView')}");   // single view → no toggle
 
@@ -2291,6 +2320,8 @@ class FullstackStarterIntegrationTests {
                 .contains("const [viewMode] = useState<'table'>('table')")   // no toggle → no unused setter
                 .doesNotContain("KanbanBoard")
                 .doesNotContain("onKanbanMove")
+                .doesNotContain("WHOLE_VIEW_LIMIT")
+                .contains("import { useEffect, useState } from 'react'")
                 .doesNotContain("FilterBar");
 
         // Backend Task service: a Filters carrier + composed Specification + bulk delete.

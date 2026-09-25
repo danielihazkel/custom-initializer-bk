@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Column } from './Table'
 import { Skeleton } from './Skeleton'
@@ -14,6 +14,10 @@ interface Props<T extends object> {
   dateField: string
   loading: boolean
   onView?: (row: T) => void
+  /** Told the first and last day (yyyy-mm-dd) of the month on screen, to load that month's records. */
+  onRangeChange?: (from: string, to: string) => void
+  /** How many records the month really holds, when that may be more than `rows`. */
+  total?: number
 }
 
 // Weekday/month names follow the generated locale; the grid always starts on Sunday.
@@ -29,13 +33,17 @@ function dayKey(d: Date): string {
 
 /**
  * Month-grid calendar: records are bucketed onto the day of their `dateField`. Prev/next step the
- * month; clicking a record opens its detail via `onView`. Pure client-side date math — no extra
- * endpoint, so only the currently-loaded page of records is shown.
+ * month; clicking a record opens its detail via `onView`. With `onRangeChange` the page loads the
+ * month on screen; without it only the rows it was handed are placed.
  */
-export function CalendarView<T extends object>({ columns, rows, rowKey, dateField, loading, onView }: Props<T>) {
+export function CalendarView<T extends object>({ columns, rows, rowKey, dateField, loading, onView, onRangeChange, total }: Props<T>) {
   const today = new Date()
   const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() })
   const heading = columns[0]
+
+  useEffect(() => {
+    onRangeChange?.(dayKey(new Date(cursor.year, cursor.month, 1)), dayKey(new Date(cursor.year, cursor.month + 1, 0)))
+  }, [cursor, onRangeChange])
 
   // Bucket rows by local day key.
   const byDay = new Map<string, T[]>()
@@ -65,12 +73,18 @@ export function CalendarView<T extends object>({ columns, rows, rowKey, dateFiel
     })
   }
 
-  if (loading) return <Skeleton className="h-96 w-full" />
+  // A new month keeps the grid on screen while its records load; only the first load waits.
+  if (loading && rows.length === 0) return <Skeleton className="h-96 w-full" />
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm" aria-busy={loading}>
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-fg">{monthFormat.format(first)} {cursor.year}</h2>
+        <div>
+          <h2 className="text-sm font-semibold text-fg">{monthFormat.format(first)} {cursor.year}</h2>
+          {total != null && total > rows.length && (
+            <p className="mt-0.5 text-xs text-muted">{t('firstNOfM', { n: rows.length, m: total })}</p>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           <button onClick={() => step(-1)} className="rounded-lg border border-border bg-surface p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg" title={t('previousMonth')} aria-label={t('previousMonth')}>
             <ChevronLeft className="h-4 w-4 rtl:rotate-180" />

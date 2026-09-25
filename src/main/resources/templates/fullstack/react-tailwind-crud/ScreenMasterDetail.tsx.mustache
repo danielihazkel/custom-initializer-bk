@@ -69,16 +69,19 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
 {{#showParent}}
   // The selected parent's own details: from the loaded list page, else fetched by id (a reload, a link).
   const [fetchedParent, setFetchedParent] = useState<{{parentEntityName}} | null>(null)
+  const [parentFailed, setParentFailed] = useState(false)
+  const [parentAttempt, setParentAttempt] = useState(0)
   const parent = selectedId == null ? null
     : items.find(r => String(r.{{parentPkName}}) === selectedId) ?? (fetchedParent && String(fetchedParent.{{parentPkName}}) === selectedId ? fetchedParent : null)
   useEffect(() => {
     if (selectedId == null || items.some(r => String(r.{{parentPkName}}) === selectedId)) return
     let current = true
+    setParentFailed(false)
     api.get<{{parentEntityName}}>(`/api/{{parentEntityNamePluralKebab}}/${encodeURIComponent(selectedId)}`)
       .then(r => { if (current) setFetchedParent(r) })
-      .catch(() => { if (current) setFetchedParent(null) })
+      .catch(() => { if (current) { setFetchedParent(null); setParentFailed(true) } })
     return () => { current = false }
-  }, [selectedId, items])
+  }, [selectedId, items, parentAttempt])
 {{#showParentEdit}}
   const [editing, setEditing] = useState<Partial<{{parentEntityName}}> | null>(null)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
@@ -228,7 +231,12 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
                   )}
 {{/showParentEdit}}
                 </div>
-                {parent ? <{{parentEntityName}}Detail value={parent} /> : <Skeleton className="h-4 w-1/2" />}
+                {parent ? <{{parentEntityName}}Detail value={parent} /> : parentFailed ? (
+                  <p className="text-sm text-muted" role="alert">
+                    {t('couldNotLoad')}{' '}
+                    <button type="button" onClick={() => setParentAttempt(a => a + 1)} className="font-medium text-brand hover:underline">{t('retry')}</button>
+                  </p>
+                ) : <Skeleton className="h-4 w-1/2" />}
               </div>
 {{/showParent}}
             <{{childEntityName}}Page

@@ -42,6 +42,14 @@ export function PeriodSelect({ value, onChange }: { value: Period; onChange: (pe
   const [custom, setCustom] = useState(picked != null)
   const [from, setFrom] = useState(picked?.from ?? '')
   const [to, setTo] = useState(picked?.to ?? '')
+  // Back / Forward to another period: the picker follows the route instead of its first value.
+  const [shownFor, setShownFor] = useState(value)
+  if (value !== shownFor) {
+    setShownFor(value)
+    setCustom(picked != null)
+    setFrom(picked?.from ?? '')
+    setTo(picked?.to ?? '')
+  }
   const pick = (nextFrom: string, nextTo: string) => {
     setFrom(nextFrom)
     setTo(nextTo)
@@ -195,7 +203,7 @@ export function BarRows({ data, onSelect }: { data: { label: string; value: numb
         )
         return onSelect ? (
           <button
-            key={d.label}
+            key={i}
             type="button"
             onClick={() => onSelect(i)}
             className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-lg px-1 text-start text-sm transition-colors hover:bg-surface-2"
@@ -203,7 +211,7 @@ export function BarRows({ data, onSelect }: { data: { label: string; value: numb
             {row}
           </button>
         ) : (
-          <div key={d.label} className="flex items-center gap-3 text-sm">{row}</div>
+          <div key={i} className="flex items-center gap-3 text-sm">{row}</div>
         )
       })}
     </div>
@@ -440,7 +448,7 @@ function Legend({ items }: { items: { label: string; value?: number }[] }) {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
       {items.map((item, i) => (
-        <li key={item.label} className="flex items-center gap-1.5">
+        <li key={i} className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: seriesColor(i) }} />
           <span className="truncate">{item.label}</span>
           {item.value != null && <span className="tabular-nums text-fg">{formatStat(item.value)}</span>}
@@ -890,8 +898,8 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {rows.map(row => (
-                  <tr key={row.label}>
+                {rows.map((row, i) => (
+                  <tr key={i}>
                     <td className="py-2 text-fg">{row.label}</td>
                     <td className="py-2 text-end tabular-nums text-fg">{formatStat(row.value)}</td>
                   </tr>

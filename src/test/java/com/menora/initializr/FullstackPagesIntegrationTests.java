@@ -220,7 +220,7 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/pages/ticket/ui/TicketPage.tsx"))
                 .contains("export function TicketPage() {")
                 .contains("useState<FilterValues>({})")
-                .contains("q: debouncedSearch, filters })")
+                .contains("q: debouncedSearch, filters: listFilters })")
                 .contains("<FilterBar filters={filterDescriptors} values={filters} onChange={setFilters} />")
                 .contains("onView={setDetailRow}")
                 .doesNotContain("scope")
@@ -507,6 +507,8 @@ class FullstackPagesIntegrationTests {
                 .contains("label: t('undo'),")
                 .contains("message={t('undoHint')}")
                 .doesNotContain("cannotUndo");
+        // The list page's own delete confirm promises the same Undo.
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx")).contains("message={t('undoHint')}");
 
         // The entity's own override wins over the project opt (Order opts out → hard delete again).
         Map<String, Object> order = entities(body).stream()
@@ -765,7 +767,8 @@ class FullstackPagesIntegrationTests {
                 .contains("import { Alert, EmptyState, Skeleton, FormDrawer } from '@shared/ui'")
                 .contains("api.get<Customer>(`/api/customers/${encodeURIComponent(selectedId)}`)")
                 .contains("<div className=\"border-b border-border p-5\" data-parent-card>")
-                .contains("{parent ? <CustomerDetail value={parent} /> : <Skeleton className=\"h-4 w-1/2\" />}")
+                .contains("{parent ? <CustomerDetail value={parent} /> : parentFailed ? (")
+                .contains("onClick={() => setParentAttempt(a => a + 1)}")
                 .contains("const saved = await api.put<Customer>(`/api/customers/${encodeURIComponent(selectedId)}`, editing)")
                 .contains("title={t('editX', { x: 'Customer' })}");
 
@@ -844,8 +847,13 @@ class FullstackPagesIntegrationTests {
                 .contains("      <RefreshTick.Provider value={tick}>\n")
                 .contains("      </RefreshTick.Provider>\n");
         assertThat(files.get(FE + "src/shared/ui/stats.ts"))
-                .contains("export const RefreshTick = createContext(0)")
+                .contains("import { api, RefreshTick } from '@shared/api'")
+                .contains("export { RefreshTick }")
                 .contains("}, [path, query, attempt, tick])");
+        // The lists a dashboard embeds reload with its widgets.
+        assertThat(files.get(FE + "src/shared/api/useResource.ts"))
+                .contains("export const RefreshTick = createContext(0)")
+                .contains("}, [reload, tick])");
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
                 .contains("export function RefreshButton({ onClick }: { onClick: () => void }) {")
                 .contains("}, [path, agg, field, params, attempt, tick])");
@@ -1012,7 +1020,10 @@ class FullstackPagesIntegrationTests {
                 .contains("const openRow = sidePane && onSelect ? (r: Order) => onSelect(String(rowKey(r))) : onOpenRecord ?? setDetailRow")
                 .contains("api.get<Order>(`/api/orders/${encodeURIComponent(selectedId)}`)")
                 .contains("<aside className=\"self-start rounded-2xl border border-border bg-surface p-5 shadow-sm\" data-side-pane>")
-                .contains("<p className=\"text-sm text-muted\">{t('selectARow')}</p>");
+                .contains("<p className=\"text-sm text-muted\">{selectedId != null ? t('loading') : t('selectARow')}</p>")
+                // A row that cannot be fetched says so, with a retry.
+                .contains(".catch(() => { if (current) { setFetchedRow(null); setPaneFailed(true) } })")
+                .contains("onClick={() => setPaneAttempt(a => a + 1)}");
         assertThat(files.get(FE + "src/pages/product/ui/ProductPage.tsx")).doesNotContain("sidePane");
         assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("selectARow: 'Select a row to see its details.',");
 
