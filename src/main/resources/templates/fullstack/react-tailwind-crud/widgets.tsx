@@ -1,9 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { ArrowRight, RefreshCw } from 'lucide-react'
 import { api } from '@shared/api'
 import { LOCALE, t, type StringKey } from '../i18n'
 import { Skeleton } from './Skeleton'
-import { PERIODS, aggQuery, customPeriod, customRange, formatStat, statLabel, statsQuery, useStats, type Period, type PresetPeriod, type StatsResponse } from './stats'
+import { PERIODS, RefreshTick, aggQuery, customPeriod, customRange, fillBuckets, formatStat, statLabel, statsQuery, useStats, type Period, type PresetPeriod, type StatsResponse } from './stats'
 
 // Dashboard widgets for the generated screens (src/app/screens). Counts come from the list
 // endpoint's page metadata; every breakdown, trend and aggregate comes from the entity's
@@ -18,6 +18,21 @@ const PERIOD_LABELS: Record<PresetPeriod, StringKey> = {
   '90d': 'period90d',
   ytd: 'periodYtd',
   '12m': 'period12m',
+}
+
+/** Reloads every data widget of the dashboard (see RefreshTick). */
+export function RefreshButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
+      title={t('refresh')}
+    >
+      <RefreshCw className="h-4 w-4" />
+      {t('refresh')}
+    </button>
+  )
 }
 
 /** The dashboard's period picker: every widget with a date column follows it. Besides the presets,
@@ -219,12 +234,30 @@ export function LineChart({ data, onSelect }: { data: { label: string; value: nu
 
   return (
     <div>
+      <div className="flex gap-2">
+      {/* The scale: the highest value, the middle and the lowest (never above zero). */}
+      <div className="flex flex-col justify-between py-1 text-end text-[10px] tabular-nums text-muted" aria-hidden="true">
+        <span>{formatStat(max)}</span>
+        <span>{formatStat(min + span / 2)}</span>
+        <span>{formatStat(min)}</span>
+      </div>
       <svg
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-        className="h-auto w-full"
+        className="h-auto w-full min-w-0 flex-1"
         role="img"
         aria-label={data.map(d => `${d.label}: ${formatStat(d.value)}`).join(', ')}
       >
+        {[0, 0.5, 1].map(f => (
+          <line
+            key={f}
+            x1={CHART_PAD}
+            x2={CHART_W - CHART_PAD}
+            y1={CHART_PAD + f * (CHART_H - CHART_PAD * 2)}
+            y2={CHART_PAD + f * (CHART_H - CHART_PAD * 2)}
+            className="stroke-border"
+            strokeDasharray="3 3"
+          />
+        ))}
         {data.length > 1 && <path d={area} className="fill-brand/10" />}
         <path
           d={line}
@@ -259,6 +292,7 @@ export function LineChart({ data, onSelect }: { data: { label: string; value: nu
           />
         ))}
       </svg>
+      </div>
       <div className="mt-1 flex justify-between text-[11px] tabular-nums text-muted">
         <span>{data[0].label}</span>
         {data.length > 1 && <span>{data[data.length - 1].label}</span>}
@@ -273,19 +307,25 @@ function useNumber(path: string, agg: string | undefined, field: string | undefi
   const [value, setValue] = useState<number | null>(null)
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const tick = useContext(RefreshTick)
+  const asked = useRef('')
 
   useEffect(() => {
     if (params == null) return
     let active = true
+    const question = `${path}|${agg}|${field}|${params}`
     // A plain count is already exact from the page metadata, and one row crosses the wire.
     const pending = agg && agg !== 'count'
       ? api.get<StatsResponse>(`${path}/stats?${statsQuery(aggQuery(agg, field), params)}`).then(s => s.total)
       : api.get<{ totalElements: number }>(`${path}?${statsQuery('size=1', params)}`).then(p => p.totalElements)
-    setValue(null)
+    if (asked.current !== question) {
+      asked.current = question
+      setValue(null)
+    }
     setFailed(false)
     pending.then(v => { if (active) setValue(v) }).catch(() => { if (active) setFailed(true) })
     return () => { active = false }
-  }, [path, agg, field, params, attempt])
+  }, [path, agg, field, params, attempt, tick])
 
   return { value, failed, retry: () => setAttempt(a => a + 1) }
 }
@@ -465,7 +505,7 @@ export function DonutChart({ data, onSelect }: { data: { label: string; value: n
 
 /** Records grouped by `field` (an enum or boolean column), rolled up by the backend — as bars, or
  *  with `donut` as shares of a ring. */
-export function BreakdownCard({ title, path, field, agg, valueField, labels, params = '', donut = false, onSelect, onOpen, className = '' }: {
+export function BreakdownCard({ title, path, field, agg, valueField, labels, optionsPath, optionValue = 'id', optionLabel, params = '', donut = false, onSelect, onOpen, className = '' }: {
   title: string
   path: string
   field: string
@@ -474,6 +514,10 @@ export function BreakdownCard({ title, path, field, agg, valueField, labels, par
   valueField?: string
   /** Enum breakdowns: display label per constant. */
   labels?: Record<string, string>
+  /** Grouped by a relation: the target's list endpoint, its key and its label column. */
+  optionsPath?: string
+  optionValue?: string
+  optionLabel?: string
   /** List filter params the chart is limited to (a preset, the dashboard period). */
   params?: string
   /** Draw a ring of shares instead of bars. */
@@ -485,9 +529,10 @@ export function BreakdownCard({ title, path, field, agg, valueField, labels, par
   className?: string
 }) {
   const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${field}`, aggQuery(agg, valueField), params))
+  const names = useOptionNames(optionsPath, optionValue, optionLabel, (stats?.buckets ?? []).map(b => b.key))
   // Largest first: a breakdown is read by size, not by key order.
   const data = (stats?.buckets ?? [])
-    .map(b => ({ key: b.key, label: statLabel(b, labels), value: b.value ?? 0 }))
+    .map(b => ({ key: b.key, label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : statLabel(b, labels), value: b.value ?? 0 }))
     .sort((a, b) => b.value - a.value)
 
   return (
@@ -615,7 +660,7 @@ export function TrendCard({ title, path, on, bucket, agg, field, params = '', on
   className?: string
 }) {
   const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${on}`, `bucket=${bucket}`, aggQuery(agg, field), params))
-  const data = (stats?.buckets ?? []).map(b => ({ key: b.key, label: b.key === '' ? '—' : b.key, value: b.value ?? 0 }))
+  const data = fillBuckets((stats?.buckets ?? []).map(b => ({ key: b.key, label: b.key === '' ? '—' : b.key, value: b.value ?? 0 })), bucket, agg)
 
   return (
     <div className={`${card} ${className}`}>
@@ -650,7 +695,7 @@ export function TopList({ title, path, by, agg, valueField, limit, labels, optio
   className?: string
 }) {
   const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${by}`, aggQuery(agg, valueField), `top=${limit}`, params))
-  const names = useOptionNames(optionsPath, optionValue, optionLabel)
+  const names = useOptionNames(optionsPath, optionValue, optionLabel, (stats?.buckets ?? []).map(b => b.key))
 
   const rows = (stats?.buckets ?? []).map(b => ({
     key: b.key,
@@ -710,16 +755,22 @@ export function RecentList({ title, path, sortField, keyField, displayField, lim
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const tick = useContext(RefreshTick)
+  const asked = useRef('')
 
   useEffect(() => {
     let active = true
-    setRows(null)
+    const query = statsQuery(`size=${limit}`, `sort=${sortField},desc`, params)
+    if (asked.current !== `${path}?${query}`) {
+      asked.current = `${path}?${query}`
+      setRows(null)
+    }
     setFailed(false)
-    api.get<{ content: Record<string, unknown>[] }>(`${path}?${statsQuery(`size=${limit}`, `sort=${sortField},desc`, params)}`)
+    api.get<{ content: Record<string, unknown>[] }>(`${path}?${query}`)
       .then(p => { if (active) setRows(p.content ?? []) })
       .catch(() => { if (active) setFailed(true) })
     return () => { active = false }
-  }, [path, sortField, limit, params, attempt])
+  }, [path, sortField, limit, params, attempt, tick])
 
   // The key reads as "#12"; any other sort column shows its value (a date in the app's locale).
   const sortValue = (row: Record<string, unknown>) => {
@@ -762,33 +813,33 @@ export function RecentList({ title, path, sortField, keyField, displayField, lim
   )
 }
 
-/** One chart of a report page: bars (an enum/boolean group) or a line (a date, bucketed) from the
- *  rollup of the filtered rows, and — for the page's first chart — the totals table beneath it. */
 /** The display names of a relation's targets by key (`#id` without a label column) — what a
  *  rank or a chart grouped by a relation names its rows with. Empty without `optionsPath`. */
-function useOptionNames(optionsPath: string | undefined, optionValue: string, optionLabel: string | undefined): Record<string, string> {
+function useOptionNames(optionsPath: string | undefined, optionValue: string, optionLabel: string | undefined, keys: readonly string[] = []): Record<string, string> {
   const [names, setNames] = useState<Record<string, string>>({})
-
+  const wanted = keys.join('\n')
   useEffect(() => {
-    if (!optionsPath) return
     let active = true
+    if (!optionsPath) return
+    const nameOf = (row: Record<string, unknown>) => (optionLabel ? String(row[optionLabel] ?? '') : '') || `#${String(row[optionValue])}`
     api.get<{ content: Record<string, unknown>[] }>(`${optionsPath}?size=1000`)
-      .then(page => {
-        if (!active) return
-        const next: Record<string, string> = {}
-        for (const row of page.content ?? []) {
-          const id = String(row[optionValue])
-          next[id] = optionLabel && row[optionLabel] != null ? String(row[optionLabel]) : `#${id}`
-        }
-        setNames(next)
+      .then(async page => {
+        const out: Record<string, string> = {}
+        for (const row of page.content ?? []) out[String(row[optionValue])] = nameOf(row)
+        // A group past the first thousand rows is named by its own id, a few at a time.
+        const missing = wanted.split('\n').filter(k => k !== '' && !(k in out)).slice(0, 50)
+        const rows = await Promise.all(missing.map(k => api.get<Record<string, unknown>>(`${optionsPath}/${encodeURIComponent(k)}`).catch(() => null)))
+        rows.forEach((row, i) => { if (row) out[missing[i]] = nameOf(row) })
+        if (active) setNames(out)
       })
       .catch(() => { if (active) setNames({}) })
     return () => { active = false }
-  }, [optionsPath, optionValue, optionLabel])
-
+  }, [optionsPath, optionValue, optionLabel, wanted])
   return names
 }
 
+/** One chart of a report page: bars (an enum/boolean group) or a line (a date, bucketed) from the
+ *  rollup of the filtered rows, and — for the page's first chart — the totals table beneath it. */
 export function ReportChart({ title, path, rollup, search, line = false, labels, optionsPath, optionValue = 'id', optionLabel, groupLabel, valueLabel, table = false, onSelect }: {
   /** Shown when the page has more than one chart. */
   title?: string
@@ -810,13 +861,17 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
   onSelect?: (key: string) => void
 }) {
   const { stats, failed, retry } = useStats(path, statsQuery(rollup, search))
-  const names = useOptionNames(optionsPath, optionValue, optionLabel)
+  const names = useOptionNames(optionsPath, optionValue, optionLabel, (stats?.buckets ?? []).map(b => b.key))
   const rows = (stats?.buckets ?? []).map(b => ({
     key: b.key,
     label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ? (b.key === '' ? '—' : b.key) : statLabel(b, labels),
     value: b.value ?? 0,
   }))
-  const select = onSelect && ((i: number) => { if (rows[i].key !== '') onSelect(rows[i].key) })
+  // A line has a point for every day/month/year in its span, not only the ones with rows.
+  const bucket = /(?:^|&)bucket=(day|month|year)/.exec(rollup)?.[1]
+  const agg = /(?:^|&)agg=(\w+)/.exec(rollup)?.[1]
+  const points = line && bucket ? fillBuckets(rows, bucket, agg) : rows
+  const select = onSelect && ((i: number) => { if (points[i].key !== '') onSelect(points[i].key) })
 
   return (
     <div className={card}>
@@ -825,7 +880,7 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
         <Status failed={failed} loading={stats == null} empty={rows.length === 0} onRetry={retry} emptyText={t('noMatchingRecords')} />
       ) : (
         <>
-          {line ? <LineChart data={rows} onSelect={select} /> : <BarRows data={rows} onSelect={select} />}
+          {line ? <LineChart data={points} onSelect={select} /> : <BarRows data={points} onSelect={select} />}
           {table && (
             <table className="mt-5 w-full text-sm">
               <thead>

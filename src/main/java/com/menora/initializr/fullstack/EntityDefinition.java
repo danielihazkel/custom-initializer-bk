@@ -38,7 +38,15 @@ public record EntityDefinition(
         List<String> listViews,
         String label,
         String labelPlural,
-        Map<String, Boolean> opts) {
+        Map<String, Boolean> opts,
+        List<FormSection> formSections) {
+
+    /** A titled group of the entity's form (and details): field and relation field names, in order. */
+    public record FormSection(String title, List<String> fields) {
+        public FormSection {
+            fields = List.copyOf(fields);
+        }
+    }
 
     /** The list-view modes the generated entity page may render. */
     private static final Set<String> KNOWN_VIEWS = Set.of("table", "cards", "kanban", "calendar");
@@ -66,6 +74,16 @@ public record EntityDefinition(
         if (norm.isEmpty()) norm.add("table");
         listViews = List.copyOf(norm);
         opts = opts == null ? Map.of() : Map.copyOf(opts);
+        formSections = formSections == null ? List.of() : List.copyOf(formSections);
+    }
+
+    /** Every property but the form sections (one untitled form). */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
+                            String label, String labelPlural, Map<String, Boolean> opts) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
+                label, labelPlural, opts, List.of());
     }
 
     /** Overload without the per-entity scaffold {@code opts} overrides (none). */

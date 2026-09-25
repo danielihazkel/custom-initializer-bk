@@ -30,6 +30,7 @@ import java.util.Map;
  * @param view         {@link Type#ENTITY_LIST} only — the list view it opens in, one of the entity's
  *                     emitted views (null: the entity's first)
  * @param pageSize     {@link Type#ENTITY_LIST} only — rows per page it opens with (null: the default 20)
+ * @param refreshSeconds {@link Type#DASHBOARD} only — how often its widgets reload (null: on request only)
  */
 public record PageDefinition(
         String id,
@@ -57,7 +58,8 @@ public record PageDefinition(
         String view,
         Integer pageSize,
         Detail detail,
-        boolean showParent) {
+        boolean showParent,
+        Integer refreshSeconds) {
 
     public PageDefinition {
         roles = roles == null ? List.of() : List.copyOf(roles);
@@ -78,7 +80,7 @@ public record PageDefinition(
                           String icon, DateRange dateRange, List<Step> steps, List<HeaderStat> headerStats,
                           List<String> roles) {
         this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via, childTabs,
-                charts, group, icon, dateRange, steps, headerStats, roles, null, null, null, null, null, false);
+                charts, group, icon, dateRange, steps, headerStats, roles, null, null, null, null, null, false, null);
     }
 
     /** Every page property but {@code roles} (open to everyone). */
@@ -113,42 +115,49 @@ public record PageDefinition(
     public PageDefinition withNav(String group, String icon) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
     }
 
     /** The same page, open only to users holding one of {@code roles}. */
     public PageDefinition withRoles(List<String> roles) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
     }
 
     /** The same dashboard with a period picker opening on {@code range}. */
     public PageDefinition withDateRange(DateRange range) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, range, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
     }
 
     /** The same list page opening with these columns, sort, view and page size (each null/empty: the default). */
     public PageDefinition withListPresentation(List<String> columns, ListSort sort, String view, Integer pageSize) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
     }
 
     /** The same list page opening its rows as {@code detail} says (null: the default). */
     public PageDefinition withDetail(Detail detail) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
     }
 
     /** The same master-detail page, with (or without) the selected parent's own details above its rows. */
     public PageDefinition withShowParent(boolean showParent) {
         return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                 parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
-                columns, sort, view, pageSize, detail, showParent);
+                columns, sort, view, pageSize, detail, showParent, refreshSeconds);
+    }
+
+    /** The same dashboard, reloading its widgets every {@code seconds} (null: on request only). */
+    public PageDefinition withRefreshSeconds(Integer seconds) {
+        return new PageDefinition(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
+                parent, child, via, childTabs, charts, group, icon, dateRange, steps, headerStats, roles,
+                columns, sort, view, pageSize, detail, showParent, seconds);
     }
 
     /** The generated shell's navigation, for a layout: its style and whether sections fold. */
@@ -360,7 +369,22 @@ public record PageDefinition(
     public record HeaderStat(String child, String via, Agg agg, String field, String title) {}
 
     /** A related list under a record page: {@code entity} rows whose {@code via} relation points at the record. */
-    public record ChildTab(String entity, String via) {}
+    /** @param columns the related list's columns, in order (empty: every column); @param sort its opening sort */
+    public record ChildTab(String entity, String via, List<String> columns, ListSort sort) {
+
+        public ChildTab {
+            columns = columns == null ? List.of() : List.copyOf(columns);
+        }
+
+        public ChildTab(String entity, String via) {
+            this(entity, via, null, null);
+        }
+
+        /** Whether the list opens other than by default (so its entity page takes the props). */
+        public boolean hasListPresentation() {
+            return !columns.isEmpty() || sort != null;
+        }
+    }
 
     /**
      * A report's chart: rows grouped by {@code groupBy} — an enum/boolean field (a bar) or a
@@ -368,5 +392,11 @@ public record PageDefinition(
      *
      * @param bucket set only when {@code groupBy} is temporal
      */
-    public record Chart(String groupBy, Bucket bucket, Agg agg, String field) {}
+    /** @param table the grouped totals table under the chart; null: under a report's first chart only */
+    public record Chart(String groupBy, Bucket bucket, Agg agg, String field, Boolean table) {
+
+        public Chart(String groupBy, Bucket bucket, Agg agg, String field) {
+            this(groupBy, bucket, agg, field, null);
+        }
+    }
 }

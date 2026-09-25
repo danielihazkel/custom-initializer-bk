@@ -1,17 +1,33 @@
+{{#listKeepsState}}
+import { useRef, useState } from 'react'
+{{/listKeepsState}}
 import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
+{{#listKeepsState}}
+import type { ListState } from '@shared/ui'
+import { listQueryOf, listStateOf } from '../route'
+{{/listKeepsState}}
+{{^listKeepsState}}
 {{#listTakesQuery}}
 import type { FilterValues } from '@shared/ui'
 {{/listTakesQuery}}
+{{/listKeepsState}}
 {{#presetUsesPeriod}}
 import { queryOf, rangeParams } from '@shared/ui/stats'
 {{/presetUsesPeriod}}
 {{#hasScreenProps}}
 
 interface Props {
+{{#listKeepsState}}
+  /** The route's query: the list's filters, search, sort, page, size and view (none inside a tab). */
+  query?: Record<string, string>
+  onQueryChange?: (query: Record<string, string>) => void
+{{/listKeepsState}}
+{{^listKeepsState}}
 {{#listTakesQuery}}
   /** Filters from the route (#/<page>?<field>=<value>), on top of the page's own preset. */
   filters?: FilterValues
 {{/listTakesQuery}}
+{{/listKeepsState}}
 {{#needsNavigate}}
   onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
 {{/needsNavigate}}
@@ -28,6 +44,47 @@ interface Props {
 {{/hasScreenProps}}
 
 export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Props{{/hasScreenProps}}) {
+{{#listKeepsState}}
+  const route = query ?? {}
+  const seen = JSON.stringify(route)
+  // The list writes where it is into the route; only a route it did not write (a link, Back,
+  // a drill-down) opens it afresh.
+  const written = useRef('')
+  const [mount, setMount] = useState({ key: 0, seen })
+  if (mount.seen !== seen) setMount({ key: seen === written.current ? mount.key : mount.key + 1, seen })
+  const opening = listStateOf(route)
+  const preset = {{{presetFilterOrEmptyTs}}}
+  const report = (state: ListState) => {
+    const next = listQueryOf(state, preset)
+    const text = JSON.stringify(next)
+    if (text === seen) return
+    written.current = text
+    onQueryChange?.(next)
+  }
+  return (
+    <{{EntityName}}Page
+      key={mount.key}
+{{#listTakesQuery}}
+      initialFilters={ { ...preset, ...opening.filters } }
+{{/listTakesQuery}}
+      listState={opening}
+      onListStateChange={report}{{#opensRecord}}
+      onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/opensRecord}}{{#detailSide}}
+      sidePane
+      selectedId={selectedId}
+      onSelect={onSelect}{{/detailSide}}{{#hasWizard}}
+      onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}}{{#hasColumns}}
+      columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}}
+      initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}}
+      initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}}
+      initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasPageTitle}}
+      title={ {{pageTitleExpr}} }{{/hasPageTitle}}{{#hasPageDescription}}
+      description={ {{pageDescriptionExpr}} }{{/hasPageDescription}}{{#isTabTarget}}
+      embedded={embedded}{{/isTabTarget}}
+    />
+  )
+{{/listKeepsState}}
+{{^listKeepsState}}
 {{^listTakesQuery}}
   return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#opensRecord}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/opensRecord}}{{#detailSide}} sidePane selectedId={selectedId} onSelect={onSelect}{{/detailSide}}{{#hasWizard}} onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}}{{#hasColumns}} columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}} initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}} initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}} initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasPageTitle}} title={ {{pageTitleExpr}} }{{/hasPageTitle}}{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}}{{#isTabTarget}} embedded={embedded}{{/isTabTarget}} />
 {{/listTakesQuery}}
@@ -52,4 +109,5 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
     />
   )
 {{/listTakesQuery}}
+{{/listKeepsState}}
 }

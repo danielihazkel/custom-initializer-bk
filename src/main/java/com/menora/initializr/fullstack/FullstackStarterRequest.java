@@ -157,7 +157,21 @@ public record FullstackStarterRequest(
             // scaffold option name ({@code audit}, {@code softDelete}, {@code csvExport},
             // {@code bulkDelete}, {@code bulkUpdate}, {@code tests}) -> true/false. An absent key
             // inherits the project setting; an unknown key is a 400. Null/empty = no overrides.
-            Map<String, Boolean> opts) {
+            Map<String, Boolean> opts,
+            // The form in titled sections: each lists field names and MANY_TO_ONE relation field
+            // names, each at most once. The drawer form, the record's details and a wizard without
+            // its own steps follow them; whatever no section lists comes after, untitled.
+            List<FormSectionDto> formSections) {
+
+        /** Every property but {@code formSections} (one untitled form). */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql, String listView,
+                                   List<String> listViews, String label, String labelPlural,
+                                   Map<String, Boolean> opts) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
+                    label, labelPlural, opts, null);
+        }
 
         /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql/listView(s)). */
         public EntityDefinitionDto(String name, String tableName, String schema,
@@ -204,6 +218,9 @@ public record FullstackStarterRequest(
                     label, labelPlural, null);
         }
     }
+
+    /** A titled group of an entity's form: field and relation names, in order. */
+    public record FormSectionDto(String title, List<String> fields) {}
 
     /**
      * One page of the generated frontend. {@code type} is {@code entity-list}, {@code dashboard},
@@ -272,7 +289,23 @@ public record FullstackStarterRequest(
             String detail,
             // master-detail: show the selected parent's own details (and Edit, for a writable
             // parent) above its child rows. Absent: false.
-            Boolean showParent) {
+            Boolean showParent,
+            // dashboard: reload its widgets every so many seconds while the page is open (30, 60,
+            // 300 or 900). Absent: only the Refresh button reloads them.
+            Integer refreshSeconds) {
+
+        /** Every property but {@code refreshSeconds}. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize, String detail, Boolean showParent) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, detail, showParent, null);
+        }
 
         /** Every property but {@code showParent}. */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
@@ -284,7 +317,7 @@ public record FullstackStarterRequest(
                                  SortDto sort, String view, Integer pageSize, String detail) {
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
                     childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
-                    pageSize, detail, null);
+                    pageSize, detail, null, null);
         }
 
         /** Every property but {@code detail}. */
@@ -297,7 +330,7 @@ public record FullstackStarterRequest(
                                  SortDto sort, String view, Integer pageSize) {
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
                     childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
-                    pageSize, null, null);
+                    pageSize, null, null, null);
         }
 
         /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */
@@ -396,7 +429,15 @@ public record FullstackStarterRequest(
             String groupBy,
             String bucket,
             String agg,
-            String field) {}
+            String field,
+            // report: the grouped totals table under the chart. Absent: under the first chart only.
+            Boolean table) {
+
+        /** A chart with the default table (under a report's first chart only). */
+        public ChartDto(String groupBy, String bucket, String agg, String field) {
+            this(groupBy, bucket, agg, field, null);
+        }
+    }
 
     /** One step of a {@code wizard} page: its heading and the form fields it asks for. */
     public record StepDto(String title, List<String> fields) {}
@@ -416,14 +457,22 @@ public record FullstackStarterRequest(
     }
 
     /** One related-list tab of a {@code record} page: the child entity, and the child's relation to
-     *  the record entity that links them (optional unless it has several). A bare string in the
-     *  JSON is the entity alone. */
-    public record ChildTabDto(String entity, String via) {
+     *  the record entity that links them (optional unless it has several), and how its list opens —
+     *  the columns it shows and its sort, as an entity-list page's. A bare string in the JSON is
+     *  the entity alone. */
+    public record ChildTabDto(String entity, String via, List<String> columns, SortDto sort) {
 
         @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
-        public ChildTabDto(@JsonProperty("entity") String entity, @JsonProperty("via") String via) {
+        public ChildTabDto(@JsonProperty("entity") String entity, @JsonProperty("via") String via,
+                           @JsonProperty("columns") List<String> columns, @JsonProperty("sort") SortDto sort) {
             this.entity = entity;
             this.via = via;
+            this.columns = columns;
+            this.sort = sort;
+        }
+
+        public ChildTabDto(String entity, String via) {
+            this(entity, via, null, null);
         }
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)

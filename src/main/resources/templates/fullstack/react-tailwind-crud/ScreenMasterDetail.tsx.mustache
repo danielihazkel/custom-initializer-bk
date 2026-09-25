@@ -235,6 +235,12 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
               key={selectedId}
               embedded
               scope={ { param: '{{viaParam}}', value: {{#parentPkIsNumber}}Number(selectedId){{/parentPkIsNumber}}{{^parentPkIsNumber}}selectedId{{/parentPkIsNumber}} } }
+{{#childHasColumns}}
+              columns={ {{{childColumnsTs}}} }
+{{/childHasColumns}}
+{{#childHasSort}}
+              initialSort={ {{{childSortTs}}} }
+{{/childHasSort}}
 {{#childHasRecordPage}}
               onOpenRecord={r => onNavigate('{{childRecordPageId}}', String(r.{{childRecordPk}}))}
 {{/childHasRecordPage}}

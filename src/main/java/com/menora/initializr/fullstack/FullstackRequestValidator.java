@@ -9,6 +9,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -49,7 +50,8 @@ public final class FullstackRequestValidator {
         record Parsed(int ei, String name, String tableName, String schema, List<FieldDefinition> fields,
                       Set<String> memberNames, List<FullstackStarterRequest.RelationDefinitionDto> rawRelations,
                       boolean readOnly, String viewQuery, List<String> listViews,
-                      String label, String labelPlural, Map<String, Boolean> opts) {}
+                      String label, String labelPlural, Map<String, Boolean> opts,
+                      List<FullstackStarterRequest.FormSectionDto> rawSections) {}
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
@@ -257,7 +259,7 @@ public final class FullstackRequestValidator {
                     ? null : e.labelPlural().trim();
             parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
                     readOnly, viewQuery, resolveListViews(e), label, labelPlural,
-                    parseEntityOpts(e.opts(), name)));
+                    parseEntityOpts(e.opts(), name), e.formSections()));
         }
 
         // Pass 2 — resolve and validate relations now that all entity names are known.
@@ -272,9 +274,61 @@ public final class FullstackRequestValidator {
                     parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
                             pkCountByLower, viewLowerNames);
             result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
-                    p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts()));
+                    p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts(),
+                    parseFormSections(p.rawSections(), p.name(), p.fields(), relations)));
         }
         return result;
+    }
+
+    /** How many titled sections an entity's form may have (a wizard follows them, one step each). */
+    static final int MAX_FORM_SECTIONS = 6;
+    static final int MAX_SECTION_TITLE = 60;
+
+    /**
+     * The entity's form sections: each titled, listing fields (not a generated key — the database
+     * assigns it) and MANY_TO_ONE relations by name, matched ignoring case and canonicalized; a
+     * name appears in one section at most. Null/empty: one untitled form.
+     */
+    static List<EntityDefinition.FormSection> parseFormSections(List<FullstackStarterRequest.FormSectionDto> raw,
+                                                               String entity, List<FieldDefinition> fields,
+                                                               List<RelationDefinition> relations) {
+        if (raw == null || raw.isEmpty()) return List.of();
+        if (raw.size() > MAX_FORM_SECTIONS) {
+            throw new WizardArgumentException("Entity '" + entity + "' has more than " + MAX_FORM_SECTIONS + " form sections");
+        }
+        Map<String, String> askable = new LinkedHashMap<>();
+        for (FieldDefinition f : fields) {
+            if (!(f.primaryKey() && f.generated())) askable.put(f.name().toLowerCase(Locale.ROOT), f.name());
+        }
+        for (RelationDefinition r : relations) {
+            if (r.type() == RelationType.MANY_TO_ONE) askable.put(r.fieldName().toLowerCase(Locale.ROOT), r.fieldName());
+        }
+        Set<String> seen = new HashSet<>();
+        List<EntityDefinition.FormSection> out = new ArrayList<>();
+        for (int i = 0; i < raw.size(); i++) {
+            FullstackStarterRequest.FormSectionDto section = raw.get(i);
+            String where = "Entity '" + entity + "' form section " + (i + 1);
+            String title = section == null || section.title() == null ? "" : section.title().trim();
+            if (title.isEmpty()) throw new WizardArgumentException(where + " needs a title");
+            if (title.length() > MAX_SECTION_TITLE) {
+                throw new WizardArgumentException(where + " has a title over " + MAX_SECTION_TITLE + " characters");
+            }
+            List<String> names = new ArrayList<>();
+            for (String name : section.fields() == null ? List.<String>of() : section.fields()) {
+                String canonical = name == null ? null : askable.get(name.trim().toLowerCase(Locale.ROOT));
+                if (canonical == null) {
+                    throw new WizardArgumentException(where + " ('" + title + "') lists '" + name
+                            + "', which is not one of its fields or relations");
+                }
+                if (!seen.add(canonical)) {
+                    throw new WizardArgumentException("Entity '" + entity + "' lists '" + canonical + "' in two form sections");
+                }
+                names.add(canonical);
+            }
+            if (names.isEmpty()) throw new WizardArgumentException(where + " ('" + title + "') lists no fields");
+            out.add(new EntityDefinition.FormSection(title, names));
+        }
+        return out;
     }
 
     /**

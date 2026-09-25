@@ -29,6 +29,7 @@
     {"source": "KanbanBoard.tsx", "path": "src/shared/ui/KanbanBoard.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 122, "sourceSet": "react-tailwind-crud"},
     {"source": "CalendarView.tsx", "path": "src/shared/ui/CalendarView.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 123, "sourceSet": "react-tailwind-crud"},
     {"source": "FilterBar.tsx", "path": "src/shared/ui/FilterBar.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 124},
+    {"source": "RelationPicker.tsx", "path": "src/shared/ui/RelationPicker.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 125, "sourceSet": "react-tailwind-crud"},
     {"source": "FormDrawer.tsx", "path": "src/shared/ui/FormDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 130},
     {"source": "Field.tsx", "path": "src/shared/ui/Field.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 140, "sourceSet": "react-tailwind-crud"},
     {"source": "Badge.tsx", "path": "src/shared/ui/Badge.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 141},

@@ -1,7 +1,7 @@
-{{#hasDateRange}}
-import { useState } from 'react'
-{{/hasDateRange}}
-import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesText}}TextCard, {{/usesText}}{{#usesList}}ListCard, {{/usesList}}} from '@shared/ui/widgets'
+{{#usesDashboardState}}
+import { {{#hasAutoRefresh}}useEffect, {{/hasAutoRefresh}}useState } from 'react'
+{{/usesDashboardState}}
+import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesText}}TextCard, {{/usesText}}{{#usesList}}ListCard, {{/usesList}}{{#hasRefresh}}RefreshButton, {{/hasRefresh}}} from '@shared/ui/widgets'
 {{#listImports}}
 import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
 {{/listImports}}
@@ -12,7 +12,7 @@ import { LinksCard } from '@shared/ui/links'
 import { {{linkIcons}} } from 'lucide-react'
 {{/hasLinkIcons}}
 {{#usesStatsHelpers}}
-import { {{#usesBucketRange}}bucketRange, {{/usesBucketRange}}{{#hasDateRange}}parsePeriod, {{/hasDateRange}}{{#usesQueryOf}}queryOf, {{/usesQueryOf}}{{#usesRangeParams}}rangeParams, {{/usesRangeParams}}{{#usesStatsQuery}}statsQuery, {{/usesStatsQuery}}{{#hasDateRange}}type Period {{/hasDateRange}}} from '@shared/ui/stats'
+import { {{#hasRefresh}}RefreshTick, {{/hasRefresh}}{{#usesBucketRange}}bucketRange, {{/usesBucketRange}}{{#hasDateRange}}parsePeriod, {{/hasDateRange}}{{#usesQueryOf}}queryOf, {{/usesQueryOf}}{{#usesRangeParams}}rangeParams, {{/usesRangeParams}}{{#usesStatsQuery}}statsQuery, {{/usesStatsQuery}}{{#hasDateRange}}type Period {{/hasDateRange}}} from '@shared/ui/stats'
 {{/usesStatsHelpers}}
 {{#usesT}}
 import { t } from '@shared/i18n'
@@ -42,17 +42,29 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
   const period = onPeriodChange ? parsePeriod(routePeriod, '{{dateRangeDefault}}') : localPeriod
   const setPeriod = onPeriodChange ?? setLocalPeriod
 {{/hasDateRange}}
+{{#hasRefresh}}
+  // Bumped by Refresh{{#hasAutoRefresh}} and every {{refreshMs}} ms while the tab is visible{{/hasAutoRefresh}}: the widgets reload.
+  const [tick, setTick] = useState(0)
+{{/hasRefresh}}
+{{#hasAutoRefresh}}
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') setTick(n => n + 1)
+    }, {{refreshMs}})
+    return () => clearInterval(timer)
+  }, [])
+{{/hasAutoRefresh}}
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">
-{{^hasDateRange}}
+{{^hasHeaderTools}}
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
 {{#hasPageDescription}}
         <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
 {{/hasPageDescription}}
       </div>
-{{/hasDateRange}}
-{{#hasDateRange}}
+{{/hasHeaderTools}}
+{{#hasHeaderTools}}
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
@@ -60,9 +72,19 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
 {{/hasPageDescription}}
         </div>
-        <PeriodSelect value={period} onChange={setPeriod} />
-      </div>
+        <div className="flex flex-wrap items-center gap-2">
+{{#hasDateRange}}
+          <PeriodSelect value={period} onChange={setPeriod} />
 {{/hasDateRange}}
+{{#hasRefresh}}
+          <RefreshButton onClick={() => setTick(n => n + 1)} />
+{{/hasRefresh}}
+        </div>
+      </div>
+{{/hasHeaderTools}}
+{{#hasRefresh}}
+      <RefreshTick.Provider value={tick}>
+{{/hasRefresh}}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 {{#widgets}}
 {{#widgetIsKpi}}
@@ -143,6 +165,13 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{#hasLabels}}
           labels={ {{labelsRef}} }
 {{/hasLabels}}
+{{#isRelationRank}}
+          optionsPath="{{optionsPath}}"
+          optionValue="{{optionValue}}"
+{{#hasOptionLabel}}
+          optionLabel="{{optionLabel}}"
+{{/hasOptionLabel}}
+{{/isRelationRank}}
 {{#hasParams}}
           params={ {{paramsExpr}} }
 {{/hasParams}}
@@ -286,6 +315,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{/widgetIsRecent}}
 {{/widgets}}
       </div>
+{{#hasRefresh}}
+      </RefreshTick.Provider>
+{{/hasRefresh}}
     </div>
   )
 }

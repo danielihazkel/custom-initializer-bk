@@ -16,6 +16,17 @@ export interface SortSpec {
   direction: 'asc' | 'desc'
 }
 
+/** Where a list is — what a list page keeps in its route. Each part absent is the list's opening
+ *  value; `sort: null` is "no sort" chosen over an opening sort. */
+export interface ListState {
+  q?: string
+  sort?: SortSpec | null
+  page?: number
+  size?: number
+  view?: string
+  filters?: Record<string, string>
+}
+
 export interface PaginationProps {
   pageNumber: number
   pageSize: number
@@ -51,6 +62,10 @@ interface Props<T extends object> {
   /** Header checkbox state + handler for "select all rows on this page". */
   allOnPageSelected?: boolean
   onToggleAllOnPage?: () => void
+  /** A search or filter is on: an empty page says nothing matches rather than inviting a first record. */
+  filtered?: boolean
+  /** Offered on an empty, unfiltered list — "New <entity>". */
+  emptyAction?: { label: string; onClick: () => void }
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
@@ -65,6 +80,7 @@ export function Table<T extends object>({
   columns, rows, rowKey, onView, onEdit, onDelete, loading,
   sort, onSortChange, search, onSearchChange, pagination, searchable = true,
   selectable = false, isRowSelected, onToggleRow, allOnPageSelected, onToggleAllOnPage,
+  filtered = false, emptyAction,
 }: Props<T>) {
   const { pageNumber, pageSize, totalPages, totalElements, onPageChange, onPageSizeChange } = pagination
   const startRow = totalElements === 0 ? 0 : pageNumber * pageSize + 1
@@ -143,7 +159,9 @@ export function Table<T extends object>({
               ) : empty ? (
                 <tr>
                   <td colSpan={columns.length + leadCols + (hasActions ? 1 : 0)}>
-                    <EmptyState title={t('noRecordsTitle')} hint={t('noRecordsHint')} />
+                    {filtered
+                      ? <EmptyState title={t('noMatchingRecords')} />
+                      : <EmptyState title={t('noRecordsTitle')} hint={t('noRecordsHint')} action={emptyAction} />}
                   </td>
                 </tr>
               ) : (

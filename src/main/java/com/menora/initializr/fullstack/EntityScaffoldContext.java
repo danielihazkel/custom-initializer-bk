@@ -6,6 +6,7 @@ import com.menora.initializr.gen.Naming;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -172,6 +173,11 @@ public final class EntityScaffoldContext {
                     pv.put("needsNavigate", opensRecord);
                     // A filterable list also opens with the filters in its route (#/orders?status=OPEN).
                     pv.put("listTakesQuery", Boolean.TRUE.equals(ev.get("hasFilters")));
+                    // A list page in the nav keeps its whole state there — search, sort, page, rows
+                    // per page, view and filters (#/orders?status=OPEN&_q=acme&_page=3) — so a
+                    // reload, Back from a record and a shared link reopen the same list.
+                    pv.put("listKeepsState", !p.hidden());
+                    pv.put("presetFilterOrEmptyTs", presetTs == null ? "{}" : presetTs);
                     // New opens the entity's wizard page, when it has one.
                     String wizard = links.wizardPageOf(p.entity());
                     pv.put("hasWizard", wizard != null);
@@ -248,6 +254,13 @@ public final class EntityScaffoldContext {
                     pv.put("childEntityNameKebab", child.get("entityNameKebab"));
                     pv.put("childLabelPluralExpr", tsString((String) child.get("entityLabelPlural")));
                     pv.put("viaParam", Naming.toCamelCase(p.via()) + "Id");
+                    // How the child list opens (each absent: the entity page's default).
+                    pv.put("childHasColumns", !p.columns().isEmpty());
+                    pv.put("childColumnsTs", p.columns().isEmpty() ? null
+                            : "[" + String.join(", ", p.columns().stream().map(EntityScaffoldContext::tsString).toList()) + "]");
+                    pv.put("childHasSort", p.sort() != null);
+                    pv.put("childSortTs", p.sort() == null ? null
+                            : "{ field: " + tsString(p.sort().field()) + ", direction: '" + (p.sort().desc() ? "desc" : "asc") + "' }");
                     putRecordLink(pv, "parent", p.parent(), links, summaries);
                     putRecordLink(pv, "child", p.child(), links, summaries);
                     pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("parentHasRecordPage"))
@@ -276,7 +289,18 @@ public final class EntityScaffoldContext {
                     pv.put("recordEditsInWizard", editWizard != null);
                     pv.put("recordEditsInDrawer", recordMutable && editWizard == null);
                     pv.put("wizardPageId", editWizard);
-                    pv.put("recordHasIcons", back != null || recordMutable);
+                    // Previous / Next walk the rows of the list the record was opened from.
+                    pv.put("recordHasIcons", true);
+                    // The record's state at a glance: its first two enum fields as chips by the heading.
+                    List<Map<String, Object>> statusFields = new ArrayList<>();
+                    for (Map<String, Object> f : (List<Map<String, Object>>) ev.get("fields")) {
+                        if (statusFields.size() < 2 && Boolean.TRUE.equals(f.get("isEnum")) && !Boolean.TRUE.equals(f.get("isPrimaryKey"))) {
+                            statusFields.add(Map.of("name", f.get("name"), "enumTypeName", f.get("enumTypeName")));
+                        }
+                    }
+                    pv.put("statusFields", statusFields);
+                    pv.put("hasStatusFields", !statusFields.isEmpty());
+                    pv.put("statusLabelsImport", String.join(", ", statusFields.stream().map(f -> f.get("enumTypeName") + "Labels").toList()));
                     // With soft delete the page's Delete toast offers Undo (POST /restore, then the
                     // restored row is reopened). Like csvExport, the entity's own override is
                     // resolved against the project opt here, because a page context never runs
@@ -288,13 +312,19 @@ public final class EntityScaffoldContext {
                             : Boolean.TRUE.equals(ctx.get("optScaffoldSoftDelete")));
                     pv.put("recordSoftDeletes", recordSoftDeletes);
                     List<Map<String, Object>> tabViews = new ArrayList<>();
-                    boolean navigates = back != null || editWizard != null || recordSoftDeletes;
+                    boolean navigates = true;
                     for (int i = 0; i < p.childTabs().size(); i++) {
                         PageDefinition.ChildTab tab = p.childTabs().get(i);
                         Map<String, Object> cv = entityByPascal.get(Naming.toPascalCase(tab.entity()));
                         Map<String, Object> tv = new LinkedHashMap<>();
                         // Tab 0 is the record's own details.
                         tv.put("tabIndex", i + 1);
+                        tv.put("tabHasColumns", !tab.columns().isEmpty());
+                        tv.put("tabColumnsTs", tab.columns().isEmpty() ? null
+                                : "[" + String.join(", ", tab.columns().stream().map(EntityScaffoldContext::tsString).toList()) + "]");
+                        tv.put("tabHasSort", tab.sort() != null);
+                        tv.put("tabSortTs", tab.sort() == null ? null
+                                : "{ field: " + tsString(tab.sort().field()) + ", direction: '" + (tab.sort().desc() ? "desc" : "asc") + "' }");
                         tv.put("tabId", cv.get("entityNameKebab"));
                         tv.put("childEntityName", cv.get("EntityName"));
                         tv.put("childEntityNameKebab", cv.get("entityNameKebab"));
@@ -418,6 +448,12 @@ public final class EntityScaffoldContext {
             } else if (Boolean.TRUE.equals(pv.get("pageIsMasterDetail"))) {
                 // The selected parent is the route arg (#/customers/42).
                 routeProps = " selectedId={route.arg} onSelect={id => go('" + pv.get("pageId") + "', id)}";
+            } else if (Boolean.TRUE.equals(pv.get("listKeepsState"))) {
+                // The list's state rides in the hash, rewritten in place; a side pane's row is the
+                // route arg (#/tickets/42?_page=2), opened without losing the list's state.
+                routeProps = (Boolean.TRUE.equals(pv.get("detailSide"))
+                        ? " selectedId={route.arg} onSelect={id => go('" + pv.get("pageId") + "', id, route.query)}" : "")
+                        + " query={route.query} onQueryChange={setQuery}";
             } else if (Boolean.TRUE.equals(pv.get("detailSide"))) {
                 // The row open in the side pane likewise (#/tickets/42), with any route filters.
                 routeProps = " selectedId={route.arg} onSelect={id => go('" + pv.get("pageId") + "', id)}"
@@ -437,16 +473,18 @@ public final class EntityScaffoldContext {
             // screen is embedded as a tab, where they keep local state instead).
             boolean dashboardPeriod = Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"));
             boolean reportQuery = Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"));
+            boolean listState = Boolean.TRUE.equals(pv.get("listKeepsState"));
             List<String> screenParams = new ArrayList<>();
             if (Boolean.TRUE.equals(pv.get("detailSide"))) screenParams.addAll(List.of("selectedId", "onSelect"));
-            if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) screenParams.add("filters");
+            if (listState) screenParams.addAll(List.of("query", "onQueryChange"));
+            else if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) screenParams.add("filters");
             if (dashboardPeriod) screenParams.addAll(List.of("period: routePeriod", "onPeriodChange"));
             if (reportQuery) screenParams.addAll(List.of("query", "onQueryChange"));
             if (Boolean.TRUE.equals(pv.get("needsNavigate"))) screenParams.add("onNavigate");
             if (Boolean.TRUE.equals(pv.get("isTabTarget"))) screenParams.add("embedded");
             pv.put("screenParams", String.join(", ", screenParams));
             pv.put("hasScreenProps", !screenParams.isEmpty());
-            pv.put("takesQuery", dashboardPeriod || reportQuery);
+            pv.put("takesQuery", dashboardPeriod || reportQuery || listState);
         }
 
         // Screens import the i18n `t` only when one of their label expressions calls it — the
@@ -523,6 +561,13 @@ public final class EntityScaffoldContext {
         Set<String> listConfigured = new LinkedHashSet<>();
         for (PageDefinition p : pages) {
             if (p.type() == PageDefinition.Type.ENTITY_LIST && p.hasListPresentation()) listConfigured.add(p.entity());
+            // A master-detail child list and a record's related list may open with their own columns / sort.
+            if (p.type() == PageDefinition.Type.MASTER_DETAIL && p.hasListPresentation()) listConfigured.add(p.child());
+            if (p.type() == PageDefinition.Type.RECORD) {
+                for (PageDefinition.ChildTab tab : p.childTabs()) {
+                    if (tab.hasListPresentation()) listConfigured.add(tab.entity());
+                }
+            }
             // A list widget always hands its page a page size, so its entity takes the props too.
             if (p.type() == PageDefinition.Type.DASHBOARD) {
                 for (PageDefinition.Widget w : p.widgets()) {
@@ -538,6 +583,13 @@ public final class EntityScaffoldContext {
             if (p.type() == PageDefinition.Type.ENTITY_LIST && p.detail() == PageDefinition.Detail.SIDE) sideDetail.add(p.entity());
         }
         ctx.put(SIDE_DETAIL_KEY, sideDetail);
+        // ...and only an entity with a list page in the nav reports its list state for the route.
+        Set<String> listState = new LinkedHashSet<>();
+        for (PageDefinition p : pages) {
+            if (p.type() == PageDefinition.Type.ENTITY_LIST && !p.hidden()) listState.add(p.entity());
+        }
+        ctx.put(LIST_STATE_KEY, listState);
+        ctx.put("hasListStatePages", !listState.isEmpty());
         ctx.put("hasTabsPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTabs"))));
     }
 
@@ -818,12 +870,23 @@ public final class EntityScaffoldContext {
         pv.put("needsNavigate", needsNavigate);
         pv.put("hasDateRange", p.dateRange() != null);
         pv.put("dateRangeDefault", p.dateRange() == null ? null : p.dateRange().wire());
+        // A dashboard with data to show has a Refresh button, and reloads on a timer when it says
+        // how often; its data widgets read the reload count from RefreshTick.
+        boolean hasRefresh = p.widgets().stream().anyMatch(w -> w.kind() != PageDefinition.WidgetKind.TEXT
+                && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.LIST);
+        pv.put("hasRefresh", hasRefresh);
+        pv.put("hasAutoRefresh", hasRefresh && p.refreshSeconds() != null);
+        pv.put("refreshMs", p.refreshSeconds() == null ? null : p.refreshSeconds() * 1000);
+        pv.put("usesDashboardState", hasRefresh || p.dateRange() != null);
+        pv.put("hasHeaderTools", hasRefresh || p.dateRange() != null);
         // stats.ts helpers the screen imports.
         pv.put("usesRangeParams", usesRange);
         pv.put("usesStatsQuery", usesStatsQuery);
         pv.put("usesQueryOf", usesQueryOf);
         pv.put("usesBucketRange", usesBucketRange);
-        pv.put("usesStatsHelpers", p.dateRange() != null || usesStatsQuery || usesQueryOf || usesBucketRange || usesRange);
+        pv.put("usesStatsHelpers", p.dateRange() != null || usesStatsQuery || usesQueryOf || usesBucketRange || usesRange
+                || p.widgets().stream().anyMatch(w -> w.kind() != PageDefinition.WidgetKind.TEXT
+                        && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.LIST));
     }
 
     /** The widget's filter params as a TS expression: its preset (already an expression), the
@@ -1143,6 +1206,8 @@ public final class EntityScaffoldContext {
                     + (reduces ? measure : tsString((String) ev.get("entityLabelPlural")))
                     + (overTime ? "" : ", y: " + groupLabelExpr) + " })");
             cv.put("chartIsFirst", i == 0);
+            // The totals table: under the first chart unless it says otherwise, under another when asked.
+            cv.put("chartHasTable", chart.table() == null ? i == 0 : chart.table());
             StringBuilder query = new StringBuilder("groupBy=").append(chart.groupBy());
             if (overTime) query.append("&bucket=").append(chart.bucket().wire());
             if (reduces) query.append("&agg=").append(chart.agg().wire()).append("&field=").append(chart.field());
@@ -1233,6 +1298,16 @@ public final class EntityScaffoldContext {
 
     /** A user-supplied string as a single-quoted TS literal (apostrophes, backslashes and line
      *  breaks escaped). */
+    /** One group of the form: its title (null: untitled) and its field and relation view-models. */
+    private static Map<String, Object> formGroup(String title, List<Map<String, Object>> fields, List<Map<String, Object>> relations) {
+        Map<String, Object> g = new LinkedHashMap<>();
+        g.put("groupHasTitle", title != null);
+        g.put("groupTitleExpr", title == null ? null : tsString(title));
+        g.put("groupFields", fields);
+        g.put("groupRelations", relations);
+        return g;
+    }
+
     static String tsString(String s) {
         return "'" + escapeTsSingleQuoted(s).replace("\r", "").replace("\n", "\\n") + "'";
     }
@@ -1252,6 +1327,8 @@ public final class EntityScaffoldContext {
     private static final String LIST_PRESENTATION_KEY = "__listPresentationEntities";
     /** Entities with a list page whose rows open in a side pane. */
     private static final String SIDE_DETAIL_KEY = "__sideDetailEntities";
+    /** Entities with a list page in the nav, whose list state rides in the route. */
+    private static final String LIST_STATE_KEY = "__listStateEntities";
 
     /** Internal key under which the entity-summary lookup rides in the project context.
      *  Not referenced by any template. */
@@ -1321,6 +1398,9 @@ public final class EntityScaffoldContext {
             FieldDefinition labelField = e.fields().stream()
                     .filter(f -> f.type().isString() && !f.primaryKey()).findFirst().orElse(null);
             s.put("labelField", labelField == null ? null : labelField.name());
+            // The list's `q` text search covers the label field: a link to this entity can be picked
+            // by typing its name (RelationPicker) instead of from a one-page <select>.
+            s.put("labelSearchable", labelField != null && labelField.searchable());
             // SQL names for a referencing entity's @Formula label subselect: this entity's table
             // (custom name or default snake-plural, schema-qualified) and the PK/label columns —
             // the same derivations its own @Table/@Column use.
@@ -1432,6 +1512,16 @@ public final class EntityScaffoldContext {
                 linked.add(rc);
             }
             ctx.put("relations", linked);
+            // The form's groups hold the same relations: hand them the linked copies too.
+            List<Map<String, Object>> groups = new ArrayList<>();
+            for (Map<String, Object> group : (List<Map<String, Object>>) ctx.get("formGroups")) {
+                Map<String, Object> gc = new LinkedHashMap<>(group);
+                gc.put("groupRelations", ((List<Map<String, Object>>) group.get("groupRelations")).stream()
+                        .map(r -> linked.stream().filter(l -> l.get("fieldName").equals(r.get("fieldName"))).findFirst().orElse(r))
+                        .toList());
+                groups.add(gc);
+            }
+            ctx.put("formGroups", groups);
         }
         // Page layouts only: the list page can be scoped to one parent through a relation filter
         // (master-detail and record pages), so it takes a `scope` prop.
@@ -1448,6 +1538,11 @@ public final class EntityScaffoldContext {
         ctx.put("listConfigurable", listConfigured != null && listConfigured.contains(entity.name()));
         Set<String> sideDetail = (Set<String>) projectContext.get(SIDE_DETAIL_KEY);
         ctx.put("listSideDetail", sideDetail != null && sideDetail.contains(entity.name()));
+        Map<String, String> recordPageOf = (Map<String, String>) projectContext.get(RECORD_PAGES_KEY);
+        ctx.put("entityHasRecordPage", recordPageOf != null && recordPageOf.keySet().stream()
+                .anyMatch(k -> k.equalsIgnoreCase(entity.name())));
+        Set<String> listState = (Set<String>) projectContext.get(LIST_STATE_KEY);
+        ctx.put("listUrlState", listState != null && listState.contains(entity.name()));
         // Per-entity scaffold-opt overrides: resolve `override ?? projectOpt` for every overridable
         // option and store it under the same optScaffold<X> key, so it shadows the project-level
         // value for this entity only. Both the per-entity templates ({{#optScaffoldCsvExport}} ...)
@@ -1473,6 +1568,16 @@ public final class EntityScaffoldContext {
         // a @Subselect view would have to project created_at/updated_at columns that may not exist.
         ctx.put("auditApplicable",
                 Boolean.TRUE.equals(ctx.get("optScaffoldAudit")) && mutable);
+        // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
+        // besides the audit rows — so it imports t / LOCALE exactly when one of them is drawn
+        // (the generated lint rejects an unused import).
+        List<Map<String, Object>> detailFields = (List<Map<String, Object>>) ctx.get("fields");
+        boolean audit = Boolean.TRUE.equals(ctx.get("auditApplicable"));
+        boolean detailBool = detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isBoolean")));
+        boolean detailDate = detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isDate")) || Boolean.TRUE.equals(f.get("isDateTime")));
+        ctx.put("detailUsesT", audit || detailBool);
+        ctx.put("detailUsesLocale", audit || detailDate);
+        ctx.put("detailUsesI18n", audit || detailBool || detailDate);
         // Bulk delete (opt-in) deletes by a list of single-column ids, so it is offered only for
         // writable, single-PK entities — a composite key can't be addressed by one id list.
         ctx.put("bulkDeleteApplicable",
@@ -1794,6 +1899,7 @@ public final class EntityScaffoldContext {
             union.append('\'').append(emitted.get(i)).append('\'');
         }
         view.put("viewModeType", union.toString());
+        view.put("viewModesTs", "[" + union.toString().replace(" | ", ", ") + "]");
 
         // Relations (MANY_TO_ONE foreign keys). Each resolves its target's PK type/name from the
         // summary lookup so the entity gets a typed @ManyToOne, the DTO exposes the key as
@@ -1824,6 +1930,7 @@ public final class EntityScaffoldContext {
             Object labelField = target == null ? null : target.get("labelField");
             rv.put("targetLabelField", labelField);
             rv.put("hasTargetLabel", labelField != null);
+            rv.put("targetSearchable", target != null && Boolean.TRUE.equals(target.get("labelSearchable")));
             // SQL names for the entity's @Formula `<field>Label` column (a per-row subselect of the
             // target's label column, so the DTO can show a name instead of a raw FK id without an
             // open session — open-in-view is off in the generated app).
@@ -1838,6 +1945,36 @@ public final class EntityScaffoldContext {
         boolean hasRequiredRelations = relationViews.stream()
                 .anyMatch(m -> Boolean.TRUE.equals(m.get("required")));
         view.put("relations", relationViews);
+        // The form and the details in groups: without sections one untitled group of every field
+        // then every relation (the bytes they always had); with sections the entity's key(s) not in
+        // one first, each section in its order, then an untitled group of the rest.
+        List<Map<String, Object>> formGroups = new ArrayList<>();
+        if (entity.formSections().isEmpty()) {
+            formGroups.add(formGroup(null, fieldViews, relationViews));
+        } else {
+            Set<String> placed = new HashSet<>();
+            entity.formSections().forEach(sec -> sec.fields().forEach(f -> placed.add(f)));
+            formGroups.add(formGroup(null,
+                    fieldViews.stream().filter(f -> Boolean.TRUE.equals(f.get("isPrimaryKey")) && !placed.contains(f.get("name"))).toList(),
+                    List.of()));
+            for (EntityDefinition.FormSection sec : entity.formSections()) {
+                List<Map<String, Object>> fs = new ArrayList<>();
+                List<Map<String, Object>> rs = new ArrayList<>();
+                for (String name : sec.fields()) {
+                    fieldViews.stream().filter(f -> name.equals(f.get("name"))).findFirst().ifPresent(fs::add);
+                    relationViews.stream().filter(r -> name.equals(r.get("fieldName"))).findFirst().ifPresent(rs::add);
+                }
+                Map<String, Object> group = formGroup(sec.title(), fs, rs);
+                group.put("groupShowExpr", String.join(" || ", sec.fields().stream().map(n -> "show('" + n + "')").toList()));
+                formGroups.add(group);
+            }
+            formGroups.add(formGroup(null,
+                    fieldViews.stream().filter(f -> !Boolean.TRUE.equals(f.get("isPrimaryKey")) && !placed.contains(f.get("name"))).toList(),
+                    relationViews.stream().filter(r -> !placed.contains(r.get("fieldName"))).toList()));
+            formGroups.removeIf(g -> ((List<?>) g.get("groupFields")).isEmpty() && ((List<?>) g.get("groupRelations")).isEmpty());
+        }
+        view.put("formGroups", formGroups);
+        view.put("hasFormSections", !entity.formSections().isEmpty());
         view.put("hasRelations", !relationViews.isEmpty());
         view.put("hasRelationLabels", relationViews.stream()
                 .anyMatch(m -> Boolean.TRUE.equals(m.get("hasTargetLabel"))));
@@ -1860,8 +1997,13 @@ public final class EntityScaffoldContext {
                                         || Boolean.TRUE.equals(m.get("isEmail")))));
         // And for the form (ui/<Entity>Form.tsx): it reads a chrome string only for a generated PK's
         // hint, boolean/enum <option> labels, and the relation picker's loading placeholder.
+        // A searchable target is picked by typing (RelationPicker); any other keeps the one-page
+        // <select> fed by useOptions, whose placeholder is the chrome string below.
+        boolean formUsesOptions = relationViews.stream().anyMatch(m -> !Boolean.TRUE.equals(m.get("targetSearchable")));
+        view.put("formUsesOptions", formUsesOptions);
+        view.put("formUsesPicker", relationViews.stream().anyMatch(m -> Boolean.TRUE.equals(m.get("targetSearchable"))));
         view.put("formUsesStrings",
-                !relationViews.isEmpty()
+                formUsesOptions
                         || fieldViews.stream().anyMatch(m ->
                                 (Boolean.TRUE.equals(m.get("isPrimaryKey")) && Boolean.TRUE.equals(m.get("isGenerated")))
                                 || Boolean.TRUE.equals(m.get("isBoolean"))
@@ -1886,6 +2028,7 @@ public final class EntityScaffoldContext {
             ff.put("targetEntityKebabPlural", rv.get("targetEntityKebabPlural"));
             ff.put("targetLabelField", rv.get("targetLabelField"));
             ff.put("hasTargetLabel", rv.get("hasTargetLabel"));
+            ff.put("targetSearchable", rv.get("targetSearchable"));
             ff.put("enumValues", List.of());
             filterFieldViews.add(ff);
         }

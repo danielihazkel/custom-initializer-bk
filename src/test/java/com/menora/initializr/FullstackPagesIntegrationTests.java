@@ -66,13 +66,13 @@ class FullstackPagesIntegrationTests {
                 // The agents page carries its own title in this test, so the nav shows it.
                 .contains("    label: 'People',\n    items: [\n      { id: 'agents', label: 'Support agents', icon: Users },\n"
                         + "      { id: 'teams', label: 'Teams', icon: PanelLeft },\n    ],")
-                // No routed screen keeps state in the hash here: no `replace`, no `setQuery`.
-                .contains("const [route, navigate] = useRoute()")
-                .doesNotContain("setQuery")
+                // The agents list keeps its state in the hash, rewritten in place.
+                .contains("const [route, navigate, replace] = useRoute()")
+                .contains("const setQuery = (query: Record<string, string>) => replace({ ...route, query })")
                 .contains("{view === 'overview' && <OverviewScreen onNavigate={goView} />}")
                 // The route hands a tabs page its open tab, and a filterable list its filters.
                 .contains("{view === 'queue' && <QueueScreen tab={route.arg} onTabChange={tab => go('queue', tab)} />}")
-                .contains("{view === 'agents' && <AgentsScreen selectedId={route.arg} onSelect={id => go('agents', id)} filters={route.query} />}")
+                .contains("{view === 'agents' && <AgentsScreen selectedId={route.arg} onSelect={id => go('agents', id, route.query)} query={route.query} onQueryChange={setQuery} />}")
                 // A master-detail page keeps its selected parent in the route (#/teams/3).
                 .contains("{view === 'teams' && <TeamsScreen selectedId={route.arg} onSelect={id => go('teams', id)} />}")
                 .doesNotContain("DashboardPage")
@@ -103,13 +103,13 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/app/screens/TicketsOpenScreen.tsx"))
                 .contains("key={JSON.stringify(filters ?? {})}")
                 .contains("initialFilters={ { status: 'OPEN', ...filters } }");
-        assertThat(files.get(FE + "src/app/screens/AgentsScreen.tsx")).contains("initialFilters={filters}");
+        assertThat(files.get(FE + "src/app/screens/AgentsScreen.tsx")).contains("initialFilters={ { ...preset, ...opening.filters } }");
 
         // Dashboard: widgets in order. Ticket's list pages are only tabs, so its widgets open the
         // tabs page; Team's home is its master-detail page.
         String overview = files.get(FE + "src/app/screens/OverviewScreen.tsx");
         assertThat(overview)
-                .contains("import { BreakdownCard, KpiTile, TopList, RecentList, StackedCard, TextCard, } from '@shared/ui/widgets'")
+                .contains("import { BreakdownCard, KpiTile, TopList, RecentList, StackedCard, TextCard, RefreshButton, } from '@shared/ui/widgets'")
                 .contains("import { t } from '@shared/i18n'")
                 .contains("import { TicketStatusTypeLabels, TicketPriorityTypeLabels } from '@entities/ticket'")
                 .contains("export function OverviewScreen({ onNavigate }: Props)")
@@ -124,8 +124,8 @@ class FullstackPagesIntegrationTests {
                 .contains("title={ t('xByY', { x: 'Tickets', y: 'Priority' }) }")
                 .contains("title={ t('recentX', { x: 'Tickets' }) }")
                 .contains("sortField=\"id\"\n          displayField=\"subject\"\n          limit={ 5 }")
-                // No period picker on this dashboard: no state, no params.
-                .doesNotContain("useState")
+                // No period picker on this dashboard: its only state is the refresh count.
+                .doesNotContain("PeriodSelect")
                 .doesNotContain("params=");
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
                 .contains("export function KpiTile(")
@@ -168,8 +168,8 @@ class FullstackPagesIntegrationTests {
         // A list page with its own title passes it (and its description) to the entity page; a
         // list that is not a tab target takes no `embedded`.
         assertThat(files.get(FE + "src/app/screens/AgentsScreen.tsx"))
-                .contains("export function AgentsScreen({ selectedId, onSelect, filters }: Props) {")
-                .contains("      initialFilters={filters}\n      sidePane\n      selectedId={selectedId}\n      onSelect={onSelect}\n      title={ 'Support agents' }\n      description={ 'Everyone on the desk.' }\n    />")
+                .contains("export function AgentsScreen({ selectedId, onSelect, query, onQueryChange }: Props) {")
+                .contains("      initialFilters={ { ...preset, ...opening.filters } }\n      listState={opening}\n      onListStateChange={report}\n      sidePane\n      selectedId={selectedId}\n      onSelect={onSelect}\n      title={ 'Support agents' }\n      description={ 'Everyone on the desk.' }\n    />")
                 .doesNotContain("embedded");
         assertThat(files.get(FE + "src/pages/ticket/ui/TicketPage.tsx"))
                 .contains("export function TicketPage({ initialFilters, scope, onOpenRecord, title, description, embedded }: TicketPageProps = {}) {")
@@ -254,10 +254,12 @@ class FullstackPagesIntegrationTests {
                 .contains("{ key: 'createdAt', label: t('created'), sortKey: 'createdAt'")
                 .contains("  columns?: string[]\n")
                 .contains("initialView?: 'table' | 'kanban' | 'calendar'")
-                .contains(", columns: columnKeys, initialSort, initialView, initialPageSize }: OrderPageProps = {}")
-                .contains("useState(initialPageSize ?? 20)")
-                .contains("useState<SortSpec | null>(initialSort ?? null)")
-                .contains("useState<'table' | 'kanban' | 'calendar'>(initialView ?? 'table')")
+                .contains(", columns: columnKeys, initialSort, initialView, initialPageSize, listState, onListStateChange }: OrderPageProps = {}")
+                .contains("const openingSize = initialPageSize ?? 20")
+                .contains("const openingSort = JSON.stringify(initialSort ?? null)")
+                .contains("useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : JSON.parse(openingSort))")
+                .contains("const openingView = initialView ?? 'table'")
+                .contains("useState<'table' | 'kanban' | 'calendar'>(routeView ?? openingView)")
                 .contains("const shown = columnKeys ? columnKeys.flatMap(k => columns.filter(c => c.key === k)) : columns")
                 .contains("columns={shown}")
                 .doesNotContain("columns={columns}");
@@ -291,7 +293,8 @@ class FullstackPagesIntegrationTests {
                 .contains("type ListColumn = Column<Order> & { key: string }")
                 .contains("{ key: 'reference', label:")
                 .contains("{ key: 'status', label: 'Status', sortKey: 'status', chip: true")
-                .contains("useState<'table' | 'kanban' | 'calendar'>(initialView ?? 'table')")
+                .contains("const openingView = initialView ?? 'table'")
+                .contains("useState<'table' | 'kanban' | 'calendar'>(routeView ?? openingView)")
                 .contains("columns={shown}");
         assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx")).doesNotContain("ListColumn");
     }
@@ -407,7 +410,7 @@ class FullstackPagesIntegrationTests {
                 .contains("const go = (id: View, arg?: string, query: Record<string, string> = {}) => {\n"
                         + "    navigate({ view: id, arg, query })\n")
                 .contains("const goView = (v: string, arg?: string, query?: Record<string, string>) => go(v as View, arg, query)")
-                .contains("{view === 'orders' && <OrdersScreen filters={route.query} onNavigate={goView} />}")
+                .contains("{view === 'orders' && <OrdersScreen query={route.query} onQueryChange={setQuery} onNavigate={goView} />}")
                 .contains("{view === 'order' && route.arg && <OrderScreen key={route.arg} recordId={route.arg} onNavigate={goView} />}")
                 .contains("{current?.label ?? RECORD_TITLES[view] ?? t('dashboard')}")
                 .doesNotContain("{ id: 'order',");
@@ -418,10 +421,10 @@ class FullstackPagesIntegrationTests {
         // Rows of an entity with a record page open it; its dashboard recents link there too.
         assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx"))
                 .contains("onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void")
-                .contains("export function OrdersScreen({ filters, onNavigate }: Props) {")
-                .contains("      initialFilters={filters}\n      onOpenRecord={r => onNavigate('order', String(r.id))}\n");
+                .contains("export function OrdersScreen({ query, onQueryChange, onNavigate }: Props) {")
+                .contains("      initialFilters={ { ...preset, ...opening.filters } }\n      listState={opening}\n      onListStateChange={report}\n      onOpenRecord={r => onNavigate('order', String(r.id))}\n");
         assertThat(files.get(FE + "src/app/screens/ProductsScreen.tsx"))
-                .contains("export function ProductsScreen({ filters }: Props) {")
+                .contains("export function ProductsScreen({ query, onQueryChange }: Props) {")
                 .doesNotContain("onNavigate");
         assertThat(files.get(FE + "src/app/screens/DeskScreen.tsx"))
                 .contains("limit={ 6 }\n          className=\"sm:col-span-2\"\n          onOpenRow={r => onNavigate('order', String(r['id']))}");
@@ -443,7 +446,7 @@ class FullstackPagesIntegrationTests {
         // Record page: fetched by id, details tab + one tab per related list, back to the list.
         String record = files.get(FE + "src/app/screens/OrderScreen.tsx");
         assertThat(record)
-                .contains("import { ArrowLeft, Pencil, Trash2, } from 'lucide-react'")
+                .contains("import { ArrowLeft, ChevronLeft, ChevronRight, Pencil, Trash2, } from 'lucide-react'")
                 .contains("import type { Order } from '@entities/order'")
                 // Order has a wizard page, so Edit reopens the row in it; Delete goes back to the list.
                 .contains("import { OrderDetail } from '@features/order-form'")
@@ -523,20 +526,19 @@ class FullstackPagesIntegrationTests {
 
         String record = files.get(FE + "src/app/screens/AgentScreen.tsx");
         assertThat(record)
-                .contains("export function AgentScreen({ recordId }: Props) {")
+                .contains("export function AgentScreen({ recordId, onNavigate }: Props) {")
                 .contains("<AgentDetail value={record} />")
                 // No wizard: Edit opens the form drawer and saves with a PUT.
                 .contains("import { AgentDetail, AgentForm, validateAgent } from '@features/agent-form'")
                 .contains("const saved = await api.put<Agent>(PATH + encodeURIComponent(recordId), editing)")
                 .contains("onClick={() => { setEditing({ ...record }); setFormErrors({}) } }")
                 // Editable even without a home page: a delete steps back in the browser history.
-                .contains("import { Pencil, Trash2, } from 'lucide-react'")
+                .contains("import { ChevronLeft, ChevronRight, Pencil, Trash2, } from 'lucide-react'")
                 .contains("      setConfirming(false)\n      window.history.back()\n")
                 .doesNotContain("TABS")
-                .doesNotContain("onNavigate")
                 .doesNotContain("ArrowLeft");
         assertThat(files.get(FE + "src/app/App.tsx"))
-                .contains("{view === 'agent' && route.arg && <AgentScreen key={route.arg} recordId={route.arg} />}");
+                .contains("{view === 'agent' && route.arg && <AgentScreen key={route.arg} recordId={route.arg} onNavigate={goView} />}");
         // A record page needs an id: without one the route falls back to the start page.
         assertThat(files.get(FE + "src/app/route.ts"))
                 .contains("const RECORD_VIEWS: readonly View[] = ['agent']")
@@ -627,8 +629,8 @@ class FullstackPagesIntegrationTests {
         String dashboard = files.get(FE + "src/app/screens/ReportScreen.tsx");
         assertThat(dashboard)
                 .contains("import { useState } from 'react'")
-                .contains("import { BreakdownCard, KpiTile, PeriodSelect, ProgressTile, TrendCard, RecentList, } from '@shared/ui/widgets'")
-                .contains("import { bucketRange, parsePeriod, queryOf, rangeParams, statsQuery, type Period } from '@shared/ui/stats'")
+                .contains("import { BreakdownCard, KpiTile, PeriodSelect, ProgressTile, TrendCard, RecentList, RefreshButton, } from '@shared/ui/widgets'")
+                .contains("import { RefreshTick, bucketRange, parsePeriod, queryOf, rangeParams, statsQuery, type Period } from '@shared/ui/stats'")
                 .contains("export function ReportScreen({ period: routePeriod, onPeriodChange, onNavigate }: Props) {")
                 // A compared tile asks for the previous period too; "all time" has none.
                 .contains("compareParams={ period === 'all' ? undefined : rangeParams('soldOn', false, period, true) }")
@@ -706,8 +708,8 @@ class FullstackPagesIntegrationTests {
                 .contains("onSelect={key => onNavigate('orders', undefined, { ...filters, customerId: key })}")
                 .doesNotContain("@entities/order'");
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
-                .contains("function useOptionNames(optionsPath: string | undefined, optionValue: string, optionLabel: string | undefined): Record<string, string> {")
-                .contains("const names = useOptionNames(optionsPath, optionValue, optionLabel)\n  const rows = (stats?.buckets ?? []).map(b => ({\n    key: b.key,\n    label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ?");
+                .contains("function useOptionNames(optionsPath: string | undefined, optionValue: string, optionLabel: string | undefined, keys: readonly string[] = []): Record<string, string> {")
+                .contains("const names = useOptionNames(optionsPath, optionValue, optionLabel, (stats?.buckets ?? []).map(b => b.key))\n  const rows = (stats?.buckets ?? []).map(b => ({\n    key: b.key,\n    label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ?");
     }
 
     @Test
@@ -782,6 +784,214 @@ class FullstackPagesIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_listPagesKeepTheirStateInTheRoute() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        Map<String, String> files = generate(body);
+
+        // The route maps its query to a list's state and back: filters by name, the rest `_`-prefixed.
+        assertThat(files.get(FE + "src/app/route.ts"))
+                .contains("import type { FilterValues, ListState } from '@shared/ui'")
+                .contains("export function listStateOf(query: Record<string, string>): ListState {")
+                .contains("export function listQueryOf(state: ListState, preset: FilterValues = {}): Record<string, string> {")
+                .contains("if (state.page) out._page = String(state.page + 1)");
+        // A list page in the nav hands its page the route's state, and writes it back in place;
+        // only a route the list did not write itself remounts it.
+        assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx"))
+                .contains("import { listQueryOf, listStateOf } from '../route'")
+                .contains("  query?: Record<string, string>\n  onQueryChange?: (query: Record<string, string>) => void\n")
+                .contains("if (mount.seen !== seen) setMount({ key: seen === written.current ? mount.key : mount.key + 1, seen })")
+                .contains("      key={mount.key}\n")
+                .contains("      listState={opening}\n      onListStateChange={report}")
+                .doesNotContain("JSON.stringify(filters ?? {})");
+        assertThat(files.get(FE + "src/app/App.tsx"))
+                .contains("const [route, navigate, replace] = useRoute()")
+                .contains("<OrdersScreen query={route.query} onQueryChange={setQuery} onNavigate={goView} />");
+        // The page opens from the state and reports what differs from its defaults; the page reset
+        // is derived during render, so the page it opened on stands.
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx"))
+                .contains("  listState?: ListState\n")
+                .contains("const [page, setPage] = useState(listState?.page ?? 0)")
+                .contains("const [search, setSearch] = useState(listState?.q ?? '')")
+                .contains("const routeView = (['table', 'kanban', 'calendar'] as string[]).includes(listState?.view ?? '')")
+                .contains("if (resetKey !== lastReset) {")
+                .contains("onListStateChange?.({")
+                .doesNotContain("  useEffect(() => {\n    setPage(0)\n");
+        assertThat(files.get(FE + "src/shared/ui/Table.tsx")).contains("export interface ListState {");
+        assertThat(files.get(FE + "src/shared/ui/index.ts")).contains("type ListState } from './Table'");
+
+        // An entity with no list page in the nav (Customer is only a master-detail parent) keeps
+        // its local list state and its bytes.
+        assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx"))
+                .doesNotContain("listState")
+                .contains("  useEffect(() => {\n    setPage(0)\n");
+        // The classic shell has no route to keep it in.
+        Map<String, Object> classic = exampleBody("orders", "react-tailwind-crud");
+        classic.remove("pages");
+        assertThat(generate(classic).get(FE + "src/pages/order/ui/OrderPage.tsx")).doesNotContain("listState");
+    }
+
+    @Test
+    void fullstackEndpoint_dashboardsRefreshTheirWidgets() throws Exception {
+        // The Tickets overview reloads every five minutes; every dashboard with data has Refresh.
+        Map<String, String> files = generate(exampleBody("tickets", "react-tailwind-crud"));
+        assertThat(files.get(FE + "src/app/screens/OverviewScreen.tsx"))
+                .contains("import { useEffect, useState } from 'react'")
+                .contains("RefreshButton, } from '@shared/ui/widgets'")
+                .contains("import { RefreshTick, ")
+                .contains("const [tick, setTick] = useState(0)")
+                .contains("if (document.visibilityState === 'visible') setTick(n => n + 1)\n    }, 300000)")
+                .contains("<RefreshButton onClick={() => setTick(n => n + 1)} />")
+                .contains("      <RefreshTick.Provider value={tick}>\n")
+                .contains("      </RefreshTick.Provider>\n");
+        assertThat(files.get(FE + "src/shared/ui/stats.ts"))
+                .contains("export const RefreshTick = createContext(0)")
+                .contains("}, [path, query, attempt, tick])");
+        assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
+                .contains("export function RefreshButton({ onClick }: { onClick: () => void }) {")
+                .contains("}, [path, agg, field, params, attempt, tick])");
+        // Without refreshSeconds: the button, no timer.
+        Map<String, String> orders = generate(exampleBody("orders", "react-tailwind-crud"));
+        assertThat(orders.get(FE + "src/app/screens/DeskScreen.tsx"))
+                .contains("<RefreshButton onClick={() => setTick(n => n + 1)} />")
+                .doesNotContain("setInterval");
+
+        assertRejected(p -> p.get(0).put("refreshSeconds", 45), "Page 'overview': refreshSeconds must be one of 30, 60, 300 or 900, got 45");
+        assertOrdersRejected(p -> p.put("refreshSeconds", 60), "(entity-list) does not take 'refreshSeconds'");
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "text", "text", "Hello"))),
+                "Page 'overview' refreshes every 300 seconds, but none of its widgets shows data to reload");
+    }
+
+    @Test
+    void fullstackEndpoint_wizardKeepsADraftAndRecordPagesWalkTheirList() throws Exception {
+        Map<String, String> files = generate(exampleBody("orders", "react-tailwind-crud"));
+
+        // The wizard keeps a new record's answers for the tab, revisits finished steps and can start over.
+        assertThat(files.get(FE + "src/app/screens/NewOrderScreen.tsx"))
+                .contains("const DRAFT = 'wizard-draft:new-order'")
+                .contains("const [draft] = useState(() => editId != null ? null : readDraft())")
+                .contains("sessionStorage.setItem(DRAFT, JSON.stringify({ step, value }))")
+                .contains("disabled={i >= step || saving}")
+                .contains("{t('startOver')}")
+                .contains("      forgetDraft()\n      toast.success(t('xCreated'");
+        assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("startOver: 'Start over',");
+
+        // A list of an entity with a record page hands the record its neighbours; the record page
+        // walks them and shows its status as chips.
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx"))
+                .contains("sessionStorage.setItem('record-siblings:order', JSON.stringify(items.map(r => String(rowKey(r)))))");
+        assertThat(files.get(FE + "src/app/screens/OrderScreen.tsx"))
+                .contains("import { ArrowLeft, ChevronLeft, ChevronRight, ")
+                .contains("import { OrderStatusTypeLabels } from '@entities/order'")
+                .contains("const at = siblings.indexOf(recordId)")
+                .contains("onClick={() => onNavigate('order', siblings[at + 1])}")
+                .contains("{ OrderStatusTypeLabels[record.status] }");
+        // An entity without a record page keeps its bytes.
+        assertThat(files.get(FE + "src/pages/product/ui/ProductPage.tsx")).doesNotContain("record-siblings");
+    }
+
+    @Test
+    void fullstackEndpoint_chartsGroupByRelationsFillTheirGapsAndChooseTheirTables() throws Exception {
+        Map<String, String> files = generate(exampleBody("inventory", "react-tailwind-crud"));
+
+        // A donut grouped by a relation names its slices from the target's list and drills on its id.
+        assertThat(files.get(FE + "src/app/screens/StockScreen.tsx"))
+                .contains("field=\"warehouse\"")
+                .contains("optionsPath=\"/api/warehouses\"")
+                .contains("          donut\n");
+        assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
+                .contains("export function BreakdownCard({ title, path, field, agg, valueField, labels, optionsPath, optionValue = 'id', optionLabel,")
+                .contains("const data = fillBuckets(")
+                .contains("<span>{formatStat(min + span / 2)}</span>");
+        assertThat(files.get(FE + "src/shared/ui/stats.ts"))
+                .contains("export function fillBuckets<T extends { key: string; label: string; value: number }>(rows: T[], bucket: string, agg?: string): T[] {");
+        // The report's third chart asks for its totals table; the second does not get one.
+        String report = files.get(FE + "src/app/screens/MovementsScreen.tsx");
+        assertThat(report.split("\n          table\n", -1)).hasSize(2);
+        assertThat(report).contains("        table\n");
+
+        assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "stacked", "entity", "Ticket", "groupBy", "team"))),
+                "groupBy 'team' is not a field of Ticket");
+    }
+
+    @Test
+    void fullstackEndpoint_formSectionsGroupTheFormTheDetailsAndTheWizard() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        Map<String, Object> order = entity(body, "Order");
+        order.put("formSections", List.of(
+                Map.of("title", "Who", "fields", List.of("customer", "reference")),
+                Map.of("title", "What", "fields", List.of("STATUS", "total"))));
+        // The wizard names no steps: it follows the sections, then asks for the rest.
+        page(body, "new-order").remove("steps");
+        Map<String, String> files = generate(body);
+
+        assertThat(files.get(FE + "src/features/order-form/ui/OrderForm.tsx"))
+                .contains("<legend className=\"mb-3 text-sm font-semibold text-fg\">{ 'Who' }</legend>")
+                .contains("{(show('customer') || show('reference')) && (<fieldset")
+                .contains("<legend className=\"mb-3 text-sm font-semibold text-fg\">{ 'What' }</legend>");
+        String form = files.get(FE + "src/features/order-form/ui/OrderForm.tsx");
+        // In the Who section the relation picker comes after its fields, and placedAt (in no section) last.
+        assertThat(form.indexOf("{ 'Who' }")).isLessThan(form.indexOf("set('reference'"));
+        assertThat(form.indexOf("{ 'What' }")).isLessThan(form.indexOf("set('placedAt'"));
+        assertThat(files.get(FE + "src/features/order-form/ui/OrderDetail.tsx"))
+                .contains("{ 'Who' }</div>")
+                .contains("{ 'What' }</div>");
+        assertThat(files.get(FE + "src/app/screens/NewOrderScreen.tsx"))
+                .contains("{ title: 'Who', fields: ['customer', 'reference']")
+                .contains("{ title: 'What', fields: ['status', 'total']")
+                .contains("fields: ['placedAt']");
+        // Without sections the form keeps its bytes: no fieldset at all.
+        Map<String, Object> plain = exampleBody("orders", "react-tailwind-crud");
+        entity(plain, "Order").remove("formSections");
+        assertThat(generate(plain).get(FE + "src/features/order-form/ui/OrderForm.tsx"))
+                .doesNotContain("fieldset");
+
+        Map<String, Object> twice = exampleBody("orders", "react-tailwind-crud");
+        entity(twice, "Order").put("formSections", List.of(
+                Map.of("title", "A", "fields", List.of("status")), Map.of("title", "B", "fields", List.of("status"))));
+        assertBadRequest(twice, "Entity 'Order' lists 'status' in two form sections");
+        Map<String, Object> unknown = exampleBody("orders", "react-tailwind-crud");
+        entity(unknown, "Order").put("formSections", List.of(Map.of("title", "A", "fields", List.of("nope"))));
+        assertBadRequest(unknown, "Entity 'Order' form section 1 ('A') lists 'nope', which is not one of its fields or relations");
+        Map<String, Object> untitled = exampleBody("orders", "react-tailwind-crud");
+        entity(untitled, "Order").put("formSections", List.of(Map.of("title", " ", "fields", List.of("status"))));
+        assertBadRequest(untitled, "Entity 'Order' form section 1 needs a title");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> entity(Map<String, Object> body, String name) {
+        return ((List<Map<String, Object>>) body.get("entities")).stream()
+                .filter(e -> name.equals(e.get("name"))).findFirst().orElseThrow();
+    }
+
+    @Test
+    void fullstackEndpoint_relatedListsOpenWithTheirOwnColumnsAndSort() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        // The customers master-detail's order list, and the order record's lines tab.
+        page(body, "customers").put("columns", List.of("reference", "STATUS", "total"));
+        page(body, "customers").put("sort", Map.of("field", "placedAt", "dir", "desc"));
+        page(body, "order").put("childTabs", List.of(Map.of("entity", "OrderLine", "columns", List.of("quantity"),
+                "sort", Map.of("field", "quantity", "dir", "desc"))));
+        Map<String, String> files = generate(body);
+
+        assertThat(files.get(FE + "src/app/screens/CustomersScreen.tsx"))
+                .contains("              columns={ ['reference', 'status', 'total'] }\n")
+                .contains("              initialSort={ { field: 'placedAt', direction: 'desc' } }\n");
+        assertThat(files.get(FE + "src/app/screens/OrderScreen.tsx"))
+                .contains("                columns={ ['quantity'] }\n")
+                .contains("                initialSort={ { field: 'quantity', direction: 'desc' } }\n");
+        // Both entities' pages take the presentation props.
+        assertThat(files.get(FE + "src/pages/order-line/ui/OrderLinePage.tsx")).contains("initialSort?: SortSpec");
+
+        Map<String, Object> bad = exampleBody("orders", "react-tailwind-crud");
+        page(bad, "customers").put("columns", List.of("nope"));
+        assertBadRequest(bad, "Page 'customers' (master-detail) child");
+        Map<String, Object> badTab = exampleBody("orders", "react-tailwind-crud");
+        page(badTab, "order").put("childTabs", List.of(Map.of("entity", "OrderLine", "sort", Map.of("field", "nope"))));
+        assertBadRequest(badTab, "childTabs[0]");
+        assertRejected(p -> p.get(0).put("columns", List.of("subject")), "(dashboard) does not take 'columns'");
+    }
+
+    @Test
     void fullstackEndpoint_listOpensRowsInASidePane() throws Exception {
         Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
         page(body, "orders").put("detail", "side");
@@ -795,7 +1005,7 @@ class FullstackPagesIntegrationTests {
                 .contains("      sidePane\n      selectedId={selectedId}\n      onSelect={onSelect}\n")
                 .doesNotContain("onOpenRecord");
         assertThat(files.get(FE + "src/app/App.tsx"))
-                .contains("<OrdersScreen selectedId={route.arg} onSelect={id => go('orders', id)} filters={route.query} onNavigate={goView} />");
+                .contains("<OrdersScreen selectedId={route.arg} onSelect={id => go('orders', id, route.query)} query={route.query} onQueryChange={setQuery} onNavigate={goView} />");
         // Only the entity with a side-pane page gets the pane and its props.
         assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx"))
                 .contains("  sidePane?: boolean\n")
@@ -835,7 +1045,8 @@ class FullstackPagesIntegrationTests {
         // The period is computed when the screen loads; the ranges are the list's own From/To and Min/Max params.
         assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx"))
                 .contains("import { queryOf, rangeParams } from '@shared/ui/stats'")
-                .contains("initialFilters={ { ...queryOf(rangeParams('placedAt', false, '30d')), status: 'OPEN', totalMin: '100', ...filters } }");
+                .contains("const preset = { ...queryOf(rangeParams('placedAt', false, '30d')), status: 'OPEN', totalMin: '100' }")
+                .contains("initialFilters={ { ...preset, ...opening.filters } }");
         assertThat(files.get(FE + "src/app/screens/OlderScreen.tsx"))
                 .doesNotContain("@shared/ui/stats")
                 .contains("initialFilters={ { placedAtFrom: '2026-01-01', placedAtTo: '2026-03-31', ...filters } }");
@@ -867,7 +1078,7 @@ class FullstackPagesIntegrationTests {
         // The card embeds the entity page with the same literal props a list page's screen passes,
         // ten rows a page, its rows opening the record page and "View all" the orders list.
         assertThat(files.get(FE + "src/app/screens/DeskScreen.tsx"))
-                .contains("RecentList, ListCard, } from '@shared/ui/widgets'")
+                .contains("RecentList, ListCard, RefreshButton, } from '@shared/ui/widgets'")
                 .contains("import { OrderPage } from '@pages/order'")
                 .contains("        <ListCard\n          title={ 'Open orders' }\n          className=\"sm:col-span-2 lg:col-span-4\"\n"
                         + "          onOpen={() => onNavigate('orders')}\n        >\n"
@@ -875,7 +1086,7 @@ class FullstackPagesIntegrationTests {
                         + " columns={ ['reference', 'customer', 'total'] } initialSort={ { field: 'placedAt', direction: 'desc' } }"
                         + " onOpenRecord={r => onNavigate('order', String(r.id))} />\n        </ListCard>\n");
         // Only the embedded entity's page takes the presentation props.
-        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx")).contains(", columns: columnKeys, initialSort, initialView, initialPageSize }: OrderPageProps = {}");
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx")).contains(", columns: columnKeys, initialSort, initialView, initialPageSize, listState, onListStateChange }: OrderPageProps = {}");
         assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx")).doesNotContain("initialPageSize");
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx")).contains("export function ListCard(");
     }
@@ -940,7 +1151,7 @@ class FullstackPagesIntegrationTests {
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "bar", "entity", "Ticket", "groupBy", "subject"))),
                 "groupBy 'subject' must be a non-key enum or boolean field");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "bar", "entity", "Team"))),
-                "Team has no enum or boolean field to group by");
+                "Team has no enum, boolean or relation to group by");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "agg", "sum"))),
                 "agg 'sum' needs a numeric 'field' of Ticket to reduce");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket",
@@ -1158,7 +1369,7 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/app/screens/OverviewScreen.tsx"))
                 .contains("const [localPeriod, setLocalPeriod] = useState<Period>('ytd')")
                 .contains("const period = onPeriodChange ? parsePeriod(routePeriod, 'ytd') : localPeriod")
-                .contains("import { parsePeriod, rangeParams, type Period } from '@shared/ui/stats'")
+                .contains("import { RefreshTick, parsePeriod, rangeParams, type Period } from '@shared/ui/stats'")
                 .contains("title={ 'Tickets' }\n          path=\"/api/tickets\"\n          params={ rangeParams('dueAt', true, period) }")
                 .contains("title={ 'Agents' }\n          path=\"/api/agents\"\n          onOpen=")
                 .doesNotContain("statsQuery");
@@ -1240,7 +1451,7 @@ class FullstackPagesIntegrationTests {
 
         String screen = files.get(FE + "src/app/screens/InsightsScreen.tsx");
         assertThat(screen)
-                .contains("import { BreakdownCard, StackedCard, TextCard, } from '@shared/ui/widgets'")
+                .contains("import { BreakdownCard, StackedCard, TextCard, RefreshButton, } from '@shared/ui/widgets'")
                 .contains("          field=\"status\"\n")
                 .contains("          donut\n")
                 .contains("<StackedCard\n")

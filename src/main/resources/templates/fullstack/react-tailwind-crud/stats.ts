@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { api } from '@shared/api'
 import { LOCALE } from '../i18n'
 
@@ -21,6 +21,10 @@ export interface StatsResponse {
   total: number | null
 }
 
+/** Bumped by a dashboard's Refresh (or its timer): every data widget under it reloads, keeping
+ *  what it shows until the new numbers arrive. */
+export const RefreshTick = createContext(0)
+
 /** Reads an entity's rollup. `query` is a ready query string, so a fresh object literal at the
  *  call site can never retrigger the fetch. */
 export function useStats(path: string, query: string) {
@@ -28,16 +32,23 @@ export function useStats(path: string, query: string) {
   const [failed, setFailed] = useState(false)
   // Bumped by retry() to run the same request again.
   const [attempt, setAttempt] = useState(0)
+  const tick = useContext(RefreshTick)
+  // Only a different question clears the answer; a reload keeps it on screen meanwhile.
+  const asked = useRef('')
 
   useEffect(() => {
     let active = true
-    setStats(null)
+    const question = `${path}?${query}`
+    if (asked.current !== question) {
+      asked.current = question
+      setStats(null)
+    }
     setFailed(false)
     api.get<StatsResponse>(`${path}/stats${query ? `?${query}` : ''}`)
       .then(s => { if (active) setStats(s) })
       .catch(() => { if (active) setFailed(true) })
     return () => { active = false }
-  }, [path, query, attempt])
+  }, [path, query, attempt, tick])
 
   return { stats, failed, retry: () => setAttempt(a => a + 1) }
 }
@@ -177,4 +188,33 @@ export function bucketRange(field: string, key: string, dateTime: boolean): Reco
     [`${field}From`]: isoDay(from) + (dateTime ? 'T00:00:00' : ''),
     [`${field}To`]: isoDay(to) + (dateTime ? 'T23:59:59' : ''),
   }
+}
+
+/**
+ * A time series with a point for every day/month/year between its first and last bucket: the
+ * rollup only answers the buckets that have rows. A missing bucket counts 0 for a count or a sum;
+ * for an average, minimum or maximum there is nothing to show, so the gaps stay gaps.
+ */
+export function fillBuckets<T extends { key: string; label: string; value: number }>(rows: T[], bucket: string, agg?: string): T[] {
+  if (rows.length < 2 || (agg && agg !== 'count' && agg !== 'sum')) return rows
+  const dated = rows.filter(r => r.key !== '')
+  if (dated.length < 2) return rows
+  const next = (key: string): string => {
+    if (bucket === 'year') return String(Number(key) + 1)
+    if (bucket === 'month') {
+      const [y, m] = key.split('-').map(Number)
+      return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+    }
+    const d = new Date(`${key}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + 1)
+    return d.toISOString().slice(0, 10)
+  }
+  const byKey = new Map(dated.map(r => [r.key, r]))
+  const out: T[] = []
+  // A long run of days is capped, so a stray outlier cannot draw thousands of points.
+  for (let key = dated[0].key; out.length < 400; key = next(key)) {
+    out.push(byKey.get(key) ?? ({ ...dated[0], key, label: key, value: 0 }))
+    if (key >= dated[dated.length - 1].key) break
+  }
+  return [...rows.filter(r => r.key === ''), ...out]
 }

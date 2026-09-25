@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 {{#hasEnumFields}}import { {{#fields}}{{#isEnum}}{{enumTypeName}}Labels, {{/isEnum}}{{/fields}}} from '@entities/{{entityNameKebab}}'
 {{/hasEnumFields}}
-import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
+import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#listUrlState}}type ListState, {{/listUrlState}}{{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { SectionHeader, Chip{{#hasViewToggle}}, Tabs{{/hasViewToggle}}{{#mutable}}, Button{{/mutable}}{{^mutable}}{{#optScaffoldCsvExport}}, Button{{/optScaffoldCsvExport}}{{/mutable}} } from '@shared/ui/menora'
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
@@ -32,7 +32,7 @@ type ListColumn = Column<{{EntityName}}> & { key: string }
 const VIEW_TABS: { id: {{viewModeType}}; label: string }[] = [{{#viewTable}}{ id: 'table', label: t('tableView') }, {{/viewTable}}{{#viewCards}}{ id: 'cards', label: t('cardView') }, {{/viewCards}}{{#viewKanban}}{ id: 'kanban', label: t('boardView') }, {{/viewKanban}}{{#viewCalendar}}{ id: 'calendar', label: t('calendarView') }, {{/viewCalendar}}]
 {{/hasViewToggle}}{{#hasFilters}}
 const filterDescriptors: FilterDescriptor[] = [
-{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{/isRelationFilter}} },
+{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
 {{/filterFields}}]
 {{/hasFilters}}{{#bulkUpdateApplicable}}{{#viewTable}}
 // Fields eligible for bulk edit. `kind` selects the value control shown in the bulk-edit bar; the
@@ -75,6 +75,12 @@ interface {{EntityName}}PageProps {
   /** New opens the entity's wizard page instead of the form drawer. */
   onCreate?: () => void
 {{/hasWizardPage}}
+{{#listUrlState}}
+  /** Where the list opens, from the route: search, sort, page, rows per page, view, filters. */
+  listState?: ListState
+  /** Told where the list is as it changes, for the route to keep. */
+  onListStateChange?: (state: ListState) => void
+{{/listUrlState}}
 {{#listConfigurable}}
   /** The columns to show, by key, in this order (default: every column). */
   columns?: string[]
@@ -88,7 +94,22 @@ interface {{EntityName}}PageProps {
 }
 
 {{/hasPages}}
-export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+{{#listUrlState}}
+  // What the list opens with when the route says nothing — the parts it does not report back.
+  const openingSize = {{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20
+  const openingSort = JSON.stringify({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
+  const openingView = {{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}'
+  const routeView = ({{{viewModesTs}}} as string[]).includes(listState?.view ?? '') ? listState?.view as {{viewModeType}} : undefined
+  const [page, setPage] = useState(listState?.page ?? 0)
+  const [size, setSize] = useState(listState?.size ?? openingSize)
+  const [sort, setSort] = useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : JSON.parse(openingSort))
+  const [search, setSearch] = useState(listState?.q ?? '')
+  const [debouncedSearch, setDebouncedSearch] = useState(listState?.q ?? '')
+  // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
+  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>(routeView ?? openingView)
+{{/listUrlState}}
+{{^listUrlState}}
   const [page, setPage] = useState(0)
   const [size, setSize] = useState({{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20)
   const [sort, setSort] = useState<SortSpec | null>({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
@@ -96,6 +117,7 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
   const [debouncedSearch, setDebouncedSearch] = useState('')
   // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
   const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>({{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}')
+{{/listUrlState}}
   const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
 {{#listConfigurable}}
   // A list page may show an ordered subset of the columns.
@@ -123,14 +145,50 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
     return () => clearTimeout(t)
   }, [search])
 
+{{#listUrlState}}
+  // A new search, sort, page size or filter starts again at the first page — but the page the
+  // list opened on (from the route) stands.
+  const resetKey = JSON.stringify([debouncedSearch, sort, size{{#hasFilters}}, filters{{/hasFilters}}])
+  const [lastReset, setLastReset] = useState(resetKey)
+  if (resetKey !== lastReset) {
+    setLastReset(resetKey)
+    setPage(0)
+  }
+  // Where the list is, for the route: only what differs from how it opens by default.
+  useEffect(() => {
+    onListStateChange?.({
+      q: debouncedSearch || undefined,
+      sort: JSON.stringify(sort) === openingSort ? undefined : sort,
+      page: page || undefined,
+      size: size === openingSize ? undefined : size,
+      view: viewMode === openingView ? undefined : viewMode,
+{{#hasFilters}}      filters,
+{{/hasFilters}}    })
+  }, [onListStateChange, debouncedSearch, sort, page, size, viewMode, openingSort, openingSize, openingView{{#hasFilters}}, filters{{/hasFilters}}])
+{{/listUrlState}}
+{{^listUrlState}}
   useEffect(() => {
     setPage(0)
   }, [debouncedSearch, sort, size{{#hasFilters}}, filters{{/hasFilters}}])
+{{/listUrlState}}
 
   const {
     items, totalElements, totalPages, pageNumber, pageSize,
     loading, error,{{#viewKanban}} reload,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
   } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/hasFilters}} })
+{{#hasPages}}
+{{#entityHasRecordPage}}
+  // A row opened on the record page takes its neighbours along, for the page's Previous / Next.
+  useEffect(() => {
+    if (!onOpenRecord || items.length === 0) return
+    try {
+      sessionStorage.setItem('record-siblings:{{entityNameKebab}}', JSON.stringify(items.map(r => String(rowKey(r)))))
+    } catch {
+      // No storage: the record page simply has no Previous / Next.
+    }
+  }, [onOpenRecord, items])
+{{/entityHasRecordPage}}
+{{/hasPages}}
 {{#listSideDetail}}
   // The pane's row: from the loaded page when it is there, else fetched by id (a reload, a link).
   const [fetchedRow, setFetchedRow] = useState<{{EntityName}} | null>(null)
@@ -315,7 +373,10 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
     }
   }
 {{/viewTable}}{{/bulkUpdateApplicable}}
-  const pagination = {
+  // An empty list offers the first record — unless a search or filter is what emptied it.
+  const filtered = debouncedSearch !== ''{{#hasFilters}} || Object.values(filters).some(v => v !== ''){{/hasFilters}}
+{{#mutable}}  const emptyAction = { label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasWizardPage}}openNew{{/hasWizardPage}}{{#hasWizardPage}}onCreate ?? openNew{{/hasWizardPage}} }
+{{/mutable}}  const pagination = {
     pageNumber,
     pageSize,
     totalPages,
@@ -433,7 +494,9 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
 {{#hasStringFields}}          searchable={true}
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
 {{/hasStringFields}}          pagination={pagination}
-        />
+          filtered={filtered}
+{{#mutable}}          emptyAction={emptyAction}
+{{/mutable}}        />
       ) : {{/viewCards}}{{#viewKanban}}viewMode === 'kanban' ? (
         <KanbanBoard
           columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
@@ -478,7 +541,9 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
           allOnPageSelected={allOnPageSelected}
           onToggleAllOnPage={toggleAllOnPage}
 {{/bulkSelectApplicable}}          pagination={pagination}
-        />
+          filtered={filtered}
+{{#mutable}}          emptyAction={emptyAction}
+{{/mutable}}        />
       ) : {{/viewTable}}null}
 {{#listSideDetail}}
       </div>

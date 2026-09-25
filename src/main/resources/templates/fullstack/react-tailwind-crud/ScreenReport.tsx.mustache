@@ -28,7 +28,7 @@ const PRESET: FilterValues = {{presetFilterTs}}
 {{/hasPresetFilter}}
 
 const filterDescriptors: FilterDescriptor[] = [
-{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{/isRelationFilter}} },
+{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
 {{/filterFields}}]
 {{/hasFilters}}
 {{#hasScreenProps}}
@@ -114,7 +114,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{/chartIsRelation}}
         groupLabel={ {{chartGroupLabelExpr}} }
         valueLabel={ {{chartValueHeaderExpr}} }
+{{#chartHasTable}}
         table
+{{/chartHasTable}}
 {{#hasDrill}}
         onSelect={key => onNavigate('{{drillPageId}}', undefined, { {{#hasFilters}}...filters, {{/hasFilters}}{{drillExpr}} })}
 {{/hasDrill}}
@@ -143,6 +145,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{/chartIsRelation}}
           groupLabel={ {{chartGroupLabelExpr}} }
           valueLabel={ {{chartValueHeaderExpr}} }
+{{#chartHasTable}}
+          table
+{{/chartHasTable}}
 {{#hasDrill}}
           onSelect={key => onNavigate('{{drillPageId}}', undefined, { {{#hasFilters}}...filters, {{/hasFilters}}{{drillExpr}} })}
 {{/hasDrill}}

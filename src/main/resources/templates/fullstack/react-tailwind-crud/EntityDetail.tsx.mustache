@@ -2,8 +2,8 @@ import type { ReactNode } from 'react'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 {{#hasEnumFields}}import { {{#fields}}{{#isEnum}}{{enumTypeName}}Labels, {{/isEnum}}{{/fields}}} from '@entities/{{entityNameKebab}}'
 {{/hasEnumFields}}
-{{#auditApplicable}}import { t, LOCALE } from '@shared/i18n'
-{{/auditApplicable}}
+{{#detailUsesI18n}}import { {{#detailUsesT}}t{{/detailUsesT}}{{#detailUsesT}}{{#detailUsesLocale}}, {{/detailUsesLocale}}{{/detailUsesT}}{{#detailUsesLocale}}LOCALE{{/detailUsesLocale}} } from '@shared/i18n'
+{{/detailUsesI18n}}
 interface Props {
   value: {{EntityName}}
 }
@@ -24,9 +24,13 @@ const empty = <span className="text-muted">—</span>
 export function {{EntityName}}Detail({ value }: Props) {
   return (
     <dl>
-{{#fields}}      <Row label="{{label}}">{value.{{name}} == null ? empty : {{#isText}}<span className="whitespace-pre-wrap break-words">{String(value.{{name}})}</span>{{/isText}}{{^isText}}{{#isEnum}}{{enumTypeName}}Labels[value.{{name}}]{{/isEnum}}{{^isEnum}}String(value.{{name}}){{/isEnum}}{{/isText}}}</Row>
-{{/fields}}{{#relations}}      <Row label="{{FieldName}}">{ {{#targetHasRecordPage}}value.{{fkFieldName}} == null ? empty : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(value.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}value.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(value.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}value.{{fieldName}}Label ?? ({{/hasTargetLabel}}value.{{fkFieldName}} == null ? empty : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(value.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} }</Row>
-{{/relations}}{{#auditApplicable}}      <Row label={t('created')}>{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString(LOCALE)}</Row>
+{{#formGroups}}
+{{#groupHasTitle}}
+      <div role="presentation" className="pb-1 pt-5 text-xs font-semibold uppercase tracking-wider text-brand first:pt-0">{ {{{groupTitleExpr}}} }</div>
+{{/groupHasTitle}}
+{{#groupFields}}      <Row label="{{label}}">{value.{{name}} == null ? empty : {{#isText}}<span className="whitespace-pre-wrap break-words">{String(value.{{name}})}</span>{{/isText}}{{^isText}}{{#isEnum}}{{enumTypeName}}Labels[value.{{name}}]{{/isEnum}}{{^isEnum}}{{#isBoolean}}(value.{{name}} ? t('trueLabel') : t('falseLabel')){{/isBoolean}}{{#isDate}}new Date(`${value.{{name}}}T00:00:00`).toLocaleDateString(LOCALE){{/isDate}}{{#isDateTime}}new Date(value.{{name}}).toLocaleString(LOCALE){{/isDateTime}}{{^isBoolean}}{{^isDate}}{{^isDateTime}}String(value.{{name}}){{/isDateTime}}{{/isDate}}{{/isBoolean}}{{/isEnum}}{{/isText}}}</Row>
+{{/groupFields}}{{#groupRelations}}      <Row label="{{FieldName}}">{ {{#targetHasRecordPage}}value.{{fkFieldName}} == null ? empty : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(value.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}value.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(value.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}value.{{fieldName}}Label ?? ({{/hasTargetLabel}}value.{{fkFieldName}} == null ? empty : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(value.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} }</Row>
+{{/groupRelations}}{{/formGroups}}{{#auditApplicable}}      <Row label={t('created')}>{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString(LOCALE)}</Row>
       <Row label={t('updated')}>{value.updatedAt == null ? empty : new Date(value.updatedAt).toLocaleString(LOCALE)}</Row>
 {{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}      <Row label="{{CollectionField}}">{value.{{collectionField}}Count == null ? empty : String(value.{{collectionField}}Count)}</Row>
 {{/inverseRelations}}{{/optScaffoldInverse}}    </dl>

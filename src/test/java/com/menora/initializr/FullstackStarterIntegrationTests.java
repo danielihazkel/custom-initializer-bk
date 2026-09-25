@@ -901,12 +901,12 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.get("shop/frontend/src/entities/order/model/types.ts"))
                 .contains("customerId: number | null")
                 .contains("customerLabel?: string | null");
-        // The FK now renders as a <select> populated from the target's list endpoint via useOptions.
+        // The FK is picked by typing: the target's label is searchable, so a RelationPicker
+        // searches its list endpoint (a target without one keeps the useOptions <select>).
         assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
-                .contains("import { useOptions } from '@shared/api'")
-                .contains("useOptions<Record<string, unknown>>('/api/customers')")
+                .contains("import { Field, inputClass, RelationPicker } from '@shared/ui'")
+                .contains("path=\"/api/customers\"")
                 .contains("label=\"Customer\" required")
-                .contains("<select")
                 .contains("set('customerId'");
         // Table column shows the label (falling back to #id), and the filter bar gets a relation select.
         assertThat(entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx"))
@@ -2448,6 +2448,99 @@ class FullstackStarterIntegrationTests {
         });
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).contains("Unknown scaffold option 'bogus' on entity Note");
+    }
+
+    @Test
+    void fullstackEndpoint_listsOfferTheFirstRecordAndTheDetailFormatsValues() throws Exception {
+        // An empty, unfiltered list offers "New <entity>"; a filtered one says nothing matches.
+        // The detail view words booleans and formats dates, importing only the i18n names it uses.
+        Map<String, Object> ticket = new LinkedHashMap<>();
+        ticket.put("name", "Ticket");
+        ticket.put("fields", List.of(pkField(),
+                Map.of("name", "title", "type", "String"),
+                Map.of("name", "open", "type", "Boolean"),
+                Map.of("name", "due", "type", "LocalDate"),
+                Map.of("name", "closedAt", "type", "LocalDateTime")));
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "Note");
+        note.put("fields", List.of(pkField(), Map.of("name", "text", "type", "String")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "desk");
+        body.put("packageName", "com.menora.desk");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(ticket, note));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(entries.get("desk/frontend/src/pages/ticket/ui/TicketPage.tsx"))
+                .contains("const filtered = debouncedSearch !== '' || Object.values(filters).some(v => v !== '')")
+                .contains("const emptyAction = { label: t('newX', { x: 'Ticket' }), onClick: openNew }")
+                .contains("filtered={filtered}")
+                .contains("emptyAction={emptyAction}");
+        assertThat(entries.get("desk/frontend/src/shared/ui/Table.tsx"))
+                .contains("<EmptyState title={t('noMatchingRecords')} />")
+                .contains("action={emptyAction}");
+        assertThat(entries.get("desk/frontend/src/features/ticket-form/ui/TicketDetail.tsx"))
+                .contains("import { t, LOCALE } from '@shared/i18n'")
+                .contains("(value.open ? t('trueLabel') : t('falseLabel'))")
+                .contains("new Date(`${value.due}T00:00:00`).toLocaleDateString(LOCALE)")
+                .contains("new Date(value.closedAt).toLocaleString(LOCALE)")
+                .contains("String(value.title)");
+        // Nothing to word or format: no i18n import at all (the generated lint rejects unused ones).
+        assertThat(entries.get("desk/frontend/src/features/note-form/ui/NoteDetail.tsx"))
+                .doesNotContain("@shared/i18n");
+    }
+
+    @Test
+    void fullstackEndpoint_picksASearchableLinkByTyping() throws Exception {
+        // A link to an entity whose label field is searchable is picked by typing (RelationPicker,
+        // server-side `q`), in the form and in the filter bar; a target without a searchable label
+        // keeps the one-page <select>.
+        Map<String, Object> customer = new LinkedHashMap<>();
+        customer.put("name", "Customer");
+        customer.put("fields", List.of(pkField(), Map.of("name", "name", "type", "String")));
+        Map<String, Object> region = new LinkedHashMap<>();
+        region.put("name", "Region");
+        region.put("fields", List.of(pkField(), Map.of("name", "code", "type", "Integer")));
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("name", "Order");
+        order.put("fields", List.of(pkField(), Map.of("name", "ref", "type", "String")));
+        order.put("relations", List.of(
+                Map.of("type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Customer"),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "region", "targetEntity", "Region")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(customer, region, order));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(entries).containsKey("shop/frontend/src/shared/ui/RelationPicker.tsx");
+        assertThat(entries.get("shop/frontend/src/shared/ui/index.ts")).contains("export { RelationPicker } from './RelationPicker'");
+        assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
+                .contains("import { Field, inputClass, RelationPicker } from '@shared/ui'")
+                .contains("import { useOptions } from '@shared/api'")
+                .contains("path=\"/api/customers\"")
+                .contains("labelKey=\"name\"")
+                .contains("onChange={v => set('customerId', v == null ? null : Number(v))}")
+                .contains("const regionOptions = useOptions<Record<string, unknown>>('/api/regions')")
+                .doesNotContain("customerOptions");
+        assertThat(entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx"))
+                .contains("optionsPath: '/api/customers', optionValue: 'id', optionLabel: 'name', searchable: true }")
+                .contains("optionsPath: '/api/regions', optionValue: 'id' }");
+        assertThat(entries.get("shop/frontend/src/shared/ui/FilterBar.tsx"))
+                .contains("f.searchable && f.optionLabel");
+        // Every link searchable: the form needs no useOptions.
+        Map<String, Object> onlyCustomer = new LinkedHashMap<>(order);
+        onlyCustomer.put("relations", List.of(Map.of("type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Customer")));
+        body.put("entities", List.of(customer, onlyCustomer));
+        assertThat(generateZip(body).get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
+                .doesNotContain("useOptions");
     }
 
     @Test

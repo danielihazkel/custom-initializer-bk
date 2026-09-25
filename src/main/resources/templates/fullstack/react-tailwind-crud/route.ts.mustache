@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react'
+{{#hasListStatePages}}
+import type { FilterValues, ListState } from '@shared/ui'
+{{/hasListStatePages}}
 
 /** Every page the shell can show: the nav pages, plus record pages (opened with an id). */
 export type View = {{#routePages}}{{^-first}} | {{/-first}}'{{pageId}}'{{/routePages}}
@@ -68,3 +71,41 @@ export function useRoute(): [Route, (next: Route) => void, (next: Route) => void
   }
   return [route, navigate, replace]
 }
+{{#hasListStatePages}}
+
+/**
+ * A list page's state as its route query spells it: its filters under their own names, the rest
+ * under `_`-prefixed keys (`_q`, `_sort` = `field` or `-field`, `_page` from 1, `_size`, `_view`).
+ */
+export function listStateOf(query: Record<string, string>): ListState {
+  const filters: FilterValues = {}
+  for (const [k, v] of Object.entries(query)) if (!k.startsWith('_')) filters[k] = v
+  const sort = query._sort
+  const page = Number(query._page)
+  const size = Number(query._size)
+  return {
+    q: query._q || undefined,
+    sort: sort === undefined ? undefined : sort === '' ? null : { field: sort.replace(/^-/, ''), direction: sort.startsWith('-') ? 'desc' : 'asc' },
+    page: page >= 1 ? Math.floor(page) - 1 : undefined,
+    size: size >= 1 ? Math.floor(size) : undefined,
+    view: query._view || undefined,
+    filters,
+  }
+}
+
+/** The route query for a list's state; a filter still at the page's preset is left out, and one
+ *  cleared from it is kept (blank) so it stays cleared. */
+export function listQueryOf(state: ListState, preset: FilterValues = {}): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(state.filters ?? {})) {
+    if (preset[k] === v) continue
+    if (v !== '' || preset[k] != null) out[k] = v
+  }
+  if (state.q) out._q = state.q
+  if (state.sort !== undefined) out._sort = state.sort == null ? '' : `${state.sort.direction === 'desc' ? '-' : ''}${state.sort.field}`
+  if (state.page) out._page = String(state.page + 1)
+  if (state.size) out._size = String(state.size)
+  if (state.view) out._view = state.view
+  return out
+}
+{{/hasListStatePages}}

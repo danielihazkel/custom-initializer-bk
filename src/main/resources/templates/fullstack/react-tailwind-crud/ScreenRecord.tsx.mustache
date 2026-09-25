@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 {{#recordHasIcons}}
-import { {{#hasBack}}ArrowLeft, {{/hasBack}}{{#recordMutable}}Pencil, Trash2, {{/recordMutable}}} from 'lucide-react'
+import { {{#hasBack}}ArrowLeft, {{/hasBack}}ChevronLeft, ChevronRight, {{#recordMutable}}Pencil, Trash2, {{/recordMutable}}} from 'lucide-react'
 {{/recordHasIcons}}
 {{#recordMutable}}
 import { toast } from 'sonner'
@@ -12,6 +12,9 @@ import { KpiTile } from '@shared/ui/widgets'
 {{/hasHeaderStats}}
 import { t } from '@shared/i18n'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{#hasStatusFields}}
+import { {{statusLabelsImport}} } from '@entities/{{entityNameKebab}}'
+{{/hasStatusFields}}
 import { {{EntityName}}Detail{{#recordEditsInDrawer}}, {{EntityName}}Form, validate{{EntityName}}{{/recordEditsInDrawer}} } from '@features/{{entityNameKebab}}-form'
 {{#childTabs}}
 import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
@@ -36,11 +39,24 @@ const TABS = [
 
 const PATH = '/api/{{entityNamePluralKebab}}/'
 
+/** The keys of the rows the list showed when this record was opened from it (see its page). */
+function siblingsOf(): string[] {
+  try {
+    const ids: unknown = JSON.parse(sessionStorage.getItem('record-siblings:{{entityNameKebab}}') ?? '[]')
+    return Array.isArray(ids) ? ids.map(String) : []
+  } catch {
+    return []
+  }
+}
+
 export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
   const [record, setRecord] = useState<{{EntityName}} | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Bumped by "Try again" to fetch the record once more.
   const [attempt, setAttempt] = useState(0)
+  // Previous / Next: the neighbours in the list this record was opened from.
+  const [siblings] = useState(siblingsOf)
+  const at = siblings.indexOf(recordId)
 {{#hasChildTabs}}
   const [active, setActive] = useState(0)
 {{/hasChildTabs}}
@@ -160,10 +176,44 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
           {record == null && !error
             ? <Skeleton className="mt-1 h-8 w-56" />
             : <h1 className="mt-1 text-2xl font-semibold tracking-tight text-fg">{heading}</h1>}
+{{#hasStatusFields}}
+          {record && (
+            <div className="mt-2 flex flex-wrap gap-2">
+{{#statusFields}}
+              {record.{{name}} != null && <span className="rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-medium text-brand">{ {{enumTypeName}}Labels[record.{{name}}] }</span>}
+{{/statusFields}}
+            </div>
+          )}
+{{/hasStatusFields}}
 {{#hasPageDescription}}
           <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
 {{/hasPageDescription}}
         </div>
+        {at >= 0 && siblings.length > 1 && (
+          <div className="flex items-center gap-1 text-sm text-muted" data-record-siblings>
+            <button
+              type="button"
+              disabled={at === 0}
+              onClick={() => onNavigate('{{pageId}}', siblings[at - 1])}
+              className="rounded-lg border border-border bg-surface p-2 transition-colors hover:bg-surface-2 disabled:opacity-40"
+              aria-label={t('prev')}
+              title={t('prev')}
+            >
+              <ChevronLeft className="h-4 w-4 rtl:rotate-180" />
+            </button>
+            <span className="px-1 tabular-nums">{at + 1} / {siblings.length}</span>
+            <button
+              type="button"
+              disabled={at === siblings.length - 1}
+              onClick={() => onNavigate('{{pageId}}', siblings[at + 1])}
+              className="rounded-lg border border-border bg-surface p-2 transition-colors hover:bg-surface-2 disabled:opacity-40"
+              aria-label={t('next')}
+              title={t('next')}
+            >
+              <ChevronRight className="h-4 w-4 rtl:rotate-180" />
+            </button>
+          </div>
+        )}
 {{#recordMutable}}
         {record && (
           <div className="flex items-center gap-2">
@@ -253,6 +303,12 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
               <{{childEntityName}}Page
                 embedded
                 scope={ { param: '{{viaParam}}', value: record.{{pkName}} as string | number } }
+{{#tabHasColumns}}
+                columns={ {{{tabColumnsTs}}} }
+{{/tabHasColumns}}
+{{#tabHasSort}}
+                initialSort={ {{{tabSortTs}}} }
+{{/tabHasSort}}
 {{#childHasRecordPage}}
                 onOpenRecord={r => onNavigate('{{childRecordPageId}}', String(r.{{childRecordPk}}))}
 {{/childHasRecordPage}}

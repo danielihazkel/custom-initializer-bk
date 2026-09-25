@@ -50,6 +50,8 @@ public final class FullstackPageValidator {
     static final int MAX_HEADER_STATS = 4;
     /** The rows-per-page choices the generated list's pager offers — a list page may open on one. */
     static final List<Integer> LIST_PAGE_SIZES = List.of(10, 20, 50, 100);
+    /** How often a dashboard may reload its widgets, in seconds — the editor's choices. */
+    static final List<Integer> REFRESH_SECONDS = List.of(30, 60, 300, 900);
     /** The list views an entity can enable (EntityDefinition.listViews). */
     static final List<String> LIST_VIEWS = List.of("table", "cards", "kanban", "calendar");
 
@@ -150,8 +152,18 @@ public final class FullstackPageValidator {
                         throw new WizardArgumentException("Page '" + id + "' has a dateRange, but none of its widgets"
                                 + " counts an entity with a filterable date field for it to limit");
                     }
+                    Integer refresh = p.refreshSeconds();
+                    if (refresh != null && !REFRESH_SECONDS.contains(refresh)) {
+                        throw new WizardArgumentException("Page '" + id + "': refreshSeconds must be one of 30, 60, 300 or 900, got " + refresh);
+                    }
+                    if (refresh != null && widgets.stream().noneMatch(w -> w.kind() != PageDefinition.WidgetKind.TEXT
+                            && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.LIST)) {
+                        throw new WizardArgumentException("Page '" + id + "' refreshes every " + refresh
+                                + " seconds, but none of its widgets shows data to reload");
+                    }
                     yield new PageDefinition(id, type, title, description, hidden, null, null, widgets, null)
-                            .withDateRange(range);
+                            .withDateRange(range)
+                            .withRefreshSeconds(refresh);
                 }
                 case TABS -> {
                     // No entity to borrow a name from, so the nav label has to be given.
@@ -165,9 +177,13 @@ public final class FullstackPageValidator {
                     EntityDefinition child = requireEntity(entitiesByLower, p.child(), prefix + " child");
                     requireSinglePk(prefix, parent);
                     String via = via(prefix, child, parent, trimToNull(p.via()));
+                    // The child list may open with its own columns and sort, like an entity-list page.
+                    boolean childAudit = auditApplies(child, scaffoldOpts);
                     yield new PageDefinition(id, type, title, description, hidden, null, null, null, null,
                             parent.name(), child.name(), via, null, null, null, null, null, null, null)
-                            .withShowParent(Boolean.TRUE.equals(p.showParent()));
+                            .withShowParent(Boolean.TRUE.equals(p.showParent()))
+                            .withListPresentation(columns(prefix + " child", child, p.columns(), childAudit),
+                                    sort(prefix + " child", child, p.sort(), childAudit), null, null);
                 }
                 case REPORT -> {
                     String prefix = "Page '" + id + "' (report)";
@@ -184,7 +200,7 @@ public final class FullstackPageValidator {
                         throw new WizardArgumentException(prefix + ": " + entity.name()
                                 + " already has a record page ('" + previous + "')");
                     }
-                    List<PageDefinition.ChildTab> childTabs = childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower);
+                    List<PageDefinition.ChildTab> childTabs = childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower, scaffoldOpts);
                     yield new PageDefinition(id, type, title, description, true, entity.name(), null, null, null,
                             null, null, null, childTabs, null, null, null, null, null,
                             headerStats(prefix, entity, p.headerStats(), childTabs, entitiesByLower));
@@ -319,15 +335,20 @@ public final class FullstackPageValidator {
         if (type != PageDefinition.Type.DASHBOARD && trimToNull(p.dateRange()) != null) {
             throw new WizardArgumentException(prefix + "does not take 'dateRange'");
         }
+        if (type != PageDefinition.Type.DASHBOARD && p.refreshSeconds() != null) {
+            throw new WizardArgumentException(prefix + "does not take 'refreshSeconds'");
+        }
         if (type != PageDefinition.Type.WIZARD && p.steps() != null && !p.steps().isEmpty()) {
             throw new WizardArgumentException(prefix + "does not take 'steps'");
         }
         if (type != PageDefinition.Type.RECORD && p.headerStats() != null) {
             throw new WizardArgumentException(prefix + "does not take 'headerStats'");
         }
-        if (type != PageDefinition.Type.ENTITY_LIST) {
+        if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.MASTER_DETAIL) {
             if (p.columns() != null) throw new WizardArgumentException(prefix + "does not take 'columns'");
             if (p.sort() != null) throw new WizardArgumentException(prefix + "does not take 'sort'");
+        }
+        if (type != PageDefinition.Type.ENTITY_LIST) {
             if (trimToNull(p.view()) != null) throw new WizardArgumentException(prefix + "does not take 'view'");
             if (p.pageSize() != null) throw new WizardArgumentException(prefix + "does not take 'pageSize'");
             if (trimToNull(p.detail()) != null) throw new WizardArgumentException(prefix + "does not take 'detail'");
@@ -671,12 +692,12 @@ public final class FullstackPageValidator {
             String series = null;
             PageDefinition.Bucket bucket = null;
             switch (kind) {
-                case BAR, DONUT -> groupBy = groupBy(prefix, entity, trimToNull(w.groupBy()));
+                case BAR, DONUT -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "group by");
                 case STACKED -> {
                     groupBy = groupBy(prefix, entity, trimToNull(w.groupBy()));
                     series = series(prefix, entity, groupBy, trimToNull(w.series()));
                 }
-                case TOP -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()));
+                case TOP -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "rank by");
                 case LINE -> {
                     groupBy = dateGroupBy(prefix, entity, trimToNull(w.groupBy()));
                     bucket = parseBucket(prefix, w.bucket());
@@ -863,7 +884,7 @@ public final class FullstackPageValidator {
      * at (the relation's field name). Omitted: the first enum, else the first boolean, else the
      * first relation.
      */
-    private static String rankBy(String prefix, EntityDefinition entity, String requested) {
+    private static String rankBy(String prefix, EntityDefinition entity, String requested, String verb) {
         List<String> relations = entity.relations().stream()
                 .filter(r -> r.type() == RelationType.MANY_TO_ONE).map(RelationDefinition::fieldName).toList();
         if (requested == null) {
@@ -872,7 +893,7 @@ public final class FullstackPageValidator {
                     .map(FieldDefinition::name)
                     .or(() -> relations.stream().findFirst())
                     .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
-                            + " has no enum, boolean or relation to rank by"));
+                            + " has no enum, boolean or relation to " + verb));
         }
         for (String relation : relations) {
             if (relation.equalsIgnoreCase(requested)) return relation;
@@ -1018,7 +1039,7 @@ public final class FullstackPageValidator {
                     }
                     PageDefinition.Agg agg = parseAgg(prefix, raw.agg());
                     return new PageDefinition.Chart(r.fieldName(), null, agg,
-                            aggField(prefix, entity, agg, trimToNull(raw.field())));
+                            aggField(prefix, entity, agg, trimToNull(raw.field())), raw.table());
                 }
             }
             field = fieldOf(prefix, entity, requested, "groupBy");
@@ -1042,7 +1063,7 @@ public final class FullstackPageValidator {
         }
         PageDefinition.Agg agg = parseAgg(prefix, raw.agg());
         return new PageDefinition.Chart(field.name(), overTime ? parseBucket(prefix, raw.bucket()) : null,
-                agg, aggField(prefix, entity, agg, trimToNull(raw.field())));
+                agg, aggField(prefix, entity, agg, trimToNull(raw.field())), raw.table());
     }
 
     /** A bar groups by a non-PK enum/boolean field — the first enum, else the first boolean, when omitted. */
@@ -1111,6 +1132,18 @@ public final class FullstackPageValidator {
         }
         if (askable.isEmpty()) {
             throw new WizardArgumentException(prefix + ": " + entity.name() + " has no field to ask for");
+        }
+        if ((raw == null || raw.isEmpty()) && !entity.formSections().isEmpty()) {
+            // The form's own sections, one step each; whatever they leave out is the last step.
+            List<PageDefinition.Step> out = new ArrayList<>();
+            Set<String> placed = new HashSet<>();
+            for (EntityDefinition.FormSection section : entity.formSections()) {
+                out.add(new PageDefinition.Step(section.title(), section.fields()));
+                section.fields().forEach(f -> placed.add(f.toLowerCase(Locale.ROOT)));
+            }
+            List<String> rest = askable.values().stream().filter(f -> !placed.contains(f.toLowerCase(Locale.ROOT))).toList();
+            if (!rest.isEmpty()) out.add(new PageDefinition.Step(null, rest));
+            return out;
         }
         if (raw == null || raw.isEmpty()) {
             List<String> all = new ArrayList<>(askable.values());
@@ -1241,7 +1274,8 @@ public final class FullstackPageValidator {
     private static List<PageDefinition.ChildTab> childTabs(String prefix, EntityDefinition entity,
                                                           List<FullstackStarterRequest.ChildTabDto> raw,
                                                           List<EntityDefinition> entities,
-                                                          Map<String, EntityDefinition> entitiesByLower) {
+                                                          Map<String, EntityDefinition> entitiesByLower,
+                                                          Set<String> scaffoldOpts) {
         List<PageDefinition.ChildTab> out = new ArrayList<>();
         if (raw == null) {
             for (EntityDefinition candidate : entities) {
@@ -1261,7 +1295,10 @@ public final class FullstackPageValidator {
                 if (!seen.add(child.name())) {
                     throw new WizardArgumentException(itemPrefix + ": " + child.name() + " is already a tab");
                 }
-                out.add(new PageDefinition.ChildTab(child.name(), viaRel));
+                // How the related list opens: the columns and sort of an entity-list page.
+                boolean audit = auditApplies(child, scaffoldOpts);
+                out.add(new PageDefinition.ChildTab(child.name(), viaRel,
+                        columns(itemPrefix, child, item.columns(), audit), sort(itemPrefix, child, item.sort(), audit)));
             }
         }
         if (out.size() > MAX_TABS - 1) {
