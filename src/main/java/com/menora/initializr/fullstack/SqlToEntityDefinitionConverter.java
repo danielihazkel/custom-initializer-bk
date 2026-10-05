@@ -163,7 +163,7 @@ public class SqlToEntityDefinitionConverter {
                 fkColumns.add(col);
                 continue;
             }
-            FieldDefinition f = toField(col, dialect, enumsByColumn.get(key));
+            FieldDefinition f = toField(table, col, dialect, enumsByColumn.get(key));
             fields.add(f);
             taken.add(f.name().toLowerCase(Locale.ROOT));
         }
@@ -175,7 +175,7 @@ public class SqlToEntityDefinitionConverter {
             String fieldName = relationFieldName(col.name(), target.entityName(), taken);
             if (fieldName == null) {
                 // No usable name — keep the column as a plain field rather than emit a clash.
-                FieldDefinition f = toField(col, dialect, null);
+                FieldDefinition f = toField(table, col, dialect, null);
                 fields.add(f);
                 taken.add(f.name().toLowerCase(Locale.ROOT));
                 continue;
@@ -183,14 +183,17 @@ public class SqlToEntityDefinitionConverter {
             // The FK column exactly as the DDL spells it: a name derived back from the relation's
             // field name (ADDR_2_ID → addr2 → addr2_id, CUST_REF → custRef → cust_ref_id) would miss it.
             relations.add(new RelationDefinition(RelationType.MANY_TO_ONE, fieldName, target.entityName(),
-                    !col.nullable(), col.name()));
+                    !col.nullable(), table.physical(col.name(), dialect)));
             taken.add(fieldName.toLowerCase(Locale.ROOT));
         }
-        return new EntityDefinition(entityName, table.name(), table.schema(), fields, relations,
+        // Table, schema and columns in the form the generated code must carry (SqlNames): a
+        // mixed-case name folded or quoted for the dialect, a quoted one kept exact.
+        return new EntityDefinition(entityName, table.physical(table.name(), dialect),
+                table.schema() == null ? null : table.physical(table.schema(), dialect), fields, relations,
                 false, null, table.sourceSql());
     }
 
-    private FieldDefinition toField(ColumnModel col, SqlDialect dialect, List<String> enumValues) {
+    private FieldDefinition toField(TableModel table, ColumnModel col, SqlDialect dialect, List<String> enumValues) {
         JavaType jt = TypeMappers.map(dialect, col.rawType(), col.precision(), col.scale());
         FieldType type = enumValues != null ? FieldType.ENUM : mapType(jt);
         Integer length = type == FieldType.STRING ? col.precision() : null;
@@ -210,9 +213,9 @@ public class SqlToEntityDefinitionConverter {
                 true, true, // imported fields default to searchable/filterable
                 null, false, // no custom label; editable
                 null, null, // no default, no enum labels
-                // Keep the column exactly as the DDL spells it: camel-casing is lossy
+                // Keep the column as the DDL spells it: camel-casing is lossy
                 // (FUTURE_USE_8 → futureUse8 → future_use8), so it can't be derived back.
-                col.name());
+                table.physical(col.name(), dialect));
     }
 
     /**

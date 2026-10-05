@@ -1523,11 +1523,81 @@ class FullstackStarterIntegrationTests {
                 .contains("private String frfQodMishloahFutureUse8;")
                 .contains("@JoinColumn(name = \"CUST_REF\", nullable = false)")
                 .contains("@Formula(\"(select t.CUST_SHEM_2 from VNRF.CUSTOMERS t where t.CUST_NO = CUST_REF)\")")
-                .contains("SET deleted = true WHERE ORD_NO = ?")
+                .contains("UPDATE VNRF.ORDERS SET deleted = true WHERE ORD_NO = ?")
                 .doesNotContain("future_use8")
                 .doesNotContain("cust_ref_id");
         assertThat(contentEndingWith(entries, "/repository/OrderRepository.java"))
-                .contains("SET deleted = false WHERE ORD_NO = :id");
+                .contains("UPDATE VNRF.ORDERS SET deleted = false WHERE ORD_NO = :id");
+        // All-caps names pass Boot's naming strategy untouched: no extra strategy in the project.
+        assertThat(entries.keySet()).noneMatch(k -> k.endsWith("QuotedNamesNamingStrategy.java"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void importedDdl_keepsMixedCaseAndQuotedNamesThroughTheNamingStrategy() throws Exception {
+        Map<String, Object> importBody = new LinkedHashMap<>();
+        importBody.put("dialect", "POSTGRESQL");
+        importBody.put("sql", """
+                CREATE TABLE app."OrderItems" (
+                    id BIGINT PRIMARY KEY,
+                    "UnitPrice" NUMERIC(10, 2),
+                    orderDate DATE
+                );
+                """);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<Map<String, Object>> imported = restTemplate.exchange(
+                "/metadata/fullstack/import-ddl", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(importBody, headers),
+                new org.springframework.core.ParameterizedTypeReference<>() {});
+        assertThat(imported.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) imported.getBody().get("entities");
+        assertThat(entities.get(0)).containsEntry("tableName", "\"OrderItems\"").containsEntry("schema", "app");
+        assertThat((List<Map<String, Object>>) entities.get(0).get("fields"))
+                .extracting(f -> f.get("column")).containsExactly("id", "\"UnitPrice\"", "ORDERDATE");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", entities);
+        body.put("opts", Map.of("scaffold", List.of("softDelete")));
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/entity/OrderItem.java"))
+                .contains("@Table(name = \"\\\"OrderItems\\\"\", schema = \"app\")")
+                .contains("@Column(name = \"\\\"UnitPrice\\\"\"")
+                .contains("@Column(name = \"ORDERDATE\"")
+                // Native SQL is not touched by the naming strategy, and @Table's schema does not reach it.
+                .contains("UPDATE app.\\\"OrderItems\\\" SET deleted = true WHERE id = ?");
+        assertThat(contentEndingWith(entries, "/config/QuotedNamesNamingStrategy.java"))
+                .contains("package com.menora.shop.config;")
+                .contains("@Component");
+    }
+
+    @Test
+    void fullstackEndpoint_mapsCamelCaseViewAliasesThroughTheNamingStrategy() throws Exception {
+        // A SELECT view maps a field by its projected label; a camelCase alias is folded so the
+        // strategy does not look for customer_name instead of customerName.
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("name", "CustomerSummary");
+        view.put("readOnly", true);
+        view.put("viewQuery", "SELECT id, customer_name AS customerName FROM customers");
+        view.put("fields", List.of(
+                Map.of("name", "id", "type", "Long", "primaryKey", true),
+                Map.of("name", "customerName", "type", "String")));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "crm");
+        body.put("packageName", "com.menora.crm");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(view));
+        Map<String, String> entries = generateZip(body);
+        assertThat(contentEndingWith(entries, "/entity/CustomerSummary.java"))
+                .contains("@Column(name = \"CUSTOMERNAME\"")
+                .contains("@Column(name = \"id\"");
+        assertThat(entries.keySet()).noneMatch(k -> k.endsWith("QuotedNamesNamingStrategy.java"));
     }
 
     @Test

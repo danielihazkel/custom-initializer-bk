@@ -10,6 +10,7 @@ import com.menora.initializr.db.repository.EntityTemplateSetRepository;
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
 import com.menora.initializr.fullstack.FullstackRenderer;
+import com.menora.initializr.sql.SqlNames;
 import io.spring.initializr.generator.project.ProjectDescription;
 import io.spring.initializr.generator.project.ProjectGenerationConfiguration;
 import io.spring.initializr.generator.project.contributor.ProjectContributor;
@@ -19,6 +20,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.annotation.Order;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -122,6 +125,14 @@ public class FullstackProjectGenerationConfiguration {
             log.info("Rendering backend CRUD scaffolding: set='{}', {} files, {} entities",
                     setKey, files.size(), entities.size());
             FullstackRenderer.render(files, projectCtx, entities, projectRoot);
+            // A quoted table/column name (exact case from the DDL) only survives Boot's naming
+            // strategy with this one; written from Java, not a template row, so upgraded DBs get it.
+            if (EntityScaffoldContext.rendersQuotedName(entities)) {
+                Path target = projectRoot.resolve(SqlNames.NAMING_STRATEGY_PATH.replace(
+                        "{{packagePath}}", description.getPackageName().replace('.', '/')));
+                Files.createDirectories(target.getParent());
+                Files.writeString(target, SqlNames.namingStrategySource(description.getPackageName()));
+            }
         };
     }
 

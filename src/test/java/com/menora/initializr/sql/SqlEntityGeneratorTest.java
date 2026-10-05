@@ -29,6 +29,44 @@ class SqlEntityGeneratorTest {
                 .contains("@Column(name = \"ADDR_2_ID\"");
     }
 
+    @Test
+    void postgresql_mixedCaseNamesSurviveTheNamingStrategy() {
+        // Boot's naming strategy would turn orderDate into order_date and lower-case a quoted
+        // "UnitPrice": unquoted humps are folded, quoted names stay exact with the project's
+        // own naming strategy alongside.
+        String sql = """
+                CREATE TABLE app."OrderItems" (
+                    id BIGINT PRIMARY KEY,
+                    "UnitPrice" NUMERIC(10, 2),
+                    orderDate DATE,
+                    "status" VARCHAR(10)
+                );
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo", null);
+        assertThat(findFile(files, "entity/OrderItems.java").content())
+                .contains("@Table(name = \"\\\"OrderItems\\\"\", schema = \"app\")")
+                .contains("@Column(name = \"\\\"UnitPrice\\\"\", precision = 10, scale = 2)")
+                .contains("@Column(name = \"ORDERDATE\")")
+                .contains("private String status;")
+                .doesNotContain("name = \"status\"");
+        assertThat(findFile(files, "config/QuotedNamesNamingStrategy.java").content())
+                .contains("package com.menora.demo.config;")
+                .contains("public class QuotedNamesNamingStrategy extends CamelCaseToUnderscoresNamingStrategy");
+    }
+
+    @Test
+    void db2_quoteEverythingExportNeedsNoNamingStrategy() {
+        // db2look quotes every name; upper-case ones are plain DB2 names, rendered unquoted.
+        String sql = """
+                CREATE TABLE "VNRF"."ORDERS" ("ORD_NO" NUMERIC(6, 0) NOT NULL PRIMARY KEY, "ORD_SHEM" CHAR(20));
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.DB2, "com.menora.demo", null);
+        assertThat(findFile(files, "entity/Orders.java").content())
+                .contains("@Table(name = \"ORDERS\", schema = \"VNRF\")")
+                .contains("@Column(name = \"ORD_SHEM\"");
+        assertThat(files).noneMatch(f -> f.relativePath().endsWith("QuotedNamesNamingStrategy.java"));
+    }
+
     // ── Dialect: PostgreSQL ───────────────────────────────────────────────────
 
     @Test
@@ -811,7 +849,8 @@ class SqlEntityGeneratorTest {
                 .contains("SELECT u.id AS id, u.full_name AS fullName FROM users u")
                 .contains("@Id")
                 .contains("@Column(name = \"id\")")
-                .contains("@Column(name = \"fullName\")")
+                // A camelCase alias is folded, or Boot's naming strategy would read full_name.
+                .contains("@Column(name = \"FULLNAME\")")
                 .contains("private String id;")
                 .contains("private String fullName;")
                 .contains("// TODO")

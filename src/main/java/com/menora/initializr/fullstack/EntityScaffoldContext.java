@@ -2,6 +2,7 @@ package com.menora.initializr.fullstack;
 
 import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.gen.Naming;
+import com.menora.initializr.sql.SqlNames;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -1687,10 +1688,8 @@ public final class EntityScaffoldContext {
                 // SQL names for the parent's @Formula child count: the child's table (custom name
                 // or the default snake-plural, schema-qualified when set) and its FK column —
                 // the same derivations the child's own @Table/@JoinColumn use.
-                String childTable = child.tableName() != null ? child.tableName()
-                        : Naming.pluralize(Naming.toSnakeCase(child.name()));
-                inv.put("childTableRef", (child.schema() != null ? child.schema() + "." : "") + childTable);
-                inv.put("childJoinColumn", joinColumnOf(rel));
+                inv.put("childTableRef", SqlNames.javaLiteral(tableRefOf(child)));
+                inv.put("childJoinColumn", SqlNames.javaLiteral(joinColumnOf(rel)));
                 byLower.computeIfAbsent(parentLower, k -> new ArrayList<>()).add(inv);
             }
         }
@@ -1729,10 +1728,9 @@ public final class EntityScaffoldContext {
             // SQL names for a referencing entity's @Formula label subselect: this entity's table
             // (custom name or default snake-plural, schema-qualified) and the PK/label columns —
             // the same derivations its own @Table/@Column use.
-            String table = e.tableName() != null ? e.tableName() : Naming.pluralize(Naming.toSnakeCase(e.name()));
-            s.put("tableRef", (e.schema() != null && !e.schema().isBlank() ? e.schema() + "." : "") + table);
-            s.put("pkColumn", pk == null ? "id" : columnOf(pk));
-            s.put("labelColumn", labelField == null ? null : columnOf(labelField));
+            s.put("tableRef", SqlNames.javaLiteral(tableRefOf(e)));
+            s.put("pkColumn", pk == null ? "id" : SqlNames.javaLiteral(columnOf(pk)));
+            s.put("labelColumn", labelField == null ? null : SqlNames.javaLiteral(columnOf(labelField)));
             summaries.put(e.name().toLowerCase(Locale.ROOT), s);
         }
         return summaries;
@@ -1970,9 +1968,14 @@ public final class EntityScaffoldContext {
                 : (entity.label() != null && !entity.label().isBlank()) ? entity.label() : pascalPlural;
         view.put("entityLabel", label);
         view.put("entityLabelPlural", labelPlural);
-        view.put("tableName", entity.tableName() != null ? entity.tableName() : snakePlural);
-        view.put("schema", entity.schema());
-        view.put("hasSchema", entity.schema() != null && !entity.schema().isBlank());
+        // SQL names go through SqlNames (a mixed-case or quoted schema name survives Boot's naming
+        // strategy) and are Java-escaped — every template splices them into a string literal.
+        view.put("tableName", SqlNames.javaLiteral(tableOf(entity)));
+        view.put("schema", SqlNames.javaLiteral(schemaOf(entity)));
+        view.put("hasSchema", schemaOf(entity) != null);
+        // Schema-qualified, for native SQL (@SQLDelete, the restore query), which @Table's schema
+        // attribute does not reach.
+        view.put("tableRef", SqlNames.javaLiteral(tableRefOf(entity)));
         // Read-only / view flags — gate CRUD in the backend & frontend templates.
         // `isView` swaps @Table for @Immutable/@Subselect; `mutable` gates create/update/delete.
         view.put("readOnly", entity.readOnly());
@@ -2264,7 +2267,7 @@ public final class EntityScaffoldContext {
             rv.put("fieldName", relField);
             rv.put("FieldName", Naming.toPascalCase(rel.fieldName()));
             rv.put("fkFieldName", relField + "Id");
-            rv.put("joinColumn", joinColumnOf(rel));
+            rv.put("joinColumn", SqlNames.javaLiteral(joinColumnOf(rel)));
             rv.put("targetEntity", target != null ? target.get("pascal") : Naming.toPascalCase(rel.targetEntity()));
             rv.put("targetEntityCamel", target != null ? target.get("camel") : Naming.toCamelCase(rel.targetEntity()));
             rv.put("targetEntityKebab", target != null ? target.get("kebab") : Naming.toKebabCase(rel.targetEntity()));
@@ -2441,14 +2444,51 @@ public final class EntityScaffoldContext {
      *  {@code @Column}, the soft-delete SQL, a referencing entity's label/count subselects — goes
      *  through here, so they always agree. */
     static String columnOf(FieldDefinition f) {
-        return f.column() != null ? f.column() : Naming.toSnakeCase(f.name());
+        return SqlNames.physical(f.column() != null ? f.column() : Naming.toSnakeCase(f.name()), null);
     }
 
     /** The foreign-key column of a relation: its own {@code joinColumn} when set (DDL import), else
      *  {@code <snake fieldName>_id}. Used by {@code @JoinColumn}, the label subselect and the
      *  parent's child-count subselect. */
     static String joinColumnOf(RelationDefinition r) {
-        return r.joinColumn() != null ? r.joinColumn() : Naming.toSnakeCase(r.fieldName()) + "_id";
+        return SqlNames.physical(r.joinColumn() != null ? r.joinColumn()
+                : Naming.toSnakeCase(r.fieldName()) + "_id", null);
+    }
+
+    /** The entity's table: its own {@code tableName} (DDL import, or by hand) else the snake plural
+     *  of its name, through {@link SqlNames#physical(String, com.menora.initializr.sql.SqlDialect)}. */
+    static String tableOf(EntityDefinition e) {
+        return SqlNames.physical(e.tableName() != null ? e.tableName()
+                : Naming.pluralize(Naming.toSnakeCase(e.name())), null);
+    }
+
+    /** The entity's schema through {@link SqlNames}; null when it has none. */
+    static String schemaOf(EntityDefinition e) {
+        return e.schema() == null || e.schema().isBlank() ? null : SqlNames.physical(e.schema(), null);
+    }
+
+    /** {@code schema.table} (or just the table) for native SQL. */
+    static String tableRefOf(EntityDefinition e) {
+        String schema = schemaOf(e);
+        return (schema != null ? schema + "." : "") + tableOf(e);
+    }
+
+    /**
+     * True when a table-backed entity renders a quoted name (one the schema spells with exact case),
+     * so the backend needs {@link SqlNames#namingStrategySource} for it to reach the database as
+     * written. A view's labels are never quoted here (no dialect at render time: they fold).
+     */
+    public static boolean rendersQuotedName(List<EntityDefinition> entities) {
+        for (EntityDefinition e : entities) {
+            if (e.isView()) continue;
+            List<String> names = new ArrayList<>();
+            names.add(tableOf(e));
+            if (schemaOf(e) != null) names.add(schemaOf(e));
+            e.fields().forEach(f -> names.add(columnOf(f)));
+            e.relations().forEach(r -> names.add(joinColumnOf(r)));
+            if (names.stream().anyMatch(SqlNames::isQuoted)) return true;
+        }
+        return false;
     }
 
     private static Map<String, Object> fieldViewModel(String entityPascal, FieldDefinition f) {
@@ -2456,7 +2496,10 @@ public final class EntityScaffoldContext {
         fv.put("name", f.name());
         String pascalName = Naming.toPascalCase(f.name());
         fv.put("Name", pascalName);
-        fv.put("column", columnOf(f));
+        fv.put("column", SqlNames.javaLiteral(columnOf(f)));
+        // A SELECT-backed view maps a field by its projected label (the field name): passed through
+        // SqlNames so a camelCase alias is not turned into snake_case by the naming strategy.
+        fv.put("viewColumn", SqlNames.javaLiteral(SqlNames.physical(f.name(), false, null)));
         // Human-facing display override for the generated UI (table header, form label, filter
         // chip, detail row). Defaults to the PascalCase name when no custom label was supplied —
         // done here because Mustache has no default operator.

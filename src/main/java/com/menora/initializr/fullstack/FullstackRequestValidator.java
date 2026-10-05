@@ -259,6 +259,15 @@ public final class FullstackRequestValidator {
                     ? null : e.tableName().trim();
             String schema = (e.schema() == null || e.schema().isBlank())
                     ? null : e.schema().trim();
+            // Both end up in Java string literals and native SQL, like a column name.
+            if (tableName != null && !SQL_NAME.matcher(tableName).matches()) {
+                throw new WizardArgumentException("tableName '" + tableName + "' on entity '" + name
+                        + "' is not a valid table name (" + SQL_NAME_RULE + ")");
+            }
+            if (schema != null && !SQL_NAME.matcher(schema).matches()) {
+                throw new WizardArgumentException("schema '" + schema + "' on entity '" + name
+                        + "' is not a valid schema name (" + SQL_NAME_RULE + ")");
+            }
             // Optional entity display labels — blank → null (templates fall back to the name).
             String label = (e.label() == null || e.label().isBlank()) ? null : e.label().trim();
             String labelPlural = (e.labelPlural() == null || e.labelPlural().isBlank())
@@ -528,17 +537,25 @@ public final class FullstackRequestValidator {
         return relations;
     }
 
-    /** A database identifier the generated code can splice into native SQL ({@code @Formula},
-     *  {@code @SQLDelete}, native queries) unquoted: letters, digits, {@code _ $ # @}. */
-    private static final Pattern COLUMN_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_$#@]{0,127}");
+    /** A database name the generated code can splice into native SQL ({@code @Formula},
+     *  {@code @SQLDelete}, native queries): letters, digits and {@code _ $ # @}, or one quoted in
+     *  any of the three styles Hibernate reads ({@code "x"}, {@code `x`}, {@code [x]} — exact case,
+     *  see {@link com.menora.initializr.sql.SqlNames}) of letters, digits, spaces and {@code _ $ # @ . -}. */
+    static final Pattern SQL_NAME = Pattern.compile(
+            "[A-Za-z_$#@][A-Za-z0-9_$#@]{0,127}"
+                    + "|\"[A-Za-z0-9_$#@ .-]{1,128}\""
+                    + "|`[A-Za-z0-9_$#@ .-]{1,128}`"
+                    + "|\\[[A-Za-z0-9_$#@ .-]{1,128}]");
+
+    static final String SQL_NAME_RULE = "letters, digits and _ $ # @, or a quoted name such as \"OrderDate\"";
 
     /** An optional {@code column}/{@code joinColumn}: blank → null (derived), else trimmed and checked. */
     static String parseColumnName(String raw, String prop, String member, String entity) {
         if (raw == null || raw.isBlank()) return null;
         String column = raw.trim();
-        if (!COLUMN_NAME.matcher(column).matches()) {
+        if (!SQL_NAME.matcher(column).matches()) {
             throw new WizardArgumentException(prop + " '" + column + "' of '" + member + "' on entity '" + entity
-                    + "' is not a valid column name (letters, digits and _ $ # @, starting with a letter or _)");
+                    + "' is not a valid column name (" + SQL_NAME_RULE + ")");
         }
         return column;
     }
