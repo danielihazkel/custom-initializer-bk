@@ -152,6 +152,38 @@ class SqlToEntityDefinitionConverterTest {
     }
 
     @Test
+    void fieldsAndRelationsKeepTheirDdlColumnNames() {
+        // Camel-casing loses the underscore before a digit (FUTURE_USE_8 → futureUse8 → future_use8)
+        // and an FK without an _id suffix would derive <field>_id, so both keep the DDL's own name.
+        String sql = """
+                CREATE TABLE VNRF.CUSTOMERS (
+                    CUST_NO NUMERIC(6, 0) NOT NULL PRIMARY KEY,
+                    CUST_SHEM_2 CHAR(20)
+                );
+                CREATE TABLE VNRF.ORDERS (
+                    ORD_NO NUMERIC(6, 0) NOT NULL PRIMARY KEY,
+                    FRF_QOD_MISHLOAH_FUTURE_USE_8 CHAR(1),
+                    CUST_REF NUMERIC(6, 0) NOT NULL,
+                    ADDR_2_ID NUMERIC(6, 0),
+                    FOREIGN KEY (CUST_REF) REFERENCES VNRF.CUSTOMERS (CUST_NO),
+                    FOREIGN KEY (ADDR_2_ID) REFERENCES VNRF.CUSTOMERS (CUST_NO)
+                );
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.DB2);
+        assertThat(entities.get(0).fields()).extracting(FieldDefinition::column)
+                .containsExactly("CUST_NO", "CUST_SHEM_2");
+        EntityDefinition order = entities.get(1);
+        assertThat(order.fields()).extracting(FieldDefinition::name, FieldDefinition::column)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("ordNo", "ORD_NO"),
+                        org.assertj.core.groups.Tuple.tuple("frfQodMishloahFutureUse8", "FRF_QOD_MISHLOAH_FUTURE_USE_8"));
+        assertThat(order.relations()).extracting(RelationDefinition::fieldName, RelationDefinition::joinColumn)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("custRef", "CUST_REF"),
+                        org.assertj.core.groups.Tuple.tuple("addr2", "ADDR_2_ID"));
+    }
+
+    @Test
     void pluralYWithIesGetsSingularized() {
         String sql = "CREATE TABLE categories (id BIGINT PRIMARY KEY, name VARCHAR(50));";
         List<EntityDefinition> entities = converter.convert(sql, SqlDialect.H2);

@@ -1690,7 +1690,7 @@ public final class EntityScaffoldContext {
                 String childTable = child.tableName() != null ? child.tableName()
                         : Naming.pluralize(Naming.toSnakeCase(child.name()));
                 inv.put("childTableRef", (child.schema() != null ? child.schema() + "." : "") + childTable);
-                inv.put("childJoinColumn", Naming.toSnakeCase(rel.fieldName()) + "_id");
+                inv.put("childJoinColumn", joinColumnOf(rel));
                 byLower.computeIfAbsent(parentLower, k -> new ArrayList<>()).add(inv);
             }
         }
@@ -1731,8 +1731,8 @@ public final class EntityScaffoldContext {
             // the same derivations its own @Table/@Column use.
             String table = e.tableName() != null ? e.tableName() : Naming.pluralize(Naming.toSnakeCase(e.name()));
             s.put("tableRef", (e.schema() != null && !e.schema().isBlank() ? e.schema() + "." : "") + table);
-            s.put("pkColumn", Naming.toSnakeCase(pkName));
-            s.put("labelColumn", labelField == null ? null : Naming.toSnakeCase(labelField.name()));
+            s.put("pkColumn", pk == null ? "id" : columnOf(pk));
+            s.put("labelColumn", labelField == null ? null : columnOf(labelField));
             summaries.put(e.name().toLowerCase(Locale.ROOT), s);
         }
         return summaries;
@@ -2264,7 +2264,7 @@ public final class EntityScaffoldContext {
             rv.put("fieldName", relField);
             rv.put("FieldName", Naming.toPascalCase(rel.fieldName()));
             rv.put("fkFieldName", relField + "Id");
-            rv.put("joinColumn", Naming.toSnakeCase(rel.fieldName()) + "_id");
+            rv.put("joinColumn", joinColumnOf(rel));
             rv.put("targetEntity", target != null ? target.get("pascal") : Naming.toPascalCase(rel.targetEntity()));
             rv.put("targetEntityCamel", target != null ? target.get("camel") : Naming.toCamelCase(rel.targetEntity()));
             rv.put("targetEntityKebab", target != null ? target.get("kebab") : Naming.toKebabCase(rel.targetEntity()));
@@ -2436,12 +2436,27 @@ public final class EntityScaffoldContext {
         return view;
     }
 
+    /** The database column a field maps to: the schema's own spelling when the field carries one
+     *  (DDL import), else the snake_case of its name. Every column name rendered for a field —
+     *  {@code @Column}, the soft-delete SQL, a referencing entity's label/count subselects — goes
+     *  through here, so they always agree. */
+    static String columnOf(FieldDefinition f) {
+        return f.column() != null ? f.column() : Naming.toSnakeCase(f.name());
+    }
+
+    /** The foreign-key column of a relation: its own {@code joinColumn} when set (DDL import), else
+     *  {@code <snake fieldName>_id}. Used by {@code @JoinColumn}, the label subselect and the
+     *  parent's child-count subselect. */
+    static String joinColumnOf(RelationDefinition r) {
+        return r.joinColumn() != null ? r.joinColumn() : Naming.toSnakeCase(r.fieldName()) + "_id";
+    }
+
     private static Map<String, Object> fieldViewModel(String entityPascal, FieldDefinition f) {
         Map<String, Object> fv = new LinkedHashMap<>();
         fv.put("name", f.name());
         String pascalName = Naming.toPascalCase(f.name());
         fv.put("Name", pascalName);
-        fv.put("column", Naming.toSnakeCase(f.name()));
+        fv.put("column", columnOf(f));
         // Human-facing display override for the generated UI (table header, form label, filter
         // chip, detail row). Defaults to the PascalCase name when no custom label was supplied —
         // done here because Mustache has no default operator.

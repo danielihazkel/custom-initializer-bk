@@ -526,7 +526,16 @@ public record FullstackStarterRequest(
             String type,
             String fieldName,
             String targetEntity,
-            Boolean required) {}
+            Boolean required,
+            // Optional foreign-key column as the schema spells it (the DDL import sets it);
+            // omitted → <snake fieldName>_id.
+            String joinColumn) {
+
+        /** Back-compat constructor without {@code joinColumn}. */
+        public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required) {
+            this(type, fieldName, targetEntity, required, null);
+        }
+    }
 
     public record FieldDefinitionDto(
             String name,
@@ -552,7 +561,20 @@ public record FullstackStarterRequest(
             // Optional display label per enum constant (constant -> label, e.g. {"OPEN": "פתוח"}).
             // Keys are matched case-insensitively against enumValues; only valid on ENUM fields.
             // A constant without a label falls back to a humanized form ("IN_PROGRESS" -> "In progress").
-            Map<String, String> enumLabels) {
+            Map<String, String> enumLabels,
+            // Optional database column as the schema spells it (the DDL import sets it);
+            // omitted → the snake_case of name.
+            String column) {
+
+        /** Back-compat constructor without {@code column} (derived from the name). */
+        public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                                  String pattern, Boolean email, List<String> enumValues,
+                                  Boolean searchable, Boolean filterable, String label, Boolean readOnly,
+                                  String defaultValue, Map<String, String> enumLabels) {
+            this(name, type, primaryKey, generated, required, unique, length, min, max,
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels, null);
+        }
 
         /** Back-compat constructor without {@code enumLabels} (no custom labels). */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
@@ -561,7 +583,7 @@ public record FullstackStarterRequest(
                                   Boolean searchable, Boolean filterable, String label, Boolean readOnly,
                                   String defaultValue) {
             this(name, type, primaryKey, generated, required, unique, length, min, max,
-                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, null);
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, (Map<String, String>) null);
         }
 
         /** Back-compat constructor without the {@code searchable}/{@code filterable} opt-out flags

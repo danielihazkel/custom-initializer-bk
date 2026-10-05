@@ -210,6 +210,11 @@ public final class FullstackRequestValidator {
                 String label = (f.label() == null || f.label().isBlank()) ? null : f.label().trim();
                 String defaultValue = normalizeDefault(f.defaultValue(), type, isGenerated, f.length(),
                         f.enumValues(), fname, name);
+                String column = parseColumnName(f.column(), "column", fname, name);
+                if (column != null && viewQuery != null) {
+                    throw new WizardArgumentException("Field '" + fname + "' on entity '" + name
+                            + "' sets a column, but a SELECT-backed view maps fields by their names");
+                }
                 fields.add(new FieldDefinition(
                         fname,
                         type,
@@ -232,7 +237,8 @@ public final class FullstackRequestValidator {
                         label,
                         Boolean.TRUE.equals(f.readOnly()),
                         defaultValue,
-                        enumLabels));
+                        enumLabels,
+                        column));
             }
 
             if (pkCount == 0) {
@@ -273,6 +279,7 @@ public final class FullstackRequestValidator {
             List<RelationDefinition> relations =
                     parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
                             pkCountByLower, viewLowerNames);
+            checkColumnClashes(p.name(), p.fields(), relations);
             result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
                     p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts(),
                     parseFormSections(p.rawSections(), p.name(), p.fields(), relations)));
@@ -515,9 +522,52 @@ public final class FullstackRequestValidator {
             }
 
             relations.add(new RelationDefinition(type, fieldName, canonicalTarget,
-                    Boolean.TRUE.equals(r.required())));
+                    Boolean.TRUE.equals(r.required()),
+                    parseColumnName(r.joinColumn(), "joinColumn", fieldName, entityName)));
         }
         return relations;
+    }
+
+    /** A database identifier the generated code can splice into native SQL ({@code @Formula},
+     *  {@code @SQLDelete}, native queries) unquoted: letters, digits, {@code _ $ # @}. */
+    private static final Pattern COLUMN_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_$#@]{0,127}");
+
+    /** An optional {@code column}/{@code joinColumn}: blank → null (derived), else trimmed and checked. */
+    static String parseColumnName(String raw, String prop, String member, String entity) {
+        if (raw == null || raw.isBlank()) return null;
+        String column = raw.trim();
+        if (!COLUMN_NAME.matcher(column).matches()) {
+            throw new WizardArgumentException(prop + " '" + column + "' of '" + member + "' on entity '" + entity
+                    + "' is not a valid column name (letters, digits and _ $ # @, starting with a letter or _)");
+        }
+        return column;
+    }
+
+    /**
+     * Two members of an entity may not map to one column. Only checked where an explicit
+     * {@code column}/{@code joinColumn} is involved, so requests that never set one keep validating
+     * exactly as before.
+     */
+    private static void checkColumnClashes(String entity, List<FieldDefinition> fields,
+                                           List<RelationDefinition> relations) {
+        record Member(String name, String column, boolean explicit) {}
+        List<Member> members = new ArrayList<>();
+        for (FieldDefinition f : fields) {
+            members.add(new Member(f.name(), EntityScaffoldContext.columnOf(f), f.column() != null));
+        }
+        for (RelationDefinition r : relations) {
+            members.add(new Member(r.fieldName(), EntityScaffoldContext.joinColumnOf(r), r.joinColumn() != null));
+        }
+        Map<String, List<Member>> byColumn = new LinkedHashMap<>();
+        for (Member m : members) {
+            byColumn.computeIfAbsent(m.column().toLowerCase(Locale.ROOT), k -> new ArrayList<>()).add(m);
+        }
+        for (List<Member> same : byColumn.values()) {
+            if (same.size() > 1 && same.stream().anyMatch(Member::explicit)) {
+                throw new WizardArgumentException("'" + same.get(0).name() + "' and '" + same.get(1).name()
+                        + "' on entity '" + entity + "' both map to column '" + same.get(0).column() + "'");
+            }
+        }
     }
 
     static boolean isValidJavaIdentifier(String s) {

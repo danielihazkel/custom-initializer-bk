@@ -39,6 +39,10 @@ import java.util.regex.Pattern;
  *       FK column is dropped from the fields — the relation renders the join column. Composite FKs,
  *       FKs to tables outside the paste, FKs to composite-key tables and FK columns that are also
  *       part of the primary key stay plain fields.</li>
+ *   <li>Every field and relation keeps its column exactly as the DDL spells it
+ *       ({@link FieldDefinition#column()}, {@link RelationDefinition#joinColumn()}), because the
+ *       camelCase field name can't be turned back into it ({@code USE_8} and {@code USE8} both
+ *       become {@code use8}).</li>
  *   <li>{@code CHECK (col IN ('A','B'))} — column-level or table-level — turns the column into an
  *       {@link FieldType#ENUM} with those constants. It is read from the statement text with a regex
  *       rather than the JSqlParser AST because column-level checks only survive there as raw
@@ -176,7 +180,10 @@ public class SqlToEntityDefinitionConverter {
                 taken.add(f.name().toLowerCase(Locale.ROOT));
                 continue;
             }
-            relations.add(new RelationDefinition(RelationType.MANY_TO_ONE, fieldName, target.entityName(), !col.nullable()));
+            // The FK column exactly as the DDL spells it: a name derived back from the relation's
+            // field name (ADDR_2_ID → addr2 → addr2_id, CUST_REF → custRef → cust_ref_id) would miss it.
+            relations.add(new RelationDefinition(RelationType.MANY_TO_ONE, fieldName, target.entityName(),
+                    !col.nullable(), col.name()));
             taken.add(fieldName.toLowerCase(Locale.ROOT));
         }
         return new EntityDefinition(entityName, table.name(), table.schema(), fields, relations,
@@ -201,7 +208,11 @@ public class SqlToEntityDefinitionConverter {
                 false,
                 enumValues != null ? enumValues : List.of(),
                 true, true, // imported fields default to searchable/filterable
-                null, false); // no custom label; editable
+                null, false, // no custom label; editable
+                null, null, // no default, no enum labels
+                // Keep the column exactly as the DDL spells it: camel-casing is lossy
+                // (FUTURE_USE_8 → futureUse8 → future_use8), so it can't be derived back.
+                col.name());
     }
 
     /**

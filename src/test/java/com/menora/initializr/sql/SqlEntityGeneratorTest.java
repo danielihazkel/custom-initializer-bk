@@ -11,6 +11,24 @@ class SqlEntityGeneratorTest {
 
     private final SqlEntityGenerator generator = new SqlEntityGenerator();
 
+    @Test
+    void db2_keepsAnUnderscoreBeforeADigitInTheColumnName() {
+        // The field camel-cases to futureUse8, which snake-cases back to future_use8 — the
+        // entity must name the real column instead of deriving it.
+        String sql = """
+                CREATE TABLE VNRF.ORDERS (
+                    ORD_NO NUMERIC(6, 0) NOT NULL PRIMARY KEY,
+                    FRF_QOD_MISHLOAH_FUTURE_USE_8 CHAR(1),
+                    ADDR_2_ID NUMERIC(6, 0)
+                );
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.DB2, "com.menora.demo", null);
+        assertThat(findFile(files, "entity/Orders.java").content())
+                .contains("@Column(name = \"FRF_QOD_MISHLOAH_FUTURE_USE_8\", length = 1)")
+                .contains("private String frfQodMishloahFutureUse8;")
+                .contains("@Column(name = \"ADDR_2_ID\"");
+    }
+
     // ── Dialect: PostgreSQL ───────────────────────────────────────────────────
 
     @Test

@@ -1477,6 +1477,80 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void importedDdl_generatesEntitiesOnTheSchemasOwnColumnNames() throws Exception {
+        // A DB2 column with an underscore before a digit used to come out as ..._use8 (derived back
+        // from the camelCase field name), and an FK without an _id suffix as <field>_id — both
+        // queries then failed. The import now carries the DDL names into every SQL name.
+        Map<String, Object> importBody = new LinkedHashMap<>();
+        importBody.put("dialect", "DB2");
+        importBody.put("sql", """
+                CREATE TABLE VNRF.CUSTOMERS (
+                    CUST_NO NUMERIC(6, 0) NOT NULL PRIMARY KEY,
+                    CUST_SHEM_2 CHAR(20)
+                );
+                CREATE TABLE VNRF.ORDERS (
+                    ORD_NO NUMERIC(6, 0) NOT NULL PRIMARY KEY,
+                    FRF_QOD_MISHLOAH_FUTURE_USE_8 CHAR(1),
+                    CUST_REF NUMERIC(6, 0) NOT NULL,
+                    FOREIGN KEY (CUST_REF) REFERENCES VNRF.CUSTOMERS (CUST_NO)
+                );
+                """);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<Map<String, Object>> imported = restTemplate.exchange(
+                "/metadata/fullstack/import-ddl", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(importBody, headers),
+                new org.springframework.core.ParameterizedTypeReference<>() {});
+        assertThat(imported.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) imported.getBody().get("entities");
+        Map<String, Object> order = entities.get(1);
+        assertThat((List<Map<String, Object>>) order.get("fields"))
+                .anySatisfy(f -> assertThat(f).containsEntry("column", "FRF_QOD_MISHLOAH_FUTURE_USE_8"));
+        assertThat(((List<Map<String, Object>>) order.get("relations")).get(0)).containsEntry("joinColumn", "CUST_REF");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "frf");
+        body.put("packageName", "com.menora.frf");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", entities);
+        body.put("opts", Map.of("scaffold", List.of("softDelete")));
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/entity/Order.java"))
+                .contains("@Column(name = \"FRF_QOD_MISHLOAH_FUTURE_USE_8\"")
+                .contains("private String frfQodMishloahFutureUse8;")
+                .contains("@JoinColumn(name = \"CUST_REF\", nullable = false)")
+                .contains("@Formula(\"(select t.CUST_SHEM_2 from VNRF.CUSTOMERS t where t.CUST_NO = CUST_REF)\")")
+                .contains("SET deleted = true WHERE ORD_NO = ?")
+                .doesNotContain("future_use8")
+                .doesNotContain("cust_ref_id");
+        assertThat(contentEndingWith(entries, "/repository/OrderRepository.java"))
+                .contains("SET deleted = false WHERE ORD_NO = :id");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsBadOrClashingColumnNames() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        // Column names are spliced into native SQL, so only identifier characters pass.
+        ResponseEntity<String> bad = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(bodyWithField(Map.of("name", "title", "type", "String", "column", "TITLE; DROP")), headers),
+                String.class);
+        assertThat(bad.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(bad.getBody()).contains("column 'TITLE; DROP' of 'title' on entity 'Task' is not a valid column name");
+
+        // An explicit column may not reuse another member's (derived) column.
+        ResponseEntity<String> clash = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(bodyWithField(Map.of("name", "title", "type", "String", "column", "ID")), headers),
+                String.class);
+        assertThat(clash.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(clash.getBody()).contains("'id' and 'title' on entity 'Task' both map to column 'id'");
+    }
+
+    @Test
     void importDdlEndpoint_returns400OnParseError() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("sql", "CREATE TABLE bad ( this is not valid sql );");
