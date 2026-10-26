@@ -131,12 +131,12 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
 {{/isRelationFilter}}{{/filterFields}}  return record as Partial<{{EntityName}}>
 }
 
-/** A filter set to exactly one value; `OPEN,CLOSED` names no single value to start with. */
+{{#fromFiltersChecksOne}}/** A filter set to exactly one value; `OPEN,CLOSED` names no single value to start with. */
 function oneValue(value: string | undefined): boolean {
   return !!value && !value.includes(',')
 }
 
-{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}}{{#listActionsConfigurable}}, hideActions{{/listActionsConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+{{/fromFiltersChecksOne}}{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}}{{#listActionsConfigurable}}, hideActions{{/listActionsConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
   // This browser's own settings for the list — rows per page, sort, view, hidden columns — saved as
   // they change; the list opens with them unless the route says otherwise.
   const [prefs] = useState(() => readListPrefs('{{entityNameKebab}}', columns.flatMap(c => c.sortKey ? [c.sortKey] : []), {{{viewModesTs}}}))

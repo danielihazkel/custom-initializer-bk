@@ -2612,6 +2612,10 @@ public final class EntityScaffoldContext {
         view.put("newFromFilters", !entity.readOnly() && filterFieldViews.stream().anyMatch(ff ->
                 Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isBooleanFilter"))
                         || Boolean.TRUE.equals(ff.get("isRelationFilter"))));
+        // An enum or relation filter may hold several values; a new record takes it only when it
+        // names one (the helper is emitted only when such a filter exists — the lint rejects it unused).
+        view.put("fromFiltersChecksOne", !entity.readOnly() && filterFieldViews.stream().anyMatch(ff ->
+                Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isRelationFilter"))));
         // The generated Service builds a JPA Specification when it has either text search or
         // type-aware filters — gates the Specification import / machinery in the template.
         view.put("needsSpecification", !stringFieldViews.isEmpty() || !filterFieldViews.isEmpty());

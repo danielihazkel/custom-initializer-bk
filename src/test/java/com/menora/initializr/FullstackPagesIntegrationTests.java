@@ -1285,6 +1285,10 @@ class FullstackPagesIntegrationTests {
                 .contains("  if (oneValue(values['status'])) record['status'] = values['status']")
                 .contains("  if (oneValue(values['customerId'])) record['customerId'] = Number(values['customerId'])")
                 .contains("function oneValue(value: string | undefined): boolean {");
+        // A list filtered by a yes/no field alone has no multi-value filter, so no helper (the lint rejects it unused).
+        assertThat(files.get(FE + "src/pages/product/ui/ProductPage.tsx"))
+                .contains("if (values['inStock']) record['inStock'] = values['inStock'] === 'true'")
+                .doesNotContain("oneValue");
 
         // The generated API takes any number of values for an enum or relation filter.
         String controller = backendFile(files, "OrderController.java");
