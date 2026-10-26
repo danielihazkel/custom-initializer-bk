@@ -47,6 +47,7 @@ public final class EntityScaffoldContext {
         m.put("bulkUpdate", "optScaffoldBulkUpdate");
         m.put("tests", "optScaffoldTests");
         m.put("csvImport", "optScaffoldCsvImport");
+        m.put("optimisticLocking", "optScaffoldOptimisticLocking");
         SCAFFOLD_OPT_FLAGS = java.util.Collections.unmodifiableMap(m);
     }
 
@@ -669,6 +670,22 @@ public final class EntityScaffoldContext {
      * classic shell's list pages get the Import button too. Call after {@code optScaffoldCsvImport}
      * is set.
      */
+    /**
+     * Whether any entity resolves the {@code optimisticLocking} option on (its override, else the
+     * project option) and can use it (writable, table-backed) — {@code hasOptimisticLocking}, which
+     * gates the project-wide stale-update handler, so an entity that opts in on its own still gets it.
+     */
+    public static void putOptimisticLocking(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldOptimisticLocking"));
+        ctx.put("hasOptimisticLocking", entities.stream().anyMatch(e -> lockingApplies(e, projectOpt)));
+    }
+
+    /** {@code optimisticLocking} for one entity: the override, else the project option; writable tables only. */
+    public static boolean lockingApplies(EntityDefinition e, boolean projectOpt) {
+        Boolean override = e.opts().get("optimisticLocking");
+        return !e.readOnly() && e.viewQuery() == null && (override != null ? override : projectOpt);
+    }
+
     public static void putCsvImport(Map<String, Object> ctx, List<EntityDefinition> entities) {
         boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldCsvImport"));
         ctx.put("hasCsvImport", entities.stream().anyMatch(e -> !e.readOnly()
@@ -1895,6 +1912,9 @@ public final class EntityScaffoldContext {
         // a @Subselect view would have to project created_at/updated_at columns that may not exist.
         ctx.put("auditApplicable",
                 Boolean.TRUE.equals(ctx.get("optScaffoldAudit")) && mutable);
+        // Optimistic locking (a @Version column, stale updates answered 409) — writable tables only.
+        ctx.put("lockingApplicable", Boolean.TRUE.equals(ctx.get("optScaffoldOptimisticLocking"))
+                && mutable && !Boolean.TRUE.equals(ctx.get("isView")));
         // CSV import (the csvImport opt, or an import page — which switches the opt on for its
         // entity) creates rows, so it needs a writable entity. The import checks each row's
         // relations through the EntityManager, which the stats rollup also uses.

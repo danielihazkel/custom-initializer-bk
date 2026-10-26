@@ -10,8 +10,9 @@ import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} 
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
 import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 {{#mutable}}import { {{EntityName}}Form, validate{{EntityName}}{{#importApplicable}}, {{EntityName}}ImportFields{{/importApplicable}} } from '@features/{{entityNameKebab}}-form'
-import { ApiError } from '@shared/api'
-{{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
+import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail}}{{/lockingApplicable}} } from '@shared/api'
+{{#lockingApplicable}}import { StaleNotice } from '@shared/ui/StaleNotice'
+{{/lockingApplicable}}{{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
 {{/optScaffoldCsvExport}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
 {{/importApplicable}}
 {{#listSideDetail}}import { api } from '@shared/api'
@@ -41,7 +42,11 @@ const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?
 {{#wholeViews}}/** The most records the board or the calendar loads at once. */
 const WHOLE_VIEW_LIMIT = 500
 
-{{/wholeViews}}/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
+{{/wholeViews}}{{#lockingApplicable}}/** A save refused because the record changed since it was read (the API's 409 with `stale`). */
+const isStale = (e: unknown) =>
+  e instanceof ApiError && e.status === 409 && (e.body as { stale?: boolean } | undefined)?.stale === true
+
+{{/lockingApplicable}}/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
 const rowKey = (row: {{EntityName}}) => {{#hasCompositePk}}[{{#pkFields}}String(row.{{name}}){{^last}}, {{/last}}{{/pkFields}}].join('/'){{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as string | number{{/hasCompositePk}}
 
 {{#hasPages}}
@@ -263,6 +268,11 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [pendingDelete, setPendingDelete] = useState<{{EntityName}} | null>(null)
   const [deleting, setDeleting] = useState(false)
+{{#lockingApplicable}}
+  // Set when a save is refused because someone saved the record first; the form then offers
+  // to load their version or to save over it.
+  const [stale, setStale] = useState(false)
+{{/lockingApplicable}}
 
   // Has the user changed anything since the drawer opened? Drives the discard guard.
   const dirty = editing != null && JSON.stringify(editing) !== JSON.stringify(initial)
@@ -279,18 +289,21 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
     setEditing({{#newFromFilters}}{ ...{{/newFromFilters}}{{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}}{{#newFromFilters}}, ...fromFilters(filters) }{{/newFromFilters}})
     setInitial({{#newFromFilters}}{ ...{{/newFromFilters}}{{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}}{{#newFromFilters}}, ...fromFilters(filters) }{{/newFromFilters}})
     setIsNew(true)
-    setFormErrors({})
+{{#lockingApplicable}}    setStale(false)
+{{/lockingApplicable}}    setFormErrors({})
     setDrawerOpen(true)
   }
   function openEdit(row: {{EntityName}}) {
     setEditing({ ...row })
     setInitial({ ...row })
     setIsNew(false)
-    setFormErrors({})
+{{#lockingApplicable}}    setStale(false)
+{{/lockingApplicable}}    setFormErrors({})
     setDrawerOpen(true)
   }
   function close() {
-    setDrawerOpen(false)
+{{#lockingApplicable}}    setStale(false)
+{{/lockingApplicable}}    setDrawerOpen(false)
     setEditing(null)
     setFormErrors({})
   }
@@ -324,14 +337,53 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
         setFormErrors(e.fieldErrors)
         toast.error(t('fixHighlighted'))
         focusFirstInvalid()
-      } else {
+      }{{#lockingApplicable}} else if (isStale(e)) {
+        setStale(true)
+      }{{/lockingApplicable}} else {
         toast.error(e instanceof Error ? e.message : String(e))
       }
     } finally {
       setSaving(false)
     }
   }
-  async function confirmDelete() {
+{{#lockingApplicable}}  /** The record as it is now on the server (the row being edited, re-read by its key). */
+  function fetchCurrent(row: Partial<{{EntityName}}>) {
+    const key = [{{#pkFields}}row.{{name}}{{^last}}, {{/last}}{{/pkFields}}].map(v => encodeURIComponent(String(v))).join('/')
+    return api.get<{{EntityName}}>(`/api/{{entityNamePluralKebab}}/${key}`)
+  }
+  async function loadTheirs() {
+    if (!editing) return
+    setSaving(true)
+    try {
+      const current = await fetchCurrent(editing)
+      setEditing({ ...current })
+      setInitial({ ...current })
+      setFormErrors({})
+      setStale(false)
+      toast.success(t('staleLoaded'))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+  async function saveMineAnyway() {
+    if (!editing) return
+    setSaving(true)
+    try {
+      // Take the current version so the server accepts the draft over the other change.
+      const current = await fetchCurrent(editing)
+      await update({{#hasCompositePk}}[{{#pkFields}}editing.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}editing.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...editing, version: current.version } as {{EntityName}})
+      toast.success(t('xUpdated', { x: '{{entityLabel}}' }))
+      close()
+    } catch (e) {
+      if (isStale(e)) setStale(true)
+      else toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+{{/lockingApplicable}}  async function confirmDelete() {
     if (!pendingDelete) return
     const removed = pendingDelete
     setDeleting(true)
@@ -708,7 +760,8 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
         saving={saving}
         dirty={dirty}
       >
-        {editing && (
+{{#lockingApplicable}}        {stale && <StaleNotice busy={saving} onReload={loadTheirs} onOverwrite={saveMineAnyway} />}
+{{/lockingApplicable}}        {editing && (
           <{{EntityName}}Form
             value={editing}
             onChange={next => {

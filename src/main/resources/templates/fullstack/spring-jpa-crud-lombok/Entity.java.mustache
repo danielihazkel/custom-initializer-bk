@@ -68,7 +68,12 @@ import org.hibernate.annotations.Formula;
     @Column(name = "updated_at")
     private Instant updatedAt;
 
-{{/auditApplicable}}{{#softDeleteApplicable}}    @Column(name = "deleted", nullable = false)
+{{/auditApplicable}}{{#lockingApplicable}}    /** Optimistic lock: bumped by every update; an update carrying an older value is refused. */
+    @Version
+    @Column(name = "version")
+    private Long version;
+
+{{/lockingApplicable}}{{#softDeleteApplicable}}    @Column(name = "deleted", nullable = false)
     private boolean deleted = false;
 
 {{/softDeleteApplicable}}{{#optScaffoldInverse}}{{#hasInverseRelations}}{{#inverseRelations}}    @OneToMany(mappedBy = "{{mappedBy}}")

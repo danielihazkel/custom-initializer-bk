@@ -116,6 +116,10 @@ public class FullstackProjectGenerationConfiguration {
             // Bulk field-edit endpoint. Narrowed per entity in EntityScaffoldContext (bulkUpdateApplicable)
             // to writable, single-PK entities with ≥1 editable non-PK field. No extra dependency.
             projectCtx.put("optScaffoldBulkUpdate", optionsContext.hasOption("scaffold", "bulkUpdate"));
+            // @Version + a 409 for a stale update. Narrowed per entity (lockingApplicable);
+            // hasOptimisticLocking gates the shared stale-update handler.
+            projectCtx.put("optScaffoldOptimisticLocking", optionsContext.hasOption("scaffold", "optimisticLocking"));
+            EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
             // Demo rows on first start (config/DemoDataLoader, a CommandLineRunner). Backend-only;
             // the seeding order/expressions come from EntityScaffoldContext (seedEntities/seedExpr).
             projectCtx.put("optScaffoldSeedData", optionsContext.hasOption("scaffold", "seedData"));

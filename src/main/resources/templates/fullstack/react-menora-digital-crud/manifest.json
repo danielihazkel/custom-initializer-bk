@@ -47,6 +47,7 @@
     {"source": "BoardView.tsx", "path": "src/shared/ui/BoardView.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasBoardPages", "sourceSet": "react-tailwind-crud"},
     {"source": "csv.ts", "path": "src/shared/ui/csv.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCsvImport", "sourceSet": "react-tailwind-crud"},
     {"source": "CsvImport.tsx", "path": "src/shared/ui/CsvImport.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCsvImport", "sourceSet": "react-tailwind-crud"},
+    {"source": "StaleNotice.tsx", "path": "src/shared/ui/StaleNotice.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasOptimisticLocking", "sourceSet": "react-tailwind-crud"},
     {"source": "links.tsx", "path": "src/shared/ui/links.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 149, "gatedBy": "hasLinksWidgets"},
     {"source": "DashboardPage.tsx.mustache", "path": "src/pages/dashboard/ui/DashboardPage.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 150},
     {"source": "dashboard-barrel.ts.mustache", "path": "src/pages/dashboard/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 152, "sourceSet": "react-tailwind-crud"},

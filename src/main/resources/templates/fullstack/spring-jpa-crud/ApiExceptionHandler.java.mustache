@@ -9,7 +9,8 @@ import org.springframework.data.mapping.PropertyReferenceException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.validation.FieldError;
+{{#hasOptimisticLocking}}import org.springframework.orm.ObjectOptimisticLockingFailureException;
+{{/hasOptimisticLocking}}import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -36,7 +37,9 @@ import java.util.Map;
  *
  * <ul>
  *   <li>404 — {@link ResourceNotFoundException} (thrown by the services' {@code findById})</li>
- *   <li>409 — {@link ResourceConflictException} (create with an existing client-supplied key) and
+ *   <li>409 — {@link ResourceConflictException} (create with an existing client-supplied key){{#hasOptimisticLocking}},
+ *       a stale update (the record changed since the client read it — the problem carries
+ *       {@code "stale": true} so the frontend can offer to reload),{{/hasOptimisticLocking}} and
  *       database constraint violations, classified by the driver message so a unique clash reads
  *       "already exists" while a foreign-key or not-null failure is described as such</li>
  *   <li>400 — bean validation (with the per-field {@code errors} map the frontend maps onto its
@@ -64,7 +67,15 @@ public class ApiExceptionHandler {
         return problem(HttpStatus.CONFLICT, ex.getMessage());
     }
 
-    @ExceptionHandler(DataIntegrityViolationException.class)
+{{#hasOptimisticLocking}}    /** Thrown by a service's version check, or by Hibernate when two saves race past it. */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ProblemDetail handleStale(ObjectOptimisticLockingFailureException ex) {
+        ProblemDetail pd = problem(HttpStatus.CONFLICT, "This record was changed by someone else since you opened it");
+        pd.setProperty("stale", true);
+        return pd;
+    }
+
+{{/hasOptimisticLocking}}    @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
         String cause = rootMessage(ex).toLowerCase(Locale.ROOT);
         String detail;

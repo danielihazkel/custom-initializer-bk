@@ -437,6 +437,10 @@ public class FullstackStarterController {
         // Bulk field-edit selection UI. Like bulkDelete, narrowed per entity in EntityScaffoldContext
         // (bulkUpdateApplicable) to writable, single-PK entities that have ≥1 editable non-PK field.
         projectCtx.put("optScaffoldBulkUpdate", optionsContext.hasOption("scaffold", "bulkUpdate"));
+        // The record's version rides along in the DTO; the page turns a stale 409 into the
+        // conflict dialog. Mirrors the backend config.
+        projectCtx.put("optScaffoldOptimisticLocking", optionsContext.hasOption("scaffold", "optimisticLocking"));
+        EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
         // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.
         putIfPresent(projectCtx, "dashboardTitle", dashboardTitle);
         putIfPresent(projectCtx, "dashboardOverview", dashboardOverview);

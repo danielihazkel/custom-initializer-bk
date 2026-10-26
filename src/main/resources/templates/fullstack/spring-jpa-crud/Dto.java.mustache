@@ -21,7 +21,8 @@ public record {{EntityName}}Dto(
         String {{fieldName}}Label{{/hasTargetLabel}}{{^last}},{{/last}}
 {{/relations}}{{#auditApplicable}},
         java.time.Instant createdAt,
-        java.time.Instant updatedAt{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
+        java.time.Instant updatedAt{{/auditApplicable}}{{#lockingApplicable}},
+        Long version{{/lockingApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
         int {{collectionField}}Count{{/inverseRelations}}{{/optScaffoldInverse}}) {
 
     public static {{EntityName}}Dto from({{EntityName}} entity) {
@@ -31,7 +32,8 @@ public record {{EntityName}}Dto(
                 entity.get{{FieldName}}Label(){{/hasTargetLabel}}{{^last}},{{/last}}
 {{/relations}}{{#auditApplicable}},
                 entity.getCreatedAt(),
-                entity.getUpdatedAt(){{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
+                entity.getUpdatedAt(){{/auditApplicable}}{{#lockingApplicable}},
+                entity.getVersion(){{/lockingApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
                 entity.get{{CollectionField}}Count() == null ? 0 : entity.get{{CollectionField}}Count().intValue(){{/inverseRelations}}{{/optScaffoldInverse}}
         );
     }
@@ -44,6 +46,7 @@ public record {{EntityName}}Dto(
             {{fieldName}}.set{{TargetPkName}}(this.{{fkFieldName}});
             entity.set{{FieldName}}({{fieldName}});
         }
-{{/relations}}        return entity;
+{{/relations}}{{#lockingApplicable}}        entity.setVersion(this.version);
+{{/lockingApplicable}}        return entity;
     }
 }

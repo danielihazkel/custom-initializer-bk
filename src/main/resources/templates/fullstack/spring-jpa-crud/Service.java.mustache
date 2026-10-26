@@ -5,7 +5,8 @@ import {{entityPackage}}.{{EntityName}};
 {{/hasCompositePk}}import {{repositoryPackage}}.{{EntityName}}Repository;
 import {{packageName}}.web.ResourceNotFoundException;
 {{#mutable}}{{^pkField.isGenerated}}import {{packageName}}.web.ResourceConflictException;
-{{/pkField.isGenerated}}{{/mutable}}{{#hasStringFields}}import java.util.Locale;
+{{/pkField.isGenerated}}{{/mutable}}{{#lockingApplicable}}import org.springframework.orm.ObjectOptimisticLockingFailureException;
+{{/lockingApplicable}}{{#hasStringFields}}import java.util.Locale;
 {{/hasStringFields}}import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 {{#needsSpecification}}import org.springframework.data.jpa.domain.Specification;
@@ -280,7 +281,8 @@ public class {{EntityName}}Service {
     }
 
 {{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
-{{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
+{{#lockingApplicable}}        entity.setVersion(null); // a new row starts at version 0, whatever the client sent
+{{/lockingApplicable}}{{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}{{^pkField.isGenerated}}        // Client-supplied key: save() would silently merge over an existing row, so refuse with a 409.
         {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
         if (id != null && repository.existsById(id)) {
@@ -318,7 +320,8 @@ public class {{EntityName}}Service {
                 errors.add(new ImportError(row, "{{fkFieldName}}", "no {{targetEntity}} " + dto.{{fkFieldName}}()));
             }
 {{/relations}}            {{EntityName}} entity = dto.toEntity();
-{{#pkField.isGenerated}}            entity.set{{pkField.Name}}(null);
+{{#lockingApplicable}}            entity.setVersion(null);
+{{/lockingApplicable}}{{#pkField.isGenerated}}            entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}{{^pkField.isGenerated}}            {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
             if (id != null && !keys.add(id)) {
                 errors.add(new ImportError(row, null, "has the same key as an earlier row: " + id));
@@ -334,7 +337,12 @@ public class {{EntityName}}Service {
 
     public {{EntityName}} update({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id, {{EntityName}} updated) {
         {{EntityName}} existing = findById(id);
-{{#nonPkFields}}{{^isReadOnly}}        existing.set{{Name}}(updated.get{{Name}}());
+{{#lockingApplicable}}        // The client sends the version it read: an older one means someone saved in between, so
+        // refuse instead of overwriting their change (409, "stale"). No version = last write wins.
+        if (updated.getVersion() != null && !updated.getVersion().equals(existing.getVersion())) {
+            throw new ObjectOptimisticLockingFailureException({{EntityName}}.class, id);
+        }
+{{/lockingApplicable}}{{#nonPkFields}}{{^isReadOnly}}        existing.set{{Name}}(updated.get{{Name}}());
 {{/isReadOnly}}{{/nonPkFields}}{{#relations}}        existing.set{{FieldName}}(updated.get{{FieldName}}());
 {{/relations}}        return repository.save(existing);
     }

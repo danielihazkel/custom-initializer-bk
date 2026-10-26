@@ -2403,7 +2403,8 @@ class FullstackStarterIntegrationTests {
 
         // Task page: only the selected Table + Kanban views, a toggle across just those, plus the
         // (view-independent) filter bar, CSV export, and bulk-select table. No Cards/Calendar code.
-        String taskPage = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+        // CRLF templates on a Windows checkout render CRLF; the multi-line checks below expect LF.
+        String taskPage = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx").replace("\r\n", "\n");
         assertThat(taskPage)
                 .contains("const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')")  // initial = first selected (canonical order)
                 .contains("KanbanBoard, FilterBar")
@@ -2649,6 +2650,113 @@ class FullstackStarterIntegrationTests {
         });
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).contains("Unknown scaffold option 'bogus' on entity Note");
+    }
+
+    @Test
+    void fullstackEndpoint_optimisticLockingVersionsWritableEntities() throws Exception {
+        // Invoice inherits the project opt; Note opts out; Summary is a read-only view.
+        Map<String, Object> invoice = new LinkedHashMap<>();
+        invoice.put("name", "Invoice");
+        invoice.put("fields", List.of(pkField(), Map.of("name", "number", "type", "String")));
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "Note");
+        note.put("fields", List.of(pkField(), Map.of("name", "body", "type", "String")));
+        note.put("opts", Map.of("optimisticLocking", false));
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("name", "Summary");
+        summary.put("readOnly", true);
+        summary.put("viewQuery", "SELECT id, number FROM invoice");
+        summary.put("fields", List.of(Map.of("name", "id", "type", "Long", "primaryKey", true),
+                Map.of("name", "number", "type", "String")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "books");
+        body.put("packageName", "com.menora.books");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(invoice, note, summary));
+        body.put("opts", Map.of("scaffold", List.of("optimisticLocking")));
+
+        Map<String, String> entries = generateZip(body);
+
+        String entity = contentEndingWith(entries, "/entity/Invoice.java").replace("\r\n", "\n");
+        assertThat(entity).contains("    @Version\n    @Column(name = \"version\")\n    private Long version;")
+                .contains("public void setVersion(Long version)");
+        String dto = contentEndingWith(entries, "/dto/InvoiceDto.java");
+        assertThat(dto).contains("Long version)").contains("entity.getVersion()").contains("entity.setVersion(this.version);");
+        String service = contentEndingWith(entries, "/service/InvoiceService.java");
+        assertThat(service)
+                .contains("import org.springframework.orm.ObjectOptimisticLockingFailureException;")
+                .contains("if (updated.getVersion() != null && !updated.getVersion().equals(existing.getVersion())) {")
+                .contains("throw new ObjectOptimisticLockingFailureException(Invoice.class, id);")
+                .contains("entity.setVersion(null);");
+        String handler = contentEndingWith(entries, "/web/ApiExceptionHandler.java");
+        assertThat(handler).contains("@ExceptionHandler(ObjectOptimisticLockingFailureException.class)")
+                .contains("pd.setProperty(\"stale\", true);");
+
+        String types = entries.get("books/frontend/src/entities/invoice/model/types.ts");
+        assertThat(types).contains("version?: number | null");
+        String page = entries.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx");
+        assertThat(page).contains("import { StaleNotice } from '@shared/ui/StaleNotice'")
+                .contains("const isStale = (e: unknown) =>")
+                .contains("} else if (isStale(e)) {")
+                .contains("{ ...editing, version: current.version }")
+                .contains("<StaleNotice busy={saving} onReload={loadTheirs} onOverwrite={saveMineAnyway} />");
+        assertThat(entries).containsKey("books/frontend/src/shared/ui/StaleNotice.tsx");
+        assertThat(entries.get("books/frontend/src/shared/i18n/strings.ts")).contains("saveMineAnyway: 'Save mine anyway'");
+
+        // Opted out, and the read-only view: no version anywhere.
+        assertThat(contentEndingWith(entries, "/entity/Note.java")).doesNotContain("@Version");
+        assertThat(contentEndingWith(entries, "/service/NoteService.java")).doesNotContain("ObjectOptimisticLockingFailureException");
+        assertThat(entries.get("books/frontend/src/pages/note/ui/NotePage.tsx")).doesNotContain("StaleNotice").doesNotContain("isStale");
+        assertThat(contentEndingWith(entries, "/entity/Summary.java")).doesNotContain("@Version");
+        assertThat(entries.get("books/frontend/src/entities/summary/model/types.ts")).doesNotContain("version");
+
+        // An entity can opt in on its own: the shared handler and notice still ship.
+        Map<String, Object> lockedNote = new LinkedHashMap<>(note);
+        lockedNote.put("opts", Map.of("optimisticLocking", true));
+        Map<String, Object> soloBody = new LinkedHashMap<>(body);
+        soloBody.put("entities", List.of(invoice, lockedNote));
+        soloBody.remove("opts");
+        Map<String, String> solo = generateZip(soloBody);
+        assertThat(contentEndingWith(solo, "/entity/Note.java")).contains("@Version");
+        assertThat(contentEndingWith(solo, "/entity/Invoice.java")).doesNotContain("@Version");
+        assertThat(contentEndingWith(solo, "/web/ApiExceptionHandler.java")).contains("ObjectOptimisticLockingFailureException");
+        assertThat(solo).containsKey("books/frontend/src/shared/ui/StaleNotice.tsx");
+
+        // Without the opt nothing changes.
+        Map<String, Object> plainBody = new LinkedHashMap<>(body);
+        plainBody.remove("opts");
+        plainBody.put("entities", List.of(invoice));
+        Map<String, String> plain = generateZip(plainBody);
+        assertThat(contentEndingWith(plain, "/web/ApiExceptionHandler.java")).doesNotContain("Optimistic");
+        assertThat(plain).doesNotContainKey("books/frontend/src/shared/ui/StaleNotice.tsx");
+        assertThat(plain.get("books/frontend/src/shared/i18n/strings.ts")).doesNotContain("staleTitle");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsAVersionFieldUnderOptimisticLocking() {
+        Map<String, Object> invoice = new LinkedHashMap<>();
+        invoice.put("name", "Invoice");
+        invoice.put("fields", List.of(pkField(), Map.of("name", "version", "type", "Integer")));
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "books");
+            b.put("bootVersion", "3.2.1");
+            b.put("entities", List.of(invoice));
+            b.put("opts", Map.of("scaffold", List.of("optimisticLocking")));
+        });
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("Entity 'Invoice' already has a 'version' field or column");
+
+        // The same field is fine when the entity opts out.
+        invoice.put("opts", Map.of("optimisticLocking", false));
+        ResponseEntity<String> ok = postFullstack(b -> {
+            b.put("artifactId", "books");
+            b.put("bootVersion", "3.2.1");
+            b.put("entities", List.of(invoice));
+            b.put("opts", Map.of("scaffold", List.of("optimisticLocking")));
+        });
+        assertThat(ok.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     @Test
