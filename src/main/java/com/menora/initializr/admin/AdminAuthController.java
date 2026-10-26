@@ -5,7 +5,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/admin")
@@ -24,18 +23,15 @@ public class AdminAuthController {
     public ResponseEntity<?> login(@RequestBody Map<String, String> body) {
         String password = body.get("password");
         if (password != null && password.equals(configuredPassword)) {
-            String token = UUID.randomUUID().toString();
-            tokenStore.add(token);
-            return ResponseEntity.ok(Map.of("token", token));
+            return ResponseEntity.ok(Map.of("token", tokenStore.issue()));
         }
         return ResponseEntity.status(401).body(Map.of("error", "Invalid password"));
     }
 
+    // Tokens are stateless (see AdminTokenStore): the client drops its copy and the token
+    // expires on its own. A server-side revocation would only reach one replica.
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@RequestHeader(value = "Authorization", required = false) String authHeader) {
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            tokenStore.remove(authHeader.substring(7));
-        }
+    public ResponseEntity<Void> logout() {
         return ResponseEntity.noContent().build();
     }
 }

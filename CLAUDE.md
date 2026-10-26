@@ -39,6 +39,8 @@ This app wraps the Spring Initializr framework (`initializr-web` + `initializr-g
 2. **A single dynamic generation config** (`DynamicProjectGenerationConfiguration`) — reads from DB at generation time, replacing what used to be 8 separate hardcoded extension classes
 3. **An admin REST API** (`/admin/*`) — full CRUD for all DB tables + a `/admin/refresh` endpoint to hot-reload the dependency metadata cache
 
+**Admin tokens are stateless.** `POST /admin/login` returns an HMAC-signed token carrying its own expiry (`admin/AdminTokenStore`: key = `admin.token-secret`, else derived from `admin.password`; lifetime `admin.token-ttl`, default 12h), so any replica behind a load balancer accepts a token another one issued. Nothing is stored, so there is nothing to clean up; `/admin/logout` is a no-op and changing the password (or secret) invalidates every token. Every replica must share the password/secret. The tokens used to be an in-memory set per JVM, which logged users out at random with two QA instances. Pinned by `AdminTokenStoreTest`.
+
 ### Generation Pipeline
 
 When a project is generated, the framework spins up a child Spring application context for that request and calls every `ProjectGenerationConfiguration` registered in `META-INF/spring.factories`. Only one is registered: `DynamicProjectGenerationConfiguration`, which contributes three beans:

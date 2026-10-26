@@ -3,6 +3,10 @@ server:
 
 admin:
   password: changeme
+  # Login tokens are HMAC-signed, so any instance can check them. Every replica must share the
+  # same password (or token-secret, which takes precedence when set).
+  # token-secret:
+  token-ttl: 12h
 
 spring:
   cache:
