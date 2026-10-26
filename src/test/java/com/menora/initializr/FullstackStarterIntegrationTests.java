@@ -897,10 +897,10 @@ class FullstackStarterIntegrationTests {
         // Service copies the association on update and filters by the relation's FK.
         assertThat(contentEndingWith(entries, "/service/OrderService.java"))
                 .contains("existing.setCustomer(updated.getCustomer());")
-                .contains("Long customerId")
-                .contains("cb.equal(root.get(\"customer\").get(\"id\"), filters.customerId())");
+                .contains("List<Long> customerId")
+                .contains("root.get(\"customer\").get(\"id\").in(filters.customerId())");
         assertThat(contentEndingWith(entries, "/controller/OrderController.java"))
-                .contains("@RequestParam(required = false) Long customerId");
+                .contains("@RequestParam(required = false) List<Long> customerId");
 
         // Frontend: type + form + page carry customerId (and the label).
         assertThat(entries.get("shop/frontend/src/entities/order/model/types.ts"))
@@ -2500,7 +2500,7 @@ class FullstackStarterIntegrationTests {
         String taskService = contentEndingWith(entries, "/service/TaskService.java");
         assertThat(taskService)
                 .contains("public record Filters(")
-                .contains("TaskStatusType status")
+                .contains("List<TaskStatusType> status")
                 .contains("Integer priorityMin, Integer priorityMax")
                 .contains("LocalDate dueDateFrom, LocalDate dueDateTo")
                 .contains("findAll(String q, Filters filters, Pageable pageable)")
@@ -2509,7 +2509,7 @@ class FullstackStarterIntegrationTests {
         // Backend Task controller: filter params, CSV export, bulk-delete endpoint.
         String taskController = contentEndingWith(entries, "/controller/TaskController.java");
         assertThat(taskController)
-                .contains("@RequestParam(required = false) TaskStatusType status")
+                .contains("@RequestParam(required = false) List<TaskStatusType> status")
                 .contains("DateTimeFormat.ISO.DATE")
                 .contains("@GetMapping(\"/export.csv\")")
                 .contains("@DeleteMapping(\"/bulk\")")
@@ -3048,7 +3048,7 @@ class FullstackStarterIntegrationTests {
                 // ...and with the list's one-value filters on top (an ACTIVE-filtered list makes ACTIVE rows).
                 .contains("setEditing({ ...newDefaults(), ...fromFilters(filters) })")
                 .contains("setInitial({ ...newDefaults(), ...fromFilters(filters) })")
-                .contains("  if (values['stage']) record['stage'] = values['stage']")
+                .contains("  if (oneValue(values['stage'])) record['stage'] = values['stage']")
                 .contains("  if (values['open']) record['open'] = values['open'] === 'true'")
                 .doesNotContain("setEditing({})");
 

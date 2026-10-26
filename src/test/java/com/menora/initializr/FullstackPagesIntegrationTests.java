@@ -481,7 +481,7 @@ class FullstackPagesIntegrationTests {
                 .contains("if (scope) record[scope.param] = scope.value")
                 // New starts linked to the scope and with the list's one-value filters.
                 .contains("setEditing({ ...newRecord(), ...fromFilters(filters) })")
-                .contains("  if (values['orderId']) record['orderId'] = Number(values['orderId'])")
+                .contains("  if (oneValue(values['orderId'])) record['orderId'] = Number(values['orderId'])")
                 .contains("onView={openRow}")
                 // Order has a record page, so the relation cell links there; Product has none.
                 .contains("label: 'Order', render: r => r.orderId == null ? '—' : <a href={`#/order/${encodeURIComponent(String(r.orderId))}`} onClick={e => e.stopPropagation()} className=\"font-medium text-brand hover:underline\">{ r.orderLabel ?? '#' + String(r.orderId)}</a> },")
@@ -1084,6 +1084,64 @@ class FullstackPagesIntegrationTests {
                 "presetFilter 'placedAt': expected a date range (2026-01-01..2026-03-31, either side optional) or a period (last:7d, last:30d, last:90d, ytd, 12m), got 'last:5d'");
         assertOrdersRejected(p -> p.put("presetFilter", Map.of("placedAt", "2026-03-31..2026-01-01")), "presetFilter 'placedAt': from '2026-03-31' is after to '2026-01-01'");
         assertOrdersRejected(p -> p.put("presetFilter", Map.of("reference", "x")), "presetFilter 'reference': only filterable enum, boolean, date or number fields can be preset");
+    }
+
+    @Test
+    void fullstackEndpoint_multiValueAndRelationPresets() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        // Several statuses (any case, a duplicate, out of order) and two customers, by relation name.
+        page(body, "orders").put("presetFilter", Map.of("status", "paid, open,PAID", "customer", "7,3"));
+        // A relation keyed by its filter name, on a hidden list embedded in a tabs page.
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "first-customer", "type", "entity-list", "entity", "Order",
+                "hidden", true, "presetFilter", Map.of("customerId", "1"))));
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "queue", "type", "tabs", "title", "Queue",
+                "tabs", List.of(Map.of("page", "orders"), Map.of("page", "first-customer")))));
+        Map<String, String> files = generate(body);
+
+        // Constants in the enum's order, ids in the order given, under the list's own params.
+        assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx"))
+                .contains("const preset = { customerId: '7,3', status: 'OPEN,PAID' }");
+        assertThat(files.get(FE + "src/app/screens/FirstCustomerScreen.tsx"))
+                .contains("initialFilters={ { customerId: '1', ...filters } }");
+        assertThat(files.get(FE + "src/app/screens/QueueScreen.tsx"))
+                .contains("{ id: 'orders', path: '/api/orders', params: 'customerId=7,3&status=OPEN,PAID' },")
+                .contains("{ id: 'first-customer', path: '/api/orders', params: 'customerId=1' },");
+        // The enum filter is a multi-select, and a new record takes a filter only when it names one value.
+        assertThat(files.get(FE + "src/shared/ui/FilterBar.tsx"))
+                .contains("function EnumMultiSelect(")
+                .contains("<EnumMultiSelect f={f} value={values[f.name] ?? ''} onChange={v => set(f.name, v)} className={fieldClass} />");
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx"))
+                .contains("  if (oneValue(values['status'])) record['status'] = values['status']")
+                .contains("  if (oneValue(values['customerId'])) record['customerId'] = Number(values['customerId'])")
+                .contains("function oneValue(value: string | undefined): boolean {");
+
+        // The generated API takes any number of values for an enum or relation filter.
+        String controller = backendFile(files, "OrderController.java");
+        assertThat(controller)
+                .contains("@RequestParam(required = false) List<OrderStatusType> status")
+                .contains("@RequestParam(required = false) List<Long> customerId")
+                .contains("@RequestParam(required = false) BigDecimal totalMin");
+        assertThat(backendFile(files, "OrderService.java"))
+                .contains("List<OrderStatusType> status,")
+                .contains("if (filters.status() != null && !filters.status().isEmpty()) specs.add((root, query, cb) -> root.get(\"status\").in(filters.status()));")
+                .contains("if (filters.customerId() != null && !filters.customerId().isEmpty()) specs.add((root, query, cb) -> root.get(\"customer\").get(\"id\").in(filters.customerId()));");
+
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("status", "OPEN,LOST")), "presetFilter 'status': 'LOST' is not one of [OPEN, PAID, SHIPPED, CANCELLED]");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("status", "OPEN,")), "presetFilter 'status': 'OPEN,' has an empty value");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("customer", "abc")), "presetFilter 'customer': 'abc' is not a Customer id (a whole number)");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("buyer", "1")), "presetFilter 'buyer': no such field or relation on Order");
+        Map<String, Object> products = exampleBody("orders", "react-tailwind-crud");
+        page(products, "products").put("presetFilter", Map.of("inStock", "true,false"));
+        assertBadRequest(products, "presetFilter 'inStock': a yes/no field takes one value, got 'true,false'");
+    }
+
+    /** The generated backend source file whose path ends with {@code name}. */
+    private static String backendFile(Map<String, String> files, String name) {
+        return files.entrySet().stream()
+                .filter(e -> e.getKey().contains("/backend/") && e.getKey().endsWith("/" + name))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no " + name + " in " + files.keySet()));
     }
 
     @Test

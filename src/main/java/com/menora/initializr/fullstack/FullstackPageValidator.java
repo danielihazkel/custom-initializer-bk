@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -158,7 +159,7 @@ public final class FullstackPageValidator {
                     // A side pane addresses its row by one key in the route.
                     if (detail == PageDefinition.Detail.SIDE) requireSinglePk(prefix, entity);
                     yield new PageDefinition(id, type, title, description, hidden, entity.name(),
-                            presetFilter(prefix, entity, p.presetFilter()), null, null)
+                            presetFilter(prefix, entity, p.presetFilter(), entitiesByLower), null, null)
                             .withListPresentation(columns(prefix, entity, p.columns(), audit),
                                     sort(prefix, entity, p.sort(), audit), view(prefix, entity, p.view()),
                                     pageSize(prefix, p.pageSize()))
@@ -211,7 +212,7 @@ public final class FullstackPageValidator {
                     String prefix = "Page '" + id + "' (report)";
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
                     yield new PageDefinition(id, type, title, description, hidden, entity.name(),
-                            presetFilter("Page '" + id + "'", entity, p.presetFilter()), charts(prefix, entity, p));
+                            presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower), charts(prefix, entity, p));
                 }
                 case RECORD -> {
                     String prefix = "Page '" + id + "' (record)";
@@ -246,7 +247,7 @@ public final class FullstackPageValidator {
                     String prefix = "Page '" + id + "' (calendar)";
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
                     PageDefinition.CalendarSpec spec = calendar(prefix, entity, p);
-                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter());
+                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
                     for (String field : java.util.stream.Stream.of(spec.dateField(), spec.endField()).filter(java.util.Objects::nonNull).toList()) {
                         if (preset.keySet().stream().anyMatch(k -> k.equals(field) || k.equals(field + "From") || k.equals(field + "To"))) {
                             throw new WizardArgumentException(prefix + ": presetFilter cannot name '" + field
@@ -260,7 +261,7 @@ public final class FullstackPageValidator {
                     String prefix = "Page '" + id + "' (board)";
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
                     PageDefinition.BoardSpec spec = board(prefix, entity, p);
-                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter());
+                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
                     if (preset.containsKey(spec.laneField())) {
                         throw new WizardArgumentException(prefix + ": presetFilter cannot name '" + spec.laneField()
                                 + "' — the lanes already split by it");
@@ -632,8 +633,10 @@ public final class FullstackPageValidator {
     }
 
     /**
-     * Preset filters: equality on a filterable enum/boolean field (the enum constant canonicalized,
-     * matched ignoring case), a range on a filterable date or number field ({@code 2026-01-01..2026-03-31},
+     * Preset filters: equality on a filterable enum/boolean field (enum constants canonicalized,
+     * matched ignoring case; an enum may name several, {@code OPEN,IN_PROGRESS}, any of which
+     * matches), the id(s) a MANY_TO_ONE points at (keyed by the relation's field name or its
+     * {@code <field>Id} filter, kept as the latter), a range on a filterable date or number field ({@code 2026-01-01..2026-03-31},
      * {@code 100..500}, either side optional) or a period ending on the day the app is opened on a
      * date field ({@code last:7d}, {@code last:30d}, {@code last:90d}, {@code ytd}, {@code 12m}).
      * The result maps list params to literals — a range becomes {@code <field>From}/{@code <field>To}
@@ -641,7 +644,8 @@ public final class FullstackPageValidator {
      * {@code @<period>} for the renderer to turn into a {@code rangeParams(...)} call (it depends on
      * today's date). {@code owner} names the page or widget in the error.
      */
-    private static Map<String, String> presetFilter(String owner, EntityDefinition entity, Map<String, String> raw) {
+    private static Map<String, String> presetFilter(String owner, EntityDefinition entity, Map<String, String> raw,
+                                                    Map<String, EntityDefinition> entitiesByLower) {
         if (raw == null || raw.isEmpty()) return Map.of();
         Map<String, String> out = new LinkedHashMap<>();
         for (Map.Entry<String, String> en : raw.entrySet()) {
@@ -649,7 +653,18 @@ public final class FullstackPageValidator {
             FieldDefinition field = entity.fields().stream()
                     .filter(f -> f.name().equalsIgnoreCase(en.getKey()))
                     .findFirst()
-                    .orElseThrow(() -> new WizardArgumentException(prefix + ": no such field on " + entity.name()));
+                    .orElse(null);
+            if (field == null) {
+                RelationDefinition relation = entity.relations().stream()
+                        .filter(r -> r.fieldName().equalsIgnoreCase(en.getKey())
+                                || (r.fieldName() + "Id").equalsIgnoreCase(en.getKey()))
+                        .findFirst()
+                        .orElseThrow(() -> new WizardArgumentException(prefix + ": no such field or relation on " + entity.name()));
+                String ids = trimToNull(en.getValue());
+                if (ids == null) throw new WizardArgumentException(prefix + ": value is required");
+                out.put(relation.fieldName() + "Id", relationIds(prefix, relation, ids, entitiesByLower));
+                continue;
+            }
             FieldType type = field.type();
             if (field.primaryKey() || !field.filterable()
                     || !(type.isEnum() || type.isBoolean() || type.isTemporal() || type.isNumeric())) {
@@ -658,18 +673,27 @@ public final class FullstackPageValidator {
             String value = trimToNull(en.getValue());
             if (value == null) throw new WizardArgumentException(prefix + ": value is required");
             if (type.isBoolean()) {
+                if (value.contains(",")) {
+                    throw new WizardArgumentException(prefix + ": a yes/no field takes one value, got '" + value + "'");
+                }
                 String lower = value.toLowerCase(Locale.ROOT);
                 if (!lower.equals("true") && !lower.equals("false")) {
                     throw new WizardArgumentException(prefix + ": expected true or false, got '" + value + "'");
                 }
                 out.put(field.name(), lower);
             } else if (type.isEnum()) {
-                String constant = field.enumValues().stream()
-                        .filter(c -> c.equalsIgnoreCase(value))
-                        .findFirst()
-                        .orElseThrow(() -> new WizardArgumentException(prefix + ": '" + value
-                                + "' is not one of " + field.enumValues()));
-                out.put(field.name(), constant);
+                Set<String> picked = new HashSet<>();
+                for (String part : value.split(",", -1)) {
+                    String one = part.trim();
+                    if (one.isEmpty()) throw new WizardArgumentException(prefix + ": '" + value + "' has an empty value");
+                    picked.add(field.enumValues().stream()
+                            .filter(c -> c.equalsIgnoreCase(one))
+                            .findFirst()
+                            .orElseThrow(() -> new WizardArgumentException(prefix + ": '" + one
+                                    + "' is not one of " + field.enumValues())));
+                }
+                // In the enum's own order, so one choice always renders (and routes) the same way.
+                out.put(field.name(), String.join(",", field.enumValues().stream().filter(picked::contains).toList()));
             } else if (type.isTemporal()) {
                 String period = presetPeriod(value);
                 if (period != null) {
@@ -698,6 +722,50 @@ public final class FullstackPageValidator {
             }
         }
         return out;
+    }
+
+    private static final Pattern PRESET_TEXT_ID = Pattern.compile("[A-Za-z0-9._~-]+");
+
+    /**
+     * The ids a relation preset names, comma-joined and checked against the target's key type:
+     * whole numbers for an integral key, UUIDs (lower-cased) for a UUID one, and plain URL-safe
+     * text otherwise — the value lands in a query string verbatim.
+     */
+    private static String relationIds(String prefix, RelationDefinition relation, String value,
+                                      Map<String, EntityDefinition> entitiesByLower) {
+        EntityDefinition target = entitiesByLower.get(relation.targetEntity().toLowerCase(Locale.ROOT));
+        FieldType keyType = target == null ? FieldType.STRING : target.fields().stream()
+                .filter(FieldDefinition::primaryKey)
+                .findFirst()
+                .map(FieldDefinition::type)
+                .orElse(FieldType.STRING);
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        for (String part : value.split(",", -1)) {
+            String id = part.trim();
+            if (id.isEmpty()) throw new WizardArgumentException(prefix + ": '" + value + "' has an empty id");
+            if (keyType == FieldType.LONG || keyType == FieldType.INTEGER) {
+                try {
+                    long n = Long.parseLong(id);
+                    if (keyType == FieldType.INTEGER && (n < Integer.MIN_VALUE || n > Integer.MAX_VALUE)) {
+                        throw new NumberFormatException();
+                    }
+                    ids.add(Long.toString(n));
+                } catch (NumberFormatException e) {
+                    throw new WizardArgumentException(prefix + ": '" + id + "' is not a " + relation.targetEntity() + " id (a whole number)");
+                }
+            } else if (keyType == FieldType.UUID) {
+                try {
+                    ids.add(UUID.fromString(id).toString());
+                } catch (IllegalArgumentException e) {
+                    throw new WizardArgumentException(prefix + ": '" + id + "' is not a " + relation.targetEntity() + " id (a UUID)");
+                }
+            } else if (PRESET_TEXT_ID.matcher(id).matches()) {
+                ids.add(id);
+            } else {
+                throw new WizardArgumentException(prefix + ": '" + id + "' may hold only letters, digits and . _ ~ -");
+            }
+        }
+        return String.join(",", ids);
     }
 
     private static final Set<String> PRESET_PERIODS = Set.of("7d", "30d", "90d", "ytd", "12m");
@@ -877,7 +945,7 @@ public final class FullstackPageValidator {
                 }
             }
             out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit, agg, field, bucket, span,
-                    presetFilter(prefix, entity, w.presetFilter()), sortBy, dateField, compare, target, series, null,
+                    presetFilter(prefix, entity, w.presetFilter(), entitiesByLower), sortBy, dateField, compare, target, series, null,
                     null, null, null, drillTo(prefix, w.drillTo(), entity.name(), typeById, hiddenById, entityById)));
         }
         return out;
@@ -1082,7 +1150,7 @@ public final class FullstackPageValidator {
         }
         return new PageDefinition.Widget(PageDefinition.WidgetKind.LIST, entity.name(),
                 checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title"), null, limit, null, null, null, span,
-                presetFilter(prefix, entity, w.presetFilter()), null, null, false, null, null, null, null, columns, sort);
+                presetFilter(prefix, entity, w.presetFilter(), entitiesByLower), null, null, false, null, null, null, null, columns, sort);
     }
 
     /** What a stacked bar splits each group by: another enum/boolean field — the entity's next one

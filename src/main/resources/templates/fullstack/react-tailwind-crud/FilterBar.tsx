@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { SlidersHorizontal, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, SlidersHorizontal, X } from 'lucide-react'
 import { useOptions } from '@shared/api'
 import { RelationPicker } from './RelationPicker'
 import { t } from '../i18n'
@@ -31,6 +31,83 @@ function toOption(o: string | { value: string; label: string }): { value: string
   return typeof o === 'string' ? { value: o, label: o } : o
 }
 
+/** The values of a multi-value filter: `status=OPEN,IN_PROGRESS` matches either. */
+function splitValues(value: string | undefined): string[] {
+  return value ? value.split(',').filter(v => v !== '') : []
+}
+
+/** An enum filter that takes any number of values: a button naming the choice, over checkboxes. */
+function EnumMultiSelect({ f, value, onChange, className }: {
+  f: FilterDescriptor
+  value: string
+  onChange: (value: string) => void
+  className: string
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const options = (f.options ?? []).map(toOption)
+  const picked = splitValues(value)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => { if (!rootRef.current?.contains(e.target as Node)) setOpen(false) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        e.preventDefault()
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  // Kept in the options' order, so the same choice always reads (and routes) the same way.
+  const toggle = (v: string) => {
+    const next = picked.includes(v) ? picked.filter(p => p !== v) : [...picked, v]
+    onChange(options.map(o => o.value).filter(o => next.includes(o)).join(','))
+  }
+  const summary = picked.length === 0
+    ? t('any')
+    : picked.length === 1
+      ? options.find(o => o.value === picked[0])?.label ?? picked[0]
+      : t('nSelected', { n: picked.length })
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-label={`${f.label}: ${summary}`}
+        className={`${className} inline-flex min-w-32 items-center justify-between gap-2`}
+      >
+        <span className="truncate">{summary}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted" />
+      </button>
+      {open && (
+        <div role="group" aria-label={f.label} className="absolute start-0 z-30 mt-1 max-h-72 w-56 overflow-y-auto rounded-xl border border-border bg-surface p-2 shadow-lg">
+          {options.map(o => (
+            <label key={o.value} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg hover:bg-surface-2">
+              <input
+                type="checkbox"
+                checked={picked.includes(o.value)}
+                onChange={() => toggle(o.value)}
+                className="h-4 w-4 rounded border-border accent-brand"
+              />
+              {o.label}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** A <select> over the referenced entity's rows, e.g. "Customer" on the orders page. */
 function RelationSelect({ f, value, onChange, className }: {
   f: FilterDescriptor
@@ -52,7 +129,8 @@ function RelationSelect({ f, value, onChange, className }: {
   )
 }
 
-/** Query-param values keyed exactly as the backend reads them. Empty strings are dropped upstream. */
+/** Query-param values keyed exactly as the backend reads them. Empty strings are dropped upstream;
+ *  an enum filter holding several values joins them with commas. */
 export type FilterValues = Record<string, string>
 
 interface Props {
@@ -112,10 +190,7 @@ export function FilterBar({ filters, values, onChange }: Props) {
             <div key={f.name} className="flex flex-col gap-1">
               <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">{f.label}</label>
               {f.kind === 'enum' && (
-                <select className={fieldClass} value={values[f.name] ?? ''} onChange={e => set(f.name, e.target.value)}>
-                  <option value="">{t('any')}</option>
-                  {(f.options ?? []).map(toOption).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                <EnumMultiSelect f={f} value={values[f.name] ?? ''} onChange={v => set(f.name, v)} className={fieldClass} />
               )}
               {f.kind === 'boolean' && (
                 <select className={fieldClass} value={values[f.name] ?? ''} onChange={e => set(f.name, e.target.value)}>

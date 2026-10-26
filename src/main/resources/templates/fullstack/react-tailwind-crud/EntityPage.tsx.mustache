@@ -112,10 +112,15 @@ interface {{EntityName}}PageProps {
  *  to "status = OPEN" is an open one, and so shows up in the list it was made from. */
 function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
   const record: Record<string, unknown> = {}
-{{#filterFields}}{{#isEnumFilter}}  if (values['{{name}}']) record['{{name}}'] = values['{{name}}']
+{{#filterFields}}{{#isEnumFilter}}  if (oneValue(values['{{name}}'])) record['{{name}}'] = values['{{name}}']
 {{/isEnumFilter}}{{#isBooleanFilter}}  if (values['{{name}}']) record['{{name}}'] = values['{{name}}'] === 'true'
-{{/isBooleanFilter}}{{#isRelationFilter}}  if (values['{{name}}']) record['{{name}}'] = {{#isTargetPkNumeric}}Number(values['{{name}}']){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}values['{{name}}']{{/isTargetPkNumeric}}
+{{/isBooleanFilter}}{{#isRelationFilter}}  if (oneValue(values['{{name}}'])) record['{{name}}'] = {{#isTargetPkNumeric}}Number(values['{{name}}']){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}values['{{name}}']{{/isTargetPkNumeric}}
 {{/isRelationFilter}}{{/filterFields}}  return record as Partial<{{EntityName}}>
+}
+
+/** A filter set to exactly one value; `OPEN,CLOSED` names no single value to start with. */
+function oneValue(value: string | undefined): boolean {
+  return !!value && !value.includes(',')
 }
 
 {{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {

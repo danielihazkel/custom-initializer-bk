@@ -44,9 +44,10 @@ public class {{EntityName}}Service {
 {{/usesEntityManager}}{{#importValidates}}        this.validator = validator;
 {{/importValidates}}    }
 {{#hasFilters}}
-    /** Type-aware filter parameters bound from the request query string. Null fields are ignored. */
+    /** Type-aware filter parameters bound from the request query string. Null fields are ignored;
+     *  an enum or relation filter holds every value asked for ({@code status=OPEN,CLOSED}), any of which matches. */
     public record Filters(
-{{#filterFields}}            {{#isEnumFilter}}{{javaType}} {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{javaType}} {{name}}Min, {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{javaType}} {{name}}From, {{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{javaType}} {{name}}{{/isRelationFilter}}{{^last}},{{/last}}
+{{#filterFields}}            {{#isEnumFilter}}List<{{javaType}}> {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{javaType}} {{name}}Min, {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{javaType}} {{name}}From, {{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}List<{{javaType}}> {{name}}{{/isRelationFilter}}{{^last}},{{/last}}
 {{/filterFields}}    ) {}
 
     @Transactional(readOnly = true)
@@ -65,13 +66,13 @@ public class {{EntityName}}Service {
 {{#stringFields}}                    cb.like(cb.lower(root.get("{{name}}")), like, '\\'){{^lastString}},{{/lastString}}
 {{/stringFields}}            ));
         }
-{{/hasStringFields}}{{#filterFields}}{{#isEnumFilter}}        if (filters.{{name}}() != null) specs.add((root, query, cb) -> cb.equal(root.get("{{name}}"), filters.{{name}}()));
+{{/hasStringFields}}{{#filterFields}}{{#isEnumFilter}}        if (filters.{{name}}() != null && !filters.{{name}}().isEmpty()) specs.add((root, query, cb) -> root.get("{{name}}").in(filters.{{name}}()));
 {{/isEnumFilter}}{{#isBooleanFilter}}        if (filters.{{name}}() != null) specs.add((root, query, cb) -> cb.equal(root.get("{{name}}"), filters.{{name}}()));
 {{/isBooleanFilter}}{{#isNumericFilter}}        if (filters.{{name}}Min() != null) specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}Min()));
         if (filters.{{name}}Max() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}Max()));
 {{/isNumericFilter}}{{#isTemporalFilter}}        if (filters.{{name}}From() != null) specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}From()));
         if (filters.{{name}}To() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}To()));
-{{/isTemporalFilter}}{{#isRelationFilter}}        if (filters.{{name}}() != null) specs.add((root, query, cb) -> cb.equal(root.get("{{relationField}}").get("{{targetPkName}}"), filters.{{name}}()));
+{{/isTemporalFilter}}{{#isRelationFilter}}        if (filters.{{name}}() != null && !filters.{{name}}().isEmpty()) specs.add((root, query, cb) -> root.get("{{relationField}}").get("{{targetPkName}}").in(filters.{{name}}()));
 {{/isRelationFilter}}{{/filterFields}}        if (specs.isEmpty()) return null;
         Specification<{{EntityName}}> combined = specs.get(0);
         for (int i = 1; i < specs.size(); i++) combined = combined.and(specs.get(i));
