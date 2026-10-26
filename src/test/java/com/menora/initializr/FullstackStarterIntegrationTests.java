@@ -650,7 +650,7 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.get("bank/frontend/src/pages/ledger/ui/LedgerPage.tsx")).contains("searchable={false}");
         assertThat(entries.get("bank/frontend/src/shared/ui/Table.tsx"))
                 .contains("searchable")
-                .contains("{searchable &&");
+                .contains("{searchable ? (");
     }
 
     @Test
@@ -2330,7 +2330,7 @@ class FullstackStarterIntegrationTests {
         // Cards-only: the page generates the CardGrid and nothing else — no Table, no toggle bar.
         String productPage = entries.get("shop/frontend/src/pages/product/ui/ProductPage.tsx");
         assertThat(productPage)
-                .contains("useState<'cards'>('cards')")
+                .contains("useState<'cards'>((prefs.view as 'cards' | undefined) ?? openingView)")
                 .contains("<CardGrid")
                 .doesNotContain("<Table")
                 .doesNotContain("aria-pressed={viewMode === 'cards'}")   // no toggle button
@@ -2339,7 +2339,7 @@ class FullstackStarterIntegrationTests {
         assertThat(entries).containsKey("shop/frontend/src/features/product-form/ui/ProductDetail.tsx");
         // An entity with no listViews defaults to table-only (no Cards, no toggle).
         assertThat(entries.get("shop/frontend/src/pages/plain/ui/PlainPage.tsx"))
-                .contains("useState<'table'>('table')")
+                .contains("useState<'table'>((prefs.view as 'table' | undefined) ?? openingView)")
                 .doesNotContain("<CardGrid");
 
         // The enum field drives a dashboard breakdown chart; Plain (no enum/boolean) gets none.
@@ -2406,7 +2406,8 @@ class FullstackStarterIntegrationTests {
         // CRLF templates on a Windows checkout render CRLF; the multi-line checks below expect LF.
         String taskPage = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx").replace("\r\n", "\n");
         assertThat(taskPage)
-                .contains("const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')")  // initial = first selected (canonical order)
+                .contains("const [viewMode, setViewMode] = useState<'table' | 'kanban'>((prefs.view as 'table' | 'kanban' | undefined) ?? openingView)")
+                .contains("const openingView = 'table'")  // initial = first selected (canonical order)
                 .contains("KanbanBoard, FilterBar")
                 .contains("<KanbanBoard")
                 .contains("groupField=\"status\"")
@@ -2473,7 +2474,7 @@ class FullstackStarterIntegrationTests {
         // Event page: calendar-only — no toggle bar, no Table/CardGrid/KanbanBoard.
         String eventPage = entries.get("ops/frontend/src/pages/event/ui/EventPage.tsx");
         assertThat(eventPage)
-                .contains("useState<'calendar'>('calendar')")
+                .contains("useState<'calendar'>((prefs.view as 'calendar' | undefined) ?? openingView)")
                 .contains("<CalendarView")
                 .contains("dateField=\"startsAt\"")
                 // The calendar loads the month on screen through the date's own filter (whole days).
@@ -2488,7 +2489,7 @@ class FullstackStarterIntegrationTests {
         // Plain page: legacy listView="kanban" down-grades to table-only, no filter bar.
         String plainPage = entries.get("ops/frontend/src/pages/plain/ui/PlainPage.tsx");
         assertThat(plainPage)
-                .contains("const [viewMode] = useState<'table'>('table')")   // no toggle → no unused setter
+                .contains("const [viewMode] = useState<'table'>((prefs.view as 'table' | undefined) ?? openingView)")   // no toggle → no unused setter
                 .doesNotContain("KanbanBoard")
                 .doesNotContain("onKanbanMove")
                 .doesNotContain("WHOLE_VIEW_LIMIT")
@@ -2732,6 +2733,113 @@ class FullstackStarterIntegrationTests {
         assertThat(contentEndingWith(plain, "/web/ApiExceptionHandler.java")).doesNotContain("Optimistic");
         assertThat(plain).doesNotContainKey("books/frontend/src/shared/ui/StaleNotice.tsx");
         assertThat(plain.get("books/frontend/src/shared/i18n/strings.ts")).doesNotContain("staleTitle");
+    }
+
+    @Test
+    void fullstackEndpoint_inlineEditMakesScalarCellsEditable() throws Exception {
+        Map<String, Object> task = new LinkedHashMap<>();
+        task.put("name", "Task");
+        task.put("fields", List.of(pkField(),
+                Map.of("name", "title", "type", "String", "required", true),
+                Map.of("name", "status", "type", "Enum", "enumValues", List.of("OPEN", "DONE")),
+                Map.of("name", "estimate", "type", "Integer")));
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "Note");
+        note.put("fields", List.of(pkField(), Map.of("name", "body", "type", "String")));
+        note.put("opts", Map.of("inlineEdit", false));
+
+        for (String set : List.of("react-tailwind-crud", "react-menora-digital-crud")) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("artifactId", "ops");
+            body.put("packageName", "com.menora.ops");
+            body.put("bootVersion", "3.2.1");
+            body.put("frontendTemplateSet", set);
+            body.put("entities", List.of(task, note));
+            body.put("opts", Map.of("scaffold", List.of("inlineEdit", "optimisticLocking")));
+            Map<String, String> entries = generateZip(body);
+
+            String page = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+            assertThat(page).as(set)
+                    .contains("import { InlineCell, type InlineKind } from '@shared/ui/InlineCell'")
+                    .contains("  'title': { kind: 'text' },")
+                    .contains("  'status': { kind: 'enum', options: [{ value: 'OPEN', label: 'Open' }, { value: 'DONE', label: 'Done' }] },")
+                    .contains("  'estimate': { kind: 'number' },")
+                    .contains("const problem = validateTask(next)[field]")
+                    .contains("await update(row.id as number | string, next)")
+                    // With locking on, a stale cell save reloads the list instead of keeping the editor.
+                    .contains("if (isStale(e)) {\n        await reload()".replace("\n", page.contains("\r\n") ? "\r\n" : "\n"))
+                    .contains("columns={inline(columns)}");
+            assertThat(entries).containsKey("ops/frontend/src/shared/ui/InlineCell.tsx");
+            assertThat(entries.get("ops/frontend/src/pages/note/ui/NotePage.tsx")).as(set)
+                    .doesNotContain("InlineCell").contains("columns={columns}");
+        }
+
+        // Without the opt the page and the shared UI are as they were.
+        Map<String, Object> plain = new LinkedHashMap<>();
+        plain.put("artifactId", "ops");
+        plain.put("bootVersion", "3.2.1");
+        plain.put("entities", List.of(task));
+        Map<String, String> entries = generateZip(plain);
+        assertThat(entries).doesNotContainKey("ops/frontend/src/shared/ui/InlineCell.tsx");
+        assertThat(entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx")).doesNotContain("INLINE_FIELDS");
+    }
+
+    @Test
+    void fullstackEndpoint_listsOpenRowsRememberTheirSettingsAndGuardUnsavedEdits() throws Exception {
+        Map<String, Object> task = new LinkedHashMap<>();
+        task.put("name", "Task");
+        task.put("fields", List.of(pkField(),
+                Map.of("name", "title", "type", "String"),
+                Map.of("name", "status", "type", "Enum", "enumValues", List.of("OPEN", "DONE"))));
+        task.put("listViews", List.of("table", "kanban"));
+
+        for (String set : List.of("react-tailwind-crud", "react-menora-digital-crud")) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("artifactId", "ops");
+            body.put("bootVersion", "3.2.1");
+            body.put("frontendTemplateSet", set);
+            body.put("entities", List.of(task));
+            body.put("pages", List.of(Map.of("id", "tasks", "type", "entity-list", "entity", "Task")));
+            Map<String, String> entries = generateZip(body);
+
+            String page = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+            assertThat(page).as(set)
+                    // The list opens with this browser's saved settings, keeps them as they change...
+                    .contains("const [prefs] = useState(() => readListPrefs('task', columns.flatMap(c => c.sortKey ? [c.sortKey] : []), ['table', 'kanban']))")
+                    .contains("const [size, setSize] = useState(listState?.size ?? prefs.size ?? openingSize)")
+                    .contains("useState<'table' | 'kanban'>(routeView ?? (prefs.view as 'table' | 'kanban' | undefined) ?? openingView)")
+                    .contains("writeListPrefs('task', {")
+                    // ...and its table offers the Columns menu (hide columns, reset the saved view).
+                    .contains("columnMenu={columnMenu}")
+                    .contains("      setViewMode(openingView)");
+            String table = entries.get("ops/frontend/src/shared/ui/Table.tsx");
+            assertThat(table).as(set)
+                    .contains("columnMenu?: { hidden: string[]; onChange: (hidden: string[]) => void; onReset?: () => void }")
+                    .contains("useListShortcuts(rootRef, searchRef, emptyAction?.onClick)")
+                    .contains("data-list-table");
+            if (set.equals("react-tailwind-crud")) {
+                // A row opens on click and on Enter; the arrows move between rows.
+                assertThat(table).contains("onClick={onView ? e => { if (opensRow(e)) onView(row) } : undefined}")
+                        .contains("onKeyDown={onView ? e => onRowKey(e, () => onView(row)) : undefined}");
+            } else {
+                assertThat(table).contains("onRowOpen={onView}");
+                assertThat(entries.get("ops/frontend/src/shared/ui/menora/Table.tsx")).contains("onRowOpen?: (row: T) => void;");
+            }
+            assertThat(entries).containsKeys("ops/frontend/src/shared/ui/listPrefs.ts", "ops/frontend/src/shared/ui/ColumnMenu.tsx",
+                    "ops/frontend/src/shared/ui/leaveGuard.ts");
+
+            // Unsaved edits: the drawer holds the page while dirty, and moving away asks first.
+            assertThat(entries.get("ops/frontend/src/shared/ui/FormDrawer.tsx")).as(set)
+                    .contains("const release = holdLeave()")
+                    .contains("window.addEventListener('beforeunload', onUnload)");
+            assertThat(entries.get("ops/frontend/src/app/route.ts")).as(set)
+                    .contains("import { mayLeave } from '@shared/ui/leaveGuard'")
+                    .contains("if (!mayLeave()) return");
+            // A dialog over the drawer takes the Escape for itself.
+            assertThat(entries.get("ops/frontend/src/shared/ui/ConfirmDialog.tsx")).as(set)
+                    .contains("e.preventDefault()")
+                    .contains("{busy ? busyLabel : confirmLabel}");
+        }
     }
 
     @Test

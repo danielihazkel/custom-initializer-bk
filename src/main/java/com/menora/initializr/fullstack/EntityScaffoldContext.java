@@ -48,6 +48,7 @@ public final class EntityScaffoldContext {
         m.put("tests", "optScaffoldTests");
         m.put("csvImport", "optScaffoldCsvImport");
         m.put("optimisticLocking", "optScaffoldOptimisticLocking");
+        m.put("inlineEdit", "optScaffoldInlineEdit");
         SCAFFOLD_OPT_FLAGS = java.util.Collections.unmodifiableMap(m);
     }
 
@@ -684,6 +685,18 @@ public final class EntityScaffoldContext {
     public static boolean lockingApplies(EntityDefinition e, boolean projectOpt) {
         Boolean override = e.opts().get("optimisticLocking");
         return !e.readOnly() && e.viewQuery() == null && (override != null ? override : projectOpt);
+    }
+
+    /**
+     * Whether any entity can edit its table cells in place ({@code inlineEdit}: its override, else
+     * the project option; writable, single-key entities) — {@code hasInlineEdit}, which ships the
+     * shared {@code InlineCell} component.
+     */
+    public static void putInlineEdit(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldInlineEdit"));
+        ctx.put("hasInlineEdit", entities.stream().anyMatch(e -> !e.readOnly()
+                && e.fields().stream().filter(FieldDefinition::primaryKey).count() == 1
+                && (e.opts().get("inlineEdit") != null ? e.opts().get("inlineEdit") : projectOpt)));
     }
 
     public static void putCsvImport(Map<String, Object> ctx, List<EntityDefinition> entities) {
@@ -1948,6 +1961,14 @@ public final class EntityScaffoldContext {
                         && !Boolean.TRUE.equals(ctx.get("hasCompositePk"))
                         && mutable
                         && bulkFields != null && !bulkFields.isEmpty());
+        // Inline cell edit (opt-in, frontend only): the table's scalar cells — the same fields bulk
+        // edit can set — are edited in place and saved with the entity's PUT, one row at a time.
+        ctx.put("inlineEditApplicable",
+                Boolean.TRUE.equals(ctx.get("optScaffoldInlineEdit"))
+                        && !Boolean.TRUE.equals(ctx.get("hasCompositePk"))
+                        && mutable
+                        && Boolean.TRUE.equals(ctx.get("viewTable"))
+                        && bulkFields != null && !bulkFields.isEmpty());
         // The row-selection substrate (checkboxes, `selected` state) is shared by both bulk actions,
         // so it is emitted when either is applicable.
         ctx.put("bulkSelectApplicable",
@@ -2375,12 +2396,13 @@ public final class EntityScaffoldContext {
         boolean formUsesOptions = relationViews.stream().anyMatch(m -> !Boolean.TRUE.equals(m.get("targetSearchable")));
         view.put("formUsesOptions", formUsesOptions);
         view.put("formUsesPicker", relationViews.stream().anyMatch(m -> Boolean.TRUE.equals(m.get("targetSearchable"))));
+        // The form calls t() for a generated key's hint, a boolean's yes/no and a relation select's
+        // "loading" — an enum select reads its labels from <Enum>Options, so it does not count.
         view.put("formUsesStrings",
                 formUsesOptions
                         || fieldViews.stream().anyMatch(m ->
                                 (Boolean.TRUE.equals(m.get("isPrimaryKey")) && Boolean.TRUE.equals(m.get("isGenerated")))
-                                || Boolean.TRUE.equals(m.get("isBoolean"))
-                                || Boolean.TRUE.equals(m.get("isEnum"))));
+                                || Boolean.TRUE.equals(m.get("isBoolean"))));
 
         // Filter by relation FK ("orders of customer 7"): one filter entry per MANY_TO_ONE, keyed
         // by the DTO's <field>Id, equality on the relation's target PK. The frontend renders a

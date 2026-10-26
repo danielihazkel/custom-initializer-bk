@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, Ref } from 'react';
 import { useId } from 'react';
 
 export interface SearchSuggestion {
@@ -26,6 +26,8 @@ export interface SearchFieldProps {
   onSubmit?: () => void;
   id?: string;
   className?: string;
+  /** The `<input>` itself, for a caller that moves the focus to it (a keyboard shortcut). */
+  inputRef?: Ref<HTMLInputElement>;
 }
 
 const glyph = (size: number) => (
@@ -41,7 +43,7 @@ const glyph = (size: number) => (
  * No yellow submit inside the pill — Enter submits.
  */
 export function SearchField({
-  value, onInput, label, placeholder, suggestions = [], expanded = false, onClear, clearLabel, onSubmit, id, className,
+  value, onInput, label, placeholder, suggestions = [], expanded = false, onClear, clearLabel, onSubmit, id, className, inputRef,
 }: SearchFieldProps) {
   const autoId = useId();
   const inputId = id ?? autoId;
@@ -62,6 +64,7 @@ export function SearchField({
           {label}
         </label>
         <input
+          ref={inputRef}
           id={inputId}
           type="search"
           className="mn-search__input"

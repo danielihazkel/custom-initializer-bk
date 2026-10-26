@@ -7,12 +7,14 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 {{/hasEnumFields}}
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#listUrlState}}type ListState, {{/listUrlState}}{{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
+import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
 import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 {{#mutable}}import { {{EntityName}}Form, validate{{EntityName}}{{#importApplicable}}, {{EntityName}}ImportFields{{/importApplicable}} } from '@features/{{entityNameKebab}}-form'
 import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail}}{{/lockingApplicable}} } from '@shared/api'
 {{#lockingApplicable}}import { StaleNotice } from '@shared/ui/StaleNotice'
-{{/lockingApplicable}}{{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
+{{/lockingApplicable}}{{#inlineEditApplicable}}import { InlineCell, type InlineKind } from '@shared/ui/InlineCell'
+{{/inlineEditApplicable}}{{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
 {{/optScaffoldCsvExport}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
 {{/importApplicable}}
 {{#listSideDetail}}import { api } from '@shared/api'
@@ -39,7 +41,11 @@ const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?
 {{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
 {{/bulkUpdatableFields}}}
 {{/viewTable}}{{/bulkUpdateApplicable}}
-{{#wholeViews}}/** The most records the board or the calendar loads at once. */
+{{#inlineEditApplicable}}/** The table cells that are edited in place, by field. */
+const INLINE_FIELDS: Record<string, { kind: InlineKind; options?: { value: string; label: string }[] }> = {
+{{#bulkUpdatableFields}}  '{{name}}': { kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
+{{/bulkUpdatableFields}}}
+{{/inlineEditApplicable}}{{#wholeViews}}/** The most records the board or the calendar loads at once. */
 const WHOLE_VIEW_LIMIT = 500
 
 {{/wholeViews}}{{#lockingApplicable}}/** A save refused because the record changed since it was read (the API's 409 with `stale`). */
@@ -113,6 +119,9 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
 }
 
 {{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+  // This browser's own settings for the list — rows per page, sort, view, hidden columns — saved as
+  // they change; the list opens with them unless the route says otherwise.
+  const [prefs] = useState(() => readListPrefs('{{entityNameKebab}}', columns.flatMap(c => c.sortKey ? [c.sortKey] : []), {{{viewModesTs}}}))
 {{#listUrlState}}
   // What the list opens with when the route says nothing — the parts it does not report back.
   const openingSize = {{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20
@@ -120,23 +129,37 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
   const openingView = {{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}'
   const routeView = ({{{viewModesTs}}} as string[]).includes(listState?.view ?? '') ? listState?.view as {{viewModeType}} : undefined
   const [page, setPage] = useState(listState?.page ?? 0)
-  const [size, setSize] = useState(listState?.size ?? openingSize)
-  const [sort, setSort] = useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : JSON.parse(openingSort))
+  const [size, setSize] = useState(listState?.size ?? prefs.size ?? openingSize)
+  const [sort, setSort] = useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : prefs.sort !== undefined ? prefs.sort : JSON.parse(openingSort))
   const [search, setSearch] = useState(listState?.q ?? '')
   const [debouncedSearch, setDebouncedSearch] = useState(listState?.q ?? '')
   // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
-  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>(routeView ?? openingView)
+  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>(routeView ?? (prefs.view as {{viewModeType}} | undefined) ?? openingView)
 {{/listUrlState}}
 {{^listUrlState}}
+  // What the list opens with when this browser has saved nothing for it.
+  const openingSize = {{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20
+  const openingSort = JSON.stringify({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
+  const openingView = {{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}'
   const [page, setPage] = useState(0)
-  const [size, setSize] = useState({{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20)
-  const [sort, setSort] = useState<SortSpec | null>({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
+  const [size, setSize] = useState(prefs.size ?? openingSize)
+  const [sort, setSort] = useState<SortSpec | null>(prefs.sort !== undefined ? prefs.sort : JSON.parse(openingSort))
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
-  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>({{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}')
+  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>((prefs.view as {{viewModeType}} | undefined) ?? openingView)
 {{/listUrlState}}
   const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
+  const [hiddenColumns{{#viewTable}}, setHiddenColumns{{/viewTable}}] = useState<string[]>(prefs.hidden ?? [])
+  // Only what differs from how the list opens by default is kept.
+  useEffect(() => {
+    writeListPrefs('{{entityNameKebab}}', {
+      size: size === openingSize ? undefined : size,
+      sort: JSON.stringify(sort) === openingSort ? undefined : sort,
+      view: viewMode === openingView ? undefined : viewMode,
+      hidden: hiddenColumns.length > 0 ? hiddenColumns : undefined,
+    })
+  }, [size, sort, viewMode, hiddenColumns, openingSize, openingSort, openingView])
 {{#listConfigurable}}
   // A list page may show an ordered subset of the columns.
   const shown = columnKeys ? columnKeys.flatMap(k => columns.filter(c => c.key === k)) : columns
@@ -410,7 +433,49 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
       setDeleting(false)
     }
   }
-{{/mutable}}{{#viewKanban}}
+{{#inlineEditApplicable}}
+
+  // A cell edited in place: checked like the form, saved with the row's PUT. A rejection keeps the
+  // cell's editor open (InlineCell), so a mistake can be fixed where it was made.
+  async function saveCell(row: {{EntityName}}, field: string, value: unknown) {
+    const next = { ...row, [field]: value } as {{EntityName}}
+    const problem = validate{{EntityName}}(next)[field]
+    if (problem) {
+      toast.error(problem)
+      throw new Error(problem)
+    }
+    try {
+      await update(row.{{pkField.name}} as number | string, next)
+      toast.success(t('xUpdated', { x: '{{entityLabel}}' }))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+{{#lockingApplicable}}      // Someone saved the row first: show what is there now instead of keeping a stale editor.
+      if (isStale(e)) {
+        await reload()
+        return
+      }
+{{/lockingApplicable}}      throw e
+    }
+  }
+  const inline = (cols: Column<{{EntityName}}>[]): Column<{{EntityName}}>[] => cols.map(c => {
+    const spec = c.sortKey ? INLINE_FIELDS[c.sortKey] : undefined
+    if (!spec || !c.sortKey) return c
+    const field = c.sortKey
+    return {
+      ...c,
+      render: (r: {{EntityName}}) => (
+        <InlineCell
+          label={c.label}
+          kind={spec.kind}
+          options={spec.options}
+          value={(r as unknown as Record<string, unknown>)[field]}
+          display={c.render(r)}
+          onSave={v => saveCell(r, field, v)}
+        />
+      ),
+    }
+  })
+{{/inlineEditApplicable}}{{/mutable}}{{#viewKanban}}
   // Kanban drag-and-drop writes the new lane value back. On failure the board is reloaded so
   // the card snaps back to its real lane instead of silently showing a move that never saved.
   async function onKanbanMove(row: {{EntityName}}, value: string) {
@@ -486,7 +551,18 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
   // An empty list offers the first record — unless a search or filter is what emptied it.
   const filtered = debouncedSearch !== ''{{#hasFilters}} || Object.values(filters).some(v => v !== ''){{/hasFilters}}
 {{#mutable}}  const emptyAction = { label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasWizardPage}}openNew{{/hasWizardPage}}{{#hasWizardPage}}onCreate ?? openNew{{/hasWizardPage}} }
-{{/mutable}}  const pagination = {
+{{/mutable}}{{#viewTable}}  // The Columns menu: hide columns, or forget everything this browser saved for the list.
+  const columnMenu = {
+    hidden: hiddenColumns,
+    onChange: setHiddenColumns,
+    onReset: () => {
+      setHiddenColumns([])
+      setSize(openingSize)
+      setSort(JSON.parse(openingSort))
+{{#hasViewToggle}}      setViewMode(openingView)
+{{/hasViewToggle}}    },
+  }
+{{/viewTable}}  const pagination = {
     pageNumber,
     pageSize,
     totalPages,
@@ -697,7 +773,8 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
         />
       ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
         <Table
-          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
+          columns={{#inlineEditApplicable}}{inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}})}{{/inlineEditApplicable}}{{^inlineEditApplicable}}{{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}{{/inlineEditApplicable}}
+          columnMenu={columnMenu}
           rows={items}
           rowKey={rowKey}
           loading={loading}

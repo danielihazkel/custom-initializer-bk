@@ -257,16 +257,16 @@ class FullstackPagesIntegrationTests {
                 .contains(", columns: columnKeys, initialSort, initialView, initialPageSize, listState, onListStateChange }: OrderPageProps = {}")
                 .contains("const openingSize = initialPageSize ?? 20")
                 .contains("const openingSort = JSON.stringify(initialSort ?? null)")
-                .contains("useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : JSON.parse(openingSort))")
+                .contains("useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : prefs.sort !== undefined ? prefs.sort : JSON.parse(openingSort))")
                 .contains("const openingView = initialView ?? 'table'")
-                .contains("useState<'table' | 'kanban' | 'calendar'>(routeView ?? openingView)")
+                .contains("useState<'table' | 'kanban' | 'calendar'>(routeView ?? (prefs.view as 'table' | 'kanban' | 'calendar' | undefined) ?? openingView)")
                 .contains("const shown = columnKeys ? columnKeys.flatMap(k => columns.filter(c => c.key === k)) : columns")
                 .contains("columns={shown}")
                 .doesNotContain("columns={columns}");
         assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx"))
                 .contains("const columns: Column<Customer>[] = [")
-                .contains("useState(20)")
-                .contains("useState<SortSpec | null>(null)")
+                .contains("const openingSize = 20")
+                .contains("const openingSort = JSON.stringify(null)")
                 .contains("columns={columns}")
                 .doesNotContain("ListColumn")
                 .doesNotContain("initialSort");
@@ -294,7 +294,7 @@ class FullstackPagesIntegrationTests {
                 .contains("{ key: 'reference', label:")
                 .contains("{ key: 'status', label: 'Status', sortKey: 'status', chip: true")
                 .contains("const openingView = initialView ?? 'table'")
-                .contains("useState<'table' | 'kanban' | 'calendar'>(routeView ?? openingView)")
+                .contains("useState<'table' | 'kanban' | 'calendar'>(routeView ?? (prefs.view as 'table' | 'kanban' | 'calendar' | undefined) ?? openingView)")
                 .contains("columns={shown}");
         assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx")).doesNotContain("ListColumn");
     }

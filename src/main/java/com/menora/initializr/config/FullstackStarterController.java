@@ -441,6 +441,9 @@ public class FullstackStarterController {
         // conflict dialog. Mirrors the backend config.
         projectCtx.put("optScaffoldOptimisticLocking", optionsContext.hasOption("scaffold", "optimisticLocking"));
         EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
+        // Table cells edited in place (frontend only — saved through the existing PUT).
+        projectCtx.put("optScaffoldInlineEdit", optionsContext.hasOption("scaffold", "inlineEdit"));
+        EntityScaffoldContext.putInlineEdit(projectCtx, entities);
         // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.
         putIfPresent(projectCtx, "dashboardTitle", dashboardTitle);
         putIfPresent(projectCtx, "dashboardOverview", dashboardOverview);

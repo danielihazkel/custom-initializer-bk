@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button, Chip, DropdownMenu, SearchField, Table as MenoraTable } from '@shared/ui/menora'
 import { TableSkeleton } from './Skeleton'
+import { ColumnMenu } from './ColumnMenu'
 import { t } from '../i18n'
 
 export interface Column<T> {
@@ -72,9 +73,38 @@ interface Props<T extends object> {
   filtered?: boolean
   /** Offered on an empty, unfiltered list — "New <entity>", outlined: the page's one yellow is its New pill. */
   emptyAction?: { label: string; onClick: () => void }
+  /** "Columns": the columns this browser hides (by `sortKey`, else label) — the first always shows. */
+  columnMenu?: { hidden: string[]; onChange: (hidden: string[]) => void; onReset?: () => void }
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
+
+/** A column's key for the column menu: its sort field, else its heading. */
+const columnKey = <T,>(col: Column<T>) => col.sortKey ?? col.label
+
+/** `/` focuses a list's search and `n` starts a new record — for the first list on the screen,
+ *  while no field has the focus and no drawer or dialog is open. */
+function useListShortcuts(root: RefObject<HTMLDivElement | null>, search: RefObject<HTMLInputElement | null>, onNew?: () => void) {
+  const newRef = useRef(onNew)
+  newRef.current = onNew
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+      if ((e.target as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable="true"]')) return
+      if (document.querySelector('[role="dialog"]')) return
+      if (document.querySelector('[data-list-table]') !== root.current) return
+      if (e.key === '/' && search.current) {
+        e.preventDefault()
+        search.current.focus()
+      } else if (e.key === 'n' && newRef.current) {
+        e.preventDefault()
+        newRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [root, search])
+}
 
 function nextSort(current: SortSpec | null, field: string): SortSpec | null {
   if (!current || current.field !== field) return { field, direction: 'asc' }
@@ -103,8 +133,13 @@ export function Table<T extends object>({
   caption, columns, rows, rowKey, onView, onEdit, onDelete, loading,
   sort, onSortChange, search, onSearchChange, pagination, searchable = true,
   selectable = false, isRowSelected, onToggleRow, allOnPageSelected, onToggleAllOnPage,
-  filtered = false, emptyAction,
+  filtered = false, emptyAction, columnMenu,
 }: Props<T>) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  useListShortcuts(rootRef, searchRef, emptyAction?.onClick)
+  const allColumns = columns
+  columns = columnMenu ? allColumns.filter((c, i) => i === 0 || !columnMenu.hidden.includes(columnKey(c))) : allColumns
   const { pageNumber, pageSize, totalPages, totalElements, onPageChange, onPageSizeChange } = pagination
   const startRow = totalElements === 0 ? 0 : pageNumber * pageSize + 1
   const endRow = Math.min(totalElements, (pageNumber + 1) * pageSize)
@@ -139,17 +174,30 @@ export function Table<T extends object>({
   const firstLoad = loading && rows.length === 0
 
   return (
-    <div className="space-y-3">
-      {searchable && (
-        <div className="max-w-sm">
-          <SearchField
-            value={search}
-            onInput={onSearchChange}
-            label={t('search')}
-            placeholder={t('search')}
-            onClear={() => onSearchChange('')}
-            clearLabel={t('clearSearch')}
-          />
+    <div ref={rootRef} className="space-y-3" data-list-table>
+      {(searchable || columnMenu) && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {searchable ? (
+            <div className="max-w-sm flex-1">
+              <SearchField
+                inputRef={searchRef}
+                value={search}
+                onInput={onSearchChange}
+                label={t('search')}
+                placeholder={t('search')}
+                onClear={() => onSearchChange('')}
+                clearLabel={t('clearSearch')}
+              />
+            </div>
+          ) : <span />}
+          {columnMenu && (
+            <ColumnMenu
+              columns={allColumns.map(c => ({ key: columnKey(c), label: c.label }))}
+              hidden={columnMenu.hidden}
+              onChange={columnMenu.onChange}
+              onReset={columnMenu.onReset}
+            />
+          )}
         </div>
       )}
 
@@ -202,6 +250,7 @@ export function Table<T extends object>({
             )}
           />
         ) : undefined}
+        onRowOpen={onView}
         dimmed={loading && rows.length > 0}
         body={firstLoad ? <TableSkeleton cols={columns.length + leadCols} /> : undefined}
       />

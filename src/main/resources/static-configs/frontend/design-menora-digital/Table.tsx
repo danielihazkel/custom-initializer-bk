@@ -48,6 +48,9 @@ export interface TableProps<T> {
   trailing?: (row: T) => ReactNode;
   /** Pins the trailing column to the reading-end edge while the table scrolls sideways (default true). */
   stickyTrailing?: boolean;
+  /** Makes each row open on click and on Enter (a click on a button, link or field in the row does
+   *  not count); the arrow keys move between rows. */
+  onRowOpen?: (row: T) => void;
   /** Keeps the current rows on screen, dimmed, while they are being refetched. */
   dimmed?: boolean;
   /** Replaces the body (e.g. skeleton rows for the very first load). */
@@ -62,7 +65,7 @@ export interface TableProps<T> {
  */
 export function Table<T>({
   caption, columns, rows, rowKey, sort, onSort, density = 'comfortable', empty,
-  leadingHead, leading, stickyLeading = true, trailingHead, trailing, stickyTrailing = true, dimmed = false, body, className,
+  leadingHead, leading, stickyLeading = true, trailingHead, trailing, stickyTrailing = true, onRowOpen, dimmed = false, body, className,
 }: TableProps<T>) {
   const hasLeading = !!leading;
   const hasTrailing = !!trailing;
@@ -114,7 +117,27 @@ export function Table<T>({
             <tbody>
               {body ??
                 rows.map(row => (
-                  <tr key={rowKey(row)}>
+                  <tr
+                    key={rowKey(row)}
+                    className={onRowOpen ? 'is-openable' : undefined}
+                    tabIndex={onRowOpen ? 0 : undefined}
+                    onClick={onRowOpen ? e => {
+                      if ((e.target as HTMLElement).closest('button, a, input, select, textarea, label')) return;
+                      if (window.getSelection()?.toString()) return;
+                      onRowOpen(row);
+                    } : undefined}
+                    onKeyDown={onRowOpen ? e => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        onRowOpen(row);
+                      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        const next = e.key === 'ArrowDown' ? e.currentTarget.nextElementSibling : e.currentTarget.previousElementSibling;
+                        (next as HTMLElement | null)?.focus();
+                      }
+                    } : undefined}
+                  >
                     {hasLeading && <td className={stickStartCls}>{leading!(row)}</td>}
                     {columns.map(col => (
                       <td key={col.key} className={[col.numeric ? 'num' : '', col.keyCol ? 'key' : ''].filter(Boolean).join(' ') || undefined}>
