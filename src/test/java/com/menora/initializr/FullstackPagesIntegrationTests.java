@@ -580,6 +580,9 @@ class FullstackPagesIntegrationTests {
         // The example ships settings.scaffold = [csvExport]; exampleBody carries entities and
         // pages only, so the opt is set here for the report's Export button.
         body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        // This test pins the period-only dashboard: the example's filter bar and the bar's drillTo
+        // are covered by fullstackEndpoint_dashboardFiltersReachEveryMatchingWidget.
+        withoutDashboardFiltersAndDrillTo(page(body, "report"));
         Map<String, String> files = generate(body);
 
         // The report screen: a filter bar, then its two charts — the first with the totals table,
@@ -1620,6 +1623,85 @@ class FullstackPagesIntegrationTests {
     private void assertOrdersRejected(Consumer<Map<String, Object>> mutator, String expectedMessage) {
         Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
         mutator.accept(page(body, "orders"));
+        assertBadRequest(body, expectedMessage);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void withoutDashboardFiltersAndDrillTo(Map<String, Object> dashboard) {
+        dashboard.remove("filters");
+        for (Map<String, Object> w : (List<Map<String, Object>>) dashboard.get("widgets")) w.remove("drillTo");
+    }
+
+    @Test
+    void fullstackEndpoint_dashboardFiltersReachEveryMatchingWidget() throws Exception {
+        Map<String, Object> body = exampleBody("reporting", "react-tailwind-crud");
+        Map<String, String> files = generate(body);
+        String dashboard = files.get(FE + "src/app/screens/ReportScreen.tsx").replace("\r\n", "\n");
+        assertThat(dashboard)
+                // One filter bar over the grid, described by the entity that has the field.
+                .contains("import { FilterBar, type FilterDescriptor, type FilterValues } from '@shared/ui'")
+                .contains("const DASH_FILTERS: FilterDescriptor[] = [\n  { name: 'region', label: 'Region', kind: 'enum', options: [{ value: 'NORTH', label: 'North' }, { value: 'CENTER', label: 'Center' }, { value: 'SOUTH', label: 'South' }] },\n]")
+                .contains("<FilterBar filters={DASH_FILTERS} values={filters} onChange={setFilters} />")
+                // The filters and the period share the route query: a period change keeps the filters.
+                .contains("export function ReportScreen({ query: routeQuery, onQueryChange, onNavigate }: Props) {")
+                .contains("const period = parsePeriod(query.period, '12m')")
+                .contains("const setPeriod = (next: Period) => setQuery({ ...query, period: next })")
+                .contains("const setFilters = (next: FilterValues) => setQuery({ ...next, ...(query.period ? { period: query.period } : {}) })")
+                .doesNotContain("onPeriodChange")
+                // Every widget takes the region, but the one whose preset fixes it.
+                .contains("params={ statsQuery(rangeParams('soldOn', false, period), dashParams(['region'])) }")
+                .contains("compareParams={ period === 'all' ? undefined : statsQuery(rangeParams('soldOn', false, period, true), dashParams(['region'])) }")
+                .contains("params={ statsQuery('region=NORTH', rangeParams('soldOn', false, period)) }")
+                // The bar's drillTo: a bar and View all open the report page, with the filters on.
+                .contains("onSelect={key => onNavigate('revenue', undefined, { ...queryOf(statsQuery(rangeParams('soldOn', false, period), dashParams(['region']))), region: key })}")
+                .contains("onOpen={() => onNavigate('revenue', undefined, queryOf(statsQuery(rangeParams('soldOn', false, period), dashParams(['region']))))}")
+                // Without a drillTo the tiles still open the entity's list.
+                .contains("onOpen={() => onNavigate('sales', undefined, queryOf(statsQuery(rangeParams('soldOn', false, period), dashParams(['region']))))}");
+        assertThat(files.get(FE + "src/app/App.tsx"))
+                .contains("<ReportScreen query={route.query} onQueryChange={setQuery} onNavigate={goView} />");
+
+        // A list widget opens with the dashboard's filters it takes, and starts again when they change.
+        Map<String, Object> orders = exampleBody("orders", "react-tailwind-crud");
+        Map<String, Object> desk = page(orders, "desk");
+        desk.put("filters", List.of("Customer"));
+        String screen = generate(orders).get(FE + "src/app/screens/DeskScreen.tsx");
+        assertThat(screen)
+                .contains("{ name: 'customerId', label: 'Customer', kind: 'relation', optionsPath: '/api/customers'")
+                .contains("key={dashParams(['customerId'])}")
+                .contains("...dashValues(['customerId'])");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsInvalidDashboardFiltersAndDrillTo() {
+        assertReportingRejected(b -> page(b, "sales").put("filters", List.of("region")),
+                "Page 'sales' (entity-list) does not take 'filters'");
+        assertReportingRejected(b -> page(b, "report").put("filters", List.of("nope")),
+                "Page 'report': filter 'nope' is not an enum, boolean or relation filter of any of its widgets' entities (Sale)");
+        assertReportingRejected(b -> page(b, "report").put("filters", List.of("region", "REGION")),
+                "Page 'report': filter 'region' is listed twice");
+        assertReportingRejected(b -> barOf(b).put("drillTo", "nowhere"),
+                "Page 'report' widgets[5]: drillTo names no page with id 'nowhere'");
+        assertReportingRejected(b -> barOf(b).put("drillTo", "report"),
+                "Page 'report' widgets[5]: drillTo 'report' must be an entity-list or report page");
+        assertReportingRejected(b -> barOf(b).put("drillTo", "monthly"),
+                "Page 'report' widgets[5]: drillTo 'monthly' shows MonthlySales, not Sale");
+        assertReportingRejected(b -> {
+            page(b, "revenue").put("hidden", true);
+            page(b, "revenue").remove("group");
+            page(b, "revenue").remove("icon");
+        }, "drillTo 'revenue' is hidden");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> barOf(Map<String, Object> body) {
+        return ((List<Map<String, Object>>) page(body, "report").get("widgets")).stream()
+                .filter(w -> "bar".equals(w.get("kind"))).findFirst().orElseThrow();
+    }
+
+    private void assertReportingRejected(Consumer<Map<String, Object>> mutator, String expectedMessage) {
+        Map<String, Object> body = exampleBody("reporting", "react-tailwind-crud");
+        body.put("dependencies", List.of("data-jpa", "web", "ldap-auth-rest"));
+        mutator.accept(body);
         assertBadRequest(body, expectedMessage);
     }
 

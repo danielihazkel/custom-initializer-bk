@@ -512,6 +512,9 @@ public final class EntityScaffoldContext {
                         + (Boolean.TRUE.equals(pv.get("listTakesQuery")) ? " filters={route.query}" : "");
             } else if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) {
                 routeProps = " filters={route.query}";
+            } else if (Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDashFilters"))) {
+                // Filters (and the period, when there is a picker) ride in the hash (#/desk?region=NORTH&period=30d).
+                routeProps = " query={route.query} onQueryChange={setQuery}";
             } else if (Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"))) {
                 // The period picker's choice rides in the hash (#/desk?period=30d), rewritten in place.
                 routeProps = " period={route.query.period} onPeriodChange={period => setQuery({ period })}";
@@ -527,7 +530,8 @@ public final class EntityScaffoldContext {
             // The screen's destructured props, in a fixed order. A dashboard with a period picker
             // and a filterable report take their route state as optional props (absent when the
             // screen is embedded as a tab, where they keep local state instead).
-            boolean dashboardPeriod = Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"));
+            boolean dashboardQuery = Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDashFilters"));
+            boolean dashboardPeriod = !dashboardQuery && Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"));
             boolean reportQuery = Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"));
             boolean listState = Boolean.TRUE.equals(pv.get("listKeepsState"));
             boolean ownQuery = Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"));
@@ -536,12 +540,13 @@ public final class EntityScaffoldContext {
             if (listState) screenParams.addAll(List.of("query", "onQueryChange"));
             else if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) screenParams.add("filters");
             if (dashboardPeriod) screenParams.addAll(List.of("period: routePeriod", "onPeriodChange"));
+            if (dashboardQuery) screenParams.addAll(List.of("query: routeQuery", "onQueryChange"));
             if (reportQuery || ownQuery) screenParams.addAll(List.of("query", "onQueryChange"));
             if (Boolean.TRUE.equals(pv.get("needsNavigate"))) screenParams.add("onNavigate");
             if (Boolean.TRUE.equals(pv.get("isTabTarget"))) screenParams.add("embedded");
             pv.put("screenParams", String.join(", ", screenParams));
             pv.put("hasScreenProps", !screenParams.isEmpty());
-            pv.put("takesQuery", dashboardPeriod || reportQuery || listState || ownQuery);
+            pv.put("takesQuery", dashboardPeriod || dashboardQuery || reportQuery || listState || ownQuery);
         }
 
         // Screens import the i18n `t` only when one of their label expressions calls it — the
@@ -1063,6 +1068,8 @@ public final class EntityScaffoldContext {
         boolean usesStatsQuery = false;
         boolean usesQueryOf = false;
         boolean usesBucketRange = false;
+        // Dashboard filters: one bar over the grid; each widget takes the ones its entity filters by.
+        List<String> dashFilters = p.dashboard() == null ? List.of() : p.dashboard().filters();
         for (int i = 0; i < p.widgets().size(); i++) {
             PageDefinition.Widget w = p.widgets().get(i);
             if (w.kind() == PageDefinition.WidgetKind.TEXT) {
@@ -1074,7 +1081,7 @@ public final class EntityScaffoldContext {
                 continue;
             }
             if (w.kind() == PageDefinition.WidgetKind.LIST) {
-                Map<String, Object> lv = listWidgetView(w, i, entityByPascal, summaries, links);
+                Map<String, Object> lv = listWidgetView(w, i, entityByPascal, summaries, links, dashFilters);
                 needsNavigate |= Boolean.TRUE.equals(lv.get("needsNavigate"));
                 // A period preset on the embedded list: the screen spreads a rangeParams() call in.
                 usesQueryOf |= presetHasPeriod(w.presetFilter());
@@ -1110,22 +1117,25 @@ public final class EntityScaffoldContext {
             // The filter params the widget's queries carry: its fixed preset, then the dashboard
             // period over its date field (a TS expression, since the period is screen state).
             String preset = presetQueryExpr(w.presetFilter(), ev);
-            String paramsExpr = params(preset, rangeExpr(ev, w.dateField(), false));
+            String dash = dashParamsExpr(dashKeys(ev, dashFilters, w.presetFilter()));
+            String paramsExpr = params(preset, rangeExpr(ev, w.dateField(), false), dash);
             usesRange |= w.dateField() != null || presetHasPeriod(w.presetFilter());
-            usesStatsQuery |= (preset != null && w.dateField() != null) || (preset != null && preset.startsWith("statsQuery("));
+            usesStatsQuery |= paramsExpr != null && paramsExpr.contains("statsQuery(");
             wv.put("hasParams", paramsExpr != null);
             wv.put("paramsExpr", paramsExpr);
             // A kpi's change against the previous period: the same params, one period back. The
             // picker's "all time" has no previous period, so the tile then shows no change.
             wv.put("hasCompare", w.compare());
-            wv.put("compareParamsExpr", w.compare() ? params(preset, rangeExpr(ev, w.dateField(), true)) : null);
+            wv.put("compareParamsExpr", w.compare() ? params(preset, rangeExpr(ev, w.dateField(), true), dash) : null);
             wv.put("target", w.target() == null ? null : w.target().toPlainString());
-            String target = links.homeOf(w.entity());
+            // A widget's drillTo (a list or report page of its entity) replaces the entity's home.
+            String target = w.drillTo() != null ? w.drillTo() : links.homeOf(w.entity());
             wv.put("hasTarget", target != null);
             wv.put("targetPageId", target);
             // "View all" on a filtered widget opens the list with the same filters, when its home is
-            // a list page that takes them from the route.
-            boolean openWithQuery = paramsExpr != null && target != null && target.equals(links.listPageOf(w.entity()))
+            // a list page that takes them from the route (a drillTo page always does).
+            boolean openWithQuery = paramsExpr != null && target != null
+                    && (w.drillTo() != null || target.equals(links.listPageOf(w.entity())))
                     && Boolean.TRUE.equals(ev.get("hasFilters"));
             wv.put("openWithQuery", openWithQuery);
             usesQueryOf |= openWithQuery;
@@ -1140,7 +1150,7 @@ public final class EntityScaffoldContext {
                     Map<String, Object> fv = fieldOf(ev, w.groupBy());
                     wv.put("groupByIsDateTime", Boolean.TRUE.equals(fv.get("isDateTime")));
                     // A point opens the list over its day/month/year.
-                    boolean drill = putDrill(wv, ev, w.entity(), links, w.groupBy(), paramsExpr);
+                    boolean drill = putDrill(wv, ev, w.entity(), links, w.groupBy(), paramsExpr, w.drillTo());
                     usesBucketRange |= drill;
                     usesQueryOf |= drill && paramsExpr != null;
                     needsNavigate |= drill;
@@ -1160,7 +1170,7 @@ public final class EntityScaffoldContext {
                                     .add((String) ref);
                         }
                     }
-                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr);
+                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr, w.drillTo());
                     usesQueryOf |= drill && paramsExpr != null;
                     needsNavigate |= drill;
                     defaultTitle = "t('xByYAndZ', { x: " + (reduces ? aggTitle(w, ev) : entityLabels)
@@ -1175,7 +1185,7 @@ public final class EntityScaffoldContext {
                                 .add(labelsRef);
                     }
                     // A bar or a ranked row opens the list filtered to that group.
-                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr);
+                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr, w.drillTo());
                     usesQueryOf |= drill && paramsExpr != null;
                     needsNavigate |= drill;
                     if (w.kind() == PageDefinition.WidgetKind.TOP) wv.put("limit", w.limit());
@@ -1229,8 +1239,20 @@ public final class EntityScaffoldContext {
         pv.put("hasRefresh", hasRefresh);
         pv.put("hasAutoRefresh", hasRefresh && p.refreshSeconds() != null);
         pv.put("refreshMs", p.refreshSeconds() == null ? null : p.refreshSeconds() * 1000);
-        pv.put("usesDashboardState", hasRefresh || p.dateRange() != null);
+        pv.put("usesDashboardState", hasRefresh || p.dateRange() != null || !dashFilters.isEmpty());
         pv.put("hasHeaderTools", hasRefresh || p.dateRange() != null);
+        // The filter bar's controls: each filter as the first widget entity that has it describes it.
+        List<Map<String, Object>> dashFilterFields = new ArrayList<>();
+        for (String name : dashFilters) {
+            p.widgets().stream().filter(w -> w.entity() != null)
+                    .map(w -> entityByPascal.get(Naming.toPascalCase(w.entity())))
+                    .map(ev -> dashFilterField(ev, name))
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .ifPresent(dashFilterFields::add);
+        }
+        pv.put("hasDashFilters", !dashFilterFields.isEmpty());
+        pv.put("dashFilterFields", dashFilterFields);
         // stats.ts helpers the screen imports.
         pv.put("usesRangeParams", usesRange);
         pv.put("usesStatsQuery", usesStatsQuery);
@@ -1242,11 +1264,50 @@ public final class EntityScaffoldContext {
     }
 
     /** The widget's filter params as a TS expression: its preset (already an expression), the
-     *  period, or both; null for none. */
-    private static String params(String preset, String range) {
-        if (preset == null) return range;
-        if (range == null) return preset;
-        return "statsQuery(" + preset + ", " + range + ")";
+     *  period and the dashboard filters it takes, in that order — one of them alone, several joined
+     *  by statsQuery; null for none. */
+    private static String params(String... parts) {
+        List<String> present = java.util.Arrays.stream(parts).filter(java.util.Objects::nonNull).toList();
+        if (present.isEmpty()) return null;
+        if (present.size() == 1) return present.get(0);
+        return "statsQuery(" + String.join(", ", present) + ")";
+    }
+
+    /** The entity's filter entry a dashboard filter names (an enum/boolean field, or a relation by
+     *  its field name), or null when the entity has no such filter. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> dashFilterField(Map<String, Object> ev, String name) {
+        for (Map<String, Object> ff : (List<Map<String, Object>>) ev.getOrDefault("filterFields", List.of())) {
+            boolean relation = Boolean.TRUE.equals(ff.get("isRelationFilter"));
+            if (relation ? name.equals(ff.get("relationField"))
+                    : name.equals(ff.get("name")) && (Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isBooleanFilter")))) {
+                return ff;
+            }
+        }
+        return null;
+    }
+
+    /** The query params of the dashboard filters a widget's entity takes — not one its own preset
+     *  already fixes. */
+    private static List<String> dashKeys(Map<String, Object> ev, List<String> dashFilters, Map<String, String> preset) {
+        List<String> keys = new ArrayList<>();
+        for (String name : dashFilters) {
+            Map<String, Object> ff = dashFilterField(ev, name);
+            if (ff == null) continue;
+            String key = (String) ff.get("name");
+            if (preset.containsKey(name) || preset.containsKey(key)) continue;
+            keys.add(key);
+        }
+        return keys;
+    }
+
+    /** {@code dashParams(['status', 'customerId'])}, the screen's helper over its filter bar; null for no keys. */
+    private static String dashParamsExpr(List<String> keys) {
+        return keys.isEmpty() ? null : "dashParams(" + dashKeysTs(keys) + ")";
+    }
+
+    private static String dashKeysTs(List<String> keys) {
+        return "[" + String.join(", ", keys.stream().map(EntityScaffoldContext::tsString).toList()) + "]";
     }
 
     /** {@code rangeParams('soldOn', false, period)} (the previous period with {@code previous}), or
@@ -1268,7 +1329,8 @@ public final class EntityScaffoldContext {
      *  "View all". */
     private static Map<String, Object> listWidgetView(PageDefinition.Widget w, int index,
                                                       Map<String, Map<String, Object>> entityByPascal,
-                                                      Map<String, Map<String, Object>> summaries, PageLinks links) {
+                                                      Map<String, Map<String, Object>> summaries, PageLinks links,
+                                                      List<String> dashFilters) {
         Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
@@ -1293,10 +1355,15 @@ public final class EntityScaffoldContext {
         wv.put("hasSpanClass", !spanClass.isEmpty());
         wv.put("spanClass", spanClass);
         putRecordLink(wv, "", w.entity(), links, summaries);
-        String target = links.homeOf(w.entity());
+        String target = w.drillTo() != null ? w.drillTo() : links.homeOf(w.entity());
         wv.put("hasTarget", target != null);
         wv.put("targetPageId", target);
         wv.put("needsNavigate", target != null || Boolean.TRUE.equals(wv.get("hasRecordPage")));
+        // The dashboard filters the embedded list takes: its filters open with them, and a change
+        // remounts it (`key`), since a list reads its opening filters once.
+        List<String> keys = dashKeys(ev, dashFilters, w.presetFilter());
+        wv.put("hasDashKeys", !keys.isEmpty());
+        wv.put("dashKeysTs", keys.isEmpty() ? null : dashKeysTs(keys));
         wv.put("hasParams", false);
         wv.put("hasCompare", false);
         return wv;
@@ -1385,7 +1452,14 @@ public final class EntityScaffoldContext {
     @SuppressWarnings("unchecked")
     private static boolean putDrill(Map<String, Object> view, Map<String, Object> ev, String entity, PageLinks links,
                                     String filterKey, String paramsExpr) {
-        String listPage = links.listPageOf(entity);
+        return putDrill(view, ev, entity, links, filterKey, paramsExpr, null);
+    }
+
+    /** As above, opening {@code drillTo} (a list or report page of the entity) when given. */
+    @SuppressWarnings("unchecked")
+    private static boolean putDrill(Map<String, Object> view, Map<String, Object> ev, String entity, PageLinks links,
+                                    String filterKey, String paramsExpr, String drillTo) {
+        String listPage = drillTo != null ? drillTo : links.listPageOf(entity);
         boolean filterable = ((List<Map<String, Object>>) ev.getOrDefault("filterFields", List.of())).stream()
                 .anyMatch(f -> filterKey.equals(f.get("name")));
         boolean drill = listPage != null && filterable;

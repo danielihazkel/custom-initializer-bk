@@ -1259,6 +1259,7 @@
         "title": "Sales report",
         "description": "Revenue at a glance: totals, the split by region and the trend per month.",
         "dateRange": "12m",
+        "filters": ["region"],
         "widgets": [
           {
             "kind": "kpi",
@@ -1305,7 +1306,8 @@
             "title": "Revenue by region",
             "groupBy": "region",
             "agg": "sum",
-            "field": "amount"
+            "field": "amount",
+            "drillTo": "revenue"
           },
           {
             "kind": "line",

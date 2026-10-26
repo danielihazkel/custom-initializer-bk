@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -99,6 +100,9 @@ public final class FullstackPageValidator {
         // Pass 1: ids + types, so tabs (and links widgets) can reference pages declared after them.
         Map<String, PageDefinition.Type> typeById = new LinkedHashMap<>();
         Map<String, Boolean> hiddenById = new LinkedHashMap<>();
+        // The entity a list or report page shows (canonical name), so a widget's drillTo can be
+        // checked against a page declared after it.
+        Map<String, String> entityById = new HashMap<>();
         for (int pi = 0; pi < raw.size(); pi++) {
             PageDefinitionDto p = raw.get(pi);
             if (p == null) throw new WizardArgumentException("pages[" + pi + "] is null");
@@ -111,6 +115,8 @@ public final class FullstackPageValidator {
             if (typeById.containsKey(id)) throw new WizardArgumentException("Duplicate page id '" + id + "'");
             typeById.put(id, parseType(id, p.type()));
             hiddenById.put(id, Boolean.TRUE.equals(p.hidden()) || typeById.get(id) == PageDefinition.Type.RECORD);
+            EntityDefinition shown = p.entity() == null ? null : entitiesByLower.get(p.entity().trim().toLowerCase(Locale.ROOT));
+            if (shown != null) entityById.put(id, shown.name());
         }
         // Decided here, before any page is checked in depth: a layout with nothing in the nav gets
         // this message rather than one about a widget that happens to point at a hidden page.
@@ -161,7 +167,7 @@ public final class FullstackPageValidator {
                 case DASHBOARD -> {
                     PageDefinition.DateRange range = parseDateRange(id, p.dateRange());
                     List<PageDefinition.Widget> widgets = widgets(id, p.widgets(), entitiesByLower, range != null,
-                            typeById, hiddenById, scaffoldOpts);
+                            typeById, hiddenById, entityById, scaffoldOpts);
                     if (range != null && widgets.stream().allMatch(w -> w.dateField() == null)) {
                         throw new WizardArgumentException("Page '" + id + "' has a dateRange, but none of its widgets"
                                 + " counts an entity with a filterable date field for it to limit");
@@ -175,9 +181,11 @@ public final class FullstackPageValidator {
                         throw new WizardArgumentException("Page '" + id + "' refreshes every " + refresh
                                 + " seconds, but none of its widgets shows data to reload");
                     }
+                    List<String> filters = dashboardFilters(id, p.filters(), widgets, entitiesByLower);
                     yield new PageDefinition(id, type, title, description, hidden, null, null, widgets, null)
                             .withDateRange(range)
-                            .withRefreshSeconds(refresh);
+                            .withRefreshSeconds(refresh)
+                            .withSpec(filters.isEmpty() ? null : new PageDefinition.DashboardSpec(filters));
                 }
                 case TABS -> {
                     // No entity to borrow a name from, so the nav label has to be given.
@@ -435,6 +443,9 @@ public final class FullstackPageValidator {
         }
         if (type != PageDefinition.Type.DASHBOARD && p.refreshSeconds() != null) {
             throw new WizardArgumentException(prefix + "does not take 'refreshSeconds'");
+        }
+        if (type != PageDefinition.Type.DASHBOARD && p.filters() != null && !p.filters().isEmpty()) {
+            throw new WizardArgumentException(prefix + "does not take 'filters' (only a dashboard does — a list or report page has its own filter bar)");
         }
         if (type != PageDefinition.Type.WIZARD && p.steps() != null && !p.steps().isEmpty()) {
             throw new WizardArgumentException(prefix + "does not take 'steps'");
@@ -749,6 +760,7 @@ public final class FullstackPageValidator {
                                                        boolean hasDateRange,
                                                        Map<String, PageDefinition.Type> typeById,
                                                        Map<String, Boolean> hiddenById,
+                                                       Map<String, String> entityById,
                                                        Set<String> scaffoldOpts) {
         if (raw == null || raw.isEmpty()) {
             throw new WizardArgumentException("Page '" + id + "' (dashboard) needs at least one widget");
@@ -771,7 +783,8 @@ public final class FullstackPageValidator {
                 continue;
             }
             if (kind == PageDefinition.WidgetKind.LIST) {
-                out.add(listWidget(prefix, w, entitiesByLower, scaffoldOpts));
+                PageDefinition.Widget list = listWidget(prefix, w, entitiesByLower, scaffoldOpts);
+                out.add(withDrillTo(list, drillTo(prefix, w.drillTo(), list.entity(), typeById, hiddenById, entityById)));
                 continue;
             }
             if (trimToNull(w.text()) != null) {
@@ -864,7 +877,110 @@ public final class FullstackPageValidator {
                 }
             }
             out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit, agg, field, bucket, span,
-                    presetFilter(prefix, entity, w.presetFilter()), sortBy, dateField, compare, target, series, null));
+                    presetFilter(prefix, entity, w.presetFilter()), sortBy, dateField, compare, target, series, null,
+                    null, null, null, drillTo(prefix, w.drillTo(), entity.name(), typeById, hiddenById, entityById)));
+        }
+        return out;
+    }
+
+    private static PageDefinition.Widget withDrillTo(PageDefinition.Widget w, String drillTo) {
+        return new PageDefinition.Widget(w.kind(), w.entity(), w.title(), w.groupBy(), w.limit(), w.agg(), w.field(),
+                w.bucket(), w.span(), w.presetFilter(), w.sortBy(), w.dateField(), w.compare(), w.target(), w.series(),
+                w.text(), w.pages(), w.columns(), w.sort(), drillTo);
+    }
+
+    /**
+     * The page a widget's clicks and "View all" open instead of its entity's own list: a visible
+     * entity-list or report page of the same entity — a page that shows those rows and takes their
+     * filters from the route. Null when not given.
+     */
+    private static String drillTo(String prefix, String raw, String entity,
+                                  Map<String, PageDefinition.Type> typeById, Map<String, Boolean> hiddenById,
+                                  Map<String, String> entityById) {
+        String id = trimToNull(raw);
+        if (id == null) return null;
+        PageDefinition.Type type = typeById.get(id);
+        if (type == null) throw new WizardArgumentException(prefix + ": drillTo names no page with id '" + id + "'");
+        if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.REPORT) {
+            throw new WizardArgumentException(prefix + ": drillTo '" + id + "' must be an entity-list or report page");
+        }
+        if (Boolean.TRUE.equals(hiddenById.get(id))) {
+            throw new WizardArgumentException(prefix + ": drillTo '" + id + "' is hidden, so it cannot be opened from a widget");
+        }
+        if (!entity.equals(entityById.get(id))) {
+            throw new WizardArgumentException(prefix + ": drillTo '" + id + "' shows " + entityById.get(id)
+                    + ", not " + entity);
+        }
+        return id;
+    }
+
+    /** At most this many dashboard filters. */
+    static final int MAX_DASHBOARD_FILTERS = 4;
+
+    /**
+     * A dashboard's filters: each an enum, boolean or MANY_TO_ONE name (matched ignoring case) that
+     * at least one of its data or list widgets' entities filters by — and wherever several entities
+     * have it, the same kind of filter (the same enum constants, the same relation target), since
+     * one control sets them all. Returns the declared spellings.
+     */
+    private static List<String> dashboardFilters(String id, List<String> raw, List<PageDefinition.Widget> widgets,
+                                                 Map<String, EntityDefinition> entitiesByLower) {
+        if (raw == null || raw.isEmpty()) return List.of();
+        String prefix = "Page '" + id + "'";
+        if (raw.size() > MAX_DASHBOARD_FILTERS) {
+            throw new WizardArgumentException(prefix + " has more than " + MAX_DASHBOARD_FILTERS + " filters");
+        }
+        Set<String> entities = new LinkedHashSet<>();
+        for (PageDefinition.Widget w : widgets) {
+            if (w.entity() != null && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.TEXT) {
+                entities.add(w.entity());
+            }
+        }
+        List<String> out = new ArrayList<>();
+        for (String requested : raw) {
+            String name = trimToNull(requested);
+            if (name == null) throw new WizardArgumentException(prefix + ": a filter name is blank");
+            String canonical = null;
+            String shape = null;
+            String shapeOwner = null;
+            for (String entityName : entities) {
+                EntityDefinition e = entitiesByLower.get(entityName.toLowerCase(Locale.ROOT));
+                String found = null;
+                String thisShape = null;
+                for (FieldDefinition f : e.fields()) {
+                    if (f.name().equalsIgnoreCase(name) && !f.primaryKey() && f.filterable()
+                            && (f.type().isEnum() || f.type().isBoolean())) {
+                        found = f.name();
+                        thisShape = f.type().isBoolean() ? "a yes/no field"
+                                : "the values " + String.join(", ", f.enumValues());
+                    }
+                }
+                for (RelationDefinition r : e.relations()) {
+                    if (r.fieldName().equalsIgnoreCase(name)) {
+                        found = r.fieldName();
+                        thisShape = "a link to " + r.targetEntity();
+                    }
+                }
+                if (found == null) continue;
+                if (canonical == null) {
+                    canonical = found;
+                    shape = thisShape;
+                    shapeOwner = e.name();
+                } else if (!shape.equals(thisShape)) {
+                    throw new WizardArgumentException(prefix + ": filter '" + name + "' is " + shape + " on " + shapeOwner
+                            + " but " + thisShape + " on " + e.name() + " — one control cannot set both");
+                }
+            }
+            if (canonical == null) {
+                throw new WizardArgumentException(prefix + ": filter '" + name + "' is not an enum, boolean or relation"
+                        + " filter of any of its widgets' entities (" + String.join(", ", entities) + ")");
+            }
+            for (String seen : out) {
+                if (seen.equalsIgnoreCase(canonical)) {
+                    throw new WizardArgumentException(prefix + ": filter '" + canonical + "' is listed twice");
+                }
+            }
+            out.add(canonical);
         }
         return out;
     }
@@ -879,7 +995,7 @@ public final class FullstackPageValidator {
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
                 || trimToNull(w.series()) != null || (w.pages() != null && !w.pages().isEmpty())
-                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null) {
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null) {
             throw new WizardArgumentException(prefix + ": a text widget takes only 'text', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.TEXT) : w.span();
@@ -927,7 +1043,7 @@ public final class FullstackPageValidator {
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
                 || trimToNull(w.series()) != null || trimToNull(w.text()) != null
-                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null) {
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null) {
             throw new WizardArgumentException(prefix + ": a links widget takes only 'pages', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.LINKS) : w.span();

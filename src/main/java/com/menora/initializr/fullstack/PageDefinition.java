@@ -193,8 +193,22 @@ public record PageDefinition(
     /** A {@link Type#SEARCH} page's settings; null on any other page. */
     public SearchSpec search() { return spec instanceof SearchSpec s ? s : null; }
 
+    /** A {@link Type#DASHBOARD} page's filters; null on any other page and on a dashboard without them. */
+    public DashboardSpec dashboard() { return spec instanceof DashboardSpec d ? d : null; }
+
     /** The settings only one page type has, kept apart so the record does not grow a field per type. */
-    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec {}
+    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec, DashboardSpec {}
+
+    /**
+     * @param filters the dashboard's filters, as declared field names: an enum or boolean field, or
+     *                a MANY_TO_ONE relation (its {@code <field>Id} param) — each limits every widget
+     *                whose entity filters by it
+     */
+    public record DashboardSpec(List<String> filters) implements Spec {
+        public DashboardSpec {
+            filters = List.copyOf(filters);
+        }
+    }
 
     /**
      * @param dateField the date column rows are placed by (and the visible window is fetched through)
@@ -403,12 +417,22 @@ public record PageDefinition(
     public record Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
                          Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
                          String sortBy, String dateField, boolean compare, java.math.BigDecimal target,
-                         String series, String text, List<String> pages, List<String> columns, ListSort sort) {
+                         String series, String text, List<String> pages, List<String> columns, ListSort sort,
+                         String drillTo) {
 
         public Widget {
             presetFilter = presetFilter == null ? Map.of() : Map.copyOf(presetFilter);
             pages = pages == null ? List.of() : List.copyOf(pages);
             columns = columns == null ? List.of() : List.copyOf(columns);
+        }
+
+        /** A widget that opens its entity's own pages (no {@code drillTo}). */
+        public Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
+                      Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
+                      String sortBy, String dateField, boolean compare, java.math.BigDecimal target,
+                      String series, String text, List<String> pages, List<String> columns, ListSort sort) {
+            this(kind, entity, title, groupBy, limit, agg, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, series, text, pages, columns, sort, null);
         }
 
         /** A widget of the kinds before links and lists (no page ids, columns or sort). */
