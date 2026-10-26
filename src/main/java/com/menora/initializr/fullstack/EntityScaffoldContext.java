@@ -210,6 +210,9 @@ public final class EntityScaffoldContext {
                     pv.put("hasPageSize", p.pageSize() != null);
                     pv.put("pageSize", p.pageSize());
                     pv.put("hasListPresentation", p.hasListPresentation());
+                    // The actions the page leaves out of its list (its EntityPage takes hideActions).
+                    pv.put("hasHideActions", !p.hiddenActions().isEmpty());
+                    pv.put("hideActionsTs", "[" + String.join(", ", p.hiddenActions().stream().map(a -> tsString(a.wire())).toList()) + "]");
                     // A page title replaces the entity page's own heading (its plural label).
                     pv.put("hasPageTitle", p.title() != null);
                     pv.put("navIcon", "Table2");
@@ -649,6 +652,12 @@ public final class EntityScaffoldContext {
             if (p.type() == PageDefinition.Type.ENTITY_LIST && p.detail() == PageDefinition.Detail.SIDE) sideDetail.add(p.entity());
         }
         ctx.put(SIDE_DETAIL_KEY, sideDetail);
+        // ...only an entity with a list page that hides actions takes hideActions...
+        Set<String> listActions = new LinkedHashSet<>();
+        for (PageDefinition p : pages) {
+            if (p.type() == PageDefinition.Type.ENTITY_LIST && !p.hiddenActions().isEmpty()) listActions.add(p.entity());
+        }
+        ctx.put(LIST_ACTIONS_KEY, listActions);
         // ...and only an entity with a list page in the nav reports its list state for the route.
         Set<String> listState = new LinkedHashSet<>();
         for (PageDefinition p : pages) {
@@ -1080,6 +1089,12 @@ public final class EntityScaffoldContext {
                 widgetViews.add(linksWidgetView(w, i));
                 continue;
             }
+            if (w.kind() == PageDefinition.WidgetKind.ACTIVITY) {
+                Map<String, Object> av = activityWidgetView(w, i, entityByPascal, summaries, links);
+                needsNavigate |= Boolean.TRUE.equals(av.get("needsNavigate"));
+                widgetViews.add(av);
+                continue;
+            }
             if (w.kind() == PageDefinition.WidgetKind.LIST) {
                 Map<String, Object> lv = listWidgetView(w, i, entityByPascal, summaries, links, dashFilters);
                 needsNavigate |= Boolean.TRUE.equals(lv.get("needsNavigate"));
@@ -1099,6 +1114,8 @@ public final class EntityScaffoldContext {
             wv.put("widgetIsBar", w.kind() == PageDefinition.WidgetKind.BAR || w.kind() == PageDefinition.WidgetKind.DONUT);
             wv.put("isDonut", w.kind() == PageDefinition.WidgetKind.DONUT);
             wv.put("widgetIsStacked", w.kind() == PageDefinition.WidgetKind.STACKED);
+            wv.put("widgetIsPivot", w.kind() == PageDefinition.WidgetKind.PIVOT);
+            wv.put("widgetIsActivity", false);
             wv.put("widgetIsText", false);
             wv.put("widgetIsLine", w.kind() == PageDefinition.WidgetKind.LINE);
             wv.put("widgetIsRecent", w.kind() == PageDefinition.WidgetKind.RECENT);
@@ -1176,6 +1193,35 @@ public final class EntityScaffoldContext {
                     defaultTitle = "t('xByYAndZ', { x: " + (reduces ? aggTitle(w, ev) : entityLabels)
                             + ", y: " + rank.get("groupLabelExpr") + ", z: " + split.get("groupLabelExpr") + " })";
                 }
+                case PIVOT -> {
+                    Map<String, Object> rank = rankView(ev, w.groupBy());
+                    wv.putAll(rank);
+                    Map<String, Object> cols = rankView(ev, w.series());
+                    wv.put("seriesField", w.series());
+                    wv.put("hasSeriesLabels", cols.get("hasLabels"));
+                    wv.put("seriesLabelsRef", cols.get("labelsRef"));
+                    wv.put("seriesIsRelation", cols.get("isRelationRank"));
+                    wv.put("seriesOptionsPath", cols.get("optionsPath"));
+                    wv.put("seriesOptionValue", cols.get("optionValue"));
+                    wv.put("seriesHasOptionLabel", Boolean.TRUE.equals(cols.get("hasOptionLabel")));
+                    wv.put("seriesOptionLabel", cols.get("optionLabel"));
+                    for (Object ref : new Object[] {rank.get("labelsRef"), cols.get("labelsRef")}) {
+                        if (ref != null) {
+                            labelRefsByModule.computeIfAbsent((String) ev.get("entityNameKebab"), k -> new LinkedHashSet<>())
+                                    .add((String) ref);
+                        }
+                    }
+                    // A cell opens the list filtered to both of its groups — when the list filters by both.
+                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr, w.drillTo())
+                            && ((List<Map<String, Object>>) ev.getOrDefault("filterFields", List.of())).stream()
+                                    .anyMatch(f -> cols.get("drillKey").equals(f.get("name")));
+                    wv.put("hasDrill", drill);
+                    wv.put("seriesDrillKey", cols.get("drillKey"));
+                    usesQueryOf |= drill && paramsExpr != null;
+                    needsNavigate |= drill;
+                    defaultTitle = "t('xByYAndZ', { x: " + (reduces ? aggTitle(w, ev) : entityLabels)
+                            + ", y: " + rank.get("groupLabelExpr") + ", z: " + cols.get("groupLabelExpr") + " })";
+                }
                 case BAR, TOP, DONUT -> {
                     Map<String, Object> rank = rankView(ev, w.groupBy());
                     wv.putAll(rank);
@@ -1211,7 +1257,7 @@ public final class EntityScaffoldContext {
             widgetViews.add(wv);
         }
         pv.put("widgets", widgetViews);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "Links", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "Links", "List")) {
             pv.put("uses" + kind, widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIs" + kind))));
         }
         // The entity pages the list widgets embed: one import per entity module.
@@ -1334,7 +1380,7 @@ public final class EntityScaffoldContext {
         Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "Links")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "Links")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsList", true);
@@ -1374,7 +1420,7 @@ public final class EntityScaffoldContext {
     private static Map<String, Object> linksWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsLinks", true);
@@ -1390,10 +1436,47 @@ public final class EntityScaffoldContext {
     }
 
     /** A text widget's view: its title (if any) and paragraphs as TS string literals. */
+    /** An activity feed: one source per audited entity — its list endpoint, its name, the column a
+     *  row reads by, and the record page a row opens (when there is one). */
+    private static Map<String, Object> activityWidgetView(PageDefinition.Widget w, int index,
+                                                          Map<String, Map<String, Object>> entityByPascal,
+                                                          Map<String, Map<String, Object>> summaries, PageLinks links) {
+        Map<String, Object> wv = new LinkedHashMap<>();
+        wv.put("widgetKey", "w" + index);
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Text", "Links", "List")) {
+            wv.put("widgetIs" + kind, false);
+        }
+        wv.put("widgetIsActivity", true);
+        wv.put("titleExpr", w.title() != null ? tsString(w.title()) : "t('recentActivity')");
+        wv.put("limit", w.limit());
+        boolean needsNavigate = false;
+        List<Map<String, Object>> sources = new ArrayList<>();
+        for (String name : w.entities()) {
+            Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(name));
+            Map<String, Object> summary = summaries.get(name.toLowerCase(Locale.ROOT));
+            Map<String, Object> sv = new LinkedHashMap<>();
+            sv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
+            sv.put("labelExpr", tsString((String) ev.get("entityLabel")));
+            Object labelField = summary.get("labelField");
+            sv.put("displayField", labelField != null ? labelField : summary.get("pkName"));
+            putRecordLink(sv, "", name, links, summaries);
+            needsNavigate |= Boolean.TRUE.equals(sv.get("hasRecordPage"));
+            sources.add(sv);
+        }
+        wv.put("activitySources", sources);
+        wv.put("needsNavigate", needsNavigate);
+        String spanClass = SPAN_CLASSES.get(w.span() - 1);
+        wv.put("hasSpanClass", !spanClass.isEmpty());
+        wv.put("spanClass", spanClass);
+        wv.put("hasParams", false);
+        wv.put("hasCompare", false);
+        return wv;
+    }
+
     private static Map<String, Object> textWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Links", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Links", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsText", true);
@@ -1768,6 +1851,8 @@ public final class EntityScaffoldContext {
     private static final String SIDE_DETAIL_KEY = "__sideDetailEntities";
     /** Entities with a list page in the nav, whose list state rides in the route. */
     private static final String LIST_STATE_KEY = "__listStateEntities";
+    /** Entities with a list page that hides some of its actions. */
+    private static final String LIST_ACTIONS_KEY = "__listActionEntities";
 
     /** Internal key under which the entity-summary lookup rides in the project context.
      *  Not referenced by any template. */
@@ -1978,6 +2063,8 @@ public final class EntityScaffoldContext {
         ctx.put("listConfigurable", listConfigured != null && listConfigured.contains(entity.name()));
         Set<String> sideDetail = (Set<String>) projectContext.get(SIDE_DETAIL_KEY);
         ctx.put("listSideDetail", sideDetail != null && sideDetail.contains(entity.name()));
+        Set<String> listActions = (Set<String>) projectContext.get(LIST_ACTIONS_KEY);
+        ctx.put("listActionsConfigurable", listActions != null && listActions.contains(entity.name()));
         Map<String, String> recordPageOf = (Map<String, String>) projectContext.get(RECORD_PAGES_KEY);
         ctx.put("entityHasRecordPage", recordPageOf != null && recordPageOf.keySet().stream()
                 .anyMatch(k -> k.equalsIgnoreCase(entity.name())));
@@ -2057,6 +2144,10 @@ public final class EntityScaffoldContext {
         ctx.put("bulkSelectApplicable",
                 Boolean.TRUE.equals(ctx.get("bulkDeleteApplicable"))
                         || Boolean.TRUE.equals(ctx.get("bulkUpdateApplicable")));
+        // A list page's hideActions only reach a list that has an action to hide (the validator
+        // rejects them on a read-only entity without an export).
+        ctx.put("listActionsConfigurable", Boolean.TRUE.equals(ctx.get("listActionsConfigurable"))
+                && (mutable || Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport"))));
         return ctx;
     }
 

@@ -56,7 +56,10 @@ const isStale = (e: unknown) =>
 const rowKey = (row: {{EntityName}}) => {{#hasCompositePk}}[{{#pkFields}}String(row.{{name}}){{^last}}, {{/last}}{{/pkFields}}].join('/'){{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as string | number{{/hasCompositePk}}
 
 {{#hasPages}}
-interface {{EntityName}}PageProps {
+{{#listActionsConfigurable}}/** A list action a list page can leave out (its hideActions). */
+type ListAction = 'new' | 'edit' | 'delete' | 'export' | 'import' | 'bulk'
+
+{{/listActionsConfigurable}}interface {{EntityName}}PageProps {
 {{#hasFilters}}
   /** Filter values the page opens with (a preset-filtered list page). */
   initialFilters?: FilterValues
@@ -105,6 +108,10 @@ interface {{EntityName}}PageProps {
   /** Rows per page the list opens with (default: 20). */
   initialPageSize?: number
 {{/listConfigurable}}
+{{#listActionsConfigurable}}
+  /** The actions this list leaves out — presentation only, the API still answers them. */
+  hideActions?: readonly ListAction[]
+{{/listActionsConfigurable}}
 }
 
 {{/hasPages}}
@@ -123,7 +130,7 @@ function oneValue(value: string | undefined): boolean {
   return !!value && !value.includes(',')
 }
 
-{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}}{{#listActionsConfigurable}}, hideActions{{/listActionsConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
   // This browser's own settings for the list — rows per page, sort, view, hidden columns — saved as
   // they change; the list opens with them unless the route says otherwise.
   const [prefs] = useState(() => readListPrefs('{{entityNameKebab}}', columns.flatMap(c => c.sortKey ? [c.sortKey] : []), {{{viewModesTs}}}))
@@ -555,8 +562,12 @@ function oneValue(value: string | undefined): boolean {
 {{/viewTable}}{{/bulkUpdateApplicable}}
   // An empty list offers the first record — unless a search or filter is what emptied it.
   const filtered = debouncedSearch !== ''{{#hasFilters}} || Object.values(filters).some(v => v !== ''){{/hasFilters}}
-{{#mutable}}  const emptyAction = { label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasWizardPage}}openNew{{/hasWizardPage}}{{#hasWizardPage}}onCreate ?? openNew{{/hasWizardPage}} }
-{{/mutable}}{{#viewTable}}  // The Columns menu: hide columns, or forget everything this browser saved for the list.
+{{#listActionsConfigurable}}  // What this list page leaves out (its hideActions): the buttons go; the API still answers them.
+  const can = (action: ListAction) => !hideActions?.includes(action)
+{{/listActionsConfigurable}}{{#mutable}}  const emptyAction = {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{ label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasWizardPage}}openNew{{/hasWizardPage}}{{#hasWizardPage}}onCreate ?? openNew{{/hasWizardPage}} }
+{{#listActionsConfigurable}}  const editRow = can('edit') ? openEdit : undefined
+  const deleteRow = can('delete') ? setPendingDelete : undefined
+{{/listActionsConfigurable}}{{/mutable}}{{#viewTable}}  // The Columns menu: hide columns, or forget everything this browser saved for the list.
   const columnMenu = {
     hidden: hiddenColumns,
     onChange: setHiddenColumns,
@@ -630,7 +641,8 @@ function oneValue(value: string | undefined): boolean {
               <Calendar className="h-4 w-4" />
             </button>
 {{/viewCalendar}}          </div>
-{{/hasViewToggle}}{{#optScaffoldCsvExport}}          <button
+{{/hasViewToggle}}{{#optScaffoldCsvExport}}{{#listActionsConfigurable}}          {can('export') && (
+{{/listActionsConfigurable}}          <button
             onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))}
             disabled={download.busy}
             aria-busy={download.busy}
@@ -640,7 +652,9 @@ function oneValue(value: string | undefined): boolean {
             <Download className="h-4 w-4" />
             {download.busy ? t('exporting') : t('export')}
           </button>
-{{/optScaffoldCsvExport}}{{#importApplicable}}          <button
+{{#listActionsConfigurable}}          )}
+{{/listActionsConfigurable}}{{/optScaffoldCsvExport}}{{#importApplicable}}{{#listActionsConfigurable}}          {can('import') && (
+{{/listActionsConfigurable}}          <button
             onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) }
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
             title={t('importCsv')}
@@ -648,14 +662,17 @@ function oneValue(value: string | undefined): boolean {
             <Upload className="h-4 w-4" />
             {t('import')}
           </button>
-{{/importApplicable}}{{#mutable}}          <button
+{{#listActionsConfigurable}}          )}
+{{/listActionsConfigurable}}{{/importApplicable}}{{#mutable}}{{#listActionsConfigurable}}          {can('new') && (
+{{/listActionsConfigurable}}          <button
             {{^hasWizardPage}}onClick={openNew}{{/hasWizardPage}}{{#hasWizardPage}}onClick={onCreate ?? openNew}{{/hasWizardPage}}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
           >
             <Plus className="h-4 w-4" />
             {t('newX', { x: '{{entityLabel}}' })}
           </button>
-{{/mutable}}        </div>
+{{#listActionsConfigurable}}          )}
+{{/listActionsConfigurable}}{{/mutable}}        </div>
       </div>
 
       {error && (
@@ -733,9 +750,11 @@ function oneValue(value: string | undefined): boolean {
           rowKey={rowKey}
           loading={loading}
           onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
-{{#mutable}}          onEdit={openEdit}
+{{#mutable}}{{^listActionsConfigurable}}          onEdit={openEdit}
           onDelete={setPendingDelete}
-{{/mutable}}          search={search}
+{{/listActionsConfigurable}}{{#listActionsConfigurable}}          onEdit={editRow}
+          onDelete={deleteRow}
+{{/listActionsConfigurable}}{{/mutable}}          search={search}
           onSearchChange={setSearch}
 {{#hasStringFields}}          searchable={true}
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
@@ -752,9 +771,13 @@ function oneValue(value: string | undefined): boolean {
           groupField="{{kanbanField}}"
           groupValues={[{{#kanbanColumns}}{ value: '{{value}}', label: {{labelExpr}} }{{^last}}, {{/last}}{{/kanbanColumns}}]}
           onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
-          onEdit={openEdit}
+{{^listActionsConfigurable}}          onEdit={openEdit}
           onDelete={setPendingDelete}
           onMove={onKanbanMove}
+{{/listActionsConfigurable}}{{#listActionsConfigurable}}          onEdit={editRow}
+          onDelete={deleteRow}
+          onMove={can('edit') ? onKanbanMove : undefined}
+{{/listActionsConfigurable}}
           totals={laneTotals}
           filtered={filtered}
           emptyAction={emptyAction}
@@ -778,21 +801,23 @@ function oneValue(value: string | undefined): boolean {
         />
       ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
         <Table
-          columns={{#inlineEditApplicable}}{inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}})}{{/inlineEditApplicable}}{{^inlineEditApplicable}}{{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}{{/inlineEditApplicable}}
+          columns={{#inlineEditApplicable}}{{#listActionsConfigurable}}{can('edit') ? inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}}) : {{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}}}{{/listActionsConfigurable}}{{^listActionsConfigurable}}{inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}})}{{/listActionsConfigurable}}{{/inlineEditApplicable}}{{^inlineEditApplicable}}{{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}{{/inlineEditApplicable}}
           columnMenu={columnMenu}
           rows={items}
           rowKey={rowKey}
           loading={loading}
           onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
-{{#mutable}}          onEdit={openEdit}
+{{#mutable}}{{^listActionsConfigurable}}          onEdit={openEdit}
           onDelete={setPendingDelete}
-{{/mutable}}          sort={sort}
+{{/listActionsConfigurable}}{{#listActionsConfigurable}}          onEdit={editRow}
+          onDelete={deleteRow}
+{{/listActionsConfigurable}}{{/mutable}}          sort={sort}
           onSortChange={setSort}
           search={search}
           onSearchChange={setSearch}
 {{#hasStringFields}}          searchable={true}
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
-{{/hasStringFields}}{{#bulkSelectApplicable}}          selectable={true}
+{{/hasStringFields}}{{#bulkSelectApplicable}}{{^listActionsConfigurable}}          selectable={true}{{/listActionsConfigurable}}{{#listActionsConfigurable}}          selectable={can('bulk')}{{/listActionsConfigurable}}
           isRowSelected={isRowSelected}
           onToggleRow={toggleRow}
           allOnPageSelected={allOnPageSelected}
@@ -812,8 +837,14 @@ function oneValue(value: string | undefined): boolean {
                 <h2 className="text-sm font-semibold text-fg">{t('xDetails', { x: '{{entityLabel}}' })}</h2>
                 <div className="flex items-center gap-3">
 {{#mutable}}
+{{^listActionsConfigurable}}
                   <button type="button" onClick={() => openEdit(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('edit')}</button>
                   <button type="button" onClick={() => setPendingDelete(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('delete')}</button>
+{{/listActionsConfigurable}}
+{{#listActionsConfigurable}}
+                  {can('edit') && <button type="button" onClick={() => openEdit(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('edit')}</button>}
+                  {can('delete') && <button type="button" onClick={() => setPendingDelete(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('delete')}</button>}
+{{/listActionsConfigurable}}
 {{/mutable}}
                   <button type="button" onClick={() => onSelect?.(undefined)} className="text-xs font-medium text-muted hover:text-fg" aria-label={t('close')}>×</button>
                 </div>
@@ -907,8 +938,9 @@ function oneValue(value: string | undefined): boolean {
         open={detailRow !== null}
         title={t('xDetails', { x: '{{entityLabel}}' })}
         onClose={() => setDetailRow(null)}
-{{#mutable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
-{{/mutable}}      >
+{{#mutable}}{{^listActionsConfigurable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
+{{/listActionsConfigurable}}{{#listActionsConfigurable}}        onEdit={can('edit') ? () => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } } : undefined}
+{{/listActionsConfigurable}}{{/mutable}}      >
         {detailRow && <{{EntityName}}Detail value={detailRow} />}
       </DetailDrawer>
     </div>

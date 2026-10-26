@@ -644,6 +644,185 @@ export function StackedBars({ buckets, labels, seriesLabels, onSelect }: {
   )
 }
 
+/** One aggregate over two columns at once: a row per `rows` group, a column per `columns` group,
+ *  each cell the rows in both — with row, column and grand totals for a count or a sum (an average
+ *  or an extreme does not add up). A relation on either axis is named from its target's list. */
+export function PivotCard({ title, path, rows, columns, agg, valueField, rowLabels, columnLabels, rowOptionsPath, rowOptionValue = 'id', rowOptionLabel, columnOptionsPath, columnOptionValue = 'id', columnOptionLabel, params = '', onSelect, onOpen, className = '' }: {
+  title: string
+  path: string
+  /** The column whose groups are the rows, and the one whose groups are the columns. */
+  rows: string
+  columns: string
+  agg?: string
+  valueField?: string
+  /** Enum axes: display label per constant. */
+  rowLabels?: Record<string, string>
+  columnLabels?: Record<string, string>
+  /** Relation axes: the target's list endpoint, its key and its label column. */
+  rowOptionsPath?: string
+  rowOptionValue?: string
+  rowOptionLabel?: string
+  columnOptionsPath?: string
+  columnOptionValue?: string
+  columnOptionLabel?: string
+  params?: string
+  /** A click on a cell, with its row's and its column's key (the list filter values). */
+  onSelect?: (row: string, column: string) => void
+  onOpen?: () => void
+  className?: string
+}) {
+  const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${rows}`, `series=${columns}`, aggQuery(agg, valueField), params))
+  const buckets = stats?.buckets ?? []
+  const rowKeys = [...new Set(buckets.map(b => b.key))]
+  const columnKeys = [...new Set(buckets.map(b => b.series ?? ''))]
+  const rowNames = useOptionNames(rowOptionsPath, rowOptionValue, rowOptionLabel, rowKeys)
+  const columnNames = useOptionNames(columnOptionsPath, columnOptionValue, columnOptionLabel, columnKeys)
+  const nameOf = (key: string, optionsPath: string | undefined, names: Record<string, string>, labels?: Record<string, string>) =>
+    key === '' ? '—' : optionsPath ? names[key] ?? `#${key}` : statLabel({ key, value: null }, labels)
+  const cells = new Map(buckets.map(b => [`${b.key}\n${b.series ?? ''}`, b.value]))
+  const cell = (row: string, column: string) => cells.get(`${row}\n${column}`) ?? null
+  const totals = !agg || agg === 'count' || agg === 'sum'
+  const sum = (values: (number | null)[]) => values.reduce<number>((total, v) => total + (v ?? 0), 0)
+
+  return (
+    <div className={`${card} ${className}`}>
+      <WidgetHeader title={title} onOpen={onOpen} />
+      <Status failed={failed} loading={stats == null} empty={buckets.length === 0} onRetry={retry} />
+      {buckets.length > 0 && !failed && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted">
+                <th className="sticky start-0 bg-surface py-2 pe-3" />
+                {columnKeys.map(c => (
+                  <th key={c} scope="col" className="px-2 py-2 text-end font-semibold">{nameOf(c, columnOptionsPath, columnNames, columnLabels)}</th>
+                ))}
+                {totals && <th scope="col" className="ps-2 py-2 text-end font-semibold">{t('total')}</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rowKeys.map(r => (
+                <tr key={r}>
+                  <th scope="row" className="sticky start-0 bg-surface py-2 pe-3 text-start font-medium text-fg">{nameOf(r, rowOptionsPath, rowNames, rowLabels)}</th>
+                  {columnKeys.map(c => {
+                    const value = cell(r, c)
+                    const text = value == null ? '—' : formatStat(value)
+                    return (
+                      <td key={c} className="px-2 py-2 text-end tabular-nums text-fg">
+                        {onSelect && value != null && r !== '' && c !== '' ? (
+                          <button type="button" onClick={() => onSelect(r, c)} className="rounded px-1 hover:bg-surface-2 hover:text-brand">{text}</button>
+                        ) : text}
+                      </td>
+                    )
+                  })}
+                  {totals && <td className="ps-2 py-2 text-end font-semibold tabular-nums text-fg">{formatStat(sum(columnKeys.map(c => cell(r, c))))}</td>}
+                </tr>
+              ))}
+            </tbody>
+            {totals && (
+              <tfoot>
+                <tr className="border-t-2 border-border font-semibold text-fg">
+                  <th scope="row" className="sticky start-0 bg-surface py-2 pe-3 text-start">{t('total')}</th>
+                  {columnKeys.map(c => (
+                    <td key={c} className="px-2 py-2 text-end tabular-nums">{formatStat(sum(rowKeys.map(r => cell(r, c))))}</td>
+                  ))}
+                  <td className="ps-2 py-2 text-end tabular-nums">{formatStat(stats?.total ?? null)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** One entity an activity feed reads: its list endpoint, its name and the column a row reads by. */
+export interface ActivitySource {
+  path: string
+  label: string
+  displayField: string
+  /** Opens one row (its record page); without it the row is plain text. */
+  onOpen?: (row: Record<string, unknown>) => void
+}
+
+const RELATIVE_STEPS: [Intl.RelativeTimeFormatUnit, number][] = [['second', 60], ['minute', 60], ['hour', 24], ['day', 30], ['month', 12], ['year', Infinity]]
+
+/** "5 minutes ago", in the app's language; empty for a value that is not a time. */
+function timeAgo(value: unknown): string {
+  const at = typeof value === 'string' ? Date.parse(value) : NaN
+  if (Number.isNaN(at)) return ''
+  const format = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto' })
+  let amount = Math.round((at - Date.now()) / 1000)
+  for (const [unit, size] of RELATIVE_STEPS) {
+    if (Math.abs(amount) < size) return format.format(amount, unit)
+    amount = Math.round(amount / size)
+  }
+  return ''
+}
+
+/** The latest changes across several audited entities, newest first: each list's most recently
+ *  updated rows, merged — a row created and never edited since reads "created". */
+export function ActivityFeed({ title, sources, limit, className = '' }: {
+  title: string
+  sources: ActivitySource[]
+  limit: number
+  className?: string
+}) {
+  const [rows, setRows] = useState<{ source: number; row: Record<string, unknown> }[] | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const tick = useContext(RefreshTick)
+  // The sources are a literal re-made on every render: follow their endpoints, not the array.
+  const paths = sources.map(s => s.path).join('\n')
+
+  useEffect(() => {
+    let active = true
+    setFailed(false)
+    Promise.all(paths.split('\n').map(path =>
+      api.get<{ content: Record<string, unknown>[] }>(`${path}?size=${limit}&sort=updatedAt,desc`)))
+      .then(pages => {
+        if (!active) return
+        const time = (row: Record<string, unknown>) => Date.parse(String(row.updatedAt ?? '')) || 0
+        setRows(pages
+          .flatMap((page, source) => (page.content ?? []).map(row => ({ source, row })))
+          .sort((a, b) => time(b.row) - time(a.row))
+          .slice(0, limit))
+      })
+      .catch(() => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [paths, limit, attempt, tick])
+
+  return (
+    <div className={`${card} ${className}`}>
+      <WidgetHeader title={title} />
+      <Status failed={failed} loading={rows == null} empty={rows?.length === 0} onRetry={() => setAttempt(a => a + 1)} emptyText={t('noActivity')} />
+      {rows && rows.length > 0 && !failed && (
+        <ul className="divide-y divide-border">
+          {rows.map(({ source, row }, i) => {
+            const from = sources[source]
+            const name = row[from.displayField] == null ? '—' : String(row[from.displayField])
+            const created = row.createdAt != null && row.createdAt === row.updatedAt
+            return (
+              <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <span className="min-w-0 truncate">
+                  {from.onOpen ? (
+                    <button type="button" onClick={() => from.onOpen?.(row)} className="truncate text-start font-medium text-brand hover:underline">{name}</button>
+                  ) : (
+                    <span className="text-fg">{name}</span>
+                  )}
+                  <span className="text-muted"> · {from.label} {created ? t('activityCreated') : t('activityUpdated')}</span>
+                </span>
+                <span className="shrink-0 text-xs tabular-nums text-muted">{timeAgo(row.updatedAt)}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 /** A note on the dashboard: a heading and paragraphs of plain text, no query behind it. */
 export function TextCard({ title, paragraphs, className = '' }: { title?: string; paragraphs: string[]; className?: string }) {
   return (

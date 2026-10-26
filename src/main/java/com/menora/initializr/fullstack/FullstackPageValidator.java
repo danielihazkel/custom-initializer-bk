@@ -43,6 +43,10 @@ public final class FullstackPageValidator {
     static final int MAX_DESCRIPTION = 300;
     static final int MAX_RECENT_LIMIT = 20;
     static final int DEFAULT_RECENT_LIMIT = 5;
+    /** An activity feed: how many changes it lists by default, and at least; and how many entities it reads. */
+    static final int DEFAULT_ACTIVITY_LIMIT = 10;
+    static final int MIN_ACTIVITY_LIMIT = 5;
+    static final int MAX_ACTIVITY_ENTITIES = 6;
 
     static final int MAX_GROUP = 40;
     static final int MAX_SPAN = 4;
@@ -95,7 +99,7 @@ public final class FullstackPageValidator {
         if (raw.size() > MAX_PAGES) {
             throw new WizardArgumentException("At most " + MAX_PAGES + " pages are allowed");
         }
-        Map<String, EntityDefinition> entitiesByLower = new HashMap<>();
+        Map<String, EntityDefinition> entitiesByLower = new LinkedHashMap<>();
         for (EntityDefinition e : entities) entitiesByLower.put(e.name().toLowerCase(Locale.ROOT), e);
 
         // Pass 1: ids + types, so tabs (and links widgets) can reference pages declared after them.
@@ -163,7 +167,8 @@ public final class FullstackPageValidator {
                             .withListPresentation(columns(prefix, entity, p.columns(), audit),
                                     sort(prefix, entity, p.sort(), audit), view(prefix, entity, p.view()),
                                     pageSize(prefix, p.pageSize()))
-                            .withDetail(detail);
+                            .withDetail(detail)
+                            .withSpec(listSpec(prefix, entity, p.hideActions(), scaffoldOpts));
                 }
                 case DASHBOARD -> {
                     PageDefinition.DateRange range = parseDateRange(id, p.dateRange());
@@ -482,6 +487,9 @@ public final class FullstackPageValidator {
             if (trimToNull(p.view()) != null) throw new WizardArgumentException(prefix + "does not take 'view'");
             if (p.pageSize() != null) throw new WizardArgumentException(prefix + "does not take 'pageSize'");
             if (trimToNull(p.detail()) != null) throw new WizardArgumentException(prefix + "does not take 'detail'");
+            if (p.hideActions() != null && !p.hideActions().isEmpty()) {
+                throw new WizardArgumentException(prefix + "does not take 'hideActions'");
+            }
         }
     }
 
@@ -621,6 +629,34 @@ public final class FullstackPageValidator {
                     + " boolean field on a writable entity, calendar a date field)");
         }
         return lower;
+    }
+
+    /** A list page's hidden actions, canonicalized to {@link PageDefinition.ListAction} order; null for none. */
+    private static PageDefinition.ListSpec listSpec(String prefix, EntityDefinition entity, List<String> raw,
+                                                    Set<String> scaffoldOpts) {
+        if (raw == null || raw.isEmpty()) return null;
+        Boolean exportOverride = entity.opts().get("csvExport");
+        boolean exports = exportOverride != null ? exportOverride : scaffoldOpts.contains("csvExport");
+        if (entity.readOnly() && !exports) {
+            throw new WizardArgumentException(prefix + ": " + entity.name()
+                    + " is read-only and exports nothing, so its list has no actions to hide");
+        }
+        Set<PageDefinition.ListAction> picked = new HashSet<>();
+        for (String r : raw) {
+            String name = trimToNull(r);
+            PageDefinition.ListAction action = null;
+            for (PageDefinition.ListAction a : PageDefinition.ListAction.values()) {
+                if (a.wire().equalsIgnoreCase(name)) action = a;
+            }
+            if (action == null) {
+                throw new WizardArgumentException(prefix + ": unknown hideActions entry '" + r
+                        + "' (expected new, edit, delete, export, import or bulk)");
+            }
+            if (!picked.add(action)) {
+                throw new WizardArgumentException(prefix + ": hideActions lists '" + action.wire() + "' twice");
+            }
+        }
+        return new PageDefinition.ListSpec(java.util.Arrays.stream(PageDefinition.ListAction.values()).filter(picked::contains).toList());
     }
 
     /** The rows per page a list opens with: one of the pager's choices. */
@@ -842,6 +878,13 @@ public final class FullstackPageValidator {
             String prefix = "Page '" + id + "' widgets[" + wi + "]";
             if (w == null) throw new WizardArgumentException(prefix + " is null");
             PageDefinition.WidgetKind kind = parseKind(prefix, w.kind());
+            if (kind == PageDefinition.WidgetKind.ACTIVITY) {
+                out.add(activityWidget(prefix, w, entitiesByLower, scaffoldOpts));
+                continue;
+            }
+            if (w.entities() != null && !w.entities().isEmpty()) {
+                throw new WizardArgumentException(prefix + ": only an activity widget takes 'entities'");
+            }
             if (kind == PageDefinition.WidgetKind.TEXT) {
                 out.add(textWidget(prefix, w));
                 continue;
@@ -897,18 +940,23 @@ public final class FullstackPageValidator {
                     series = series(prefix, entity, groupBy, trimToNull(w.series()));
                 }
                 case TOP -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "rank by");
+                case PIVOT -> {
+                    groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "lay out in rows");
+                    series = pivotColumns(prefix, entity, groupBy, trimToNull(w.series()));
+                }
                 case LINE -> {
                     groupBy = dateGroupBy(prefix, entity, trimToNull(w.groupBy()));
                     bucket = parseBucket(prefix, w.bucket());
                 }
                 default -> {
                     if (trimToNull(w.groupBy()) != null) {
-                        throw new WizardArgumentException(prefix + ": only a bar, donut, stacked, line or top widget takes 'groupBy'");
+                        throw new WizardArgumentException(prefix + ": only a bar, donut, stacked, pivot, line or top widget takes 'groupBy'");
                     }
                 }
             }
-            if (kind != PageDefinition.WidgetKind.STACKED && trimToNull(w.series()) != null) {
-                throw new WizardArgumentException(prefix + ": only a stacked widget takes 'series'");
+            if (kind != PageDefinition.WidgetKind.STACKED && kind != PageDefinition.WidgetKind.PIVOT
+                    && trimToNull(w.series()) != null) {
+                throw new WizardArgumentException(prefix + ": only a stacked or pivot widget takes 'series'");
             }
             if (kind != PageDefinition.WidgetKind.LINE && trimToNull(w.bucket()) != null) {
                 throw new WizardArgumentException(prefix + ": only a line widget takes 'bucket'");
@@ -928,7 +976,7 @@ public final class FullstackPageValidator {
             }
             String sortBy = null;
             if (kind == PageDefinition.WidgetKind.RECENT) {
-                sortBy = sortBy(prefix, entity, trimToNull(w.sortBy()));
+                sortBy = sortBy(prefix, entity, trimToNull(w.sortBy()), auditApplies(entity, scaffoldOpts));
             } else if (trimToNull(w.sortBy()) != null) {
                 throw new WizardArgumentException(prefix + ": only a recent widget takes 'sortBy'");
             }
@@ -1207,11 +1255,96 @@ public final class FullstackPageValidator {
     }
 
     /** What a recent list orders by: any column of the entity (the list endpoint sorts by every
-     *  scalar DTO column), newest first. Null keeps the primary key. */
-    private static String sortBy(String prefix, EntityDefinition entity, String requested) {
+     *  scalar DTO column), or — when the audit opt applies to it — {@code createdAt}/{@code updatedAt},
+     *  newest first. Null keeps the primary key. */
+    private static String sortBy(String prefix, EntityDefinition entity, String requested, boolean audit) {
         if (requested == null) return null;
+        if (audit) {
+            for (String column : List.of("createdAt", "updatedAt")) {
+                if (column.equalsIgnoreCase(requested) && entity.fields().stream().noneMatch(f -> f.name().equalsIgnoreCase(column))) {
+                    return column;
+                }
+            }
+        }
         FieldDefinition field = fieldOf(prefix, entity, requested, "sortBy");
         return field.primaryKey() ? null : field.name();
+    }
+
+    /** A pivot's columns: an enum/boolean field or a relation other than its rows — the next one
+     *  the entity has, when omitted. */
+    private static String pivotColumns(String prefix, EntityDefinition entity, String rows, String requested) {
+        if (requested == null) {
+            List<String> candidates = new ArrayList<>();
+            entity.fields().stream().filter(f -> !f.primaryKey() && f.type().isEnum()).forEach(f -> candidates.add(f.name()));
+            entity.fields().stream().filter(f -> !f.primaryKey() && f.type().isBoolean()).forEach(f -> candidates.add(f.name()));
+            entity.relations().stream().filter(r -> r.type() == RelationType.MANY_TO_ONE).forEach(r -> candidates.add(r.fieldName()));
+            return candidates.stream().filter(c -> !c.equals(rows)).findFirst()
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
+                            + " needs a second enum, boolean or relation to lay out in columns"));
+        }
+        String columns = rankBy(prefix, entity, requested, "lay out in columns");
+        if (columns.equals(rows)) {
+            throw new WizardArgumentException(prefix + ": series '" + requested + "' must differ from groupBy — the rows already split by it");
+        }
+        return columns;
+    }
+
+    /**
+     * An activity feed: the latest changes to the named entities (every one the audit opt applies
+     * to, when omitted — at most {@value #MAX_ACTIVITY_ENTITIES}), merged newest first. It reads
+     * each list sorted by {@code updatedAt}, which only an audited entity has; it is not a filter, so
+     * the feed takes no preset, period, drill target or aggregate.
+     */
+    private static PageDefinition.Widget activityWidget(String prefix, WidgetDto w, Map<String, EntityDefinition> entitiesByLower,
+                                                        Set<String> scaffoldOpts) {
+        if (trimToNull(w.entity()) != null) {
+            throw new WizardArgumentException(prefix + ": an activity widget lists 'entities', not one 'entity'");
+        }
+        if (trimToNull(w.agg()) != null || trimToNull(w.field()) != null || trimToNull(w.groupBy()) != null
+                || trimToNull(w.bucket()) != null || (w.presetFilter() != null && !w.presetFilter().isEmpty())
+                || trimToNull(w.sortBy()) != null || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare())
+                || trimToNull(w.target()) != null || trimToNull(w.series()) != null || trimToNull(w.text()) != null
+                || (w.pages() != null && !w.pages().isEmpty()) || (w.columns() != null && !w.columns().isEmpty())
+                || w.sort() != null || trimToNull(w.drillTo()) != null) {
+            throw new WizardArgumentException(prefix + ": an activity widget takes only 'entities', 'limit', 'title' and 'span'");
+        }
+        List<String> names = new ArrayList<>();
+        if (w.entities() == null || w.entities().isEmpty()) {
+            // In the request's own order (the map is a LinkedHashMap).
+            for (EntityDefinition e : entitiesByLower.values()) {
+                if (auditApplies(e, scaffoldOpts)) names.add(e.name());
+            }
+            if (names.isEmpty()) {
+                throw new WizardArgumentException(prefix + ": an activity widget needs the 'audit' opt — no entity records when it changed");
+            }
+            if (names.size() > MAX_ACTIVITY_ENTITIES) names = new ArrayList<>(names.subList(0, MAX_ACTIVITY_ENTITIES));
+        } else {
+            if (w.entities().size() > MAX_ACTIVITY_ENTITIES) {
+                throw new WizardArgumentException(prefix + ": an activity widget lists at most " + MAX_ACTIVITY_ENTITIES + " entities");
+            }
+            for (String raw : w.entities()) {
+                EntityDefinition e = requireEntity(entitiesByLower, raw, prefix);
+                if (!auditApplies(e, scaffoldOpts)) {
+                    throw new WizardArgumentException(prefix + ": " + e.name()
+                            + " does not record when it changed — turn the 'audit' opt on for it");
+                }
+                if (names.contains(e.name())) {
+                    throw new WizardArgumentException(prefix + ": " + e.name() + " is listed twice");
+                }
+                names.add(e.name());
+            }
+        }
+        int limit = w.limit() == null ? DEFAULT_ACTIVITY_LIMIT : w.limit();
+        if (limit < MIN_ACTIVITY_LIMIT || limit > MAX_RECENT_LIMIT) {
+            throw new WizardArgumentException(prefix + ": limit must be between " + MIN_ACTIVITY_LIMIT + " and " + MAX_RECENT_LIMIT);
+        }
+        int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.ACTIVITY) : w.span();
+        if (span < 1 || span > MAX_SPAN) {
+            throw new WizardArgumentException(prefix + ": span must be between 1 and " + MAX_SPAN);
+        }
+        return new PageDefinition.Widget(PageDefinition.WidgetKind.ACTIVITY, null,
+                checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title"), null, limit, null, null, null, span,
+                null, null, null, false, null, null, null, null, null, null, null, names);
     }
 
     /**
@@ -1245,7 +1378,7 @@ public final class FullstackPageValidator {
             if (kind.wire().equalsIgnoreCase(k)) return kind;
         }
         throw new WizardArgumentException(prefix + ": unknown widget kind '" + k
-                + "' (expected kpi, bar, donut, stacked, line, recent, top, progress, text, links or list)");
+                + "' (expected kpi, bar, donut, stacked, pivot, line, recent, top, progress, activity, text, links or list)");
     }
 
     /** How a tile or chart reduces its rows. Absent means {@code count}. */

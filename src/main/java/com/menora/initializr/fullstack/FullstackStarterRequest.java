@@ -337,7 +337,28 @@ public record FullstackStarterRequest(
             // dashboard: filters over its widgets — enum, boolean or MANY_TO_ONE field names; each
             // limits every widget whose entity has that filter (a filter bar above the grid, kept
             // in the route). Absent: no dashboard filters.
-            List<String> filters) {
+            List<String> filters,
+            // entity-list: the actions this page leaves out of its list — new, edit, delete,
+            // export, import, bulk. Presentation only: the API still answers them.
+            List<String> hideActions) {
+
+        /** Every property but a list page's hidden actions. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize, String detail, Boolean showParent,
+                                 Integer refreshSeconds, String dateField, String endField, List<String> modes,
+                                 String laneField, List<String> lanes, List<String> cardFields,
+                                 Map<String, Integer> wipLimits, Integer laneSize, String body,
+                                 List<String> entities, Integer perEntity, Boolean shellSearch, List<String> filters) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, detail, showParent, refreshSeconds, dateField, endField, modes, laneField, lanes,
+                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, null);
+        }
 
         /** Every property but the dashboard filters. */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
@@ -479,7 +500,19 @@ public record FullstackStarterRequest(
             SortDto sort,
             // any widget over an entity: the page its clicks and "View all" open — a visible
             // entity-list or report page of the same entity. Absent: the entity's own list/home.
-            String drillTo) {
+            String drillTo,
+            // activity: the entities whose latest changes it lists (each needs the audit opt).
+            // Absent: every entity the audit opt applies to.
+            List<String> entities) {
+
+        /** The widget as layouts before activity feeds spell it. */
+        public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
+                         String field, String bucket, Integer span, Map<String, String> presetFilter,
+                         String sortBy, String dateField, Boolean compare, String target, String series, String text,
+                         List<String> pages, List<String> columns, SortDto sort, String drillTo) {
+            this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, series, text, pages, columns, sort, drillTo, null);
+        }
 
         /** The widget as layouts before {@code drillTo} spell it. */
         public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
@@ -487,7 +520,7 @@ public record FullstackStarterRequest(
                          String sortBy, String dateField, Boolean compare, String target, String series, String text,
                          List<String> pages, List<String> columns, SortDto sort) {
             this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
-                    compare, target, series, text, pages, columns, sort, null);
+                    compare, target, series, text, pages, columns, sort, null, null);
         }
 
         /** The widget as layouts before links and lists spell it. */

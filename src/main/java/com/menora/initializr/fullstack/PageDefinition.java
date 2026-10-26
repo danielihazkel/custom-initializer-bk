@@ -196,8 +196,40 @@ public record PageDefinition(
     /** A {@link Type#DASHBOARD} page's filters; null on any other page and on a dashboard without them. */
     public DashboardSpec dashboard() { return spec instanceof DashboardSpec d ? d : null; }
 
+    /** The actions an {@link Type#ENTITY_LIST} page leaves out of its list; empty for every other page. */
+    public List<ListAction> hiddenActions() { return spec instanceof ListSpec l ? l.hideActions() : List.of(); }
+
     /** The settings only one page type has, kept apart so the record does not grow a field per type. */
-    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec, DashboardSpec {}
+    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec, DashboardSpec, ListSpec {}
+
+    /** @param hideActions what an entity-list page leaves out of its list, in {@link ListAction} order */
+    public record ListSpec(List<ListAction> hideActions) implements Spec {
+        public ListSpec {
+            hideActions = List.copyOf(hideActions);
+        }
+    }
+
+    /** The list actions a page can leave out. Presentation only — the API still answers them. */
+    public enum ListAction {
+        /** New, the empty list's "New …" and the {@code n} shortcut. */
+        NEW("new"),
+        /** Edit on a row, in the side pane and the quick look, inline cells and moving a card. */
+        EDIT("edit"),
+        /** Delete on a row and in the side pane. */
+        DELETE("delete"),
+        /** Export CSV. */
+        EXPORT("export"),
+        /** Import CSV. */
+        IMPORT("import"),
+        /** Row selection and the bulk bar. */
+        BULK("bulk");
+
+        private final String wire;
+
+        ListAction(String wire) { this.wire = wire; }
+
+        public String wire() { return wire; }
+    }
 
     /**
      * @param filters the dashboard's filters, as declared field names: an enum or boolean field, or
@@ -354,7 +386,11 @@ public record PageDefinition(
         /** Tiles that open other pages of the app — a launcher. No entity, no query. */
         LINKS("links"),
         /** An entity's rows in a card: its list page embedded, with chosen columns, a sort and a filter. */
-        LIST("list");
+        LIST("list"),
+        /** A table of one aggregate over two columns at once: a row per group, a column per series. */
+        PIVOT("pivot"),
+        /** The latest changes across audited entities, newest first (needs the audit opt). */
+        ACTIVITY("activity");
 
         private final String wire;
 
@@ -418,12 +454,23 @@ public record PageDefinition(
                          Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
                          String sortBy, String dateField, boolean compare, java.math.BigDecimal target,
                          String series, String text, List<String> pages, List<String> columns, ListSort sort,
-                         String drillTo) {
+                         String drillTo, List<String> entities) {
 
         public Widget {
             presetFilter = presetFilter == null ? Map.of() : Map.copyOf(presetFilter);
             pages = pages == null ? List.of() : List.copyOf(pages);
             columns = columns == null ? List.of() : List.copyOf(columns);
+            entities = entities == null ? List.of() : List.copyOf(entities);
+        }
+
+        /** A widget over one entity, or none (every kind but an activity feed). */
+        public Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
+                      Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
+                      String sortBy, String dateField, boolean compare, java.math.BigDecimal target,
+                      String series, String text, List<String> pages, List<String> columns, ListSort sort,
+                      String drillTo) {
+            this(kind, entity, title, groupBy, limit, agg, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, series, text, pages, columns, sort, drillTo, null);
         }
 
         /** A widget that opens its entity's own pages (no {@code drillTo}). */
@@ -463,7 +510,7 @@ public record PageDefinition(
          *  a launcher the whole row. */
         public static int defaultSpan(WidgetKind kind) {
             return kind == WidgetKind.KPI || kind == WidgetKind.PROGRESS ? 1
-                    : kind == WidgetKind.LINKS || kind == WidgetKind.LIST ? 4 : 2;
+                    : kind == WidgetKind.LINKS || kind == WidgetKind.LIST || kind == WidgetKind.PIVOT ? 4 : 2;
         }
     }
 

@@ -1,7 +1,7 @@
 {{#usesDashboardState}}
 import { {{#hasAutoRefresh}}useEffect, {{/hasAutoRefresh}}useState } from 'react'
 {{/usesDashboardState}}
-import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesText}}TextCard, {{/usesText}}{{#usesList}}ListCard, {{/usesList}}{{#hasRefresh}}RefreshButton, {{/hasRefresh}}} from '@shared/ui/widgets'
+import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesPivot}}PivotCard, {{/usesPivot}}{{#usesActivity}}ActivityFeed, {{/usesActivity}}{{#usesText}}TextCard, {{/usesText}}{{#usesList}}ListCard, {{/usesList}}{{#hasRefresh}}RefreshButton, {{/hasRefresh}}} from '@shared/ui/widgets'
 {{#listImports}}
 import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
 {{/listImports}}
@@ -259,6 +259,64 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{/hasTarget}}
         />
 {{/widgetIsStacked}}
+{{#widgetIsPivot}}
+        <PivotCard
+          title={ {{titleExpr}} }
+          path="{{path}}"
+          rows="{{groupBy}}"
+          columns="{{seriesField}}"
+{{#hasAgg}}
+          agg="{{agg}}"
+          valueField="{{aggField}}"
+{{/hasAgg}}
+{{#hasLabels}}
+          rowLabels={ {{labelsRef}} }
+{{/hasLabels}}
+{{#isRelationRank}}
+          rowOptionsPath="{{optionsPath}}"
+          rowOptionValue="{{optionValue}}"
+{{#hasOptionLabel}}
+          rowOptionLabel="{{optionLabel}}"
+{{/hasOptionLabel}}
+{{/isRelationRank}}
+{{#hasSeriesLabels}}
+          columnLabels={ {{seriesLabelsRef}} }
+{{/hasSeriesLabels}}
+{{#seriesIsRelation}}
+          columnOptionsPath="{{seriesOptionsPath}}"
+          columnOptionValue="{{seriesOptionValue}}"
+{{#seriesHasOptionLabel}}
+          columnOptionLabel="{{seriesOptionLabel}}"
+{{/seriesHasOptionLabel}}
+{{/seriesIsRelation}}
+{{#hasParams}}
+          params={ {{paramsExpr}} }
+{{/hasParams}}
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+{{#hasDrill}}
+          onSelect={(row, column) => onNavigate('{{drillPageId}}', undefined, { {{drillBase}}{{drillKey}}: row, {{seriesDrillKey}}: column })}
+{{/hasDrill}}
+{{#hasTarget}}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
+{{/hasTarget}}
+        />
+{{/widgetIsPivot}}
+{{#widgetIsActivity}}
+        <ActivityFeed
+          title={ {{titleExpr}} }
+          sources={ [
+{{#activitySources}}
+            { path: '{{path}}', label: {{labelExpr}}, displayField: '{{displayField}}'{{#hasRecordPage}}, onOpen: row => onNavigate('{{recordPageId}}', String(row['{{recordPk}}'])){{/hasRecordPage}} },
+{{/activitySources}}
+          ] }
+          limit={ {{limit}} }
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+        />
+{{/widgetIsActivity}}
 {{#widgetIsText}}
         <TextCard
 {{#hasTitle}}
