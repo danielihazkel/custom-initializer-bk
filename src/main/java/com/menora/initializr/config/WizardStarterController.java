@@ -209,7 +209,6 @@ public class WizardStarterController {
         for (var e : body.specByDep().entrySet()) {
             String spec = e.getValue();
             if (spec == null || spec.isBlank()) continue;
-            openApiGenerator.detectPaths(spec); // does not throw
             openApiGenerator.generate(spec, "com.menora.demo",
                     body.openApiOptions() == null ? null : toOpenApiOptions(body.openApiOptions().get(e.getKey())));
         }

@@ -86,17 +86,19 @@ public class SoapCodeGenerator {
         return out;
     }
 
-    /** For the wizard's live preview — returns {@code "Service.Port: opA, opB"} style strings. */
+    /**
+     * For the wizard's live preview — returns {@code "Service.Port: opA, opB"} style strings.
+     * Throws {@link SoapParseException} (a 400 from the wizard controller) for a document that
+     * does not parse or declares no service — the same WSDL {@link #generate} would refuse.
+     */
     public List<String> detectServices(String wsdl) {
         if (wsdl == null || wsdl.isBlank()) return List.of();
-        Definition def;
-        try {
-            def = parseOrThrow(wsdl);
-        } catch (SoapParseException e) {
-            return List.of();
+        List<SoapServiceModel> services = buildServices(parseOrThrow(wsdl));
+        if (services.isEmpty()) {
+            throw new SoapParseException(List.of("WSDL contains no <service> definitions"));
         }
         List<String> out = new ArrayList<>();
-        for (SoapServiceModel svc : buildServices(def)) {
+        for (SoapServiceModel svc : services) {
             List<String> opNames = new ArrayList<>();
             for (SoapOperationModel op : svc.operations()) opNames.add(op.operationName());
             out.add(svc.serviceName() + "." + svc.portName() + ": " + String.join(", ", opNames));
