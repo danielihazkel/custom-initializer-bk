@@ -1,7 +1,7 @@
 {{#usesDashboardState}}
 import { {{#hasAutoRefresh}}useEffect, {{/hasAutoRefresh}}useState } from 'react'
 {{/usesDashboardState}}
-import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesText}}TextCard, {{/usesText}}{{#usesList}}ListCard, {{/usesList}}{{#hasRefresh}}RefreshButton, {{/hasRefresh}}} from '@shared/ui/widgets'
+import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesPivot}}PivotCard, {{/usesPivot}}{{#usesActivity}}ActivityFeed, {{/usesActivity}}{{#usesText}}TextCard, {{/usesText}}{{#usesList}}ListCard, {{/usesList}}{{#hasRefresh}}RefreshButton, {{/hasRefresh}}} from '@shared/ui/widgets'
 {{#listImports}}
 import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
 {{/listImports}}
@@ -17,17 +17,34 @@ import { {{#hasRefresh}}RefreshTick, {{/hasRefresh}}{{#usesBucketRange}}bucketRa
 {{#usesT}}
 import { t } from '@shared/i18n'
 {{/usesT}}
+{{#hasDashFilters}}
+import { FilterBar, type FilterDescriptor, type FilterValues } from '@shared/ui'
+{{/hasDashFilters}}
 {{#labelImports}}
 import { {{labelsRefs}} } from '@entities/{{entityNameKebab}}'
 {{/labelImports}}
+{{#hasDashFilters}}
+
+/** The dashboard's filters: each limits every widget whose entity filters by it. */
+const DASH_FILTERS: FilterDescriptor[] = [
+{{#dashFilterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
+{{/dashFilterFields}}]
+{{/hasDashFilters}}
 {{#hasScreenProps}}
 
 interface Props {
+{{#hasDashFilters}}
+  /** The filters{{#hasDateRange}} and the period{{/hasDateRange}}, from the route (#/<page>?region=NORTH{{#hasDateRange}}&period=30d{{/hasDateRange}}); absent (a tab), the screen keeps its own. */
+  query?: Record<string, string>
+  onQueryChange?: (query: Record<string, string>) => void
+{{/hasDashFilters}}
+{{^hasDashFilters}}
 {{#hasDateRange}}
   /** The period from the route (#/<page>?period=30d); absent (a tab), the screen keeps its own. */
   period?: string
   onPeriodChange?: (period: Period) => void
 {{/hasDateRange}}
+{{/hasDashFilters}}
 {{#needsNavigate}}
   onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
 {{/needsNavigate}}
@@ -35,6 +52,23 @@ interface Props {
 {{/hasScreenProps}}
 
 export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Props{{/hasScreenProps}}) {
+{{#hasDashFilters}}
+  // The filter bar's values{{#hasDateRange}} and the period{{/hasDateRange}}. Routed, they live in the URL, so a reload
+  // or bookmark keeps them; embedded as a tab, they are local state.
+  const [localQuery, setLocalQuery] = useState<Record<string, string>>({})
+  const query = onQueryChange ? routeQuery ?? {} : localQuery
+  const setQuery = onQueryChange ?? setLocalQuery
+{{#hasDateRange}}
+  const period = parsePeriod(query.period, '{{dateRangeDefault}}')
+  const setPeriod = (next: Period) => setQuery({ ...query, period: next })
+{{/hasDateRange}}
+  const filters: FilterValues = Object.fromEntries(Object.entries(query).filter(([k, v]) => k !== 'period' && v !== ''))
+  const setFilters = (next: FilterValues) => setQuery({ ...next{{#hasDateRange}}, ...(query.period ? { period: query.period } : {}){{/hasDateRange}} })
+  /** The filters a widget's entity takes (by their param names), set to a value — as a query string. */
+  const dashValues = (keys: string[]): FilterValues => Object.fromEntries(Object.entries(filters).filter(([k]) => keys.includes(k)))
+  const dashParams = (keys: string[]) => new URLSearchParams(dashValues(keys)).toString()
+{{/hasDashFilters}}
+{{^hasDashFilters}}
 {{#hasDateRange}}
   const [localPeriod, setLocalPeriod] = useState<Period>('{{dateRangeDefault}}')
   // The period every widget with a date column is limited to. Routed, it lives in the URL, so a
@@ -42,6 +76,7 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
   const period = onPeriodChange ? parsePeriod(routePeriod, '{{dateRangeDefault}}') : localPeriod
   const setPeriod = onPeriodChange ?? setLocalPeriod
 {{/hasDateRange}}
+{{/hasDashFilters}}
 {{#hasRefresh}}
   // Bumped by Refresh{{#hasAutoRefresh}} and every {{refreshMs}} ms while the tab is visible{{/hasAutoRefresh}}: the widgets reload.
   const [tick, setTick] = useState(0)
@@ -82,6 +117,11 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
         </div>
       </div>
 {{/hasHeaderTools}}
+{{#hasDashFilters}}
+      <div className="mb-4">
+        <FilterBar filters={DASH_FILTERS} values={filters} onChange={setFilters} />
+      </div>
+{{/hasDashFilters}}
 {{#hasRefresh}}
       <RefreshTick.Provider value={tick}>
 {{/hasRefresh}}
@@ -219,6 +259,64 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{/hasTarget}}
         />
 {{/widgetIsStacked}}
+{{#widgetIsPivot}}
+        <PivotCard
+          title={ {{titleExpr}} }
+          path="{{path}}"
+          rows="{{groupBy}}"
+          columns="{{seriesField}}"
+{{#hasAgg}}
+          agg="{{agg}}"
+          valueField="{{aggField}}"
+{{/hasAgg}}
+{{#hasLabels}}
+          rowLabels={ {{labelsRef}} }
+{{/hasLabels}}
+{{#isRelationRank}}
+          rowOptionsPath="{{optionsPath}}"
+          rowOptionValue="{{optionValue}}"
+{{#hasOptionLabel}}
+          rowOptionLabel="{{optionLabel}}"
+{{/hasOptionLabel}}
+{{/isRelationRank}}
+{{#hasSeriesLabels}}
+          columnLabels={ {{seriesLabelsRef}} }
+{{/hasSeriesLabels}}
+{{#seriesIsRelation}}
+          columnOptionsPath="{{seriesOptionsPath}}"
+          columnOptionValue="{{seriesOptionValue}}"
+{{#seriesHasOptionLabel}}
+          columnOptionLabel="{{seriesOptionLabel}}"
+{{/seriesHasOptionLabel}}
+{{/seriesIsRelation}}
+{{#hasParams}}
+          params={ {{paramsExpr}} }
+{{/hasParams}}
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+{{#hasDrill}}
+          onSelect={(row, column) => onNavigate('{{drillPageId}}', undefined, { {{drillBase}}{{drillKey}}: row, {{seriesDrillKey}}: column })}
+{{/hasDrill}}
+{{#hasTarget}}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
+{{/hasTarget}}
+        />
+{{/widgetIsPivot}}
+{{#widgetIsActivity}}
+        <ActivityFeed
+          title={ {{titleExpr}} }
+          sources={ [
+{{#activitySources}}
+            { path: '{{path}}', label: {{labelExpr}}, displayField: '{{displayField}}'{{#hasRecordPage}}, onOpen: row => onNavigate('{{recordPageId}}', String(row['{{recordPk}}'])){{/hasRecordPage}} },
+{{/activitySources}}
+          ] }
+          limit={ {{limit}} }
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+        />
+{{/widgetIsActivity}}
 {{#widgetIsText}}
         <TextCard
 {{#hasTitle}}
@@ -252,7 +350,7 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           onOpen={() => onNavigate('{{targetPageId}}')}
 {{/hasTarget}}
         >
-          <{{EntityName}}Page embedded initialPageSize={ {{limit}} }{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#hasColumns}} columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}} initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasRecordPage}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}} />
+          <{{EntityName}}Page embedded initialPageSize={ {{limit}} }{{#hasDashKeys}} key={dashParams({{{dashKeysTs}}})} initialFilters={ { {{#hasPresetFilter}}...{{presetFilterTs}}, {{/hasPresetFilter}}...dashValues({{{dashKeysTs}}}) } }{{/hasDashKeys}}{{^hasDashKeys}}{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{/hasDashKeys}}{{#hasColumns}} columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}} initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasRecordPage}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/hasRecordPage}} />
         </ListCard>
 {{/widgetIsList}}
 {{#widgetIsTop}}

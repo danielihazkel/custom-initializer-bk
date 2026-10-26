@@ -153,9 +153,10 @@ class GeneratedFrontendBuildSmokeTests {
     void fullstackFrontendPageLayoutsInstallAndBuild(@TempDir Path workDir) throws Exception {
         // The Orders example's page layout: a dashboard with every widget kind, plain list pages,
         // a master-detail page and a record page with a related list (the two id-driven screens).
-        // Soft delete is on, so the record page's Delete toast carries the Undo (restore) path too.
+        // Soft delete is on, so the record page's Delete toast carries the Undo (restore) path too;
+        // optimistic locking and inline cell edit put the stale-save notice and the cell editors in.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
-        body.put("opts", Map.of("scaffold", List.of("csvExport", "softDelete")));
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "softDelete", "optimisticLocking", "inlineEdit")));
         // The tailwind shell's other navigation: a top bar with folding sections.
         body.put("nav", Map.of("style", "topbar", "collapsibleGroups", true));
         Path project = postAndExtractFrontend(workDir, body);
@@ -167,9 +168,11 @@ class GeneratedFrontendBuildSmokeTests {
     @Test
     void fullstackFrontendMenoraPageLayoutsInstallAndBuild(@TempDir Path workDir) throws Exception {
         // The Tickets layout on the Menora set: its own Tabs-port screen over preset-filtered list
-        // pages, plus the borrowed dashboard and master-detail screens.
-        Path project = postAndExtractFrontend(workDir,
-                FullstackPagesIntegrationTests.exampleBody("tickets", "react-menora-digital-crud"));
+        // pages, plus the borrowed dashboard and master-detail screens; locking and inline edit on
+        // the Menora entity page.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("tickets", "react-menora-digital-crud");
+        body.put("opts", Map.of("scaffold", List.of("optimisticLocking", "inlineEdit")));
+        Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
         runPnpm(project, "run", "build");

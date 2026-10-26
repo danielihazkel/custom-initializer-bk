@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { t } from '../i18n'
+import { holdLeave } from './leaveGuard'
 
 interface Props {
   open: boolean
@@ -48,6 +49,18 @@ export function FormDrawer({ open, title, subtitle, onClose, onSave, saving, dir
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
+
+  // While the form holds unsaved edits, going to another page or closing the tab asks first.
+  useEffect(() => {
+    if (!open || !dirty) return
+    const release = holdLeave()
+    const onUnload = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', onUnload)
+    return () => {
+      release()
+      window.removeEventListener('beforeunload', onUnload)
+    }
+  }, [open, dirty])
 
   // Move focus into the drawer when it opens so keyboard/AT users land inside it.
   useEffect(() => {

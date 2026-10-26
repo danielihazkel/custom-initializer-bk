@@ -1085,6 +1085,38 @@ class ProjectGenerationIntegrationTests {
         assertThat(response.getBody()).contains("CountryService").contains("getCountry");
     }
 
+    @Test
+    void soapDetectServicesEndpoint_rejectsMalformedWsdl() {
+        ResponseEntity<String> broken = restTemplate.postForEntity("/starter-wizard.detect-services",
+                Map.of("wsdl", "<?xml version=\"1.0\"?><root>not a valid wsdl</root>"), String.class);
+        assertThat(broken.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(broken.getBody()).contains("Invalid WSDL");
+
+        ResponseEntity<String> blank = restTemplate.postForEntity("/starter-wizard.detect-services",
+                Map.of("wsdl", "  "), String.class);
+        assertThat(blank.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(blank.getBody()).isEqualTo("[]");
+    }
+
+    @Test
+    void openApiDetectPathsEndpoint() {
+        ResponseEntity<String> ok = restTemplate.postForEntity("/starter-wizard.detect-paths", Map.of("spec", """
+                openapi: 3.0.3
+                info: { title: Petstore, version: 1.0.0 }
+                paths:
+                  /pets:
+                    get: { responses: { '200': { description: ok } } }
+                    post: { responses: { '201': { description: created } } }
+                """), String.class);
+        assertThat(ok.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ok.getBody()).contains("GET /pets").contains("POST /pets");
+
+        ResponseEntity<String> broken = restTemplate.postForEntity("/starter-wizard.detect-paths",
+                Map.of("spec", "this: is: not: openapi: ["), String.class);
+        assertThat(broken.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(broken.getBody()).contains("Invalid OpenAPI spec").contains("messages");
+    }
+
     private Map<String, Object> soapBaseBody() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("groupId", "com.menora");

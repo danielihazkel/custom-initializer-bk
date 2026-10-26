@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { mayLeave } from '@shared/ui/leaveGuard'
 {{#hasListStatePages}}
 import type { FilterValues, ListState } from '@shared/ui'
 {{/hasListStatePages}}
@@ -54,12 +55,22 @@ export function toHash({ view, arg, query }: Route): string {
  */
 export function useRoute(): [Route, (next: Route) => void, (next: Route) => void] {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash))
+  const current = useRef(route)
+  current.current = route
   useEffect(() => {
-    const onHashChange = () => setRoute(parseRoute(window.location.hash))
+    const onHashChange = () => {
+      // Back/Forward away from a form with unsaved edits: staying puts the page's address back.
+      if (!mayLeave()) {
+        window.history.pushState(null, '', toHash(current.current))
+        return
+      }
+      setRoute(parseRoute(window.location.hash))
+    }
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
   const navigate = (next: Route) => {
+    if (!mayLeave()) return
     window.location.hash = toHash(next)
     setRoute(next)
   }

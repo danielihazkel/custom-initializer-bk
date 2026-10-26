@@ -7,12 +7,15 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 {{/hasEnumFields}}
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#listUrlState}}type ListState, {{/listUrlState}}{{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
+import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
 import { SectionHeader, Chip{{#hasViewToggle}}, Tabs{{/hasViewToggle}}{{#mutable}}, Button{{/mutable}}{{^mutable}}{{#optScaffoldCsvExport}}, Button{{/optScaffoldCsvExport}}{{/mutable}} } from '@shared/ui/menora'
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
 import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 {{#mutable}}import { {{EntityName}}Form, validate{{EntityName}}{{#importApplicable}}, {{EntityName}}ImportFields{{/importApplicable}} } from '@features/{{entityNameKebab}}-form'
-import { ApiError } from '@shared/api'
-{{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
+import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail}}{{/lockingApplicable}} } from '@shared/api'
+{{#lockingApplicable}}import { StaleNotice } from '@shared/ui/StaleNotice'
+{{/lockingApplicable}}{{#inlineEditApplicable}}import { InlineCell, type InlineKind } from '@shared/ui/InlineCell'
+{{/inlineEditApplicable}}{{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
 {{/optScaffoldCsvExport}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
 {{/importApplicable}}
 {{#listSideDetail}}import { api } from '@shared/api'
@@ -44,14 +47,25 @@ const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?
 {{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
 {{/bulkUpdatableFields}}}
 {{/viewTable}}{{/bulkUpdateApplicable}}
-{{#wholeViews}}/** The most records the board or the calendar loads at once. */
+{{#inlineEditApplicable}}/** The table cells that are edited in place, by field. */
+const INLINE_FIELDS: Record<string, { kind: InlineKind; options?: { value: string; label: string }[] }> = {
+{{#bulkUpdatableFields}}  '{{name}}': { kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
+{{/bulkUpdatableFields}}}
+{{/inlineEditApplicable}}{{#wholeViews}}/** The most records the board or the calendar loads at once. */
 const WHOLE_VIEW_LIMIT = 500
 
-{{/wholeViews}}/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
+{{/wholeViews}}{{#lockingApplicable}}/** A save refused because the record changed since it was read (the API's 409 with `stale`). */
+const isStale = (e: unknown) =>
+  e instanceof ApiError && e.status === 409 && (e.body as { stale?: boolean } | undefined)?.stale === true
+
+{{/lockingApplicable}}/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
 const rowKey = (row: {{EntityName}}) => {{#hasCompositePk}}[{{#pkFields}}String(row.{{name}}){{^last}}, {{/last}}{{/pkFields}}].join('/'){{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as string | number{{/hasCompositePk}}
 
 {{#hasPages}}
-interface {{EntityName}}PageProps {
+{{#listActionsConfigurable}}/** A list action a list page can leave out (its hideActions). */
+type ListAction = 'new' | 'edit' | 'delete' | 'export' | 'import' | 'bulk'
+
+{{/listActionsConfigurable}}interface {{EntityName}}PageProps {
 {{#hasFilters}}
   /** Filter values the page opens with (a preset-filtered list page). */
   initialFilters?: FilterValues
@@ -100,6 +114,10 @@ interface {{EntityName}}PageProps {
   /** Rows per page the list opens with (default: 20). */
   initialPageSize?: number
 {{/listConfigurable}}
+{{#listActionsConfigurable}}
+  /** The actions this list leaves out — presentation only, the API still answers them. */
+  hideActions?: readonly ListAction[]
+{{/listActionsConfigurable}}
 }
 
 {{/hasPages}}
@@ -107,13 +125,21 @@ interface {{EntityName}}PageProps {
  *  to "status = OPEN" is an open one, and so shows up in the list it was made from. */
 function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
   const record: Record<string, unknown> = {}
-{{#filterFields}}{{#isEnumFilter}}  if (values['{{name}}']) record['{{name}}'] = values['{{name}}']
+{{#filterFields}}{{#isEnumFilter}}  if (oneValue(values['{{name}}'])) record['{{name}}'] = values['{{name}}']
 {{/isEnumFilter}}{{#isBooleanFilter}}  if (values['{{name}}']) record['{{name}}'] = values['{{name}}'] === 'true'
-{{/isBooleanFilter}}{{#isRelationFilter}}  if (values['{{name}}']) record['{{name}}'] = {{#isTargetPkNumeric}}Number(values['{{name}}']){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}values['{{name}}']{{/isTargetPkNumeric}}
+{{/isBooleanFilter}}{{#isRelationFilter}}  if (oneValue(values['{{name}}'])) record['{{name}}'] = {{#isTargetPkNumeric}}Number(values['{{name}}']){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}values['{{name}}']{{/isTargetPkNumeric}}
 {{/isRelationFilter}}{{/filterFields}}  return record as Partial<{{EntityName}}>
 }
 
-{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+{{#fromFiltersChecksOne}}/** A filter set to exactly one value; `OPEN,CLOSED` names no single value to start with. */
+function oneValue(value: string | undefined): boolean {
+  return !!value && !value.includes(',')
+}
+
+{{/fromFiltersChecksOne}}{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}}{{#listActionsConfigurable}}, hideActions{{/listActionsConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+  // This browser's own settings for the list — rows per page, sort, view, hidden columns — saved as
+  // they change; the list opens with them unless the route says otherwise.
+  const [prefs] = useState(() => readListPrefs('{{entityNameKebab}}', columns.flatMap(c => c.sortKey ? [c.sortKey] : []), {{{viewModesTs}}}))
 {{#listUrlState}}
   // What the list opens with when the route says nothing — the parts it does not report back.
   const openingSize = {{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20
@@ -121,23 +147,37 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
   const openingView = {{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}'
   const routeView = ({{{viewModesTs}}} as string[]).includes(listState?.view ?? '') ? listState?.view as {{viewModeType}} : undefined
   const [page, setPage] = useState(listState?.page ?? 0)
-  const [size, setSize] = useState(listState?.size ?? openingSize)
-  const [sort, setSort] = useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : JSON.parse(openingSort))
+  const [size, setSize] = useState(listState?.size ?? prefs.size ?? openingSize)
+  const [sort, setSort] = useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : prefs.sort !== undefined ? prefs.sort : JSON.parse(openingSort))
   const [search, setSearch] = useState(listState?.q ?? '')
   const [debouncedSearch, setDebouncedSearch] = useState(listState?.q ?? '')
   // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
-  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>(routeView ?? openingView)
+  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>(routeView ?? (prefs.view as {{viewModeType}} | undefined) ?? openingView)
 {{/listUrlState}}
 {{^listUrlState}}
+  // What the list opens with when this browser has saved nothing for it.
+  const openingSize = {{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20
+  const openingSort = JSON.stringify({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
+  const openingView = {{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}'
   const [page, setPage] = useState(0)
-  const [size, setSize] = useState({{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20)
-  const [sort, setSort] = useState<SortSpec | null>({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
+  const [size, setSize] = useState(prefs.size ?? openingSize)
+  const [sort, setSort] = useState<SortSpec | null>(prefs.sort !== undefined ? prefs.sort : JSON.parse(openingSort))
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
-  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>({{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}')
+  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>((prefs.view as {{viewModeType}} | undefined) ?? openingView)
 {{/listUrlState}}
   const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
+  const [hiddenColumns{{#viewTable}}, setHiddenColumns{{/viewTable}}] = useState<string[]>(prefs.hidden ?? [])
+  // Only what differs from how the list opens by default is kept.
+  useEffect(() => {
+    writeListPrefs('{{entityNameKebab}}', {
+      size: size === openingSize ? undefined : size,
+      sort: JSON.stringify(sort) === openingSort ? undefined : sort,
+      view: viewMode === openingView ? undefined : viewMode,
+      hidden: hiddenColumns.length > 0 ? hiddenColumns : undefined,
+    })
+  }, [size, sort, viewMode, hiddenColumns, openingSize, openingSort, openingView])
 {{#listConfigurable}}
   // A list page may show an ordered subset of the columns.
   const shown = columnKeys ? columnKeys.flatMap(k => columns.filter(c => c.key === k)) : columns
@@ -269,6 +309,11 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [pendingDelete, setPendingDelete] = useState<{{EntityName}} | null>(null)
   const [deleting, setDeleting] = useState(false)
+{{#lockingApplicable}}
+  // Set when a save is refused because someone saved the record first; the form then offers
+  // to load their version or to save over it.
+  const [stale, setStale] = useState(false)
+{{/lockingApplicable}}
 
   // Has the user changed anything since the drawer opened? Drives the discard guard.
   const dirty = editing != null && JSON.stringify(editing) !== JSON.stringify(initial)
@@ -285,18 +330,21 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
     setEditing({{#newFromFilters}}{ ...{{/newFromFilters}}{{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}}{{#newFromFilters}}, ...fromFilters(filters) }{{/newFromFilters}})
     setInitial({{#newFromFilters}}{ ...{{/newFromFilters}}{{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}}{{#newFromFilters}}, ...fromFilters(filters) }{{/newFromFilters}})
     setIsNew(true)
-    setFormErrors({})
+{{#lockingApplicable}}    setStale(false)
+{{/lockingApplicable}}    setFormErrors({})
     setDrawerOpen(true)
   }
   function openEdit(row: {{EntityName}}) {
     setEditing({ ...row })
     setInitial({ ...row })
     setIsNew(false)
-    setFormErrors({})
+{{#lockingApplicable}}    setStale(false)
+{{/lockingApplicable}}    setFormErrors({})
     setDrawerOpen(true)
   }
   function close() {
-    setDrawerOpen(false)
+{{#lockingApplicable}}    setStale(false)
+{{/lockingApplicable}}    setDrawerOpen(false)
     setEditing(null)
     setFormErrors({})
   }
@@ -330,14 +378,53 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
         setFormErrors(e.fieldErrors)
         toast.error(t('fixHighlighted'))
         focusFirstInvalid()
-      } else {
+      }{{#lockingApplicable}} else if (isStale(e)) {
+        setStale(true)
+      }{{/lockingApplicable}} else {
         toast.error(e instanceof Error ? e.message : String(e))
       }
     } finally {
       setSaving(false)
     }
   }
-  async function confirmDelete() {
+{{#lockingApplicable}}  /** The record as it is now on the server (the row being edited, re-read by its key). */
+  function fetchCurrent(row: Partial<{{EntityName}}>) {
+    const key = [{{#pkFields}}row.{{name}}{{^last}}, {{/last}}{{/pkFields}}].map(v => encodeURIComponent(String(v))).join('/')
+    return api.get<{{EntityName}}>(`/api/{{entityNamePluralKebab}}/${key}`)
+  }
+  async function loadTheirs() {
+    if (!editing) return
+    setSaving(true)
+    try {
+      const current = await fetchCurrent(editing)
+      setEditing({ ...current })
+      setInitial({ ...current })
+      setFormErrors({})
+      setStale(false)
+      toast.success(t('staleLoaded'))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+  async function saveMineAnyway() {
+    if (!editing) return
+    setSaving(true)
+    try {
+      // Take the current version so the server accepts the draft over the other change.
+      const current = await fetchCurrent(editing)
+      await update({{#hasCompositePk}}[{{#pkFields}}editing.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}editing.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...editing, version: current.version } as {{EntityName}})
+      toast.success(t('xUpdated', { x: '{{entityLabel}}' }))
+      close()
+    } catch (e) {
+      if (isStale(e)) setStale(true)
+      else toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+{{/lockingApplicable}}  async function confirmDelete() {
     if (!pendingDelete) return
     const removed = pendingDelete
     setDeleting(true)
@@ -364,7 +451,49 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
       setDeleting(false)
     }
   }
-{{/mutable}}{{#viewKanban}}
+{{#inlineEditApplicable}}
+
+  // A cell edited in place: checked like the form, saved with the row's PUT. A rejection keeps the
+  // cell's editor open (InlineCell), so a mistake can be fixed where it was made.
+  async function saveCell(row: {{EntityName}}, field: string, value: unknown) {
+    const next = { ...row, [field]: value } as {{EntityName}}
+    const problem = validate{{EntityName}}(next)[field]
+    if (problem) {
+      toast.error(problem)
+      throw new Error(problem)
+    }
+    try {
+      await update(row.{{pkField.name}} as number | string, next)
+      toast.success(t('xUpdated', { x: '{{entityLabel}}' }))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+{{#lockingApplicable}}      // Someone saved the row first: show what is there now instead of keeping a stale editor.
+      if (isStale(e)) {
+        await reload()
+        return
+      }
+{{/lockingApplicable}}      throw e
+    }
+  }
+  const inline = (cols: Column<{{EntityName}}>[]): Column<{{EntityName}}>[] => cols.map(c => {
+    const spec = c.sortKey ? INLINE_FIELDS[c.sortKey] : undefined
+    if (!spec || !c.sortKey) return c
+    const field = c.sortKey
+    return {
+      ...c,
+      render: (r: {{EntityName}}) => (
+        <InlineCell
+          label={c.label}
+          kind={spec.kind}
+          options={spec.options}
+          value={(r as unknown as Record<string, unknown>)[field]}
+          display={c.render(r)}
+          onSave={v => saveCell(r, field, v)}
+        />
+      ),
+    }
+  })
+{{/inlineEditApplicable}}{{/mutable}}{{#viewKanban}}
   // Kanban drag-and-drop writes the new lane value back. On failure the board is reloaded so
   // the card snaps back to its real lane instead of silently showing a move that never saved.
   async function onKanbanMove(row: {{EntityName}}, value: string) {
@@ -439,8 +568,23 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
 {{/viewTable}}{{/bulkUpdateApplicable}}
   // An empty list offers the first record — unless a search or filter is what emptied it.
   const filtered = debouncedSearch !== ''{{#hasFilters}} || Object.values(filters).some(v => v !== ''){{/hasFilters}}
-{{#mutable}}  const emptyAction = { label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasWizardPage}}openNew{{/hasWizardPage}}{{#hasWizardPage}}onCreate ?? openNew{{/hasWizardPage}} }
-{{/mutable}}  const pagination = {
+{{#listActionsConfigurable}}  // What this list page leaves out (its hideActions): the buttons go; the API still answers them.
+  const can = (action: ListAction) => !hideActions?.includes(action)
+{{/listActionsConfigurable}}{{#mutable}}  const emptyAction = {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{ label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasWizardPage}}openNew{{/hasWizardPage}}{{#hasWizardPage}}onCreate ?? openNew{{/hasWizardPage}} }
+{{#listActionsConfigurable}}  const editRow = can('edit') ? openEdit : undefined
+  const deleteRow = can('delete') ? setPendingDelete : undefined
+{{/listActionsConfigurable}}{{/mutable}}{{#viewTable}}  // The Columns menu: hide columns, or forget everything this browser saved for the list.
+  const columnMenu = {
+    hidden: hiddenColumns,
+    onChange: setHiddenColumns,
+    onReset: () => {
+      setHiddenColumns([])
+      setSize(openingSize)
+      setSort(JSON.parse(openingSort))
+{{#hasViewToggle}}      setViewMode(openingView)
+{{/hasViewToggle}}    },
+  }
+{{/viewTable}}  const pagination = {
     pageNumber,
     pageSize,
     totalPages,
@@ -474,9 +618,9 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
 {{#isView}}          <Chip tone="outlined" label={t('readOnlyView')} />
 {{/isView}}        </div>
         <div className="flex items-center gap-2">
-{{#optScaffoldCsvExport}}          <Button variant="outlined" className="mn-btn--compact" label={download.busy ? t('exporting') : t('export')} onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))} />
-{{/optScaffoldCsvExport}}{{#importApplicable}}          <Button variant="outlined" className="mn-btn--compact" label={t('import')} onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) } />
-{{/importApplicable}}{{#mutable}}          <Button variant="primary" className="mn-btn--compact" label={t('newX', { x: '{{entityLabel}}' })} {{^hasWizardPage}}onClick={openNew}{{/hasWizardPage}}{{#hasWizardPage}}onClick={onCreate ?? openNew}{{/hasWizardPage}} />
+{{#optScaffoldCsvExport}}          {{#listActionsConfigurable}}{can('export') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={download.busy ? t('exporting') : t('export')} onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
+{{/optScaffoldCsvExport}}{{#importApplicable}}          {{#listActionsConfigurable}}{can('import') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={t('import')} onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) } />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
+{{/importApplicable}}{{#mutable}}          {{#listActionsConfigurable}}{can('new') && {{/listActionsConfigurable}}<Button variant="primary" className="mn-btn--compact" label={t('newX', { x: '{{entityLabel}}' })} {{^hasWizardPage}}onClick={openNew}{{/hasWizardPage}}{{#hasWizardPage}}onClick={onCreate ?? openNew}{{/hasWizardPage}} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
 {{/mutable}}        </div>
       </div>
 
@@ -557,9 +701,11 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
           rowKey={rowKey}
           loading={loading}
           onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
-{{#mutable}}          onEdit={openEdit}
+{{#mutable}}{{^listActionsConfigurable}}          onEdit={openEdit}
           onDelete={setPendingDelete}
-{{/mutable}}          search={search}
+{{/listActionsConfigurable}}{{#listActionsConfigurable}}          onEdit={editRow}
+          onDelete={deleteRow}
+{{/listActionsConfigurable}}{{/mutable}}          search={search}
           onSearchChange={setSearch}
 {{#hasStringFields}}          searchable={true}
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
@@ -576,9 +722,13 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
           groupField="{{kanbanField}}"
           groupValues={[{{#kanbanColumns}}{ value: '{{value}}', label: {{labelExpr}} }{{^last}}, {{/last}}{{/kanbanColumns}}]}
           onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
-          onEdit={openEdit}
+{{^listActionsConfigurable}}          onEdit={openEdit}
           onDelete={setPendingDelete}
           onMove={onKanbanMove}
+{{/listActionsConfigurable}}{{#listActionsConfigurable}}          onEdit={editRow}
+          onDelete={deleteRow}
+          onMove={can('edit') ? onKanbanMove : undefined}
+{{/listActionsConfigurable}}
           totals={laneTotals}
           filtered={filtered}
           emptyAction={emptyAction}
@@ -603,20 +753,23 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
       ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
         <Table
           caption="{{entityLabelPlural}}"
-          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
+          columns={{#inlineEditApplicable}}{{#listActionsConfigurable}}{can('edit') ? inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}}) : {{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}}}{{/listActionsConfigurable}}{{^listActionsConfigurable}}{inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}})}{{/listActionsConfigurable}}{{/inlineEditApplicable}}{{^inlineEditApplicable}}{{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}{{/inlineEditApplicable}}
+          columnMenu={columnMenu}
           rows={items}
           rowKey={rowKey}
           loading={loading}
           onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
-{{#mutable}}          onEdit={openEdit}
+{{#mutable}}{{^listActionsConfigurable}}          onEdit={openEdit}
           onDelete={setPendingDelete}
-{{/mutable}}          sort={sort}
+{{/listActionsConfigurable}}{{#listActionsConfigurable}}          onEdit={editRow}
+          onDelete={deleteRow}
+{{/listActionsConfigurable}}{{/mutable}}          sort={sort}
           onSortChange={setSort}
           search={search}
           onSearchChange={setSearch}
 {{#hasStringFields}}          searchable={true}
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
-{{/hasStringFields}}{{#bulkSelectApplicable}}          selectable={true}
+{{/hasStringFields}}{{#bulkSelectApplicable}}{{^listActionsConfigurable}}          selectable={true}{{/listActionsConfigurable}}{{#listActionsConfigurable}}          selectable={can('bulk')}{{/listActionsConfigurable}}
           isRowSelected={isRowSelected}
           onToggleRow={toggleRow}
           allOnPageSelected={allOnPageSelected}
@@ -636,8 +789,14 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
                 <h2 className="text-sm font-semibold text-fg">{t('xDetails', { x: '{{entityLabel}}' })}</h2>
                 <div className="flex items-center gap-3">
 {{#mutable}}
+{{^listActionsConfigurable}}
                   <button type="button" onClick={() => openEdit(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('edit')}</button>
                   <button type="button" onClick={() => setPendingDelete(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('delete')}</button>
+{{/listActionsConfigurable}}
+{{#listActionsConfigurable}}
+                  {can('edit') && <button type="button" onClick={() => openEdit(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('edit')}</button>}
+                  {can('delete') && <button type="button" onClick={() => setPendingDelete(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('delete')}</button>}
+{{/listActionsConfigurable}}
 {{/mutable}}
                   <button type="button" onClick={() => onSelect?.(undefined)} className="text-xs font-medium text-muted hover:text-fg" aria-label={t('close')}>×</button>
                 </div>
@@ -666,7 +825,8 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
         saving={saving}
         dirty={dirty}
       >
-        {editing && (
+{{#lockingApplicable}}        {stale && <StaleNotice busy={saving} onReload={loadTheirs} onOverwrite={saveMineAnyway} />}
+{{/lockingApplicable}}        {editing && (
           <{{EntityName}}Form
             value={editing}
             onChange={next => {
@@ -730,8 +890,9 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
         open={detailRow !== null}
         title={t('xDetails', { x: '{{entityLabel}}' })}
         onClose={() => setDetailRow(null)}
-{{#mutable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
-{{/mutable}}      >
+{{#mutable}}{{^listActionsConfigurable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
+{{/listActionsConfigurable}}{{#listActionsConfigurable}}        onEdit={can('edit') ? () => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } } : undefined}
+{{/listActionsConfigurable}}{{/mutable}}      >
         {detailRow && <{{EntityName}}Detail value={detailRow} />}
       </DetailDrawer>
     </div>

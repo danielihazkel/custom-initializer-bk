@@ -650,7 +650,7 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.get("bank/frontend/src/pages/ledger/ui/LedgerPage.tsx")).contains("searchable={false}");
         assertThat(entries.get("bank/frontend/src/shared/ui/Table.tsx"))
                 .contains("searchable")
-                .contains("{searchable &&");
+                .contains("{searchable ? (");
     }
 
     @Test
@@ -897,10 +897,10 @@ class FullstackStarterIntegrationTests {
         // Service copies the association on update and filters by the relation's FK.
         assertThat(contentEndingWith(entries, "/service/OrderService.java"))
                 .contains("existing.setCustomer(updated.getCustomer());")
-                .contains("Long customerId")
-                .contains("cb.equal(root.get(\"customer\").get(\"id\"), filters.customerId())");
+                .contains("List<Long> customerId")
+                .contains("root.get(\"customer\").get(\"id\").in(filters.customerId())");
         assertThat(contentEndingWith(entries, "/controller/OrderController.java"))
-                .contains("@RequestParam(required = false) Long customerId");
+                .contains("@RequestParam(required = false) List<Long> customerId");
 
         // Frontend: type + form + page carry customerId (and the label).
         assertThat(entries.get("shop/frontend/src/entities/order/model/types.ts"))
@@ -2330,7 +2330,7 @@ class FullstackStarterIntegrationTests {
         // Cards-only: the page generates the CardGrid and nothing else — no Table, no toggle bar.
         String productPage = entries.get("shop/frontend/src/pages/product/ui/ProductPage.tsx");
         assertThat(productPage)
-                .contains("useState<'cards'>('cards')")
+                .contains("useState<'cards'>((prefs.view as 'cards' | undefined) ?? openingView)")
                 .contains("<CardGrid")
                 .doesNotContain("<Table")
                 .doesNotContain("aria-pressed={viewMode === 'cards'}")   // no toggle button
@@ -2339,7 +2339,7 @@ class FullstackStarterIntegrationTests {
         assertThat(entries).containsKey("shop/frontend/src/features/product-form/ui/ProductDetail.tsx");
         // An entity with no listViews defaults to table-only (no Cards, no toggle).
         assertThat(entries.get("shop/frontend/src/pages/plain/ui/PlainPage.tsx"))
-                .contains("useState<'table'>('table')")
+                .contains("useState<'table'>((prefs.view as 'table' | undefined) ?? openingView)")
                 .doesNotContain("<CardGrid");
 
         // The enum field drives a dashboard breakdown chart; Plain (no enum/boolean) gets none.
@@ -2403,9 +2403,11 @@ class FullstackStarterIntegrationTests {
 
         // Task page: only the selected Table + Kanban views, a toggle across just those, plus the
         // (view-independent) filter bar, CSV export, and bulk-select table. No Cards/Calendar code.
-        String taskPage = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+        // CRLF templates on a Windows checkout render CRLF; the multi-line checks below expect LF.
+        String taskPage = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx").replace("\r\n", "\n");
         assertThat(taskPage)
-                .contains("const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')")  // initial = first selected (canonical order)
+                .contains("const [viewMode, setViewMode] = useState<'table' | 'kanban'>((prefs.view as 'table' | 'kanban' | undefined) ?? openingView)")
+                .contains("const openingView = 'table'")  // initial = first selected (canonical order)
                 .contains("KanbanBoard, FilterBar")
                 .contains("<KanbanBoard")
                 .contains("groupField=\"status\"")
@@ -2472,7 +2474,7 @@ class FullstackStarterIntegrationTests {
         // Event page: calendar-only — no toggle bar, no Table/CardGrid/KanbanBoard.
         String eventPage = entries.get("ops/frontend/src/pages/event/ui/EventPage.tsx");
         assertThat(eventPage)
-                .contains("useState<'calendar'>('calendar')")
+                .contains("useState<'calendar'>((prefs.view as 'calendar' | undefined) ?? openingView)")
                 .contains("<CalendarView")
                 .contains("dateField=\"startsAt\"")
                 // The calendar loads the month on screen through the date's own filter (whole days).
@@ -2487,7 +2489,7 @@ class FullstackStarterIntegrationTests {
         // Plain page: legacy listView="kanban" down-grades to table-only, no filter bar.
         String plainPage = entries.get("ops/frontend/src/pages/plain/ui/PlainPage.tsx");
         assertThat(plainPage)
-                .contains("const [viewMode] = useState<'table'>('table')")   // no toggle → no unused setter
+                .contains("const [viewMode] = useState<'table'>((prefs.view as 'table' | undefined) ?? openingView)")   // no toggle → no unused setter
                 .doesNotContain("KanbanBoard")
                 .doesNotContain("onKanbanMove")
                 .doesNotContain("WHOLE_VIEW_LIMIT")
@@ -2498,7 +2500,7 @@ class FullstackStarterIntegrationTests {
         String taskService = contentEndingWith(entries, "/service/TaskService.java");
         assertThat(taskService)
                 .contains("public record Filters(")
-                .contains("TaskStatusType status")
+                .contains("List<TaskStatusType> status")
                 .contains("Integer priorityMin, Integer priorityMax")
                 .contains("LocalDate dueDateFrom, LocalDate dueDateTo")
                 .contains("findAll(String q, Filters filters, Pageable pageable)")
@@ -2507,7 +2509,7 @@ class FullstackStarterIntegrationTests {
         // Backend Task controller: filter params, CSV export, bulk-delete endpoint.
         String taskController = contentEndingWith(entries, "/controller/TaskController.java");
         assertThat(taskController)
-                .contains("@RequestParam(required = false) TaskStatusType status")
+                .contains("@RequestParam(required = false) List<TaskStatusType> status")
                 .contains("DateTimeFormat.ISO.DATE")
                 .contains("@GetMapping(\"/export.csv\")")
                 .contains("@DeleteMapping(\"/bulk\")")
@@ -2649,6 +2651,258 @@ class FullstackStarterIntegrationTests {
         });
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).contains("Unknown scaffold option 'bogus' on entity Note");
+    }
+
+    @Test
+    void fullstackEndpoint_optimisticLockingVersionsWritableEntities() throws Exception {
+        // Invoice inherits the project opt; Note opts out; Summary is a read-only view.
+        Map<String, Object> invoice = new LinkedHashMap<>();
+        invoice.put("name", "Invoice");
+        invoice.put("fields", List.of(pkField(), Map.of("name", "number", "type", "String")));
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "Note");
+        note.put("fields", List.of(pkField(), Map.of("name", "body", "type", "String")));
+        note.put("opts", Map.of("optimisticLocking", false));
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("name", "Summary");
+        summary.put("readOnly", true);
+        summary.put("viewQuery", "SELECT id, number FROM invoice");
+        summary.put("fields", List.of(Map.of("name", "id", "type", "Long", "primaryKey", true),
+                Map.of("name", "number", "type", "String")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "books");
+        body.put("packageName", "com.menora.books");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(invoice, note, summary));
+        body.put("opts", Map.of("scaffold", List.of("optimisticLocking")));
+
+        Map<String, String> entries = generateZip(body);
+
+        String entity = contentEndingWith(entries, "/entity/Invoice.java").replace("\r\n", "\n");
+        assertThat(entity).contains("    @Version\n    @Column(name = \"version\")\n    private Long version;")
+                .contains("public void setVersion(Long version)");
+        String dto = contentEndingWith(entries, "/dto/InvoiceDto.java");
+        assertThat(dto).contains("Long version)").contains("entity.getVersion()").contains("entity.setVersion(this.version);");
+        String service = contentEndingWith(entries, "/service/InvoiceService.java");
+        assertThat(service)
+                .contains("import org.springframework.orm.ObjectOptimisticLockingFailureException;")
+                .contains("if (updated.getVersion() != null && !updated.getVersion().equals(existing.getVersion())) {")
+                .contains("throw new ObjectOptimisticLockingFailureException(Invoice.class, id);")
+                .contains("entity.setVersion(null);");
+        String handler = contentEndingWith(entries, "/web/ApiExceptionHandler.java");
+        assertThat(handler).contains("@ExceptionHandler(ObjectOptimisticLockingFailureException.class)")
+                .contains("pd.setProperty(\"stale\", true);");
+
+        String types = entries.get("books/frontend/src/entities/invoice/model/types.ts");
+        assertThat(types).contains("version?: number | null");
+        String page = entries.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx");
+        assertThat(page).contains("import { StaleNotice } from '@shared/ui/StaleNotice'")
+                .contains("const isStale = (e: unknown) =>")
+                .contains("} else if (isStale(e)) {")
+                .contains("{ ...editing, version: current.version }")
+                .contains("<StaleNotice busy={saving} onReload={loadTheirs} onOverwrite={saveMineAnyway} />");
+        assertThat(entries).containsKey("books/frontend/src/shared/ui/StaleNotice.tsx");
+        assertThat(entries.get("books/frontend/src/shared/i18n/strings.ts")).contains("saveMineAnyway: 'Save mine anyway'");
+
+        // Opted out, and the read-only view: no version anywhere.
+        assertThat(contentEndingWith(entries, "/entity/Note.java")).doesNotContain("@Version");
+        assertThat(contentEndingWith(entries, "/service/NoteService.java")).doesNotContain("ObjectOptimisticLockingFailureException");
+        assertThat(entries.get("books/frontend/src/pages/note/ui/NotePage.tsx")).doesNotContain("StaleNotice").doesNotContain("isStale");
+        assertThat(contentEndingWith(entries, "/entity/Summary.java")).doesNotContain("@Version");
+        assertThat(entries.get("books/frontend/src/entities/summary/model/types.ts")).doesNotContain("version");
+
+        // An entity can opt in on its own: the shared handler and notice still ship.
+        Map<String, Object> lockedNote = new LinkedHashMap<>(note);
+        lockedNote.put("opts", Map.of("optimisticLocking", true));
+        Map<String, Object> soloBody = new LinkedHashMap<>(body);
+        soloBody.put("entities", List.of(invoice, lockedNote));
+        soloBody.remove("opts");
+        Map<String, String> solo = generateZip(soloBody);
+        assertThat(contentEndingWith(solo, "/entity/Note.java")).contains("@Version");
+        assertThat(contentEndingWith(solo, "/entity/Invoice.java")).doesNotContain("@Version");
+        assertThat(contentEndingWith(solo, "/web/ApiExceptionHandler.java")).contains("ObjectOptimisticLockingFailureException");
+        assertThat(solo).containsKey("books/frontend/src/shared/ui/StaleNotice.tsx");
+
+        // Without the opt nothing changes.
+        Map<String, Object> plainBody = new LinkedHashMap<>(body);
+        plainBody.remove("opts");
+        plainBody.put("entities", List.of(invoice));
+        Map<String, String> plain = generateZip(plainBody);
+        assertThat(contentEndingWith(plain, "/web/ApiExceptionHandler.java")).doesNotContain("Optimistic");
+        assertThat(plain).doesNotContainKey("books/frontend/src/shared/ui/StaleNotice.tsx");
+        assertThat(plain.get("books/frontend/src/shared/i18n/strings.ts")).doesNotContain("staleTitle");
+    }
+
+    @Test
+    void fullstackEndpoint_inlineEditMakesScalarCellsEditable() throws Exception {
+        Map<String, Object> task = new LinkedHashMap<>();
+        task.put("name", "Task");
+        task.put("fields", List.of(pkField(),
+                Map.of("name", "title", "type", "String", "required", true),
+                Map.of("name", "status", "type", "Enum", "enumValues", List.of("OPEN", "DONE")),
+                Map.of("name", "estimate", "type", "Integer")));
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "Note");
+        note.put("fields", List.of(pkField(), Map.of("name", "body", "type", "String")));
+        note.put("opts", Map.of("inlineEdit", false));
+
+        for (String set : List.of("react-tailwind-crud", "react-menora-digital-crud")) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("artifactId", "ops");
+            body.put("packageName", "com.menora.ops");
+            body.put("bootVersion", "3.2.1");
+            body.put("frontendTemplateSet", set);
+            body.put("entities", List.of(task, note));
+            body.put("opts", Map.of("scaffold", List.of("inlineEdit", "optimisticLocking")));
+            Map<String, String> entries = generateZip(body);
+
+            String page = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+            assertThat(page).as(set)
+                    .contains("import { InlineCell, type InlineKind } from '@shared/ui/InlineCell'")
+                    .contains("  'title': { kind: 'text' },")
+                    .contains("  'status': { kind: 'enum', options: [{ value: 'OPEN', label: 'Open' }, { value: 'DONE', label: 'Done' }] },")
+                    .contains("  'estimate': { kind: 'number' },")
+                    .contains("const problem = validateTask(next)[field]")
+                    .contains("await update(row.id as number | string, next)")
+                    // With locking on, a stale cell save reloads the list instead of keeping the editor.
+                    .contains("if (isStale(e)) {\n        await reload()".replace("\n", page.contains("\r\n") ? "\r\n" : "\n"))
+                    .contains("columns={inline(columns)}");
+            assertThat(entries).containsKey("ops/frontend/src/shared/ui/InlineCell.tsx");
+            assertThat(entries.get("ops/frontend/src/pages/note/ui/NotePage.tsx")).as(set)
+                    .doesNotContain("InlineCell").contains("columns={columns}");
+        }
+
+        // Without the opt the page and the shared UI are as they were.
+        Map<String, Object> plain = new LinkedHashMap<>();
+        plain.put("artifactId", "ops");
+        plain.put("bootVersion", "3.2.1");
+        plain.put("entities", List.of(task));
+        Map<String, String> entries = generateZip(plain);
+        assertThat(entries).doesNotContainKey("ops/frontend/src/shared/ui/InlineCell.tsx");
+        assertThat(entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx")).doesNotContain("INLINE_FIELDS");
+    }
+
+    @Test
+    void fullstackEndpoint_listsOpenRowsRememberTheirSettingsAndGuardUnsavedEdits() throws Exception {
+        Map<String, Object> task = new LinkedHashMap<>();
+        task.put("name", "Task");
+        task.put("fields", List.of(pkField(),
+                Map.of("name", "title", "type", "String"),
+                Map.of("name", "status", "type", "Enum", "enumValues", List.of("OPEN", "DONE"))));
+        task.put("listViews", List.of("table", "kanban"));
+
+        for (String set : List.of("react-tailwind-crud", "react-menora-digital-crud")) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("artifactId", "ops");
+            body.put("bootVersion", "3.2.1");
+            body.put("frontendTemplateSet", set);
+            body.put("entities", List.of(task));
+            body.put("pages", List.of(Map.of("id", "tasks", "type", "entity-list", "entity", "Task")));
+            Map<String, String> entries = generateZip(body);
+
+            String page = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+            assertThat(page).as(set)
+                    // The list opens with this browser's saved settings, keeps them as they change...
+                    .contains("const [prefs] = useState(() => readListPrefs('task', columns.flatMap(c => c.sortKey ? [c.sortKey] : []), ['table', 'kanban']))")
+                    .contains("const [size, setSize] = useState(listState?.size ?? prefs.size ?? openingSize)")
+                    .contains("useState<'table' | 'kanban'>(routeView ?? (prefs.view as 'table' | 'kanban' | undefined) ?? openingView)")
+                    .contains("writeListPrefs('task', {")
+                    // ...and its table offers the Columns menu (hide columns, reset the saved view).
+                    .contains("columnMenu={columnMenu}")
+                    .contains("      setViewMode(openingView)");
+            String table = entries.get("ops/frontend/src/shared/ui/Table.tsx");
+            assertThat(table).as(set)
+                    .contains("columnMenu?: { hidden: string[]; onChange: (hidden: string[]) => void; onReset?: () => void }")
+                    .contains("useListShortcuts(rootRef, searchRef, emptyAction?.onClick)")
+                    .contains("data-list-table");
+            if (set.equals("react-tailwind-crud")) {
+                // A row opens on click and on Enter; the arrows move between rows.
+                assertThat(table).contains("onClick={onView ? e => { if (opensRow(e)) onView(row) } : undefined}")
+                        .contains("onKeyDown={onView ? e => onRowKey(e, () => onView(row)) : undefined}");
+            } else {
+                assertThat(table).contains("onRowOpen={onView}");
+                assertThat(entries.get("ops/frontend/src/shared/ui/menora/Table.tsx")).contains("onRowOpen?: (row: T) => void;");
+            }
+            assertThat(entries).containsKeys("ops/frontend/src/shared/ui/listPrefs.ts", "ops/frontend/src/shared/ui/ColumnMenu.tsx",
+                    "ops/frontend/src/shared/ui/leaveGuard.ts");
+
+            // Unsaved edits: the drawer holds the page while dirty, and moving away asks first.
+            assertThat(entries.get("ops/frontend/src/shared/ui/FormDrawer.tsx")).as(set)
+                    .contains("const release = holdLeave()")
+                    .contains("window.addEventListener('beforeunload', onUnload)");
+            assertThat(entries.get("ops/frontend/src/app/route.ts")).as(set)
+                    .contains("import { mayLeave } from '@shared/ui/leaveGuard'")
+                    .contains("if (!mayLeave()) return");
+            // A dialog over the drawer takes the Escape for itself.
+            assertThat(entries.get("ops/frontend/src/shared/ui/ConfirmDialog.tsx")).as(set)
+                    .contains("e.preventDefault()")
+                    .contains("{busy ? busyLabel : confirmLabel}");
+        }
+    }
+
+    @Test
+    void fullstackEndpoint_shipsTheModelItWasGeneratedFrom() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Map<String, Object> task = Map.of("name", "Task", "fields", List.of(pkField(), Map.of("name", "title", "type", "String")));
+
+        // The editor's snapshot rides along and lands verbatim at the zip root.
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("format", "menora-fullstack-model/1");
+        snapshot.put("meta", Map.of("artifactId", "ops", "groupId", "com.menora"));
+        snapshot.put("entities", List.of(Map.of("name", "Task", "fields", List.of())));
+        snapshot.put("pages", List.of(Map.of("id", "tasks", "type", "entity-list", "entity", "Task", "idLocked", true)));
+        snapshot.put("dismissedWarnings", List.of("unreachable:tasks"));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "ops");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(task));
+        body.put("editorModel", snapshot);
+        Map<String, String> entries = generateZip(body);
+        assertThat(mapper.readTree(entries.get("ops/menora-model.json"))).isEqualTo(mapper.valueToTree(snapshot));
+        assertThat(entries.get("ops/README.md")).contains("## Reopen in the generator").contains("menora-model.json");
+
+        // Without one (curl, an IDE), the file holds the request itself — what was sent, not the
+        // dependencies the template set added.
+        body.remove("editorModel");
+        com.fasterxml.jackson.databind.JsonNode model = mapper.readTree(generateZip(body).get("ops/menora-model.json"));
+        assertThat(model.get("format").asText()).isEqualTo("menora-fullstack-request/1");
+        assertThat(model.get("request").get("artifactId").asText()).isEqualTo("ops");
+        assertThat(model.get("request").get("dependencies")).isEqualTo(mapper.valueToTree(List.of("data-jpa", "web")));
+        assertThat(model.get("request").get("entities").get(0).get("name").asText()).isEqualTo("Task");
+        assertThat(model.get("request").has("editorModel")).isFalse();
+
+        // A model that is not an editor snapshot falls back to the request too.
+        body.put("editorModel", "not a model");
+        assertThat(mapper.readTree(generateZip(body).get("ops/menora-model.json")).get("format").asText())
+                .isEqualTo("menora-fullstack-request/1");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsAVersionFieldUnderOptimisticLocking() {
+        Map<String, Object> invoice = new LinkedHashMap<>();
+        invoice.put("name", "Invoice");
+        invoice.put("fields", List.of(pkField(), Map.of("name", "version", "type", "Integer")));
+        ResponseEntity<String> response = postFullstack(b -> {
+            b.put("artifactId", "books");
+            b.put("bootVersion", "3.2.1");
+            b.put("entities", List.of(invoice));
+            b.put("opts", Map.of("scaffold", List.of("optimisticLocking")));
+        });
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("Entity 'Invoice' already has a 'version' field or column");
+
+        // The same field is fine when the entity opts out.
+        invoice.put("opts", Map.of("optimisticLocking", false));
+        ResponseEntity<String> ok = postFullstack(b -> {
+            b.put("artifactId", "books");
+            b.put("bootVersion", "3.2.1");
+            b.put("entities", List.of(invoice));
+            b.put("opts", Map.of("scaffold", List.of("optimisticLocking")));
+        });
+        assertThat(ok.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     @Test
@@ -2794,7 +3048,7 @@ class FullstackStarterIntegrationTests {
                 // ...and with the list's one-value filters on top (an ACTIVE-filtered list makes ACTIVE rows).
                 .contains("setEditing({ ...newDefaults(), ...fromFilters(filters) })")
                 .contains("setInitial({ ...newDefaults(), ...fromFilters(filters) })")
-                .contains("  if (values['stage']) record['stage'] = values['stage']")
+                .contains("  if (oneValue(values['stage'])) record['stage'] = values['stage']")
                 .contains("  if (values['open']) record['open'] = values['open'] === 'true'")
                 .doesNotContain("setEditing({})");
 

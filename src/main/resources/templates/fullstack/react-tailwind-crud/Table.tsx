@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown, Eye, Pencil, Search, Trash2 } from 'lucide-react'
 import { EmptyState } from './EmptyState'
 import { TableSkeleton } from './Skeleton'
+import { ColumnMenu } from './ColumnMenu'
 import { t } from '../i18n'
 
 export interface Column<T> {
@@ -66,9 +67,58 @@ interface Props<T extends object> {
   filtered?: boolean
   /** Offered on an empty, unfiltered list — "New <entity>". */
   emptyAction?: { label: string; onClick: () => void }
+  /** "Columns": the columns this browser hides (by `sortKey`, else label) — the first always shows. */
+  columnMenu?: { hidden: string[]; onChange: (hidden: string[]) => void; onReset?: () => void }
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
+
+/** A column's key for the column menu: its sort field, else its heading. */
+const columnKey = <T,>(col: Column<T>) => col.sortKey ?? col.label
+
+/** A click on a row opens it — unless it landed on something of its own (a button, a link, a
+ *  checkbox, a cell editor) or ends a text selection. */
+function opensRow(e: ReactMouseEvent) {
+  return !(e.target as HTMLElement).closest('button, a, input, select, textarea, label')
+    && !window.getSelection()?.toString()
+}
+
+/** Enter opens the focused row; the arrow keys move between rows. */
+function onRowKey(e: ReactKeyboardEvent<HTMLTableRowElement>, open: () => void) {
+  if (e.target !== e.currentTarget) return
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    open()
+  } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    const next = e.key === 'ArrowDown' ? e.currentTarget.nextElementSibling : e.currentTarget.previousElementSibling
+    ;(next as HTMLElement | null)?.focus()
+  }
+}
+
+/** `/` focuses a list's search and `n` starts a new record — for the first list on the screen,
+ *  while no field has the focus and no drawer or dialog is open. */
+function useListShortcuts(root: RefObject<HTMLDivElement | null>, search: RefObject<HTMLInputElement | null>, onNew?: () => void) {
+  const newRef = useRef(onNew)
+  newRef.current = onNew
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+      if ((e.target as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable="true"]')) return
+      if (document.querySelector('[role="dialog"]')) return
+      if (document.querySelector('[data-list-table]') !== root.current) return
+      if (e.key === '/' && search.current) {
+        e.preventDefault()
+        search.current.focus()
+      } else if (e.key === 'n' && newRef.current) {
+        e.preventDefault()
+        newRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [root, search])
+}
 
 function nextSort(current: SortSpec | null, field: string): SortSpec | null {
   if (!current || current.field !== field) return { field, direction: 'asc' }
@@ -80,8 +130,13 @@ export function Table<T extends object>({
   columns, rows, rowKey, onView, onEdit, onDelete, loading,
   sort, onSortChange, search, onSearchChange, pagination, searchable = true,
   selectable = false, isRowSelected, onToggleRow, allOnPageSelected, onToggleAllOnPage,
-  filtered = false, emptyAction,
+  filtered = false, emptyAction, columnMenu,
 }: Props<T>) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  useListShortcuts(rootRef, searchRef, emptyAction?.onClick)
+  const allColumns = columns
+  columns = columnMenu ? allColumns.filter((c, i) => i === 0 || !columnMenu.hidden.includes(columnKey(c))) : allColumns
   const { pageNumber, pageSize, totalPages, totalElements, onPageChange, onPageSizeChange } = pagination
   const startRow = totalElements === 0 ? 0 : pageNumber * pageSize + 1
   const endRow = Math.min(totalElements, (pageNumber + 1) * pageSize)
@@ -90,17 +145,31 @@ export function Table<T extends object>({
   const leadCols = selectable ? 1 : 0
 
   return (
-    <div className="space-y-3">
-      {searchable && (
-        <div className="relative max-w-sm">
-          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => onSearchChange(e.target.value)}
-            placeholder={t('search')}
-            className="w-full rounded-lg border border-border bg-surface py-2 ps-9 pe-3 text-sm text-fg placeholder:text-muted shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40"
-          />
+    <div ref={rootRef} className="space-y-3" data-list-table>
+      {(searchable || columnMenu) && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {searchable ? (
+            <div className="relative max-w-sm flex-1">
+              <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <input
+                ref={searchRef}
+                type="text"
+                aria-keyshortcuts="/"
+                value={search}
+                onChange={e => onSearchChange(e.target.value)}
+                placeholder={t('search')}
+                className="w-full rounded-lg border border-border bg-surface py-2 ps-9 pe-3 text-sm text-fg placeholder:text-muted shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40"
+              />
+            </div>
+          ) : <span />}
+          {columnMenu && (
+            <ColumnMenu
+              columns={allColumns.map(c => ({ key: columnKey(c), label: c.label }))}
+              hidden={columnMenu.hidden}
+              onChange={columnMenu.onChange}
+              onReset={columnMenu.onReset}
+            />
+          )}
         </div>
       )}
 
@@ -168,7 +237,10 @@ export function Table<T extends object>({
                 rows.map(row => (
                   <tr
                     key={rowKey(row)}
-                    className="group border-t border-border transition-colors hover:bg-surface-2/60"
+                    className={`group border-t border-border transition-colors hover:bg-surface-2/60${onView ? ' cursor-pointer focus:bg-surface-2/60 focus:outline-none' : ''}`}
+                    tabIndex={onView ? 0 : undefined}
+                    onClick={onView ? e => { if (opensRow(e)) onView(row) } : undefined}
+                    onKeyDown={onView ? e => onRowKey(e, () => onView(row)) : undefined}
                   >
                     {selectable && (
                       <td className="px-5 py-3">

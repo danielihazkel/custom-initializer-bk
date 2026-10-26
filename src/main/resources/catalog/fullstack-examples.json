@@ -179,6 +179,11 @@
             "title": "Latest posts",
             "sortBy": "publishedAt",
             "limit": 6
+          },
+          {
+            "kind": "activity",
+            "title": "What changed",
+            "limit": 8
           }
         ]
       },
@@ -514,7 +519,8 @@
         "type": "entity-list",
         "group": "Catalog",
         "icon": "Package",
-        "entity": "Product"
+        "entity": "Product",
+        "hideActions": ["delete"]
       },
       {
         "id": "order",
@@ -1259,6 +1265,7 @@
         "title": "Sales report",
         "description": "Revenue at a glance: totals, the split by region and the trend per month.",
         "dateRange": "12m",
+        "filters": ["region"],
         "widgets": [
           {
             "kind": "kpi",
@@ -1305,7 +1312,8 @@
             "title": "Revenue by region",
             "groupBy": "region",
             "agg": "sum",
-            "field": "amount"
+            "field": "amount",
+            "drillTo": "revenue"
           },
           {
             "kind": "line",
@@ -1340,6 +1348,7 @@
         "charts": [
           {
             "groupBy": "region",
+            "kind": "donut",
             "agg": "sum",
             "field": "amount"
           },
@@ -1363,6 +1372,7 @@
         },
         "chart": {
           "groupBy": "soldOn",
+          "kind": "area",
           "bucket": "month",
           "agg": "sum",
           "field": "amount"
@@ -1564,6 +1574,13 @@
             "limit": 5
           },
           {
+            "kind": "pivot",
+            "entity": "Task",
+            "title": "Work per person",
+            "groupBy": "assignee",
+            "series": "status"
+          },
+          {
             "kind": "links",
             "title": "Go to",
             "pages": [
@@ -1573,6 +1590,28 @@
               "help"
             ],
             "span": 4
+          }
+        ]
+      },
+      {
+        "id": "open-work",
+        "type": "report",
+        "title": "Open work",
+        "group": "Work",
+        "description": "Everything not done yet: by priority, split by status, and when it falls due.",
+        "entity": "Task",
+        "presetFilter": {
+          "status": "TODO,DOING,REVIEW"
+        },
+        "charts": [
+          {
+            "groupBy": "priority",
+            "kind": "stacked"
+          },
+          {
+            "groupBy": "dueOn",
+            "kind": "area",
+            "bucket": "month"
           }
         ]
       },

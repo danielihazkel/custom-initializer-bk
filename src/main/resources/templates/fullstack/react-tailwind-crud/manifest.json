@@ -38,6 +38,9 @@
     { "source": "Alert.tsx", "path": "src/shared/ui/Alert.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 142 },
     { "source": "EmptyState.tsx", "path": "src/shared/ui/EmptyState.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 143 },
     { "source": "Skeleton.tsx", "path": "src/shared/ui/Skeleton.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 144 },
+    { "source": "leaveGuard.ts", "path": "src/shared/ui/leaveGuard.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
+    { "source": "listPrefs.ts", "path": "src/shared/ui/listPrefs.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
+    { "source": "ColumnMenu.tsx", "path": "src/shared/ui/ColumnMenu.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
     { "source": "ConfirmDialog.tsx", "path": "src/shared/ui/ConfirmDialog.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
     { "source": "DetailDrawer.tsx", "path": "src/shared/ui/DetailDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 145 },
     { "source": "useTheme.ts", "path": "src/shared/ui/useTheme.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147 },
@@ -50,6 +53,8 @@
     { "source": "BoardView.tsx", "path": "src/shared/ui/BoardView.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasBoardPages" },
     { "source": "csv.ts", "path": "src/shared/ui/csv.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCsvImport" },
     { "source": "CsvImport.tsx", "path": "src/shared/ui/CsvImport.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCsvImport" },
+    { "source": "InlineCell.tsx", "path": "src/shared/ui/InlineCell.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasInlineEdit" },
+    { "source": "StaleNotice.tsx", "path": "src/shared/ui/StaleNotice.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasOptimisticLocking" },
 
     { "source": "DashboardPage.tsx.mustache", "path": "src/pages/dashboard/ui/DashboardPage.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 150 },
     { "source": "dashboard-barrel.ts.mustache", "path": "src/pages/dashboard/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 152 },

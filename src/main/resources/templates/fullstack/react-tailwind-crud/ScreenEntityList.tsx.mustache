@@ -78,7 +78,8 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
       columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}}
       initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}}
       initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}}
-      initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasPageTitle}}
+      initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasHideActions}}
+      hideActions={ {{{hideActionsTs}}} }{{/hasHideActions}}{{#hasPageTitle}}
       title={ {{pageTitleExpr}} }{{/hasPageTitle}}{{#hasPageDescription}}
       description={ {{pageDescriptionExpr}} }{{/hasPageDescription}}{{#isTabTarget}}
       embedded={embedded}{{/isTabTarget}}
@@ -87,7 +88,7 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{/listKeepsState}}
 {{^listKeepsState}}
 {{^listTakesQuery}}
-  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#opensRecord}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/opensRecord}}{{#detailSide}} sidePane selectedId={selectedId} onSelect={onSelect}{{/detailSide}}{{#hasWizard}} onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}}{{#hasImportPage}} onImport={() => onNavigate('{{importPageId}}')}{{/hasImportPage}}{{#hasColumns}} columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}} initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}} initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}} initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasPageTitle}} title={ {{pageTitleExpr}} }{{/hasPageTitle}}{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}}{{#isTabTarget}} embedded={embedded}{{/isTabTarget}} />
+  return <{{EntityName}}Page{{#hasPresetFilter}} initialFilters={ {{presetFilterTs}} }{{/hasPresetFilter}}{{#opensRecord}} onOpenRecord={r => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}{{/opensRecord}}{{#detailSide}} sidePane selectedId={selectedId} onSelect={onSelect}{{/detailSide}}{{#hasWizard}} onCreate={() => onNavigate('{{wizardPageId}}')}{{/hasWizard}}{{#hasImportPage}} onImport={() => onNavigate('{{importPageId}}')}{{/hasImportPage}}{{#hasColumns}} columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}} initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}} initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}} initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasHideActions}} hideActions={ {{{hideActionsTs}}} }{{/hasHideActions}}{{#hasPageTitle}} title={ {{pageTitleExpr}} }{{/hasPageTitle}}{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}}{{#isTabTarget}} embedded={embedded}{{/isTabTarget}} />
 {{/listTakesQuery}}
 {{#listTakesQuery}}
   // A different filter set in the route is a fresh list, not an edit of the open one.
@@ -104,7 +105,8 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
       columns={ {{{columnsTs}}} }{{/hasColumns}}{{#hasSort}}
       initialSort={ {{{sortTs}}} }{{/hasSort}}{{#hasInitialView}}
       initialView="{{initialViewOverride}}"{{/hasInitialView}}{{#hasPageSize}}
-      initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasPageTitle}}
+      initialPageSize={ {{pageSize}} }{{/hasPageSize}}{{#hasHideActions}}
+      hideActions={ {{{hideActionsTs}}} }{{/hasHideActions}}{{#hasPageTitle}}
       title={ {{pageTitleExpr}} }{{/hasPageTitle}}{{#hasPageDescription}}
       description={ {{pageDescriptionExpr}} }{{/hasPageDescription}}{{#isTabTarget}}
       embedded={embedded}{{/isTabTarget}}

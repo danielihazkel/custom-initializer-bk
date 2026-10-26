@@ -289,11 +289,33 @@ public final class FullstackRequestValidator {
                     parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
                             pkCountByLower, viewLowerNames);
             checkColumnClashes(p.name(), p.fields(), relations);
+            checkVersionName(p.name(), p.fields(), relations, p.readOnly(), p.viewQuery(), p.opts(), body);
             result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
                     p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts(),
                     parseFormSections(p.rawSections(), p.name(), p.fields(), relations)));
         }
         return result;
+    }
+
+    /**
+     * Optimistic locking adds a {@code version} property mapped to a {@code version} column, so an
+     * entity it applies to may not have a field, relation or column of that name already.
+     */
+    private static void checkVersionName(String entity, List<FieldDefinition> fields, List<RelationDefinition> relations,
+                                         boolean readOnly, String viewQuery, Map<String, Boolean> opts,
+                                         FullstackStarterRequest body) {
+        List<String> scaffold = body.opts() == null ? null : body.opts().get("scaffold");
+        boolean projectOpt = scaffold != null && scaffold.contains("optimisticLocking");
+        Boolean override = opts.get("optimisticLocking");
+        if (readOnly || viewQuery != null || !(override != null ? override : projectOpt)) return;
+        boolean clash = fields.stream().anyMatch(f -> "version".equalsIgnoreCase(f.name())
+                        || "version".equalsIgnoreCase(f.column()))
+                || relations.stream().anyMatch(r -> "version".equalsIgnoreCase(r.fieldName())
+                        || "version".equalsIgnoreCase(r.joinColumn()));
+        if (clash) {
+            throw new WizardArgumentException("Entity '" + entity + "' already has a 'version' field or column, which"
+                    + " optimistic locking needs for itself — rename it, or turn optimistic locking off for this entity");
+        }
     }
 
     /** How many titled sections an entity's form may have (a wizard follows them, one step each). */

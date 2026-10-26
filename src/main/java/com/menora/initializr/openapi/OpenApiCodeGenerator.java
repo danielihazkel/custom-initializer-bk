@@ -99,15 +99,14 @@ public class OpenApiCodeGenerator {
         return out;
     }
 
-    /** For the wizard's live preview — returns {@code "GET /pets"} style strings. */
+    /**
+     * For the wizard's live preview — returns {@code "GET /pets"} style strings. A document
+     * that does not parse throws {@link OpenApiParseException} (a 400 from the wizard
+     * controller), so the drawer can say the spec is broken instead of "nothing detected yet".
+     */
     public List<String> detectPaths(String spec) {
         if (spec == null || spec.isBlank()) return List.of();
-        OpenAPI api;
-        try {
-            api = parseOrThrow(spec);
-        } catch (OpenApiParseException e) {
-            return List.of();
-        }
+        OpenAPI api = parseOrThrow(spec);
         if (api.getPaths() == null) return List.of();
         List<String> out = new ArrayList<>();
         for (var e : api.getPaths().entrySet()) {

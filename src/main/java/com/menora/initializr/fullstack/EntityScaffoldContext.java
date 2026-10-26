@@ -47,6 +47,8 @@ public final class EntityScaffoldContext {
         m.put("bulkUpdate", "optScaffoldBulkUpdate");
         m.put("tests", "optScaffoldTests");
         m.put("csvImport", "optScaffoldCsvImport");
+        m.put("optimisticLocking", "optScaffoldOptimisticLocking");
+        m.put("inlineEdit", "optScaffoldInlineEdit");
         SCAFFOLD_OPT_FLAGS = java.util.Collections.unmodifiableMap(m);
     }
 
@@ -208,6 +210,9 @@ public final class EntityScaffoldContext {
                     pv.put("hasPageSize", p.pageSize() != null);
                     pv.put("pageSize", p.pageSize());
                     pv.put("hasListPresentation", p.hasListPresentation());
+                    // The actions the page leaves out of its list (its EntityPage takes hideActions).
+                    pv.put("hasHideActions", !p.hiddenActions().isEmpty());
+                    pv.put("hideActionsTs", "[" + String.join(", ", p.hiddenActions().stream().map(a -> tsString(a.wire())).toList()) + "]");
                     // A page title replaces the entity page's own heading (its plural label).
                     pv.put("hasPageTitle", p.title() != null);
                     pv.put("navIcon", "Table2");
@@ -510,6 +515,9 @@ public final class EntityScaffoldContext {
                         + (Boolean.TRUE.equals(pv.get("listTakesQuery")) ? " filters={route.query}" : "");
             } else if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) {
                 routeProps = " filters={route.query}";
+            } else if (Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDashFilters"))) {
+                // Filters (and the period, when there is a picker) ride in the hash (#/desk?region=NORTH&period=30d).
+                routeProps = " query={route.query} onQueryChange={setQuery}";
             } else if (Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"))) {
                 // The period picker's choice rides in the hash (#/desk?period=30d), rewritten in place.
                 routeProps = " period={route.query.period} onPeriodChange={period => setQuery({ period })}";
@@ -525,7 +533,8 @@ public final class EntityScaffoldContext {
             // The screen's destructured props, in a fixed order. A dashboard with a period picker
             // and a filterable report take their route state as optional props (absent when the
             // screen is embedded as a tab, where they keep local state instead).
-            boolean dashboardPeriod = Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"));
+            boolean dashboardQuery = Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDashFilters"));
+            boolean dashboardPeriod = !dashboardQuery && Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"));
             boolean reportQuery = Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"));
             boolean listState = Boolean.TRUE.equals(pv.get("listKeepsState"));
             boolean ownQuery = Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"));
@@ -534,12 +543,13 @@ public final class EntityScaffoldContext {
             if (listState) screenParams.addAll(List.of("query", "onQueryChange"));
             else if (Boolean.TRUE.equals(pv.get("listTakesQuery"))) screenParams.add("filters");
             if (dashboardPeriod) screenParams.addAll(List.of("period: routePeriod", "onPeriodChange"));
+            if (dashboardQuery) screenParams.addAll(List.of("query: routeQuery", "onQueryChange"));
             if (reportQuery || ownQuery) screenParams.addAll(List.of("query", "onQueryChange"));
             if (Boolean.TRUE.equals(pv.get("needsNavigate"))) screenParams.add("onNavigate");
             if (Boolean.TRUE.equals(pv.get("isTabTarget"))) screenParams.add("embedded");
             pv.put("screenParams", String.join(", ", screenParams));
             pv.put("hasScreenProps", !screenParams.isEmpty());
-            pv.put("takesQuery", dashboardPeriod || reportQuery || listState || ownQuery);
+            pv.put("takesQuery", dashboardPeriod || dashboardQuery || reportQuery || listState || ownQuery);
         }
 
         // Screens import the i18n `t` only when one of their label expressions calls it — the
@@ -642,6 +652,12 @@ public final class EntityScaffoldContext {
             if (p.type() == PageDefinition.Type.ENTITY_LIST && p.detail() == PageDefinition.Detail.SIDE) sideDetail.add(p.entity());
         }
         ctx.put(SIDE_DETAIL_KEY, sideDetail);
+        // ...only an entity with a list page that hides actions takes hideActions...
+        Set<String> listActions = new LinkedHashSet<>();
+        for (PageDefinition p : pages) {
+            if (p.type() == PageDefinition.Type.ENTITY_LIST && !p.hiddenActions().isEmpty()) listActions.add(p.entity());
+        }
+        ctx.put(LIST_ACTIONS_KEY, listActions);
         // ...and only an entity with a list page in the nav reports its list state for the route.
         Set<String> listState = new LinkedHashSet<>();
         for (PageDefinition p : pages) {
@@ -669,6 +685,34 @@ public final class EntityScaffoldContext {
      * classic shell's list pages get the Import button too. Call after {@code optScaffoldCsvImport}
      * is set.
      */
+    /**
+     * Whether any entity resolves the {@code optimisticLocking} option on (its override, else the
+     * project option) and can use it (writable, table-backed) — {@code hasOptimisticLocking}, which
+     * gates the project-wide stale-update handler, so an entity that opts in on its own still gets it.
+     */
+    public static void putOptimisticLocking(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldOptimisticLocking"));
+        ctx.put("hasOptimisticLocking", entities.stream().anyMatch(e -> lockingApplies(e, projectOpt)));
+    }
+
+    /** {@code optimisticLocking} for one entity: the override, else the project option; writable tables only. */
+    public static boolean lockingApplies(EntityDefinition e, boolean projectOpt) {
+        Boolean override = e.opts().get("optimisticLocking");
+        return !e.readOnly() && e.viewQuery() == null && (override != null ? override : projectOpt);
+    }
+
+    /**
+     * Whether any entity can edit its table cells in place ({@code inlineEdit}: its override, else
+     * the project option; writable, single-key entities) — {@code hasInlineEdit}, which ships the
+     * shared {@code InlineCell} component.
+     */
+    public static void putInlineEdit(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldInlineEdit"));
+        ctx.put("hasInlineEdit", entities.stream().anyMatch(e -> !e.readOnly()
+                && e.fields().stream().filter(FieldDefinition::primaryKey).count() == 1
+                && (e.opts().get("inlineEdit") != null ? e.opts().get("inlineEdit") : projectOpt)));
+    }
+
     public static void putCsvImport(Map<String, Object> ctx, List<EntityDefinition> entities) {
         boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldCsvImport"));
         ctx.put("hasCsvImport", entities.stream().anyMatch(e -> !e.readOnly()
@@ -1033,6 +1077,8 @@ public final class EntityScaffoldContext {
         boolean usesStatsQuery = false;
         boolean usesQueryOf = false;
         boolean usesBucketRange = false;
+        // Dashboard filters: one bar over the grid; each widget takes the ones its entity filters by.
+        List<String> dashFilters = p.dashboard() == null ? List.of() : p.dashboard().filters();
         for (int i = 0; i < p.widgets().size(); i++) {
             PageDefinition.Widget w = p.widgets().get(i);
             if (w.kind() == PageDefinition.WidgetKind.TEXT) {
@@ -1043,8 +1089,14 @@ public final class EntityScaffoldContext {
                 widgetViews.add(linksWidgetView(w, i));
                 continue;
             }
+            if (w.kind() == PageDefinition.WidgetKind.ACTIVITY) {
+                Map<String, Object> av = activityWidgetView(w, i, entityByPascal, summaries, links);
+                needsNavigate |= Boolean.TRUE.equals(av.get("needsNavigate"));
+                widgetViews.add(av);
+                continue;
+            }
             if (w.kind() == PageDefinition.WidgetKind.LIST) {
-                Map<String, Object> lv = listWidgetView(w, i, entityByPascal, summaries, links);
+                Map<String, Object> lv = listWidgetView(w, i, entityByPascal, summaries, links, dashFilters);
                 needsNavigate |= Boolean.TRUE.equals(lv.get("needsNavigate"));
                 // A period preset on the embedded list: the screen spreads a rangeParams() call in.
                 usesQueryOf |= presetHasPeriod(w.presetFilter());
@@ -1062,6 +1114,8 @@ public final class EntityScaffoldContext {
             wv.put("widgetIsBar", w.kind() == PageDefinition.WidgetKind.BAR || w.kind() == PageDefinition.WidgetKind.DONUT);
             wv.put("isDonut", w.kind() == PageDefinition.WidgetKind.DONUT);
             wv.put("widgetIsStacked", w.kind() == PageDefinition.WidgetKind.STACKED);
+            wv.put("widgetIsPivot", w.kind() == PageDefinition.WidgetKind.PIVOT);
+            wv.put("widgetIsActivity", false);
             wv.put("widgetIsText", false);
             wv.put("widgetIsLine", w.kind() == PageDefinition.WidgetKind.LINE);
             wv.put("widgetIsRecent", w.kind() == PageDefinition.WidgetKind.RECENT);
@@ -1080,22 +1134,25 @@ public final class EntityScaffoldContext {
             // The filter params the widget's queries carry: its fixed preset, then the dashboard
             // period over its date field (a TS expression, since the period is screen state).
             String preset = presetQueryExpr(w.presetFilter(), ev);
-            String paramsExpr = params(preset, rangeExpr(ev, w.dateField(), false));
+            String dash = dashParamsExpr(dashKeys(ev, dashFilters, w.presetFilter()));
+            String paramsExpr = params(preset, rangeExpr(ev, w.dateField(), false), dash);
             usesRange |= w.dateField() != null || presetHasPeriod(w.presetFilter());
-            usesStatsQuery |= (preset != null && w.dateField() != null) || (preset != null && preset.startsWith("statsQuery("));
+            usesStatsQuery |= paramsExpr != null && paramsExpr.contains("statsQuery(");
             wv.put("hasParams", paramsExpr != null);
             wv.put("paramsExpr", paramsExpr);
             // A kpi's change against the previous period: the same params, one period back. The
             // picker's "all time" has no previous period, so the tile then shows no change.
             wv.put("hasCompare", w.compare());
-            wv.put("compareParamsExpr", w.compare() ? params(preset, rangeExpr(ev, w.dateField(), true)) : null);
+            wv.put("compareParamsExpr", w.compare() ? params(preset, rangeExpr(ev, w.dateField(), true), dash) : null);
             wv.put("target", w.target() == null ? null : w.target().toPlainString());
-            String target = links.homeOf(w.entity());
+            // A widget's drillTo (a list or report page of its entity) replaces the entity's home.
+            String target = w.drillTo() != null ? w.drillTo() : links.homeOf(w.entity());
             wv.put("hasTarget", target != null);
             wv.put("targetPageId", target);
             // "View all" on a filtered widget opens the list with the same filters, when its home is
-            // a list page that takes them from the route.
-            boolean openWithQuery = paramsExpr != null && target != null && target.equals(links.listPageOf(w.entity()))
+            // a list page that takes them from the route (a drillTo page always does).
+            boolean openWithQuery = paramsExpr != null && target != null
+                    && (w.drillTo() != null || target.equals(links.listPageOf(w.entity())))
                     && Boolean.TRUE.equals(ev.get("hasFilters"));
             wv.put("openWithQuery", openWithQuery);
             usesQueryOf |= openWithQuery;
@@ -1110,7 +1167,7 @@ public final class EntityScaffoldContext {
                     Map<String, Object> fv = fieldOf(ev, w.groupBy());
                     wv.put("groupByIsDateTime", Boolean.TRUE.equals(fv.get("isDateTime")));
                     // A point opens the list over its day/month/year.
-                    boolean drill = putDrill(wv, ev, w.entity(), links, w.groupBy(), paramsExpr);
+                    boolean drill = putDrill(wv, ev, w.entity(), links, w.groupBy(), paramsExpr, w.drillTo());
                     usesBucketRange |= drill;
                     usesQueryOf |= drill && paramsExpr != null;
                     needsNavigate |= drill;
@@ -1130,11 +1187,40 @@ public final class EntityScaffoldContext {
                                     .add((String) ref);
                         }
                     }
-                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr);
+                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr, w.drillTo());
                     usesQueryOf |= drill && paramsExpr != null;
                     needsNavigate |= drill;
                     defaultTitle = "t('xByYAndZ', { x: " + (reduces ? aggTitle(w, ev) : entityLabels)
                             + ", y: " + rank.get("groupLabelExpr") + ", z: " + split.get("groupLabelExpr") + " })";
+                }
+                case PIVOT -> {
+                    Map<String, Object> rank = rankView(ev, w.groupBy());
+                    wv.putAll(rank);
+                    Map<String, Object> cols = rankView(ev, w.series());
+                    wv.put("seriesField", w.series());
+                    wv.put("hasSeriesLabels", cols.get("hasLabels"));
+                    wv.put("seriesLabelsRef", cols.get("labelsRef"));
+                    wv.put("seriesIsRelation", cols.get("isRelationRank"));
+                    wv.put("seriesOptionsPath", cols.get("optionsPath"));
+                    wv.put("seriesOptionValue", cols.get("optionValue"));
+                    wv.put("seriesHasOptionLabel", Boolean.TRUE.equals(cols.get("hasOptionLabel")));
+                    wv.put("seriesOptionLabel", cols.get("optionLabel"));
+                    for (Object ref : new Object[] {rank.get("labelsRef"), cols.get("labelsRef")}) {
+                        if (ref != null) {
+                            labelRefsByModule.computeIfAbsent((String) ev.get("entityNameKebab"), k -> new LinkedHashSet<>())
+                                    .add((String) ref);
+                        }
+                    }
+                    // A cell opens the list filtered to both of its groups — when the list filters by both.
+                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr, w.drillTo())
+                            && ((List<Map<String, Object>>) ev.getOrDefault("filterFields", List.of())).stream()
+                                    .anyMatch(f -> cols.get("drillKey").equals(f.get("name")));
+                    wv.put("hasDrill", drill);
+                    wv.put("seriesDrillKey", cols.get("drillKey"));
+                    usesQueryOf |= drill && paramsExpr != null;
+                    needsNavigate |= drill;
+                    defaultTitle = "t('xByYAndZ', { x: " + (reduces ? aggTitle(w, ev) : entityLabels)
+                            + ", y: " + rank.get("groupLabelExpr") + ", z: " + cols.get("groupLabelExpr") + " })";
                 }
                 case BAR, TOP, DONUT -> {
                     Map<String, Object> rank = rankView(ev, w.groupBy());
@@ -1145,7 +1231,7 @@ public final class EntityScaffoldContext {
                                 .add(labelsRef);
                     }
                     // A bar or a ranked row opens the list filtered to that group.
-                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr);
+                    boolean drill = putDrill(wv, ev, w.entity(), links, (String) rank.get("drillKey"), paramsExpr, w.drillTo());
                     usesQueryOf |= drill && paramsExpr != null;
                     needsNavigate |= drill;
                     if (w.kind() == PageDefinition.WidgetKind.TOP) wv.put("limit", w.limit());
@@ -1171,7 +1257,7 @@ public final class EntityScaffoldContext {
             widgetViews.add(wv);
         }
         pv.put("widgets", widgetViews);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "Links", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "Links", "List")) {
             pv.put("uses" + kind, widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIs" + kind))));
         }
         // The entity pages the list widgets embed: one import per entity module.
@@ -1199,8 +1285,20 @@ public final class EntityScaffoldContext {
         pv.put("hasRefresh", hasRefresh);
         pv.put("hasAutoRefresh", hasRefresh && p.refreshSeconds() != null);
         pv.put("refreshMs", p.refreshSeconds() == null ? null : p.refreshSeconds() * 1000);
-        pv.put("usesDashboardState", hasRefresh || p.dateRange() != null);
+        pv.put("usesDashboardState", hasRefresh || p.dateRange() != null || !dashFilters.isEmpty());
         pv.put("hasHeaderTools", hasRefresh || p.dateRange() != null);
+        // The filter bar's controls: each filter as the first widget entity that has it describes it.
+        List<Map<String, Object>> dashFilterFields = new ArrayList<>();
+        for (String name : dashFilters) {
+            p.widgets().stream().filter(w -> w.entity() != null)
+                    .map(w -> entityByPascal.get(Naming.toPascalCase(w.entity())))
+                    .map(ev -> dashFilterField(ev, name))
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .ifPresent(dashFilterFields::add);
+        }
+        pv.put("hasDashFilters", !dashFilterFields.isEmpty());
+        pv.put("dashFilterFields", dashFilterFields);
         // stats.ts helpers the screen imports.
         pv.put("usesRangeParams", usesRange);
         pv.put("usesStatsQuery", usesStatsQuery);
@@ -1212,11 +1310,50 @@ public final class EntityScaffoldContext {
     }
 
     /** The widget's filter params as a TS expression: its preset (already an expression), the
-     *  period, or both; null for none. */
-    private static String params(String preset, String range) {
-        if (preset == null) return range;
-        if (range == null) return preset;
-        return "statsQuery(" + preset + ", " + range + ")";
+     *  period and the dashboard filters it takes, in that order — one of them alone, several joined
+     *  by statsQuery; null for none. */
+    private static String params(String... parts) {
+        List<String> present = java.util.Arrays.stream(parts).filter(java.util.Objects::nonNull).toList();
+        if (present.isEmpty()) return null;
+        if (present.size() == 1) return present.get(0);
+        return "statsQuery(" + String.join(", ", present) + ")";
+    }
+
+    /** The entity's filter entry a dashboard filter names (an enum/boolean field, or a relation by
+     *  its field name), or null when the entity has no such filter. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> dashFilterField(Map<String, Object> ev, String name) {
+        for (Map<String, Object> ff : (List<Map<String, Object>>) ev.getOrDefault("filterFields", List.of())) {
+            boolean relation = Boolean.TRUE.equals(ff.get("isRelationFilter"));
+            if (relation ? name.equals(ff.get("relationField"))
+                    : name.equals(ff.get("name")) && (Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isBooleanFilter")))) {
+                return ff;
+            }
+        }
+        return null;
+    }
+
+    /** The query params of the dashboard filters a widget's entity takes — not one its own preset
+     *  already fixes. */
+    private static List<String> dashKeys(Map<String, Object> ev, List<String> dashFilters, Map<String, String> preset) {
+        List<String> keys = new ArrayList<>();
+        for (String name : dashFilters) {
+            Map<String, Object> ff = dashFilterField(ev, name);
+            if (ff == null) continue;
+            String key = (String) ff.get("name");
+            if (preset.containsKey(name) || preset.containsKey(key)) continue;
+            keys.add(key);
+        }
+        return keys;
+    }
+
+    /** {@code dashParams(['status', 'customerId'])}, the screen's helper over its filter bar; null for no keys. */
+    private static String dashParamsExpr(List<String> keys) {
+        return keys.isEmpty() ? null : "dashParams(" + dashKeysTs(keys) + ")";
+    }
+
+    private static String dashKeysTs(List<String> keys) {
+        return "[" + String.join(", ", keys.stream().map(EntityScaffoldContext::tsString).toList()) + "]";
     }
 
     /** {@code rangeParams('soldOn', false, period)} (the previous period with {@code previous}), or
@@ -1238,11 +1375,12 @@ public final class EntityScaffoldContext {
      *  "View all". */
     private static Map<String, Object> listWidgetView(PageDefinition.Widget w, int index,
                                                       Map<String, Map<String, Object>> entityByPascal,
-                                                      Map<String, Map<String, Object>> summaries, PageLinks links) {
+                                                      Map<String, Map<String, Object>> summaries, PageLinks links,
+                                                      List<String> dashFilters) {
         Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "Links")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "Links")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsList", true);
@@ -1263,10 +1401,15 @@ public final class EntityScaffoldContext {
         wv.put("hasSpanClass", !spanClass.isEmpty());
         wv.put("spanClass", spanClass);
         putRecordLink(wv, "", w.entity(), links, summaries);
-        String target = links.homeOf(w.entity());
+        String target = w.drillTo() != null ? w.drillTo() : links.homeOf(w.entity());
         wv.put("hasTarget", target != null);
         wv.put("targetPageId", target);
         wv.put("needsNavigate", target != null || Boolean.TRUE.equals(wv.get("hasRecordPage")));
+        // The dashboard filters the embedded list takes: its filters open with them, and a change
+        // remounts it (`key`), since a list reads its opening filters once.
+        List<String> keys = dashKeys(ev, dashFilters, w.presetFilter());
+        wv.put("hasDashKeys", !keys.isEmpty());
+        wv.put("dashKeysTs", keys.isEmpty() ? null : dashKeysTs(keys));
         wv.put("hasParams", false);
         wv.put("hasCompare", false);
         return wv;
@@ -1277,7 +1420,7 @@ public final class EntityScaffoldContext {
     private static Map<String, Object> linksWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Text", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsLinks", true);
@@ -1293,10 +1436,47 @@ public final class EntityScaffoldContext {
     }
 
     /** A text widget's view: its title (if any) and paragraphs as TS string literals. */
+    /** An activity feed: one source per audited entity — its list endpoint, its name, the column a
+     *  row reads by, and the record page a row opens (when there is one). */
+    private static Map<String, Object> activityWidgetView(PageDefinition.Widget w, int index,
+                                                          Map<String, Map<String, Object>> entityByPascal,
+                                                          Map<String, Map<String, Object>> summaries, PageLinks links) {
+        Map<String, Object> wv = new LinkedHashMap<>();
+        wv.put("widgetKey", "w" + index);
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Text", "Links", "List")) {
+            wv.put("widgetIs" + kind, false);
+        }
+        wv.put("widgetIsActivity", true);
+        wv.put("titleExpr", w.title() != null ? tsString(w.title()) : "t('recentActivity')");
+        wv.put("limit", w.limit());
+        boolean needsNavigate = false;
+        List<Map<String, Object>> sources = new ArrayList<>();
+        for (String name : w.entities()) {
+            Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(name));
+            Map<String, Object> summary = summaries.get(name.toLowerCase(Locale.ROOT));
+            Map<String, Object> sv = new LinkedHashMap<>();
+            sv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
+            sv.put("labelExpr", tsString((String) ev.get("entityLabel")));
+            Object labelField = summary.get("labelField");
+            sv.put("displayField", labelField != null ? labelField : summary.get("pkName"));
+            putRecordLink(sv, "", name, links, summaries);
+            needsNavigate |= Boolean.TRUE.equals(sv.get("hasRecordPage"));
+            sources.add(sv);
+        }
+        wv.put("activitySources", sources);
+        wv.put("needsNavigate", needsNavigate);
+        String spanClass = SPAN_CLASSES.get(w.span() - 1);
+        wv.put("hasSpanClass", !spanClass.isEmpty());
+        wv.put("spanClass", spanClass);
+        wv.put("hasParams", false);
+        wv.put("hasCompare", false);
+        return wv;
+    }
+
     private static Map<String, Object> textWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Links", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Links", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsText", true);
@@ -1355,7 +1535,14 @@ public final class EntityScaffoldContext {
     @SuppressWarnings("unchecked")
     private static boolean putDrill(Map<String, Object> view, Map<String, Object> ev, String entity, PageLinks links,
                                     String filterKey, String paramsExpr) {
-        String listPage = links.listPageOf(entity);
+        return putDrill(view, ev, entity, links, filterKey, paramsExpr, null);
+    }
+
+    /** As above, opening {@code drillTo} (a list or report page of the entity) when given. */
+    @SuppressWarnings("unchecked")
+    private static boolean putDrill(Map<String, Object> view, Map<String, Object> ev, String entity, PageLinks links,
+                                    String filterKey, String paramsExpr, String drillTo) {
+        String listPage = drillTo != null ? drillTo : links.listPageOf(entity);
         boolean filterable = ((List<Map<String, Object>>) ev.getOrDefault("filterFields", List.of())).stream()
                 .anyMatch(f -> filterKey.equals(f.get("name")));
         boolean drill = listPage != null && filterable;
@@ -1507,6 +1694,14 @@ public final class EntityScaffoldContext {
             boolean overTime = chart.bucket() != null;
             cv.put("chartIsLine", overTime);
             cv.put("chartIsBar", !overTime);
+            // A kind other than the default bar/line: the shape ReportChart draws instead.
+            cv.put("chartHasShape", chart.kind() != null);
+            cv.put("chartShape", chart.kind() == null ? "" : chart.kind().wire());
+            Map<String, Object> seriesRank = chart.series() == null ? null : rankView(ev, chart.series());
+            String seriesLabelsRef = seriesRank == null ? null : (String) seriesRank.get("labelsRef");
+            cv.put("chartHasSeriesLabels", seriesLabelsRef != null);
+            cv.put("chartSeriesLabelsRef", seriesLabelsRef);
+            if (seriesLabelsRef != null) labelRefs.add(seriesLabelsRef);
             cv.put("chartGroupBy", chart.groupBy());
             cv.put("chartIsRelation", relation);
             if (relation) {
@@ -1532,6 +1727,7 @@ public final class EntityScaffoldContext {
             cv.put("chartHasTable", chart.table() == null ? i == 0 : chart.table());
             StringBuilder query = new StringBuilder("groupBy=").append(chart.groupBy());
             if (overTime) query.append("&bucket=").append(chart.bucket().wire());
+            if (chart.series() != null) query.append("&series=").append(chart.series());
             if (reduces) query.append("&agg=").append(chart.agg().wire()).append("&field=").append(chart.field());
             cv.put("rollupQuery", query.toString());
             // A bar opens the list on its value (a relation's on its id); a point in time on its day/month/year.
@@ -1655,6 +1851,8 @@ public final class EntityScaffoldContext {
     private static final String SIDE_DETAIL_KEY = "__sideDetailEntities";
     /** Entities with a list page in the nav, whose list state rides in the route. */
     private static final String LIST_STATE_KEY = "__listStateEntities";
+    /** Entities with a list page that hides some of its actions. */
+    private static final String LIST_ACTIONS_KEY = "__listActionEntities";
 
     /** Internal key under which the entity-summary lookup rides in the project context.
      *  Not referenced by any template. */
@@ -1865,6 +2063,8 @@ public final class EntityScaffoldContext {
         ctx.put("listConfigurable", listConfigured != null && listConfigured.contains(entity.name()));
         Set<String> sideDetail = (Set<String>) projectContext.get(SIDE_DETAIL_KEY);
         ctx.put("listSideDetail", sideDetail != null && sideDetail.contains(entity.name()));
+        Set<String> listActions = (Set<String>) projectContext.get(LIST_ACTIONS_KEY);
+        ctx.put("listActionsConfigurable", listActions != null && listActions.contains(entity.name()));
         Map<String, String> recordPageOf = (Map<String, String>) projectContext.get(RECORD_PAGES_KEY);
         ctx.put("entityHasRecordPage", recordPageOf != null && recordPageOf.keySet().stream()
                 .anyMatch(k -> k.equalsIgnoreCase(entity.name())));
@@ -1895,6 +2095,9 @@ public final class EntityScaffoldContext {
         // a @Subselect view would have to project created_at/updated_at columns that may not exist.
         ctx.put("auditApplicable",
                 Boolean.TRUE.equals(ctx.get("optScaffoldAudit")) && mutable);
+        // Optimistic locking (a @Version column, stale updates answered 409) — writable tables only.
+        ctx.put("lockingApplicable", Boolean.TRUE.equals(ctx.get("optScaffoldOptimisticLocking"))
+                && mutable && !Boolean.TRUE.equals(ctx.get("isView")));
         // CSV import (the csvImport opt, or an import page — which switches the opt on for its
         // entity) creates rows, so it needs a writable entity. The import checks each row's
         // relations through the EntityManager, which the stats rollup also uses.
@@ -1928,11 +2131,23 @@ public final class EntityScaffoldContext {
                         && !Boolean.TRUE.equals(ctx.get("hasCompositePk"))
                         && mutable
                         && bulkFields != null && !bulkFields.isEmpty());
+        // Inline cell edit (opt-in, frontend only): the table's scalar cells — the same fields bulk
+        // edit can set — are edited in place and saved with the entity's PUT, one row at a time.
+        ctx.put("inlineEditApplicable",
+                Boolean.TRUE.equals(ctx.get("optScaffoldInlineEdit"))
+                        && !Boolean.TRUE.equals(ctx.get("hasCompositePk"))
+                        && mutable
+                        && Boolean.TRUE.equals(ctx.get("viewTable"))
+                        && bulkFields != null && !bulkFields.isEmpty());
         // The row-selection substrate (checkboxes, `selected` state) is shared by both bulk actions,
         // so it is emitted when either is applicable.
         ctx.put("bulkSelectApplicable",
                 Boolean.TRUE.equals(ctx.get("bulkDeleteApplicable"))
                         || Boolean.TRUE.equals(ctx.get("bulkUpdateApplicable")));
+        // A list page's hideActions only reach a list that has an action to hide (the validator
+        // rejects them on a read-only entity without an export).
+        ctx.put("listActionsConfigurable", Boolean.TRUE.equals(ctx.get("listActionsConfigurable"))
+                && (mutable || Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport"))));
         return ctx;
     }
 
@@ -2355,12 +2570,13 @@ public final class EntityScaffoldContext {
         boolean formUsesOptions = relationViews.stream().anyMatch(m -> !Boolean.TRUE.equals(m.get("targetSearchable")));
         view.put("formUsesOptions", formUsesOptions);
         view.put("formUsesPicker", relationViews.stream().anyMatch(m -> Boolean.TRUE.equals(m.get("targetSearchable"))));
+        // The form calls t() for a generated key's hint, a boolean's yes/no and a relation select's
+        // "loading" — an enum select reads its labels from <Enum>Options, so it does not count.
         view.put("formUsesStrings",
                 formUsesOptions
                         || fieldViews.stream().anyMatch(m ->
                                 (Boolean.TRUE.equals(m.get("isPrimaryKey")) && Boolean.TRUE.equals(m.get("isGenerated")))
-                                || Boolean.TRUE.equals(m.get("isBoolean"))
-                                || Boolean.TRUE.equals(m.get("isEnum"))));
+                                || Boolean.TRUE.equals(m.get("isBoolean"))));
 
         // Filter by relation FK ("orders of customer 7"): one filter entry per MANY_TO_ONE, keyed
         // by the DTO's <field>Id, equality on the relation's target PK. The frontend renders a
@@ -2396,6 +2612,10 @@ public final class EntityScaffoldContext {
         view.put("newFromFilters", !entity.readOnly() && filterFieldViews.stream().anyMatch(ff ->
                 Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isBooleanFilter"))
                         || Boolean.TRUE.equals(ff.get("isRelationFilter"))));
+        // An enum or relation filter may hold several values; a new record takes it only when it
+        // names one (the helper is emitted only when such a filter exists — the lint rejects it unused).
+        view.put("fromFiltersChecksOne", !entity.readOnly() && filterFieldViews.stream().anyMatch(ff ->
+                Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isRelationFilter"))));
         // The generated Service builds a JPA Specification when it has either text search or
         // type-aware filters — gates the Specification import / machinery in the template.
         view.put("needsSpecification", !stringFieldViews.isEmpty() || !filterFieldViews.isEmpty());

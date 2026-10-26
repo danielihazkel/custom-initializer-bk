@@ -257,16 +257,16 @@ class FullstackPagesIntegrationTests {
                 .contains(", columns: columnKeys, initialSort, initialView, initialPageSize, listState, onListStateChange }: OrderPageProps = {}")
                 .contains("const openingSize = initialPageSize ?? 20")
                 .contains("const openingSort = JSON.stringify(initialSort ?? null)")
-                .contains("useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : JSON.parse(openingSort))")
+                .contains("useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : prefs.sort !== undefined ? prefs.sort : JSON.parse(openingSort))")
                 .contains("const openingView = initialView ?? 'table'")
-                .contains("useState<'table' | 'kanban' | 'calendar'>(routeView ?? openingView)")
+                .contains("useState<'table' | 'kanban' | 'calendar'>(routeView ?? (prefs.view as 'table' | 'kanban' | 'calendar' | undefined) ?? openingView)")
                 .contains("const shown = columnKeys ? columnKeys.flatMap(k => columns.filter(c => c.key === k)) : columns")
                 .contains("columns={shown}")
                 .doesNotContain("columns={columns}");
         assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx"))
                 .contains("const columns: Column<Customer>[] = [")
-                .contains("useState(20)")
-                .contains("useState<SortSpec | null>(null)")
+                .contains("const openingSize = 20")
+                .contains("const openingSort = JSON.stringify(null)")
                 .contains("columns={columns}")
                 .doesNotContain("ListColumn")
                 .doesNotContain("initialSort");
@@ -294,7 +294,7 @@ class FullstackPagesIntegrationTests {
                 .contains("{ key: 'reference', label:")
                 .contains("{ key: 'status', label: 'Status', sortKey: 'status', chip: true")
                 .contains("const openingView = initialView ?? 'table'")
-                .contains("useState<'table' | 'kanban' | 'calendar'>(routeView ?? openingView)")
+                .contains("useState<'table' | 'kanban' | 'calendar'>(routeView ?? (prefs.view as 'table' | 'kanban' | 'calendar' | undefined) ?? openingView)")
                 .contains("columns={shown}");
         assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx")).doesNotContain("ListColumn");
     }
@@ -481,7 +481,7 @@ class FullstackPagesIntegrationTests {
                 .contains("if (scope) record[scope.param] = scope.value")
                 // New starts linked to the scope and with the list's one-value filters.
                 .contains("setEditing({ ...newRecord(), ...fromFilters(filters) })")
-                .contains("  if (values['orderId']) record['orderId'] = Number(values['orderId'])")
+                .contains("  if (oneValue(values['orderId'])) record['orderId'] = Number(values['orderId'])")
                 .contains("onView={openRow}")
                 // Order has a record page, so the relation cell links there; Product has none.
                 .contains("label: 'Order', render: r => r.orderId == null ? '—' : <a href={`#/order/${encodeURIComponent(String(r.orderId))}`} onClick={e => e.stopPropagation()} className=\"font-medium text-brand hover:underline\">{ r.orderLabel ?? '#' + String(r.orderId)}</a> },")
@@ -580,6 +580,9 @@ class FullstackPagesIntegrationTests {
         // The example ships settings.scaffold = [csvExport]; exampleBody carries entities and
         // pages only, so the opt is set here for the report's Export button.
         body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        // This test pins the period-only dashboard: the example's filter bar and the bar's drillTo
+        // are covered by fullstackEndpoint_dashboardFiltersReachEveryMatchingWidget.
+        withoutDashboardFiltersAndDrillTo(page(body, "report"));
         Map<String, String> files = generate(body);
 
         // The report screen: a filter bar, then its two charts — the first with the totals table,
@@ -713,7 +716,8 @@ class FullstackPagesIntegrationTests {
                 .doesNotContain("@entities/order'");
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
                 .contains("function useOptionNames(optionsPath: string | undefined, optionValue: string, optionLabel: string | undefined, keys: readonly string[] = []): Record<string, string> {")
-                .contains("const names = useOptionNames(optionsPath, optionValue, optionLabel, (stats?.buckets ?? []).map(b => b.key))\n  const rows = (stats?.buckets ?? []).map(b => ({\n    key: b.key,\n    label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ?");
+                .contains("const names = useOptionNames(optionsPath, optionValue, optionLabel, (stats?.buckets ?? []).map(b => b.key))\n")
+                .contains("  const rows = grouped.map(b => ({\n    key: b.key,\n    label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ?");
     }
 
     @Test
@@ -1084,6 +1088,238 @@ class FullstackPagesIntegrationTests {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void fullstackEndpoint_rendersPivotAndActivityWidgets() throws Exception {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> overview = page(body, "overview");
+        withoutDashboardFiltersAndDrillTo(overview);
+        List<Map<String, Object>> widgets = new ArrayList<>((List<Map<String, Object>>) overview.get("widgets"));
+        // Teams down the side, statuses across; and the default — priority by status.
+        widgets.add(Map.of("kind", "pivot", "entity", "Ticket", "groupBy", "team", "series", "status"));
+        widgets.add(Map.of("kind", "pivot", "entity", "Ticket", "title", "Load"));
+        overview.put("widgets", widgets);
+        Map<String, String> files = generate(body);
+
+        String screen = files.get(FE + "src/app/screens/OverviewScreen.tsx");
+        assertThat(screen)
+                .contains("StackedCard, PivotCard, TextCard,")
+                .contains("        <PivotCard\n          title={ t('xByYAndZ', { x: 'Tickets', y: 'Team', z: 'Status' }) }\n"
+                        + "          path=\"/api/tickets\"\n          rows=\"team\"\n          columns=\"status\"\n"
+                        + "          rowOptionsPath=\"/api/teams\"\n          rowOptionValue=\"id\"\n          rowOptionLabel=\"name\"\n"
+                        + "          columnLabels={ TicketStatusTypeLabels }\n          className=\"sm:col-span-2 lg:col-span-4\"\n")
+                // The queue's tabs are the tickets' home, and none of them is a list it can filter.
+                .contains("        <PivotCard\n          title={ 'Load' }\n          path=\"/api/tickets\"\n          rows=\"priority\"\n          columns=\"status\"\n"
+                        + "          rowLabels={ TicketPriorityTypeLabels }\n          columnLabels={ TicketStatusTypeLabels }\n");
+        assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
+                .contains("export function PivotCard(")
+                .contains("useStats(path, statsQuery(`groupBy=${rows}`, `series=${columns}`, aggQuery(agg, valueField), params))");
+
+        // An activity feed over the audited entities of the blog, newest first.
+        Map<String, Object> blog = exampleBody("blog", "react-tailwind-crud");
+        blog.put("opts", Map.of("scaffold", List.of("audit")));
+        Map<String, Object> home = page(blog, "home");
+        List<Map<String, Object>> blogWidgets = new ArrayList<>((List<Map<String, Object>>) home.get("widgets"));
+        blogWidgets.add(Map.of("kind", "activity"));
+        blogWidgets.add(Map.of("kind", "activity", "entities", List.of("post"), "limit", 5, "title", "Posts lately"));
+        blogWidgets.add(Map.of("kind", "recent", "entity", "Post", "sortBy", "UPDATEDAT"));
+        home.put("widgets", blogWidgets);
+        Map<String, String> blogFiles = generate(blog);
+        String blogHome = blogFiles.get(FE + "src/app/screens/HomeScreen.tsx");
+        assertThat(blogHome)
+                .contains("ActivityFeed,")
+                .contains("        <ActivityFeed\n          title={ t('recentActivity') }\n          sources={ [\n"
+                        + "            { path: '/api/authors', label: 'Author', displayField: 'name' },\n"
+                        + "            { path: '/api/posts', label: 'Post', displayField: 'title', onOpen: row => onNavigate('post', String(row['id'])) },\n"
+                        + "            { path: '/api/comments', label: 'Comment', displayField: 'id' },\n"
+                        + "          ] }\n          limit={ 10 }\n")
+                .contains("          title={ 'Posts lately' }\n          sources={ [\n"
+                        + "            { path: '/api/posts', label: 'Post', displayField: 'title', onOpen: row => onNavigate('post', String(row['id'])) },\n"
+                        + "          ] }\n          limit={ 5 }\n")
+                .contains("sortField=\"updatedAt\"");
+        assertThat(blogFiles.get(FE + "src/shared/i18n/strings.ts"))
+                .contains("recentActivity: 'Recent activity',")
+                .contains("activityCreated: 'created',");
+
+        assertWidgetRejected(Map.of("kind", "pivot", "entity", "Ticket", "groupBy", "status", "series", "status"),
+                "series 'status' must differ from groupBy — the rows already split by it");
+        assertWidgetRejected(Map.of("kind", "activity"),
+                "an activity widget needs the 'audit' opt — no entity records when it changed");
+        assertWidgetRejected(Map.of("kind", "activity", "entities", List.of("Ticket")),
+                "Ticket does not record when it changed — turn the 'audit' opt on for it");
+        assertWidgetRejected(Map.of("kind", "activity", "entity", "Ticket"),
+                "an activity widget lists 'entities', not one 'entity'");
+        assertWidgetRejected(Map.of("kind", "kpi", "entity", "Ticket", "entities", List.of("Ticket")),
+                "only an activity widget takes 'entities'");
+        assertWidgetRejected(Map.of("kind", "bar", "entity", "Ticket", "series", "status"),
+                "only a stacked or pivot widget takes 'series'");
+        assertWidgetRejected(Map.of("kind", "recent", "entity", "Ticket", "sortBy", "updatedAt"), "sortBy");
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertWidgetRejected(Map<String, Object> widget, String expectedMessage) {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> overview = page(body, "overview");
+        List<Map<String, Object>> widgets = new ArrayList<>((List<Map<String, Object>>) overview.get("widgets"));
+        widgets.add(widget);
+        overview.put("widgets", widgets);
+        assertBadRequest(body, expectedMessage);
+    }
+
+    @Test
+    void fullstackEndpoint_listPageHidesActions() throws Exception {
+        for (String set : List.of("react-tailwind-crud", "react-menora-digital-crud")) {
+            Map<String, Object> body = exampleBody("orders", set);
+            body.put("opts", Map.of("scaffold", List.of("csvExport", "bulkDelete")));
+            // Any case, any order: kept in the actions' own order.
+            page(body, "orders").put("hideActions", List.of("BULK", "edit", "export"));
+            Map<String, String> files = generate(body);
+
+            assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx")).as(set)
+                    .contains("      hideActions={ ['edit', 'export', 'bulk'] }\n");
+            String page = files.get(FE + "src/pages/order/ui/OrderPage.tsx");
+            assertThat(page).as(set)
+                    .contains("type ListAction = 'new' | 'edit' | 'delete' | 'export' | 'import' | 'bulk'")
+                    .contains("  hideActions?: readonly ListAction[]")
+                    .contains("const can = (action: ListAction) => !hideActions?.includes(action)")
+                    .contains("const editRow = can('edit') ? openEdit : undefined")
+                    .contains("          onEdit={editRow}\n          onDelete={deleteRow}\n")
+                    .contains("selectable={can('bulk')}")
+                    .contains("{can('export') && ")
+                    .contains("const emptyAction = !can('new') ? undefined : { label:");
+            // Every other entity's page keeps its bytes.
+            assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx")).as(set)
+                    .doesNotContain("hideActions")
+                    .doesNotContain("ListAction");
+        }
+
+        assertOrdersRejected(p -> p.put("hideActions", List.of("archive")),
+                "unknown hideActions entry 'archive' (expected new, edit, delete, export, import or bulk)");
+        assertOrdersRejected(p -> p.put("hideActions", List.of("new", "NEW")), "hideActions lists 'new' twice");
+        assertRejected(p -> p.get(0).put("hideActions", List.of("new")), "does not take 'hideActions'");
+        Map<String, Object> reporting = exampleBody("reporting", "react-tailwind-crud");
+        page(reporting, "monthly").put("hideActions", List.of("export"));
+        assertBadRequest(reporting, "MonthlySales is read-only and exports nothing, so its list has no actions to hide");
+    }
+
+    @Test
+    void fullstackEndpoint_reportChartKinds() throws Exception {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> report = new LinkedHashMap<>(Map.of("id", "workload", "type", "report", "entity", "Ticket",
+                "title", "Workload", "charts", List.of(
+                        Map.of("groupBy", "status", "kind", "donut"),
+                        // series defaults to the next enum — status, after priority.
+                        Map.of("groupBy", "priority", "kind", "STACKED"),
+                        Map.of("groupBy", "dueAt", "kind", "area", "bucket", "day"),
+                        Map.of("groupBy", "team", "kind", "table"))));
+        pages(body).add(report);
+        // Naming the default kind draws exactly what leaving it out does.
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "by-status", "type", "report", "entity", "Ticket",
+                "chart", Map.of("groupBy", "status", "kind", "bar"))));
+        Map<String, String> files = generate(body);
+
+        String screen = files.get(FE + "src/app/screens/WorkloadScreen.tsx");
+        assertThat(screen)
+                .contains("import { TicketStatusTypeLabels, TicketPriorityTypeLabels } from '@entities/ticket'")
+                .contains("rollup=\"groupBy=status\"\n        search={search}\n        shape=\"donut\"\n        labels={ TicketStatusTypeLabels }\n")
+                .contains("rollup=\"groupBy=priority&series=status\"\n          search={search}\n          shape=\"stacked\"\n"
+                        + "          labels={ TicketPriorityTypeLabels }\n          seriesLabels={ TicketStatusTypeLabels }\n")
+                .contains("rollup=\"groupBy=dueAt&bucket=day\"\n          search={search}\n          line\n          shape=\"area\"\n")
+                // A table chart always has its table, whatever its place.
+                .contains("rollup=\"groupBy=team\"\n          search={search}\n          shape=\"table\"\n");
+        assertThat(files.get(FE + "src/app/screens/ByStatusScreen.tsx"))
+                .contains("rollup=\"groupBy=status\"\n        search={search}\n        labels={ TicketStatusTypeLabels }\n")
+                .doesNotContain("shape=");
+        int tables = screen.split("\n\\s+table\n", -1).length - 1;
+        assertThat(tables).as("the first chart and the table chart have a totals table").isEqualTo(2);
+        assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
+                .contains("export function StackedBars(")
+                .contains("shape?: 'donut' | 'stacked' | 'area' | 'table'")
+                .contains("<StackedBars buckets={buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />");
+
+        assertChartRejected(Map.of("groupBy", "status", "kind", "pie"),
+                "unknown chart kind 'pie' (expected bar, donut, stacked, line, area or table)");
+        assertChartRejected(Map.of("groupBy", "status", "kind", "line"),
+                "a line chart draws a date over time (for this groupBy: bar, donut, stacked or table)");
+        assertChartRejected(Map.of("groupBy", "dueAt", "kind", "donut"),
+                "a donut chart groups by an enum, boolean or relation, not a date (over time: line, area or table)");
+        assertChartRejected(Map.of("groupBy", "team", "kind", "stacked"),
+                "a stacked chart splits an enum or boolean groupBy, and 'team' is a relation");
+        assertChartRejected(Map.of("groupBy", "status", "series", "priority"), "'series' applies to a stacked chart");
+        assertChartRejected(Map.of("groupBy", "status", "kind", "stacked", "series", "status"),
+                "series 'status' must be an enum or boolean field other than groupBy");
+        assertChartRejected(Map.of("groupBy", "status", "kind", "table", "table", false),
+                "a table chart is its totals table, so 'table' cannot be false");
+    }
+
+    private void assertChartRejected(Map<String, Object> chart, String expectedMessage) {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "workload", "type", "report", "entity", "Ticket", "chart", chart)));
+        assertBadRequest(body, expectedMessage);
+    }
+
+    @Test
+    void fullstackEndpoint_multiValueAndRelationPresets() throws Exception {
+        Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
+        // Several statuses (any case, a duplicate, out of order) and two customers, by relation name.
+        page(body, "orders").put("presetFilter", Map.of("status", "paid, open,PAID", "customer", "7,3"));
+        // A relation keyed by its filter name, on a hidden list embedded in a tabs page.
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "first-customer", "type", "entity-list", "entity", "Order",
+                "hidden", true, "presetFilter", Map.of("customerId", "1"))));
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "queue", "type", "tabs", "title", "Queue",
+                "tabs", List.of(Map.of("page", "orders"), Map.of("page", "first-customer")))));
+        Map<String, String> files = generate(body);
+
+        // Constants in the enum's order, ids in the order given, under the list's own params.
+        assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx"))
+                .contains("const preset = { customerId: '7,3', status: 'OPEN,PAID' }");
+        assertThat(files.get(FE + "src/app/screens/FirstCustomerScreen.tsx"))
+                .contains("initialFilters={ { customerId: '1', ...filters } }");
+        assertThat(files.get(FE + "src/app/screens/QueueScreen.tsx"))
+                .contains("{ id: 'orders', path: '/api/orders', params: 'customerId=7,3&status=OPEN,PAID' },")
+                .contains("{ id: 'first-customer', path: '/api/orders', params: 'customerId=1' },");
+        // The enum filter is a multi-select, and a new record takes a filter only when it names one value.
+        assertThat(files.get(FE + "src/shared/ui/FilterBar.tsx"))
+                .contains("function EnumMultiSelect(")
+                .contains("<EnumMultiSelect f={f} value={values[f.name] ?? ''} onChange={v => set(f.name, v)} className={fieldClass} />");
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx"))
+                .contains("  if (oneValue(values['status'])) record['status'] = values['status']")
+                .contains("  if (oneValue(values['customerId'])) record['customerId'] = Number(values['customerId'])")
+                .contains("function oneValue(value: string | undefined): boolean {");
+        // A list filtered by a yes/no field alone has no multi-value filter, so no helper (the lint rejects it unused).
+        assertThat(files.get(FE + "src/pages/product/ui/ProductPage.tsx"))
+                .contains("if (values['inStock']) record['inStock'] = values['inStock'] === 'true'")
+                .doesNotContain("oneValue");
+
+        // The generated API takes any number of values for an enum or relation filter.
+        String controller = backendFile(files, "OrderController.java");
+        assertThat(controller)
+                .contains("@RequestParam(required = false) List<OrderStatusType> status")
+                .contains("@RequestParam(required = false) List<Long> customerId")
+                .contains("@RequestParam(required = false) BigDecimal totalMin");
+        assertThat(backendFile(files, "OrderService.java"))
+                .contains("List<OrderStatusType> status,")
+                .contains("if (filters.status() != null && !filters.status().isEmpty()) specs.add((root, query, cb) -> root.get(\"status\").in(filters.status()));")
+                .contains("if (filters.customerId() != null && !filters.customerId().isEmpty()) specs.add((root, query, cb) -> root.get(\"customer\").get(\"id\").in(filters.customerId()));");
+
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("status", "OPEN,LOST")), "presetFilter 'status': 'LOST' is not one of [OPEN, PAID, SHIPPED, CANCELLED]");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("status", "OPEN,")), "presetFilter 'status': 'OPEN,' has an empty value");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("customer", "abc")), "presetFilter 'customer': 'abc' is not a Customer id (a whole number)");
+        assertOrdersRejected(p -> p.put("presetFilter", Map.of("buyer", "1")), "presetFilter 'buyer': no such field or relation on Order");
+        Map<String, Object> products = exampleBody("orders", "react-tailwind-crud");
+        page(products, "products").put("presetFilter", Map.of("inStock", "true,false"));
+        assertBadRequest(products, "presetFilter 'inStock': a yes/no field takes one value, got 'true,false'");
+    }
+
+    /** The generated backend source file whose path ends with {@code name}. */
+    private static String backendFile(Map<String, String> files, String name) {
+        return files.entrySet().stream()
+                .filter(e -> e.getKey().contains("/backend/") && e.getKey().endsWith("/" + name))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no " + name + " in " + files.keySet()));
+    }
+
+    @Test
     void fullstackEndpoint_rendersAListWidget() throws Exception {
         // The Orders example's desk ends with an "Open orders" list widget.
         Map<String, String> files = generate(exampleBody("orders", "react-tailwind-crud"));
@@ -1176,7 +1412,7 @@ class FullstackPagesIntegrationTests {
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "agg", "median"))),
                 "unknown agg 'median' (expected count, sum, avg, min or max)");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "pie", "entity", "Ticket"))),
-                "unknown widget kind 'pie' (expected kpi, bar, donut, stacked, line, recent, top, progress, text, links or list)");
+                "unknown widget kind 'pie' (expected kpi, bar, donut, stacked, pivot, line, recent, top, progress, activity, text, links or list)");
         // line widgets plot a temporal field, bucketed
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "line", "entity", "Team"))),
                 "Team has no date field to plot over time");
@@ -1510,7 +1746,7 @@ class FullstackPagesIntegrationTests {
                 "groupBy", "status", "series", "status"))),
                 "series 'status' must be an enum or boolean field other than groupBy");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "bar", "entity", "Ticket", "series", "status"))),
-                "only a stacked widget takes 'series'");
+                "only a stacked or pivot widget takes 'series'");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "text", "entity", "Ticket", "text", "Hi"))),
                 "a text widget takes only 'text', 'title' and 'span'");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "text"))),
@@ -1620,6 +1856,85 @@ class FullstackPagesIntegrationTests {
     private void assertOrdersRejected(Consumer<Map<String, Object>> mutator, String expectedMessage) {
         Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
         mutator.accept(page(body, "orders"));
+        assertBadRequest(body, expectedMessage);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void withoutDashboardFiltersAndDrillTo(Map<String, Object> dashboard) {
+        dashboard.remove("filters");
+        for (Map<String, Object> w : (List<Map<String, Object>>) dashboard.get("widgets")) w.remove("drillTo");
+    }
+
+    @Test
+    void fullstackEndpoint_dashboardFiltersReachEveryMatchingWidget() throws Exception {
+        Map<String, Object> body = exampleBody("reporting", "react-tailwind-crud");
+        Map<String, String> files = generate(body);
+        String dashboard = files.get(FE + "src/app/screens/ReportScreen.tsx").replace("\r\n", "\n");
+        assertThat(dashboard)
+                // One filter bar over the grid, described by the entity that has the field.
+                .contains("import { FilterBar, type FilterDescriptor, type FilterValues } from '@shared/ui'")
+                .contains("const DASH_FILTERS: FilterDescriptor[] = [\n  { name: 'region', label: 'Region', kind: 'enum', options: [{ value: 'NORTH', label: 'North' }, { value: 'CENTER', label: 'Center' }, { value: 'SOUTH', label: 'South' }] },\n]")
+                .contains("<FilterBar filters={DASH_FILTERS} values={filters} onChange={setFilters} />")
+                // The filters and the period share the route query: a period change keeps the filters.
+                .contains("export function ReportScreen({ query: routeQuery, onQueryChange, onNavigate }: Props) {")
+                .contains("const period = parsePeriod(query.period, '12m')")
+                .contains("const setPeriod = (next: Period) => setQuery({ ...query, period: next })")
+                .contains("const setFilters = (next: FilterValues) => setQuery({ ...next, ...(query.period ? { period: query.period } : {}) })")
+                .doesNotContain("onPeriodChange")
+                // Every widget takes the region, but the one whose preset fixes it.
+                .contains("params={ statsQuery(rangeParams('soldOn', false, period), dashParams(['region'])) }")
+                .contains("compareParams={ period === 'all' ? undefined : statsQuery(rangeParams('soldOn', false, period, true), dashParams(['region'])) }")
+                .contains("params={ statsQuery('region=NORTH', rangeParams('soldOn', false, period)) }")
+                // The bar's drillTo: a bar and View all open the report page, with the filters on.
+                .contains("onSelect={key => onNavigate('revenue', undefined, { ...queryOf(statsQuery(rangeParams('soldOn', false, period), dashParams(['region']))), region: key })}")
+                .contains("onOpen={() => onNavigate('revenue', undefined, queryOf(statsQuery(rangeParams('soldOn', false, period), dashParams(['region']))))}")
+                // Without a drillTo the tiles still open the entity's list.
+                .contains("onOpen={() => onNavigate('sales', undefined, queryOf(statsQuery(rangeParams('soldOn', false, period), dashParams(['region']))))}");
+        assertThat(files.get(FE + "src/app/App.tsx"))
+                .contains("<ReportScreen query={route.query} onQueryChange={setQuery} onNavigate={goView} />");
+
+        // A list widget opens with the dashboard's filters it takes, and starts again when they change.
+        Map<String, Object> orders = exampleBody("orders", "react-tailwind-crud");
+        Map<String, Object> desk = page(orders, "desk");
+        desk.put("filters", List.of("Customer"));
+        String screen = generate(orders).get(FE + "src/app/screens/DeskScreen.tsx");
+        assertThat(screen)
+                .contains("{ name: 'customerId', label: 'Customer', kind: 'relation', optionsPath: '/api/customers'")
+                .contains("key={dashParams(['customerId'])}")
+                .contains("...dashValues(['customerId'])");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsInvalidDashboardFiltersAndDrillTo() {
+        assertReportingRejected(b -> page(b, "sales").put("filters", List.of("region")),
+                "Page 'sales' (entity-list) does not take 'filters'");
+        assertReportingRejected(b -> page(b, "report").put("filters", List.of("nope")),
+                "Page 'report': filter 'nope' is not an enum, boolean or relation filter of any of its widgets' entities (Sale)");
+        assertReportingRejected(b -> page(b, "report").put("filters", List.of("region", "REGION")),
+                "Page 'report': filter 'region' is listed twice");
+        assertReportingRejected(b -> barOf(b).put("drillTo", "nowhere"),
+                "Page 'report' widgets[5]: drillTo names no page with id 'nowhere'");
+        assertReportingRejected(b -> barOf(b).put("drillTo", "report"),
+                "Page 'report' widgets[5]: drillTo 'report' must be an entity-list or report page");
+        assertReportingRejected(b -> barOf(b).put("drillTo", "monthly"),
+                "Page 'report' widgets[5]: drillTo 'monthly' shows MonthlySales, not Sale");
+        assertReportingRejected(b -> {
+            page(b, "revenue").put("hidden", true);
+            page(b, "revenue").remove("group");
+            page(b, "revenue").remove("icon");
+        }, "drillTo 'revenue' is hidden");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> barOf(Map<String, Object> body) {
+        return ((List<Map<String, Object>>) page(body, "report").get("widgets")).stream()
+                .filter(w -> "bar".equals(w.get("kind"))).findFirst().orElseThrow();
+    }
+
+    private void assertReportingRejected(Consumer<Map<String, Object>> mutator, String expectedMessage) {
+        Map<String, Object> body = exampleBody("reporting", "react-tailwind-crud");
+        body.put("dependencies", List.of("data-jpa", "web", "ldap-auth-rest"));
+        mutator.accept(body);
         assertBadRequest(body, expectedMessage);
     }
 

@@ -240,7 +240,33 @@ public class FullstackStarterController {
         // Root files
         Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
         Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
+        Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body));
         return request;
+    }
+
+    /** The model the project was generated from, at the zip root, for the editor's Import JSON. */
+    static final String MODEL_FILE = "menora-model.json";
+    /** Marks a model file that holds the request itself (a request sent without the editor's snapshot). */
+    static final String REQUEST_MODEL_FORMAT = "menora-fullstack-request/1";
+    private static final com.fasterxml.jackson.databind.ObjectMapper MODEL_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /**
+     * The editor's own snapshot when the request carries a usable one (an object with an
+     * {@code entities} array, at most the team-model size), else the request itself — everything
+     * but {@code editorModel} — under {@link #REQUEST_MODEL_FORMAT}, which the editor imports too.
+     */
+    static String modelJson(FullstackStarterRequest body) throws IOException {
+        com.fasterxml.jackson.databind.JsonNode model = body.editorModel();
+        if (model != null && model.isObject() && model.path("entities").isArray()) {
+            String json = MODEL_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(model);
+            if (json.getBytes(StandardCharsets.UTF_8).length <= FullstackModelController.MAX_SNAPSHOT_BYTES) return json + "\n";
+        }
+        com.fasterxml.jackson.databind.node.ObjectNode request = MODEL_MAPPER.valueToTree(body);
+        request.remove("editorModel");
+        com.fasterxml.jackson.databind.node.ObjectNode wrapper = MODEL_MAPPER.createObjectNode();
+        wrapper.put("format", REQUEST_MODEL_FORMAT);
+        wrapper.set("request", request);
+        return MODEL_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(wrapper) + "\n";
     }
 
     /** Resolves a template set by key and asserts its kind, throwing HTTP 400 otherwise. */
@@ -437,6 +463,13 @@ public class FullstackStarterController {
         // Bulk field-edit selection UI. Like bulkDelete, narrowed per entity in EntityScaffoldContext
         // (bulkUpdateApplicable) to writable, single-PK entities that have ≥1 editable non-PK field.
         projectCtx.put("optScaffoldBulkUpdate", optionsContext.hasOption("scaffold", "bulkUpdate"));
+        // The record's version rides along in the DTO; the page turns a stale 409 into the
+        // conflict dialog. Mirrors the backend config.
+        projectCtx.put("optScaffoldOptimisticLocking", optionsContext.hasOption("scaffold", "optimisticLocking"));
+        EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
+        // Table cells edited in place (frontend only — saved through the existing PUT).
+        projectCtx.put("optScaffoldInlineEdit", optionsContext.hasOption("scaffold", "inlineEdit"));
+        EntityScaffoldContext.putInlineEdit(projectCtx, entities);
         // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.
         putIfPresent(projectCtx, "dashboardTitle", dashboardTitle);
         putIfPresent(projectCtx, "dashboardOverview", dashboardOverview);
@@ -533,7 +566,11 @@ public class FullstackStarterController {
                 + "matching `.env` file (the API client `frontend/src/shared/api/client.ts` reads it at\n"
                 + "build time) and allow that origin on the backend with\n"
                 + "`app.cors.allowed-origins=http://localhost:5173` (comma-separated; CORS is off\n"
-                + "when the property is empty — see `CorsConfig`).\n";
+                + "when the property is empty — see `CorsConfig`).\n\n"
+                + "## Reopen in the generator\n\n"
+                + "`menora-model.json` is the model this project was generated from. To change the\n"
+                + "entities or pages and generate again, open the Fullstack tab of the Menora\n"
+                + "Initializr and choose **Start from → Import JSON** with that file.\n";
     }
 
     private static final String ROOT_GITIGNORE =

@@ -193,8 +193,54 @@ public record PageDefinition(
     /** A {@link Type#SEARCH} page's settings; null on any other page. */
     public SearchSpec search() { return spec instanceof SearchSpec s ? s : null; }
 
+    /** A {@link Type#DASHBOARD} page's filters; null on any other page and on a dashboard without them. */
+    public DashboardSpec dashboard() { return spec instanceof DashboardSpec d ? d : null; }
+
+    /** The actions an {@link Type#ENTITY_LIST} page leaves out of its list; empty for every other page. */
+    public List<ListAction> hiddenActions() { return spec instanceof ListSpec l ? l.hideActions() : List.of(); }
+
     /** The settings only one page type has, kept apart so the record does not grow a field per type. */
-    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec {}
+    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec, DashboardSpec, ListSpec {}
+
+    /** @param hideActions what an entity-list page leaves out of its list, in {@link ListAction} order */
+    public record ListSpec(List<ListAction> hideActions) implements Spec {
+        public ListSpec {
+            hideActions = List.copyOf(hideActions);
+        }
+    }
+
+    /** The list actions a page can leave out. Presentation only — the API still answers them. */
+    public enum ListAction {
+        /** New, the empty list's "New …" and the {@code n} shortcut. */
+        NEW("new"),
+        /** Edit on a row, in the side pane and the quick look, inline cells and moving a card. */
+        EDIT("edit"),
+        /** Delete on a row and in the side pane. */
+        DELETE("delete"),
+        /** Export CSV. */
+        EXPORT("export"),
+        /** Import CSV. */
+        IMPORT("import"),
+        /** Row selection and the bulk bar. */
+        BULK("bulk");
+
+        private final String wire;
+
+        ListAction(String wire) { this.wire = wire; }
+
+        public String wire() { return wire; }
+    }
+
+    /**
+     * @param filters the dashboard's filters, as declared field names: an enum or boolean field, or
+     *                a MANY_TO_ONE relation (its {@code <field>Id} param) — each limits every widget
+     *                whose entity filters by it
+     */
+    public record DashboardSpec(List<String> filters) implements Spec {
+        public DashboardSpec {
+            filters = List.copyOf(filters);
+        }
+    }
 
     /**
      * @param dateField the date column rows are placed by (and the visible window is fetched through)
@@ -340,7 +386,11 @@ public record PageDefinition(
         /** Tiles that open other pages of the app — a launcher. No entity, no query. */
         LINKS("links"),
         /** An entity's rows in a card: its list page embedded, with chosen columns, a sort and a filter. */
-        LIST("list");
+        LIST("list"),
+        /** A table of one aggregate over two columns at once: a row per group, a column per series. */
+        PIVOT("pivot"),
+        /** The latest changes across audited entities, newest first (needs the audit opt). */
+        ACTIVITY("activity");
 
         private final String wire;
 
@@ -403,12 +453,33 @@ public record PageDefinition(
     public record Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
                          Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
                          String sortBy, String dateField, boolean compare, java.math.BigDecimal target,
-                         String series, String text, List<String> pages, List<String> columns, ListSort sort) {
+                         String series, String text, List<String> pages, List<String> columns, ListSort sort,
+                         String drillTo, List<String> entities) {
 
         public Widget {
             presetFilter = presetFilter == null ? Map.of() : Map.copyOf(presetFilter);
             pages = pages == null ? List.of() : List.copyOf(pages);
             columns = columns == null ? List.of() : List.copyOf(columns);
+            entities = entities == null ? List.of() : List.copyOf(entities);
+        }
+
+        /** A widget over one entity, or none (every kind but an activity feed). */
+        public Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
+                      Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
+                      String sortBy, String dateField, boolean compare, java.math.BigDecimal target,
+                      String series, String text, List<String> pages, List<String> columns, ListSort sort,
+                      String drillTo) {
+            this(kind, entity, title, groupBy, limit, agg, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, series, text, pages, columns, sort, drillTo, null);
+        }
+
+        /** A widget that opens its entity's own pages (no {@code drillTo}). */
+        public Widget(WidgetKind kind, String entity, String title, String groupBy, int limit,
+                      Agg agg, String field, Bucket bucket, int span, Map<String, String> presetFilter,
+                      String sortBy, String dateField, boolean compare, java.math.BigDecimal target,
+                      String series, String text, List<String> pages, List<String> columns, ListSort sort) {
+            this(kind, entity, title, groupBy, limit, agg, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, series, text, pages, columns, sort, null);
         }
 
         /** A widget of the kinds before links and lists (no page ids, columns or sort). */
@@ -439,7 +510,7 @@ public record PageDefinition(
          *  a launcher the whole row. */
         public static int defaultSpan(WidgetKind kind) {
             return kind == WidgetKind.KPI || kind == WidgetKind.PROGRESS ? 1
-                    : kind == WidgetKind.LINKS || kind == WidgetKind.LIST ? 4 : 2;
+                    : kind == WidgetKind.LINKS || kind == WidgetKind.LIST || kind == WidgetKind.PIVOT ? 4 : 2;
         }
     }
 
@@ -489,11 +560,43 @@ public record PageDefinition(
      *
      * @param bucket set only when {@code groupBy} is temporal
      */
-    /** @param table the grouped totals table under the chart; null: under a report's first chart only */
-    public record Chart(String groupBy, Bucket bucket, Agg agg, String field, Boolean table) {
+    /**
+     * @param table  the grouped totals table under the chart; null: under a report's first chart only
+     * @param kind   how it is drawn; null for the default (a bar, or a line over time)
+     * @param series the column a {@link ChartKind#STACKED} chart splits each bar by; null otherwise
+     */
+    public record Chart(String groupBy, Bucket bucket, Agg agg, String field, Boolean table, ChartKind kind,
+                        String series) {
 
         public Chart(String groupBy, Bucket bucket, Agg agg, String field) {
             this(groupBy, bucket, agg, field, null);
+        }
+
+        public Chart(String groupBy, Bucket bucket, Agg agg, String field, Boolean table) {
+            this(groupBy, bucket, agg, field, table, null, null);
+        }
+    }
+
+    /** How a report chart draws its groups: as bars, a ring of shares, bars split by a second column
+     *  or only the totals table; over time, as a line, a filled area or the table. */
+    public enum ChartKind {
+        BAR("bar", false), DONUT("donut", false), STACKED("stacked", false), LINE("line", true),
+        AREA("area", true), TABLE("table", null);
+
+        private final String wire;
+        /** True: needs a date groupBy; false: a group; null: either. */
+        private final Boolean overTime;
+
+        ChartKind(String wire, Boolean overTime) {
+            this.wire = wire;
+            this.overTime = overTime;
+        }
+
+        public String wire() { return wire; }
+
+        /** Whether this kind can draw a chart grouped over time ({@code true}) or by a group. */
+        public boolean fits(boolean byDate) {
+            return overTime == null || overTime == byDate;
         }
     }
 }

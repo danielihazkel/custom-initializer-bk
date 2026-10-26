@@ -14,5 +14,7 @@ export interface {{EntityName}} {
   {{fieldName}}Label?: string | null
 {{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}  createdAt?: string | null
   updatedAt?: string | null
-{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  {{collectionField}}Count?: number | null
+{{/auditApplicable}}{{#lockingApplicable}}  /** Optimistic-lock version: sent back on save so a stale edit is refused, never shown. */
+  version?: number | null
+{{/lockingApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  {{collectionField}}Count?: number | null
 {{/inverseRelations}}{{/optScaffoldInverse}}}

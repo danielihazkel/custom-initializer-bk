@@ -204,6 +204,8 @@
 .mn-table td { padding: 13px 18px; border-bottom: 1px solid var(--line); font: 500 18px/27px var(--font-sans); color: var(--ink-body); }
 .mn-table tbody tr:last-child td { border-bottom: 0; }
 .mn-table tbody tr:hover td { background: var(--purple-hover); }
+.mn-table tbody tr.is-openable { cursor: pointer; }
+.mn-table tbody tr.is-openable:focus-visible { outline: 2px solid var(--purple); outline-offset: -2px; }
 .mn-table .num { direction: ltr; text-align: left; font-variant-numeric: tabular-nums; }
 .mn-table th.num > button, .mn-table th.num > span { justify-content: flex-end; direction: ltr; }
 .mn-table .key { color: var(--ink); font-weight: 600; }

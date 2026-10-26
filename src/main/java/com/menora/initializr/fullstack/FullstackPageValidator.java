@@ -9,10 +9,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -41,6 +43,10 @@ public final class FullstackPageValidator {
     static final int MAX_DESCRIPTION = 300;
     static final int MAX_RECENT_LIMIT = 20;
     static final int DEFAULT_RECENT_LIMIT = 5;
+    /** An activity feed: how many changes it lists by default, and at least; and how many entities it reads. */
+    static final int DEFAULT_ACTIVITY_LIMIT = 10;
+    static final int MIN_ACTIVITY_LIMIT = 5;
+    static final int MAX_ACTIVITY_ENTITIES = 6;
 
     static final int MAX_GROUP = 40;
     static final int MAX_SPAN = 4;
@@ -93,12 +99,15 @@ public final class FullstackPageValidator {
         if (raw.size() > MAX_PAGES) {
             throw new WizardArgumentException("At most " + MAX_PAGES + " pages are allowed");
         }
-        Map<String, EntityDefinition> entitiesByLower = new HashMap<>();
+        Map<String, EntityDefinition> entitiesByLower = new LinkedHashMap<>();
         for (EntityDefinition e : entities) entitiesByLower.put(e.name().toLowerCase(Locale.ROOT), e);
 
         // Pass 1: ids + types, so tabs (and links widgets) can reference pages declared after them.
         Map<String, PageDefinition.Type> typeById = new LinkedHashMap<>();
         Map<String, Boolean> hiddenById = new LinkedHashMap<>();
+        // The entity a list or report page shows (canonical name), so a widget's drillTo can be
+        // checked against a page declared after it.
+        Map<String, String> entityById = new HashMap<>();
         for (int pi = 0; pi < raw.size(); pi++) {
             PageDefinitionDto p = raw.get(pi);
             if (p == null) throw new WizardArgumentException("pages[" + pi + "] is null");
@@ -111,6 +120,8 @@ public final class FullstackPageValidator {
             if (typeById.containsKey(id)) throw new WizardArgumentException("Duplicate page id '" + id + "'");
             typeById.put(id, parseType(id, p.type()));
             hiddenById.put(id, Boolean.TRUE.equals(p.hidden()) || typeById.get(id) == PageDefinition.Type.RECORD);
+            EntityDefinition shown = p.entity() == null ? null : entitiesByLower.get(p.entity().trim().toLowerCase(Locale.ROOT));
+            if (shown != null) entityById.put(id, shown.name());
         }
         // Decided here, before any page is checked in depth: a layout with nothing in the nav gets
         // this message rather than one about a widget that happens to point at a hidden page.
@@ -152,16 +163,17 @@ public final class FullstackPageValidator {
                     // A side pane addresses its row by one key in the route.
                     if (detail == PageDefinition.Detail.SIDE) requireSinglePk(prefix, entity);
                     yield new PageDefinition(id, type, title, description, hidden, entity.name(),
-                            presetFilter(prefix, entity, p.presetFilter()), null, null)
+                            presetFilter(prefix, entity, p.presetFilter(), entitiesByLower), null, null)
                             .withListPresentation(columns(prefix, entity, p.columns(), audit),
                                     sort(prefix, entity, p.sort(), audit), view(prefix, entity, p.view()),
                                     pageSize(prefix, p.pageSize()))
-                            .withDetail(detail);
+                            .withDetail(detail)
+                            .withSpec(listSpec(prefix, entity, p.hideActions(), scaffoldOpts));
                 }
                 case DASHBOARD -> {
                     PageDefinition.DateRange range = parseDateRange(id, p.dateRange());
                     List<PageDefinition.Widget> widgets = widgets(id, p.widgets(), entitiesByLower, range != null,
-                            typeById, hiddenById, scaffoldOpts);
+                            typeById, hiddenById, entityById, scaffoldOpts);
                     if (range != null && widgets.stream().allMatch(w -> w.dateField() == null)) {
                         throw new WizardArgumentException("Page '" + id + "' has a dateRange, but none of its widgets"
                                 + " counts an entity with a filterable date field for it to limit");
@@ -175,9 +187,11 @@ public final class FullstackPageValidator {
                         throw new WizardArgumentException("Page '" + id + "' refreshes every " + refresh
                                 + " seconds, but none of its widgets shows data to reload");
                     }
+                    List<String> filters = dashboardFilters(id, p.filters(), widgets, entitiesByLower);
                     yield new PageDefinition(id, type, title, description, hidden, null, null, widgets, null)
                             .withDateRange(range)
-                            .withRefreshSeconds(refresh);
+                            .withRefreshSeconds(refresh)
+                            .withSpec(filters.isEmpty() ? null : new PageDefinition.DashboardSpec(filters));
                 }
                 case TABS -> {
                     // No entity to borrow a name from, so the nav label has to be given.
@@ -203,7 +217,7 @@ public final class FullstackPageValidator {
                     String prefix = "Page '" + id + "' (report)";
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
                     yield new PageDefinition(id, type, title, description, hidden, entity.name(),
-                            presetFilter("Page '" + id + "'", entity, p.presetFilter()), charts(prefix, entity, p));
+                            presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower), charts(prefix, entity, p));
                 }
                 case RECORD -> {
                     String prefix = "Page '" + id + "' (record)";
@@ -238,7 +252,7 @@ public final class FullstackPageValidator {
                     String prefix = "Page '" + id + "' (calendar)";
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
                     PageDefinition.CalendarSpec spec = calendar(prefix, entity, p);
-                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter());
+                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
                     for (String field : java.util.stream.Stream.of(spec.dateField(), spec.endField()).filter(java.util.Objects::nonNull).toList()) {
                         if (preset.keySet().stream().anyMatch(k -> k.equals(field) || k.equals(field + "From") || k.equals(field + "To"))) {
                             throw new WizardArgumentException(prefix + ": presetFilter cannot name '" + field
@@ -252,7 +266,7 @@ public final class FullstackPageValidator {
                     String prefix = "Page '" + id + "' (board)";
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
                     PageDefinition.BoardSpec spec = board(prefix, entity, p);
-                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter());
+                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
                     if (preset.containsKey(spec.laneField())) {
                         throw new WizardArgumentException(prefix + ": presetFilter cannot name '" + spec.laneField()
                                 + "' — the lanes already split by it");
@@ -436,6 +450,9 @@ public final class FullstackPageValidator {
         if (type != PageDefinition.Type.DASHBOARD && p.refreshSeconds() != null) {
             throw new WizardArgumentException(prefix + "does not take 'refreshSeconds'");
         }
+        if (type != PageDefinition.Type.DASHBOARD && p.filters() != null && !p.filters().isEmpty()) {
+            throw new WizardArgumentException(prefix + "does not take 'filters' (only a dashboard does — a list or report page has its own filter bar)");
+        }
         if (type != PageDefinition.Type.WIZARD && p.steps() != null && !p.steps().isEmpty()) {
             throw new WizardArgumentException(prefix + "does not take 'steps'");
         }
@@ -470,6 +487,9 @@ public final class FullstackPageValidator {
             if (trimToNull(p.view()) != null) throw new WizardArgumentException(prefix + "does not take 'view'");
             if (p.pageSize() != null) throw new WizardArgumentException(prefix + "does not take 'pageSize'");
             if (trimToNull(p.detail()) != null) throw new WizardArgumentException(prefix + "does not take 'detail'");
+            if (p.hideActions() != null && !p.hideActions().isEmpty()) {
+                throw new WizardArgumentException(prefix + "does not take 'hideActions'");
+            }
         }
     }
 
@@ -611,6 +631,34 @@ public final class FullstackPageValidator {
         return lower;
     }
 
+    /** A list page's hidden actions, canonicalized to {@link PageDefinition.ListAction} order; null for none. */
+    private static PageDefinition.ListSpec listSpec(String prefix, EntityDefinition entity, List<String> raw,
+                                                    Set<String> scaffoldOpts) {
+        if (raw == null || raw.isEmpty()) return null;
+        Boolean exportOverride = entity.opts().get("csvExport");
+        boolean exports = exportOverride != null ? exportOverride : scaffoldOpts.contains("csvExport");
+        if (entity.readOnly() && !exports) {
+            throw new WizardArgumentException(prefix + ": " + entity.name()
+                    + " is read-only and exports nothing, so its list has no actions to hide");
+        }
+        Set<PageDefinition.ListAction> picked = new HashSet<>();
+        for (String r : raw) {
+            String name = trimToNull(r);
+            PageDefinition.ListAction action = null;
+            for (PageDefinition.ListAction a : PageDefinition.ListAction.values()) {
+                if (a.wire().equalsIgnoreCase(name)) action = a;
+            }
+            if (action == null) {
+                throw new WizardArgumentException(prefix + ": unknown hideActions entry '" + r
+                        + "' (expected new, edit, delete, export, import or bulk)");
+            }
+            if (!picked.add(action)) {
+                throw new WizardArgumentException(prefix + ": hideActions lists '" + action.wire() + "' twice");
+            }
+        }
+        return new PageDefinition.ListSpec(java.util.Arrays.stream(PageDefinition.ListAction.values()).filter(picked::contains).toList());
+    }
+
     /** The rows per page a list opens with: one of the pager's choices. */
     private static Integer pageSize(String prefix, Integer raw) {
         if (raw == null) return null;
@@ -621,8 +669,10 @@ public final class FullstackPageValidator {
     }
 
     /**
-     * Preset filters: equality on a filterable enum/boolean field (the enum constant canonicalized,
-     * matched ignoring case), a range on a filterable date or number field ({@code 2026-01-01..2026-03-31},
+     * Preset filters: equality on a filterable enum/boolean field (enum constants canonicalized,
+     * matched ignoring case; an enum may name several, {@code OPEN,IN_PROGRESS}, any of which
+     * matches), the id(s) a MANY_TO_ONE points at (keyed by the relation's field name or its
+     * {@code <field>Id} filter, kept as the latter), a range on a filterable date or number field ({@code 2026-01-01..2026-03-31},
      * {@code 100..500}, either side optional) or a period ending on the day the app is opened on a
      * date field ({@code last:7d}, {@code last:30d}, {@code last:90d}, {@code ytd}, {@code 12m}).
      * The result maps list params to literals — a range becomes {@code <field>From}/{@code <field>To}
@@ -630,7 +680,8 @@ public final class FullstackPageValidator {
      * {@code @<period>} for the renderer to turn into a {@code rangeParams(...)} call (it depends on
      * today's date). {@code owner} names the page or widget in the error.
      */
-    private static Map<String, String> presetFilter(String owner, EntityDefinition entity, Map<String, String> raw) {
+    private static Map<String, String> presetFilter(String owner, EntityDefinition entity, Map<String, String> raw,
+                                                    Map<String, EntityDefinition> entitiesByLower) {
         if (raw == null || raw.isEmpty()) return Map.of();
         Map<String, String> out = new LinkedHashMap<>();
         for (Map.Entry<String, String> en : raw.entrySet()) {
@@ -638,7 +689,18 @@ public final class FullstackPageValidator {
             FieldDefinition field = entity.fields().stream()
                     .filter(f -> f.name().equalsIgnoreCase(en.getKey()))
                     .findFirst()
-                    .orElseThrow(() -> new WizardArgumentException(prefix + ": no such field on " + entity.name()));
+                    .orElse(null);
+            if (field == null) {
+                RelationDefinition relation = entity.relations().stream()
+                        .filter(r -> r.fieldName().equalsIgnoreCase(en.getKey())
+                                || (r.fieldName() + "Id").equalsIgnoreCase(en.getKey()))
+                        .findFirst()
+                        .orElseThrow(() -> new WizardArgumentException(prefix + ": no such field or relation on " + entity.name()));
+                String ids = trimToNull(en.getValue());
+                if (ids == null) throw new WizardArgumentException(prefix + ": value is required");
+                out.put(relation.fieldName() + "Id", relationIds(prefix, relation, ids, entitiesByLower));
+                continue;
+            }
             FieldType type = field.type();
             if (field.primaryKey() || !field.filterable()
                     || !(type.isEnum() || type.isBoolean() || type.isTemporal() || type.isNumeric())) {
@@ -647,18 +709,27 @@ public final class FullstackPageValidator {
             String value = trimToNull(en.getValue());
             if (value == null) throw new WizardArgumentException(prefix + ": value is required");
             if (type.isBoolean()) {
+                if (value.contains(",")) {
+                    throw new WizardArgumentException(prefix + ": a yes/no field takes one value, got '" + value + "'");
+                }
                 String lower = value.toLowerCase(Locale.ROOT);
                 if (!lower.equals("true") && !lower.equals("false")) {
                     throw new WizardArgumentException(prefix + ": expected true or false, got '" + value + "'");
                 }
                 out.put(field.name(), lower);
             } else if (type.isEnum()) {
-                String constant = field.enumValues().stream()
-                        .filter(c -> c.equalsIgnoreCase(value))
-                        .findFirst()
-                        .orElseThrow(() -> new WizardArgumentException(prefix + ": '" + value
-                                + "' is not one of " + field.enumValues()));
-                out.put(field.name(), constant);
+                Set<String> picked = new HashSet<>();
+                for (String part : value.split(",", -1)) {
+                    String one = part.trim();
+                    if (one.isEmpty()) throw new WizardArgumentException(prefix + ": '" + value + "' has an empty value");
+                    picked.add(field.enumValues().stream()
+                            .filter(c -> c.equalsIgnoreCase(one))
+                            .findFirst()
+                            .orElseThrow(() -> new WizardArgumentException(prefix + ": '" + one
+                                    + "' is not one of " + field.enumValues())));
+                }
+                // In the enum's own order, so one choice always renders (and routes) the same way.
+                out.put(field.name(), String.join(",", field.enumValues().stream().filter(picked::contains).toList()));
             } else if (type.isTemporal()) {
                 String period = presetPeriod(value);
                 if (period != null) {
@@ -687,6 +758,50 @@ public final class FullstackPageValidator {
             }
         }
         return out;
+    }
+
+    private static final Pattern PRESET_TEXT_ID = Pattern.compile("[A-Za-z0-9._~-]+");
+
+    /**
+     * The ids a relation preset names, comma-joined and checked against the target's key type:
+     * whole numbers for an integral key, UUIDs (lower-cased) for a UUID one, and plain URL-safe
+     * text otherwise — the value lands in a query string verbatim.
+     */
+    private static String relationIds(String prefix, RelationDefinition relation, String value,
+                                      Map<String, EntityDefinition> entitiesByLower) {
+        EntityDefinition target = entitiesByLower.get(relation.targetEntity().toLowerCase(Locale.ROOT));
+        FieldType keyType = target == null ? FieldType.STRING : target.fields().stream()
+                .filter(FieldDefinition::primaryKey)
+                .findFirst()
+                .map(FieldDefinition::type)
+                .orElse(FieldType.STRING);
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        for (String part : value.split(",", -1)) {
+            String id = part.trim();
+            if (id.isEmpty()) throw new WizardArgumentException(prefix + ": '" + value + "' has an empty id");
+            if (keyType == FieldType.LONG || keyType == FieldType.INTEGER) {
+                try {
+                    long n = Long.parseLong(id);
+                    if (keyType == FieldType.INTEGER && (n < Integer.MIN_VALUE || n > Integer.MAX_VALUE)) {
+                        throw new NumberFormatException();
+                    }
+                    ids.add(Long.toString(n));
+                } catch (NumberFormatException e) {
+                    throw new WizardArgumentException(prefix + ": '" + id + "' is not a " + relation.targetEntity() + " id (a whole number)");
+                }
+            } else if (keyType == FieldType.UUID) {
+                try {
+                    ids.add(UUID.fromString(id).toString());
+                } catch (IllegalArgumentException e) {
+                    throw new WizardArgumentException(prefix + ": '" + id + "' is not a " + relation.targetEntity() + " id (a UUID)");
+                }
+            } else if (PRESET_TEXT_ID.matcher(id).matches()) {
+                ids.add(id);
+            } else {
+                throw new WizardArgumentException(prefix + ": '" + id + "' may hold only letters, digits and . _ ~ -");
+            }
+        }
+        return String.join(",", ids);
     }
 
     private static final Set<String> PRESET_PERIODS = Set.of("7d", "30d", "90d", "ytd", "12m");
@@ -749,6 +864,7 @@ public final class FullstackPageValidator {
                                                        boolean hasDateRange,
                                                        Map<String, PageDefinition.Type> typeById,
                                                        Map<String, Boolean> hiddenById,
+                                                       Map<String, String> entityById,
                                                        Set<String> scaffoldOpts) {
         if (raw == null || raw.isEmpty()) {
             throw new WizardArgumentException("Page '" + id + "' (dashboard) needs at least one widget");
@@ -762,6 +878,13 @@ public final class FullstackPageValidator {
             String prefix = "Page '" + id + "' widgets[" + wi + "]";
             if (w == null) throw new WizardArgumentException(prefix + " is null");
             PageDefinition.WidgetKind kind = parseKind(prefix, w.kind());
+            if (kind == PageDefinition.WidgetKind.ACTIVITY) {
+                out.add(activityWidget(prefix, w, entitiesByLower, scaffoldOpts));
+                continue;
+            }
+            if (w.entities() != null && !w.entities().isEmpty()) {
+                throw new WizardArgumentException(prefix + ": only an activity widget takes 'entities'");
+            }
             if (kind == PageDefinition.WidgetKind.TEXT) {
                 out.add(textWidget(prefix, w));
                 continue;
@@ -771,7 +894,8 @@ public final class FullstackPageValidator {
                 continue;
             }
             if (kind == PageDefinition.WidgetKind.LIST) {
-                out.add(listWidget(prefix, w, entitiesByLower, scaffoldOpts));
+                PageDefinition.Widget list = listWidget(prefix, w, entitiesByLower, scaffoldOpts);
+                out.add(withDrillTo(list, drillTo(prefix, w.drillTo(), list.entity(), typeById, hiddenById, entityById)));
                 continue;
             }
             if (trimToNull(w.text()) != null) {
@@ -816,18 +940,23 @@ public final class FullstackPageValidator {
                     series = series(prefix, entity, groupBy, trimToNull(w.series()));
                 }
                 case TOP -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "rank by");
+                case PIVOT -> {
+                    groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "lay out in rows");
+                    series = pivotColumns(prefix, entity, groupBy, trimToNull(w.series()));
+                }
                 case LINE -> {
                     groupBy = dateGroupBy(prefix, entity, trimToNull(w.groupBy()));
                     bucket = parseBucket(prefix, w.bucket());
                 }
                 default -> {
                     if (trimToNull(w.groupBy()) != null) {
-                        throw new WizardArgumentException(prefix + ": only a bar, donut, stacked, line or top widget takes 'groupBy'");
+                        throw new WizardArgumentException(prefix + ": only a bar, donut, stacked, pivot, line or top widget takes 'groupBy'");
                     }
                 }
             }
-            if (kind != PageDefinition.WidgetKind.STACKED && trimToNull(w.series()) != null) {
-                throw new WizardArgumentException(prefix + ": only a stacked widget takes 'series'");
+            if (kind != PageDefinition.WidgetKind.STACKED && kind != PageDefinition.WidgetKind.PIVOT
+                    && trimToNull(w.series()) != null) {
+                throw new WizardArgumentException(prefix + ": only a stacked or pivot widget takes 'series'");
             }
             if (kind != PageDefinition.WidgetKind.LINE && trimToNull(w.bucket()) != null) {
                 throw new WizardArgumentException(prefix + ": only a line widget takes 'bucket'");
@@ -847,7 +976,7 @@ public final class FullstackPageValidator {
             }
             String sortBy = null;
             if (kind == PageDefinition.WidgetKind.RECENT) {
-                sortBy = sortBy(prefix, entity, trimToNull(w.sortBy()));
+                sortBy = sortBy(prefix, entity, trimToNull(w.sortBy()), auditApplies(entity, scaffoldOpts));
             } else if (trimToNull(w.sortBy()) != null) {
                 throw new WizardArgumentException(prefix + ": only a recent widget takes 'sortBy'");
             }
@@ -864,7 +993,110 @@ public final class FullstackPageValidator {
                 }
             }
             out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit, agg, field, bucket, span,
-                    presetFilter(prefix, entity, w.presetFilter()), sortBy, dateField, compare, target, series, null));
+                    presetFilter(prefix, entity, w.presetFilter(), entitiesByLower), sortBy, dateField, compare, target, series, null,
+                    null, null, null, drillTo(prefix, w.drillTo(), entity.name(), typeById, hiddenById, entityById)));
+        }
+        return out;
+    }
+
+    private static PageDefinition.Widget withDrillTo(PageDefinition.Widget w, String drillTo) {
+        return new PageDefinition.Widget(w.kind(), w.entity(), w.title(), w.groupBy(), w.limit(), w.agg(), w.field(),
+                w.bucket(), w.span(), w.presetFilter(), w.sortBy(), w.dateField(), w.compare(), w.target(), w.series(),
+                w.text(), w.pages(), w.columns(), w.sort(), drillTo);
+    }
+
+    /**
+     * The page a widget's clicks and "View all" open instead of its entity's own list: a visible
+     * entity-list or report page of the same entity — a page that shows those rows and takes their
+     * filters from the route. Null when not given.
+     */
+    private static String drillTo(String prefix, String raw, String entity,
+                                  Map<String, PageDefinition.Type> typeById, Map<String, Boolean> hiddenById,
+                                  Map<String, String> entityById) {
+        String id = trimToNull(raw);
+        if (id == null) return null;
+        PageDefinition.Type type = typeById.get(id);
+        if (type == null) throw new WizardArgumentException(prefix + ": drillTo names no page with id '" + id + "'");
+        if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.REPORT) {
+            throw new WizardArgumentException(prefix + ": drillTo '" + id + "' must be an entity-list or report page");
+        }
+        if (Boolean.TRUE.equals(hiddenById.get(id))) {
+            throw new WizardArgumentException(prefix + ": drillTo '" + id + "' is hidden, so it cannot be opened from a widget");
+        }
+        if (!entity.equals(entityById.get(id))) {
+            throw new WizardArgumentException(prefix + ": drillTo '" + id + "' shows " + entityById.get(id)
+                    + ", not " + entity);
+        }
+        return id;
+    }
+
+    /** At most this many dashboard filters. */
+    static final int MAX_DASHBOARD_FILTERS = 4;
+
+    /**
+     * A dashboard's filters: each an enum, boolean or MANY_TO_ONE name (matched ignoring case) that
+     * at least one of its data or list widgets' entities filters by — and wherever several entities
+     * have it, the same kind of filter (the same enum constants, the same relation target), since
+     * one control sets them all. Returns the declared spellings.
+     */
+    private static List<String> dashboardFilters(String id, List<String> raw, List<PageDefinition.Widget> widgets,
+                                                 Map<String, EntityDefinition> entitiesByLower) {
+        if (raw == null || raw.isEmpty()) return List.of();
+        String prefix = "Page '" + id + "'";
+        if (raw.size() > MAX_DASHBOARD_FILTERS) {
+            throw new WizardArgumentException(prefix + " has more than " + MAX_DASHBOARD_FILTERS + " filters");
+        }
+        Set<String> entities = new LinkedHashSet<>();
+        for (PageDefinition.Widget w : widgets) {
+            if (w.entity() != null && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.TEXT) {
+                entities.add(w.entity());
+            }
+        }
+        List<String> out = new ArrayList<>();
+        for (String requested : raw) {
+            String name = trimToNull(requested);
+            if (name == null) throw new WizardArgumentException(prefix + ": a filter name is blank");
+            String canonical = null;
+            String shape = null;
+            String shapeOwner = null;
+            for (String entityName : entities) {
+                EntityDefinition e = entitiesByLower.get(entityName.toLowerCase(Locale.ROOT));
+                String found = null;
+                String thisShape = null;
+                for (FieldDefinition f : e.fields()) {
+                    if (f.name().equalsIgnoreCase(name) && !f.primaryKey() && f.filterable()
+                            && (f.type().isEnum() || f.type().isBoolean())) {
+                        found = f.name();
+                        thisShape = f.type().isBoolean() ? "a yes/no field"
+                                : "the values " + String.join(", ", f.enumValues());
+                    }
+                }
+                for (RelationDefinition r : e.relations()) {
+                    if (r.fieldName().equalsIgnoreCase(name)) {
+                        found = r.fieldName();
+                        thisShape = "a link to " + r.targetEntity();
+                    }
+                }
+                if (found == null) continue;
+                if (canonical == null) {
+                    canonical = found;
+                    shape = thisShape;
+                    shapeOwner = e.name();
+                } else if (!shape.equals(thisShape)) {
+                    throw new WizardArgumentException(prefix + ": filter '" + name + "' is " + shape + " on " + shapeOwner
+                            + " but " + thisShape + " on " + e.name() + " — one control cannot set both");
+                }
+            }
+            if (canonical == null) {
+                throw new WizardArgumentException(prefix + ": filter '" + name + "' is not an enum, boolean or relation"
+                        + " filter of any of its widgets' entities (" + String.join(", ", entities) + ")");
+            }
+            for (String seen : out) {
+                if (seen.equalsIgnoreCase(canonical)) {
+                    throw new WizardArgumentException(prefix + ": filter '" + canonical + "' is listed twice");
+                }
+            }
+            out.add(canonical);
         }
         return out;
     }
@@ -879,7 +1111,7 @@ public final class FullstackPageValidator {
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
                 || trimToNull(w.series()) != null || (w.pages() != null && !w.pages().isEmpty())
-                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null) {
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null) {
             throw new WizardArgumentException(prefix + ": a text widget takes only 'text', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.TEXT) : w.span();
@@ -927,7 +1159,7 @@ public final class FullstackPageValidator {
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
                 || trimToNull(w.series()) != null || trimToNull(w.text()) != null
-                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null) {
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null) {
             throw new WizardArgumentException(prefix + ": a links widget takes only 'pages', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.LINKS) : w.span();
@@ -966,7 +1198,7 @@ public final class FullstackPageValidator {
         }
         return new PageDefinition.Widget(PageDefinition.WidgetKind.LIST, entity.name(),
                 checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title"), null, limit, null, null, null, span,
-                presetFilter(prefix, entity, w.presetFilter()), null, null, false, null, null, null, null, columns, sort);
+                presetFilter(prefix, entity, w.presetFilter(), entitiesByLower), null, null, false, null, null, null, null, columns, sort);
     }
 
     /** What a stacked bar splits each group by: another enum/boolean field — the entity's next one
@@ -1023,11 +1255,96 @@ public final class FullstackPageValidator {
     }
 
     /** What a recent list orders by: any column of the entity (the list endpoint sorts by every
-     *  scalar DTO column), newest first. Null keeps the primary key. */
-    private static String sortBy(String prefix, EntityDefinition entity, String requested) {
+     *  scalar DTO column), or — when the audit opt applies to it — {@code createdAt}/{@code updatedAt},
+     *  newest first. Null keeps the primary key. */
+    private static String sortBy(String prefix, EntityDefinition entity, String requested, boolean audit) {
         if (requested == null) return null;
+        if (audit) {
+            for (String column : List.of("createdAt", "updatedAt")) {
+                if (column.equalsIgnoreCase(requested) && entity.fields().stream().noneMatch(f -> f.name().equalsIgnoreCase(column))) {
+                    return column;
+                }
+            }
+        }
         FieldDefinition field = fieldOf(prefix, entity, requested, "sortBy");
         return field.primaryKey() ? null : field.name();
+    }
+
+    /** A pivot's columns: an enum/boolean field or a relation other than its rows — the next one
+     *  the entity has, when omitted. */
+    private static String pivotColumns(String prefix, EntityDefinition entity, String rows, String requested) {
+        if (requested == null) {
+            List<String> candidates = new ArrayList<>();
+            entity.fields().stream().filter(f -> !f.primaryKey() && f.type().isEnum()).forEach(f -> candidates.add(f.name()));
+            entity.fields().stream().filter(f -> !f.primaryKey() && f.type().isBoolean()).forEach(f -> candidates.add(f.name()));
+            entity.relations().stream().filter(r -> r.type() == RelationType.MANY_TO_ONE).forEach(r -> candidates.add(r.fieldName()));
+            return candidates.stream().filter(c -> !c.equals(rows)).findFirst()
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": " + entity.name()
+                            + " needs a second enum, boolean or relation to lay out in columns"));
+        }
+        String columns = rankBy(prefix, entity, requested, "lay out in columns");
+        if (columns.equals(rows)) {
+            throw new WizardArgumentException(prefix + ": series '" + requested + "' must differ from groupBy — the rows already split by it");
+        }
+        return columns;
+    }
+
+    /**
+     * An activity feed: the latest changes to the named entities (every one the audit opt applies
+     * to, when omitted — at most {@value #MAX_ACTIVITY_ENTITIES}), merged newest first. It reads
+     * each list sorted by {@code updatedAt}, which only an audited entity has; it is not a filter, so
+     * the feed takes no preset, period, drill target or aggregate.
+     */
+    private static PageDefinition.Widget activityWidget(String prefix, WidgetDto w, Map<String, EntityDefinition> entitiesByLower,
+                                                        Set<String> scaffoldOpts) {
+        if (trimToNull(w.entity()) != null) {
+            throw new WizardArgumentException(prefix + ": an activity widget lists 'entities', not one 'entity'");
+        }
+        if (trimToNull(w.agg()) != null || trimToNull(w.field()) != null || trimToNull(w.groupBy()) != null
+                || trimToNull(w.bucket()) != null || (w.presetFilter() != null && !w.presetFilter().isEmpty())
+                || trimToNull(w.sortBy()) != null || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare())
+                || trimToNull(w.target()) != null || trimToNull(w.series()) != null || trimToNull(w.text()) != null
+                || (w.pages() != null && !w.pages().isEmpty()) || (w.columns() != null && !w.columns().isEmpty())
+                || w.sort() != null || trimToNull(w.drillTo()) != null) {
+            throw new WizardArgumentException(prefix + ": an activity widget takes only 'entities', 'limit', 'title' and 'span'");
+        }
+        List<String> names = new ArrayList<>();
+        if (w.entities() == null || w.entities().isEmpty()) {
+            // In the request's own order (the map is a LinkedHashMap).
+            for (EntityDefinition e : entitiesByLower.values()) {
+                if (auditApplies(e, scaffoldOpts)) names.add(e.name());
+            }
+            if (names.isEmpty()) {
+                throw new WizardArgumentException(prefix + ": an activity widget needs the 'audit' opt — no entity records when it changed");
+            }
+            if (names.size() > MAX_ACTIVITY_ENTITIES) names = new ArrayList<>(names.subList(0, MAX_ACTIVITY_ENTITIES));
+        } else {
+            if (w.entities().size() > MAX_ACTIVITY_ENTITIES) {
+                throw new WizardArgumentException(prefix + ": an activity widget lists at most " + MAX_ACTIVITY_ENTITIES + " entities");
+            }
+            for (String raw : w.entities()) {
+                EntityDefinition e = requireEntity(entitiesByLower, raw, prefix);
+                if (!auditApplies(e, scaffoldOpts)) {
+                    throw new WizardArgumentException(prefix + ": " + e.name()
+                            + " does not record when it changed — turn the 'audit' opt on for it");
+                }
+                if (names.contains(e.name())) {
+                    throw new WizardArgumentException(prefix + ": " + e.name() + " is listed twice");
+                }
+                names.add(e.name());
+            }
+        }
+        int limit = w.limit() == null ? DEFAULT_ACTIVITY_LIMIT : w.limit();
+        if (limit < MIN_ACTIVITY_LIMIT || limit > MAX_RECENT_LIMIT) {
+            throw new WizardArgumentException(prefix + ": limit must be between " + MIN_ACTIVITY_LIMIT + " and " + MAX_RECENT_LIMIT);
+        }
+        int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.ACTIVITY) : w.span();
+        if (span < 1 || span > MAX_SPAN) {
+            throw new WizardArgumentException(prefix + ": span must be between 1 and " + MAX_SPAN);
+        }
+        return new PageDefinition.Widget(PageDefinition.WidgetKind.ACTIVITY, null,
+                checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title"), null, limit, null, null, null, span,
+                null, null, null, false, null, null, null, null, null, null, null, names);
     }
 
     /**
@@ -1061,7 +1378,7 @@ public final class FullstackPageValidator {
             if (kind.wire().equalsIgnoreCase(k)) return kind;
         }
         throw new WizardArgumentException(prefix + ": unknown widget kind '" + k
-                + "' (expected kpi, bar, donut, stacked, line, recent, top, progress, text, links or list)");
+                + "' (expected kpi, bar, donut, stacked, pivot, line, recent, top, progress, activity, text, links or list)");
     }
 
     /** How a tile or chart reduces its rows. Absent means {@code count}. */
@@ -1159,8 +1476,13 @@ public final class FullstackPageValidator {
                                 + r.fieldName() + "' is not one");
                     }
                     PageDefinition.Agg agg = parseAgg(prefix, raw.agg());
+                    PageDefinition.ChartKind kind = chartKind(prefix, raw, false);
+                    if (kind == PageDefinition.ChartKind.STACKED) {
+                        throw new WizardArgumentException(prefix + ": a stacked chart splits an enum or boolean groupBy, and '"
+                                + r.fieldName() + "' is a relation");
+                    }
                     return new PageDefinition.Chart(r.fieldName(), null, agg,
-                            aggField(prefix, entity, agg, trimToNull(raw.field())), raw.table());
+                            aggField(prefix, entity, agg, trimToNull(raw.field())), chartTable(prefix, raw, kind), kind, null);
                 }
             }
             field = fieldOf(prefix, entity, requested, "groupBy");
@@ -1183,8 +1505,49 @@ public final class FullstackPageValidator {
                     + field.name() + "' is not one");
         }
         PageDefinition.Agg agg = parseAgg(prefix, raw.agg());
+        PageDefinition.ChartKind kind = chartKind(prefix, raw, overTime);
+        String series = kind == PageDefinition.ChartKind.STACKED
+                ? series(prefix, entity, field.name(), trimToNull(raw.series())) : null;
         return new PageDefinition.Chart(field.name(), overTime ? parseBucket(prefix, raw.bucket()) : null,
-                agg, aggField(prefix, entity, agg, trimToNull(raw.field())), raw.table());
+                agg, aggField(prefix, entity, agg, trimToNull(raw.field())), chartTable(prefix, raw, kind), kind, series);
+    }
+
+    /**
+     * A chart's {@code kind}, checked against its grouping: bar/donut/stacked/table for a group,
+     * line/area/table over time. The default for its grouping (bar, line) comes back as null, so a
+     * chart that names it renders exactly like one that does not. {@code series} belongs to a
+     * stacked chart alone.
+     */
+    private static PageDefinition.ChartKind chartKind(String prefix, FullstackStarterRequest.ChartDto raw, boolean overTime) {
+        String k = trimToNull(raw.kind());
+        PageDefinition.ChartKind kind = null;
+        if (k != null) {
+            for (PageDefinition.ChartKind c : PageDefinition.ChartKind.values()) {
+                if (c.wire().equalsIgnoreCase(k)) kind = c;
+            }
+            if (kind == null) {
+                throw new WizardArgumentException(prefix + ": unknown chart kind '" + k
+                        + "' (expected bar, donut, stacked, line, area or table)");
+            }
+            if (!kind.fits(overTime)) {
+                throw new WizardArgumentException(prefix + ": a " + kind.wire() + " chart "
+                        + (overTime ? "groups by an enum, boolean or relation, not a date (over time: line, area or table)"
+                                : "draws a date over time (for this groupBy: bar, donut, stacked or table)"));
+            }
+        }
+        if (kind != PageDefinition.ChartKind.STACKED && trimToNull(raw.series()) != null) {
+            throw new WizardArgumentException(prefix + ": 'series' applies to a stacked chart");
+        }
+        boolean isDefault = kind == (overTime ? PageDefinition.ChartKind.LINE : PageDefinition.ChartKind.BAR);
+        return isDefault ? null : kind;
+    }
+
+    /** A table chart is its totals table, so it cannot leave it out. */
+    private static Boolean chartTable(String prefix, FullstackStarterRequest.ChartDto raw, PageDefinition.ChartKind kind) {
+        if (kind == PageDefinition.ChartKind.TABLE && Boolean.FALSE.equals(raw.table())) {
+            throw new WizardArgumentException(prefix + ": a table chart is its totals table, so 'table' cannot be false");
+        }
+        return kind == PageDefinition.ChartKind.TABLE ? Boolean.TRUE : raw.table();
     }
 
     /** A bar groups by a non-PK enum/boolean field — the first enum, else the first boolean, when omitted. */

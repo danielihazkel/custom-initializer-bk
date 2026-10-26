@@ -8,19 +8,27 @@ interface Props {
   message: string
   confirmLabel?: string
   busy?: boolean
+  /** What the confirm button says while `busy` (default: "Deleting…"). */
+  busyLabel?: string
   onConfirm: () => void
   onCancel: () => void
 }
 
 /** Centered confirmation modal for destructive actions (delete). */
 export function ConfirmDialog({
-  open, title, message, confirmLabel = t('delete'), busy, onConfirm, onCancel,
+  open, title, message, confirmLabel = t('delete'), busy, busyLabel = t('deleting'), onConfirm, onCancel,
 }: Props) {
   const cancelRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) onCancel() }
+    // Handled here only: a form drawer under the dialog skips an Escape that is already taken.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        e.preventDefault()
+        onCancel()
+      }
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onCancel])
@@ -62,7 +70,7 @@ export function ConfirmDialog({
             disabled={busy}
             className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? t('deleting') : confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </button>
         </div>
       </div>

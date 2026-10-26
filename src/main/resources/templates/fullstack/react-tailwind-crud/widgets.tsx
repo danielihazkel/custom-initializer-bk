@@ -3,7 +3,7 @@ import { ArrowRight, RefreshCw } from 'lucide-react'
 import { api } from '@shared/api'
 import { LOCALE, t, type StringKey } from '../i18n'
 import { Skeleton } from './Skeleton'
-import { PERIODS, RefreshTick, aggQuery, customPeriod, customRange, fillBuckets, formatStat, statLabel, statsQuery, useStats, type Period, type PresetPeriod, type StatsResponse } from './stats'
+import { PERIODS, RefreshTick, aggQuery, customPeriod, customRange, fillBuckets, formatStat, statLabel, statsQuery, useStats, type Period, type PresetPeriod, type StatsBucket, type StatsResponse } from './stats'
 
 // Dashboard widgets for the generated screens (src/app/screens). Counts come from the list
 // endpoint's page metadata; every breakdown, trend and aggregate comes from the entity's
@@ -224,8 +224,9 @@ const CHART_PAD = 8
 
 /** A time series as plain SVG — the generated app ships no charting library. The viewBox scales
  *  with the container, so the stroke and the dots keep their proportions at any width. With
- *  `onSelect` each point is a button (a drill-down into its day/month/year). */
-export function LineChart({ data, onSelect }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void }) {
+ *  `onSelect` each point is a button (a drill-down into its day/month/year); `area` fills the
+ *  ground under the line, for a total read by its size. */
+export function LineChart({ data, onSelect, area: filled = false }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void; area?: boolean }) {
   if (data.length === 0) return null
   const values = data.map(d => d.value)
   const max = Math.max(...values, 0)
@@ -266,7 +267,7 @@ export function LineChart({ data, onSelect }: { data: { label: string; value: nu
             strokeDasharray="3 3"
           />
         ))}
-        {data.length > 1 && <path d={area} className="fill-brand/10" />}
+        {data.length > 1 && <path d={area} className={filled ? 'fill-brand/35' : 'fill-brand/10'} />}
         <path
           d={line}
           className="stroke-brand"
@@ -574,6 +575,27 @@ export function StackedCard({ title, path, field, series, agg, valueField, label
 }) {
   const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${field}`, `series=${series}`, aggQuery(agg, valueField), params))
   const buckets = stats?.buckets ?? []
+
+  return (
+    <div className={`${card} ${className}`}>
+      <WidgetHeader title={title} onOpen={onOpen} />
+      <Status failed={failed} loading={stats == null} empty={buckets.length === 0} onRetry={retry} />
+      {buckets.length > 0 && !failed && (
+        <StackedBars buckets={buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />
+      )}
+    </div>
+  )
+}
+
+/** The groups of a split rollup (one bucket per group and series) as stacked bars, largest first,
+ *  with a legend of the series. Shared by the stacked widget and a stacked report chart. */
+export function StackedBars({ buckets, labels, seriesLabels, onSelect }: {
+  buckets: StatsBucket[]
+  labels?: Record<string, string>
+  seriesLabels?: Record<string, string>
+  /** A click on a bar, with its group's key. */
+  onSelect?: (key: string) => void
+}) {
   // Series in first-seen order, so the colours stay put as the numbers change.
   const seriesKeys = [...new Set(buckets.map(b => b.series ?? ''))]
   const groups = [...new Set(buckets.map(b => b.key))].map(key => {
@@ -584,45 +606,218 @@ export function StackedCard({ title, path, field, series, agg, valueField, label
   const seriesLabel = (s: string) => statLabel({ key: s, value: null }, seriesLabels)
 
   return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        {groups.map(g => {
+          const bar = (
+            <>
+              <div className="w-28 shrink-0 truncate text-muted" title={g.label}>{g.label}</div>
+              <div className="flex h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+                {g.parts.map((v, i) => (
+                  <div
+                    key={seriesKeys[i]}
+                    className="h-full"
+                    style={{ width: `${(v / max) * 100}%`, background: seriesColor(i) }}
+                    title={`${seriesLabel(seriesKeys[i])}: ${formatStat(v)}`}
+                  />
+                ))}
+              </div>
+              <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(g.total)}</div>
+            </>
+          )
+          return onSelect && g.key !== '' ? (
+            <button
+              key={g.key}
+              type="button"
+              onClick={() => onSelect(g.key)}
+              className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-lg px-1 text-start text-sm transition-colors hover:bg-surface-2"
+            >
+              {bar}
+            </button>
+          ) : (
+            <div key={g.key} className="flex items-center gap-3 text-sm">{bar}</div>
+          )
+        })}
+      </div>
+      <Legend items={seriesKeys.map(s => ({ label: seriesLabel(s) }))} />
+    </div>
+  )
+}
+
+/** One aggregate over two columns at once: a row per `rows` group, a column per `columns` group,
+ *  each cell the rows in both — with row, column and grand totals for a count or a sum (an average
+ *  or an extreme does not add up). A relation on either axis is named from its target's list. */
+export function PivotCard({ title, path, rows, columns, agg, valueField, rowLabels, columnLabels, rowOptionsPath, rowOptionValue = 'id', rowOptionLabel, columnOptionsPath, columnOptionValue = 'id', columnOptionLabel, params = '', onSelect, onOpen, className = '' }: {
+  title: string
+  path: string
+  /** The column whose groups are the rows, and the one whose groups are the columns. */
+  rows: string
+  columns: string
+  agg?: string
+  valueField?: string
+  /** Enum axes: display label per constant. */
+  rowLabels?: Record<string, string>
+  columnLabels?: Record<string, string>
+  /** Relation axes: the target's list endpoint, its key and its label column. */
+  rowOptionsPath?: string
+  rowOptionValue?: string
+  rowOptionLabel?: string
+  columnOptionsPath?: string
+  columnOptionValue?: string
+  columnOptionLabel?: string
+  params?: string
+  /** A click on a cell, with its row's and its column's key (the list filter values). */
+  onSelect?: (row: string, column: string) => void
+  onOpen?: () => void
+  className?: string
+}) {
+  const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${rows}`, `series=${columns}`, aggQuery(agg, valueField), params))
+  const buckets = stats?.buckets ?? []
+  const rowKeys = [...new Set(buckets.map(b => b.key))]
+  const columnKeys = [...new Set(buckets.map(b => b.series ?? ''))]
+  const rowNames = useOptionNames(rowOptionsPath, rowOptionValue, rowOptionLabel, rowKeys)
+  const columnNames = useOptionNames(columnOptionsPath, columnOptionValue, columnOptionLabel, columnKeys)
+  const nameOf = (key: string, optionsPath: string | undefined, names: Record<string, string>, labels?: Record<string, string>) =>
+    key === '' ? '—' : optionsPath ? names[key] ?? `#${key}` : statLabel({ key, value: null }, labels)
+  const cells = new Map(buckets.map(b => [`${b.key}\n${b.series ?? ''}`, b.value]))
+  const cell = (row: string, column: string) => cells.get(`${row}\n${column}`) ?? null
+  const totals = !agg || agg === 'count' || agg === 'sum'
+  const sum = (values: (number | null)[]) => values.reduce<number>((total, v) => total + (v ?? 0), 0)
+
+  return (
     <div className={`${card} ${className}`}>
       <WidgetHeader title={title} onOpen={onOpen} />
-      <Status failed={failed} loading={stats == null} empty={groups.length === 0} onRetry={retry} />
-      {groups.length > 0 && !failed && (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            {groups.map(g => {
-              const bar = (
-                <>
-                  <div className="w-28 shrink-0 truncate text-muted" title={g.label}>{g.label}</div>
-                  <div className="flex h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
-                    {g.parts.map((v, i) => (
-                      <div
-                        key={seriesKeys[i]}
-                        className="h-full"
-                        style={{ width: `${(v / max) * 100}%`, background: seriesColor(i) }}
-                        title={`${seriesLabel(seriesKeys[i])}: ${formatStat(v)}`}
-                      />
-                    ))}
-                  </div>
-                  <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(g.total)}</div>
-                </>
-              )
-              return onSelect && g.key !== '' ? (
-                <button
-                  key={g.key}
-                  type="button"
-                  onClick={() => onSelect(g.key)}
-                  className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-lg px-1 text-start text-sm transition-colors hover:bg-surface-2"
-                >
-                  {bar}
-                </button>
-              ) : (
-                <div key={g.key} className="flex items-center gap-3 text-sm">{bar}</div>
-              )
-            })}
-          </div>
-          <Legend items={seriesKeys.map(s => ({ label: seriesLabel(s) }))} />
+      <Status failed={failed} loading={stats == null} empty={buckets.length === 0} onRetry={retry} />
+      {buckets.length > 0 && !failed && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted">
+                <th className="sticky start-0 bg-surface py-2 pe-3" />
+                {columnKeys.map(c => (
+                  <th key={c} scope="col" className="px-2 py-2 text-end font-semibold">{nameOf(c, columnOptionsPath, columnNames, columnLabels)}</th>
+                ))}
+                {totals && <th scope="col" className="ps-2 py-2 text-end font-semibold">{t('total')}</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rowKeys.map(r => (
+                <tr key={r}>
+                  <th scope="row" className="sticky start-0 bg-surface py-2 pe-3 text-start font-medium text-fg">{nameOf(r, rowOptionsPath, rowNames, rowLabels)}</th>
+                  {columnKeys.map(c => {
+                    const value = cell(r, c)
+                    const text = value == null ? '—' : formatStat(value)
+                    return (
+                      <td key={c} className="px-2 py-2 text-end tabular-nums text-fg">
+                        {onSelect && value != null && r !== '' && c !== '' ? (
+                          <button type="button" onClick={() => onSelect(r, c)} className="rounded px-1 hover:bg-surface-2 hover:text-brand">{text}</button>
+                        ) : text}
+                      </td>
+                    )
+                  })}
+                  {totals && <td className="ps-2 py-2 text-end font-semibold tabular-nums text-fg">{formatStat(sum(columnKeys.map(c => cell(r, c))))}</td>}
+                </tr>
+              ))}
+            </tbody>
+            {totals && (
+              <tfoot>
+                <tr className="border-t-2 border-border font-semibold text-fg">
+                  <th scope="row" className="sticky start-0 bg-surface py-2 pe-3 text-start">{t('total')}</th>
+                  {columnKeys.map(c => (
+                    <td key={c} className="px-2 py-2 text-end tabular-nums">{formatStat(sum(rowKeys.map(r => cell(r, c))))}</td>
+                  ))}
+                  <td className="ps-2 py-2 text-end tabular-nums">{formatStat(stats?.total ?? null)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
         </div>
+      )}
+    </div>
+  )
+}
+
+/** One entity an activity feed reads: its list endpoint, its name and the column a row reads by. */
+export interface ActivitySource {
+  path: string
+  label: string
+  displayField: string
+  /** Opens one row (its record page); without it the row is plain text. */
+  onOpen?: (row: Record<string, unknown>) => void
+}
+
+const RELATIVE_STEPS: [Intl.RelativeTimeFormatUnit, number][] = [['second', 60], ['minute', 60], ['hour', 24], ['day', 30], ['month', 12], ['year', Infinity]]
+
+/** "5 minutes ago", in the app's language; empty for a value that is not a time. */
+function timeAgo(value: unknown): string {
+  const at = typeof value === 'string' ? Date.parse(value) : NaN
+  if (Number.isNaN(at)) return ''
+  const format = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto' })
+  let amount = Math.round((at - Date.now()) / 1000)
+  for (const [unit, size] of RELATIVE_STEPS) {
+    if (Math.abs(amount) < size) return format.format(amount, unit)
+    amount = Math.round(amount / size)
+  }
+  return ''
+}
+
+/** The latest changes across several audited entities, newest first: each list's most recently
+ *  updated rows, merged — a row created and never edited since reads "created". */
+export function ActivityFeed({ title, sources, limit, className = '' }: {
+  title: string
+  sources: ActivitySource[]
+  limit: number
+  className?: string
+}) {
+  const [rows, setRows] = useState<{ source: number; row: Record<string, unknown> }[] | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const tick = useContext(RefreshTick)
+  // The sources are a literal re-made on every render: follow their endpoints, not the array.
+  const paths = sources.map(s => s.path).join('\n')
+
+  useEffect(() => {
+    let active = true
+    setFailed(false)
+    Promise.all(paths.split('\n').map(path =>
+      api.get<{ content: Record<string, unknown>[] }>(`${path}?size=${limit}&sort=updatedAt,desc`)))
+      .then(pages => {
+        if (!active) return
+        const time = (row: Record<string, unknown>) => Date.parse(String(row.updatedAt ?? '')) || 0
+        setRows(pages
+          .flatMap((page, source) => (page.content ?? []).map(row => ({ source, row })))
+          .sort((a, b) => time(b.row) - time(a.row))
+          .slice(0, limit))
+      })
+      .catch(() => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [paths, limit, attempt, tick])
+
+  return (
+    <div className={`${card} ${className}`}>
+      <WidgetHeader title={title} />
+      <Status failed={failed} loading={rows == null} empty={rows?.length === 0} onRetry={() => setAttempt(a => a + 1)} emptyText={t('noActivity')} />
+      {rows && rows.length > 0 && !failed && (
+        <ul className="divide-y divide-border">
+          {rows.map(({ source, row }, i) => {
+            const from = sources[source]
+            const name = row[from.displayField] == null ? '—' : String(row[from.displayField])
+            const created = row.createdAt != null && row.createdAt === row.updatedAt
+            return (
+              <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <span className="min-w-0 truncate">
+                  {from.onOpen ? (
+                    <button type="button" onClick={() => from.onOpen?.(row)} className="truncate text-start font-medium text-brand hover:underline">{name}</button>
+                  ) : (
+                    <span className="text-fg">{name}</span>
+                  )}
+                  <span className="text-muted"> · {from.label} {created ? t('activityCreated') : t('activityUpdated')}</span>
+                </span>
+                <span className="shrink-0 text-xs tabular-nums text-muted">{timeAgo(row.updatedAt)}</span>
+              </li>
+            )
+          })}
+        </ul>
       )}
     </div>
   )
@@ -847,8 +1042,9 @@ function useOptionNames(optionsPath: string | undefined, optionValue: string, op
 }
 
 /** One chart of a report page: bars (an enum/boolean group) or a line (a date, bucketed) from the
- *  rollup of the filtered rows, and — for the page's first chart — the totals table beneath it. */
-export function ReportChart({ title, path, rollup, search, line = false, labels, optionsPath, optionValue = 'id', optionLabel, groupLabel, valueLabel, table = false, onSelect }: {
+ *  rollup of the filtered rows — or, by `shape`, a ring of shares, bars split by a series, a filled
+ *  area, or only the table — and, for the page's first chart, the totals table beneath it. */
+export function ReportChart({ title, path, rollup, search, line = false, shape, labels, seriesLabels, optionsPath, optionValue = 'id', optionLabel, groupLabel, valueLabel, table = false, onSelect }: {
   /** Shown when the page has more than one chart. */
   title?: string
   path: string
@@ -857,7 +1053,12 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
   /** The filter bar's values, as list params. */
   search: string
   line?: boolean
+  /** Drawn instead of the bar (or the line): a ring of shares, bars split by the rollup's series,
+   *  the line's ground filled, or nothing but the totals table. */
+  shape?: 'donut' | 'stacked' | 'area' | 'table'
   labels?: Record<string, string>
+  /** A stacked chart: display label per series constant. */
+  seriesLabels?: Record<string, string>
   /** Grouped by a relation: the target's list endpoint, its key and its label column. */
   optionsPath?: string
   optionValue?: string
@@ -870,7 +1071,14 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
 }) {
   const { stats, failed, retry } = useStats(path, statsQuery(rollup, search))
   const names = useOptionNames(optionsPath, optionValue, optionLabel, (stats?.buckets ?? []).map(b => b.key))
-  const rows = (stats?.buckets ?? []).map(b => ({
+  // A split rollup has a bucket per (group, series); the table and the totals count each group once.
+  const grouped = shape === 'stacked'
+    ? [...new Set((stats?.buckets ?? []).map(b => b.key))].map(key => ({
+        key,
+        value: (stats?.buckets ?? []).filter(b => b.key === key).reduce((sum, b) => sum + (b.value ?? 0), 0),
+      }))
+    : stats?.buckets ?? []
+  const rows = grouped.map(b => ({
     key: b.key,
     label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ? (b.key === '' ? '—' : b.key) : statLabel(b, labels),
     value: b.value ?? 0,
@@ -888,9 +1096,13 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
         <Status failed={failed} loading={stats == null} empty={rows.length === 0} onRetry={retry} emptyText={t('noMatchingRecords')} />
       ) : (
         <>
-          {line ? <LineChart data={points} onSelect={select} /> : <BarRows data={points} onSelect={select} />}
-          {table && (
-            <table className="mt-5 w-full text-sm">
+          {shape === 'table' ? null
+            : shape === 'stacked' ? <StackedBars buckets={stats.buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />
+              : shape === 'donut' ? <DonutChart data={points} onSelect={select} />
+                : line ? <LineChart data={points} onSelect={select} area={shape === 'area'} />
+                  : <BarRows data={points} onSelect={select} />}
+          {(table || shape === 'table') && (
+            <table className={`${shape === 'table' ? '' : 'mt-5 '}w-full text-sm`}>
               <thead>
                 <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted">
                   <th className="py-2 text-start font-semibold">{groupLabel}</th>
