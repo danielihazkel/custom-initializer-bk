@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -124,7 +125,7 @@ public class FullstackExampleAdminController {
         e.setDescription(description);
         e.setIcon(icon);
         e.setEntities(validateEntities(body.entities(), objectMapper));
-        e.setPages(validatePages(body.entities(), body.pages(), objectMapper));
+        e.setPages(validatePages(body.entities(), body.pages(), body.settings(), objectMapper));
         e.setSettings(validateSettings(body.settings(), objectMapper));
         e.setSortOrder(body.sortOrder() == null ? 0 : body.sortOrder());
         e.setEnabled(body.enabled() == null || body.enabled());
@@ -168,9 +169,10 @@ public class FullstackExampleAdminController {
     /**
      * Checks {@code pages} is a page layout the generator accepts for {@code entities} (which must
      * already have passed {@link #validateEntities}) and returns it as compact JSON text, or null
-     * when absent/empty (the classic layout).
+     * when absent/empty (the classic layout). {@code settings} supplies the example's scaffold opts
+     * (a list page may show the audit columns only with {@code audit} on).
      */
-    public static String validatePages(JsonNode entities, JsonNode pages, ObjectMapper objectMapper) {
+    public static String validatePages(JsonNode entities, JsonNode pages, JsonNode settings, ObjectMapper objectMapper) {
         if (pages == null || pages.isNull() || (pages.isArray() && pages.isEmpty())) return null;
         if (!pages.isArray()) throw new InvalidExampleException("pages must be a JSON array");
         List<PageDefinitionDto> dtos;
@@ -184,11 +186,21 @@ public class FullstackExampleAdminController {
                     null, null, null, null, null, null, null, null, null, null, null, null, null,
                     null, null, null, null, null,
                     objectMapper.convertValue(entities, new TypeReference<List<EntityDefinitionDto>>() {})));
-            FullstackPageValidator.validateAndConvert(dtos, converted);
+            FullstackPageValidator.validateAndConvert(dtos, converted, scaffoldOptsOf(settings));
         } catch (WizardArgumentException ex) {
             throw new InvalidExampleException(ex.getMessage());
         }
         return toJson(pages, "pages", objectMapper);
+    }
+
+    /** The {@code scaffold} names of an example's settings (an array of strings; anything else: none). */
+    private static Set<String> scaffoldOptsOf(JsonNode settings) {
+        if (settings == null || !settings.isObject() || !settings.path("scaffold").isArray()) return Set.of();
+        Set<String> out = new LinkedHashSet<>();
+        for (JsonNode n : settings.get("scaffold")) {
+            if (n.isTextual()) out.add(n.asText());
+        }
+        return out;
     }
 
     /**
@@ -210,6 +222,21 @@ public class FullstackExampleAdminController {
                 if (key.equals("locale") && !Set.of("en", "he").contains(v.asText())) {
                     throw new InvalidExampleException("settings.locale must be 'en' or 'he'");
                 }
+            } else if (key.equals("nav")) {
+                // The shell's navigation for a layout: a style and whether nav sections fold.
+                if (!v.isObject()) throw new InvalidExampleException("settings.nav must be a JSON object");
+                for (Iterator<Map.Entry<String, JsonNode>> nit = v.fields(); nit.hasNext(); ) {
+                    Map.Entry<String, JsonNode> nav = nit.next();
+                    if (nav.getKey().equals("style")) {
+                        if (!nav.getValue().isTextual() || !Set.of("sidebar", "topbar").contains(nav.getValue().asText())) {
+                            throw new InvalidExampleException("settings.nav.style must be sidebar or topbar");
+                        }
+                    } else if (nav.getKey().equals("collapsibleGroups")) {
+                        if (!nav.getValue().isBoolean()) throw new InvalidExampleException("settings.nav.collapsibleGroups must be true or false");
+                    } else {
+                        throw new InvalidExampleException("settings.nav." + nav.getKey() + " is not a known nav setting (expected style or collapsibleGroups)");
+                    }
+                }
             } else if (key.equals("scaffold")) {
                 if (!v.isArray() || v.size() > 20) {
                     throw new InvalidExampleException("settings.scaffold must be an array of at most 20 option names");
@@ -221,7 +248,7 @@ public class FullstackExampleAdminController {
                 }
             } else {
                 throw new InvalidExampleException("settings." + key + " is not a known setting (expected one of "
-                        + new java.util.TreeSet<>(SETTINGS_STRING_KEYS) + " or scaffold)");
+                        + new java.util.TreeSet<>(SETTINGS_STRING_KEYS) + ", scaffold or nav)");
             }
         }
         return toJson(settings, "settings", objectMapper);

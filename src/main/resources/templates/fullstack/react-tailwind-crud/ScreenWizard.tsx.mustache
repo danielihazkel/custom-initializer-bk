@@ -1,4 +1,4 @@
-import { {{#wizardEditable}}useEffect, {{/wizardEditable}}useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { api, ApiError } from '@shared/api'
 import { t } from '@shared/i18n'
@@ -14,6 +14,27 @@ const STEPS: { title: string; fields: readonly string[]; keys: readonly string[]
 ]
 
 const INITIAL: Partial<{{EntityName}}> = {{initialTs}}
+
+/** Where a new record's answers are kept for this browser tab while the wizard is unfinished:
+ *  another page and back, or a reload, picks up at the same step. */
+const DRAFT = 'wizard-draft:{{pageId}}'
+
+function readDraft(): { step: number; value: Partial<{{EntityName}}> } | null {
+  try {
+    const raw = sessionStorage.getItem(DRAFT)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function forgetDraft() {
+  try {
+    sessionStorage.removeItem(DRAFT)
+  } catch {
+    // No storage: nothing was kept.
+  }
+}
 
 /** The messages of `all` that belong to step `index`. */
 function errorsOf(index: number, all: Record<string, string>): Record<string, string> {
@@ -42,9 +63,10 @@ const PATH = '/api/{{entityNamePluralKebab}}'
 {{/wizardEditable}}
 
 export function {{PageName}}Screen({{#wizardHasProps}}{ {{#wizardEditable}}editId{{#needsNavigate}}, {{/needsNavigate}}{{/wizardEditable}}{{#needsNavigate}}onNavigate{{/needsNavigate}} }: Props{{/wizardHasProps}}) {
-  // STEPS.length is the review step.
-  const [step, setStep] = useState(0)
-  const [value, setValue] = useState<Partial<{{EntityName}}>>(INITIAL)
+  // A new record picks up its draft; STEPS.length is the review step.
+  const [draft] = useState(() => {{#wizardEditable}}editId != null ? null : {{/wizardEditable}}readDraft())
+  const [step, setStep] = useState(Math.min(Math.max(draft?.step ?? 0, 0), STEPS.length))
+  const [value, setValue] = useState<Partial<{{EntityName}}>>(draft?.value ?? INITIAL)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const reviewing = step === STEPS.length
@@ -66,6 +88,24 @@ export function {{PageName}}Screen({{#wizardHasProps}}{ {{#wizardEditable}}editI
     return () => { current = false }
   }, [editId])
 {{/wizardEditable}}
+
+  useEffect(() => {
+{{#wizardEditable}}
+    if (editId != null) return
+{{/wizardEditable}}
+    try {
+      sessionStorage.setItem(DRAFT, JSON.stringify({ step, value }))
+    } catch {
+      // No storage: the answers live only while the page is open.
+    }
+  }, [step, value{{#wizardEditable}}, editId{{/wizardEditable}}])
+
+  function startOver() {
+    forgetDraft()
+    setValue(INITIAL)
+    setErrors({})
+    setStep(0)
+  }
 
   // Editing a field clears its message, as the entity page's form does.
   const edit = (next: Partial<{{EntityName}}>) => {
@@ -104,6 +144,7 @@ export function {{PageName}}Screen({{#wizardHasProps}}{ {{#wizardEditable}}editI
       }
 {{/wizardEditable}}
       {{#hasRecordPage}}const created = {{/hasRecordPage}}await api.post<{{EntityName}}>('/api/{{entityNamePluralKebab}}', value)
+      forgetDraft()
       toast.success(t('xCreated', { x: {{entityLabelExpr}} }))
 {{#hasRecordPage}}
       onNavigate('{{recordPageId}}', String(created.{{recordPk}}))
@@ -113,8 +154,7 @@ export function {{PageName}}Screen({{#wizardHasProps}}{ {{#wizardEditable}}editI
       onNavigate('{{backPageId}}')
 {{/hasBack}}
 {{^hasBack}}
-      setValue(INITIAL)
-      setStep(0)
+      startOver()
 {{/hasBack}}
 {{/hasRecordPage}}
     } catch (e) {
@@ -143,19 +183,26 @@ export function {{PageName}}Screen({{#wizardHasProps}}{ {{#wizardEditable}}editI
 
       <ol className="flex flex-wrap gap-2" aria-label={t('stepXOfY', { x: Math.min(step + 1, STEPS.length + 1), y: STEPS.length + 1 })}>
         {[...STEPS.map(s => s.title), t('review')].map((title, i) => (
-          <li
-            key={i}
-            aria-current={i === step ? 'step' : undefined}
-            className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${
-              i === step
-                ? 'border-brand bg-brand/10 text-brand'
-                : i < step
-                  ? 'border-border bg-surface text-fg'
-                  : 'border-border bg-surface text-muted'
-            }`}
-          >
-            <span className="tabular-nums">{i + 1}</span>
-            {title}
+          <li key={i} aria-current={i === step ? 'step' : undefined}>
+            <button
+              type="button"
+              // A step already passed can be gone back to; the ones ahead open through Next.
+              disabled={i >= step || saving}
+              onClick={() => {
+                setErrors({})
+                setStep(i)
+              }}
+              className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${
+                i === step
+                  ? 'border-brand bg-brand/10 text-brand'
+                  : i < step
+                    ? 'border-border bg-surface text-fg hover:border-brand/50 hover:text-brand'
+                    : 'border-border bg-surface text-muted'
+              }`}
+            >
+              <span className="tabular-nums">{i + 1}</span>
+              {title}
+            </button>
           </li>
         ))}
       </ol>
@@ -190,7 +237,14 @@ export function {{PageName}}Screen({{#wizardHasProps}}{ {{#wizardEditable}}editI
           >
             {t('back')}
           </button>
-          <span className="text-xs tabular-nums text-muted">{t('stepXOfY', { x: step + 1, y: STEPS.length + 1 })}</span>
+          <span className="flex items-center gap-3 text-xs tabular-nums text-muted">
+            {t('stepXOfY', { x: step + 1, y: STEPS.length + 1 })}
+            { {{#wizardEditable}}editId == null && {{/wizardEditable}}(step > 0 || JSON.stringify(value) !== JSON.stringify(INITIAL)) && (
+              <button type="button" onClick={startOver} disabled={saving} className="font-medium text-muted underline-offset-2 hover:text-fg hover:underline">
+                {t('startOver')}
+              </button>
+            )}
+          </span>
           <button
             type="submit"
             disabled={saving}

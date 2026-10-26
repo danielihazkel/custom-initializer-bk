@@ -1,0 +1,11 @@
+import type { ImportField } from '@shared/ui/csv'
+
+/**
+ * How a CSV file's columns become {{entityLabel}} records: every field an import can fill, its kind
+ * (how a cell is read) and whether a row needs it. A column is matched by the field's name or label,
+ * ignoring case, spaces and punctuation — so a file exported from this app imports as it is.
+ */
+export const IMPORT_FIELDS: ImportField[] = [
+{{#fields}}{{^isGenerated}}{{^isReadOnly}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isIntegral}}integer{{/isIntegral}}{{#isBigDecimal}}number{{/isBigDecimal}}{{#isBoolean}}boolean{{/isBoolean}}{{#isDate}}date{{/isDate}}{{#isDateTime}}datetime{{/isDateTime}}{{#isEnum}}enum{{/isEnum}}{{#isString}}string{{/isString}}{{#isText}}string{{/isText}}{{#isUuid}}string{{/isUuid}}', required: {{#isRequired}}true{{/isRequired}}{{^isRequired}}false{{/isRequired}}{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
+{{/isReadOnly}}{{/isGenerated}}{{/fields}}{{#relations}}  { name: '{{fkFieldName}}', label: '{{FieldName}}', kind: 'relation', required: {{#required}}true{{/required}}{{^required}}false{{/required}}, also: ['{{fieldName}}'], numeric: {{#isTargetPkNumeric}}true{{/isTargetPkNumeric}}{{^isTargetPkNumeric}}false{{/isTargetPkNumeric}} },
+{{/relations}}]

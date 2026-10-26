@@ -21,6 +21,9 @@ interface Props<T extends object> {
   /** When false, the search box is hidden (the backend only filters on string fields). */
   searchable?: boolean
   pagination: PaginationProps
+  /** See Table: a filtered empty page says nothing matches; an unfiltered one offers `emptyAction`. */
+  filtered?: boolean
+  emptyAction?: { label: string; onClick: () => void }
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
@@ -44,7 +47,7 @@ function Dots() {
  */
 export function CardGrid<T extends object>({
   columns, rows, rowKey, onView, onEdit, onDelete, loading,
-  search, onSearchChange, pagination, searchable = true,
+  search, onSearchChange, pagination, searchable = true, filtered = false, emptyAction,
 }: Props<T>) {
   const { pageNumber, pageSize, totalPages, totalElements, onPageChange, onPageSizeChange } = pagination
   const startRow = totalElements === 0 ? 0 : pageNumber * pageSize + 1
@@ -88,7 +91,9 @@ export function CardGrid<T extends object>({
         </div>
       ) : empty ? (
         <div className="mn-panel">
-          <EmptyState title={t('noRecordsTitle')} hint={t('noRecordsHint')} />
+          {filtered
+            ? <EmptyState title={t('noMatchingRecords')} />
+            : <EmptyState title={t('noRecordsTitle')} hint={t('noRecordsHint')} action={emptyAction} />}
         </div>
       ) : (
         <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 transition-opacity ${loading ? 'opacity-60' : ''}`}>

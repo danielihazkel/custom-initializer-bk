@@ -591,7 +591,7 @@ public class ConfigurationExportImportService {
                 entity.setDescription(ex.getDescription());
                 entity.setIcon(ex.getIcon());
                 entity.setEntities(FullstackExampleAdminController.validateEntities(ex.getEntities(), objectMapper));
-                entity.setPages(FullstackExampleAdminController.validatePages(ex.getEntities(), ex.getPages(), objectMapper));
+                entity.setPages(FullstackExampleAdminController.validatePages(ex.getEntities(), ex.getPages(), ex.getSettings(), objectMapper));
                 entity.setSettings(FullstackExampleAdminController.validateSettings(ex.getSettings(), objectMapper));
                 entity.setSortOrder(ex.getSortOrder());
                 entity.setEnabled(ex.isEnabled());
@@ -686,7 +686,7 @@ public class ConfigurationExportImportService {
             }
             try {
                 FullstackExampleAdminController.validateEntities(ex.getEntities(), objectMapper);
-                FullstackExampleAdminController.validatePages(ex.getEntities(), ex.getPages(), objectMapper);
+                FullstackExampleAdminController.validatePages(ex.getEntities(), ex.getPages(), ex.getSettings(), objectMapper);
                 FullstackExampleAdminController.validateSettings(ex.getSettings(), objectMapper);
             } catch (FullstackExampleAdminController.InvalidExampleException e) {
                 throw new IllegalArgumentException("Fullstack example '" + ex.getExampleId() + "': " + e.getMessage());

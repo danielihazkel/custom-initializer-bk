@@ -1,8 +1,13 @@
+{{^hasPages}}
 import { useState } from 'react'
+{{/hasPages}}
+{{#hasPages}}
+import { useEffect, useRef, useState } from 'react'
+{{/hasPages}}
 import { Menu, X } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { t } from '@shared/i18n'
-import { {{#hasNavGroups}}DropdownMenu, {{/hasNavGroups}}NavLinks, ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'
+import { {{#hasNavGroups}}DropdownMenu, {{/hasNavGroups}}NavLinks, {{#hasShellSearch}}SearchField, {{/hasShellSearch}}ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'
 {{^hasPages}}
 import { DashboardPage } from '@pages/dashboard'
 {{#entities}}
@@ -157,10 +162,20 @@ function PageNotice({ title, hint, action, onAction }: { title: string; hint: st
  * hash (see route.ts).
  */
 export default function App() {
-  const [route, navigate] = useRoute()
+  const [route, navigate{{#hasQueryScreens}}, replace{{/hasQueryScreens}}] = useRoute()
   const [navOpen, setNavOpen] = useState(false)
+{{#hasShellSearch}}
+  // The header's search box: Enter opens the search page with the words.
+  const [shellQ, setShellQ] = useState('')
+{{/hasShellSearch}}
   const { isDark } = useMenoraTheme()
   const { view } = route
+  // A new page starts at its top, not at the scroll offset the last one was left at.
+  const mainRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0)
+    window.scrollTo(0, 0)
+  }, [view])
   const current = NAV.find(n => n.id === view)
 {{#hasPageRoles}}
   // Pages restricted to roles leave the nav, and their route shows a notice, for other users.
@@ -184,8 +199,14 @@ export default function App() {
   // Screens navigate by page id; a record page also takes the record's key, a list page its filters.
   const goView = (v: string, arg?: string, query?: Record<string, string>) => go(v as View, arg, query)
 {{/hasNavigatingScreens}}
+{{#hasQueryScreens}}
 
-  const linksOf = (items: { id: View; label: string }[]) =>
+  // A screen's own state that belongs in the URL (a dashboard's period, a report's filters)
+  // rewrites the current entry rather than adding one, so Back still leaves the page.
+  const setQuery = (query: Record<string, string>) => replace({ ...route, query })
+{{/hasQueryScreens}}
+
+  const linksOf =(items: { id: View; label: string }[]) =>
     items.map(({ id, label }) => ({ label, href: `#/${id}`, current: view === id, onClick: () => go(id) }))
 {{^hasNavGroups}}
   const navItems = linksOf(sections.flatMap(s => s.items))
@@ -284,7 +305,24 @@ export default function App() {
 {{/hasNavGroups}}
           </div>
 
+{{#hasShellSearch}}
+          <div className="flex items-center gap-3">
+            <SearchField
+              value={shellQ}
+              onInput={setShellQ}
+              label={t('searchEverything')}
+              placeholder={t('searchEverything')}
+              onSubmit={() => {
+                const words = shellQ.trim()
+                go('{{searchPageId}}', undefined, words ? { q: words } : {})
+              }}
+              className="hidden w-64 sm:block"
+            />
+{{/hasShellSearch}}
           <ThemeToggle darkLabel={t('switchToDark')} lightLabel={t('switchToLight')} />
+{{#hasShellSearch}}
+          </div>
+{{/hasShellSearch}}
         </div>
 
         {/* Collapsible nav (mobile) */}
@@ -305,7 +343,7 @@ export default function App() {
         )}
       </header>
 
-      <main className="flex-1 overflow-auto">
+      <main ref={mainRef} className="flex-1 overflow-auto">
         {route.notFound != null ? (
           <PageNotice title={t('pageNotFound')} hint={t('pageNotFoundHint', { x: route.notFound })} action={t('goToStart')} onAction={() => go('{{initialPageId}}')} />
 {{#hasPageRoles}}

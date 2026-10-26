@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { Chip, DropdownMenu, SearchField, Table as MenoraTable } from '@shared/ui/menora'
+import { Button, Chip, DropdownMenu, SearchField, Table as MenoraTable } from '@shared/ui/menora'
 import { TableSkeleton } from './Skeleton'
 import { t } from '../i18n'
 
@@ -18,6 +18,17 @@ export interface Column<T> {
 export interface SortSpec {
   field: string
   direction: 'asc' | 'desc'
+}
+
+/** Where a list is — what a list page keeps in its route. Each part absent is the list's opening
+ *  value; `sort: null` is "no sort" chosen over an opening sort. */
+export interface ListState {
+  q?: string
+  sort?: SortSpec | null
+  page?: number
+  size?: number
+  view?: string
+  filters?: Record<string, string>
 }
 
 export interface PaginationProps {
@@ -57,6 +68,10 @@ interface Props<T extends object> {
   /** Header checkbox state + handler for "select all rows on this page". */
   allOnPageSelected?: boolean
   onToggleAllOnPage?: () => void
+  /** A search or filter is on: an empty page says nothing matches rather than inviting a first record. */
+  filtered?: boolean
+  /** Offered on an empty, unfiltered list — "New <entity>", outlined: the page's one yellow is its New pill. */
+  emptyAction?: { label: string; onClick: () => void }
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
@@ -88,6 +103,7 @@ export function Table<T extends object>({
   caption, columns, rows, rowKey, onView, onEdit, onDelete, loading,
   sort, onSortChange, search, onSearchChange, pagination, searchable = true,
   selectable = false, isRowSelected, onToggleRow, allOnPageSelected, onToggleAllOnPage,
+  filtered = false, emptyAction,
 }: Props<T>) {
   const { pageNumber, pageSize, totalPages, totalElements, onPageChange, onPageSizeChange } = pagination
   const startRow = totalElements === 0 ? 0 : pageNumber * pageSize + 1
@@ -144,7 +160,11 @@ export function Table<T extends object>({
         rowKey={rowKey}
         sort={sort ? { key: sort.field, dir: sort.direction } : null}
         onSort={key => onSortChange(nextSort(sort, key))}
-        empty={{ title: t('noRecordsTitle'), hint: t('noRecordsHint') }}
+        empty={filtered ? { title: t('noMatchingRecords') } : {
+          title: t('noRecordsTitle'),
+          hint: t('noRecordsHint'),
+          action: emptyAction ? <Button variant="outlined" className="mn-btn--compact" label={emptyAction.label} onClick={emptyAction.onClick} /> : undefined,
+        }}
         leadingHead={selectable ? (
           <input
             type="checkbox"

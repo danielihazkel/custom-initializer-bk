@@ -49,7 +49,28 @@ public record FullstackStarterRequest(
         List<EntityDefinitionDto> entities,
         // Optional frontend page layout (dashboards, entity lists, tabbed pages). Null/empty keeps
         // the classic shell: one dashboard plus one list page per entity. See FullstackPageValidator.
-        List<PageDefinitionDto> pages) {
+        List<PageDefinitionDto> pages,
+        // The generated shell's navigation, for a page layout: `style` sidebar (the default) or
+        // topbar, and `collapsibleGroups` for nav sections that fold. Needs `pages`; the Menora
+        // set, a top bar already, ignores it.
+        NavDto nav) {
+
+    /** Every property but {@code nav}. */
+    public FullstackStarterRequest(
+            String groupId, String artifactId, String name, String description, String packageName,
+            String domainPackage, String type, String language, String bootVersion, String packaging,
+            String javaVersion, String version, String configurationFileFormat, List<String> dependencies,
+            Map<String, List<String>> opts, String backendTemplateSet, String frontendTemplateSet,
+            String colorPalette, String dashboardTitle, String dashboardOverview, String locale,
+            String department, List<EntityDefinitionDto> entities, List<PageDefinitionDto> pages) {
+        this(groupId, artifactId, name, description, packageName, domainPackage, type, language,
+                bootVersion, packaging, javaVersion, version, configurationFileFormat, dependencies,
+                opts, backendTemplateSet, frontendTemplateSet, colorPalette, dashboardTitle,
+                dashboardOverview, locale, department, entities, pages, null);
+    }
+
+    /** The generated shell's navigation: {@code style} sidebar/topbar, {@code collapsibleGroups}. */
+    public record NavDto(String style, Boolean collapsibleGroups) {}
 
     /** Back-compat constructor without {@code pages} (the classic one-page-per-entity layout). */
     public FullstackStarterRequest(
@@ -136,7 +157,21 @@ public record FullstackStarterRequest(
             // scaffold option name ({@code audit}, {@code softDelete}, {@code csvExport},
             // {@code bulkDelete}, {@code bulkUpdate}, {@code tests}) -> true/false. An absent key
             // inherits the project setting; an unknown key is a 400. Null/empty = no overrides.
-            Map<String, Boolean> opts) {
+            Map<String, Boolean> opts,
+            // The form in titled sections: each lists field names and MANY_TO_ONE relation field
+            // names, each at most once. The drawer form, the record's details and a wizard without
+            // its own steps follow them; whatever no section lists comes after, untitled.
+            List<FormSectionDto> formSections) {
+
+        /** Every property but {@code formSections} (one untitled form). */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql, String listView,
+                                   List<String> listViews, String label, String labelPlural,
+                                   Map<String, Boolean> opts) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
+                    label, labelPlural, opts, null);
+        }
 
         /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql/listView(s)). */
         public EntityDefinitionDto(String name, String tableName, String schema,
@@ -184,10 +219,13 @@ public record FullstackStarterRequest(
         }
     }
 
+    /** A titled group of an entity's form: field and relation names, in order. */
+    public record FormSectionDto(String title, List<String> fields) {}
+
     /**
      * One page of the generated frontend. {@code type} is {@code entity-list}, {@code dashboard},
-     * {@code tabs}, {@code master-detail}, {@code record} or {@code report}; which of the other
-     * properties apply depends on it (see FullstackPageValidator).
+     * {@code tabs}, {@code master-detail}, {@code record}, {@code report} or {@code wizard}; which
+     * of the other properties apply depends on it (see FullstackPageValidator).
      */
     public record PageDefinitionDto(
             String id,
@@ -235,7 +273,103 @@ public record FullstackStarterRequest(
             List<HeaderStatDto> headerStats,
             // any page: the roles (ADMIN, USER) of which a user needs one to see and open it; needs
             // ldap-auth-rest (the sets' default) or ldap-auth. Absent: everyone.
-            List<String> roles) {
+            List<String> roles,
+            // entity-list: how the list opens. `columns` is the ordered subset of columns it shows
+            // (field names, relation field names, and createdAt/updatedAt with the audit opt;
+            // absent: every column), `sort` the column it is sorted by and its direction, `view`
+            // one of the entity's list views (table, cards, kanban, calendar) and `pageSize` the
+            // rows per page (10, 20, 50 or 100).
+            List<String> columns,
+            SortDto sort,
+            String view,
+            Integer pageSize,
+            // entity-list: where a row opens — `drawer` (the quick-look drawer), `side` (a pane
+            // beside the rows, the open row in the route) or `record` (its record page). Absent:
+            // the record page when the entity has one, else the drawer.
+            String detail,
+            // master-detail: show the selected parent's own details (and Edit, for a writable
+            // parent) above its child rows. Absent: false.
+            Boolean showParent,
+            // dashboard: reload its widgets every so many seconds while the page is open (30, 60,
+            // 300 or 900). Absent: only the Refresh button reloads them.
+            Integer refreshSeconds,
+            // calendar: the date field rows are placed by (default: the entity's first filterable
+            // date), an optional end date (needed by the timeline) and the views it offers — month,
+            // week, agenda, timeline — the first one opening (default: month).
+            String dateField,
+            String endField,
+            List<String> modes,
+            // board: the enum/boolean field the lanes split by (default: the first), the lanes in
+            // order (default: every value), what a card shows (1–4 field or relation names, the first
+            // as its heading), the most cards a lane may hold (lane -> 1..999) and the cards a lane
+            // loads at a time (10, 20 or 50; default 20). `presetFilter` and `sort` apply too.
+            String laneField,
+            List<String> lanes,
+            List<String> cardFields,
+            Map<String, Integer> wipLimits,
+            Integer laneSize,
+            // content: the page's text, in a small Markdown subset (headings, lists, quotes, rules,
+            // **bold**, *em*, `code`, [links](#/page-id or https://…)).
+            String body,
+            // search: the entities searched (default: every entity with text to search, up to 8),
+            // the matches shown per entity (3–10, default 5) and whether the header gets a search box.
+            List<String> entities,
+            Integer perEntity,
+            Boolean shellSearch) {
+
+        /** Every property but the calendar, board, content and search settings. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize, String detail, Boolean showParent,
+                                 Integer refreshSeconds) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, detail, showParent, refreshSeconds, null, null, null, null, null, null, null, null,
+                    null, null, null, null);
+        }
+
+        /** Every property but {@code refreshSeconds}. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize, String detail, Boolean showParent) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, detail, showParent, null);
+        }
+
+        /** Every property but {@code showParent}. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize, String detail) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, detail, null, null);
+        }
+
+        /** Every property but {@code detail}. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, null, null, null);
+        }
 
         /** Back-compat constructor for the phase-1 page types (no master-detail/record/report props). */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
@@ -243,6 +377,17 @@ public record FullstackStarterRequest(
                                  List<TabDto> tabs) {
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs,
                     null, null, null, null, null, null, null, null, null, null, null, null);
+        }
+
+        /** Every property but the list presentation. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, null, null, null, null);
         }
 
         /** Every property but {@code roles}. */
@@ -284,7 +429,22 @@ public record FullstackStarterRequest(
             // stacked: the enum/boolean field each bar is split by (default: the entity's next one).
             String series,
             // text: the widget's content, plain text; a blank line starts a new paragraph.
-            String text) {
+            String text,
+            // links: the ids of the pages its tiles open (1–8; never a record page, nor a hidden
+            // page that is not a wizard).
+            List<String> pages,
+            // list: the entity's rows in a card — the columns it shows and the sort it opens with,
+            // as on an entity-list page; `limit` (10 or 20, the pager's sizes) is its page size.
+            List<String> columns,
+            SortDto sort) {
+
+        /** The widget as layouts before links and lists spell it. */
+        public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
+                         String field, String bucket, Integer span, Map<String, String> presetFilter,
+                         String sortBy, String dateField, Boolean compare, String target, String series, String text) {
+            this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, series, text, null, null, null);
+        }
 
         /** The widget as phase-1 layouts spell it (no span, filter, sort or date field). */
         public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
@@ -307,10 +467,21 @@ public record FullstackStarterRequest(
             String groupBy,
             String bucket,
             String agg,
-            String field) {}
+            String field,
+            // report: the grouped totals table under the chart. Absent: under the first chart only.
+            Boolean table) {
+
+        /** A chart with the default table (under a report's first chart only). */
+        public ChartDto(String groupBy, String bucket, String agg, String field) {
+            this(groupBy, bucket, agg, field, null);
+        }
+    }
 
     /** One step of a {@code wizard} page: its heading and the form fields it asks for. */
     public record StepDto(String title, List<String> fields) {}
+
+    /** How an {@code entity-list} page opens sorted: a sortable column and {@code asc} (default) or {@code desc}. */
+    public record SortDto(String field, String dir) {}
 
     /** A number tile above a {@code record} page's tabs: {@code agg} over the {@code child} rows of
      *  the record ({@code count} by default), linked through the child's {@code via} relation (default:
@@ -324,14 +495,22 @@ public record FullstackStarterRequest(
     }
 
     /** One related-list tab of a {@code record} page: the child entity, and the child's relation to
-     *  the record entity that links them (optional unless it has several). A bare string in the
-     *  JSON is the entity alone. */
-    public record ChildTabDto(String entity, String via) {
+     *  the record entity that links them (optional unless it has several), and how its list opens —
+     *  the columns it shows and its sort, as an entity-list page's. A bare string in the JSON is
+     *  the entity alone. */
+    public record ChildTabDto(String entity, String via, List<String> columns, SortDto sort) {
 
         @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
-        public ChildTabDto(@JsonProperty("entity") String entity, @JsonProperty("via") String via) {
+        public ChildTabDto(@JsonProperty("entity") String entity, @JsonProperty("via") String via,
+                           @JsonProperty("columns") List<String> columns, @JsonProperty("sort") SortDto sort) {
             this.entity = entity;
             this.via = via;
+            this.columns = columns;
+            this.sort = sort;
+        }
+
+        public ChildTabDto(String entity, String via) {
+            this(entity, via, null, null);
         }
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
@@ -347,7 +526,16 @@ public record FullstackStarterRequest(
             String type,
             String fieldName,
             String targetEntity,
-            Boolean required) {}
+            Boolean required,
+            // Optional foreign-key column as the schema spells it (the DDL import sets it);
+            // omitted → <snake fieldName>_id.
+            String joinColumn) {
+
+        /** Back-compat constructor without {@code joinColumn}. */
+        public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required) {
+            this(type, fieldName, targetEntity, required, null);
+        }
+    }
 
     public record FieldDefinitionDto(
             String name,
@@ -373,7 +561,20 @@ public record FullstackStarterRequest(
             // Optional display label per enum constant (constant -> label, e.g. {"OPEN": "פתוח"}).
             // Keys are matched case-insensitively against enumValues; only valid on ENUM fields.
             // A constant without a label falls back to a humanized form ("IN_PROGRESS" -> "In progress").
-            Map<String, String> enumLabels) {
+            Map<String, String> enumLabels,
+            // Optional database column as the schema spells it (the DDL import sets it);
+            // omitted → the snake_case of name.
+            String column) {
+
+        /** Back-compat constructor without {@code column} (derived from the name). */
+        public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                                  String pattern, Boolean email, List<String> enumValues,
+                                  Boolean searchable, Boolean filterable, String label, Boolean readOnly,
+                                  String defaultValue, Map<String, String> enumLabels) {
+            this(name, type, primaryKey, generated, required, unique, length, min, max,
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels, null);
+        }
 
         /** Back-compat constructor without {@code enumLabels} (no custom labels). */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
@@ -382,7 +583,7 @@ public record FullstackStarterRequest(
                                   Boolean searchable, Boolean filterable, String label, Boolean readOnly,
                                   String defaultValue) {
             this(name, type, primaryKey, generated, required, unique, length, min, max,
-                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, null);
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, (Map<String, String>) null);
         }
 
         /** Back-compat constructor without the {@code searchable}/{@code filterable} opt-out flags

@@ -71,6 +71,9 @@ public class SqlEntityGenerator {
         }
 
         List<GeneratedJavaFile> files = new ArrayList<>();
+        if (tables.stream().anyMatch(t -> rendersQuotedName(t, dialect))) {
+            files.add(new GeneratedJavaFile(SqlNames.NAMING_STRATEGY_PATH, SqlNames.namingStrategySource(packageName)));
+        }
         for (TableModel table : tables) {
             files.add(renderEntity(table, dialect, packageName, opts, knownTableNames));
             if (table.hasCompositePk()) {
@@ -694,15 +697,20 @@ public class SqlEntityGenerator {
     }
 
     private TableModel toTableModel(CreateTable ct, String sourceSql) {
-        String tableName = unquote(ct.getTable().getName());
-        String schema = unquote(ct.getTable().getSchemaName());
+        // Names the DDL quoted keep their exact spelling in the generated code (SqlNames).
+        Set<String> quoted = new HashSet<>();
+        String rawName = ct.getTable().getName();
+        String rawSchema = ct.getTable().getSchemaName();
         // Be robust to JSqlParser variants that leave the schema fused onto the
-        // name (e.g. "ENTV.TD_APP_STP"): split on the last dot ourselves.
-        if (tableName != null && tableName.contains(".")) {
-            int dot = tableName.lastIndexOf('.');
-            if (schema == null || schema.isBlank()) schema = tableName.substring(0, dot);
-            tableName = tableName.substring(dot + 1);
+        // name (e.g. "ENTV.TD_APP_STP"): split on the last dot ourselves, before
+        // unquoting, so "VNRF"."Orders" splits into two quoted parts.
+        if (rawName != null && rawName.contains(".")) {
+            int dot = rawName.lastIndexOf('.');
+            if (rawSchema == null || rawSchema.isBlank()) rawSchema = rawName.substring(0, dot);
+            rawName = rawName.substring(dot + 1);
         }
+        String tableName = unquote(rawName, quoted);
+        String schema = unquote(rawSchema, quoted);
         List<String> pkColumns = new ArrayList<>();
         List<ForeignKey> fks = new ArrayList<>();
         Set<String> fkColumnNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
@@ -712,14 +720,14 @@ public class SqlEntityGenerator {
                 String type = ix.getType() == null ? "" : ix.getType().toUpperCase(Locale.ROOT);
                 if (type.contains("PRIMARY KEY")) {
                     for (String col : ix.getColumnsNames()) {
-                        pkColumns.add(unquote(col));
+                        pkColumns.add(unquote(col, quoted));
                     }
                 }
                 if (ix instanceof ForeignKeyIndex fk) {
-                    List<String> cols = fk.getColumnsNames().stream().map(SqlEntityGenerator::unquote).toList();
-                    String refTable = fk.getTable() != null ? unquote(fk.getTable().getName()) : "";
+                    List<String> cols = fk.getColumnsNames().stream().map(n -> unquote(n, quoted)).toList();
+                    String refTable = fk.getTable() != null ? unquote(fk.getTable().getName(), quoted) : "";
                     List<String> refCols = fk.getReferencedColumnNames() == null ? List.of()
-                            : fk.getReferencedColumnNames().stream().map(SqlEntityGenerator::unquote).toList();
+                            : fk.getReferencedColumnNames().stream().map(n -> unquote(n, quoted)).toList();
                     fks.add(new ForeignKey(cols, refTable, refCols));
                     fkColumnNames.addAll(cols);
                 }
@@ -730,7 +738,7 @@ public class SqlEntityGenerator {
         List<ColumnDefinition> defs = ct.getColumnDefinitions() == null
                 ? Collections.emptyList() : ct.getColumnDefinitions();
         for (ColumnDefinition cd : defs) {
-            columns.add(toColumnModel(cd, pkColumns, fkColumnNames));
+            columns.add(toColumnModel(cd, pkColumns, fkColumnNames, quoted));
         }
 
         // PKs can also be declared inline on columns. Collect them if missing.
@@ -751,7 +759,7 @@ public class SqlEntityGenerator {
             columns = fixed;
         }
 
-        return new TableModel(tableName, schema, columns, pkColumns, fks, null, sourceSql);
+        return new TableModel(tableName, schema, columns, pkColumns, fks, null, sourceSql, quoted);
     }
 
     /**
@@ -794,8 +802,9 @@ public class SqlEntityGenerator {
         return new TableModel(className, null, columns, pkColumns, List.of(), stmt);
     }
 
-    private ColumnModel toColumnModel(ColumnDefinition cd, List<String> tablePkCols, Set<String> fkColumnNames) {
-        String name = unquote(cd.getColumnName());
+    private ColumnModel toColumnModel(ColumnDefinition cd, List<String> tablePkCols, Set<String> fkColumnNames,
+                                      Set<String> quoted) {
+        String name = unquote(cd.getColumnName(), quoted);
         String rawType = cd.getColDataType().getDataType();
         Integer precision = null, scale = null;
         List<String> args = cd.getColDataType().getArgumentsStringList();
@@ -830,6 +839,13 @@ public class SqlEntityGenerator {
         try { return Integer.parseInt(s.trim()); } catch (NumberFormatException e) { return null; }
     }
 
+    /** {@link #unquote(String)}, recording the bare name in {@code quoted} when it was quoted. */
+    private static String unquote(String s, Set<String> quoted) {
+        String bare = unquote(s);
+        if (bare != null && !bare.equals(s)) quoted.add(bare);
+        return bare;
+    }
+
     private static String unquote(String s) {
         if (s == null) return null;
         if (s.length() >= 2) {
@@ -843,11 +859,28 @@ public class SqlEntityGenerator {
 
     // ── Rendering ─────────────────────────────────────────────────────────────
 
+    /** True when one of the table's rendered names comes out quoted, so the project needs
+     *  {@link SqlNames#namingStrategySource} for it to reach the database as written. */
+    private static boolean rendersQuotedName(TableModel table, SqlDialect dialect) {
+        List<String> names = new ArrayList<>();
+        names.add(table.name());
+        if (table.schema() != null) names.add(table.schema());
+        table.columns().forEach(c -> names.add(c.name()));
+        for (ForeignKey fk : table.foreignKeys()) names.addAll(fk.referencedColumns());
+        return names.stream().anyMatch(n -> SqlNames.isQuoted(table.physical(n, dialect)));
+    }
+
+    /** A table/schema/column name as the body of a Java string literal in the entity — the
+     *  name Spring Boot's naming strategy will hand to the database unchanged (see {@link SqlNames}). */
+    private static String sqlName(TableModel table, String name, SqlDialect dialect) {
+        return SqlNames.javaLiteral(table.physical(name, dialect));
+    }
+
     private GeneratedJavaFile renderEntity(TableModel table, SqlDialect dialect,
                                            String packageName, SqlDepOptions opts,
                                            Set<String> knownTableNames) {
         if (table.isView()) {
-            return renderViewEntity(table, packageName, opts);
+            return renderViewEntity(table, dialect, packageName, opts);
         }
         String className = toPascalCase(table.name());
         String subPkg = opts.subPackage();
@@ -878,7 +911,7 @@ public class SqlEntityGenerator {
         for (ColumnModel c : table.columns()) {
             JavaType jt = TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale());
             imports.addAll(jt.imports());
-            processColumn(body, c, jt, table, knownTableNames, emittedFks, usedFieldNames, imports);
+            processColumn(body, c, jt, table, dialect, knownTableNames, emittedFks, usedFieldNames, imports);
         }
 
         StringBuilder sb = new StringBuilder();
@@ -888,9 +921,9 @@ public class SqlEntityGenerator {
         }
         sb.append('\n');
         sb.append("@Entity\n");
-        sb.append("@Table(name = \"").append(table.name()).append('"');
+        sb.append("@Table(name = \"").append(sqlName(table, table.name(), dialect)).append('"');
         if (table.schema() != null && !table.schema().isBlank()) {
-            sb.append(", schema = \"").append(table.schema()).append('"');
+            sb.append(", schema = \"").append(sqlName(table, table.schema(), dialect)).append('"');
         }
         sb.append(")\n");
         sb.append("@Data\n");
@@ -914,7 +947,8 @@ public class SqlEntityGenerator {
      * <em>verbatim</em> so it matches the column the query actually returns. The first
      * projected column is the {@code @Id}. The raw query goes into a Java text block.
      */
-    private GeneratedJavaFile renderViewEntity(TableModel table, String packageName, SqlDepOptions opts) {
+    private GeneratedJavaFile renderViewEntity(TableModel table, SqlDialect dialect, String packageName,
+                                               SqlDepOptions opts) {
         String className = toPascalCase(table.name());
         String subPkg = opts.subPackage();
         String fullPkg = packageName + "." + subPkg;
@@ -949,9 +983,10 @@ public class SqlEntityGenerator {
             }
             usedFieldNames.add(fieldName);
             if (c.isPk()) sb.append("    @Id\n");
-            // Match the SELECT's projected column label verbatim — that's the name Hibernate
-            // reads back from the @Subselect result set.
-            sb.append("    @Column(name = \"").append(c.name()).append("\")\n");
+            // Match the SELECT's projected column label — that's the name Hibernate reads back
+            // from the @Subselect result set. A camelCase alias goes through SqlNames, or the
+            // naming strategy would look for full_name instead of fullName.
+            sb.append("    @Column(name = \"").append(sqlName(table, c.name(), dialect)).append("\")\n");
             sb.append("    // TODO: SELECT has no column types — set the real type\n");
             sb.append("    private String ").append(fieldName).append(";\n\n");
         }
@@ -967,31 +1002,31 @@ public class SqlEntityGenerator {
      * scalar field. Falls back to scalar+TODO when the FK target table is not
      * in the same generation batch.
      */
-    private void processColumn(StringBuilder body, ColumnModel c, JavaType jt, TableModel table,
+    private void processColumn(StringBuilder body, ColumnModel c, JavaType jt, TableModel table, SqlDialect dialect,
                                Set<String> knownTableNames, Set<ForeignKey> emittedFks,
                                Set<String> usedFieldNames, Set<String> imports) {
         ForeignKey compositeFk = findCompositeForeignKey(c.name(), table.foreignKeys());
         if (compositeFk != null) {
             boolean refKnown = knownTableNames.contains(compositeFk.referencedTable());
             if (refKnown && !emittedFks.contains(compositeFk)) {
-                appendCompositeAssociation(body, compositeFk, usedFieldNames, imports);
+                appendCompositeAssociation(body, compositeFk, table, dialect, usedFieldNames, imports);
                 emittedFks.add(compositeFk);
             }
             // PK columns must still emit their scalar @Id field for @IdClass to bind.
             // Non-PK composite-FK columns are absorbed by the association unless the
             // ref table is missing (then fall back to scalar+TODO).
             if (c.isPk()) {
-                appendScalarField(body, c, jt, usedFieldNames);
+                appendScalarField(body, c, jt, table, dialect, usedFieldNames);
             } else if (!refKnown) {
                 body.append("    // TODO: map as @ManyToOne (composite FK to unknown table)\n");
-                appendScalarField(body, c, jt, usedFieldNames);
+                appendScalarField(body, c, jt, table, dialect, usedFieldNames);
             }
             return;
         }
 
         ForeignKey singleFk = findSingleForeignKey(c.name(), table.foreignKeys());
         if (singleFk != null && knownTableNames.contains(singleFk.referencedTable())) {
-            appendSingleAssociation(body, c, singleFk, table, usedFieldNames, imports);
+            appendSingleAssociation(body, c, singleFk, table, dialect, usedFieldNames, imports);
             emittedFks.add(singleFk);
             return;
         }
@@ -999,11 +1034,11 @@ public class SqlEntityGenerator {
         if (c.isForeignKey()) {
             body.append("    // TODO: map as @ManyToOne\n");
         }
-        appendScalarField(body, c, jt, usedFieldNames);
+        appendScalarField(body, c, jt, table, dialect, usedFieldNames);
     }
 
     private void appendSingleAssociation(StringBuilder body, ColumnModel c, ForeignKey fk,
-                                         TableModel table, Set<String> usedFieldNames,
+                                         TableModel table, SqlDialect dialect, Set<String> usedFieldNames,
                                          Set<String> imports) {
         String refEntity = toPascalCase(fk.referencedTable());
         String fieldName = pickAssociationFieldName(c, fk, usedFieldNames, false);
@@ -1019,19 +1054,19 @@ public class SqlEntityGenerator {
             body.append("    @Id\n");
             body.append("    @OneToOne(fetch = FetchType.LAZY)\n");
             body.append("    @MapsId\n");
-            body.append("    @JoinColumn(name = \"").append(c.name()).append("\")\n");
+            body.append("    @JoinColumn(name = \"").append(sqlName(table, c.name(), dialect)).append("\")\n");
             body.append("    private ").append(refEntity).append(' ').append(fieldName).append(";\n\n");
             return;
         }
 
         body.append("    @ManyToOne(fetch = FetchType.LAZY)\n");
-        body.append("    @JoinColumn(name = \"").append(c.name()).append('"');
+        body.append("    @JoinColumn(name = \"").append(sqlName(table, c.name(), dialect)).append('"');
         if (!c.nullable()) body.append(", nullable = false");
         body.append(")\n");
         body.append("    private ").append(refEntity).append(' ').append(fieldName).append(";\n\n");
     }
 
-    private void appendCompositeAssociation(StringBuilder body, ForeignKey fk,
+    private void appendCompositeAssociation(StringBuilder body, ForeignKey fk, TableModel table, SqlDialect dialect,
                                             Set<String> usedFieldNames, Set<String> imports) {
         String refEntity = toPascalCase(fk.referencedTable());
         String fieldName = pickAssociationFieldName(null, fk, usedFieldNames, true);
@@ -1047,8 +1082,8 @@ public class SqlEntityGenerator {
             String col = fk.columns().get(i);
             String refCol = i < fk.referencedColumns().size()
                     ? fk.referencedColumns().get(i) : col;
-            body.append("        @JoinColumn(name = \"").append(col)
-                    .append("\", referencedColumnName = \"").append(refCol).append("\")");
+            body.append("        @JoinColumn(name = \"").append(sqlName(table, col, dialect))
+                    .append("\", referencedColumnName = \"").append(sqlName(table, refCol, dialect)).append("\")");
             if (i < fk.columns().size() - 1) body.append(',');
             body.append('\n');
         }
@@ -1056,8 +1091,8 @@ public class SqlEntityGenerator {
         body.append("    private ").append(refEntity).append(' ').append(fieldName).append(";\n\n");
     }
 
-    private void appendScalarField(StringBuilder body, ColumnModel c, JavaType jt,
-                                   Set<String> usedFieldNames) {
+    private void appendScalarField(StringBuilder body, ColumnModel c, JavaType jt, TableModel table,
+                                   SqlDialect dialect, Set<String> usedFieldNames) {
         String fieldName = toCamelCase(c.name());
         if (usedFieldNames.contains(fieldName)) {
             int n = 2;
@@ -1065,7 +1100,10 @@ public class SqlEntityGenerator {
             fieldName = fieldName + n;
         }
         usedFieldNames.add(fieldName);
-        boolean renameViaColumn = !fieldName.equals(c.name());
+        // The column the naming strategy must receive; named whenever the field alone would not
+        // produce it (a different name, or a mixed-case/quoted one SqlNames had to rewrite).
+        String column = sqlName(table, c.name(), dialect);
+        boolean renameViaColumn = !fieldName.equals(column);
 
         if (c.isPk()) {
             body.append("    @Id\n");
@@ -1076,7 +1114,7 @@ public class SqlEntityGenerator {
 
         StringBuilder col = new StringBuilder("    @Column(");
         List<String> parts = new ArrayList<>();
-        if (renameViaColumn) parts.add("name = \"" + c.name() + "\"");
+        if (renameViaColumn) parts.add("name = \"" + column + "\"");
         if (!c.nullable()) parts.add("nullable = false");
         if (c.precision() != null && isStringType(jt)) {
             parts.add("length = " + c.precision());

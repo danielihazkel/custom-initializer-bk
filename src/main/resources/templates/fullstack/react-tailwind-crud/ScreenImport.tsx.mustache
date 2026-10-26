@@ -1,0 +1,44 @@
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { {{EntityName}}ImportFields, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+import { CsvImport } from '@shared/ui/CsvImport'
+import { t } from '@shared/i18n'
+
+{{#needsNavigate}}
+interface Props {
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+}
+
+{{/needsNavigate}}
+/** Creates records from a CSV file: every row checked first, then all saved or none. */
+export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+  // A finished import starts a fresh one{{#hasBack}}, after going to the list of what it made{{/hasBack}}.
+  const [run, setRun] = useState(0)
+  return (
+    <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+        <p className="mt-1 text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      </div>
+      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+        <CsvImport
+          key={run}
+          fields={ {{EntityName}}ImportFields }
+          validate={value => validate{{EntityName}}(value as Partial<{{EntityName}}>)}
+          path="/api/{{entityNamePluralKebab}}"
+          label={ {{{entityLabelPluralExpr}}} }
+          onDone={n => {
+            toast.success(t('importDone', { n, x: {{{entityLabelPluralExpr}}} }))
+            setRun(r => r + 1)
+{{#hasBack}}
+            onNavigate('{{backPageId}}')
+{{/hasBack}}
+          }}
+        />
+      </div>
+    </div>
+  )
+}

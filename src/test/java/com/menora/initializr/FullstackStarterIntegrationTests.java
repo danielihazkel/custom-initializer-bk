@@ -354,7 +354,12 @@ class FullstackStarterIntegrationTests {
 
         // The API client reads the problem-detail shape.
         assertThat(entries.get("shop/frontend/src/shared/api/client.ts"))
-                .contains("problem.errors").contains("problem.detail || problem.title");
+                .contains("problem.errors").contains("problem.detail || problem.error || problem.message")
+                // Errors reach the user in their language, never as "HTTP 500 on GET /api/…".
+                .contains("import { t } from '../i18n'")
+                .contains("throw new ApiError(0, t('errorOffline'))")
+                .contains("if (status === 403) return t('errorForbidden')")
+                .doesNotContain("HTTP ${res.status} on");
     }
 
     @Test
@@ -901,12 +906,12 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.get("shop/frontend/src/entities/order/model/types.ts"))
                 .contains("customerId: number | null")
                 .contains("customerLabel?: string | null");
-        // The FK now renders as a <select> populated from the target's list endpoint via useOptions.
+        // The FK is picked by typing: the target's label is searchable, so a RelationPicker
+        // searches its list endpoint (a target without one keeps the useOptions <select>).
         assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
-                .contains("import { useOptions } from '@shared/api'")
-                .contains("useOptions<Record<string, unknown>>('/api/customers')")
+                .contains("import { Field, inputClass, RelationPicker } from '@shared/ui'")
+                .contains("path=\"/api/customers\"")
                 .contains("label=\"Customer\" required")
-                .contains("<select")
                 .contains("set('customerId'");
         // Table column shows the label (falling back to #id), and the filter bar gets a relation select.
         assertThat(entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx"))
@@ -1469,6 +1474,150 @@ class FullstackStarterIntegrationTests {
                 .containsEntry("fieldName", "customer")
                 .containsEntry("targetEntity", "Customer")
                 .containsEntry("required", true);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void importedDdl_generatesEntitiesOnTheSchemasOwnColumnNames() throws Exception {
+        // A DB2 column with an underscore before a digit used to come out as ..._use8 (derived back
+        // from the camelCase field name), and an FK without an _id suffix as <field>_id — both
+        // queries then failed. The import now carries the DDL names into every SQL name.
+        Map<String, Object> importBody = new LinkedHashMap<>();
+        importBody.put("dialect", "DB2");
+        importBody.put("sql", """
+                CREATE TABLE VNRF.CUSTOMERS (
+                    CUST_NO NUMERIC(6, 0) NOT NULL PRIMARY KEY,
+                    CUST_SHEM_2 CHAR(20)
+                );
+                CREATE TABLE VNRF.ORDERS (
+                    ORD_NO NUMERIC(6, 0) NOT NULL PRIMARY KEY,
+                    FRF_QOD_MISHLOAH_FUTURE_USE_8 CHAR(1),
+                    CUST_REF NUMERIC(6, 0) NOT NULL,
+                    FOREIGN KEY (CUST_REF) REFERENCES VNRF.CUSTOMERS (CUST_NO)
+                );
+                """);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<Map<String, Object>> imported = restTemplate.exchange(
+                "/metadata/fullstack/import-ddl", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(importBody, headers),
+                new org.springframework.core.ParameterizedTypeReference<>() {});
+        assertThat(imported.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) imported.getBody().get("entities");
+        Map<String, Object> order = entities.get(1);
+        assertThat((List<Map<String, Object>>) order.get("fields"))
+                .anySatisfy(f -> assertThat(f).containsEntry("column", "FRF_QOD_MISHLOAH_FUTURE_USE_8"));
+        assertThat(((List<Map<String, Object>>) order.get("relations")).get(0)).containsEntry("joinColumn", "CUST_REF");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "frf");
+        body.put("packageName", "com.menora.frf");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", entities);
+        body.put("opts", Map.of("scaffold", List.of("softDelete")));
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/entity/Order.java"))
+                .contains("@Column(name = \"FRF_QOD_MISHLOAH_FUTURE_USE_8\"")
+                .contains("private String frfQodMishloahFutureUse8;")
+                .contains("@JoinColumn(name = \"CUST_REF\", nullable = false)")
+                .contains("@Formula(\"(select t.CUST_SHEM_2 from VNRF.CUSTOMERS t where t.CUST_NO = CUST_REF)\")")
+                .contains("UPDATE VNRF.ORDERS SET deleted = true WHERE ORD_NO = ?")
+                .doesNotContain("future_use8")
+                .doesNotContain("cust_ref_id");
+        assertThat(contentEndingWith(entries, "/repository/OrderRepository.java"))
+                .contains("UPDATE VNRF.ORDERS SET deleted = false WHERE ORD_NO = :id");
+        // All-caps names pass Boot's naming strategy untouched: no extra strategy in the project.
+        assertThat(entries.keySet()).noneMatch(k -> k.endsWith("QuotedNamesNamingStrategy.java"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void importedDdl_keepsMixedCaseAndQuotedNamesThroughTheNamingStrategy() throws Exception {
+        Map<String, Object> importBody = new LinkedHashMap<>();
+        importBody.put("dialect", "POSTGRESQL");
+        importBody.put("sql", """
+                CREATE TABLE app."OrderItems" (
+                    id BIGINT PRIMARY KEY,
+                    "UnitPrice" NUMERIC(10, 2),
+                    orderDate DATE
+                );
+                """);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<Map<String, Object>> imported = restTemplate.exchange(
+                "/metadata/fullstack/import-ddl", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(importBody, headers),
+                new org.springframework.core.ParameterizedTypeReference<>() {});
+        assertThat(imported.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) imported.getBody().get("entities");
+        assertThat(entities.get(0)).containsEntry("tableName", "\"OrderItems\"").containsEntry("schema", "app");
+        assertThat((List<Map<String, Object>>) entities.get(0).get("fields"))
+                .extracting(f -> f.get("column")).containsExactly("id", "\"UnitPrice\"", "ORDERDATE");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", entities);
+        body.put("opts", Map.of("scaffold", List.of("softDelete")));
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/entity/OrderItem.java"))
+                .contains("@Table(name = \"\\\"OrderItems\\\"\", schema = \"app\")")
+                .contains("@Column(name = \"\\\"UnitPrice\\\"\"")
+                .contains("@Column(name = \"ORDERDATE\"")
+                // Native SQL is not touched by the naming strategy, and @Table's schema does not reach it.
+                .contains("UPDATE app.\\\"OrderItems\\\" SET deleted = true WHERE id = ?");
+        assertThat(contentEndingWith(entries, "/config/QuotedNamesNamingStrategy.java"))
+                .contains("package com.menora.shop.config;")
+                .contains("@Component");
+    }
+
+    @Test
+    void fullstackEndpoint_mapsCamelCaseViewAliasesThroughTheNamingStrategy() throws Exception {
+        // A SELECT view maps a field by its projected label; a camelCase alias is folded so the
+        // strategy does not look for customer_name instead of customerName.
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("name", "CustomerSummary");
+        view.put("readOnly", true);
+        view.put("viewQuery", "SELECT id, customer_name AS customerName FROM customers");
+        view.put("fields", List.of(
+                Map.of("name", "id", "type", "Long", "primaryKey", true),
+                Map.of("name", "customerName", "type", "String")));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "crm");
+        body.put("packageName", "com.menora.crm");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(view));
+        Map<String, String> entries = generateZip(body);
+        assertThat(contentEndingWith(entries, "/entity/CustomerSummary.java"))
+                .contains("@Column(name = \"CUSTOMERNAME\"")
+                .contains("@Column(name = \"id\"");
+        assertThat(entries.keySet()).noneMatch(k -> k.endsWith("QuotedNamesNamingStrategy.java"));
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsBadOrClashingColumnNames() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        // Column names are spliced into native SQL, so only identifier characters pass.
+        ResponseEntity<String> bad = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(bodyWithField(Map.of("name", "title", "type", "String", "column", "TITLE; DROP")), headers),
+                String.class);
+        assertThat(bad.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(bad.getBody()).contains("column 'TITLE; DROP' of 'title' on entity 'Task' is not a valid column name");
+
+        // An explicit column may not reuse another member's (derived) column.
+        ResponseEntity<String> clash = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(bodyWithField(Map.of("name", "title", "type", "String", "column", "ID")), headers),
+                String.class);
+        assertThat(clash.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(clash.getBody()).contains("'id' and 'title' on entity 'Task' both map to column 'id'");
     }
 
     @Test
@@ -2274,7 +2423,51 @@ class FullstackStarterIntegrationTests {
                 .contains("async function onKanbanMove(row: Task, value: string)")
                 .contains("onMove={onKanbanMove}")
                 .contains("await reload()")
-                .contains(" reload,");
+                .contains(" reload,")
+                // The board loads every matching row (not one page) and takes its lane totals from
+                // /stats; a lane with more than it shows opens in the table, filtered to that lane.
+                .contains("const WHOLE_VIEW_LIMIT = 500")
+                .contains("const wholeView = viewMode === 'kanban'")
+                .doesNotContain("calendarRange")
+                .contains("useTask({ page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size, sort,")
+                .contains("countBy('status')")
+                .contains("totals={laneTotals}")
+                .contains("onShowLane={value => { setFilters(f => ({ ...f, status: value })); setViewMode('table') }}")
+                // Hard delete: the confirm promises no undo.
+                .contains("message={t('cannotUndo')}")
+                .doesNotContain("undoHint")
+                // Deleting the last row of the last page steps back a page.
+                .contains("if (!loading && items.length === 0 && page > 0 && totalPages > 0) setPage(totalPages - 1)")
+                // A new search or filter starts the bulk selection again.
+                .contains("if (selectionKey !== selectionFor) {");
+        assertThat(taskPage)
+                // A filtered board says nothing matches; an unfiltered one offers the first record.
+                .contains("          filtered={filtered}\n          emptyAction={emptyAction}\n")
+                // A failed load can be retried in place.
+                .contains("{t('retry')}</button>")
+                // A failed export is told, and the button says it is busy meanwhile.
+                .contains("  const download = useDownload()")
+                .contains("onClick={() => download.run(() => exportCsv('tasks.csv'))}");
+        assertThat(entries.get("ops/frontend/src/shared/ui/KanbanBoard.tsx"))
+                .contains("if (loading && rows.length === 0) {")
+                .contains("t('nMoreShowInList', { n: hidden })")
+                .contains("? <EmptyState title={t('noMatchingRecords')} />");
+        // A date-only value is placed on its own day, not read as UTC midnight (the day before, west of UTC).
+        assertThat(entries.get("ops/frontend/src/shared/ui/CalendarView.tsx"))
+                .contains("const day = /^(\\d{4}-\\d{2}-\\d{2})/.exec(String(raw))")
+                .doesNotContain("new Date(String(raw))");
+        // Escape in a relation picker closes the picker, not the drawer or dialog around it.
+        for (String layer : List.of("FormDrawer", "DetailDrawer", "ConfirmDialog")) {
+            assertThat(entries.get("ops/frontend/src/shared/ui/" + layer + ".tsx"))
+                    .contains("if (e.key === 'Escape' && !e.defaultPrevented)");
+        }
+        assertThat(entries.get("ops/frontend/src/shared/api/useResource.ts"))
+                .contains("export function useDownload()")
+                .contains("toast.error(t('exportFailed',");
+        assertThat(entries.get("ops/frontend/src/shared/api/useResource.ts"))
+                .contains("export const RefreshTick = createContext(0)")
+                .contains("}, [reload, tick])")
+                .contains("`${basePath}/stats?groupBy=${encodeURIComponent(field)}${where ? `&${where}` : ''}`");
 
         // Event page: calendar-only — no toggle bar, no Table/CardGrid/KanbanBoard.
         String eventPage = entries.get("ops/frontend/src/pages/event/ui/EventPage.tsx");
@@ -2282,6 +2475,12 @@ class FullstackStarterIntegrationTests {
                 .contains("useState<'calendar'>('calendar')")
                 .contains("<CalendarView")
                 .contains("dateField=\"startsAt\"")
+                // The calendar loads the month on screen through the date's own filter (whole days).
+                .contains("startsAtFrom: from + 'T00:00:00',")
+                .contains("startsAtTo: to + 'T23:59:59',")
+                .contains("filters: listFilters })")
+                .contains("onRangeChange={onCalendarRange}")
+                .contains("const wholeView = (viewMode === 'calendar' && calendarRange != null)")
                 .doesNotContain("<Table")
                 .doesNotContain("aria-label={t('calendarView')}");   // single view → no toggle
 
@@ -2291,6 +2490,8 @@ class FullstackStarterIntegrationTests {
                 .contains("const [viewMode] = useState<'table'>('table')")   // no toggle → no unused setter
                 .doesNotContain("KanbanBoard")
                 .doesNotContain("onKanbanMove")
+                .doesNotContain("WHOLE_VIEW_LIMIT")
+                .contains("import { useEffect, useState } from 'react'")
                 .doesNotContain("FilterBar");
 
         // Backend Task service: a Filters carrier + composed Specification + bulk delete.
@@ -2451,6 +2652,99 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_listsOfferTheFirstRecordAndTheDetailFormatsValues() throws Exception {
+        // An empty, unfiltered list offers "New <entity>"; a filtered one says nothing matches.
+        // The detail view words booleans and formats dates, importing only the i18n names it uses.
+        Map<String, Object> ticket = new LinkedHashMap<>();
+        ticket.put("name", "Ticket");
+        ticket.put("fields", List.of(pkField(),
+                Map.of("name", "title", "type", "String"),
+                Map.of("name", "open", "type", "Boolean"),
+                Map.of("name", "due", "type", "LocalDate"),
+                Map.of("name", "closedAt", "type", "LocalDateTime")));
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "Note");
+        note.put("fields", List.of(pkField(), Map.of("name", "text", "type", "String")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "desk");
+        body.put("packageName", "com.menora.desk");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(ticket, note));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(entries.get("desk/frontend/src/pages/ticket/ui/TicketPage.tsx"))
+                .contains("const filtered = debouncedSearch !== '' || Object.values(filters).some(v => v !== '')")
+                .contains("const emptyAction = { label: t('newX', { x: 'Ticket' }), onClick: openNew }")
+                .contains("filtered={filtered}")
+                .contains("emptyAction={emptyAction}");
+        assertThat(entries.get("desk/frontend/src/shared/ui/Table.tsx"))
+                .contains("<EmptyState title={t('noMatchingRecords')} />")
+                .contains("action={emptyAction}");
+        assertThat(entries.get("desk/frontend/src/features/ticket-form/ui/TicketDetail.tsx"))
+                .contains("import { t, LOCALE } from '@shared/i18n'")
+                .contains("(value.open ? t('trueLabel') : t('falseLabel'))")
+                .contains("new Date(`${value.due}T00:00:00`).toLocaleDateString(LOCALE)")
+                .contains("new Date(value.closedAt).toLocaleString(LOCALE)")
+                .contains("String(value.title)");
+        // Nothing to word or format: no i18n import at all (the generated lint rejects unused ones).
+        assertThat(entries.get("desk/frontend/src/features/note-form/ui/NoteDetail.tsx"))
+                .doesNotContain("@shared/i18n");
+    }
+
+    @Test
+    void fullstackEndpoint_picksASearchableLinkByTyping() throws Exception {
+        // A link to an entity whose label field is searchable is picked by typing (RelationPicker,
+        // server-side `q`), in the form and in the filter bar; a target without a searchable label
+        // keeps the one-page <select>.
+        Map<String, Object> customer = new LinkedHashMap<>();
+        customer.put("name", "Customer");
+        customer.put("fields", List.of(pkField(), Map.of("name", "name", "type", "String")));
+        Map<String, Object> region = new LinkedHashMap<>();
+        region.put("name", "Region");
+        region.put("fields", List.of(pkField(), Map.of("name", "code", "type", "Integer")));
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("name", "Order");
+        order.put("fields", List.of(pkField(), Map.of("name", "ref", "type", "String")));
+        order.put("relations", List.of(
+                Map.of("type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Customer"),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "region", "targetEntity", "Region")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(customer, region, order));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(entries).containsKey("shop/frontend/src/shared/ui/RelationPicker.tsx");
+        assertThat(entries.get("shop/frontend/src/shared/ui/index.ts")).contains("export { RelationPicker } from './RelationPicker'");
+        assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
+                .contains("import { Field, inputClass, RelationPicker } from '@shared/ui'")
+                .contains("import { useOptions } from '@shared/api'")
+                .contains("path=\"/api/customers\"")
+                .contains("labelKey=\"name\"")
+                .contains("onChange={v => set('customerId', v == null ? null : Number(v))}")
+                .contains("const regionOptions = useOptions<Record<string, unknown>>('/api/regions')")
+                .doesNotContain("customerOptions");
+        assertThat(entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx"))
+                .contains("optionsPath: '/api/customers', optionValue: 'id', optionLabel: 'name', searchable: true }")
+                .contains("optionsPath: '/api/regions', optionValue: 'id' }");
+        assertThat(entries.get("shop/frontend/src/shared/ui/FilterBar.tsx"))
+                .contains("f.searchable && f.optionLabel");
+        // Every link searchable: the form needs no useOptions.
+        Map<String, Object> onlyCustomer = new LinkedHashMap<>(order);
+        onlyCustomer.put("relations", List.of(Map.of("type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Customer")));
+        body.put("entities", List.of(customer, onlyCustomer));
+        assertThat(generateZip(body).get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
+                .doesNotContain("useOptions");
+    }
+
+    @Test
     void fullstackEndpoint_rendersFieldDefaults() throws Exception {
         // A declared defaultValue becomes the entity field's Java initializer, the form's initial
         // value for a new row, a null-guard in the DTO's toEntity and the demo-data seed value.
@@ -2497,8 +2791,11 @@ class FullstackStarterIntegrationTests {
         String page = entries.get("desk/frontend/src/pages/ticket/ui/TicketPage.tsx");
         assertThat(page)
                 .contains("const newDefaults = (): Partial<Ticket> => ({ status: 'draft', priority: 1, open: true, stage: 'ACTIVE', due: '2024-01-01', code: 'X', })")
-                .contains("setEditing(newDefaults())")
-                .contains("setInitial(newDefaults())")
+                // ...and with the list's one-value filters on top (an ACTIVE-filtered list makes ACTIVE rows).
+                .contains("setEditing({ ...newDefaults(), ...fromFilters(filters) })")
+                .contains("setInitial({ ...newDefaults(), ...fromFilters(filters) })")
+                .contains("  if (values['stage']) record['stage'] = values['stage']")
+                .contains("  if (values['open']) record['open'] = values['open'] === 'true'")
                 .doesNotContain("setEditing({})");
 
         // The Lombok set renders the same initializers.

@@ -164,6 +164,22 @@ public class {{EntityName}}Controller {
     public {{EntityName}}Dto create(@RequestBody {{#hasValidation}}@Valid {{/hasValidation}}{{EntityName}}Dto dto) {
         return {{EntityName}}Dto.from(service.create(dto.toEntity()));
     }
+{{#importApplicable}}
+
+    /** A CSV import's rows, created together or not at all: 200 with {@code created} when every
+     *  row is valid, 422 with each row's {@code errors} (rows counted from 1) when any is not. */
+{{#optScaffoldOpenApi}}    @Operation(summary = "Import {{EntityName}} records (all or nothing)")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
+{{/optScaffoldSecured}}    @PostMapping("/import")
+    public ResponseEntity<java.util.Map<String, Object>> importRows(@RequestBody java.util.List<{{EntityName}}Dto> rows) {
+        if (rows.size() > 1000) {
+            throw new IllegalArgumentException("An import takes at most 1000 rows, got " + rows.size());
+        }
+        java.util.List<{{EntityName}}Service.ImportError> errors = service.importAll(rows);
+        if (!errors.isEmpty()) return ResponseEntity.unprocessableEntity().body(java.util.Map.of("errors", errors));
+        return ResponseEntity.ok(java.util.Map.of("created", rows.size()));
+    }
+{{/importApplicable}}
 
 {{#hasCompositePk}}{{#optScaffoldOpenApi}}    @Operation(summary = "Update a {{EntityName}}")
 {{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)

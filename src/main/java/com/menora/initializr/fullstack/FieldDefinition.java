@@ -35,6 +35,11 @@ import java.util.Map;
  * <p>{@code enumLabels} maps an ENUM constant (already upper-cased, as the generated Java enum
  * spells it) to its human-facing display label. Always non-null (empty when none were supplied);
  * a constant absent from the map gets a humanized fallback at render time.
+ *
+ * <p>{@code column} is the database column the field maps to, exactly as the schema spells it
+ * (set by the DDL import, or by hand). Null means the column is derived from the name
+ * ({@link com.menora.initializr.gen.Naming#toSnakeCase}) — which cannot reproduce every schema
+ * name ({@code USE_8} and {@code USE8} both camel-case to {@code use8}), hence the field.
  */
 public record FieldDefinition(
         String name,
@@ -54,10 +59,21 @@ public record FieldDefinition(
         String label,
         boolean readOnly,
         String defaultValue,
-        Map<String, String> enumLabels) {
+        Map<String, String> enumLabels,
+        String column) {
 
     public FieldDefinition {
         enumLabels = enumLabels == null ? Map.of() : Map.copyOf(enumLabels);
+    }
+
+    /** Back-compat constructor without {@code column} (derived from the name). */
+    public FieldDefinition(String name, FieldType type, boolean primaryKey, boolean generated,
+                           boolean required, boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                           String pattern, boolean email, List<String> enumValues,
+                           boolean searchable, boolean filterable, String label, boolean readOnly,
+                           String defaultValue, Map<String, String> enumLabels) {
+        this(name, type, primaryKey, generated, required, unique, length, min, max,
+                pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels, null);
     }
 
     /** Back-compat constructor without {@code enumLabels} (no custom labels). */
@@ -67,7 +83,7 @@ public record FieldDefinition(
                            boolean searchable, boolean filterable, String label, boolean readOnly,
                            String defaultValue) {
         this(name, type, primaryKey, generated, required, unique, length, min, max,
-                pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, null);
+                pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, (Map<String, String>) null);
     }
 
     /** Back-compat constructor without the {@code label}/{@code readOnly}/{@code defaultValue}

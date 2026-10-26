@@ -257,11 +257,12 @@ public class ExtensionMetadataController {
                 fields.add(new FieldWire(
                         f.name(), f.type().name(),
                         f.primaryKey(), f.generated(), f.required(), f.unique(),
-                        f.length(), f.enumValues()));
+                        f.length(), f.enumValues(), f.column()));
             }
             List<RelationWire> relations = new ArrayList<>(d.relations().size());
             for (RelationDefinition r : d.relations()) {
-                relations.add(new RelationWire(r.type().name(), r.fieldName(), r.targetEntity(), r.required()));
+                relations.add(new RelationWire(r.type().name(), r.fieldName(), r.targetEntity(), r.required(),
+                        r.joinColumn()));
             }
             wire.add(new EntityWire(d.name(), d.tableName(), d.schema(), fields,
                     d.readOnly(), d.viewQuery(), d.sourceSql(), relations));
@@ -297,11 +298,14 @@ public class ExtensionMetadataController {
                              boolean readOnly, String viewQuery, String sourceSql,
                              List<RelationWire> relations) {}
     /** A MANY_TO_ONE derived from a single-column foreign key in the imported DDL. */
-    public record RelationWire(String type, String fieldName, String targetEntity, boolean required) {}
+    public record RelationWire(String type, String fieldName, String targetEntity, boolean required,
+                               String joinColumn) {}
     public record FieldWire(
             String name, String type,
             boolean primaryKey, boolean generated, boolean required, boolean unique,
-            Integer length, List<String> enumValues) {}
+            Integer length, List<String> enumValues,
+            // The DDL's own column name (the field name is its camelCase, which can't be reversed).
+            String column) {}
 
     public record SubOptionDto(String id, String label, String description) {}
     public record CompatibilityRuleDto(String sourceDepId, String targetDepId, String relationType, String description, String projectKind) {}

@@ -1,4 +1,9 @@
+{{^hasPages}}
 import { useState } from 'react'
+{{/hasPages}}
+{{#hasPages}}
+import { {{^navTopbar}}useState, {{/navTopbar}}useEffect, useRef } from 'react'
+{{/hasPages}}
 import type { LucideIcon } from 'lucide-react'
 {{^hasPages}}
 import { LayoutDashboard, Menu, Moon, Sun, Table2 } from 'lucide-react'
@@ -201,10 +206,18 @@ function PageNotice({ title, hint, action, onAction }: { title: string; hint: st
 }
 
 export default function App() {
-  const [route, navigate] = useRoute()
+  const [route, navigate{{#hasQueryScreens}}, replace{{/hasQueryScreens}}] = useRoute()
+{{^navTopbar}}
   const [navOpen, setNavOpen] = useState(false)
+{{/navTopbar}}
   const { isDark, toggle } = useTheme()
   const { view } = route
+  // A new page starts at its top, not at the scroll offset the last one was left at.
+  const mainRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0)
+    window.scrollTo(0, 0)
+  }, [view])
   const current = NAV.find(n => n.id === view)
 {{#hasPageRoles}}
   // Pages restricted to roles leave the nav, and their route shows a notice, for other users.
@@ -221,14 +234,23 @@ export default function App() {
 
   const go = (id: View, arg?: string, query: Record<string, string> = {}) => {
     navigate({ view: id, arg, query })
+{{^navTopbar}}
     setNavOpen(false)
+{{/navTopbar}}
   }
 {{#hasNavigatingScreens}}
 
   // Screens navigate by page id; a record page also takes the record's key, a list page its filters.
   const goView = (v: string, arg?: string, query?: Record<string, string>) => go(v as View, arg, query)
 {{/hasNavigatingScreens}}
+{{#hasQueryScreens}}
 
+  // A screen's own state that belongs in the URL (a dashboard's period, a report's filters)
+  // rewrites the current entry rather than adding one, so Back still leaves the page.
+  const setQuery = (query: Record<string, string>) => replace({ ...route, query })
+{{/hasQueryScreens}}
+
+{{^navTopbar}}
   const sidebar = (
     <>
       <div className="flex items-center gap-2.5 border-b border-white/10 px-5 py-5">
@@ -241,6 +263,7 @@ export default function App() {
         </div>
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
+{{^navCollapsibleGroups}}
         {sections.map((section, i) => (
           <div key={i} className="space-y-0.5">
             {section.label && (
@@ -270,15 +293,53 @@ export default function App() {
             })}
           </div>
         ))}
+{{/navCollapsibleGroups}}
+{{#navCollapsibleGroups}}
+        {sections.map((section, i) => {
+          // A labelled section folds; a run of ungrouped pages has nothing to fold under.
+          const links = section.items.map(({ id, label, icon: Icon }) => {
+            const active = view === id
+            return (
+              <a
+                key={id}
+                href={`#/${id}`}
+                onClick={e => {
+                  e.preventDefault()
+                  go(id)
+                }}
+                aria-current={active ? 'page' : undefined}
+                className={`flex w-full items-center gap-3 rounded-lg border-s-2 px-3 py-2 text-sm transition-colors ${
+                  active
+                    ? 'border-gold bg-ink-soft font-medium text-white'
+                    : 'border-transparent text-slate-300 hover:bg-ink-soft hover:text-white'
+                }`}
+              >
+                <Icon className={`h-4 w-4 ${active ? 'text-gold' : ''}`} />
+                {label}
+              </a>
+            )
+          })
+          return section.label ? (
+            <details key={i} open className="space-y-0.5">
+              <summary className="cursor-pointer select-none px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</summary>
+              {links}
+            </details>
+          ) : (
+            <div key={i} className="space-y-0.5">{links}</div>
+          )
+        })}
+{{/navCollapsibleGroups}}
       </nav>
       <div className="border-t border-white/10 px-5 py-3 text-[11px] text-white/70">
         v0.0.1
       </div>
     </>
   )
+{{/navTopbar}}
 
   return (
     <div className="flex h-full bg-canvas text-fg">
+{{^navTopbar}}
       {/* Static sidebar (tablet and up) */}
       <aside className="hidden w-64 flex-col bg-app-shell text-slate-100 md:flex">
         {sidebar}
@@ -300,10 +361,54 @@ export default function App() {
           {sidebar}
         </aside>
       </div>
+{{/navTopbar}}
 
       <div className="flex flex-1 flex-col overflow-hidden">
+{{#navTopbar}}
+        {/* Top bar: the brand, then every nav section in a row that scrolls sideways on a phone. */}
+        <div className="bg-app-shell text-slate-100">
+          <div className="flex items-center gap-4 px-4 md:px-8">
+            <div className="flex shrink-0 items-center gap-2.5 py-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white p-1 shadow-sm">
+                <img src="/logo.png" alt="{{artifactId}}" className="h-full w-auto" />
+              </div>
+              <div className="font-semibold tracking-tight">{{artifactId}}</div>
+            </div>
+            <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto" aria-label={t('navigation')}>
+              {sections.map((section, i) => (
+                <div key={i} className="flex items-stretch gap-1">
+                  {section.label && (
+                    <span className="self-center whitespace-nowrap ps-2 pe-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</span>
+                  )}
+                  {section.items.map(({ id, label, icon: Icon }) => {
+                    const active = view === id
+                    return (
+                      <a
+                        key={id}
+                        href={`#/${id}`}
+                        onClick={e => {
+                          e.preventDefault()
+                          go(id)
+                        }}
+                        aria-current={active ? 'page' : undefined}
+                        className={`flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-3 text-sm transition-colors ${
+                          active ? 'border-gold font-medium text-white' : 'border-transparent text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        <Icon className={`h-4 w-4 ${active ? 'text-gold' : ''}`} />
+                        {label}
+                      </a>
+                    )
+                  })}
+                </div>
+              ))}
+            </nav>
+          </div>
+        </div>
+{{/navTopbar}}
         <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3.5 md:px-8">
           <div className="flex items-center gap-3">
+{{^navTopbar}}
             <button
               onClick={() => setNavOpen(true)}
               className="-ms-1 rounded-lg p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg md:hidden"
@@ -311,6 +416,7 @@ export default function App() {
             >
               <Menu className="h-5 w-5" />
             </button>
+{{/navTopbar}}
             <div>
 {{#hasBreadcrumbs}}
               {crumb ? (
@@ -337,6 +443,25 @@ export default function App() {
               <h1 className="text-sm font-semibold text-fg">{current?.label ?? {{#hasOffNavPages}}RECORD_TITLES[view] ?? {{/hasOffNavPages}}t('dashboard')}</h1>
             </div>
           </div>
+{{#hasShellSearch}}
+          <div className="flex items-center gap-2">
+            <form
+              role="search"
+              onSubmit={e => {
+                e.preventDefault()
+                const words = String(new FormData(e.currentTarget).get('q') ?? '').trim()
+                go('{{searchPageId}}', undefined, words ? { q: words } : {})
+              }}
+            >
+              <input
+                name="q"
+                type="search"
+                placeholder={t('searchEverything')}
+                aria-label={t('searchEverything')}
+                className="w-40 rounded-lg border border-border bg-canvas px-3 py-1.5 text-sm text-fg placeholder:text-muted focus:border-brand focus:outline-none sm:w-64"
+              />
+            </form>
+{{/hasShellSearch}}
           <button
             onClick={toggle}
             className="rounded-lg border border-border p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
@@ -345,9 +470,12 @@ export default function App() {
           >
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
+{{#hasShellSearch}}
+          </div>
+{{/hasShellSearch}}
         </header>
 
-        <main className="flex-1 overflow-auto bg-canvas">
+        <main ref={mainRef} className="flex-1 overflow-auto bg-canvas">
         {route.notFound != null ? (
           <PageNotice title={t('pageNotFound')} hint={t('pageNotFoundHint', { x: route.notFound })} action={t('goToStart')} onAction={() => go('{{initialPageId}}')} />
 {{#hasPageRoles}}

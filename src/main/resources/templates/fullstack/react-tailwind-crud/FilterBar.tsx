@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { SlidersHorizontal, X } from 'lucide-react'
 import { useOptions } from '@shared/api'
+import { RelationPicker } from './RelationPicker'
 import { t } from '../i18n'
 
 export type FilterKind = 'enum' | 'boolean' | 'temporal' | 'numeric' | 'relation'
@@ -21,6 +22,8 @@ export interface FilterDescriptor {
   optionsPath?: string
   optionValue?: string
   optionLabel?: string
+  /** The referenced list searches its label: pick by typing instead of from one page of options. */
+  searchable?: boolean
 }
 
 /** Normalizes an enum option to its value/label pair (a bare string labels itself). */
@@ -129,7 +132,9 @@ export function FilterBar({ filters, values, onChange }: Props) {
                 </div>
               )}
               {f.kind === 'relation' && (
-                <RelationSelect f={f} value={values[f.name] ?? ''} onChange={v => set(f.name, v)} className={fieldClass} />
+                f.searchable && f.optionLabel
+                  ? <RelationPicker path={f.optionsPath ?? ''} valueKey={f.optionValue ?? 'id'} labelKey={f.optionLabel} value={values[f.name] ?? ''} onChange={v => set(f.name, v ?? '')} className={fieldClass} placeholder={t('any')} aria-label={f.label} />
+                  : <RelationSelect f={f} value={values[f.name] ?? ''} onChange={v => set(f.name, v)} className={fieldClass} />
               )}
               {f.kind === 'numeric' && (
                 <div className="flex items-center gap-1">

@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { api } from './client'
+import { t } from '../i18n'
 
 /** A resource key: a single value, or — for composite primary keys — the key parts in
  *  declared order (the backend addresses them as ordered path segments, e.g. /api/x/{a}/{b}). */
@@ -8,6 +10,27 @@ export type ResourceId = number | string | Array<number | string>
 function toPath(id: ResourceId): string {
   return Array.isArray(id) ? id.map(v => encodeURIComponent(String(v))).join('/') : encodeURIComponent(String(id))
 }
+
+/** Runs a download (a CSV export) with a busy flag, and tells the user when it fails — a failed
+ *  download otherwise ends silently, with no file and no message. */
+export function useDownload(): { busy: boolean; run: (start: () => Promise<void>) => void } {
+  const [busy, setBusy] = useState(false)
+  // A second click while one is running is ignored rather than starting a second download.
+  const running = useRef(false)
+  const run = useCallback((start: () => Promise<void>) => {
+    if (running.current) return
+    running.current = true
+    setBusy(true)
+    start()
+      .catch(e => { toast.error(t('exportFailed', { message: e instanceof Error ? e.message : String(e) })) })
+      .finally(() => { running.current = false; setBusy(false) })
+  }, [])
+  return { busy, run }
+}
+
+/** Bumped by a dashboard's Refresh (or its timer): every list and data widget under it reloads,
+ *  keeping what it shows until the new rows arrive. */
+export const RefreshTick = createContext(0)
 
 export interface SortSpec {
   field: string
@@ -44,11 +67,9 @@ export function useResource<T extends object>(basePath: string, params: PagePara
   const [error, setError] = useState<string | null>(null)
 
   const filterKey = JSON.stringify(params.filters ?? {})
-  const query = useMemo(() => {
+  // The search and filters alone — what the stats rollup takes.
+  const where = useMemo(() => {
     const sp = new URLSearchParams()
-    sp.set('page', String(params.page))
-    sp.set('size', String(params.size))
-    if (params.sort) sp.set('sort', `${params.sort.field},${params.sort.direction}`)
     if (params.q && params.q.trim() !== '') sp.set('q', params.q.trim())
     for (const [k, v] of Object.entries(params.filters ?? {})) {
       if (v !== '' && v != null) sp.set(k, v)
@@ -57,7 +78,15 @@ export function useResource<T extends object>(basePath: string, params: PagePara
     // filterKey is the serialized form of params.filters: a fresh object with equal contents must
     // not rebuild the query (and refetch), so the object itself is deliberately not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.page, params.size, params.sort, params.q, filterKey])
+  }, [params.q, filterKey])
+  const query = useMemo(() => {
+    const sp = new URLSearchParams()
+    sp.set('page', String(params.page))
+    sp.set('size', String(params.size))
+    if (params.sort) sp.set('sort', `${params.sort.field},${params.sort.direction}`)
+    return where ? `${sp}&${where}` : sp.toString()
+  }, [params.page, params.size, params.sort, where])
+  const tick = useContext(RefreshTick)
 
   // Monotonic request counter: a response is applied only if no newer request was issued
   // meanwhile, so a slow page-1 response can never overwrite a faster page-2 one.
@@ -82,9 +111,10 @@ export function useResource<T extends object>(basePath: string, params: PagePara
     }
   }, [basePath, query])
 
+  // tick: a dashboard Refresh reloads the same page.
   useEffect(() => {
     reload()
-  }, [reload])
+  }, [reload, tick])
 
   const create = useCallback(async (payload: Omit<T, 'id'>) => {
     const created = await api.post<T>(basePath, payload)
@@ -123,6 +153,16 @@ export function useResource<T extends object>(basePath: string, params: PagePara
     await reload()
   }, [basePath, reload])
 
+  // How many matching records each value of `field` (an enum/boolean column) has, from the
+  // entity's stats rollup (GET <base>/stats?groupBy=). A grouped column always has one.
+  const countBy = useCallback(async (field: string) => {
+    const stats = await api.get<{ buckets: { key: string | null; value: number | null }[] }>(
+      `${basePath}/stats?groupBy=${encodeURIComponent(field)}${where ? `&${where}` : ''}`)
+    const totals: Record<string, number> = {}
+    for (const b of stats.buckets) if (b.key != null && b.key !== '') totals[b.key] = b.value ?? 0
+    return totals
+  }, [basePath, where])
+
   // Download the current result set (honoring search/filters/sort) as a CSV file. The backend
   // export endpoint ignores page/size and streams every matching row.
   const exportCsv = useCallback((filename = 'export.csv') => {
@@ -145,5 +185,6 @@ export function useResource<T extends object>(basePath: string, params: PagePara
     removeMany,
     updateMany,
     exportCsv,
+    countBy,
   }
 }

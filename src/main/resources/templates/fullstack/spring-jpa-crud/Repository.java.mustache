@@ -18,6 +18,6 @@ public interface {{EntityName}}Repository
      *  has that id at all. */
     @Modifying
     @Transactional
-    @Query(value = "UPDATE {{tableName}} SET deleted = false WHERE {{pkField.column}} = :id", nativeQuery = true)
+    @Query(value = "UPDATE {{tableRef}} SET deleted = false WHERE {{pkField.column}} = :id", nativeQuery = true)
     int restore(@Param("id") {{pkField.javaType}} id);
 {{/softDeleteApplicable}}}

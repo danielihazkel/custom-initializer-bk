@@ -1,0 +1,24 @@
+{{#usesT}}
+import { t } from '@shared/i18n'
+
+{{/usesT}}
+{{#needsNavigate}}
+interface Props {
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+}
+
+{{/needsNavigate}}
+/** A page of text, written in the layout editor. Every piece of it is a quoted string, so nothing
+ *  in it can become markup; a link to another page moves the app there. */
+export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+  return (
+    <div className="mx-auto max-w-3xl p-4 md:p-8">
+      <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+      <p className="mt-1 text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      <article className="mt-6 space-y-4 rounded-2xl border border-border bg-surface p-6 shadow-sm">
+{{{contentJsx}}}      </article>
+    </div>
+  )
+}

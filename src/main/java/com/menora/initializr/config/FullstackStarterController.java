@@ -159,6 +159,13 @@ public class FullstackStarterController {
         }
     }
 
+    /** The request's {@code opts.scaffold} names, for the page validator: a list page may only show
+     *  the audit columns when the audit opt is on. */
+    private static Set<String> scaffoldOptsOf(FullstackStarterRequest body) {
+        List<String> scaffold = body.opts() == null ? null : body.opts().get("scaffold");
+        return scaffold == null ? Set.of() : new LinkedHashSet<>(scaffold);
+    }
+
     /**
      * Shared pipeline for {@link #generate} and {@link #preview}: validates the request,
      * resolves and kind-checks both template sets (fail-fast 400 on a bad key), then renders
@@ -167,8 +174,11 @@ public class FullstackStarterController {
      * thread-local contexts in a {@code finally}.
      */
     private WebProjectRequest buildArtifacts(FullstackStarterRequest body, Path tempDir) throws IOException {
-        List<EntityDefinition> entities = FullstackRequestValidator.validateAndConvert(body);
-        List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), entities);
+        List<EntityDefinition> validated = FullstackRequestValidator.validateAndConvert(body);
+        List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), validated, scaffoldOptsOf(body));
+        // An import page switches on its entity's csvImport option, for both render paths.
+        List<EntityDefinition> entities = FullstackPageValidator.applyPageImplications(validated, pages);
+        PageDefinition.Nav nav = FullstackPageValidator.validateNav(body.nav(), pages);
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
 
@@ -224,7 +234,7 @@ public class FullstackStarterController {
         }
 
         // Frontend — rendered inline outside the Initializr pipeline.
-        renderFrontend(frontendSet, request, entities, pages, domainPackage, body.colorPalette(),
+        renderFrontend(frontendSet, request, entities, pages, nav, domainPackage, body.colorPalette(),
                 body.dashboardTitle(), body.dashboardOverview(), locale, tempDir.resolve("frontend"));
 
         // Root files
@@ -370,7 +380,7 @@ public class FullstackStarterController {
      * </ol>
      */
     private void renderFrontend(EntityTemplateSetEntity set, WebProjectRequest request,
-                                List<EntityDefinition> entities, List<PageDefinition> pages,
+                                List<EntityDefinition> entities, List<PageDefinition> pages, PageDefinition.Nav nav,
                                 String domainPackage, String colorPaletteId, String dashboardTitle, String dashboardOverview,
                                 String locale, Path targetDir) throws IOException {
         // 1. Substrate — reuse the standalone frontend generator.
@@ -421,6 +431,8 @@ public class FullstackStarterController {
         // page gates the Export button on optScaffoldCsvExport and the row checkboxes on the per-entity
         // bulkDeleteApplicable (derived in EntityScaffoldContext from optScaffoldBulkDelete).
         projectCtx.put("optScaffoldCsvExport", optionsContext.hasOption("scaffold", "csvExport"));
+        projectCtx.put("optScaffoldCsvImport", optionsContext.hasOption("scaffold", "csvImport"));
+        EntityScaffoldContext.putCsvImport(projectCtx, entities);
         projectCtx.put("optScaffoldBulkDelete", optionsContext.hasOption("scaffold", "bulkDelete"));
         // Bulk field-edit selection UI. Like bulkDelete, narrowed per entity in EntityScaffoldContext
         // (bulkUpdateApplicable) to writable, single-PK entities that have ≥1 editable non-PK field.
@@ -436,7 +448,7 @@ public class FullstackStarterController {
         // Page layout (dashboards / list pages / tabs / master-detail / record / report). No pages
         // → hasPages=false, the classic shell. Runs last: a report screen resolves its Export
         // button from optScaffoldCsvExport, which is only in the context by this point.
-        EntityScaffoldContext.putPageContext(projectCtx, pages);
+        EntityScaffoldContext.putPageContext(projectCtx, pages, nav);
         log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());

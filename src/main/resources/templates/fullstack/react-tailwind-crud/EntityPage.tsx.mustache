@@ -1,27 +1,34 @@
-import { useEffect, useState } from 'react'
-import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}PencilLine, {{/viewTable}}{{/bulkUpdateApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
+import { {{#calendarRanged}}useCallback, {{/calendarRanged}}useEffect, useState } from 'react'
+import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#importApplicable}}Upload, {{/importApplicable}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}PencilLine, {{/viewTable}}{{/bulkUpdateApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
 {{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 {{#hasEnumFields}}import { {{#fields}}{{#isEnum}}{{enumTypeName}}Labels, {{/isEnum}}{{/fields}}} from '@entities/{{entityNameKebab}}'
 {{/hasEnumFields}}
-import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
+import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#listUrlState}}type ListState, {{/listUrlState}}{{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
 import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
-{{#mutable}}import { {{EntityName}}Form, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
+{{#mutable}}import { {{EntityName}}Form, validate{{EntityName}}{{#importApplicable}}, {{EntityName}}ImportFields{{/importApplicable}} } from '@features/{{entityNameKebab}}-form'
 import { ApiError } from '@shared/api'
-{{/mutable}}
-const columns: Column<{{EntityName}}>[] = [
-{{#fields}}  { label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : {{#isEnum}}{{enumTypeName}}Labels[r.{{name}}]{{/isEnum}}{{^isEnum}}String(r.{{name}}){{/isEnum}} },
-{{/fields}}{{#relations}}  { label: '{{FieldName}}', render: r => {{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}} },
-{{/relations}}{{#auditApplicable}}  { label: t('created'), sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
-  { label: t('updated'), sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
-{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
+{{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
+{{/optScaffoldCsvExport}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
+{{/importApplicable}}
+{{#listSideDetail}}import { api } from '@shared/api'
+{{/listSideDetail}}
+{{#listConfigurable}}/** A column with the key a list page's `columns` prop picks it by. */
+type ListColumn = Column<{{EntityName}}> & { key: string }
+
+{{/listConfigurable}}const columns: {{#listConfigurable}}ListColumn[]{{/listConfigurable}}{{^listConfigurable}}Column<{{EntityName}}>[]{{/listConfigurable}} = [
+{{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : {{#isEnum}}{{enumTypeName}}Labels[r.{{name}}]{{/isEnum}}{{^isEnum}}String(r.{{name}}){{/isEnum}} },
+{{/fields}}{{#relations}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => {{#targetHasRecordPage}}r.{{fkFieldName}} == null ? '—' : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(r.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}r.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(r.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} },
+{{/relations}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
+  { {{#listConfigurable}}key: 'updatedAt', {{/listConfigurable}}label: t('updated'), sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
+{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
 {{/inverseRelations}}{{/optScaffoldInverse}}]
 {{#hasFilters}}
 const filterDescriptors: FilterDescriptor[] = [
-{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{/isRelationFilter}} },
+{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
 {{/filterFields}}]
 {{/hasFilters}}{{#bulkUpdateApplicable}}{{#viewTable}}
 // Fields eligible for bulk edit. `kind` selects the value control shown in the bulk-edit bar; the
@@ -31,7 +38,10 @@ const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?
 {{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
 {{/bulkUpdatableFields}}}
 {{/viewTable}}{{/bulkUpdateApplicable}}
-/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
+{{#wholeViews}}/** The most records the board or the calendar loads at once. */
+const WHOLE_VIEW_LIMIT = 500
+
+{{/wholeViews}}/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
 const rowKey = (row: {{EntityName}}) => {{#hasCompositePk}}[{{#pkFields}}String(row.{{name}}){{^last}}, {{/last}}{{/pkFields}}].join('/'){{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as string | number{{/hasCompositePk}}
 
 {{#hasPages}}
@@ -47,25 +57,94 @@ interface {{EntityName}}PageProps {
 {{/pageScopeable}}
   /** Opens a row on its record page instead of the quick-look drawer. */
   onOpenRecord?: (row: {{EntityName}}) => void
+  /** The heading (default: the entity's plural label) — a list page's own title. */
+  title?: string
+  /** Shown under the heading — a list page's description. */
+  description?: string
+  /** Embedded in another screen (a tab, a record's related list): no heading of its own. */
+  embedded?: boolean
+{{#listSideDetail}}
+  /** Rows open in a pane beside the list (a list page with `detail: side`) instead of the drawer. */
+  sidePane?: boolean
+  /** The pane's row, from the route (#/<page>/<id>); `onSelect` changes it (undefined closes the pane). */
+  selectedId?: string
+  onSelect?: (id?: string) => void
+{{/listSideDetail}}
+{{#hasImportPage}}
+  /** Import opens the entity's import page instead of the import drawer. */
+  onImport?: () => void
+{{/hasImportPage}}
 {{#hasWizardPage}}
   /** New opens the entity's wizard page instead of the form drawer. */
   onCreate?: () => void
 {{/hasWizardPage}}
+{{#listUrlState}}
+  /** Where the list opens, from the route: search, sort, page, rows per page, view, filters. */
+  listState?: ListState
+  /** Told where the list is as it changes, for the route to keep. */
+  onListStateChange?: (state: ListState) => void
+{{/listUrlState}}
+{{#listConfigurable}}
+  /** The columns to show, by key, in this order (default: every column). */
+  columns?: string[]
+  /** The sort the list opens with (default: the primary key). */
+  initialSort?: SortSpec
+  /** The view the list opens in (default: the first enabled view). */
+  initialView?: {{viewModeType}}
+  /** Rows per page the list opens with (default: 20). */
+  initialPageSize?: number
+{{/listConfigurable}}
 }
 
 {{/hasPages}}
-export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord{{#hasWizardPage}}, onCreate{{/hasWizardPage}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+{{#newFromFilters}}/** The list's one-value filters, as the fields of a new record: a record made from a list filtered
+ *  to "status = OPEN" is an open one, and so shows up in the list it was made from. */
+function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
+  const record: Record<string, unknown> = {}
+{{#filterFields}}{{#isEnumFilter}}  if (values['{{name}}']) record['{{name}}'] = values['{{name}}']
+{{/isEnumFilter}}{{#isBooleanFilter}}  if (values['{{name}}']) record['{{name}}'] = values['{{name}}'] === 'true'
+{{/isBooleanFilter}}{{#isRelationFilter}}  if (values['{{name}}']) record['{{name}}'] = {{#isTargetPkNumeric}}Number(values['{{name}}']){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}values['{{name}}']{{/isTargetPkNumeric}}
+{{/isRelationFilter}}{{/filterFields}}  return record as Partial<{{EntityName}}>
+}
+
+{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+{{#listUrlState}}
+  // What the list opens with when the route says nothing — the parts it does not report back.
+  const openingSize = {{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20
+  const openingSort = JSON.stringify({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
+  const openingView = {{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}'
+  const routeView = ({{{viewModesTs}}} as string[]).includes(listState?.view ?? '') ? listState?.view as {{viewModeType}} : undefined
+  const [page, setPage] = useState(listState?.page ?? 0)
+  const [size, setSize] = useState(listState?.size ?? openingSize)
+  const [sort, setSort] = useState<SortSpec | null>(listState?.sort !== undefined ? listState.sort : JSON.parse(openingSort))
+  const [search, setSearch] = useState(listState?.q ?? '')
+  const [debouncedSearch, setDebouncedSearch] = useState(listState?.q ?? '')
+  // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
+  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>(routeView ?? openingView)
+{{/listUrlState}}
+{{^listUrlState}}
   const [page, setPage] = useState(0)
-  const [size, setSize] = useState(20)
-  const [sort, setSort] = useState<SortSpec | null>(null)
+  const [size, setSize] = useState({{#listConfigurable}}initialPageSize ?? {{/listConfigurable}}20)
+  const [sort, setSort] = useState<SortSpec | null>({{#listConfigurable}}initialSort ?? {{/listConfigurable}}null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   // The setter only exists when there is a view toggle to call it (eslint no-unused-vars).
-  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>('{{initialView}}')
+  const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>({{#listConfigurable}}initialView ?? {{/listConfigurable}}'{{initialView}}')
+{{/listUrlState}}
   const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
+{{#listConfigurable}}
+  // A list page may show an ordered subset of the columns.
+  const shown = columnKeys ? columnKeys.flatMap(k => columns.filter(c => c.key === k)) : columns
+{{/listConfigurable}}
 {{#hasPages}}
   // A layout with a record page for this entity opens rows there instead of in the drawer.
+{{#listSideDetail}}
+  // ...or, on a side-pane page, in the pane: the open row rides in the route.
+  const openRow = sidePane && onSelect ? (r: {{EntityName}}) => onSelect(String(rowKey(r))) : onOpenRecord ?? setDetailRow
+{{/listSideDetail}}
+{{^listSideDetail}}
   const openRow = onOpenRecord ?? setDetailRow
+{{/listSideDetail}}
 {{/hasPages}}
 {{#hasFilters}}  const [filters, setFilters] = useState<FilterValues>({{#hasPages}}initialFilters ?? {}{{/hasPages}}{{^hasPages}}{}{{/hasPages}})
 {{/hasFilters}}
@@ -79,14 +158,102 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
     return () => clearTimeout(t)
   }, [search])
 
+{{#listUrlState}}
+  // A new search, sort, page size or filter starts again at the first page — but the page the
+  // list opened on (from the route) stands.
+  const resetKey = JSON.stringify([debouncedSearch, sort, size{{#hasFilters}}, filters{{/hasFilters}}])
+  const [lastReset, setLastReset] = useState(resetKey)
+  if (resetKey !== lastReset) {
+    setLastReset(resetKey)
+    setPage(0)
+  }
+  // Where the list is, for the route: only what differs from how it opens by default.
+  useEffect(() => {
+    onListStateChange?.({
+      q: debouncedSearch || undefined,
+      sort: JSON.stringify(sort) === openingSort ? undefined : sort,
+      page: page || undefined,
+      size: size === openingSize ? undefined : size,
+      view: viewMode === openingView ? undefined : viewMode,
+{{#hasFilters}}      filters,
+{{/hasFilters}}    })
+  }, [onListStateChange, debouncedSearch, sort, page, size, viewMode, openingSort, openingSize, openingView{{#hasFilters}}, filters{{/hasFilters}}])
+{{/listUrlState}}
+{{^listUrlState}}
   useEffect(() => {
     setPage(0)
   }, [debouncedSearch, sort, size{{#hasFilters}}, filters{{/hasFilters}}])
+{{/listUrlState}}
 
+{{#calendarRanged}}
+  // The calendar asks for the month it shows (through the date's own From/To filter) instead of
+  // placing whichever page of rows happened to load.
+  const [calendarRange, setCalendarRange] = useState<Record<string, string> | null>(null)
+  const onCalendarRange = useCallback((from: string, to: string) => setCalendarRange({
+    {{calendarField}}From: from{{#calendarIsDateTime}} + 'T00:00:00'{{/calendarIsDateTime}},
+    {{calendarField}}To: to{{#calendarIsDateTime}} + 'T23:59:59'{{/calendarIsDateTime}},
+  }), [])
+  const listFilters = viewMode === 'calendar' && calendarRange ? { ...{{#pageScopeable}}scopedFilters{{/pageScopeable}}{{^pageScopeable}}filters{{/pageScopeable}}, ...calendarRange } : {{#pageScopeable}}scopedFilters{{/pageScopeable}}{{^pageScopeable}}filters{{/pageScopeable}}
+{{/calendarRanged}}
+{{#wholeViews}}
+  // The board and the calendar show every matching record (up to WHOLE_VIEW_LIMIT), not one page.
+  const wholeView = {{#viewKanban}}viewMode === 'kanban'{{/viewKanban}}{{#viewKanban}}{{#calendarRanged}} || {{/calendarRanged}}{{/viewKanban}}{{#calendarRanged}}(viewMode === 'calendar' && calendarRange != null){{/calendarRanged}}
+{{/wholeViews}}
   const {
     items, totalElements, totalPages, pageNumber, pageSize,
-    loading, error,{{#viewKanban}} reload,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
-  } = use{{EntityName}}({ page, size, sort, q: debouncedSearch{{#hasFilters}}, filters{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/hasFilters}} })
+    loading, error, reload,{{#viewKanban}} countBy,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
+  } = use{{EntityName}}({ {{#wholeViews}}page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size{{/wholeViews}}{{^wholeViews}}page, size{{/wholeViews}}, sort, q: debouncedSearch{{#hasFilters}}, filters{{#calendarRanged}}: listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/calendarRanged}}{{/hasFilters}} })
+{{#optScaffoldCsvExport}}  const download = useDownload()
+{{/optScaffoldCsvExport}}{{#importApplicable}}  const [importing, setImporting] = useState(false)
+{{/importApplicable}}
+  // Deleting the last row of the last page must not strand the list past its end.
+  useEffect(() => {
+    if (!loading && items.length === 0 && page > 0 && totalPages > 0) setPage(totalPages - 1)
+  }, [loading, items.length, page, totalPages])
+{{#viewKanban}}
+  // The lanes' totals come from the stats rollup under the same search and filters, so a lane
+  // says how many records it really holds, not how many were loaded.
+  const [laneTotals, setLaneTotals] = useState<Record<string, number> | undefined>()
+  useEffect(() => {
+    if (viewMode !== 'kanban') return
+    let live = true
+    countBy('{{kanbanField}}')
+      .then(totals => { if (live) setLaneTotals(totals) })
+      .catch(() => { if (live) setLaneTotals(undefined) })
+    return () => { live = false }
+  }, [viewMode, countBy, items])
+{{/viewKanban}}
+{{#hasPages}}
+{{#entityHasRecordPage}}
+  // A row opened on the record page takes its neighbours along, for the page's Previous / Next.
+  useEffect(() => {
+    if (!onOpenRecord || items.length === 0) return
+    try {
+      sessionStorage.setItem('record-siblings:{{entityNameKebab}}', JSON.stringify(items.map(r => String(rowKey(r)))))
+    } catch {
+      // No storage: the record page simply has no Previous / Next.
+    }
+  }, [onOpenRecord, items])
+{{/entityHasRecordPage}}
+{{/hasPages}}
+{{#listSideDetail}}
+  // The pane's row: from the loaded page when it is there, else fetched by id (a reload, a link).
+  const [fetchedRow, setFetchedRow] = useState<{{EntityName}} | null>(null)
+  const [paneFailed, setPaneFailed] = useState(false)
+  const [paneAttempt, setPaneAttempt] = useState(0)
+  const selectedRow = sidePane && selectedId != null
+    ? items.find(r => String(rowKey(r)) === selectedId) ?? (fetchedRow && String(rowKey(fetchedRow)) === selectedId ? fetchedRow : null)
+    : null
+  useEffect(() => {
+    if (!sidePane || selectedId == null || items.some(r => String(rowKey(r)) === selectedId)) return
+    let current = true
+    setPaneFailed(false)
+    api.get<{{EntityName}}>(`/api/{{entityNamePluralKebab}}/${encodeURIComponent(selectedId)}`)
+      .then(r => { if (current) setFetchedRow(r) })
+      .catch(() => { if (current) { setFetchedRow(null); setPaneFailed(true) } })
+    return () => { current = false }
+  }, [sidePane, selectedId, items, paneAttempt])
+{{/listSideDetail}}
 {{#mutable}}
   const [editing, setEditing] = useState<Partial<{{EntityName}}> | null>(null)
   const [initial, setInitial] = useState<Partial<{{EntityName}}>>({})
@@ -109,8 +276,8 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
     return record as Partial<{{EntityName}}>
   }
 {{/pageScopeable}}  function openNew() {
-    setEditing({{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}})
-    setInitial({{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}})
+    setEditing({{#newFromFilters}}{ ...{{/newFromFilters}}{{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}}{{#newFromFilters}}, ...fromFilters(filters) }{{/newFromFilters}})
+    setInitial({{#newFromFilters}}{ ...{{/newFromFilters}}{{#pageScopeable}}newRecord(){{/pageScopeable}}{{^pageScopeable}}{{#hasFieldDefaults}}newDefaults(){{/hasFieldDefaults}}{{^hasFieldDefaults}}{}{{/hasFieldDefaults}}{{/pageScopeable}}{{#newFromFilters}}, ...fromFilters(filters) }{{/newFromFilters}})
     setIsNew(true)
     setFormErrors({})
     setDrawerOpen(true)
@@ -207,6 +374,14 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
   // Bulk selection (table view only). Selected rows are tracked by primary-key value. Shared by
   // the bulk-delete and bulk-edit actions below.
   const [selected, setSelected] = useState<Array<number | string>>([])
+  // A new search or filter hides rows the selection may hold, so it starts again (a page change
+  // keeps it: rows can be picked across pages).
+  const selectionKey = JSON.stringify([debouncedSearch{{#hasFilters}}, filters{{/hasFilters}}])
+  const [selectionFor, setSelectionFor] = useState(selectionKey)
+  if (selectionKey !== selectionFor) {
+    setSelectionFor(selectionKey)
+    setSelected([])
+  }
   const pkOf = (row: {{EntityName}}) => row.{{pkField.name}} as number | string
   const isRowSelected = (row: {{EntityName}}) => selected.includes(pkOf(row))
   function toggleRow(row: {{EntityName}}) {
@@ -256,7 +431,10 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
     }
   }
 {{/viewTable}}{{/bulkUpdateApplicable}}
-  const pagination = {
+  // An empty list offers the first record — unless a search or filter is what emptied it.
+  const filtered = debouncedSearch !== ''{{#hasFilters}} || Object.values(filters).some(v => v !== ''){{/hasFilters}}
+{{#mutable}}  const emptyAction = { label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasWizardPage}}openNew{{/hasWizardPage}}{{#hasWizardPage}}onCreate ?? openNew{{/hasWizardPage}} }
+{{/mutable}}  const pagination = {
     pageNumber,
     pageSize,
     totalPages,
@@ -269,7 +447,13 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
     <div className="mx-auto max-w-6xl p-4 md:p-8">
       <div className="mb-6 flex items-end justify-between">
         <div>
+{{#hasPages}}
+          {!embedded && <h1 className="text-2xl font-semibold tracking-tight text-fg">{title ?? '{{entityLabelPlural}}'}</h1>}
+          {description && <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p>}
+{{/hasPages}}
+{{^hasPages}}
           <h1 className="text-2xl font-semibold tracking-tight text-fg">{{entityLabelPlural}}</h1>
+{{/hasPages}}
           <p className="mt-1 text-sm text-muted">
             {totalElements} {t(totalElements === 1 ? 'record' : 'records')}{{#isView}} · {t('readOnlyView')}{{/isView}}
           </p>
@@ -314,14 +498,24 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
             </button>
 {{/viewCalendar}}          </div>
 {{/hasViewToggle}}{{#optScaffoldCsvExport}}          <button
-            onClick={() => exportCsv('{{entityNamePluralKebab}}.csv')}
+            onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))}
+            disabled={download.busy}
+            aria-busy={download.busy}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
             title={t('exportCsv')}
           >
             <Download className="h-4 w-4" />
-            {t('export')}
+            {download.busy ? t('exporting') : t('export')}
           </button>
-{{/optScaffoldCsvExport}}{{#mutable}}          <button
+{{/optScaffoldCsvExport}}{{#importApplicable}}          <button
+            onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) }
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
+            title={t('importCsv')}
+          >
+            <Upload className="h-4 w-4" />
+            {t('import')}
+          </button>
+{{/importApplicable}}{{#mutable}}          <button
             {{^hasWizardPage}}onClick={openNew}{{/hasWizardPage}}{{#hasWizardPage}}onClick={onCreate ?? openNew}{{/hasWizardPage}}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
           >
@@ -331,7 +525,12 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
 {{/mutable}}        </div>
       </div>
 
-      {error && <Alert>{error}</Alert>}
+      {error && (
+        <Alert>
+          {error}{' '}
+          <button type="button" onClick={() => { void reload() }} className="font-semibold underline underline-offset-2">{t('retry')}</button>
+        </Alert>
+      )}
 {{#hasFilters}}
       <div className="mb-4">
         <FilterBar filters={{#pageScopeable}}{visibleFilters}{{/pageScopeable}}{{^pageScopeable}}{filterDescriptors}{{/pageScopeable}} values={filters} onChange={setFilters} />
@@ -389,10 +588,14 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
         </div>
       )}
 {{/viewTable}}{{/bulkSelectApplicable}}
+{{#listSideDetail}}
+      <div className={sidePane ? 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
+      <div className="min-w-0">
+{{/listSideDetail}}
       {
 {{#viewCards}}      viewMode === 'cards' ? (
         <CardGrid
-          columns={columns}
+          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
           rows={items}
           rowKey={rowKey}
           loading={loading}
@@ -404,10 +607,12 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
 {{#hasStringFields}}          searchable={true}
 {{/hasStringFields}}{{^hasStringFields}}          searchable={false}
 {{/hasStringFields}}          pagination={pagination}
-        />
+          filtered={filtered}
+{{#mutable}}          emptyAction={emptyAction}
+{{/mutable}}        />
       ) : {{/viewCards}}{{#viewKanban}}viewMode === 'kanban' ? (
         <KanbanBoard
-          columns={columns}
+          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
           rows={items}
           rowKey={rowKey}
           loading={loading}
@@ -417,19 +622,30 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
           onEdit={openEdit}
           onDelete={setPendingDelete}
           onMove={onKanbanMove}
+          totals={laneTotals}
+          filtered={filtered}
+          emptyAction={emptyAction}
+{{#kanbanShowsLane}}
+          onShowLane={value => { setFilters(f => ({ ...f, {{kanbanField}}: value })); setViewMode('table') }}
+{{/kanbanShowsLane}}
         />
       ) : {{/viewKanban}}{{#viewCalendar}}viewMode === 'calendar' ? (
         <CalendarView
-          columns={columns}
+          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
           rows={items}
           rowKey={rowKey}
           loading={loading}
           dateField="{{calendarField}}"
+          filtered={filtered}
           onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
+{{#calendarRanged}}
+          onRangeChange={onCalendarRange}
+          total={calendarRange ? totalElements : undefined}
+{{/calendarRanged}}
         />
       ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
         <Table
-          columns={columns}
+          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
           rows={items}
           rowKey={rowKey}
           loading={loading}
@@ -448,8 +664,40 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
           allOnPageSelected={allOnPageSelected}
           onToggleAllOnPage={toggleAllOnPage}
 {{/bulkSelectApplicable}}          pagination={pagination}
-        />
+          filtered={filtered}
+{{#mutable}}          emptyAction={emptyAction}
+{{/mutable}}        />
       ) : {{/viewTable}}null}
+{{#listSideDetail}}
+      </div>
+      {sidePane && (
+        <aside className="self-start rounded-2xl border border-border bg-surface p-5 shadow-sm" data-side-pane>
+          {selectedRow ? (
+            <>
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <h2 className="text-sm font-semibold text-fg">{t('xDetails', { x: '{{entityLabel}}' })}</h2>
+                <div className="flex items-center gap-3">
+{{#mutable}}
+                  <button type="button" onClick={() => openEdit(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('edit')}</button>
+                  <button type="button" onClick={() => setPendingDelete(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('delete')}</button>
+{{/mutable}}
+                  <button type="button" onClick={() => onSelect?.(undefined)} className="text-xs font-medium text-muted hover:text-fg" aria-label={t('close')}>×</button>
+                </div>
+              </div>
+              <{{EntityName}}Detail value={selectedRow} />
+            </>
+          ) : selectedId != null && paneFailed ? (
+            <p className="text-sm text-muted" role="alert">
+              {t('couldNotLoad')}{' '}
+              <button type="button" onClick={() => setPaneAttempt(a => a + 1)} className="font-medium text-brand hover:underline">{t('retry')}</button>
+            </p>
+          ) : (
+            <p className="text-sm text-muted">{selectedId != null ? t('loading') : t('selectARow')}</p>
+          )}
+        </aside>
+      )}
+      </div>
+{{/listSideDetail}}
 {{#mutable}}
       <FormDrawer
         open={drawerOpen}
@@ -483,11 +731,29 @@ export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters,
           />
         )}
       </FormDrawer>
+{{#importApplicable}}
+
+      <DetailDrawer open={importing} title={t('importX', { x: '{{entityLabelPlural}}' })} onClose={() => setImporting(false)}>
+        {importing && (
+          <CsvImport
+            fields={ {{EntityName}}ImportFields }
+            validate={value => validate{{EntityName}}(value as Partial<{{EntityName}}>)}
+            path="/api/{{entityNamePluralKebab}}"
+            label={'{{entityLabelPlural}}'}
+            onDone={n => {
+              setImporting(false)
+              toast.success(t('importDone', { n, x: '{{entityLabelPlural}}' }))
+              void reload()
+            }}
+          />
+        )}
+      </DetailDrawer>
+{{/importApplicable}}
 
       <ConfirmDialog
         open={pendingDelete !== null}
         title={t('deleteX', { x: '{{entityLabel}}' })}
-        message={t('undoHint')}
+        message={t('{{#softDeleteApplicable}}undoHint{{/softDeleteApplicable}}{{^softDeleteApplicable}}cannotUndo{{/softDeleteApplicable}}')}
         busy={deleting}
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}

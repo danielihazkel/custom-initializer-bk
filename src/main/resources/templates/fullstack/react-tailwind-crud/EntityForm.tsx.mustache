@@ -1,7 +1,7 @@
-import { Field, inputClass } from '@shared/ui'
+import { Field, inputClass{{#formUsesPicker}}, RelationPicker{{/formUsesPicker}} } from '@shared/ui'
 {{#formUsesStrings}}import { t } from '@shared/i18n'
-{{/formUsesStrings}}{{#hasRelations}}import { useOptions } from '@shared/api'
-{{/hasRelations}}import type { {{EntityName}}{{#fields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
+{{/formUsesStrings}}{{#formUsesOptions}}import { useOptions } from '@shared/api'
+{{/formUsesOptions}}import type { {{EntityName}}{{#fields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
 {{#fields}}{{#isEnum}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
 {{/isEnum}}{{/fields}}
 
@@ -21,11 +21,16 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
 {{#formHasSteps}}
   const show = (name: string) => !only || only.includes(name)
 {{/formHasSteps}}
-{{#relations}}  const {{fieldName}}Options = useOptions<Record<string, unknown>>('/api/{{targetEntityKebabPlural}}')
-{{/relations}}
+{{#relations}}{{^targetSearchable}}  const {{fieldName}}Options = useOptions<Record<string, unknown>>('/api/{{targetEntityKebabPlural}}')
+{{/targetSearchable}}{{/relations}}
   return (
     <>
-{{#fields}}
+{{#formGroups}}
+{{#groupHasTitle}}
+      {{#formHasSteps}}{({{{groupShowExpr}}}) && ({{/formHasSteps}}<fieldset className="space-y-4 border-t border-border pt-4 first:border-t-0 first:pt-0">
+        <legend className="mb-3 text-sm font-semibold text-fg">{ {{{groupTitleExpr}}} }</legend>
+{{/groupHasTitle}}
+{{#groupFields}}
 {{#isPrimaryKey}}{{#isGenerated}}      {!isNew && (
         <Field label="{{label}}" hint={t('systemGenerated')}>
           <input
@@ -84,10 +89,18 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         />
 {{/isText}}      </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}
-{{/fields}}
-{{#relations}}
+{{/groupFields}}
+{{#groupRelations}}
       {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{FieldName}}"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>
-        <select
+{{#targetSearchable}}        <RelationPicker
+          path="/api/{{targetEntityKebabPlural}}"
+          valueKey="{{targetPkName}}"
+          labelKey="{{targetLabelField}}"
+          className={inputClass}
+          value={value.{{fkFieldName}}}
+          onChange={v => set('{{fkFieldName}}', v == null ? null : {{#isTargetPkNumeric}}Number(v){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}v{{/isTargetPkNumeric}})}
+        />
+{{/targetSearchable}}{{^targetSearchable}}        <select
           className={inputClass}
           value={value.{{fkFieldName}} == null ? '' : String(value.{{fkFieldName}})}
           onChange={e => set('{{fkFieldName}}', e.target.value === '' ? null : {{#isTargetPkNumeric}}Number(e.target.value){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}e.target.value{{/isTargetPkNumeric}})}
@@ -99,8 +112,12 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
             </option>
           )) }
         </select>
-      </Field>{{#formHasSteps}})}{{/formHasSteps}}
-{{/relations}}
+{{/targetSearchable}}      </Field>{{#formHasSteps}})}{{/formHasSteps}}
+{{/groupRelations}}
+{{#groupHasTitle}}
+      </fieldset>{{#formHasSteps}})}{{/formHasSteps}}
+{{/groupHasTitle}}
+{{/formGroups}}
     </>
   )
 }
