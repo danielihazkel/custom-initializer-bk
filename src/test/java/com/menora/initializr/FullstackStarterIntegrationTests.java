@@ -2843,6 +2843,44 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_shipsTheModelItWasGeneratedFrom() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Map<String, Object> task = Map.of("name", "Task", "fields", List.of(pkField(), Map.of("name", "title", "type", "String")));
+
+        // The editor's snapshot rides along and lands verbatim at the zip root.
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("format", "menora-fullstack-model/1");
+        snapshot.put("meta", Map.of("artifactId", "ops", "groupId", "com.menora"));
+        snapshot.put("entities", List.of(Map.of("name", "Task", "fields", List.of())));
+        snapshot.put("pages", List.of(Map.of("id", "tasks", "type", "entity-list", "entity", "Task", "idLocked", true)));
+        snapshot.put("dismissedWarnings", List.of("unreachable:tasks"));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "ops");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("data-jpa", "web"));
+        body.put("entities", List.of(task));
+        body.put("editorModel", snapshot);
+        Map<String, String> entries = generateZip(body);
+        assertThat(mapper.readTree(entries.get("ops/menora-model.json"))).isEqualTo(mapper.valueToTree(snapshot));
+        assertThat(entries.get("ops/README.md")).contains("## Reopen in the generator").contains("menora-model.json");
+
+        // Without one (curl, an IDE), the file holds the request itself — what was sent, not the
+        // dependencies the template set added.
+        body.remove("editorModel");
+        com.fasterxml.jackson.databind.JsonNode model = mapper.readTree(generateZip(body).get("ops/menora-model.json"));
+        assertThat(model.get("format").asText()).isEqualTo("menora-fullstack-request/1");
+        assertThat(model.get("request").get("artifactId").asText()).isEqualTo("ops");
+        assertThat(model.get("request").get("dependencies")).isEqualTo(mapper.valueToTree(List.of("data-jpa", "web")));
+        assertThat(model.get("request").get("entities").get(0).get("name").asText()).isEqualTo("Task");
+        assertThat(model.get("request").has("editorModel")).isFalse();
+
+        // A model that is not an editor snapshot falls back to the request too.
+        body.put("editorModel", "not a model");
+        assertThat(mapper.readTree(generateZip(body).get("ops/menora-model.json")).get("format").asText())
+                .isEqualTo("menora-fullstack-request/1");
+    }
+
+    @Test
     void fullstackEndpoint_rejectsAVersionFieldUnderOptimisticLocking() {
         Map<String, Object> invoice = new LinkedHashMap<>();
         invoice.put("name", "Invoice");

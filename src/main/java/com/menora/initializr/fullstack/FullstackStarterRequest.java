@@ -53,7 +53,25 @@ public record FullstackStarterRequest(
         // The generated shell's navigation, for a page layout: `style` sidebar (the default) or
         // topbar, and `collapsibleGroups` for nav sections that fold. Needs `pages`; the Menora
         // set, a top bar already, ignores it.
-        NavDto nav) {
+        NavDto nav,
+        // The generator UI's own snapshot of the model (its `menora-fullstack-model/1` export),
+        // written verbatim to the zip's menora-model.json so the project can be reopened in the
+        // editor. Never read by validation or generation. Absent: the file holds this request.
+        com.fasterxml.jackson.databind.JsonNode editorModel) {
+
+    /** Every property but {@code editorModel}. */
+    public FullstackStarterRequest(
+            String groupId, String artifactId, String name, String description, String packageName,
+            String domainPackage, String type, String language, String bootVersion, String packaging,
+            String javaVersion, String version, String configurationFileFormat, List<String> dependencies,
+            Map<String, List<String>> opts, String backendTemplateSet, String frontendTemplateSet,
+            String colorPalette, String dashboardTitle, String dashboardOverview, String locale,
+            String department, List<EntityDefinitionDto> entities, List<PageDefinitionDto> pages, NavDto nav) {
+        this(groupId, artifactId, name, description, packageName, domainPackage, type, language,
+                bootVersion, packaging, javaVersion, version, configurationFileFormat, dependencies,
+                opts, backendTemplateSet, frontendTemplateSet, colorPalette, dashboardTitle,
+                dashboardOverview, locale, department, entities, pages, nav, null);
+    }
 
     /** Every property but {@code nav}. */
     public FullstackStarterRequest(
