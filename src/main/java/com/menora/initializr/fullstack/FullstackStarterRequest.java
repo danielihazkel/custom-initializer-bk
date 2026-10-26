@@ -521,11 +521,20 @@ public record FullstackStarterRequest(
             String agg,
             String field,
             // report: the grouped totals table under the chart. Absent: under the first chart only.
-            Boolean table) {
+            Boolean table,
+            // How it is drawn: bar/donut/stacked/table for a group, line/area/table over time.
+            // Absent: a bar, or a line over time.
+            String kind,
+            // stacked: the enum/boolean column that splits each bar (default: the next one).
+            String series) {
 
         /** A chart with the default table (under a report's first chart only). */
         public ChartDto(String groupBy, String bucket, String agg, String field) {
             this(groupBy, bucket, agg, field, null);
+        }
+
+        public ChartDto(String groupBy, String bucket, String agg, String field, Boolean table) {
+            this(groupBy, bucket, agg, field, table, null, null);
         }
     }
 

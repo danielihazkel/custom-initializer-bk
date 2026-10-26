@@ -3,7 +3,7 @@ import { ArrowRight, RefreshCw } from 'lucide-react'
 import { api } from '@shared/api'
 import { LOCALE, t, type StringKey } from '../i18n'
 import { Skeleton } from './Skeleton'
-import { PERIODS, RefreshTick, aggQuery, customPeriod, customRange, fillBuckets, formatStat, statLabel, statsQuery, useStats, type Period, type PresetPeriod, type StatsResponse } from './stats'
+import { PERIODS, RefreshTick, aggQuery, customPeriod, customRange, fillBuckets, formatStat, statLabel, statsQuery, useStats, type Period, type PresetPeriod, type StatsBucket, type StatsResponse } from './stats'
 
 // Dashboard widgets for the generated screens (src/app/screens). Counts come from the list
 // endpoint's page metadata; every breakdown, trend and aggregate comes from the entity's
@@ -224,8 +224,9 @@ const CHART_PAD = 8
 
 /** A time series as plain SVG — the generated app ships no charting library. The viewBox scales
  *  with the container, so the stroke and the dots keep their proportions at any width. With
- *  `onSelect` each point is a button (a drill-down into its day/month/year). */
-export function LineChart({ data, onSelect }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void }) {
+ *  `onSelect` each point is a button (a drill-down into its day/month/year); `area` fills the
+ *  ground under the line, for a total read by its size. */
+export function LineChart({ data, onSelect, area: filled = false }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void; area?: boolean }) {
   if (data.length === 0) return null
   const values = data.map(d => d.value)
   const max = Math.max(...values, 0)
@@ -266,7 +267,7 @@ export function LineChart({ data, onSelect }: { data: { label: string; value: nu
             strokeDasharray="3 3"
           />
         ))}
-        {data.length > 1 && <path d={area} className="fill-brand/10" />}
+        {data.length > 1 && <path d={area} className={filled ? 'fill-brand/35' : 'fill-brand/10'} />}
         <path
           d={line}
           className="stroke-brand"
@@ -574,6 +575,27 @@ export function StackedCard({ title, path, field, series, agg, valueField, label
 }) {
   const { stats, failed, retry } = useStats(path, statsQuery(`groupBy=${field}`, `series=${series}`, aggQuery(agg, valueField), params))
   const buckets = stats?.buckets ?? []
+
+  return (
+    <div className={`${card} ${className}`}>
+      <WidgetHeader title={title} onOpen={onOpen} />
+      <Status failed={failed} loading={stats == null} empty={buckets.length === 0} onRetry={retry} />
+      {buckets.length > 0 && !failed && (
+        <StackedBars buckets={buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />
+      )}
+    </div>
+  )
+}
+
+/** The groups of a split rollup (one bucket per group and series) as stacked bars, largest first,
+ *  with a legend of the series. Shared by the stacked widget and a stacked report chart. */
+export function StackedBars({ buckets, labels, seriesLabels, onSelect }: {
+  buckets: StatsBucket[]
+  labels?: Record<string, string>
+  seriesLabels?: Record<string, string>
+  /** A click on a bar, with its group's key. */
+  onSelect?: (key: string) => void
+}) {
   // Series in first-seen order, so the colours stay put as the numbers change.
   const seriesKeys = [...new Set(buckets.map(b => b.series ?? ''))]
   const groups = [...new Set(buckets.map(b => b.key))].map(key => {
@@ -584,46 +606,40 @@ export function StackedCard({ title, path, field, series, agg, valueField, label
   const seriesLabel = (s: string) => statLabel({ key: s, value: null }, seriesLabels)
 
   return (
-    <div className={`${card} ${className}`}>
-      <WidgetHeader title={title} onOpen={onOpen} />
-      <Status failed={failed} loading={stats == null} empty={groups.length === 0} onRetry={retry} />
-      {groups.length > 0 && !failed && (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            {groups.map(g => {
-              const bar = (
-                <>
-                  <div className="w-28 shrink-0 truncate text-muted" title={g.label}>{g.label}</div>
-                  <div className="flex h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
-                    {g.parts.map((v, i) => (
-                      <div
-                        key={seriesKeys[i]}
-                        className="h-full"
-                        style={{ width: `${(v / max) * 100}%`, background: seriesColor(i) }}
-                        title={`${seriesLabel(seriesKeys[i])}: ${formatStat(v)}`}
-                      />
-                    ))}
-                  </div>
-                  <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(g.total)}</div>
-                </>
-              )
-              return onSelect && g.key !== '' ? (
-                <button
-                  key={g.key}
-                  type="button"
-                  onClick={() => onSelect(g.key)}
-                  className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-lg px-1 text-start text-sm transition-colors hover:bg-surface-2"
-                >
-                  {bar}
-                </button>
-              ) : (
-                <div key={g.key} className="flex items-center gap-3 text-sm">{bar}</div>
-              )
-            })}
-          </div>
-          <Legend items={seriesKeys.map(s => ({ label: seriesLabel(s) }))} />
-        </div>
-      )}
+    <div className="space-y-4">
+      <div className="space-y-2">
+        {groups.map(g => {
+          const bar = (
+            <>
+              <div className="w-28 shrink-0 truncate text-muted" title={g.label}>{g.label}</div>
+              <div className="flex h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+                {g.parts.map((v, i) => (
+                  <div
+                    key={seriesKeys[i]}
+                    className="h-full"
+                    style={{ width: `${(v / max) * 100}%`, background: seriesColor(i) }}
+                    title={`${seriesLabel(seriesKeys[i])}: ${formatStat(v)}`}
+                  />
+                ))}
+              </div>
+              <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(g.total)}</div>
+            </>
+          )
+          return onSelect && g.key !== '' ? (
+            <button
+              key={g.key}
+              type="button"
+              onClick={() => onSelect(g.key)}
+              className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-lg px-1 text-start text-sm transition-colors hover:bg-surface-2"
+            >
+              {bar}
+            </button>
+          ) : (
+            <div key={g.key} className="flex items-center gap-3 text-sm">{bar}</div>
+          )
+        })}
+      </div>
+      <Legend items={seriesKeys.map(s => ({ label: seriesLabel(s) }))} />
     </div>
   )
 }
@@ -847,8 +863,9 @@ function useOptionNames(optionsPath: string | undefined, optionValue: string, op
 }
 
 /** One chart of a report page: bars (an enum/boolean group) or a line (a date, bucketed) from the
- *  rollup of the filtered rows, and — for the page's first chart — the totals table beneath it. */
-export function ReportChart({ title, path, rollup, search, line = false, labels, optionsPath, optionValue = 'id', optionLabel, groupLabel, valueLabel, table = false, onSelect }: {
+ *  rollup of the filtered rows — or, by `shape`, a ring of shares, bars split by a series, a filled
+ *  area, or only the table — and, for the page's first chart, the totals table beneath it. */
+export function ReportChart({ title, path, rollup, search, line = false, shape, labels, seriesLabels, optionsPath, optionValue = 'id', optionLabel, groupLabel, valueLabel, table = false, onSelect }: {
   /** Shown when the page has more than one chart. */
   title?: string
   path: string
@@ -857,7 +874,12 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
   /** The filter bar's values, as list params. */
   search: string
   line?: boolean
+  /** Drawn instead of the bar (or the line): a ring of shares, bars split by the rollup's series,
+   *  the line's ground filled, or nothing but the totals table. */
+  shape?: 'donut' | 'stacked' | 'area' | 'table'
   labels?: Record<string, string>
+  /** A stacked chart: display label per series constant. */
+  seriesLabels?: Record<string, string>
   /** Grouped by a relation: the target's list endpoint, its key and its label column. */
   optionsPath?: string
   optionValue?: string
@@ -870,7 +892,14 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
 }) {
   const { stats, failed, retry } = useStats(path, statsQuery(rollup, search))
   const names = useOptionNames(optionsPath, optionValue, optionLabel, (stats?.buckets ?? []).map(b => b.key))
-  const rows = (stats?.buckets ?? []).map(b => ({
+  // A split rollup has a bucket per (group, series); the table and the totals count each group once.
+  const grouped = shape === 'stacked'
+    ? [...new Set((stats?.buckets ?? []).map(b => b.key))].map(key => ({
+        key,
+        value: (stats?.buckets ?? []).filter(b => b.key === key).reduce((sum, b) => sum + (b.value ?? 0), 0),
+      }))
+    : stats?.buckets ?? []
+  const rows = grouped.map(b => ({
     key: b.key,
     label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ? (b.key === '' ? '—' : b.key) : statLabel(b, labels),
     value: b.value ?? 0,
@@ -888,9 +917,13 @@ export function ReportChart({ title, path, rollup, search, line = false, labels,
         <Status failed={failed} loading={stats == null} empty={rows.length === 0} onRetry={retry} emptyText={t('noMatchingRecords')} />
       ) : (
         <>
-          {line ? <LineChart data={points} onSelect={select} /> : <BarRows data={points} onSelect={select} />}
-          {table && (
-            <table className="mt-5 w-full text-sm">
+          {shape === 'table' ? null
+            : shape === 'stacked' ? <StackedBars buckets={stats.buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />
+              : shape === 'donut' ? <DonutChart data={points} onSelect={select} />
+                : line ? <LineChart data={points} onSelect={select} area={shape === 'area'} />
+                  : <BarRows data={points} onSelect={select} />}
+          {(table || shape === 'table') && (
+            <table className={`${shape === 'table' ? '' : 'mt-5 '}w-full text-sm`}>
               <thead>
                 <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted">
                   <th className="py-2 text-start font-semibold">{groupLabel}</th>

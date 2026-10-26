@@ -107,9 +107,15 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{#chartIsLine}}
         line
 {{/chartIsLine}}
+{{#chartHasShape}}
+        shape="{{chartShape}}"
+{{/chartHasShape}}
 {{#chartHasLabels}}
         labels={ {{chartLabelsRef}} }
 {{/chartHasLabels}}
+{{#chartHasSeriesLabels}}
+        seriesLabels={ {{chartSeriesLabelsRef}} }
+{{/chartHasSeriesLabels}}
 {{#chartIsRelation}}
         optionsPath="{{optionsPath}}"
         optionValue="{{optionValue}}"
@@ -138,9 +144,15 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{#chartIsLine}}
           line
 {{/chartIsLine}}
+{{#chartHasShape}}
+          shape="{{chartShape}}"
+{{/chartHasShape}}
 {{#chartHasLabels}}
           labels={ {{chartLabelsRef}} }
 {{/chartHasLabels}}
+{{#chartHasSeriesLabels}}
+          seriesLabels={ {{chartSeriesLabelsRef}} }
+{{/chartHasSeriesLabels}}
 {{#chartIsRelation}}
           optionsPath="{{optionsPath}}"
           optionValue="{{optionValue}}"

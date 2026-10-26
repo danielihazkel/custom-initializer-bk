@@ -1343,8 +1343,13 @@ public final class FullstackPageValidator {
                                 + r.fieldName() + "' is not one");
                     }
                     PageDefinition.Agg agg = parseAgg(prefix, raw.agg());
+                    PageDefinition.ChartKind kind = chartKind(prefix, raw, false);
+                    if (kind == PageDefinition.ChartKind.STACKED) {
+                        throw new WizardArgumentException(prefix + ": a stacked chart splits an enum or boolean groupBy, and '"
+                                + r.fieldName() + "' is a relation");
+                    }
                     return new PageDefinition.Chart(r.fieldName(), null, agg,
-                            aggField(prefix, entity, agg, trimToNull(raw.field())), raw.table());
+                            aggField(prefix, entity, agg, trimToNull(raw.field())), chartTable(prefix, raw, kind), kind, null);
                 }
             }
             field = fieldOf(prefix, entity, requested, "groupBy");
@@ -1367,8 +1372,49 @@ public final class FullstackPageValidator {
                     + field.name() + "' is not one");
         }
         PageDefinition.Agg agg = parseAgg(prefix, raw.agg());
+        PageDefinition.ChartKind kind = chartKind(prefix, raw, overTime);
+        String series = kind == PageDefinition.ChartKind.STACKED
+                ? series(prefix, entity, field.name(), trimToNull(raw.series())) : null;
         return new PageDefinition.Chart(field.name(), overTime ? parseBucket(prefix, raw.bucket()) : null,
-                agg, aggField(prefix, entity, agg, trimToNull(raw.field())), raw.table());
+                agg, aggField(prefix, entity, agg, trimToNull(raw.field())), chartTable(prefix, raw, kind), kind, series);
+    }
+
+    /**
+     * A chart's {@code kind}, checked against its grouping: bar/donut/stacked/table for a group,
+     * line/area/table over time. The default for its grouping (bar, line) comes back as null, so a
+     * chart that names it renders exactly like one that does not. {@code series} belongs to a
+     * stacked chart alone.
+     */
+    private static PageDefinition.ChartKind chartKind(String prefix, FullstackStarterRequest.ChartDto raw, boolean overTime) {
+        String k = trimToNull(raw.kind());
+        PageDefinition.ChartKind kind = null;
+        if (k != null) {
+            for (PageDefinition.ChartKind c : PageDefinition.ChartKind.values()) {
+                if (c.wire().equalsIgnoreCase(k)) kind = c;
+            }
+            if (kind == null) {
+                throw new WizardArgumentException(prefix + ": unknown chart kind '" + k
+                        + "' (expected bar, donut, stacked, line, area or table)");
+            }
+            if (!kind.fits(overTime)) {
+                throw new WizardArgumentException(prefix + ": a " + kind.wire() + " chart "
+                        + (overTime ? "groups by an enum, boolean or relation, not a date (over time: line, area or table)"
+                                : "draws a date over time (for this groupBy: bar, donut, stacked or table)"));
+            }
+        }
+        if (kind != PageDefinition.ChartKind.STACKED && trimToNull(raw.series()) != null) {
+            throw new WizardArgumentException(prefix + ": 'series' applies to a stacked chart");
+        }
+        boolean isDefault = kind == (overTime ? PageDefinition.ChartKind.LINE : PageDefinition.ChartKind.BAR);
+        return isDefault ? null : kind;
+    }
+
+    /** A table chart is its totals table, so it cannot leave it out. */
+    private static Boolean chartTable(String prefix, FullstackStarterRequest.ChartDto raw, PageDefinition.ChartKind kind) {
+        if (kind == PageDefinition.ChartKind.TABLE && Boolean.FALSE.equals(raw.table())) {
+            throw new WizardArgumentException(prefix + ": a table chart is its totals table, so 'table' cannot be false");
+        }
+        return kind == PageDefinition.ChartKind.TABLE ? Boolean.TRUE : raw.table();
     }
 
     /** A bar groups by a non-PK enum/boolean field — the first enum, else the first boolean, when omitted. */

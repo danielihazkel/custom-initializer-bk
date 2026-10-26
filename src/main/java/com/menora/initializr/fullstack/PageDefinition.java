@@ -513,11 +513,43 @@ public record PageDefinition(
      *
      * @param bucket set only when {@code groupBy} is temporal
      */
-    /** @param table the grouped totals table under the chart; null: under a report's first chart only */
-    public record Chart(String groupBy, Bucket bucket, Agg agg, String field, Boolean table) {
+    /**
+     * @param table  the grouped totals table under the chart; null: under a report's first chart only
+     * @param kind   how it is drawn; null for the default (a bar, or a line over time)
+     * @param series the column a {@link ChartKind#STACKED} chart splits each bar by; null otherwise
+     */
+    public record Chart(String groupBy, Bucket bucket, Agg agg, String field, Boolean table, ChartKind kind,
+                        String series) {
 
         public Chart(String groupBy, Bucket bucket, Agg agg, String field) {
             this(groupBy, bucket, agg, field, null);
+        }
+
+        public Chart(String groupBy, Bucket bucket, Agg agg, String field, Boolean table) {
+            this(groupBy, bucket, agg, field, table, null, null);
+        }
+    }
+
+    /** How a report chart draws its groups: as bars, a ring of shares, bars split by a second column
+     *  or only the totals table; over time, as a line, a filled area or the table. */
+    public enum ChartKind {
+        BAR("bar", false), DONUT("donut", false), STACKED("stacked", false), LINE("line", true),
+        AREA("area", true), TABLE("table", null);
+
+        private final String wire;
+        /** True: needs a date groupBy; false: a group; null: either. */
+        private final Boolean overTime;
+
+        ChartKind(String wire, Boolean overTime) {
+            this.wire = wire;
+            this.overTime = overTime;
+        }
+
+        public String wire() { return wire; }
+
+        /** Whether this kind can draw a chart grouped over time ({@code true}) or by a group. */
+        public boolean fits(boolean byDate) {
+            return overTime == null || overTime == byDate;
         }
     }
 }

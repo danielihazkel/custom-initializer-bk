@@ -716,7 +716,8 @@ class FullstackPagesIntegrationTests {
                 .doesNotContain("@entities/order'");
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
                 .contains("function useOptionNames(optionsPath: string | undefined, optionValue: string, optionLabel: string | undefined, keys: readonly string[] = []): Record<string, string> {")
-                .contains("const names = useOptionNames(optionsPath, optionValue, optionLabel, (stats?.buckets ?? []).map(b => b.key))\n  const rows = (stats?.buckets ?? []).map(b => ({\n    key: b.key,\n    label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ?");
+                .contains("const names = useOptionNames(optionsPath, optionValue, optionLabel, (stats?.buckets ?? []).map(b => b.key))\n")
+                .contains("  const rows = grouped.map(b => ({\n    key: b.key,\n    label: optionsPath ? (b.key === '' ? '—' : names[b.key] ?? `#${b.key}`) : line ?");
     }
 
     @Test
@@ -1084,6 +1085,62 @@ class FullstackPagesIntegrationTests {
                 "presetFilter 'placedAt': expected a date range (2026-01-01..2026-03-31, either side optional) or a period (last:7d, last:30d, last:90d, ytd, 12m), got 'last:5d'");
         assertOrdersRejected(p -> p.put("presetFilter", Map.of("placedAt", "2026-03-31..2026-01-01")), "presetFilter 'placedAt': from '2026-03-31' is after to '2026-01-01'");
         assertOrdersRejected(p -> p.put("presetFilter", Map.of("reference", "x")), "presetFilter 'reference': only filterable enum, boolean, date or number fields can be preset");
+    }
+
+    @Test
+    void fullstackEndpoint_reportChartKinds() throws Exception {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> report = new LinkedHashMap<>(Map.of("id", "workload", "type", "report", "entity", "Ticket",
+                "title", "Workload", "charts", List.of(
+                        Map.of("groupBy", "status", "kind", "donut"),
+                        // series defaults to the next enum — status, after priority.
+                        Map.of("groupBy", "priority", "kind", "STACKED"),
+                        Map.of("groupBy", "dueAt", "kind", "area", "bucket", "day"),
+                        Map.of("groupBy", "team", "kind", "table"))));
+        pages(body).add(report);
+        // Naming the default kind draws exactly what leaving it out does.
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "by-status", "type", "report", "entity", "Ticket",
+                "chart", Map.of("groupBy", "status", "kind", "bar"))));
+        Map<String, String> files = generate(body);
+
+        String screen = files.get(FE + "src/app/screens/WorkloadScreen.tsx");
+        assertThat(screen)
+                .contains("import { TicketStatusTypeLabels, TicketPriorityTypeLabels } from '@entities/ticket'")
+                .contains("rollup=\"groupBy=status\"\n        search={search}\n        shape=\"donut\"\n        labels={ TicketStatusTypeLabels }\n")
+                .contains("rollup=\"groupBy=priority&series=status\"\n          search={search}\n          shape=\"stacked\"\n"
+                        + "          labels={ TicketPriorityTypeLabels }\n          seriesLabels={ TicketStatusTypeLabels }\n")
+                .contains("rollup=\"groupBy=dueAt&bucket=day\"\n          search={search}\n          line\n          shape=\"area\"\n")
+                // A table chart always has its table, whatever its place.
+                .contains("rollup=\"groupBy=team\"\n          search={search}\n          shape=\"table\"\n");
+        assertThat(files.get(FE + "src/app/screens/ByStatusScreen.tsx"))
+                .contains("rollup=\"groupBy=status\"\n        search={search}\n        labels={ TicketStatusTypeLabels }\n")
+                .doesNotContain("shape=");
+        int tables = screen.split("\n\\s+table\n", -1).length - 1;
+        assertThat(tables).as("the first chart and the table chart have a totals table").isEqualTo(2);
+        assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
+                .contains("export function StackedBars(")
+                .contains("shape?: 'donut' | 'stacked' | 'area' | 'table'")
+                .contains("<StackedBars buckets={buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />");
+
+        assertChartRejected(Map.of("groupBy", "status", "kind", "pie"),
+                "unknown chart kind 'pie' (expected bar, donut, stacked, line, area or table)");
+        assertChartRejected(Map.of("groupBy", "status", "kind", "line"),
+                "a line chart draws a date over time (for this groupBy: bar, donut, stacked or table)");
+        assertChartRejected(Map.of("groupBy", "dueAt", "kind", "donut"),
+                "a donut chart groups by an enum, boolean or relation, not a date (over time: line, area or table)");
+        assertChartRejected(Map.of("groupBy", "team", "kind", "stacked"),
+                "a stacked chart splits an enum or boolean groupBy, and 'team' is a relation");
+        assertChartRejected(Map.of("groupBy", "status", "series", "priority"), "'series' applies to a stacked chart");
+        assertChartRejected(Map.of("groupBy", "status", "kind", "stacked", "series", "status"),
+                "series 'status' must be an enum or boolean field other than groupBy");
+        assertChartRejected(Map.of("groupBy", "status", "kind", "table", "table", false),
+                "a table chart is its totals table, so 'table' cannot be false");
+    }
+
+    private void assertChartRejected(Map<String, Object> chart, String expectedMessage) {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "workload", "type", "report", "entity", "Ticket", "chart", chart)));
+        assertBadRequest(body, expectedMessage);
     }
 
     @Test

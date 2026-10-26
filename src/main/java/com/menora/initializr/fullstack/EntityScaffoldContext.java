@@ -1611,6 +1611,14 @@ public final class EntityScaffoldContext {
             boolean overTime = chart.bucket() != null;
             cv.put("chartIsLine", overTime);
             cv.put("chartIsBar", !overTime);
+            // A kind other than the default bar/line: the shape ReportChart draws instead.
+            cv.put("chartHasShape", chart.kind() != null);
+            cv.put("chartShape", chart.kind() == null ? "" : chart.kind().wire());
+            Map<String, Object> seriesRank = chart.series() == null ? null : rankView(ev, chart.series());
+            String seriesLabelsRef = seriesRank == null ? null : (String) seriesRank.get("labelsRef");
+            cv.put("chartHasSeriesLabels", seriesLabelsRef != null);
+            cv.put("chartSeriesLabelsRef", seriesLabelsRef);
+            if (seriesLabelsRef != null) labelRefs.add(seriesLabelsRef);
             cv.put("chartGroupBy", chart.groupBy());
             cv.put("chartIsRelation", relation);
             if (relation) {
@@ -1636,6 +1644,7 @@ public final class EntityScaffoldContext {
             cv.put("chartHasTable", chart.table() == null ? i == 0 : chart.table());
             StringBuilder query = new StringBuilder("groupBy=").append(chart.groupBy());
             if (overTime) query.append("&bucket=").append(chart.bucket().wire());
+            if (chart.series() != null) query.append("&series=").append(chart.series());
             if (reduces) query.append("&agg=").append(chart.agg().wire()).append("&field=").append(chart.field());
             cv.put("rollupQuery", query.toString());
             // A bar opens the list on its value (a relation's on its id); a point in time on its day/month/year.
