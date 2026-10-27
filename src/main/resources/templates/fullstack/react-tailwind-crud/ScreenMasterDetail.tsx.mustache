@@ -1,25 +1,20 @@
 import { {{#usesEffect}}useEffect, {{/usesEffect}}useState } from 'react'
-{{#parentHasRecordPage}}
-import { ArrowUpRight{{#showParentEdit}}, Pencil{{/showParentEdit}} } from 'lucide-react'
-{{/parentHasRecordPage}}
-{{^parentHasRecordPage}}
-{{#showParentEdit}}
-import { Pencil } from 'lucide-react'
-{{/showParentEdit}}
-{{/parentHasRecordPage}}
-{{#showParentEdit}}
+{{#parentIconImports}}
+import { {{parentIconImports}} } from 'lucide-react'
+{{/parentIconImports}}
+{{#parentHasDrawer}}
 import { toast } from 'sonner'
-{{/showParentEdit}}
-{{#showParent}}
-import { api{{#showParentEdit}}, ApiError{{/showParentEdit}} } from '@shared/api'
-{{/showParent}}
+{{/parentHasDrawer}}
+{{#parentUsesApi}}
+import { api{{#parentHasDrawer}}, ApiError{{/parentHasDrawer}} } from '@shared/api'
+{{/parentUsesApi}}
 import { use{{parentEntityName}} } from '@entities/{{parentEntityNameKebab}}'
 import type { {{parentEntityName}} } from '@entities/{{parentEntityNameKebab}}'
-{{#showParent}}
-import { {{parentEntityName}}Detail{{#showParentEdit}}, {{parentEntityName}}Form, validate{{parentEntityName}}{{/showParentEdit}} } from '@features/{{parentEntityNameKebab}}-form'
-{{/showParent}}
+{{#parentFeatureImports}}
+import { {{parentFeatureImports}} } from '@features/{{parentEntityNameKebab}}-form'
+{{/parentFeatureImports}}
 import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
-import { Alert, EmptyState, Skeleton{{#showParentEdit}}, FormDrawer{{/showParentEdit}} } from '@shared/ui'
+import { Alert, EmptyState, Skeleton{{#parentHasDrawer}}, FormDrawer{{/parentHasDrawer}} } from '@shared/ui'
 import { t } from '@shared/i18n'
 
 interface Props {
@@ -42,6 +37,11 @@ const parentLabel = (row: {{parentEntityName}}) =>
 {{^parentHasLabel}}
   '#' + String(row.{{parentPkName}})
 {{/parentHasLabel}}
+{{#parentCreatesInDrawer}}
+
+/** A new parent starts from its fields' defaults. */
+const newParent = (): Partial<{{parentEntityName}}> => ({{{parentNewTs}}})
+{{/parentCreatesInDrawer}}
 
 export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
   const [page, setPage] = useState(0)
@@ -82,19 +82,68 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
       .catch(() => { if (current) { setFetchedParent(null); setParentFailed(true) } })
     return () => { current = false }
   }, [selectedId, items, parentAttempt])
-{{#showParentEdit}}
+{{/showParent}}
+{{#parentHasDrawer}}
   const [editing, setEditing] = useState<Partial<{{parentEntityName}}> | null>(null)
+{{#parentCreatesInDrawer}}
+{{#showParentEdit}}
+  // New and Edit share the drawer; `creating` says which one it is.
+  const [creating, setCreating] = useState(false)
+{{/showParentEdit}}
+{{/parentCreatesInDrawer}}
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
-  async function saveParent() {
-    if (!editing || selectedId == null) return
-    const clientErrors = validate{{parentEntityName}}(editing)
-    if (Object.keys(clientErrors).length > 0) {
-      setFormErrors(clientErrors)
+  /** Runs the client-side checks; false (with the messages shown) when the draft is not ready. */
+  function checked(draft: Partial<{{parentEntityName}}>) {
+    const clientErrors = validate{{parentEntityName}}(draft)
+    if (Object.keys(clientErrors).length === 0) return true
+    setFormErrors(clientErrors)
+    toast.error(t('fixHighlighted'))
+    return false
+  }
+
+  function saveFailed(e: unknown) {
+    // A 400 carries per-field messages — show them inline; anything else is a toast.
+    if (e instanceof ApiError && e.fieldErrors) {
+      setFormErrors(e.fieldErrors)
       toast.error(t('fixHighlighted'))
-      return
+    } else {
+      toast.error(e instanceof Error ? e.message : String(e))
     }
+  }
+{{#parentCreatesInDrawer}}
+
+  function openNew() {
+    setFormErrors({})
+{{#showParentEdit}}
+    setCreating(true)
+{{/showParentEdit}}
+    setEditing(newParent())
+  }
+
+  async function createParent() {
+    if (!editing || !checked(editing)) return
+    setSaving(true)
+    setFormErrors({})
+    try {
+      const created = await api.post<{{parentEntityName}}>('/api/{{parentEntityNamePluralKebab}}', editing)
+      setEditing(null)
+      toast.success(t('xCreated', { x: {{parentLabelExpr}} }))
+      void reload()
+      // Open the new parent, so its first rows can be added straight away.
+      select(String(created.{{parentPkName}}))
+    } catch (e) {
+      saveFailed(e)
+    } finally {
+      setSaving(false)
+    }
+  }
+{{/parentCreatesInDrawer}}
+{{#showParentEdit}}
+
+  async function saveParent() {
+    if (!editing || selectedId == null || !checked(editing)) return
     setSaving(true)
     setFormErrors({})
     try {
@@ -104,19 +153,13 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
       toast.success(t('xUpdated', { x: {{parentLabelExpr}} }))
       void reload()
     } catch (e) {
-      // A 400 carries per-field messages — show them inline; anything else is a toast.
-      if (e instanceof ApiError && e.fieldErrors) {
-        setFormErrors(e.fieldErrors)
-        toast.error(t('fixHighlighted'))
-      } else {
-        toast.error(e instanceof Error ? e.message : String(e))
-      }
+      saveFailed(e)
     } finally {
       setSaving(false)
     }
   }
 {{/showParentEdit}}
-{{/showParent}}
+{{/parentHasDrawer}}
 
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-8">
@@ -128,7 +171,22 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
       </div>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="self-start overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+{{#parentCreatable}}
+          <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+            <span className="text-sm font-semibold text-fg">{ {{parentLabelPluralExpr}} }</span>
+            <button
+              type="button"
+              onClick={ {{#parentCreatesInPage}}() => onNavigate('{{parentCreatePageId}}'){{/parentCreatesInPage}}{{#parentCreatesInDrawer}}openNew{{/parentCreatesInDrawer}} }
+              className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {t('newX', { x: {{parentLabelExpr}} })}
+            </button>
+          </div>
+{{/parentCreatable}}
+{{^parentCreatable}}
           <div className="border-b border-border px-4 py-3 text-sm font-semibold text-fg">{ {{parentLabelPluralExpr}} }</div>
+{{/parentCreatable}}
 {{#parentSearchable}}
           <div className="border-b border-border p-3">
             <input
@@ -222,7 +280,7 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
                   {parent && (
                     <button
                       type="button"
-                      onClick={() => { setFormErrors({}); setEditing({ ...parent }) }}
+                      onClick={() => { setFormErrors({}); {{#parentCreatesInDrawer}}setCreating(false); {{/parentCreatesInDrawer}}setEditing({ ...parent }) }}
                       className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -264,15 +322,35 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
           )}
         </section>
       </div>
-{{#showParentEdit}}
+{{#parentHasDrawer}}
       <FormDrawer
         open={editing !== null}
+{{#parentCreatesInDrawer}}
+{{#showParentEdit}}
+        title={creating ? t('newX', { x: {{parentLabelExpr}} }) : t('editX', { x: {{parentLabelExpr}} })}
+        subtitle={creating ? t('createXBlurb', { x: {{parentLabelExpr}} }) : t('updateXBlurb', { x: {{parentLabelExpr}} })}
+        onClose={() => setEditing(null)}
+        onSave={creating ? createParent : saveParent}
+        saving={saving}
+        dirty={editing !== null && JSON.stringify(editing) !== JSON.stringify(creating ? newParent() : parent)}
+{{/showParentEdit}}
+{{^showParentEdit}}
+        title={t('newX', { x: {{parentLabelExpr}} })}
+        subtitle={t('createXBlurb', { x: {{parentLabelExpr}} })}
+        onClose={() => setEditing(null)}
+        onSave={createParent}
+        saving={saving}
+        dirty={editing !== null && JSON.stringify(editing) !== JSON.stringify(newParent())}
+{{/showParentEdit}}
+{{/parentCreatesInDrawer}}
+{{^parentCreatesInDrawer}}
         title={t('editX', { x: {{parentLabelExpr}} })}
         subtitle={t('updateXBlurb', { x: {{parentLabelExpr}} })}
         onClose={() => setEditing(null)}
         onSave={saveParent}
         saving={saving}
         dirty={editing !== null && JSON.stringify(editing) !== JSON.stringify(parent)}
+{{/parentCreatesInDrawer}}
       >
         {editing && (
           <{{parentEntityName}}Form
@@ -292,11 +370,11 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
               setEditing(next)
             }}
             errors={formErrors}
-            isNew={false}
+            isNew={ {{#parentCreatesInDrawer}}{{#showParentEdit}}creating{{/showParentEdit}}{{^showParentEdit}}true{{/showParentEdit}}{{/parentCreatesInDrawer}}{{^parentCreatesInDrawer}}false{{/parentCreatesInDrawer}} }
           />
         )}
       </FormDrawer>
-{{/showParentEdit}}
+{{/parentHasDrawer}}
     </div>
   )
 }

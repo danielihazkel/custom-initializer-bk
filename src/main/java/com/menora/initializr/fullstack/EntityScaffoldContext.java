@@ -263,6 +263,25 @@ public final class EntityScaffoldContext {
                     boolean parentMutable = Boolean.TRUE.equals(parent.get("mutable"));
                     pv.put("showParent", showParent);
                     pv.put("showParentEdit", showParent && parentMutable);
+                    // New on the parent list — without it a parent shown only here could never be
+                    // created. It goes to the parent's form/wizard page, else opens the form drawer.
+                    String parentCreatePage = parentMutable ? links.createPageOf(p.parent()) : null;
+                    boolean createsInDrawer = parentMutable && parentCreatePage == null;
+                    boolean hasDrawer = createsInDrawer || (showParent && parentMutable);
+                    pv.put("parentCreatable", parentMutable);
+                    pv.put("parentCreatesInPage", parentCreatePage != null);
+                    pv.put("parentCreatePageId", parentCreatePage);
+                    pv.put("parentCreatesInDrawer", createsInDrawer);
+                    pv.put("parentHasDrawer", hasDrawer);
+                    pv.put("parentUsesApi", showParent || createsInDrawer);
+                    pv.put("parentNewTs", newRecordTs((List<Map<String, Object>>) parent.get("fields")));
+                    List<String> features = new ArrayList<>();
+                    if (showParent) features.add(parent.get("EntityName") + "Detail");
+                    if (hasDrawer) {
+                        features.add(parent.get("EntityName") + "Form");
+                        features.add("validate" + parent.get("EntityName"));
+                    }
+                    pv.put("parentFeatureImports", features.isEmpty() ? null : String.join(", ", features));
                     pv.put("usesEffect", Boolean.TRUE.equals(parent.get("hasStringFields")) || showParent);
                     // The selected parent travels in the URL as a string; a numeric key is parsed back.
                     pv.put("parentPkIsNumber", "number".equals(parentSummary.get("pkTsType")));
@@ -285,7 +304,12 @@ public final class EntityScaffoldContext {
                     putRecordLink(pv, "parent", p.parent(), links, summaries);
                     putRecordLink(pv, "child", p.child(), links, summaries);
                     pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("parentHasRecordPage"))
-                            || Boolean.TRUE.equals(pv.get("childHasRecordPage")));
+                            || Boolean.TRUE.equals(pv.get("childHasRecordPage")) || parentCreatePage != null);
+                    List<String> icons = new ArrayList<>();
+                    if (Boolean.TRUE.equals(pv.get("parentHasRecordPage"))) icons.add("ArrowUpRight");
+                    if (showParent && parentMutable) icons.add("Pencil");
+                    if (parentMutable) icons.add("Plus");
+                    pv.put("parentIconImports", icons.isEmpty() ? null : String.join(", ", icons));
                     pv.put("navIcon", "PanelLeft");
                     defaultTitleExpr = tsString((String) parent.get("entityLabelPlural"));
                 }
@@ -1597,11 +1621,7 @@ public final class EntityScaffoldContext {
         }
         pv.put("steps", steps);
         // The form starts from the fields' defaults, as the entity page's New does.
-        List<String> defaults = new ArrayList<>();
-        for (Map<String, Object> fv : (List<Map<String, Object>>) ev.get("fields")) {
-            if (Boolean.TRUE.equals(fv.get("hasDefault"))) defaults.add(fv.get("name") + ": " + fv.get("defaultTs"));
-        }
-        pv.put("initialTs", defaults.isEmpty() ? "{}" : "{ " + String.join(", ", defaults) + " }");
+        pv.put("initialTs", newRecordTs((List<Map<String, Object>>) ev.get("fields")));
         putRecordLink(pv, "", p.entity(), links, summaries);
         String home = links.homeOf(p.entity());
         pv.put("hasBack", home != null);
@@ -1790,11 +1810,7 @@ public final class EntityScaffoldContext {
         pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
         pv.put("entityLabelExpr", tsString((String) ev.get("entityLabel")));
         // The form starts from the fields' defaults, as the entity page's New does.
-        List<String> defaults = new ArrayList<>();
-        for (Map<String, Object> fv : (List<Map<String, Object>>) ev.get("fields")) {
-            if (Boolean.TRUE.equals(fv.get("hasDefault"))) defaults.add(fv.get("name") + ": " + fv.get("defaultTs"));
-        }
-        pv.put("initialTs", defaults.isEmpty() ? "{}" : "{ " + String.join(", ", defaults) + " }");
+        pv.put("initialTs", newRecordTs((List<Map<String, Object>>) ev.get("fields")));
         // Saved, a row opens its record page; else the entity's home; else the form starts over.
         putRecordLink(pv, "", p.entity(), links, summaries);
         String home = links.homeOf(p.entity());
@@ -2031,6 +2047,15 @@ public final class EntityScaffoldContext {
         g.put("groupFields", fields);
         g.put("groupRelations", relations);
         return g;
+    }
+
+    /** A new record as a TS object literal: the fields' defaults, else {@code {}}. */
+    private static String newRecordTs(List<Map<String, Object>> fields) {
+        List<String> defaults = new ArrayList<>();
+        for (Map<String, Object> fv : fields) {
+            if (Boolean.TRUE.equals(fv.get("hasDefault"))) defaults.add(fv.get("name") + ": " + fv.get("defaultTs"));
+        }
+        return defaults.isEmpty() ? "{}" : "{ " + String.join(", ", defaults) + " }";
     }
 
     static String tsString(String s) {
