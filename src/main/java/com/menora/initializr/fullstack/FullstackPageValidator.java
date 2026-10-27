@@ -255,6 +255,29 @@ public final class FullstackPageValidator {
                     checkOneCreatePage(prefix, entity, id, type, createPageByEntity, typeById);
                     yield new PageDefinition(id, type, title, description, hidden, entity.name(), null, null, null);
                 }
+                case INBOX -> {
+                    String prefix = "Page '" + id + "' (inbox)";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    EntityDefinition.Workflow wf = entity.workflow();
+                    if (wf == null || wf.assigneeField() == null) {
+                        throw new WizardArgumentException(prefix + ": " + entity.name()
+                                + " has no workflow with an assignee — an inbox lists rows by who they are assigned to");
+                    }
+                    List<String> shown = List.of(wf.statusField(), wf.assigneeField(), wf.dueField() == null ? "" : wf.dueField());
+                    List<String> defaults = defaultCardFields(entity, wf.statusField()).stream()
+                            .filter(f -> !shown.contains(f)).toList();
+                    List<String> cards = cardFields(prefix, entity, p.cardFields(), defaults);
+                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
+                    // Soonest due first; without a due date, the newest first.
+                    PageDefinition.ListSort sort = p.sort() != null
+                            ? sort(prefix, entity, p.sort(), auditApplies(entity, scaffoldOpts))
+                            : wf.dueField() != null ? new PageDefinition.ListSort(wf.dueField(), false)
+                            : new PageDefinition.ListSort(entity.fields().stream().filter(FieldDefinition::primaryKey)
+                                    .findFirst().orElseThrow().name(), true);
+                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), preset, null, null)
+                            .withListPresentation(null, sort, null, null)
+                            .withSpec(new PageDefinition.InboxSpec(inboxQueues(prefix, p.queues()), cards));
+                }
                 case CALENDAR -> {
                     String prefix = "Page '" + id + "' (calendar)";
                     EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
@@ -387,7 +410,7 @@ public final class FullstackPageValidator {
         }
         throw new WizardArgumentException("Page '" + id + "': unknown type '" + t
                 + "' (expected entity-list, dashboard, tabs, master-detail, record, report, wizard, form,"
-                + " calendar, board, content, import or search)");
+                + " calendar, board, content, import, search or inbox)");
     }
 
     /** An entity has one page that creates its rows — a wizard or a form — since New, a calendar's
@@ -434,11 +457,13 @@ public final class FullstackPageValidator {
                 && type != PageDefinition.Type.REPORT && type != PageDefinition.Type.WIZARD
                 && type != PageDefinition.Type.CALENDAR && type != PageDefinition.Type.BOARD
                 && type != PageDefinition.Type.IMPORT && type != PageDefinition.Type.FORM
+                && type != PageDefinition.Type.INBOX
                 && trimToNull(p.entity()) != null) {
             throw new WizardArgumentException(prefix + "does not take 'entity'");
         }
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.REPORT
                 && type != PageDefinition.Type.CALENDAR && type != PageDefinition.Type.BOARD
+                && type != PageDefinition.Type.INBOX
                 && p.presetFilter() != null && !p.presetFilter().isEmpty()) {
             throw new WizardArgumentException(prefix + "does not take 'presetFilter'");
         }
@@ -480,7 +505,9 @@ public final class FullstackPageValidator {
         }
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.MASTER_DETAIL) {
             if (p.columns() != null) throw new WizardArgumentException(prefix + "does not take 'columns'");
-            if (p.sort() != null && type != PageDefinition.Type.BOARD) throw new WizardArgumentException(prefix + "does not take 'sort'");
+            if (p.sort() != null && type != PageDefinition.Type.BOARD && type != PageDefinition.Type.INBOX) {
+                throw new WizardArgumentException(prefix + "does not take 'sort'");
+            }
         }
         if (type != PageDefinition.Type.CALENDAR) {
             if (trimToNull(p.dateField()) != null) throw new WizardArgumentException(prefix + "does not take 'dateField'");
@@ -490,9 +517,12 @@ public final class FullstackPageValidator {
         if (type != PageDefinition.Type.BOARD) {
             if (trimToNull(p.laneField()) != null) throw new WizardArgumentException(prefix + "does not take 'laneField'");
             if (p.lanes() != null) throw new WizardArgumentException(prefix + "does not take 'lanes'");
-            if (p.cardFields() != null) throw new WizardArgumentException(prefix + "does not take 'cardFields'");
+            if (p.cardFields() != null && type != PageDefinition.Type.INBOX) throw new WizardArgumentException(prefix + "does not take 'cardFields'");
             if (p.wipLimits() != null) throw new WizardArgumentException(prefix + "does not take 'wipLimits'");
             if (p.laneSize() != null) throw new WizardArgumentException(prefix + "does not take 'laneSize'");
+        }
+        if (type != PageDefinition.Type.INBOX && p.queues() != null) {
+            throw new WizardArgumentException(prefix + "does not take 'queues'");
         }
         if (type != PageDefinition.Type.CONTENT && p.body() != null) {
             throw new WizardArgumentException(prefix + "does not take 'body'");
@@ -1946,28 +1976,7 @@ public final class FullstackPageValidator {
         } else {
             lanes.addAll(values);
         }
-        Map<String, String> known = new LinkedHashMap<>();
-        for (FieldDefinition f : entity.fields()) known.put(f.name().toLowerCase(Locale.ROOT), f.name());
-        for (RelationDefinition r : entity.relations()) {
-            if (r.type() == RelationType.MANY_TO_ONE) known.put(r.fieldName().toLowerCase(Locale.ROOT), r.fieldName());
-        }
-        List<String> cards = new ArrayList<>();
-        if (p.cardFields() != null) {
-            if (p.cardFields().isEmpty() || p.cardFields().size() > MAX_CARD_FIELDS) {
-                throw new WizardArgumentException(prefix + ": 'cardFields' takes 1 to " + MAX_CARD_FIELDS + " fields");
-            }
-            for (String raw : p.cardFields()) {
-                String canonical = trimToNull(raw) == null ? null : known.get(raw.trim().toLowerCase(Locale.ROOT));
-                if (canonical == null) {
-                    throw new WizardArgumentException(prefix + " cardFields: '" + raw + "' is not a field or relation of "
-                            + entity.name() + " (expected one of " + new ArrayList<>(known.values()) + ")");
-                }
-                if (cards.contains(canonical)) throw new WizardArgumentException(prefix + " cardFields: '" + canonical + "' is listed twice");
-                cards.add(canonical);
-            }
-        } else {
-            cards.addAll(defaultCardFields(entity, lane.name()));
-        }
+        List<String> cards = cardFields(prefix, entity, p.cardFields(), defaultCardFields(entity, lane.name()));
         Map<String, Integer> limits = new LinkedHashMap<>();
         if (p.wipLimits() != null) {
             for (Map.Entry<String, Integer> en : p.wipLimits().entrySet()) {
@@ -1992,6 +2001,46 @@ public final class FullstackPageValidator {
 
     /** What a card shows when the page names nothing: a heading (the first text field, else the
      *  key), then the next two fields other than the lane field and the first relation, up to four. */
+    /** What a board card or an inbox row shows: 1–4 field or relation names (the first naming the row), else the defaults. */
+    private static List<String> cardFields(String prefix, EntityDefinition entity, List<String> raw, List<String> defaults) {
+        if (raw == null) return defaults;
+        Map<String, String> known = new LinkedHashMap<>();
+        for (FieldDefinition f : entity.fields()) known.put(f.name().toLowerCase(Locale.ROOT), f.name());
+        for (RelationDefinition r : entity.relations()) {
+            if (r.type() == RelationType.MANY_TO_ONE) known.put(r.fieldName().toLowerCase(Locale.ROOT), r.fieldName());
+        }
+        if (raw.isEmpty() || raw.size() > MAX_CARD_FIELDS) {
+            throw new WizardArgumentException(prefix + ": 'cardFields' takes 1 to " + MAX_CARD_FIELDS + " fields");
+        }
+        List<String> cards = new ArrayList<>();
+        for (String name : raw) {
+            String canonical = trimToNull(name) == null ? null : known.get(name.trim().toLowerCase(Locale.ROOT));
+            if (canonical == null) {
+                throw new WizardArgumentException(prefix + " cardFields: '" + name + "' is not a field or relation of "
+                        + entity.name() + " (expected one of " + new ArrayList<>(known.values()) + ")");
+            }
+            if (cards.contains(canonical)) throw new WizardArgumentException(prefix + " cardFields: '" + canonical + "' is listed twice");
+            cards.add(canonical);
+        }
+        return cards;
+    }
+
+    /** An inbox's queues: 1–3 of mine, unassigned and open, each once. Absent: mine, then unassigned. */
+    private static List<PageDefinition.InboxQueue> inboxQueues(String prefix, List<String> raw) {
+        if (raw == null) return List.of(PageDefinition.InboxQueue.MINE, PageDefinition.InboxQueue.UNASSIGNED);
+        if (raw.isEmpty()) throw new WizardArgumentException(prefix + ": 'queues' needs at least one queue when given");
+        List<PageDefinition.InboxQueue> out = new ArrayList<>();
+        for (String q : raw) {
+            String v = trimToNull(q);
+            PageDefinition.InboxQueue queue = java.util.Arrays.stream(PageDefinition.InboxQueue.values())
+                    .filter(x -> x.wire().equalsIgnoreCase(v == null ? "" : v)).findFirst()
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": unknown queue '" + q + "' (expected mine, unassigned or open)"));
+            if (out.contains(queue)) throw new WizardArgumentException(prefix + ": queue '" + queue.wire() + "' is listed twice");
+            out.add(queue);
+        }
+        return out;
+    }
+
     static List<String> defaultCardFields(EntityDefinition entity, String laneField) {
         List<String> out = new ArrayList<>();
         FieldDefinition heading = entity.fields().stream()

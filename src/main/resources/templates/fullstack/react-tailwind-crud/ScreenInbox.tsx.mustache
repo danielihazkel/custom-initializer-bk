@@ -1,0 +1,224 @@
+import { useEffect, useRef, useState } from 'react'
+import { api } from '@shared/api'
+import { t } from '@shared/i18n'
+import { Skeleton{{^hasRecordPage}}, DetailDrawer{{/hasRecordPage}} } from '@shared/ui'
+{{#presetUsesPeriod}}
+import { rangeParams } from '@shared/ui/stats'
+{{/presetUsesPeriod}}
+import { {{EntityName}}Transitions{{^hasRecordPage}}, {{EntityName}}Detail{{/hasRecordPage}} } from '@features/{{entityNameKebab}}-form'
+import { {{cardLabelImports}}, type {{EntityName}} } from '@entities/{{entityNameKebab}}'
+
+const PATH = '/api/{{entityNamePluralKebab}}'
+const PAGE_SIZE = 20
+/** Soonest due first (else newest first), or as the page says. */
+const SORT = '{{sortParam}}'
+type Queue = {{{queueTypeTs}}}
+const QUEUES: { value: Queue; label: string }[] = [
+{{#queues}}
+  { value: '{{value}}', label: t('{{labelKey}}') },
+{{/queues}}
+]
+{{#hasPresetFilter}}
+/** The rows the inbox is limited to. */
+const PRESET: Record<string, string> = {{{presetFilterOrEmptyTs}}}
+{{/hasPresetFilter}}
+
+const keyOf = (r: {{EntityName}}) => {{{rowKeyTs}}}
+
+/** One page of a queue, as the list endpoint answers it. */
+interface PageOf<T> {
+  content: T[]
+  totalElements: number
+}
+
+function queryOf(queue: Queue, page: number, size: number): string {
+  return new URLSearchParams({ {{#hasPresetFilter}}...PRESET, {{/hasPresetFilter}}inbox: queue, page: String(page), size: String(size), sort: SORT }).toString()
+}
+{{#hasDue}}
+
+/** Today as yyyy-mm-dd, in the user's time zone (a due date is a day, not an instant). */
+function todayKey(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+{{/hasDue}}
+
+interface Props {
+  /** The open queue and page (`_queue`, `_page` from 1) when routed; embedded as a tab, local state. */
+  query?: Record<string, string>
+  onQueryChange?: (query: Record<string, string>) => void
+{{#needsNavigate}}
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+{{/needsNavigate}}
+}
+
+/** A workflow's tasks: the user's own, nobody's, or every open one — each row with its next moves. */
+export function {{PageName}}Screen({ query, onQueryChange{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
+  const [local, setLocal] = useState<Record<string, string>>({})
+  const state = onQueryChange ? query ?? {} : local
+  const setState = onQueryChange ?? setLocal
+  const queue = QUEUES.find(q => q.value === state._queue)?.value ?? QUEUES[0].value
+  const page = Math.max(1, Number(state._page) || 1) - 1
+  const [rows, setRows] = useState<{{EntityName}}[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [counts, setCounts] = useState<Partial<Record<Queue, number>>>({})
+  const [failed, setFailed] = useState(false)
+  // Bumped after a move, a claim or a release (and by Try again): every queue may have changed.
+  const [version, setVersion] = useState(0)
+{{^hasRecordPage}}
+  const [detail, setDetail] = useState<{{EntityName}} | null>(null)
+{{/hasRecordPage}}
+  const asked = useRef(0)
+{{#hasDue}}
+  const today = todayKey()
+{{/hasDue}}
+
+  useEffect(() => {
+    // Only the latest question's answer is shown: a quick switch of queues cannot be overtaken.
+    const ticket = ++asked.current
+    setFailed(false)
+    api.get<PageOf<{{EntityName}}>>(`${PATH}?${queryOf(queue, page, PAGE_SIZE)}`)
+      .then(result => {
+        if (ticket !== asked.current) return
+        setRows(result.content)
+        setTotal(result.totalElements)
+      })
+      .catch(() => { if (ticket === asked.current) setFailed(true) })
+  }, [queue, page, version])
+
+  // Each queue's size, for its tab: one row asked for, the total read from the page.
+  useEffect(() => {
+    let active = true
+    void Promise.all(QUEUES.map(q => api.get<PageOf<{{EntityName}}>>(`${PATH}?${queryOf(q.value, 0, 1)}`)
+      .then(result => [q.value, result.totalElements] as const)
+      .catch(() => [q.value, undefined] as const)))
+      .then(pairs => { if (active) setCounts(Object.fromEntries(pairs)) })
+    return () => { active = false }
+  }, [version])
+
+  const open = (q: Queue, p = 0) => {
+    setRows(null)
+    setState({ _queue: q, ...(p > 0 ? { _page: String(p + 1) } : {}) })
+  }
+  const changed = () => setVersion(v => v + 1)
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      </div>
+      <div className="flex flex-wrap gap-1 border-b border-border" role="tablist" aria-label={ {{pageTitleExpr}} }>
+        {QUEUES.map(q => (
+          <button
+            key={q.value}
+            type="button"
+            role="tab"
+            aria-selected={q.value === queue}
+            onClick={() => open(q.value)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${q.value === queue ? 'border-brand text-brand' : 'border-transparent text-muted hover:text-fg'}`}
+          >
+            {q.label}
+            {counts[q.value] != null && <span className="ms-1.5 rounded-full bg-surface-2 px-1.5 text-xs tabular-nums text-muted">{counts[q.value]}</span>}
+          </button>
+        ))}
+      </div>
+      {failed ? (
+        <p className="text-sm text-muted" role="alert">
+          {t('couldNotLoad')}{' '}
+          <button type="button" onClick={changed} className="font-medium text-brand hover:underline">{t('retry')}</button>
+        </p>
+      ) : rows == null ? (
+        <div className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted">{t('noTasks')}</p>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-border bg-surface shadow-sm">
+          <table className="w-full text-sm">
+            <thead className="bg-surface-2 text-start text-xs uppercase tracking-wider text-muted">
+              <tr>
+{{#cardFields}}
+                <th scope="col" className="px-4 py-2.5 text-start font-medium">{'{{labelTs}}'}</th>
+{{/cardFields}}
+                <th scope="col" className="px-4 py-2.5 text-start font-medium">{'{{statusLabelTs}}'}</th>
+                <th scope="col" className="px-4 py-2.5 text-start font-medium">{'{{assigneeLabelTs}}'}</th>
+{{#hasDue}}
+                <th scope="col" className="px-4 py-2.5 text-start font-medium">{'{{dueLabelTs}}'}</th>
+{{/hasDue}}
+                <th scope="col" className="px-4 py-2.5 text-end font-medium">{t('actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map(r => {
+{{#hasDue}}
+                const late = r.{{dueField}} != null && String(r.{{dueField}}).slice(0, 10) < today
+{{/hasDue}}
+                return (
+                  <tr
+                    key={keyOf(r)}
+                    className="cursor-pointer transition-colors hover:bg-surface-2"
+{{#hasRecordPage}}
+                    onClick={() => onNavigate('{{recordPageId}}', String(r.{{recordPk}}))}
+{{/hasRecordPage}}
+{{^hasRecordPage}}
+                    onClick={() => setDetail(r)}
+{{/hasRecordPage}}
+                  >
+{{#cardFields}}
+{{#isHeading}}
+                    <td className="px-4 py-2.5 font-medium text-fg">{ {{{renderTs}}} }</td>
+{{/isHeading}}
+{{^isHeading}}
+                    <td className="px-4 py-2.5 text-fg">{ {{{renderTs}}} }</td>
+{{/isHeading}}
+{{/cardFields}}
+                    <td className="px-4 py-2.5">
+                      {r.{{statusField}} != null && <span className="rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-medium text-brand">{ {{statusLabels}}[r.{{statusField}}] }</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-muted">{r.{{assigneeField}} || t('nobody')}</td>
+{{#hasDue}}
+                    <td className={`px-4 py-2.5 tabular-nums ${late ? 'font-medium text-danger' : 'text-muted'}`}>
+                      {r.{{dueField}} == null ? '—' : String(r.{{dueField}}).slice(0, 10)}
+                      {late && <span className="ms-2 text-xs">{t('overdue')}</span>}
+                    </td>
+{{/hasDue}}
+                    <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                      <div className="flex justify-end">
+                        <{{EntityName}}Transitions row={r} onDone={changed} compact />
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {pages > 1 && (
+        <div className="flex items-center justify-end gap-2 text-sm text-muted">
+          <button type="button" disabled={page === 0} onClick={() => open(queue, page - 1)} className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-40">{t('prev')}</button>
+          <span className="tabular-nums">{page + 1} / {pages}</span>
+          <button type="button" disabled={page + 1 >= pages} onClick={() => open(queue, page + 1)} className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-40">{t('next')}</button>
+        </div>
+      )}
+{{^hasRecordPage}}
+
+      <DetailDrawer open={detail !== null} title={ {{pageTitleExpr}} } onClose={() => setDetail(null)}>
+        {detail && <{{EntityName}}Detail value={detail} />}
+        {detail && (
+          <div className="mt-4 border-t border-border pt-4">
+            <{{EntityName}}Transitions row={detail} onDone={next => { setDetail(next); changed() }} />
+          </div>
+        )}
+      </DetailDrawer>
+{{/hasRecordPage}}
+    </div>
+  )
+}

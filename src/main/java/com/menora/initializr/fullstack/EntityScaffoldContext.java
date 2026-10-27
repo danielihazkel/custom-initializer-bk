@@ -158,6 +158,7 @@ public final class EntityScaffoldContext {
             pv.put("pageIsImport", p.type() == PageDefinition.Type.IMPORT);
             pv.put("pageIsSearch", p.type() == PageDefinition.Type.SEARCH);
             pv.put("pageIsForm", p.type() == PageDefinition.Type.FORM);
+            pv.put("pageIsInbox", p.type() == PageDefinition.Type.INBOX);
             pv.put("hasPageDescription", p.description() != null);
             pv.put("pageDescriptionExpr", p.description() == null ? null : tsString(p.description()));
             pv.put("needsNavigate", false);
@@ -369,6 +370,12 @@ public final class EntityScaffoldContext {
                     pv.put("navIcon", "Wand2");
                     defaultTitleExpr = "t('newX', { x: " + tsString((String) ev.get("entityLabel")) + " })";
                 }
+                case INBOX -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    putInbox(pv, p, ev, links, summaries);
+                    pv.put("navIcon", "Inbox");
+                    defaultTitleExpr = "t('myTasks')";
+                }
                 case FORM -> {
                     Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
                     putForm(pv, p, ctx, ev, links, summaries);
@@ -535,7 +542,8 @@ public final class EntityScaffoldContext {
             } else if (Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"))) {
                 // The report's filter bar likewise (#/revenue?region=NORTH).
                 routeProps = " query={route.query} onQueryChange={setQuery}";
-            } else if (Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))) {
+            } else if (Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))
+                    || Boolean.TRUE.equals(pv.get("pageIsInbox"))) {
                 // A calendar's day and view (#/schedule?_date=2026-09-01&_mode=week) and a search's
                 // words (#/find?q=acme) likewise.
                 routeProps = " query={route.query} onQueryChange={setQuery}";
@@ -548,7 +556,8 @@ public final class EntityScaffoldContext {
             boolean dashboardPeriod = !dashboardQuery && Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"));
             boolean reportQuery = Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"));
             boolean listState = Boolean.TRUE.equals(pv.get("listKeepsState"));
-            boolean ownQuery = Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"));
+            boolean ownQuery = Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))
+                    || Boolean.TRUE.equals(pv.get("pageIsInbox"));
             List<String> screenParams = new ArrayList<>();
             if (Boolean.TRUE.equals(pv.get("detailSide"))) screenParams.addAll(List.of("selectedId", "onSelect"));
             if (listState) screenParams.addAll(List.of("query", "onQueryChange"));
@@ -581,7 +590,7 @@ public final class EntityScaffoldContext {
                     || Boolean.TRUE.equals(pv.get("pageIsReport")) || Boolean.TRUE.equals(pv.get("pageIsWizard"))
                     || Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsBoard"))
                     || Boolean.TRUE.equals(pv.get("pageIsImport")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))
-                    || Boolean.TRUE.equals(pv.get("pageIsForm"))
+                    || Boolean.TRUE.equals(pv.get("pageIsForm")) || Boolean.TRUE.equals(pv.get("pageIsInbox"))
                     || exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
         }
 
@@ -624,6 +633,7 @@ public final class EntityScaffoldContext {
         putNavGroups(ctx, nav);
         ctx.put("hasDashboardPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsDashboard"))));
         ctx.put("hasReportPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsReport"))));
+        ctx.put("hasInboxPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsInbox"))));
         // widgets.tsx backs both the dashboard screens and the report screen's chart.
         ctx.put("hasWidgets", Boolean.TRUE.equals(ctx.get("hasDashboardPages"))
                 || Boolean.TRUE.equals(ctx.get("hasReportPages"))
@@ -901,39 +911,8 @@ public final class EntityScaffoldContext {
         pv.put("laneSize", spec.laneSize());
         pv.put("hasWipLimits", !spec.wipLimits().isEmpty());
         // What a card shows, as TS expressions over its row `r`, the first as the heading.
-        List<Map<String, Object>> cards = new ArrayList<>();
         Set<String> labelImports = new TreeSet<>();
-        for (int i = 0; i < spec.cardFields().size(); i++) {
-            String name = spec.cardFields().get(i);
-            Map<String, Object> cv = new LinkedHashMap<>();
-            Map<String, Object> f = fields.get(name);
-            String render;
-            String label;
-            if (f != null) {
-                label = (String) f.get("label");
-                String none = "r." + name + " == null ? '\u2014' : ";
-                if (Boolean.TRUE.equals(f.get("isEnum"))) {
-                    labelImports.add(f.get("enumTypeName") + "Labels");
-                    render = none + f.get("enumTypeName") + "Labels[r." + name + "]";
-                } else if (Boolean.TRUE.equals(f.get("isBoolean"))) {
-                    render = none + "r." + name + " ? t('trueLabel') : t('falseLabel')";
-                } else if (Boolean.TRUE.equals(f.get("isDateTime"))) {
-                    render = none + "String(r." + name + ").replace('T', ' ').slice(0, 16)";
-                } else {
-                    render = none + "String(r." + name + ")";
-                }
-            } else {
-                Map<String, Object> r = relations.get(name);
-                label = (String) r.get("FieldName");
-                String fk = "r." + r.get("fkFieldName");
-                String id = fk + " == null ? '\u2014' : '#' + String(" + fk + ")";
-                render = Boolean.TRUE.equals(r.get("hasTargetLabel")) ? "r." + name + "Label ?? (" + id + ")" : id;
-            }
-            cv.put("renderTs", render);
-            cv.put("labelTs", escapeTsSingleQuoted(label));
-            cv.put("isHeading", i == 0);
-            cards.add(cv);
-        }
+        List<Map<String, Object>> cards = cardViews(spec.cardFields(), fields, relations, labelImports);
         pv.put("cardFields", cards);
         pv.put("cardLabelImports", String.join(", ", labelImports));
         pv.put("hasCardLabelImports", !labelImports.isEmpty());
@@ -1710,6 +1689,97 @@ public final class EntityScaffoldContext {
     static String humanizeIdentifier(String name) {
         String spaced = name.replaceAll("([a-z0-9])([A-Z])", "$1 $2").toLowerCase(Locale.ROOT);
         return Character.toUpperCase(spaced.charAt(0)) + spaced.substring(1);
+    }
+
+    /** Board cards' and inbox rows' cells, as TS expressions over the row `r`, the first naming it;
+     *  the enum label maps they read are added to `labelImports`. */
+    private static List<Map<String, Object>> cardViews(List<String> names, Map<String, Map<String, Object>> fields,
+                                                       Map<String, Map<String, Object>> relations, Set<String> labelImports) {
+        List<Map<String, Object>> cards = new ArrayList<>();
+        for (int i = 0; i < names.size(); i++) {
+            String name = names.get(i);
+            Map<String, Object> cv = new LinkedHashMap<>();
+            Map<String, Object> f = fields.get(name);
+            String render;
+            String label;
+            if (f != null) {
+                label = (String) f.get("label");
+                String none = "r." + name + " == null ? '\u2014' : ";
+                if (Boolean.TRUE.equals(f.get("isEnum"))) {
+                    labelImports.add(f.get("enumTypeName") + "Labels");
+                    render = none + f.get("enumTypeName") + "Labels[r." + name + "]";
+                } else if (Boolean.TRUE.equals(f.get("isBoolean"))) {
+                    render = none + "r." + name + " ? t('trueLabel') : t('falseLabel')";
+                } else if (Boolean.TRUE.equals(f.get("isDateTime"))) {
+                    render = none + "String(r." + name + ").replace('T', ' ').slice(0, 16)";
+                } else {
+                    render = none + "String(r." + name + ")";
+                }
+            } else {
+                Map<String, Object> r = relations.get(name);
+                label = (String) r.get("FieldName");
+                String fk = "r." + r.get("fkFieldName");
+                String id = fk + " == null ? '\u2014' : '#' + String(" + fk + ")";
+                render = Boolean.TRUE.equals(r.get("hasTargetLabel")) ? "r." + name + "Label ?? (" + id + ")" : id;
+            }
+            cv.put("renderTs", render);
+            cv.put("labelTs", escapeTsSingleQuoted(label));
+            cv.put("isHeading", i == 0);
+            cards.add(cv);
+        }
+        return cards;
+    }
+
+    /** An inbox page: its queues, its row cells, the workflow's status, assignee and due columns,
+     *  the sort and preset it lists with, and where a row opens. */
+    @SuppressWarnings("unchecked")
+    private static void putInbox(Map<String, Object> pv, PageDefinition p, Map<String, Object> ev, PageLinks links,
+                                 Map<String, Map<String, Object>> summaries) {
+        PageDefinition.InboxSpec spec = p.inbox();
+        Map<String, Object> summary = summaries.get(p.entity().toLowerCase(Locale.ROOT));
+        putEntityNames(pv, ev);
+        Map<String, Map<String, Object>> fields = new LinkedHashMap<>();
+        for (Map<String, Object> f : (List<Map<String, Object>>) ev.get("fields")) fields.put((String) f.get("name"), f);
+        Map<String, Map<String, Object>> relations = new LinkedHashMap<>();
+        for (Map<String, Object> r : (List<Map<String, Object>>) ev.get("relations")) relations.put((String) r.get("fieldName"), r);
+        Set<String> labelImports = new TreeSet<>();
+        pv.put("cardFields", cardViews(spec.cardFields(), fields, relations, labelImports));
+        Map<String, Object> status = fields.get((String) ev.get("workflowStatusField"));
+        labelImports.add(status.get("enumTypeName") + "Labels");
+        pv.put("cardLabelImports", String.join(", ", labelImports));
+        pv.put("statusField", status.get("name"));
+        pv.put("statusLabelTs", escapeTsSingleQuoted((String) status.get("label")));
+        pv.put("statusLabels", status.get("enumTypeName") + "Labels");
+        Map<String, Object> assignee = fields.get((String) ev.get("assigneeField"));
+        pv.put("assigneeField", assignee.get("name"));
+        pv.put("assigneeLabelTs", escapeTsSingleQuoted((String) assignee.get("label")));
+        Object dueName = ev.get("dueField");
+        pv.put("hasDue", dueName != null);
+        if (dueName != null) {
+            Map<String, Object> due = fields.get((String) dueName);
+            pv.put("dueField", due.get("name"));
+            pv.put("dueLabelTs", escapeTsSingleQuoted((String) due.get("label")));
+        }
+        List<Map<String, Object>> queues = new ArrayList<>();
+        for (PageDefinition.InboxQueue q : spec.queues()) {
+            Map<String, Object> qv = new LinkedHashMap<>();
+            qv.put("value", q.wire());
+            qv.put("labelKey", switch (q) {
+                case MINE -> "myTasks";
+                case UNASSIGNED -> "unassignedTasks";
+                case OPEN -> "allOpenTasks";
+            });
+            queues.add(qv);
+        }
+        pv.put("queues", queues);
+        pv.put("queueTypeTs", String.join(" | ", spec.queues().stream().map(q -> "'" + q.wire() + "'").toList()));
+        pv.put("sortParam", p.sort().field() + "," + (p.sort().desc() ? "desc" : "asc"));
+        pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
+        pv.put("presetFilterOrEmptyTs", p.presetFilter().isEmpty() ? "{}" : presetFilterTs(p.presetFilter(), ev));
+        pv.put("presetUsesPeriod", presetHasPeriod(p.presetFilter()));
+        putRowNaming(pv, ev, summary);
+        putRecordLink(pv, "", p.entity(), links, summaries);
+        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")));
     }
 
     /** A form page: the entity's whole form, creating at #/<page> and editing at #/<page>/<id>. */

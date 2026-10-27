@@ -370,7 +370,31 @@ public record FullstackStarterRequest(
             List<String> filters,
             // entity-list: the actions this page leaves out of its list — new, edit, delete,
             // export, import, bulk. Presentation only: the API still answers them.
-            List<String> hideActions) {
+            List<String> hideActions,
+            // inbox: the queues it offers as tabs — mine, unassigned, open — the first opening
+            // (default: mine, unassigned). `cardFields`, `presetFilter` and `sort` apply too. Left out of
+            // the request echoed into menora-model.json when absent, so it keeps its bytes.
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            List<String> queues) {
+
+        /** Every property but an inbox's queues. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize, String detail, Boolean showParent,
+                                 Integer refreshSeconds, String dateField, String endField, List<String> modes,
+                                 String laneField, List<String> lanes, List<String> cardFields,
+                                 Map<String, Integer> wipLimits, Integer laneSize, String body,
+                                 List<String> entities, Integer perEntity, Boolean shellSearch, List<String> filters,
+                                 List<String> hideActions) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, detail, showParent, refreshSeconds, dateField, endField, modes, laneField, lanes,
+                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, hideActions, null);
+        }
 
         /** Every property but a list page's hidden actions. */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
@@ -387,7 +411,7 @@ public record FullstackStarterRequest(
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
                     childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
                     pageSize, detail, showParent, refreshSeconds, dateField, endField, modes, laneField, lanes,
-                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, null);
+                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, null, null);
         }
 
         /** Every property but the dashboard filters. */

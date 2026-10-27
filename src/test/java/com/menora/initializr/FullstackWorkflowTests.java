@@ -132,6 +132,7 @@ class FullstackWorkflowTests {
         @SuppressWarnings("unchecked")
         Map<String, Object> claim = ((List<Map<String, Object>>) plain.get("entities")).get(1);
         claim.remove("workflow");
+        ((List<Map<String, Object>>) plain.get("pages")).removeIf(p -> "inbox".equals(p.get("type")));
         Map<String, String> without = generate(plain);
         for (String path : List.of("src/pages/cost-center/ui/CostCenterPage.tsx", "src/features/cost-center-form/ui/CostCenterForm.tsx",
                 "src/features/cost-center-form/index.ts", "src/app/screens/CentersScreen.tsx")) {
@@ -147,6 +148,65 @@ class FullstackWorkflowTests {
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
         assertThat(generate(body).get(FE + "src/shared/api/client.ts"))
                 .contains("headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'");
+    }
+
+    @Test
+    void inboxPage_listsMyUnassignedAndOpenTasks() throws Exception {
+        Map<String, String> files = generate(workflowLayout(true));
+        String inbox = files.get(FE + "src/app/screens/TasksScreen.tsx");
+        assertThat(inbox)
+                .contains("type Queue = 'mine' | 'unassigned'")
+                .contains("  { value: 'mine', label: t('myTasks') },\n  { value: 'unassigned', label: t('unassignedTasks') },\n")
+                .contains("inbox: queue, page: String(page), size: String(size), sort: SORT")
+                // Rows open their record page; their moves sit in the last column.
+                .contains("onClick={() => onNavigate('claim', String(r.id))}")
+                .contains("<ExpenseClaimTransitions row={r} onDone={changed} compact />")
+                .contains("{ ExpenseClaimStatusTypeLabels[r.status] }")
+                .doesNotContain("DetailDrawer");
+        assertThat(files.get(FE + "src/app/App.tsx"))
+                .contains("<TasksScreen query={route.query} onQueryChange={setQuery} onNavigate={goView} />")
+                .contains("Inbox");
+        assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("myTasks: 'My tasks',").contains("overdue: 'Overdue',");
+        // Without a record page a row opens in the quick look, which offers the moves too.
+        String drawer = generate(workflowLayout(false)).get(FE + "src/app/screens/TasksScreen.tsx");
+        assertThat(drawer)
+                .contains("type Queue = 'open' | 'mine'")
+                .contains("onClick={() => setDetail(r)}")
+                .contains("<ExpenseClaimTransitions row={detail} onDone={next => { setDetail(next); changed() }} />")
+                .contains("{ r.costCenterLabel ?? (r.costCenterId == null ? '—' : '#' + String(r.costCenterId)) }");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void inboxPage_highlightsOverdueAndSortsByDue() throws Exception {
+        String inbox = generate(workflowLayout(true)).get(FE + "src/app/screens/TasksScreen.tsx");
+        assertThat(inbox)
+                .contains("const SORT = 'dueOn,asc'")
+                .contains("const late = r.dueOn != null && String(r.dueOn).slice(0, 10) < today")
+                .contains("{late && <span className=\"ms-2 text-xs\">{t('overdue')}</span>}");
+        // No due date: the newest first, and nothing is late.
+        Map<String, Object> body = workflowLayout(true);
+        Map<String, Object> claim = ((List<Map<String, Object>>) body.get("entities")).get(1);
+        ((Map<String, Object>) claim.get("workflow")).remove("dueField");
+        String undated = generate(body).get(FE + "src/app/screens/TasksScreen.tsx");
+        assertThat(undated).contains("const SORT = 'id,desc'").doesNotContain("const late");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void inboxPage_rejectsAnEntityWithoutAnAssignee() {
+        Map<String, Object> body = workflowLayout(true);
+        ((List<Map<String, Object>>) body.get("pages")).add(new LinkedHashMap<>(Map.of("id", "centers-inbox", "type", "inbox", "entity", "CostCenter")));
+        assertBadRequest(body, "Page 'centers-inbox' (inbox): CostCenter has no workflow with an assignee");
+        Map<String, Object> queues = workflowLayout(true);
+        ((List<Map<String, Object>>) queues.get("pages")).get(3).put("queues", List.of("mine", "later"));
+        assertBadRequest(queues, "unknown queue 'later' (expected mine, unassigned or open)");
+        Map<String, Object> twice = workflowLayout(true);
+        ((List<Map<String, Object>>) twice.get("pages")).get(3).put("queues", List.of("mine", "MINE"));
+        assertBadRequest(twice, "queue 'mine' is listed twice");
+        Map<String, Object> list = workflowLayout(true);
+        ((List<Map<String, Object>>) list.get("pages")).get(0).put("queues", List.of("mine"));
+        assertBadRequest(list, "(entity-list) does not take 'queues'");
     }
 
     @Test
@@ -238,6 +298,10 @@ class FullstackWorkflowTests {
                 : Map.of("id", "claims", "type", "entity-list", "entity", "ExpenseClaim")));
         pages.add(new LinkedHashMap<>(Map.of("id", "board", "type", "board", "entity", "ExpenseClaim")));
         pages.add(new LinkedHashMap<>(Map.of("id", "centers", "type", "entity-list", "entity", "CostCenter")));
+        pages.add(new LinkedHashMap<>(recordPage
+                ? Map.of("id", "tasks", "type", "inbox", "entity", "ExpenseClaim")
+                : Map.of("id", "tasks", "type", "inbox", "entity", "ExpenseClaim", "queues", List.of("open", "mine"),
+                        "cardFields", List.of("title", "amount", "costCenter"))));
         if (recordPage) pages.add(new LinkedHashMap<>(Map.of("id", "claim", "type", "record", "entity", "ExpenseClaim")));
         body.put("pages", pages);
         return body;
