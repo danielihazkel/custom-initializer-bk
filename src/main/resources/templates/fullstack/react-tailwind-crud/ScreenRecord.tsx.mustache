@@ -15,7 +15,7 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 {{#hasStatusFields}}
 import { {{statusLabelsImport}} } from '@entities/{{entityNameKebab}}'
 {{/hasStatusFields}}
-import { {{EntityName}}Detail{{#recordEditsInDrawer}}, {{EntityName}}Form, validate{{EntityName}}{{/recordEditsInDrawer}} } from '@features/{{entityNameKebab}}-form'
+import { {{EntityName}}Detail{{#recordEditsInDrawer}}, {{EntityName}}Form, validate{{EntityName}}{{/recordEditsInDrawer}}{{#recordHasWorkflow}}, {{EntityName}}Transitions{{/recordHasWorkflow}} } from '@features/{{entityNameKebab}}-form'
 {{#childTabs}}
 import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
 {{/childTabs}}
@@ -217,6 +217,9 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
 {{#recordMutable}}
         {record && (
           <div className="flex items-center gap-2">
+{{#recordHasWorkflow}}
+            <{{EntityName}}Transitions row={record} onDone={setRecord} />
+{{/recordHasWorkflow}}
             <button
               type="button"
               onClick={() => setConfirming(true)}

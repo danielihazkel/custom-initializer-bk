@@ -9,7 +9,10 @@ import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
 import { SectionHeader, Chip{{#hasViewToggle}}, Tabs{{/hasViewToggle}}{{#mutable}}, Button{{/mutable}}{{^mutable}}{{#optScaffoldCsvExport}}, Button{{/optScaffoldCsvExport}}{{/mutable}} } from '@shared/ui/menora'
-import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
+import { {{EntityName}}Detail{{#hasWorkflow}}, {{EntityName}}Transitions{{/hasWorkflow}}{{#kanbanIsWorkflow}}, {{EntityName}}Workflow{{/kanbanIsWorkflow}} } from '@features/{{entityNameKebab}}-form'
+{{#kanbanIsWorkflow}}
+import { useMe } from '@shared/api/me'
+{{/kanbanIsWorkflow}}
 import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 {{#mutable}}import { {{EntityName}}Form, validate{{EntityName}}{{#importApplicable}}, {{EntityName}}ImportFields{{/importApplicable}} } from '@features/{{entityNameKebab}}-form'
 import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail}}{{/lockingApplicable}} } from '@shared/api'
@@ -168,6 +171,9 @@ function oneValue(value: string | undefined): boolean {
   const [viewMode{{#hasViewToggle}}, setViewMode{{/hasViewToggle}}] = useState<{{viewModeType}}>((prefs.view as {{viewModeType}} | undefined) ?? openingView)
 {{/listUrlState}}
   const [detailRow, setDetailRow] = useState<{{EntityName}} | null>(null)
+{{#kanbanIsWorkflow}}
+  const me = useMe()
+{{/kanbanIsWorkflow}}
   const [hiddenColumns{{#viewTable}}, setHiddenColumns{{/viewTable}}] = useState<string[]>(prefs.hidden ?? [])
   // Only what differs from how the list opens by default is kept.
   useEffect(() => {
@@ -497,8 +503,29 @@ function oneValue(value: string | undefined): boolean {
   // Kanban drag-and-drop writes the new lane value back. On failure the board is reloaded so
   // the card snaps back to its real lane instead of silently showing a move that never saved.
   async function onKanbanMove(row: {{EntityName}}, value: string) {
+{{#kanbanIsWorkflow}}
+    // The lanes are the workflow's states: a card moves by the one transition between them.
+    const step = {{EntityName}}Workflow.between(String(row.{{kanbanField}}), value, me.roles)
+    if ('refusal' in step) {
+      toast.error(step.refusal)
+      await reload()
+      return
+    }
+    if (step.transition.requires.length > 0) {
+      // It asks for fields: the quick look offers the move with them.
+      toast.message(t('moveNeedsDetails', { x: step.transition.label }))
+      setDetailRow(row)
+      await reload()
+      return
+    }
+{{/kanbanIsWorkflow}}
     try {
+{{#kanbanIsWorkflow}}
+      await {{EntityName}}Workflow.run(row, step.transition.name)
+{{/kanbanIsWorkflow}}
+{{^kanbanIsWorkflow}}
       await update({{#hasCompositePk}}[{{#pkFields}}row.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...row, {{kanbanField}}: {{#kanbanIsEnum}}value{{/kanbanIsEnum}}{{^kanbanIsEnum}}value === 'true'{{/kanbanIsEnum}} } as {{EntityName}})
+{{/kanbanIsWorkflow}}
       toast.success(t('xMoved', { x: '{{entityLabel}}' }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -802,6 +829,11 @@ function oneValue(value: string | undefined): boolean {
                 </div>
               </div>
               <{{EntityName}}Detail value={selectedRow} />
+{{#hasWorkflow}}
+              <div className="mt-4 border-t border-border pt-4">
+                <{{EntityName}}Transitions row={selectedRow} onDone={next => { setFetchedRow(next); void reload() }} />
+              </div>
+{{/hasWorkflow}}
             </>
           ) : selectedId != null && paneFailed ? (
             <p className="text-sm text-muted" role="alert">
@@ -894,6 +926,13 @@ function oneValue(value: string | undefined): boolean {
 {{/listActionsConfigurable}}{{#listActionsConfigurable}}        onEdit={can('edit') ? () => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } } : undefined}
 {{/listActionsConfigurable}}{{/mutable}}      >
         {detailRow && <{{EntityName}}Detail value={detailRow} />}
+{{#hasWorkflow}}
+        {detailRow && (
+          <div className="mt-4 border-t border-border pt-4">
+            <{{EntityName}}Transitions row={detailRow} onDone={next => { setDetailRow(next); void reload() }} />
+          </div>
+        )}
+{{/hasWorkflow}}
       </DetailDrawer>
     </div>
   )

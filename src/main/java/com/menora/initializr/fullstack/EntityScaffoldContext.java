@@ -306,6 +306,8 @@ public final class EntityScaffoldContext {
                     // With a create page, Edit reopens the row there (#/<page>/<id>) instead.
                     String editPage = recordMutable ? links.createPageOf(p.entity()) : null;
                     pv.put("recordMutable", recordMutable);
+                    // The record's workflow moves sit by its Edit and Delete.
+                    pv.put("recordHasWorkflow", Boolean.TRUE.equals(ev.get("hasWorkflow")));
                     pv.put("recordEditsInPage", editPage != null);
                     pv.put("recordEditsInDrawer", recordMutable && editPage == null);
                     pv.put("createPageId", editPage);
@@ -943,6 +945,11 @@ public final class EntityScaffoldContext {
         putRowNaming(pv, ev, summary);
         putRecordLink(pv, "", p.entity(), links, summaries);
         pv.put("boardMutable", Boolean.TRUE.equals(ev.get("mutable")));
+        // Lanes of the workflow's status: a card moves by the transition between them, and the quick
+        // look (no record page) offers the row's moves.
+        boolean workflow = Boolean.TRUE.equals(ev.get("hasWorkflow"));
+        pv.put("boardIsWorkflow", workflow && spec.laneField().equals(ev.get("workflowStatusField")));
+        pv.put("boardHasWorkflow", workflow);
         pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")));
         pv.put("hasCardDetails", cards.size() > 1);
         // The screen imports `t` only when something calls it (the generated lint rejects an unused

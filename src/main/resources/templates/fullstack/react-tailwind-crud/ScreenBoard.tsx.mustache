@@ -7,10 +7,21 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { {{cardLabelImports}} } from '@entities/{{entityNameKebab}}'
 {{/hasCardLabelImports}}
 {{^hasRecordPage}}
-import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
+import { {{EntityName}}Detail{{#boardHasWorkflow}}, {{EntityName}}Transitions{{/boardHasWorkflow}}{{#boardIsWorkflow}}, {{EntityName}}Workflow{{/boardIsWorkflow}} } from '@features/{{entityNameKebab}}-form'
 import { DetailDrawer } from '@shared/ui'
 {{/hasRecordPage}}
+{{#hasRecordPage}}
+{{#boardIsWorkflow}}
+import { {{EntityName}}Workflow } from '@features/{{entityNameKebab}}-form'
+{{/boardIsWorkflow}}
+{{/hasRecordPage}}
+{{^boardIsWorkflow}}
 import { api } from '@shared/api'
+{{/boardIsWorkflow}}
+{{#boardIsWorkflow}}
+import { api } from '@shared/api'
+import { useMe } from '@shared/api/me'
+{{/boardIsWorkflow}}
 import { BoardView, type BoardLane } from '@shared/ui/BoardView'
 {{#presetUsesPeriod}}
 import { rangeParams } from '@shared/ui/stats'
@@ -35,7 +46,9 @@ const PRESET: Record<string, string> = {{{presetFilterOrEmptyTs}}}
 {{/hasPresetFilter}}
 
 const keyOf = (r: {{EntityName}}) => {{{rowKeyTs}}}
+{{^boardIsWorkflow}}
 const pathOf = (r: {{EntityName}}) => {{#hasCompositeKey}}{{{rowIdTs}}}.map(v => encodeURIComponent(String(v))).join('/'){{/hasCompositeKey}}{{^hasCompositeKey}}encodeURIComponent(String({{{rowIdTs}}})){{/hasCompositeKey}}
+{{/boardIsWorkflow}}
 
 /** What a card shows. */
 function Card({ r }: { r: {{EntityName}} }) {
@@ -78,6 +91,9 @@ interface Props {
 {{/needsNavigate}}
 export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
   const [lanes, setLanes] = useState<Record<string, LaneState>>({})
+{{#boardIsWorkflow}}
+  const me = useMe()
+{{/boardIsWorkflow}}
 {{^hasRecordPage}}
   const [detail, setDetail] = useState<{{EntityName}} | null>(null)
 {{/hasRecordPage}}
@@ -117,6 +133,25 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
       toast.error(t('laneFull', { lane: target.label, n: target.limit }))
       return
     }
+{{#boardIsWorkflow}}
+    // The lanes are the workflow's states: a card moves by the one transition between them.
+    const step = {{EntityName}}Workflow.between(from, to, me.roles)
+    if ('refusal' in step) {
+      toast.error(step.refusal)
+      return
+    }
+    if (step.transition.requires.length > 0) {
+      // It asks for fields: open the row, where the move takes them.
+      toast.message(t('moveNeedsDetails', { x: step.transition.label }))
+{{#hasRecordPage}}
+      onNavigate('{{recordPageId}}', String(row.{{recordPk}}))
+{{/hasRecordPage}}
+{{^hasRecordPage}}
+      setDetail(row)
+{{/hasRecordPage}}
+      return
+    }
+{{/boardIsWorkflow}}
     const moved = { ...row, {{laneField}}: {{#laneIsBoolean}}to === 'true'{{/laneIsBoolean}}{{^laneIsBoolean}}to{{/laneIsBoolean}} } as {{EntityName}}
     setLanes(s => {
       const source = s[from] ?? EMPTY
@@ -128,7 +163,12 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
       }
     })
     try {
+{{#boardIsWorkflow}}
+      await {{EntityName}}Workflow.run(row, step.transition.name)
+{{/boardIsWorkflow}}
+{{^boardIsWorkflow}}
       await api.put<{{EntityName}}>(`${PATH}/${pathOf(row)}`, moved)
+{{/boardIsWorkflow}}
       toast.success(t('xMoved', { x: {{{entityLabelExpr}}} }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -167,6 +207,13 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
 
       <DetailDrawer open={detail !== null} title={t('xDetails', { x: {{{entityLabelExpr}}} })} onClose={() => setDetail(null)}>
         {detail && <{{EntityName}}Detail value={detail} />}
+{{#boardHasWorkflow}}
+        {detail && (
+          <div className="mt-4 border-t border-border pt-4">
+            <{{EntityName}}Transitions row={detail} onDone={next => { setDetail(next); for (const lane of LANES) void loadLane(lane.value, 0) }} />
+          </div>
+        )}
+{{/boardHasWorkflow}}
       </DetailDrawer>
 {{/hasRecordPage}}
     </div>

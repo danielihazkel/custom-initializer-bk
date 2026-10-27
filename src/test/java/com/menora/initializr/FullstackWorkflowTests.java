@@ -91,6 +91,65 @@ class FullstackWorkflowTests {
     }
 
     @Test
+    void frontend_offersTheMovesWhereTheRowIs() throws Exception {
+        Map<String, String> files = generate(workflowLayout(true));
+        String feature = FE + "src/features/expense-claim-form/";
+        assertThat(files.get(feature + "model/workflow.ts"))
+                .contains("  { name: 'submit', label: 'Submit', from: ['DRAFT'], to: 'SUBMITTED', roles: [], requires: [] },")
+                .contains("  { name: 'reject', label: 'Send back', from: ['SUBMITTED'], to: 'REJECTED', roles: ['ADMIN'], requires: ['rejectionReason'] },")
+                .contains("const OPEN: readonly string[] = ['DRAFT', 'SUBMITTED', 'REJECTED']")
+                .contains("api.post<ExpenseClaim>(`${rowPath(row)}/transitions/${name}`, values)")
+                .contains("claim: (row: ExpenseClaim) => api.post<ExpenseClaim>(`${rowPath(row)}/claim`, {}),");
+        assertThat(files.get(feature + "ui/ExpenseClaimTransitions.tsx"))
+                .contains("const moves = ExpenseClaimWorkflow.available(row, me.roles)")
+                .contains("const canClaim = me.id != null && assignee == null && ExpenseClaimWorkflow.isOpen(row)")
+                // reject asks for a reason: its drawer shows only that field.
+                .contains("<ExpenseClaimForm value={draft} onChange={setDraft} errors={errors} isNew={false} only={asking.requires} />");
+        assertThat(files.get(feature + "index.ts")).contains("export { ExpenseClaimTransitions } from './ui/ExpenseClaimTransitions'");
+        // The status is the workflow's: never in the form, and the form takes `only` for a move's fields.
+        assertThat(files.get(feature + "ui/ExpenseClaimForm.tsx"))
+                .doesNotContain("set('status'")
+                .doesNotContain("ExpenseClaimStatusTypeOptions")
+                .contains("only?: readonly string[]");
+        String page = files.get(FE + "src/pages/expense-claim/ui/ExpenseClaimPage.tsx");
+        assertThat(page)
+                .contains("const step = ExpenseClaimWorkflow.between(String(row.status), value, me.roles)")
+                .contains("      await ExpenseClaimWorkflow.run(row, step.transition.name)\n")
+                .doesNotContain("{ ...row, status: value }")
+                .contains("<ExpenseClaimTransitions row={selectedRow} onDone={next => { setFetchedRow(next); void reload() }} />")
+                .contains("<ExpenseClaimTransitions row={detailRow} onDone={next => { setDetailRow(next); void reload() }} />");
+        assertThat(files.get(FE + "src/app/screens/ClaimScreen.tsx")).contains("<ExpenseClaimTransitions row={record} onDone={setRecord} />");
+        assertThat(files.get(FE + "src/app/screens/BoardScreen.tsx"))
+                .contains("const step = ExpenseClaimWorkflow.between(from, to, me.roles)")
+                .contains("onNavigate('claim', String(row.id))")
+                .doesNotContain("pathOf");
+        assertThat(files).containsKey(FE + "src/shared/api/me.ts");
+        assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("claim: 'Claim',").contains("moveNotAllowed:");
+        // ldap-auth-rest is on, so the dev header was sent already; it reads the same either way.
+        assertThat(files.get(FE + "src/shared/api/client.ts")).contains("headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'");
+        // The cost center has no workflow: its frontend keeps its bytes.
+        Map<String, Object> plain = workflowLayout(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> claim = ((List<Map<String, Object>>) plain.get("entities")).get(1);
+        claim.remove("workflow");
+        Map<String, String> without = generate(plain);
+        for (String path : List.of("src/pages/cost-center/ui/CostCenterPage.tsx", "src/features/cost-center-form/ui/CostCenterForm.tsx",
+                "src/features/cost-center-form/index.ts", "src/app/screens/CentersScreen.tsx")) {
+            assertThat(files.get(FE + path)).as(path).isNotNull().isEqualTo(without.get(FE + path));
+        }
+        assertThat(without.get(FE + "src/app/screens/BoardScreen.tsx")).contains("await api.put<ExpenseClaim>(`${PATH}/${pathOf(row)}`, moved)");
+    }
+
+    @Test
+    void frontend_sendsTheDevUserForAWorkflowWithoutLdap() throws Exception {
+        Map<String, Object> body = claims(true);
+        for (Map<String, Object> t : transitions(body)) t.remove("roles");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        assertThat(generate(body).get(FE + "src/shared/api/client.ts"))
+                .contains("headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'");
+    }
+
+    @Test
     void workflowWithoutRoles_needsNoDirectory() throws Exception {
         Map<String, Object> body = claims(true);
         // No roles anywhere, and no ldap-auth: the service takes no CurrentUser, which knows no roles.
@@ -160,6 +219,27 @@ class FullstackWorkflowTests {
         body.put("packageName", "com.menora.claims");
         body.put("bootVersion", "3.2.1");
         body.put("entities", new ArrayList<>(List.of(costCenter, claim)));
+        return body;
+    }
+
+    /**
+     * The claims with a page layout that shows the workflow everywhere it reaches: a list with a
+     * kanban over the status, a board, and — with {@code recordPage} — a record page and a list
+     * opening rows in a side pane; without one, both open rows in the quick-look drawer.
+     */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> workflowLayout(boolean recordPage) {
+        Map<String, Object> body = claims(true);
+        Map<String, Object> claim = ((List<Map<String, Object>>) body.get("entities")).get(1);
+        claim.put("listViews", List.of("table", "kanban"));
+        List<Map<String, Object>> pages = new ArrayList<>();
+        pages.add(new LinkedHashMap<>(recordPage
+                ? Map.of("id", "claims", "type", "entity-list", "entity", "ExpenseClaim", "detail", "side")
+                : Map.of("id", "claims", "type", "entity-list", "entity", "ExpenseClaim")));
+        pages.add(new LinkedHashMap<>(Map.of("id", "board", "type", "board", "entity", "ExpenseClaim")));
+        pages.add(new LinkedHashMap<>(Map.of("id", "centers", "type", "entity-list", "entity", "CostCenter")));
+        if (recordPage) pages.add(new LinkedHashMap<>(Map.of("id", "claim", "type", "record", "entity", "ExpenseClaim")));
+        body.put("pages", pages);
         return body;
     }
 

@@ -1,9 +1,9 @@
 import { Field, inputClass{{#formUsesPicker}}, RelationPicker{{/formUsesPicker}} } from '@shared/ui'
 {{#formUsesStrings}}import { t } from '@shared/i18n'
 {{/formUsesStrings}}{{#formUsesOptions}}import { useOptions } from '@shared/api'
-{{/formUsesOptions}}import type { {{EntityName}}{{#fields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
-{{#fields}}{{#isEnum}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
-{{/isEnum}}{{/fields}}
+{{/formUsesOptions}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
+{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
+{{/isWorkflowStatus}}{{/isEnum}}{{/fields}}
 
 interface Props {
   value: Partial<{{EntityName}}>
@@ -31,6 +31,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         <legend className="mb-3 text-sm font-semibold text-fg">{ {{{groupTitleExpr}}} }</legend>
 {{/groupHasTitle}}
 {{#groupFields}}
+{{^isWorkflowStatus}}
 {{#isPrimaryKey}}{{#isGenerated}}      {!isNew && (
         <Field label="{{label}}" hint={t('systemGenerated')}>
           <input
@@ -89,6 +90,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         />
 {{/isText}}      </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}
+{{/isWorkflowStatus}}
 {{/groupFields}}
 {{#groupRelations}}
       {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{FieldName}}"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>

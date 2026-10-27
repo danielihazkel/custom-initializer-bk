@@ -267,6 +267,27 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendWorkflowInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // An entity workflow: transitions with roles and asked-for fields, claim/release, a kanban
+        // and a board over the status, a side pane and a record page offering the moves.
+        Path project = postAndExtractFrontend(workDir, FullstackWorkflowTests.workflowLayout(true));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraWorkflowInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same on the Menora set, without a record page: the moves sit in the quick looks.
+        Map<String, Object> body = FullstackWorkflowTests.workflowLayout(false);
+        body.put("frontendTemplateSet", "react-menora-digital-crud");
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendClassicCsvImportInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // The csvImport opt without a page layout: every list page gets Import in a drawer.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-tailwind-crud");

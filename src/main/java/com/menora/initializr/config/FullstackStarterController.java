@@ -454,6 +454,9 @@ public class FullstackStarterController {
                 && (request.getDependencies().contains("ldap-auth")
                         || request.getDependencies().contains("ldap-auth-rest"));
         projectCtx.put("hasLdapAuth", hasLdapAuth);
+        // The API client sends the dev user's `userinfo` header when something reads it: the ldap
+        // permission check, or a workflow (who claims a row, whose inbox).
+        projectCtx.put("sendsDevUser", hasLdapAuth || Boolean.TRUE.equals(projectCtx.get("hasWorkflows")));
         // Opt-in scaffolding flags must be set on the frontend context too — the per-entity FE
         // templates gate audit columns / inverse-collection counts on these. The backend config
         // sets its own copy; the two render paths do not share a context.
