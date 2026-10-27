@@ -47,7 +47,7 @@ class FullstackPagesIntegrationTests {
 
     @Test
     void fullstackEndpoint_rendersPageTypes() throws Exception {
-        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> body = tabsOnlyTickets(exampleBody("tickets", "react-tailwind-crud"));
         // A list page's own title and description replace the entity page's heading.
         page(body, "agents").put("title", "Support agents");
         page(body, "agents").put("description", "Everyone on the desk.");
@@ -351,7 +351,7 @@ class FullstackPagesIntegrationTests {
 
     @Test
     void fullstackEndpoint_menoraSetSkinsTabsPagesAndBorrowsTheRest() throws Exception {
-        Map<String, String> tickets = generate(exampleBody("tickets", "react-menora-digital-crud"));
+        Map<String, String> tickets = generate(tabsOnlyTickets(exampleBody("tickets", "react-menora-digital-crud")));
         assertThat(tickets.get(FE + "src/app/screens/QueueScreen.tsx"))
                 .contains("import { SectionHeader, Tabs } from '@shared/ui/menora'")
                 .contains("{ id: 'tickets-open', label: 'Open', panelId: 'tickets-open-panel' },")
@@ -523,7 +523,7 @@ class FullstackPagesIntegrationTests {
 
     @Test
     void fullstackEndpoint_recordPageWithoutRelatedListsOrHome() throws Exception {
-        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> body = tabsOnlyTickets(exampleBody("tickets", "react-tailwind-crud"));
         pages(body).add(new LinkedHashMap<>(Map.of("id", "agent", "type", "record", "entity", "Agent", "childTabs", List.of())));
         pages(body).removeIf(p -> "agents".equals(p.get("id")));
         Map<String, String> files = generate(body);
@@ -1667,7 +1667,7 @@ class FullstackPagesIntegrationTests {
 
     @Test
     void fullstackEndpoint_dashboardPeriodLimitsOnlyWidgetsWithADate() throws Exception {
-        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> body = tabsOnlyTickets(exampleBody("tickets", "react-tailwind-crud"));
         pages(body).get(0).put("dateRange", "ytd");
         Map<String, String> files = generate(body);
 
@@ -1731,7 +1731,7 @@ class FullstackPagesIntegrationTests {
 
     @Test
     void fullstackEndpoint_hiddenWizardIsARouteAndDefaultsItsSteps() throws Exception {
-        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> body = tabsOnlyTickets(exampleBody("tickets", "react-tailwind-crud"));
         Map<String, Object> wizard = wizardPage("new-ticket", "ticket", null);
         wizard.put("hidden", true);
         pages(body).add(wizard);
@@ -1905,7 +1905,7 @@ class FullstackPagesIntegrationTests {
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private void assertRejected(Consumer<List<Map<String, Object>>> mutator, String expectedMessage) {
-        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> body = tabsOnlyTickets(exampleBody("tickets", "react-tailwind-crud"));
         mutator.accept(pages(body));
         assertBadRequest(body, expectedMessage);
     }
@@ -1994,6 +1994,21 @@ class FullstackPagesIntegrationTests {
         body.put("dependencies", List.of("data-jpa", "web", "ldap-auth-rest"));
         mutator.accept(body);
         assertBadRequest(body, expectedMessage);
+    }
+
+    /**
+     * The Tickets example in the shape these tests pin: its lists only tabs of the queue (so its
+     * widgets open the tabs page and a saved ticket goes home to it) and no record page (its rows
+     * open the quick look). The seeded example also lists every ticket in the nav and has a
+     * record page, so the editor has no dead ends to warn about.
+     */
+    static Map<String, Object> tabsOnlyTickets(Map<String, Object> body) {
+        pages(body).removeIf(p -> "ticket".equals(p.get("id")));
+        Map<String, Object> all = page(body, "tickets-all");
+        all.remove("group");
+        all.remove("title");
+        all.put("hidden", true);
+        return body;
     }
 
     private static Map<String, Object> page(Map<String, Object> body, String id) {
