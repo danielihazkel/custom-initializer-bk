@@ -75,7 +75,16 @@ public class ApiExceptionHandler {
         return pd;
     }
 
-{{/hasOptimisticLocking}}    @ExceptionHandler(DataIntegrityViolationException.class)
+{{/hasOptimisticLocking}}{{#hasWorkflows}}    /** A workflow refused a move: wrong state (409), missing role (403) or user (401), or empty
+     *  fields the transition asks for (400, with the per-field {@code errors} a form maps). */
+    @ExceptionHandler(WorkflowException.class)
+    public ProblemDetail handleWorkflow(WorkflowException ex) {
+        ProblemDetail pd = problem(HttpStatus.valueOf(ex.status()), ex.getMessage());
+        if (!ex.errors().isEmpty()) pd.setProperty("errors", ex.errors());
+        return pd;
+    }
+
+{{/hasWorkflows}}    @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
         String cause = rootMessage(ex).toLowerCase(Locale.ROOT);
         String detail;

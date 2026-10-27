@@ -1,0 +1,32 @@
+package {{packageName}}.web;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+/**
+ * The caller as the workflow sees them — the frontend offers only the transitions they may make
+ * and knows which rows are theirs. The server checks again on every move.
+ */
+@RestController
+@RequestMapping("/api/me")
+public class CurrentUserController {
+
+    private final CurrentUser currentUser;
+
+    public CurrentUserController(CurrentUser currentUser) {
+        this.currentUser = currentUser;
+    }
+
+    @GetMapping
+    public Me me(@RequestHeader(value = "userinfo", required = false) String header) {
+        String id = CurrentUser.idOf(header);
+        return new Me(id, List.copyOf(currentUser.roles(id)));
+    }
+
+    /** The user id (null when not signed in) and the application roles it holds. */
+    public record Me(String id, List<String> roles) {}
+}

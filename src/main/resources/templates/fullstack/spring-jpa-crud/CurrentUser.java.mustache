@@ -1,0 +1,50 @@
+package {{packageName}}.web;
+
+{{#hasLdapAuth}}import {{packageName}}.security.Constants;
+import {{packageName}}.security.PermissionService;
+import {{packageName}}.security.UnauthorizedException;
+{{/hasLdapAuth}}import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashSet;
+{{#hasLdapAuth}}import java.util.List;
+{{/hasLdapAuth}}import java.util.Set;
+
+/**
+ * Who is calling: the user id is the {@code userinfo} header (set by the SSO gateway; in
+ * development by the frontend's API client), and the roles are the application's
+ * ({@code ADMIN}/{@code USER}){{#hasLdapAuth}} that the user's LDAP groups grant{{/hasLdapAuth}}{{^hasLdapAuth}} — none, since the
+ * project has no ldap-auth dependency to look them up with{{/hasLdapAuth}}. Workflow transitions limited to roles
+ * check them, and assignments are made in the user id.
+ */
+@Component
+public class CurrentUser {
+{{#hasLdapAuth}}
+
+    private final PermissionService permissionService;
+
+    public CurrentUser(PermissionService permissionService) {
+        this.permissionService = permissionService;
+    }
+{{/hasLdapAuth}}
+
+    /** The user id a {@code userinfo} header carries, or null when there is none. */
+    public static String idOf(String header) {
+        return header == null || header.isBlank() ? null : header.trim();
+    }
+
+    /** The application roles {@code user} holds (empty for no user). */
+    public Set<String> roles(String user) {
+        Set<String> roles = new LinkedHashSet<>();
+        if (user == null) return roles;
+{{#hasLdapAuth}}        try {
+            List<String> groups = permissionService.getUserGroups(user);
+            for (String role : List.of(Constants.ADMIN, Constants.USER)) {
+                String group = permissionService.mapRoleToGroup(role);
+                if (groups.stream().anyMatch(g -> g.contains(group))) roles.add(role);
+            }
+        } catch (UnauthorizedException e) {
+            // A user the directory does not know holds no role.
+        }
+{{/hasLdapAuth}}        return roles;
+    }
+}

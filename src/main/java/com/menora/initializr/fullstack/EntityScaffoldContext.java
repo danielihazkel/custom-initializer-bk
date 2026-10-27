@@ -99,6 +99,8 @@ public final class EntityScaffoldContext {
             entityViews.add(view);
         }
         ctx.put("entities", entityViews);
+        // Any workflow: the shared WorkflowException, CurrentUser and GET /api/me (both render paths).
+        ctx.put("hasWorkflows", entities.stream().anyMatch(e -> e.workflow() != null));
         // Demo-data seeding order (optScaffoldSeedData): parents before children, writable only.
         List<Map<String, Object>> seedViews = buildSeedOrder(entities, entityViews);
         ctx.put("seedEntities", seedViews);
@@ -1625,6 +1627,84 @@ public final class EntityScaffoldContext {
         pv.put("wizardHasProps", editable || Boolean.TRUE.equals(pv.get("needsNavigate")));
     }
 
+    /**
+     * An entity's workflow as the templates read it: the status field (marked read-only and as the
+     * workflow's status on its view), its states as Java and TS literals, each transition with its
+     * from/to/roles/requires spelled for both, and the assignee and due fields.
+     */
+    private static void putWorkflow(Map<String, Object> view, EntityDefinition entity, EntityDefinition.Workflow wf,
+                                    List<Map<String, Object>> fieldViews) {
+        Map<String, Object> status = fieldViews.stream().filter(fv -> wf.statusField().equals(fv.get("name"))).findFirst().orElseThrow();
+        status.put("isReadOnly", true);
+        status.put("isWorkflowStatus", true);
+        String pascal = Naming.toPascalCase(entity.name());
+        String enumType = (String) status.get("enumTypeName");
+        java.util.function.Function<String, String> javaState = s -> pascal + "." + enumType + "." + s;
+        java.util.function.Function<java.util.Collection<String>, String> tsList =
+                xs -> String.join(", ", xs.stream().map(x -> "'" + x + "'").toList());
+        view.put("workflowStatusField", wf.statusField());
+        view.put("WorkflowStatusName", status.get("Name"));
+        view.put("workflowEnumType", enumType);
+        view.put("workflowInitial", wf.initial());
+        view.put("workflowInitialJava", javaState.apply(wf.initial()));
+        view.put("workflowOpenStatesJava", String.join(", ", wf.openStates().stream().map(javaState).toList()));
+        view.put("workflowOpenStatesTs", tsList.apply(wf.openStates()));
+        Map<String, String> relationIds = new LinkedHashMap<>();
+        for (RelationDefinition r : entity.relations()) relationIds.put(r.fieldName(), Naming.toCamelCase(r.fieldName()) + "Id");
+        List<Map<String, Object>> transitions = new ArrayList<>();
+        boolean usesRoles = false;
+        boolean requiresAny = false;
+        for (int i = 0; i < wf.transitions().size(); i++) {
+            EntityDefinition.Transition t = wf.transitions().get(i);
+            Map<String, Object> tv = new LinkedHashMap<>();
+            tv.put("name", t.name());
+            tv.put("labelTs", tsString(t.label() != null ? t.label() : humanizeIdentifier(t.name())));
+            tv.put("fromJava", String.join(", ", t.from().stream().map(javaState).toList()));
+            tv.put("fromTs", tsList.apply(t.from()));
+            tv.put("to", t.to());
+            tv.put("toJava", javaState.apply(t.to()));
+            tv.put("hasRoles", !t.roles().isEmpty());
+            tv.put("rolesJava", String.join(", ", t.roles().stream().map(r -> "\"" + r + "\"").toList()));
+            tv.put("rolesTs", tsList.apply(t.roles()));
+            List<Map<String, Object>> requires = new ArrayList<>();
+            for (String name : t.requires()) {
+                Map<String, Object> rv = new LinkedHashMap<>();
+                boolean relation = relationIds.containsKey(name);
+                rv.put("Name", Naming.toPascalCase(name));
+                // The key a 400 reports it under: the form's own (a relation's picker is `<name>Id`).
+                rv.put("key", relation ? relationIds.get(name) : name);
+                requires.add(rv);
+            }
+            tv.put("requires", requires);
+            tv.put("hasRequires", !requires.isEmpty());
+            // The form fields the transition's drawer shows (a relation by its field name, as `only` takes it).
+            tv.put("requiresTs", tsList.apply(t.requires()));
+            tv.put("last", i == wf.transitions().size() - 1);
+            usesRoles |= !t.roles().isEmpty();
+            requiresAny |= !requires.isEmpty();
+            transitions.add(tv);
+        }
+        view.put("workflowTransitions", transitions);
+        view.put("workflowUsesRoles", usesRoles);
+        view.put("workflowRequiresFields", requiresAny);
+        view.put("hasAssignee", wf.assigneeField() != null);
+        view.put("assigneeField", wf.assigneeField());
+        view.put("AssigneeName", wf.assigneeField() == null ? null : Naming.toPascalCase(wf.assigneeField()));
+        view.put("hasDue", wf.dueField() != null);
+        view.put("dueField", wf.dueField());
+        // Demo rows: a third each for the dev user, nobody and someone else, so every inbox queue has rows.
+        if (wf.assigneeField() != null) {
+            fieldViews.stream().filter(fv -> wf.assigneeField().equals(fv.get("name"))).findFirst()
+                    .ifPresent(fv -> fv.put("seedExpr", "i % 3 == 1 ? \"dev-user\" : i % 3 == 2 ? null : \"user\" + i"));
+        }
+    }
+
+    /** {@code submitForReview} → "Submit for review". */
+    static String humanizeIdentifier(String name) {
+        String spaced = name.replaceAll("([a-z0-9])([A-Z])", "$1 $2").toLowerCase(Locale.ROOT);
+        return Character.toUpperCase(spaced.charAt(0)) + spaced.substring(1);
+    }
+
     /** A form page: the entity's whole form, creating at #/<page> and editing at #/<page>/<id>. */
     private static void putForm(Map<String, Object> pv, PageDefinition p, Map<String, Object> ctx, Map<String, Object> ev,
                                 PageLinks links, Map<String, Map<String, Object>> summaries) {
@@ -2106,7 +2186,8 @@ public final class EntityScaffoldContext {
         Map<String, String> creates = (Map<String, String>) projectContext.get(CREATE_PAGES_KEY);
         ctx.put("hasCreatePage", creates != null && creates.containsKey(entity.name()));
         Map<String, String> wizards = (Map<String, String>) projectContext.get(WIZARD_PAGES_KEY);
-        ctx.put("formHasSteps", wizards != null && wizards.containsKey(entity.name()));
+        ctx.put("formHasSteps", (wizards != null && wizards.containsKey(entity.name()))
+                || Boolean.TRUE.equals(ctx.get("workflowRequiresFields")));
         // An entity with an import page: its list page takes `onImport` (Import opens that page
         // instead of the drawer).
         Map<String, String> imports = (Map<String, String>) projectContext.get(IMPORT_PAGES_KEY);
@@ -2283,6 +2364,12 @@ public final class EntityScaffoldContext {
                 imports.add(f.type().javaImport());
             }
         }
+        // A workflow's status changes by its transitions only: locked like a read-only field (no PUT,
+        // bulk or inline edit, no import column) — on the view, not the field, so demo data still
+        // cycles the states — and hidden from the form.
+        EntityDefinition.Workflow workflow = entity.workflow();
+        view.put("hasWorkflow", workflow != null);
+        if (workflow != null) putWorkflow(view, entity, workflow, fieldViews);
         // Re-tag last on nonPkViews
         for (int i = 0; i < nonPkViews.size(); i++) {
             nonPkViews.get(i).put("lastNonPk", i == nonPkViews.size() - 1);
@@ -2447,6 +2534,8 @@ public final class EntityScaffoldContext {
         }
         view.put("kanbanColumns", kanbanColumns);
         view.put("kanbanEnumTypeName", kanbanIsEnum ? breakdown.get("enumTypeName") : null);
+        // A board over the workflow's status moves a card by the transition between its lanes.
+        view.put("kanbanIsWorkflow", workflow != null && breakdown != null && workflow.statusField().equals(breakdown.get("name")));
 
         // Calendar view (listView == "calendar"): bucket records onto a month grid by their first
         // temporal (LOCAL_DATE / LOCAL_DATE_TIME) field. No writable requirement — it only reads.
@@ -2781,6 +2870,8 @@ public final class EntityScaffoldContext {
         fv.put("label", (f.label() != null && !f.label().isBlank()) ? f.label() : pascalName);
         // Locked-after-create read-only: the form disables it on edit and Service.update skips it.
         fv.put("isReadOnly", f.readOnly());
+        // A workflow's status: set by its transitions only (see putWorkflow).
+        fv.put("isWorkflowStatus", false);
         fv.put("isEditable", !f.readOnly());
 
         String javaType;

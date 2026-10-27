@@ -182,6 +182,8 @@ public record FullstackStarterRequest(
             List<FormSectionDto> formSections,
             // A workflow over one enum field: its states, the moves between them (each optionally
             // limited to roles and asking for fields) and who the row is assigned to. Null: none.
+            // Left out of the request echoed into menora-model.json when absent, so it keeps its bytes.
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
             WorkflowDto workflow) {
 
         /** Every property but {@code workflow} (no workflow). */
