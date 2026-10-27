@@ -155,6 +155,7 @@ public final class EntityScaffoldContext {
             pv.put("pageIsContent", p.type() == PageDefinition.Type.CONTENT);
             pv.put("pageIsImport", p.type() == PageDefinition.Type.IMPORT);
             pv.put("pageIsSearch", p.type() == PageDefinition.Type.SEARCH);
+            pv.put("pageIsForm", p.type() == PageDefinition.Type.FORM);
             pv.put("hasPageDescription", p.description() != null);
             pv.put("pageDescriptionExpr", p.description() == null ? null : tsString(p.description()));
             pv.put("needsNavigate", false);
@@ -364,6 +365,12 @@ public final class EntityScaffoldContext {
                     pv.put("navIcon", "Wand2");
                     defaultTitleExpr = "t('newX', { x: " + tsString((String) ev.get("entityLabel")) + " })";
                 }
+                case FORM -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    putForm(pv, p, ctx, ev, links, summaries);
+                    pv.put("navIcon", "FilePlus");
+                    defaultTitleExpr = "t('newX', { x: " + tsString((String) ev.get("entityLabel")) + " })";
+                }
                 case CALENDAR -> {
                     Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
                     putCalendar(pv, p, ctx, ev, links, summaries);
@@ -497,8 +504,8 @@ public final class EntityScaffoldContext {
             String routeProps = "";
             if (Boolean.TRUE.equals(pv.get("pageIsTabs"))) {
                 routeProps = " tab={route.arg} onTabChange={tab => go('" + pv.get("pageId") + "', tab)}";
-            } else if (Boolean.TRUE.equals(pv.get("wizardEditable"))) {
-                // #/<wizard>/<id> edits that row; a new id is a fresh wizard.
+            } else if (Boolean.TRUE.equals(pv.get("wizardEditable")) || Boolean.TRUE.equals(pv.get("formEditable"))) {
+                // #/<wizard>/<id> edits that row; a new id is a fresh wizard (a form likewise).
                 routeProps = " key={route.arg ?? ''} editId={route.arg}";
             } else if (Boolean.TRUE.equals(pv.get("pageIsMasterDetail"))) {
                 // The selected parent is the route arg (#/customers/42).
@@ -570,6 +577,7 @@ public final class EntityScaffoldContext {
                     || Boolean.TRUE.equals(pv.get("pageIsReport")) || Boolean.TRUE.equals(pv.get("pageIsWizard"))
                     || Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsBoard"))
                     || Boolean.TRUE.equals(pv.get("pageIsImport")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))
+                    || Boolean.TRUE.equals(pv.get("pageIsForm"))
                     || exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
         }
 
@@ -578,9 +586,10 @@ public final class EntityScaffoldContext {
         List<Map<String, Object>> records = all.stream().filter(v -> Boolean.TRUE.equals(v.get("pageIsRecord"))).toList();
         List<Map<String, Object>> routes = new ArrayList<>(nav);
         routes.addAll(records);
-        // A hidden wizard is still a route: a list page's New opens it. So is a hidden search page:
-        // the header's search box opens it.
-        all.stream().filter(v -> (Boolean.TRUE.equals(v.get("pageIsWizard")) || Boolean.TRUE.equals(v.get("pageIsSearch")))
+        // A hidden wizard or form is still a route: a list page's New opens it. So is a hidden search
+        // page: the header's search box opens it.
+        all.stream().filter(v -> (Boolean.TRUE.equals(v.get("pageIsWizard")) || Boolean.TRUE.equals(v.get("pageIsForm"))
+                        || Boolean.TRUE.equals(v.get("pageIsSearch")))
                         && Boolean.TRUE.equals(v.get("hidden")))
                 .forEach(routes::add);
         ctx.put("pages", all);
@@ -801,8 +810,11 @@ public final class EntityScaffoldContext {
                 if (p.type() == PageDefinition.Type.WIZARD) wizards.put(p.entity(), p.id());
                 if (p.type() == PageDefinition.Type.IMPORT) imports.put(p.entity(), p.id());
             }
-            // The page that creates (and edits) an entity's rows: its wizard. An entity has one at most.
+            // The page that creates (and edits) an entity's rows: its wizard or its form (never both).
             Map<String, String> creates = new LinkedHashMap<>(wizards);
+            for (PageDefinition p : pages) {
+                if (p.type() == PageDefinition.Type.FORM) creates.put(p.entity(), p.id());
+            }
             return new PageLinks(records, homes, lists, wizards, creates, imports);
         }
 
@@ -1613,6 +1625,36 @@ public final class EntityScaffoldContext {
         pv.put("wizardHasProps", editable || Boolean.TRUE.equals(pv.get("needsNavigate")));
     }
 
+    /** A form page: the entity's whole form, creating at #/<page> and editing at #/<page>/<id>. */
+    private static void putForm(Map<String, Object> pv, PageDefinition p, Map<String, Object> ctx, Map<String, Object> ev,
+                                PageLinks links, Map<String, Map<String, Object>> summaries) {
+        pv.put("EntityName", ev.get("EntityName"));
+        pv.put("entityNameKebab", ev.get("entityNameKebab"));
+        pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
+        pv.put("entityLabelExpr", tsString((String) ev.get("entityLabel")));
+        // The form starts from the fields' defaults, as the entity page's New does.
+        List<String> defaults = new ArrayList<>();
+        for (Map<String, Object> fv : (List<Map<String, Object>>) ev.get("fields")) {
+            if (Boolean.TRUE.equals(fv.get("hasDefault"))) defaults.add(fv.get("name") + ": " + fv.get("defaultTs"));
+        }
+        pv.put("initialTs", defaults.isEmpty() ? "{}" : "{ " + String.join(", ", defaults) + " }");
+        // Saved, a row opens its record page; else the entity's home; else the form starts over.
+        putRecordLink(pv, "", p.entity(), links, summaries);
+        String home = links.homeOf(p.entity());
+        pv.put("hasBack", home != null);
+        pv.put("backPageId", home);
+        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")) || home != null);
+        // A single-key entity's form also edits: #/<form>/<id> loads the row and saves it with a PUT.
+        boolean editable = !Boolean.TRUE.equals(ev.get("hasCompositePk"));
+        pv.put("formEditable", editable);
+        pv.put("formHasProps", editable || Boolean.TRUE.equals(pv.get("needsNavigate")));
+        // A stale save (optimistic locking, as the entity resolves the opt) offers the two ways out.
+        Object lockingOverride = ev.get("optimisticLockingOverride");
+        boolean locking = lockingOverride != null ? Boolean.TRUE.equals(lockingOverride)
+                : Boolean.TRUE.equals(ctx.get("optScaffoldOptimisticLocking"));
+        pv.put("formLocking", editable && locking && !Boolean.TRUE.equals(ev.get("isView")));
+    }
+
     /** A record page's header tiles: a count (or aggregate) of each related list's rows for the
      *  record, through the list's filter param; a tile whose list is a tab opens that tab. */
     private static void putHeaderStats(Map<String, Object> pv, PageDefinition p,
@@ -2373,6 +2415,7 @@ public final class EntityScaffoldContext {
         // where the opt overrides are normally applied. null = inherit the project flag.
         view.put("csvExportOverride", entity.opts().get("csvExport"));
         view.put("softDeleteOverride", entity.opts().get("softDelete"));
+        view.put("optimisticLockingOverride", entity.opts().get("optimisticLocking"));
 
         // Kanban board view (listView == "kanban"): reuse the breakdown field as the grouping
         // column and turn its distinct values into lanes. Dragging a card writes the new lane value

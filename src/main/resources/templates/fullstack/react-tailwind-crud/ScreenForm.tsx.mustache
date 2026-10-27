@@ -1,0 +1,241 @@
+import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
+import { api, ApiError } from '@shared/api'
+import { t } from '@shared/i18n'
+import { holdLeave } from '@shared/ui/leaveGuard'
+{{#formLocking}}
+import { StaleNotice } from '@shared/ui/StaleNotice'
+{{/formLocking}}
+import { {{EntityName}}Form, validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+
+const PATH = '/api/{{entityNamePluralKebab}}'
+
+const INITIAL: Partial<{{EntityName}}> = {{initialTs}}
+{{#formLocking}}
+
+/** A save refused because the record changed since it was read (the API's 409 with `stale`). */
+const isStale = (e: unknown) =>
+  e instanceof ApiError && e.status === 409 && (e.body as { stale?: boolean } | undefined)?.stale === true
+{{/formLocking}}
+{{#formHasProps}}
+
+interface Props {
+{{#formEditable}}
+  /** The key of the row to edit (#/<page>/<id>); absent, the form creates a new one. */
+  editId?: string
+{{/formEditable}}
+{{#needsNavigate}}
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+{{/needsNavigate}}
+}
+{{/formHasProps}}
+
+/** The entity's whole form on a page of its own: New and Edit come here instead of the drawer. */
+export function {{PageName}}Screen({{#formHasProps}}{ {{#formEditable}}editId{{#needsNavigate}}, {{/needsNavigate}}{{/formEditable}}{{#needsNavigate}}onNavigate{{/needsNavigate}} }: Props{{/formHasProps}}) {
+{{#formEditable}}
+  const isNew = editId == null
+{{/formEditable}}
+{{^formEditable}}
+  const isNew = true
+{{/formEditable}}
+  const [value, setValue] = useState<Partial<{{EntityName}}>>(INITIAL)
+  // What the form opened with: the edits are unsaved while the value differs from it.
+  const [baseline, setBaseline] = useState<Partial<{{EntityName}}>>(INITIAL)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+{{#formLocking}}
+  const [stale, setStale] = useState(false)
+{{/formLocking}}
+{{#formEditable}}
+  // Editing: the row is loaded first, and saved back with a PUT.
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(editId == null)
+
+  useEffect(() => {
+    if (editId == null) return
+    let current = true
+    api.get<{{EntityName}}>(PATH + '/' + encodeURIComponent(editId))
+      .then(row => {
+        if (!current) return
+        setValue(row)
+        setBaseline(row)
+        setLoaded(true)
+      })
+      .catch(e => { if (current) setLoadError(e instanceof Error ? e.message : String(e)) })
+    return () => { current = false }
+  }, [editId])
+{{/formEditable}}
+
+  // While the form holds unsaved edits, going to another page or closing the tab asks first. A
+  // save lets go of the hold itself before it moves on, so it never asks about what it just saved.
+  const dirty = JSON.stringify(value) !== JSON.stringify(baseline)
+  const release = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    if (!dirty) return
+    release.current = holdLeave()
+    const onUnload = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', onUnload)
+    return () => {
+      release.current?.()
+      release.current = null
+      window.removeEventListener('beforeunload', onUnload)
+    }
+  }, [dirty])
+
+  // Editing a field clears its message, as the entity page's form does.
+  const edit = (next: Partial<{{EntityName}}>) => {
+    setErrors(prev => Object.fromEntries(Object.entries(prev).filter(
+      ([key]) => next[key as keyof {{EntityName}}] === value[key as keyof {{EntityName}}])))
+    setValue(next)
+  }
+
+  /** Saved: let go of the unsaved-edits hold, then go where a saved record goes. */
+  function done(saved: {{EntityName}}) {
+    release.current?.()
+    release.current = null
+    toast.success(isNew ? t('xCreated', { x: {{entityLabelExpr}} }) : t('xUpdated', { x: {{entityLabelExpr}} }))
+{{#hasRecordPage}}
+    onNavigate('{{recordPageId}}', String(saved.{{recordPk}}))
+{{/hasRecordPage}}
+{{^hasRecordPage}}
+{{#hasBack}}
+    void saved
+    onNavigate('{{backPageId}}')
+{{/hasBack}}
+{{^hasBack}}
+    void saved
+    if (!isNew) {
+      window.history.back()
+      return
+    }
+    // Nowhere else to go: the form starts over for the next one.
+    setValue(INITIAL)
+    setBaseline(INITIAL)
+{{/hasBack}}
+{{/hasRecordPage}}
+  }
+
+  async function save() {
+    const found = validate{{EntityName}}(value)
+    setErrors(found)
+    if (Object.keys(found).length > 0) {
+      toast.error(t('fixHighlighted'))
+      return
+    }
+    setSaving(true)
+    try {
+{{#formEditable}}
+      done(isNew
+        ? await api.post<{{EntityName}}>(PATH, value)
+        : await api.put<{{EntityName}}>(PATH + '/' + encodeURIComponent(editId as string), value))
+{{/formEditable}}
+{{^formEditable}}
+      done(await api.post<{{EntityName}}>(PATH, value))
+{{/formEditable}}
+    } catch (e) {
+      // A 400 carries per-field messages — shown under the fields; anything else is a toast.
+      if (e instanceof ApiError && e.fieldErrors) {
+        setErrors(e.fieldErrors)
+        toast.error(t('fixHighlighted'))
+      }{{#formLocking}} else if (isStale(e)) {
+        setStale(true)
+      }{{/formLocking}} else {
+        toast.error(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+{{#formLocking}}
+
+  /** Throw the draft away and edit the record as it is now. */
+  async function loadTheirs() {
+    setSaving(true)
+    try {
+      const current = await api.get<{{EntityName}}>(PATH + '/' + encodeURIComponent(editId as string))
+      setValue(current)
+      setBaseline(current)
+      setErrors({})
+      setStale(false)
+      toast.success(t('staleLoaded'))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /** Save the draft over the other change: with the current version, the server accepts it. */
+  async function saveMineAnyway() {
+    setSaving(true)
+    try {
+      const current = await api.get<{{EntityName}}>(PATH + '/' + encodeURIComponent(editId as string))
+      done(await api.put<{{EntityName}}>(PATH + '/' + encodeURIComponent(editId as string), { ...value, version: current.version }))
+    } catch (e) {
+      if (isStale(e)) setStale(true)
+      else toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+{{/formLocking}}
+
+  function cancel() {
+{{#hasBack}}
+    onNavigate('{{backPageId}}')
+{{/hasBack}}
+{{^hasBack}}
+    window.history.back()
+{{/hasBack}}
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{{#formEditable}}{isNew ? {{pageTitleExpr}} : t('editX', { x: {{entityLabelExpr}} })}{{/formEditable}}{{^formEditable}}{ {{pageTitleExpr}} }{{/formEditable}}</h1>
+{{#hasPageDescription}}
+        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+      </div>
+
+{{#formEditable}}
+      {loadError && <div role="alert" className="rounded-lg border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">{loadError}</div>}
+      {loaded && (
+{{/formEditable}}
+      <form
+        noValidate
+        onSubmit={e => {
+          e.preventDefault()
+          void save()
+        }}
+        className="space-y-5 rounded-2xl border border-border bg-surface p-5 shadow-sm"
+      >
+{{#formLocking}}
+        {stale && <StaleNotice busy={saving} onReload={loadTheirs} onOverwrite={saveMineAnyway} />}
+{{/formLocking}}
+        <{{EntityName}}Form value={value} onChange={edit} errors={errors} isNew={isNew} />
+        <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+          <button
+            type="button"
+            onClick={cancel}
+            disabled={saving}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-2 disabled:opacity-40"
+          >
+            {t('cancel')}
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary shadow-sm transition-colors hover:bg-primary-deep disabled:opacity-60"
+          >
+            {saving ? t('saving') : t('save')}
+          </button>
+        </div>
+      </form>
+{{#formEditable}}
+      )}
+{{/formEditable}}
+    </div>
+  )
+}

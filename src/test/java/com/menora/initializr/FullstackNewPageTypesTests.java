@@ -188,6 +188,89 @@ class FullstackNewPageTypesTests {
         assertRejected(pages -> page(pages, "find").put("perEntity", 50), "perEntity must be between 3 and 10");
     }
 
+    @Test
+    void formPage_takesOverNewTheCalendarDayAndTheRecordsEdit() throws Exception {
+        Map<String, Object> body = planning("react-tailwind-crud");
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "new-task", "type", "form", "entity", "Task")));
+        Map<String, String> files = generate(body);
+
+        assertThat(files.get(FE + "src/app/screens/NewTaskScreen.tsx"))
+                .contains("export function NewTaskScreen({ editId, onNavigate }: Props) {")
+                .contains("import { TaskForm, validateTask } from '@features/task-form'")
+                .contains("<TaskForm value={value} onChange={edit} errors={errors} isNew={isNew} />")
+                // Edit by id: the row is loaded, then saved back with a PUT.
+                .contains("api.get<Task>(PATH + '/' + encodeURIComponent(editId))")
+                .contains(": await api.put<Task>(PATH + '/' + encodeURIComponent(editId as string), value))")
+                // Saved, the row opens on its record page — after the unsaved-edits hold is let go.
+                .contains("    release.current?.()\n    release.current = null\n    toast.success(")
+                .contains("onNavigate('task', String(saved.id))")
+                .contains("release.current = holdLeave()")
+                .contains("onNavigate('tasks')")
+                .doesNotContain("StaleNotice")
+                .doesNotContain("only=");
+        // It takes over New on the list, a day on the calendar and Edit on the record page.
+        assertThat(files.get(FE + "src/app/screens/TasksScreen.tsx")).contains("onCreate={() => onNavigate('new-task')}");
+        assertThat(files.get(FE + "src/app/screens/ScheduleScreen.tsx"))
+                .contains("onCreate={() => onNavigate('new-task')}")
+                .doesNotContain("onCreate={createOn}");
+        assertThat(files.get(FE + "src/app/screens/TaskScreen.tsx")).contains("onNavigate('new-task', recordId)");
+        assertThat(files.get(FE + "src/app/App.tsx"))
+                .contains("<NewTaskScreen key={route.arg ?? ''} editId={route.arg} onNavigate={goView} />")
+                .contains("FilePlus");
+        // The entity's own form keeps its bytes (no wizard steps), and so do the other entities.
+        Map<String, String> without = generate(planning("react-tailwind-crud"));
+        for (String path : List.of("src/features/task-form/ui/TaskForm.tsx", "src/pages/project/ui/ProjectPage.tsx",
+                "src/pages/person/ui/PersonPage.tsx", "src/app/screens/ProjectsScreen.tsx")) {
+            assertThat(files.get(FE + path)).as(path).isNotNull().isEqualTo(without.get(FE + path));
+        }
+        assertThat(files.get(FE + "src/pages/task/ui/TaskPage.tsx")).isNotEqualTo(without.get(FE + "src/pages/task/ui/TaskPage.tsx"));
+    }
+
+    @Test
+    void formPage_offersBothVersionsOfAStaleSaveAndStaysARouteWhenHidden() throws Exception {
+        Map<String, Object> body = planning("react-menora-digital-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "optimisticLocking")));
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "new-person", "type", "form", "entity", "Person", "hidden", true)));
+        Map<String, String> files = generate(body);
+        assertThat(files.get(FE + "src/app/screens/NewPersonScreen.tsx"))
+                .contains("import { StaleNotice } from '@shared/ui/StaleNotice'")
+                .contains("{stale && <StaleNotice busy={saving} onReload={loadTheirs} onOverwrite={saveMineAnyway} />}")
+                .contains("{ ...value, version: current.version }")
+                // Person has no record page: saved, it goes to the people list.
+                .contains("onNavigate('people')");
+        assertThat(files.get(FE + "src/app/App.tsx")).contains("<NewPersonScreen key={route.arg ?? ''} editId={route.arg} onNavigate={goView} />");
+        assertThat(files.get(FE + "src/app/screens/PeopleScreen.tsx")).contains("onCreate={() => onNavigate('new-person')}");
+    }
+
+    @Test
+    void rejectsInvalidFormPages() {
+        Map<String, Object> form = Map.of("id", "new-task", "type", "form", "entity", "Task");
+        assertRejected(pages -> {
+            pages.add(new LinkedHashMap<>(Map.of("id", "task-wizard", "type", "wizard", "entity", "Task")));
+            pages.add(new LinkedHashMap<>(form));
+        }, "Page 'new-task' (form): Task already has a wizard page ('task-wizard') — an entity has a wizard or a form, not both");
+        assertRejected(pages -> {
+            pages.add(new LinkedHashMap<>(form));
+            pages.add(new LinkedHashMap<>(Map.of("id", "task-wizard", "type", "wizard", "entity", "Task")));
+        }, "Page 'task-wizard' (wizard): Task already has a form page ('new-task') — an entity has a wizard or a form, not both");
+        assertRejected(pages -> {
+            pages.add(new LinkedHashMap<>(form));
+            pages.add(new LinkedHashMap<>(Map.of("id", "another", "type", "form", "entity", "Task")));
+        }, "Task already has a form page ('new-task')");
+        assertRejected(pages -> pages.add(new LinkedHashMap<>(Map.of("id", "new-task", "type", "form", "entity", "Task",
+                "steps", List.of(Map.of("fields", List.of("title")))))), "(form) does not take 'steps'");
+        assertRejected(pages -> pages.add(new LinkedHashMap<>(Map.of("id", "new-task", "type", "form"))), "Page 'new-task' (form)");
+        // A read-only entity has nothing to create.
+        Map<String, Object> body = planning("react-tailwind-crud");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) body.get("entities");
+        Map<String, Object> person = new LinkedHashMap<>(entities.get(0));
+        person.put("readOnly", true);
+        entities.set(0, person);
+        pages(body).add(new LinkedHashMap<>(Map.of("id", "new-person", "type", "form", "entity", "Person")));
+        assertBadRequest(body, "Page 'new-person' (form): Person is read-only, so there is nothing to create");
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private static Map<String, Object> planning(String set) {
@@ -202,9 +285,17 @@ class FullstackNewPageTypesTests {
     }
 
     @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> pages(Map<String, Object> body) {
+        return (List<Map<String, Object>>) body.get("pages");
+    }
+
     private void assertRejected(Consumer<List<Map<String, Object>>> mutator, String expected) {
         Map<String, Object> body = planning("react-tailwind-crud");
-        mutator.accept((List<Map<String, Object>>) body.get("pages"));
+        mutator.accept(pages(body));
+        assertBadRequest(body, expected);
+    }
+
+    private void assertBadRequest(Map<String, Object> body, String expected) {
         ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip", HttpMethod.POST,
                 new HttpEntity<>(body, jsonHeaders()), String.class);
         assertThat(response.getStatusCode()).as(expected).isEqualTo(HttpStatus.BAD_REQUEST);

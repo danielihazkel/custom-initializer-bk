@@ -191,9 +191,11 @@ class GeneratedFrontendBuildSmokeTests {
 
     @Test
     void fullstackFrontendMenoraListPresentationInstallsAndBuilds(@TempDir Path workDir) throws Exception {
-        // The same layout on the Menora set, whose own entity page carries the same props.
-        Path project = postAndExtractFrontend(workDir,
-                FullstackPagesIntegrationTests.exampleBody("inventory", "react-menora-digital-crud"));
+        // The same layout on the Menora set, whose own entity page carries the same props — with
+        // optimistic locking on, so the items form page's stale-save notice is built too.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("inventory", "react-menora-digital-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "optimisticLocking")));
+        Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
         runPnpm(project, "run", "build");
@@ -240,6 +242,24 @@ class GeneratedFrontendBuildSmokeTests {
         // search box (the SearchField port) and Import button.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-menora-digital-crud");
         body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fullstackFrontendFormPagesInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // Form pages on the Project planning layout: Task's lands on its record page and takes over
+        // the calendar's day; Person's, with the people list gone, has nowhere to go and starts over.
+        // (Inventory's items form, built by the ListPresentation tests, goes back to its list.)
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        List<Map<String, Object>> pages = (List<Map<String, Object>>) body.get("pages");
+        pages.removeIf(p -> "people".equals(p.get("id")));
+        pages.add(new LinkedHashMap<>(Map.of("id", "new-task", "type", "form", "entity", "Task")));
+        pages.add(new LinkedHashMap<>(Map.of("id", "new-person", "type", "form", "entity", "Person")));
         Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);

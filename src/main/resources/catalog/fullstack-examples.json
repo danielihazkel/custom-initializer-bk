@@ -1053,6 +1053,13 @@
         ]
       },
       {
+        "id": "new-item",
+        "type": "form",
+        "entity": "Item",
+        "title": "New item",
+        "hidden": true
+      },
+      {
         "id": "warehouse",
         "type": "record",
         "entity": "Warehouse",

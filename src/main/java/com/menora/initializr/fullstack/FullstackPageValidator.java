@@ -65,7 +65,7 @@ public final class FullstackPageValidator {
      *  list is a whitelist rather than "any lucide name": a typo would otherwise fail the build of the
      *  generated project instead of the request. */
     static final List<String> NAV_ICONS = List.of(
-            "BarChart3", "Building2", "Calendar", "Columns3", "FileText", "Inbox", "Layers", "LayoutDashboard",
+            "BarChart3", "Building2", "Calendar", "Columns3", "FilePlus", "FileText", "Inbox", "Layers", "LayoutDashboard",
             "ListChecks", "Package", "PanelLeft", "Search", "Settings", "ShoppingCart", "Star", "Table2", "Tag",
             "Ticket", "Truck", "Upload", "Users", "Wallet", "Wand2");
     /** A content page's text. */
@@ -131,7 +131,8 @@ public final class FullstackPageValidator {
 
         List<PageDefinition> pages = new ArrayList<>(raw.size());
         Map<String, String> recordPageByEntity = new HashMap<>();
-        Map<String, String> wizardPageByEntity = new HashMap<>();
+        // The page that creates an entity's rows: a wizard or a form, one per entity.
+        Map<String, String> createPageByEntity = new HashMap<>();
         Map<String, String> importPageByEntity = new HashMap<>();
         String searchPage = null;
         boolean anyVisible = false;
@@ -240,13 +241,19 @@ public final class FullstackPageValidator {
                         throw new WizardArgumentException(prefix + ": " + entity.name()
                                 + " is read-only, so there is nothing to create");
                     }
-                    String previous = wizardPageByEntity.putIfAbsent(entity.name(), id);
-                    if (previous != null) {
-                        throw new WizardArgumentException(prefix + ": " + entity.name()
-                                + " already has a wizard page ('" + previous + "')");
-                    }
+                    checkOneCreatePage(prefix, entity, id, type, createPageByEntity, typeById);
                     yield PageDefinition.wizard(id, title, description, hidden, entity.name(),
                             steps(prefix, entity, p.steps()));
+                }
+                case FORM -> {
+                    String prefix = "Page '" + id + "' (form)";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    if (entity.readOnly()) {
+                        throw new WizardArgumentException(prefix + ": " + entity.name()
+                                + " is read-only, so there is nothing to create");
+                    }
+                    checkOneCreatePage(prefix, entity, id, type, createPageByEntity, typeById);
+                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), null, null, null);
                 }
                 case CALENDAR -> {
                     String prefix = "Page '" + id + "' (calendar)";
@@ -379,8 +386,20 @@ public final class FullstackPageValidator {
             if (type.wire().equals(lower)) return type;
         }
         throw new WizardArgumentException("Page '" + id + "': unknown type '" + t
-                + "' (expected entity-list, dashboard, tabs, master-detail, record, report, wizard, calendar,"
-                + " board, content, import or search)");
+                + "' (expected entity-list, dashboard, tabs, master-detail, record, report, wizard, form,"
+                + " calendar, board, content, import or search)");
+    }
+
+    /** An entity has one page that creates its rows — a wizard or a form — since New, a calendar's
+     *  day and the record page's Edit all open it. */
+    private static void checkOneCreatePage(String prefix, EntityDefinition entity, String id, PageDefinition.Type type,
+                                           Map<String, String> createPageByEntity, Map<String, PageDefinition.Type> typeById) {
+        String previous = createPageByEntity.putIfAbsent(entity.name(), id);
+        if (previous == null) return;
+        PageDefinition.Type previousType = typeById.get(previous);
+        throw new WizardArgumentException(prefix + ": " + entity.name() + " already has a " + previousType.wire()
+                + " page ('" + previous + "')"
+                + (previousType != type ? " — an entity has a wizard or a form, not both" : ""));
     }
 
     /** A nav section name. Only a page that is in the nav can sit in a section of it. */
@@ -414,7 +433,7 @@ public final class FullstackPageValidator {
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.RECORD
                 && type != PageDefinition.Type.REPORT && type != PageDefinition.Type.WIZARD
                 && type != PageDefinition.Type.CALENDAR && type != PageDefinition.Type.BOARD
-                && type != PageDefinition.Type.IMPORT
+                && type != PageDefinition.Type.IMPORT && type != PageDefinition.Type.FORM
                 && trimToNull(p.entity()) != null) {
             throw new WizardArgumentException(prefix + "does not take 'entity'");
         }
@@ -1158,10 +1177,10 @@ public final class FullstackPageValidator {
                 throw new WizardArgumentException(prefix + ": a links widget cannot link to a record page ('" + id
                         + "') — it opens from a row");
             }
-            // A hidden wizard is still a route (New opens it), and so is a hidden search page (the
-            // header's search box opens it — a hidden one must have that box).
+            // A hidden wizard or form is still a route (New opens it), and so is a hidden search page
+            // (the header's search box opens it — a hidden one must have that box).
             if (Boolean.TRUE.equals(hiddenById.get(id)) && type != PageDefinition.Type.WIZARD
-                    && type != PageDefinition.Type.SEARCH) {
+                    && type != PageDefinition.Type.FORM && type != PageDefinition.Type.SEARCH) {
                 throw new WizardArgumentException(prefix + ": page '" + id + "' is hidden and not a wizard, so nothing can open it");
             }
             if (pages.contains(id)) throw new WizardArgumentException(prefix + ": page '" + id + "' is listed twice");
@@ -2007,7 +2026,7 @@ public final class FullstackPageValidator {
                                 + "' — it opens from a row");
                     }
                     if (Boolean.TRUE.equals(hiddenById.get(run.target())) && type != PageDefinition.Type.WIZARD
-                            && type != PageDefinition.Type.SEARCH) {
+                            && type != PageDefinition.Type.FORM && type != PageDefinition.Type.SEARCH) {
                         throw new WizardArgumentException(prefix + ": page '" + run.target()
                                 + "' is hidden and not a wizard, so a link cannot open it");
                     }

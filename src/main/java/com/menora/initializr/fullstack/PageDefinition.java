@@ -355,7 +355,9 @@ public record PageDefinition(
         /** A CSV upload that creates rows of one entity, checked before anything is saved. */
         IMPORT("import"),
         /** One search box over several entities, the matches grouped by entity. */
-        SEARCH("search");
+        SEARCH("search"),
+        /** One entity's whole form on a page: New (and Edit, by id) open it instead of the drawer. */
+        FORM("form");
 
         private final String wire;
 
