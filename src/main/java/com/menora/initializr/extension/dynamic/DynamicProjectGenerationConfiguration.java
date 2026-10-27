@@ -2,6 +2,8 @@ package com.menora.initializr.extension.dynamic;
 
 import com.menora.initializr.config.EntityDefinitionContext;
 import com.menora.initializr.config.OpenApiSpecContext;
+import com.menora.initializr.config.CompiledTemplates;
+import com.menora.initializr.config.GeneratedProjectFiles;
 import com.menora.initializr.config.DepartmentResolver;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.config.SoapSpecContext;
@@ -19,7 +21,6 @@ import com.menora.initializr.sql.GeneratedJavaFile;
 import com.menora.initializr.sql.SqlDepOptions;
 import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
-import com.samskivert.mustache.Mustache;
 import io.spring.initializr.generator.buildsystem.Dependency;
 import io.spring.initializr.generator.version.VersionReference;
 import io.spring.initializr.generator.buildsystem.DependencyScope;
@@ -56,9 +57,6 @@ import java.util.stream.Collectors;
 public class DynamicProjectGenerationConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicProjectGenerationConfiguration.class);
-
-    // escapeHTML=false: we render Java, Dockerfile, YAML — never HTML.
-    private static final Mustache.Compiler MUSTACHE = Mustache.compiler().escapeHTML(false);
 
     /**
      * The file-contribution rows for this generation. Both contributors below need the same
@@ -262,7 +260,7 @@ public class DynamicProjectGenerationConfiguration {
                 for (GeneratedJavaFile f : files) {
                     Path target = projectRoot.resolve(
                             f.relativePath().replace("{{packagePath}}", packagePath));
-                    Files.createDirectories(target.getParent());
+                    GeneratedProjectFiles.createParentDirectories(target);
                     Files.writeString(target, f.content());
                 }
             }
@@ -298,7 +296,7 @@ public class DynamicProjectGenerationConfiguration {
                     if (isYaml(target)) {
                         mergeYaml(f.content(), target);
                     } else {
-                        Files.createDirectories(target.getParent());
+                        GeneratedProjectFiles.createParentDirectories(target);
                         Files.writeString(target, f.content());
                     }
                 }
@@ -337,7 +335,7 @@ public class DynamicProjectGenerationConfiguration {
                     if (isYaml(target)) {
                         mergeYaml(f.content(), target);
                     } else {
-                        Files.createDirectories(target.getParent());
+                        GeneratedProjectFiles.createParentDirectories(target);
                         Files.writeString(target, f.content());
                     }
                 }
@@ -432,7 +430,7 @@ public class DynamicProjectGenerationConfiguration {
     private void writeTemplate(FileContributionEntity fc, Map<String, Object> ctx, Path target)
             throws IOException {
         String content = render(fc, ctx);
-        Files.createDirectories(target.getParent());
+        GeneratedProjectFiles.createParentDirectories(target);
         Files.writeString(target, content);
     }
 
@@ -525,7 +523,7 @@ public class DynamicProjectGenerationConfiguration {
     }
 
     private void writeStatic(String content, Path target) throws IOException {
-        Files.createDirectories(target.getParent());
+        GeneratedProjectFiles.createParentDirectories(target);
         Files.writeString(target, content);
     }
 
@@ -533,7 +531,7 @@ public class DynamicProjectGenerationConfiguration {
      *  Honoured by TEMPLATE and YAML_MERGE rows alike. */
     private static String render(FileContributionEntity fc, Map<String, Object> ctx) {
         return fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.MUSTACHE
-                ? MUSTACHE.compile(fc.getContent()).execute(ctx)
+                ? CompiledTemplates.render(fc.getContent(), ctx)
                 : fc.getContent();
     }
 
@@ -547,7 +545,7 @@ public class DynamicProjectGenerationConfiguration {
                 ? deepMerge(orEmpty(yaml.load(Files.readString(targetYamlPath))), incoming)
                 : incoming;
         if (merged.isEmpty()) return;
-        Files.createDirectories(targetYamlPath.getParent());
+        GeneratedProjectFiles.createParentDirectories(targetYamlPath);
         DumperOptions opts = new DumperOptions();
         opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         opts.setPrettyFlow(true);

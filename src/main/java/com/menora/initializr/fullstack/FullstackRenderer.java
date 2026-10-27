@@ -1,12 +1,14 @@
 package com.menora.initializr.fullstack;
 
+import com.menora.initializr.config.CompiledTemplates;
+import com.menora.initializr.config.GeneratedProjectFiles;
 import com.menora.initializr.db.entity.EntityTemplateFileEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
-import com.samskivert.mustache.Mustache;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,9 +21,6 @@ import java.util.Map;
  */
 public final class FullstackRenderer {
 
-    // escapeHTML=false: we render Java, TypeScript, JSON, YAML, TS/TSX — never HTML.
-    private static final Mustache.Compiler MUSTACHE = Mustache.compiler().escapeHTML(false);
-
     private FullstackRenderer() {}
 
     public static void render(
@@ -29,6 +28,9 @@ public final class FullstackRenderer {
             Map<String, Object> projectContext,
             List<EntityDefinition> entities,
             Path targetRoot) throws IOException {
+        // One context per entity, built on first use and shared by all of its files — it only
+        // depends on the project context and the entity, and rendering never changes it.
+        Map<EntityDefinition, Map<String, Object>> entityContexts = new IdentityHashMap<>();
         for (EntityTemplateFileEntity file : files) {
             if (file.isPerPage()) {
                 // Per-page files (the frontend screens) render once per entry of the context's
@@ -43,7 +45,8 @@ public final class FullstackRenderer {
                 }
             } else if (file.isPerEntity()) {
                 for (EntityDefinition entity : entities) {
-                    Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(projectContext, entity);
+                    Map<String, Object> ctx = entityContexts.computeIfAbsent(entity,
+                            e -> EntityScaffoldContext.buildEntityContext(projectContext, e));
                     // Per-entity files evaluate their gate against the per-entity context, so a
                     // per-entity flag (e.g. hasCompositePk) can gate a file for some entities only.
                     if (isGatedOut(file, ctx)) {
@@ -87,14 +90,14 @@ public final class FullstackRenderer {
         String content = file.getContent() == null ? "" :
                 renderString(file.getContent(), ctx, file.getSubstitutionType());
         Path target = targetRoot.resolve(relativePath);
-        if (target.getParent() != null) Files.createDirectories(target.getParent());
+        GeneratedProjectFiles.createParentDirectories(target);
         Files.writeString(target, content);
     }
 
     private static String renderString(String input, Map<String, Object> ctx,
                                        FileContributionEntity.SubstitutionType subType) {
         if (subType == FileContributionEntity.SubstitutionType.MUSTACHE) {
-            return MUSTACHE.compile(input).execute(ctx);
+            return CompiledTemplates.render(input, ctx);
         }
         return input;
     }

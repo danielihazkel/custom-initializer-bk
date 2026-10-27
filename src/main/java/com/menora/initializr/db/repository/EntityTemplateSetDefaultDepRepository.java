@@ -12,6 +12,8 @@ public interface EntityTemplateSetDefaultDepRepository
         extends JpaRepository<EntityTemplateSetDefaultDepEntity, Long> {
     List<EntityTemplateSetDefaultDepEntity> findBySetIdOrderBySortOrderAsc(Long setId);
 
+    List<EntityTemplateSetDefaultDepEntity> findAllByOrderBySetIdAscSortOrderAsc();
+
     /**
      * Bulk DML delete (not a derived delete) so the DELETEs execute immediately rather than
      * being queued as deferred persistence-context removals. The replace-default-deps PUT

@@ -433,6 +433,26 @@ rather than re-introducing a private copy:
 - `config/PreviewTreeBuilder` — `buildTree(sortedPaths)`, the flat-paths → `TreeNode` shaping
   behind every preview response
 
+### Request performance
+
+- **Open-in-view is off** (`spring.jpa.open-in-view: false`), so a generation no longer holds a pooled
+  connection from its first query through rendering and zipping. The admin API still needs it — its endpoints
+  return entities whose lazy `group`/`template`/`entries` Jackson reads — so `admin/AdminOpenEntityManagerConfig`
+  registers the interceptor for `/admin/**` only. A new non-admin endpoint must return DTOs or fetch what it
+  serializes.
+- **Responses are gzipped** (`server.compression`, JSON + the Initializr media types, ≥ 2 KB): a fullstack preview
+  shrinks ~5×. Tomcat skips responses with a strong ETag (`/metadata/client`), by design.
+- **`config/CompiledTemplates`** is the one Mustache compiler (`escapeHTML=false`) with an LRU of compiled
+  templates keyed by text — every generator renders through `CompiledTemplates.render`; don't add another
+  `Mustache.compiler()`. `FullstackRenderer` builds each entity's context once per render, not once per file.
+- **Generation is mostly filesystem time**, so `GeneratedProjectFiles` has `moveDirectory` (the fullstack/multi-module
+  backend is renamed into place, not copied), `deleteLater` (temp trees are deleted on a background thread after
+  the response; the framework's own `invoker.cleanTempFiles` stays synchronous) and `createParentDirectories`
+  (one `isDirectory` check instead of `createDirectories`' failed create per file).
+- The metadata is built on `ApplicationReadyEvent` (`MetadataProviderConfig.warmMetadata`), the team-model list
+  reads a projection without the snapshot column, and `/metadata/starter-templates` / `entity-template-sets` load
+  their child rows in one query.
+
 ### Per-Request ThreadLocal Contexts
 
 Five `@Component` holders in `config/` carry per-request state into the generation child

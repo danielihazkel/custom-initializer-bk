@@ -1,7 +1,7 @@
 package com.menora.initializr.extension.frontend;
 
+import com.menora.initializr.config.CompiledTemplates;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
-import com.samskivert.mustache.Mustache;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -32,8 +32,6 @@ import java.util.Set;
 @Component
 public class ViteConfigBuilder {
 
-    private static final Mustache.Compiler MUSTACHE = Mustache.compiler().escapeHTML(false);
-
     public String build(String baselineTemplate,
                         Map<String, Object> mustacheContext,
                         List<BuildCustomizationEntity> customizations) {
@@ -57,6 +55,6 @@ public class ViteConfigBuilder {
         ctx.put("vitePluginImports", String.join("\n", importLines));
         ctx.put("vitePluginCalls", String.join(", ", pluginCalls));
 
-        return MUSTACHE.compile(baselineTemplate).execute(ctx);
+        return CompiledTemplates.render(baselineTemplate, ctx);
     }
 }

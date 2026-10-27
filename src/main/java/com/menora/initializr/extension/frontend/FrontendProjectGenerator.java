@@ -1,5 +1,6 @@
 package com.menora.initializr.extension.frontend;
 
+import com.menora.initializr.config.CompiledTemplates;
 import com.menora.initializr.config.DepartmentResolver;
 import com.menora.initializr.config.GeneratedProjectFiles;
 import com.menora.initializr.config.OpenApiSpecContext;
@@ -15,12 +16,10 @@ import com.menora.initializr.extension.frontend.codegen.MswHandlersRenderer;
 import com.menora.initializr.extension.frontend.codegen.OpenApiCodegenException;
 import com.menora.initializr.extension.frontend.codegen.OpenApiTsGenerator;
 import io.swagger.v3.oas.models.OpenAPI;
-import com.samskivert.mustache.Mustache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
-import org.springframework.util.FileSystemUtils;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
@@ -50,7 +49,6 @@ import java.util.stream.Stream;
 public class FrontendProjectGenerator {
 
     private static final Logger log = LoggerFactory.getLogger(FrontendProjectGenerator.class);
-    private static final Mustache.Compiler MUSTACHE = Mustache.compiler().escapeHTML(false);
 
     private static final String PACKAGE_JSON_TEMPLATE = "templates/frontend/fe-package-base.mustache";
     private static final String VITE_CONFIG_TEMPLATE = "templates/frontend/fe-vite-config.mustache";
@@ -154,7 +152,7 @@ public class FrontendProjectGenerator {
             renderInto(tempDir, desc);
             return GeneratedProjectFiles.zipDirectory(tempDir, desc.getProjectName());
         } finally {
-            FileSystemUtils.deleteRecursively(tempDir);
+            GeneratedProjectFiles.deleteLater(tempDir);
         }
     }
 
@@ -180,7 +178,7 @@ public class FrontendProjectGenerator {
             }
             return out;
         } finally {
-            FileSystemUtils.deleteRecursively(tempDir);
+            GeneratedProjectFiles.deleteLater(tempDir);
         }
     }
 
@@ -234,7 +232,7 @@ public class FrontendProjectGenerator {
                 case STATIC_COPY -> writeStatic(fc.getContent(), target);
                 case TEMPLATE -> writeTemplate(fc, ctx, target);
                 case YAML_MERGE -> mergeYaml(fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.MUSTACHE
-                        ? MUSTACHE.compile(fc.getContent()).execute(ctx) : fc.getContent(), target);
+                        ? CompiledTemplates.render(fc.getContent(), ctx) : fc.getContent(), target);
                 case DELETE -> { /* deferred */ }
             }
         }
@@ -267,19 +265,19 @@ public class FrontendProjectGenerator {
     }
 
     private void writeStatic(String content, Path target) throws IOException {
-        Files.createDirectories(target.getParent());
+        GeneratedProjectFiles.createParentDirectories(target);
         Files.writeString(target, content == null ? "" : content);
     }
 
     private void writeTemplate(FileContributionEntity fc, Map<String, Object> ctx, Path target) throws IOException {
         String content = fc.getSubstitutionType() == FileContributionEntity.SubstitutionType.MUSTACHE
-                ? MUSTACHE.compile(fc.getContent() == null ? "" : fc.getContent()).execute(ctx)
+                ? CompiledTemplates.render(fc.getContent() == null ? "" : fc.getContent(), ctx)
                 : (fc.getContent() == null ? "" : fc.getContent());
         // A TEMPLATE that renders to blank content is a signal it wasn't applicable
         // to this request (e.g. paired-BE .env files when no apiBaseUrl is set).
         // Skip the write so we don't drop empty files into the generated project.
         if (content.isBlank()) return;
-        Files.createDirectories(target.getParent());
+        GeneratedProjectFiles.createParentDirectories(target);
         Files.writeString(target, content);
     }
 
@@ -293,7 +291,7 @@ public class FrontendProjectGenerator {
         } else {
             merged = yaml.load(newContent);
         }
-        Files.createDirectories(target.getParent());
+        GeneratedProjectFiles.createParentDirectories(target);
         DumperOptions opts = new DumperOptions();
         opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         opts.setPrettyFlow(true);

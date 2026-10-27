@@ -107,9 +107,13 @@ public class ExtensionMetadataController {
         List<StarterTemplateEntity> rows = projectKind == null
                 ? templateRepo.findAllByOrderBySortOrderAsc()
                 : templateRepo.findAllByProjectKindOrderBySortOrderAsc(projectKind);
+        // One query for every template's deps (in id order, as the per-template query returned
+        // them) instead of one per template.
+        Map<Long, List<StarterTemplateDepEntity>> depsByTemplate = templateDepRepo.findAllByOrderByIdAsc().stream()
+                .collect(Collectors.groupingBy(d -> d.getTemplate().getId(), LinkedHashMap::new, Collectors.toList()));
         return rows.stream()
                 .map(t -> {
-                    List<StarterTemplateDepEntity> deps = templateDepRepo.findAllByTemplateId(t.getId());
+                    List<StarterTemplateDepEntity> deps = depsByTemplate.getOrDefault(t.getId(), List.of());
                     List<TemplateDepDto> depDtos = deps.stream()
                             .map(d -> new TemplateDepDto(
                                     d.getDepId(),
@@ -195,12 +199,14 @@ public class ExtensionMetadataController {
      *  each carrying its default dep IDs so the UI can pre-check them. */
     @GetMapping("/metadata/entity-template-sets")
     public List<EntityTemplateSetDto> entityTemplateSets() {
+        Map<Long, List<String>> defaultsBySet = entityTemplateSetDefaultDepRepo
+                .findAllByOrderBySetIdAscSortOrderAsc().stream()
+                .collect(Collectors.groupingBy(EntityTemplateSetDefaultDepEntity::getSetId, LinkedHashMap::new,
+                        Collectors.mapping(EntityTemplateSetDefaultDepEntity::getDepId, Collectors.toList())));
         return entityTemplateSetRepo.findAllByOrderBySortOrderAsc().stream()
                 .filter(EntityTemplateSetEntity::isEnabled)
                 .map(s -> {
-                    List<String> defaults = entityTemplateSetDefaultDepRepo
-                            .findBySetIdOrderBySortOrderAsc(s.getId()).stream()
-                            .map(EntityTemplateSetDefaultDepEntity::getDepId).toList();
+                    List<String> defaults = defaultsBySet.getOrDefault(s.getId(), List.of());
                     return new EntityTemplateSetDto(
                             s.getSetKey(), s.getName(), s.getDescription(), s.getKind().name(),
                             defaults,

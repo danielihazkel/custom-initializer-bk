@@ -7,6 +7,7 @@ import java.util.List;
 
 public interface StarterTemplateDepRepository extends JpaRepository<StarterTemplateDepEntity, Long> {
     List<StarterTemplateDepEntity> findAllByTemplateId(Long templateId);
+    List<StarterTemplateDepEntity> findAllByOrderByIdAsc();
     void deleteAllByTemplateId(Long templateId);
     long countByDepId(String depId);
     void deleteByDepId(String depId);

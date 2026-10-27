@@ -1,5 +1,9 @@
 package com.menora.initializr.config;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.util.FileSystemUtils;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -7,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -21,6 +27,15 @@ import java.util.zip.ZipOutputStream;
  * in a different package; the tree-shaping counterpart is {@link PreviewTreeBuilder}.
  */
 public final class GeneratedProjectFiles {
+
+    private static final Logger log = LoggerFactory.getLogger(GeneratedProjectFiles.class);
+
+    /** Deletes finished generation trees off the request thread — see {@link #deleteLater}. */
+    private static final ExecutorService CLEANUP = Executors.newFixedThreadPool(2, runnable -> {
+        Thread thread = new Thread(runnable, "generated-files-cleanup");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private GeneratedProjectFiles() {}
 
@@ -75,5 +90,46 @@ public final class GeneratedProjectFiles {
                 }
             });
         }
+    }
+
+    /**
+     * Create {@code file}'s parent directories unless they already exist. Generators call this
+     * before every file they write, and most parents exist by then; {@link Files#createDirectories}
+     * finds that out by trying to create the directory and catching the failure, which costs an
+     * exception and an extra filesystem call per file.
+     */
+    public static void createParentDirectories(Path file) throws IOException {
+        Path parent = file.getParent();
+        if (parent != null && !Files.isDirectory(parent)) Files.createDirectories(parent);
+    }
+
+    /**
+     * Move {@code source} to {@code target} (which must not exist). Both are under the temp dir,
+     * so this is a rename — far cheaper than copying every file and deleting the original.
+     * Falls back to {@link #copyDirectory} when they are on different file stores; the caller
+     * still deletes {@code source} as before.
+     */
+    public static void moveDirectory(Path source, Path target) throws IOException {
+        try {
+            if (target.getParent() != null) Files.createDirectories(target.getParent());
+            Files.move(source, target);
+        } catch (IOException e) {
+            copyDirectory(source, target);
+        }
+    }
+
+    /**
+     * Delete a generation's temp tree after the response has its bytes, on a background thread:
+     * deleting a few hundred small files is a large share of a request's time (much more so on
+     * Windows), and nothing reads the tree once it is zipped or previewed.
+     */
+    public static void deleteLater(Path dir) {
+        CLEANUP.execute(() -> {
+            try {
+                FileSystemUtils.deleteRecursively(dir);
+            } catch (IOException e) {
+                log.warn("Could not delete temp directory {}: {}", dir, e.getMessage());
+            }
+        });
     }
 }
