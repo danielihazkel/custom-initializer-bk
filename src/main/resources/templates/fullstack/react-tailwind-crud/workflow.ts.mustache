@@ -1,0 +1,58 @@
+import { api } from '@shared/api'
+import { t } from '@shared/i18n'
+import { {{workflowEnumType}}Labels, type {{EntityName}}, type {{workflowEnumType}} } from '@entities/{{entityNameKebab}}'
+
+/** One move of the {{EntityName}} workflow. */
+export interface {{EntityName}}Transition {
+  name: string
+  label: string
+  from: readonly {{workflowEnumType}}[]
+  to: {{workflowEnumType}}
+  /** Who may make it (none: anyone). */
+  roles: readonly string[]
+  /** The form fields it asks for (a relation by its field name). */
+  requires: readonly string[]
+}
+
+const TRANSITIONS: readonly {{EntityName}}Transition[] = [
+{{#workflowTransitions}}
+  { name: '{{name}}', label: {{{labelTs}}}, from: [{{{fromTs}}}], to: '{{to}}', roles: [{{{rolesTs}}}], requires: [{{{requiresTs}}}] },
+{{/workflowTransitions}}
+]
+
+/** The states a row can still move on from; the others are final. */
+const OPEN: readonly string[] = [{{{workflowOpenStatesTs}}}]
+
+const PATH = '/api/{{entityNamePluralKebab}}'
+const rowPath = (row: {{EntityName}}) => `${PATH}/${encodeURIComponent(String(row.{{pkField.name}}))}`
+const allowed = (move: {{EntityName}}Transition, roles: readonly string[]) =>
+  move.roles.length === 0 || move.roles.some(role => roles.includes(role))
+const stateLabel = (state: string) => {{workflowEnumType}}Labels[state as {{workflowEnumType}}] ?? state
+
+/** The {{EntityName}} workflow as the screens use it. The server checks every move again. */
+export const {{EntityName}}Workflow = {
+  transitions: TRANSITIONS,
+  /** Whether the row can still move on (it is not in a final state). */
+  isOpen: (row: Partial<{{EntityName}}>) => row.{{workflowStatusField}} != null && OPEN.includes(row.{{workflowStatusField}}),
+  /** The moves `row` can make now, for a user holding `roles`. */
+  available: (row: Partial<{{EntityName}}>, roles: readonly string[]) =>
+    TRANSITIONS.filter(move => row.{{workflowStatusField}} != null && move.from.includes(row.{{workflowStatusField}}) && allowed(move, roles)),
+  /** What dragging a row from one state's lane to another's means: the one move between them, or why none. */
+  between(from: string, to: string, roles: readonly string[]): { transition: {{EntityName}}Transition } | { refusal: string } {
+    const moves = TRANSITIONS.filter(move => (move.from as readonly string[]).includes(from) && move.to === to)
+    if (moves.length === 0) return { refusal: t('noMoveBetween', { from: stateLabel(from), to: stateLabel(to) }) }
+    const mine = moves.filter(move => allowed(move, roles))
+    if (mine.length === 0) return { refusal: t('moveNotAllowed', { x: moves[0].label }) }
+    if (mine.length > 1) return { refusal: t('severalMovesBetween', { names: mine.map(move => move.label).join(', ') }) }
+    return { transition: mine[0] }
+  },
+  /** Makes a move; `values` carries the fields it asks for. */
+  run: (row: {{EntityName}}, name: string, values: Partial<{{EntityName}}> = {}) =>
+    api.post<{{EntityName}}>(`${rowPath(row)}/transitions/${name}`, values),
+{{#hasAssignee}}
+  /** Who the row is assigned to (a user id), or null. */
+  assigneeOf: (row: Partial<{{EntityName}}>) => row.{{assigneeField}} || null,
+  claim: (row: {{EntityName}}) => api.post<{{EntityName}}>(`${rowPath(row)}/claim`, {}),
+  release: (row: {{EntityName}}) => api.post<{{EntityName}}>(`${rowPath(row)}/release`, {}),
+{{/hasAssignee}}
+}

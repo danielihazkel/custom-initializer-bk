@@ -52,7 +52,7 @@ export class ApiError extends Error {
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> =
     body === undefined ? {} : { 'Content-Type': 'application/json' }
-{{#hasLdapAuth}}
+{{#sendsDevUser}}
   // Dev-only: the backend's @RequiresPermission aspect reads the `userinfo` header to
   // resolve the caller's LDAP groups. In production this header is injected by the SSO
   // gateway; in `npm run dev` there is no gateway, so we supply it here. Override the
@@ -60,7 +60,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (import.meta.env.DEV) {
     headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'
   }
-{{/hasLdapAuth}}
+{{/sendsDevUser}}
   const res = await send(path, {
     method,
     headers: Object.keys(headers).length > 0 ? headers : undefined,
@@ -100,11 +100,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
  *  CSV export — the browser handles the download without a navigation. */
 async function download(path: string, filename: string): Promise<void> {
   const headers: Record<string, string> = {}
-{{#hasLdapAuth}}
+{{#sendsDevUser}}
   if (import.meta.env.DEV) {
     headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'
   }
-{{/hasLdapAuth}}
+{{/sendsDevUser}}
   const res = await send(path, { headers: Object.keys(headers).length > 0 ? headers : undefined })
   if (!res.ok) throw new ApiError(res.status, failureMessage(res.status, ''))
   const blob = await res.blob()

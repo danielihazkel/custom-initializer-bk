@@ -39,7 +39,38 @@ public record EntityDefinition(
         String label,
         String labelPlural,
         Map<String, Boolean> opts,
-        List<FormSection> formSections) {
+        List<FormSection> formSections,
+        Workflow workflow) {
+
+    /**
+     * The entity's workflow: the enum field whose values are its states, the state a new row starts
+     * in, the moves between states, and optionally the text field naming who the row is assigned to
+     * and the date it is due by. Names are canonical (validated by FullstackRequestValidator).
+     */
+    public record Workflow(String statusField, String initial, String assigneeField, String dueField,
+                           List<Transition> transitions) {
+        public Workflow {
+            transitions = List.copyOf(transitions);
+        }
+
+        /** The states a row can still move on from — every state some transition leaves. */
+        public Set<String> openStates() {
+            Set<String> open = new LinkedHashSet<>();
+            for (Transition t : transitions) open.addAll(t.from());
+            return open;
+        }
+    }
+
+    /** One move: from any of {@code from} to {@code to}, for the {@code roles} (empty: anyone),
+     *  asking for the {@code requires} fields and relation field names. */
+    public record Transition(String name, String label, List<String> from, String to, List<String> roles,
+                             List<String> requires) {
+        public Transition {
+            from = List.copyOf(from);
+            roles = List.copyOf(roles);
+            requires = List.copyOf(requires);
+        }
+    }
 
     /** A titled group of the entity's form (and details): field and relation field names, in order. */
     public record FormSection(String title, List<String> fields) {
@@ -77,6 +108,15 @@ public record EntityDefinition(
         formSections = formSections == null ? List.of() : List.copyOf(formSections);
     }
 
+    /** Every property but the workflow (none). */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
+                            String label, String labelPlural, Map<String, Boolean> opts, List<FormSection> formSections) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
+                label, labelPlural, opts, formSections, null);
+    }
+
     /** Every property but the form sections (one untitled form). */
     public EntityDefinition(String name, String tableName, String schema,
                             List<FieldDefinition> fields, List<RelationDefinition> relations,
@@ -101,7 +141,7 @@ public record EntityDefinition(
         Map<String, Boolean> next = new java.util.LinkedHashMap<>(opts);
         next.put(key, value);
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
-                listViews, label, labelPlural, next, formSections);
+                listViews, label, labelPlural, next, formSections, workflow);
     }
 
     public String listView() {

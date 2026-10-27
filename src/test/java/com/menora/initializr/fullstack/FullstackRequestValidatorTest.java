@@ -493,4 +493,98 @@ class FullstackRequestValidatorTest {
                 .isInstanceOf(WizardArgumentException.class)
                 .hasMessage("enumLabels only allowed when type=ENUM (field 'status' on entity 'Item')");
     }
+
+    // ── Workflows ───────────────────────────────────────────────────────────
+
+    private static FullstackStarterRequest.FieldDefinitionDto enumField(String name, String defaultValue, String... values) {
+        return new FullstackStarterRequest.FieldDefinitionDto(name, "ENUM", null, null, null, null, null, null, null, null,
+                null, List.of(values), null, null, null, null, defaultValue, null, null);
+    }
+
+    private static FullstackStarterRequest.TransitionDto move(String name, List<String> from, String to, List<String> roles,
+                                                              List<String> requires) {
+        return new FullstackStarterRequest.TransitionDto(name, null, from, to, roles, requires);
+    }
+
+    private static List<FullstackStarterRequest.FieldDefinitionDto> claimFields(String statusDefault) {
+        return List.of(pk(), field("title", "String"), enumField("status", statusDefault, "DRAFT", "SUBMITTED", "APPROVED", "REJECTED"),
+                field("assignee", "String"), field("dueOn", "LOCAL_DATE"), field("reason", "TEXT"));
+    }
+
+    private static List<EntityDefinition> withWorkflow(List<FullstackStarterRequest.FieldDefinitionDto> fields,
+                                                       FullstackStarterRequest.WorkflowDto workflow) {
+        return FullstackRequestValidator.validateAndConvert(req(List.of(new FullstackStarterRequest.EntityDefinitionDto(
+                "Claim", null, null, fields, null, null, null, null, null, null, null, null, null, null, workflow))));
+    }
+
+    private static FullstackStarterRequest.WorkflowDto approvals(List<FullstackStarterRequest.TransitionDto> transitions) {
+        return new FullstackStarterRequest.WorkflowDto("STATUS", null, "Assignee", "dueon", transitions);
+    }
+
+    private static final List<FullstackStarterRequest.TransitionDto> APPROVALS = List.of(
+            move("submit", List.of("draft"), "submitted", null, null),
+            move("approve", List.of("SUBMITTED"), "APPROVED", List.of("admin"), null),
+            move("reject", List.of("submitted"), "REJECTED", List.of("ADMIN", "user"), List.of("REASON")));
+
+    @Test
+    void workflow_canonicalizesItsNamesAndStartsInTheFirstState() {
+        EntityDefinition.Workflow wf = withWorkflow(claimFields(null), approvals(APPROVALS)).get(0).workflow();
+        assertThat(wf.statusField()).isEqualTo("status");
+        assertThat(wf.assigneeField()).isEqualTo("assignee");
+        assertThat(wf.dueField()).isEqualTo("dueOn");
+        assertThat(wf.initial()).isEqualTo("DRAFT");
+        assertThat(wf.transitions().get(0).from()).containsExactly("DRAFT");
+        assertThat(wf.transitions().get(0).to()).isEqualTo("SUBMITTED");
+        assertThat(wf.transitions().get(2).roles()).containsExactly("ADMIN", "USER");
+        assertThat(wf.transitions().get(2).requires()).containsExactly("reason");
+        // Final states are the ones no transition leaves.
+        assertThat(wf.openStates()).containsExactly("DRAFT", "SUBMITTED");
+        // The field's default is the initial state when it names none.
+        assertThat(withWorkflow(claimFields("SUBMITTED"), approvals(APPROVALS)).get(0).workflow().initial()).isEqualTo("SUBMITTED");
+        // No workflow: none.
+        assertThat(withWorkflow(claimFields(null), null).get(0).workflow()).isNull();
+    }
+
+    @Test
+    void workflow_rejectsWhatCannotRun() {
+        assertWorkflowRejected(claimFields(null), new FullstackStarterRequest.WorkflowDto("title", null, null, null, APPROVALS),
+                "Entity 'Claim' workflow: statusField 'title' must be a filterable, non-key enum field");
+        assertWorkflowRejected(claimFields(null), new FullstackStarterRequest.WorkflowDto(null, null, null, null, APPROVALS),
+                "workflow: statusField is required");
+        assertWorkflowRejected(claimFields(null), approvals(List.of()), "workflow: needs at least one transition");
+        assertWorkflowRejected(claimFields(null), approvals(List.of(move("Submit", List.of("DRAFT"), "SUBMITTED", null, null))),
+                "transition name 'Submit' must start with a lower-case letter");
+        assertWorkflowRejected(claimFields(null), approvals(List.of(move("go", List.of("DRAFT"), "SUBMITTED", null, null),
+                move("go", List.of("SUBMITTED"), "APPROVED", null, null))), "two transitions are named 'go'");
+        assertWorkflowRejected(claimFields(null), approvals(List.of(move("go", List.of("LATER"), "SUBMITTED", null, null))),
+                "'LATER' is not a state of status (DRAFT, SUBMITTED, APPROVED, REJECTED)");
+        assertWorkflowRejected(claimFields(null), approvals(List.of(move("go", List.of("DRAFT", "SUBMITTED"), "SUBMITTED", null, null))),
+                "transition 'go' moves from SUBMITTED to itself");
+        assertWorkflowRejected(claimFields(null), approvals(List.of(move("go", List.of("DRAFT"), "SUBMITTED", List.of("BOSS"), null))),
+                "transition 'go' has an unknown role 'BOSS' (expected ADMIN or USER)");
+        assertWorkflowRejected(claimFields(null), approvals(List.of(move("go", List.of("DRAFT"), "SUBMITTED", null, List.of("status")))),
+                "requires 'status', which a transition cannot set (it is the status the transition changes)");
+        assertWorkflowRejected(claimFields(null), approvals(List.of(move("go", List.of("DRAFT"), "SUBMITTED", null, List.of("nope")))),
+                "requires 'nope', which is not a field or relation of Claim");
+        assertWorkflowRejected(claimFields(null), new FullstackStarterRequest.WorkflowDto("status", null, "reason", null, APPROVALS),
+                "assigneeField 'reason' must be a non-key, non-unique text field of Claim");
+        assertWorkflowRejected(claimFields(null), new FullstackStarterRequest.WorkflowDto("status", null, null, "title", APPROVALS),
+                "dueField 'title' must be a non-key date field of Claim");
+        assertWorkflowRejected(claimFields("SUBMITTED"), new FullstackStarterRequest.WorkflowDto("status", "DRAFT", null, null, APPROVALS),
+                "initial 'DRAFT' differs from status's default 'SUBMITTED'");
+        List<FullstackStarterRequest.FieldDefinitionDto> withInbox = new java.util.ArrayList<>(claimFields(null));
+        withInbox.add(field("inbox", "String"));
+        assertWorkflowRejected(withInbox, approvals(APPROVALS), "a field named 'inbox' clashes with the inbox queue parameter");
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(new FullstackStarterRequest.EntityDefinitionDto(
+                "Claim", null, null, claimFields(null), null, true, null, null, null, null, null, null, null, null, approvals(APPROVALS))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("Entity 'Claim' workflow: a read-only entity cannot change state");
+    }
+
+    private static void assertWorkflowRejected(List<FullstackStarterRequest.FieldDefinitionDto> fields,
+                                               FullstackStarterRequest.WorkflowDto workflow, String message) {
+        assertThatThrownBy(() -> withWorkflow(fields, workflow))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining(message);
+    }
 }

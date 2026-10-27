@@ -191,9 +191,11 @@ class GeneratedFrontendBuildSmokeTests {
 
     @Test
     void fullstackFrontendMenoraListPresentationInstallsAndBuilds(@TempDir Path workDir) throws Exception {
-        // The same layout on the Menora set, whose own entity page carries the same props.
-        Path project = postAndExtractFrontend(workDir,
-                FullstackPagesIntegrationTests.exampleBody("inventory", "react-menora-digital-crud"));
+        // The same layout on the Menora set, whose own entity page carries the same props — with
+        // optimistic locking on, so the items form page's stale-save notice is built too.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("inventory", "react-menora-digital-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "optimisticLocking")));
+        Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
         runPnpm(project, "run", "build");
@@ -240,6 +242,83 @@ class GeneratedFrontendBuildSmokeTests {
         // search box (the SearchField port) and Import button.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-menora-digital-crud");
         body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fullstackFrontendFormPagesInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // Form pages on the Project planning layout: Task's lands on its record page and takes over
+        // the calendar's day; Person's, with the people list gone, has nowhere to go and starts over.
+        // (Inventory's items form, built by the ListPresentation tests, goes back to its list.)
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        List<Map<String, Object>> pages = (List<Map<String, Object>>) body.get("pages");
+        pages.removeIf(p -> "people".equals(p.get("id")));
+        pages.add(new LinkedHashMap<>(Map.of("id", "new-task", "type", "form", "entity", "Task")));
+        pages.add(new LinkedHashMap<>(Map.of("id", "new-person", "type", "form", "entity", "Person")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendWorkflowInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // An entity workflow: transitions with roles and asked-for fields, claim/release, a kanban
+        // and a board over the status, a side pane and a record page offering the moves.
+        Path project = postAndExtractFrontend(workDir, FullstackWorkflowTests.workflowLayout(true));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraWorkflowInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same on the Menora set, without a record page: the moves sit in the quick looks.
+        Map<String, Object> body = FullstackWorkflowTests.workflowLayout(false);
+        body.put("frontendTemplateSet", "react-menora-digital-crud");
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendApprovalsInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Approvals example with its own opts: a KPI trend and an activity feed, an inbox, a
+        // form page that takes over New and the record's Edit, a kanban over the workflow's status.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "seedData")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraApprovalsInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same on the Menora set in Hebrew, right to left: the workflow's and the inbox's
+        // strings come from the Hebrew table.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-menora-digital-crud");
+        body.put("locale", "he");
+        body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "seedData", "rtl")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendClassicWorkflowInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Approvals entities without a page layout: the classic shell's entity pages carry the
+        // status cell, the moves in the quick look and the kanban over the workflow.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
+        body.put("pages", List.of());
+        body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "inlineEdit", "bulkUpdate")));
         Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);

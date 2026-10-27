@@ -65,7 +65,7 @@ public final class FullstackPageValidator {
      *  list is a whitelist rather than "any lucide name": a typo would otherwise fail the build of the
      *  generated project instead of the request. */
     static final List<String> NAV_ICONS = List.of(
-            "BarChart3", "Building2", "Calendar", "Columns3", "FileText", "Inbox", "Layers", "LayoutDashboard",
+            "BarChart3", "Building2", "Calendar", "Columns3", "FilePlus", "FileText", "Inbox", "Layers", "LayoutDashboard",
             "ListChecks", "Package", "PanelLeft", "Search", "Settings", "ShoppingCart", "Star", "Table2", "Tag",
             "Ticket", "Truck", "Upload", "Users", "Wallet", "Wand2");
     /** A content page's text. */
@@ -131,7 +131,8 @@ public final class FullstackPageValidator {
 
         List<PageDefinition> pages = new ArrayList<>(raw.size());
         Map<String, String> recordPageByEntity = new HashMap<>();
-        Map<String, String> wizardPageByEntity = new HashMap<>();
+        // The page that creates an entity's rows: a wizard or a form, one per entity.
+        Map<String, String> createPageByEntity = new HashMap<>();
         Map<String, String> importPageByEntity = new HashMap<>();
         String searchPage = null;
         boolean anyVisible = false;
@@ -240,13 +241,42 @@ public final class FullstackPageValidator {
                         throw new WizardArgumentException(prefix + ": " + entity.name()
                                 + " is read-only, so there is nothing to create");
                     }
-                    String previous = wizardPageByEntity.putIfAbsent(entity.name(), id);
-                    if (previous != null) {
-                        throw new WizardArgumentException(prefix + ": " + entity.name()
-                                + " already has a wizard page ('" + previous + "')");
-                    }
+                    checkOneCreatePage(prefix, entity, id, type, createPageByEntity, typeById);
                     yield PageDefinition.wizard(id, title, description, hidden, entity.name(),
                             steps(prefix, entity, p.steps()));
+                }
+                case FORM -> {
+                    String prefix = "Page '" + id + "' (form)";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    if (entity.readOnly()) {
+                        throw new WizardArgumentException(prefix + ": " + entity.name()
+                                + " is read-only, so there is nothing to create");
+                    }
+                    checkOneCreatePage(prefix, entity, id, type, createPageByEntity, typeById);
+                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), null, null, null);
+                }
+                case INBOX -> {
+                    String prefix = "Page '" + id + "' (inbox)";
+                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                    EntityDefinition.Workflow wf = entity.workflow();
+                    if (wf == null || wf.assigneeField() == null) {
+                        throw new WizardArgumentException(prefix + ": " + entity.name()
+                                + " has no workflow with an assignee — an inbox lists rows by who they are assigned to");
+                    }
+                    List<String> shown = List.of(wf.statusField(), wf.assigneeField(), wf.dueField() == null ? "" : wf.dueField());
+                    List<String> defaults = defaultCardFields(entity, wf.statusField()).stream()
+                            .filter(f -> !shown.contains(f)).toList();
+                    List<String> cards = cardFields(prefix, entity, p.cardFields(), defaults);
+                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
+                    // Soonest due first; without a due date, the newest first.
+                    PageDefinition.ListSort sort = p.sort() != null
+                            ? sort(prefix, entity, p.sort(), auditApplies(entity, scaffoldOpts))
+                            : wf.dueField() != null ? new PageDefinition.ListSort(wf.dueField(), false)
+                            : new PageDefinition.ListSort(entity.fields().stream().filter(FieldDefinition::primaryKey)
+                                    .findFirst().orElseThrow().name(), true);
+                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), preset, null, null)
+                            .withListPresentation(null, sort, null, null)
+                            .withSpec(new PageDefinition.InboxSpec(inboxQueues(prefix, p.queues()), cards));
                 }
                 case CALENDAR -> {
                     String prefix = "Page '" + id + "' (calendar)";
@@ -379,8 +409,20 @@ public final class FullstackPageValidator {
             if (type.wire().equals(lower)) return type;
         }
         throw new WizardArgumentException("Page '" + id + "': unknown type '" + t
-                + "' (expected entity-list, dashboard, tabs, master-detail, record, report, wizard, calendar,"
-                + " board, content, import or search)");
+                + "' (expected entity-list, dashboard, tabs, master-detail, record, report, wizard, form,"
+                + " calendar, board, content, import, search or inbox)");
+    }
+
+    /** An entity has one page that creates its rows — a wizard or a form — since New, a calendar's
+     *  day and the record page's Edit all open it. */
+    private static void checkOneCreatePage(String prefix, EntityDefinition entity, String id, PageDefinition.Type type,
+                                           Map<String, String> createPageByEntity, Map<String, PageDefinition.Type> typeById) {
+        String previous = createPageByEntity.putIfAbsent(entity.name(), id);
+        if (previous == null) return;
+        PageDefinition.Type previousType = typeById.get(previous);
+        throw new WizardArgumentException(prefix + ": " + entity.name() + " already has a " + previousType.wire()
+                + " page ('" + previous + "')"
+                + (previousType != type ? " — an entity has a wizard or a form, not both" : ""));
     }
 
     /** A nav section name. Only a page that is in the nav can sit in a section of it. */
@@ -414,12 +456,14 @@ public final class FullstackPageValidator {
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.RECORD
                 && type != PageDefinition.Type.REPORT && type != PageDefinition.Type.WIZARD
                 && type != PageDefinition.Type.CALENDAR && type != PageDefinition.Type.BOARD
-                && type != PageDefinition.Type.IMPORT
+                && type != PageDefinition.Type.IMPORT && type != PageDefinition.Type.FORM
+                && type != PageDefinition.Type.INBOX
                 && trimToNull(p.entity()) != null) {
             throw new WizardArgumentException(prefix + "does not take 'entity'");
         }
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.REPORT
                 && type != PageDefinition.Type.CALENDAR && type != PageDefinition.Type.BOARD
+                && type != PageDefinition.Type.INBOX
                 && p.presetFilter() != null && !p.presetFilter().isEmpty()) {
             throw new WizardArgumentException(prefix + "does not take 'presetFilter'");
         }
@@ -461,7 +505,9 @@ public final class FullstackPageValidator {
         }
         if (type != PageDefinition.Type.ENTITY_LIST && type != PageDefinition.Type.MASTER_DETAIL) {
             if (p.columns() != null) throw new WizardArgumentException(prefix + "does not take 'columns'");
-            if (p.sort() != null && type != PageDefinition.Type.BOARD) throw new WizardArgumentException(prefix + "does not take 'sort'");
+            if (p.sort() != null && type != PageDefinition.Type.BOARD && type != PageDefinition.Type.INBOX) {
+                throw new WizardArgumentException(prefix + "does not take 'sort'");
+            }
         }
         if (type != PageDefinition.Type.CALENDAR) {
             if (trimToNull(p.dateField()) != null) throw new WizardArgumentException(prefix + "does not take 'dateField'");
@@ -471,9 +517,12 @@ public final class FullstackPageValidator {
         if (type != PageDefinition.Type.BOARD) {
             if (trimToNull(p.laneField()) != null) throw new WizardArgumentException(prefix + "does not take 'laneField'");
             if (p.lanes() != null) throw new WizardArgumentException(prefix + "does not take 'lanes'");
-            if (p.cardFields() != null) throw new WizardArgumentException(prefix + "does not take 'cardFields'");
+            if (p.cardFields() != null && type != PageDefinition.Type.INBOX) throw new WizardArgumentException(prefix + "does not take 'cardFields'");
             if (p.wipLimits() != null) throw new WizardArgumentException(prefix + "does not take 'wipLimits'");
             if (p.laneSize() != null) throw new WizardArgumentException(prefix + "does not take 'laneSize'");
+        }
+        if (type != PageDefinition.Type.INBOX && p.queues() != null) {
+            throw new WizardArgumentException(prefix + "does not take 'queues'");
         }
         if (type != PageDefinition.Type.CONTENT && p.body() != null) {
             throw new WizardArgumentException(prefix + "does not take 'body'");
@@ -961,6 +1010,14 @@ public final class FullstackPageValidator {
             if (kind != PageDefinition.WidgetKind.LINE && trimToNull(w.bucket()) != null) {
                 throw new WizardArgumentException(prefix + ": only a line widget takes 'bucket'");
             }
+            // A kpi's sparkline: kept in the bucket and groupBy a kpi has no other use for.
+            String rawTrend = trimToNull(w.trend());
+            if (rawTrend != null) {
+                if (kind != PageDefinition.WidgetKind.KPI) {
+                    throw new WizardArgumentException(prefix + ": only a kpi widget takes 'trend'");
+                }
+                bucket = parseBucket(prefix, rawTrend, "trend");
+            }
             int limit = 0;
             if (kind == PageDefinition.WidgetKind.RECENT || kind == PageDefinition.WidgetKind.TOP) {
                 limit = w.limit() == null ? DEFAULT_RECENT_LIMIT : w.limit();
@@ -980,7 +1037,12 @@ public final class FullstackPageValidator {
             } else if (trimToNull(w.sortBy()) != null) {
                 throw new WizardArgumentException(prefix + ": only a recent widget takes 'sortBy'");
             }
-            String dateField = dateField(prefix, entity, trimToNull(w.dateField()), hasDateRange);
+            // Without a picker, a trend's dateField only names the date it plots over.
+            boolean trendDate = bucket != null && kind == PageDefinition.WidgetKind.KPI && !hasDateRange;
+            String dateField = trendDate ? null : dateField(prefix, entity, trimToNull(w.dateField()), hasDateRange);
+            if (bucket != null && kind == PageDefinition.WidgetKind.KPI) {
+                groupBy = trendOn(prefix, entity, dateField, trendDate ? trimToNull(w.dateField()) : null);
+            }
             boolean compare = Boolean.TRUE.equals(w.compare());
             if (compare) {
                 if (kind != PageDefinition.WidgetKind.KPI) {
@@ -1111,7 +1173,7 @@ public final class FullstackPageValidator {
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
                 || trimToNull(w.series()) != null || (w.pages() != null && !w.pages().isEmpty())
-                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null) {
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null || trimToNull(w.trend()) != null) {
             throw new WizardArgumentException(prefix + ": a text widget takes only 'text', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.TEXT) : w.span();
@@ -1145,10 +1207,10 @@ public final class FullstackPageValidator {
                 throw new WizardArgumentException(prefix + ": a links widget cannot link to a record page ('" + id
                         + "') — it opens from a row");
             }
-            // A hidden wizard is still a route (New opens it), and so is a hidden search page (the
-            // header's search box opens it — a hidden one must have that box).
+            // A hidden wizard or form is still a route (New opens it), and so is a hidden search page
+            // (the header's search box opens it — a hidden one must have that box).
             if (Boolean.TRUE.equals(hiddenById.get(id)) && type != PageDefinition.Type.WIZARD
-                    && type != PageDefinition.Type.SEARCH) {
+                    && type != PageDefinition.Type.FORM && type != PageDefinition.Type.SEARCH) {
                 throw new WizardArgumentException(prefix + ": page '" + id + "' is hidden and not a wizard, so nothing can open it");
             }
             if (pages.contains(id)) throw new WizardArgumentException(prefix + ": page '" + id + "' is listed twice");
@@ -1159,7 +1221,7 @@ public final class FullstackPageValidator {
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
                 || trimToNull(w.series()) != null || trimToNull(w.text()) != null
-                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null) {
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null || trimToNull(w.trend()) != null) {
             throw new WizardArgumentException(prefix + ": a links widget takes only 'pages', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.LINKS) : w.span();
@@ -1181,7 +1243,8 @@ public final class FullstackPageValidator {
         if (trimToNull(w.agg()) != null || trimToNull(w.field()) != null || trimToNull(w.groupBy()) != null
                 || trimToNull(w.bucket()) != null || trimToNull(w.sortBy()) != null || trimToNull(w.dateField()) != null
                 || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null || trimToNull(w.series()) != null
-                || trimToNull(w.text()) != null || (w.pages() != null && !w.pages().isEmpty())) {
+                || trimToNull(w.text()) != null || (w.pages() != null && !w.pages().isEmpty())
+                || trimToNull(w.trend()) != null) {
             throw new WizardArgumentException(prefix
                     + ": a list widget takes only 'entity', 'columns', 'sort', 'presetFilter', 'limit', 'title' and 'span'");
         }
@@ -1305,7 +1368,7 @@ public final class FullstackPageValidator {
                 || trimToNull(w.sortBy()) != null || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare())
                 || trimToNull(w.target()) != null || trimToNull(w.series()) != null || trimToNull(w.text()) != null
                 || (w.pages() != null && !w.pages().isEmpty()) || (w.columns() != null && !w.columns().isEmpty())
-                || w.sort() != null || trimToNull(w.drillTo()) != null) {
+                || w.sort() != null || trimToNull(w.drillTo()) != null || trimToNull(w.trend()) != null) {
             throw new WizardArgumentException(prefix + ": an activity widget takes only 'entities', 'limit', 'title' and 'span'");
         }
         List<String> names = new ArrayList<>();
@@ -1413,12 +1476,37 @@ public final class FullstackPageValidator {
 
     /** A line's bucket granularity. Absent means {@code month}. */
     private static PageDefinition.Bucket parseBucket(String prefix, String rawBucket) {
+        return parseBucket(prefix, rawBucket, "bucket");
+    }
+
+    private static PageDefinition.Bucket parseBucket(String prefix, String rawBucket, String prop) {
         String b = trimToNull(rawBucket);
         if (b == null) return PageDefinition.Bucket.MONTH;
         for (PageDefinition.Bucket bucket : PageDefinition.Bucket.values()) {
             if (bucket.wire().equalsIgnoreCase(b)) return bucket;
         }
-        throw new WizardArgumentException(prefix + ": unknown bucket '" + b + "' (expected day, month or year)");
+        throw new WizardArgumentException(prefix + ": unknown " + prop + " '" + b + "' (expected day, month or year)");
+    }
+
+    /**
+     * The date a kpi's sparkline plots over: the date the dashboard's picker limits it by (so the
+     * line covers the period on screen), else the {@code dateField} it names, else the entity's
+     * first non-key date.
+     */
+    private static String trendOn(String prefix, EntityDefinition entity, String pickerDate, String requested) {
+        if (pickerDate != null) return pickerDate;
+        if (requested != null) {
+            FieldDefinition field = fieldOf(prefix, entity, requested, "dateField");
+            if (field.primaryKey() || !field.type().isTemporal()) {
+                throw new WizardArgumentException(prefix + ": dateField '" + requested
+                        + "' must be a non-key date field to plot the trend over");
+            }
+            return field.name();
+        }
+        return entity.fields().stream().filter(f -> !f.primaryKey() && f.type().isTemporal()).findFirst()
+                .map(FieldDefinition::name)
+                .orElseThrow(() -> new WizardArgumentException(prefix + ": 'trend' needs a date field on "
+                        + entity.name() + " to plot over time"));
     }
 
     /** A line plots a temporal field over time — the entity's first, when omitted. */
@@ -1604,8 +1692,11 @@ public final class FullstackPageValidator {
                                                    List<FullstackStarterRequest.StepDto> raw) {
         Map<String, String> askable = new LinkedHashMap<>();
         List<String> required = new ArrayList<>();
+        // A workflow's status starts in its initial state and moves only by transitions.
+        String status = entity.workflow() == null ? null : entity.workflow().statusField();
         for (FieldDefinition f : entity.fields()) {
             if (f.primaryKey() && f.generated()) continue;
+            if (f.name().equals(status)) continue;
             askable.put(f.name().toLowerCase(Locale.ROOT), f.name());
             if (f.required() || f.primaryKey()) required.add(f.name());
         }
@@ -1622,7 +1713,8 @@ public final class FullstackPageValidator {
             List<PageDefinition.Step> out = new ArrayList<>();
             Set<String> placed = new HashSet<>();
             for (EntityDefinition.FormSection section : entity.formSections()) {
-                out.add(new PageDefinition.Step(section.title(), section.fields()));
+                List<String> asked = section.fields().stream().filter(f -> !f.equals(status)).toList();
+                if (!asked.isEmpty()) out.add(new PageDefinition.Step(section.title(), asked));
                 section.fields().forEach(f -> placed.add(f.toLowerCase(Locale.ROOT)));
             }
             List<String> rest = askable.values().stream().filter(f -> !placed.contains(f.toLowerCase(Locale.ROOT))).toList();
@@ -1651,6 +1743,9 @@ public final class FullstackPageValidator {
             List<String> fields = new ArrayList<>();
             for (String name : step.fields()) {
                 String canonical = name == null ? null : askable.get(name.trim().toLowerCase(Locale.ROOT));
+                if (canonical == null && status != null && name != null && status.equalsIgnoreCase(name.trim())) {
+                    throw new WizardArgumentException(stepPrefix + ": '" + status + "' is set by the workflow, so a step cannot ask for it");
+                }
                 if (canonical == null) {
                     throw new WizardArgumentException(stepPrefix + ": '" + name + "' is not a field of the "
                             + entity.name() + " form");
@@ -1881,28 +1976,7 @@ public final class FullstackPageValidator {
         } else {
             lanes.addAll(values);
         }
-        Map<String, String> known = new LinkedHashMap<>();
-        for (FieldDefinition f : entity.fields()) known.put(f.name().toLowerCase(Locale.ROOT), f.name());
-        for (RelationDefinition r : entity.relations()) {
-            if (r.type() == RelationType.MANY_TO_ONE) known.put(r.fieldName().toLowerCase(Locale.ROOT), r.fieldName());
-        }
-        List<String> cards = new ArrayList<>();
-        if (p.cardFields() != null) {
-            if (p.cardFields().isEmpty() || p.cardFields().size() > MAX_CARD_FIELDS) {
-                throw new WizardArgumentException(prefix + ": 'cardFields' takes 1 to " + MAX_CARD_FIELDS + " fields");
-            }
-            for (String raw : p.cardFields()) {
-                String canonical = trimToNull(raw) == null ? null : known.get(raw.trim().toLowerCase(Locale.ROOT));
-                if (canonical == null) {
-                    throw new WizardArgumentException(prefix + " cardFields: '" + raw + "' is not a field or relation of "
-                            + entity.name() + " (expected one of " + new ArrayList<>(known.values()) + ")");
-                }
-                if (cards.contains(canonical)) throw new WizardArgumentException(prefix + " cardFields: '" + canonical + "' is listed twice");
-                cards.add(canonical);
-            }
-        } else {
-            cards.addAll(defaultCardFields(entity, lane.name()));
-        }
+        List<String> cards = cardFields(prefix, entity, p.cardFields(), defaultCardFields(entity, lane.name()));
         Map<String, Integer> limits = new LinkedHashMap<>();
         if (p.wipLimits() != null) {
             for (Map.Entry<String, Integer> en : p.wipLimits().entrySet()) {
@@ -1927,6 +2001,46 @@ public final class FullstackPageValidator {
 
     /** What a card shows when the page names nothing: a heading (the first text field, else the
      *  key), then the next two fields other than the lane field and the first relation, up to four. */
+    /** What a board card or an inbox row shows: 1–4 field or relation names (the first naming the row), else the defaults. */
+    private static List<String> cardFields(String prefix, EntityDefinition entity, List<String> raw, List<String> defaults) {
+        if (raw == null) return defaults;
+        Map<String, String> known = new LinkedHashMap<>();
+        for (FieldDefinition f : entity.fields()) known.put(f.name().toLowerCase(Locale.ROOT), f.name());
+        for (RelationDefinition r : entity.relations()) {
+            if (r.type() == RelationType.MANY_TO_ONE) known.put(r.fieldName().toLowerCase(Locale.ROOT), r.fieldName());
+        }
+        if (raw.isEmpty() || raw.size() > MAX_CARD_FIELDS) {
+            throw new WizardArgumentException(prefix + ": 'cardFields' takes 1 to " + MAX_CARD_FIELDS + " fields");
+        }
+        List<String> cards = new ArrayList<>();
+        for (String name : raw) {
+            String canonical = trimToNull(name) == null ? null : known.get(name.trim().toLowerCase(Locale.ROOT));
+            if (canonical == null) {
+                throw new WizardArgumentException(prefix + " cardFields: '" + name + "' is not a field or relation of "
+                        + entity.name() + " (expected one of " + new ArrayList<>(known.values()) + ")");
+            }
+            if (cards.contains(canonical)) throw new WizardArgumentException(prefix + " cardFields: '" + canonical + "' is listed twice");
+            cards.add(canonical);
+        }
+        return cards;
+    }
+
+    /** An inbox's queues: 1–3 of mine, unassigned and open, each once. Absent: mine, then unassigned. */
+    private static List<PageDefinition.InboxQueue> inboxQueues(String prefix, List<String> raw) {
+        if (raw == null) return List.of(PageDefinition.InboxQueue.MINE, PageDefinition.InboxQueue.UNASSIGNED);
+        if (raw.isEmpty()) throw new WizardArgumentException(prefix + ": 'queues' needs at least one queue when given");
+        List<PageDefinition.InboxQueue> out = new ArrayList<>();
+        for (String q : raw) {
+            String v = trimToNull(q);
+            PageDefinition.InboxQueue queue = java.util.Arrays.stream(PageDefinition.InboxQueue.values())
+                    .filter(x -> x.wire().equalsIgnoreCase(v == null ? "" : v)).findFirst()
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": unknown queue '" + q + "' (expected mine, unassigned or open)"));
+            if (out.contains(queue)) throw new WizardArgumentException(prefix + ": queue '" + queue.wire() + "' is listed twice");
+            out.add(queue);
+        }
+        return out;
+    }
+
     static List<String> defaultCardFields(EntityDefinition entity, String laneField) {
         List<String> out = new ArrayList<>();
         FieldDefinition heading = entity.fields().stream()
@@ -1968,7 +2082,7 @@ public final class FullstackPageValidator {
                                 + "' — it opens from a row");
                     }
                     if (Boolean.TRUE.equals(hiddenById.get(run.target())) && type != PageDefinition.Type.WIZARD
-                            && type != PageDefinition.Type.SEARCH) {
+                            && type != PageDefinition.Type.FORM && type != PageDefinition.Type.SEARCH) {
                         throw new WizardArgumentException(prefix + ": page '" + run.target()
                                 + "' is hidden and not a wizard, so a link cannot open it");
                     }

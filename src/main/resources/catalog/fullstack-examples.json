@@ -781,8 +781,9 @@
       {
         "id": "tickets-all",
         "type": "entity-list",
-        "entity": "Ticket",
-        "hidden": true
+        "group": "Work",
+        "title": "All tickets",
+        "entity": "Ticket"
       },
       {
         "id": "agents",
@@ -800,6 +801,12 @@
         "parent": "Team",
         "child": "Ticket",
         "via": "team"
+      },
+      {
+        "id": "ticket",
+        "type": "record",
+        "entity": "Ticket",
+        "hidden": true
       }
     ],
     "settings": {
@@ -939,14 +946,14 @@
         "dateRange": "30d",
         "widgets": [
           {
-            "kind": "kpi",
-            "entity": "Item",
-            "title": "Items"
-          },
-          {
-            "kind": "kpi",
-            "entity": "Warehouse",
-            "title": "Warehouses"
+            "kind": "links",
+            "title": "Catalog",
+            "pages": [
+              "items",
+              "warehouses",
+              "new-item"
+            ],
+            "span": 2
           },
           {
             "kind": "kpi",
@@ -1053,6 +1060,13 @@
         ]
       },
       {
+        "id": "new-item",
+        "type": "form",
+        "entity": "Item",
+        "title": "New item",
+        "hidden": true
+      },
+      {
         "id": "warehouse",
         "type": "record",
         "entity": "Warehouse",
@@ -1069,6 +1083,17 @@
             "title": "Units moved"
           }
         ]
+      },
+      {
+        "id": "movement-log",
+        "type": "entity-list",
+        "group": "Reports",
+        "title": "Movement log",
+        "entity": "StockMovement",
+        "sort": {
+          "field": "movedOn",
+          "dir": "desc"
+        }
       }
     ],
     "settings": {
@@ -1278,7 +1303,8 @@
             "entity": "Sale",
             "title": "Total revenue",
             "agg": "sum",
-            "field": "amount"
+            "field": "amount",
+            "trend": "month"
           },
           {
             "kind": "kpi",
@@ -1385,6 +1411,12 @@
         "roles": [
           "ADMIN"
         ]
+      },
+      {
+        "id": "sale",
+        "type": "record",
+        "entity": "Sale",
+        "hidden": true
       }
     ],
     "settings": {
@@ -1704,6 +1736,356 @@
     "settings": {
       "scaffold": [
         "csvExport"
+      ]
+    }
+  },
+  {
+    "exampleId": "approvals",
+    "name": "Approvals",
+    "description": "Expense claims charged to cost centers, moved by an approval workflow: submit, approve or send back, pay. A form page for new claims, an inbox of tasks by queue, a kanban over the status and a trend line on the dashboard.",
+    "icon": "approval",
+    "sortOrder": 7,
+    "entities": [
+      {
+        "name": "CostCenter",
+        "fields": [
+          {
+            "name": "id",
+            "type": "LONG",
+            "primaryKey": true,
+            "generated": true
+          },
+          {
+            "name": "code",
+            "type": "STRING",
+            "required": true,
+            "unique": true,
+            "length": 20
+          },
+          {
+            "name": "name",
+            "type": "STRING",
+            "required": true,
+            "length": 120
+          },
+          {
+            "name": "budget",
+            "type": "BIG_DECIMAL",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "name": "ExpenseClaim",
+        "listViews": [
+          "table",
+          "kanban"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "LONG",
+            "primaryKey": true,
+            "generated": true
+          },
+          {
+            "name": "title",
+            "type": "STRING",
+            "required": true,
+            "length": 160
+          },
+          {
+            "name": "amount",
+            "type": "BIG_DECIMAL",
+            "required": true,
+            "min": 0
+          },
+          {
+            "name": "category",
+            "type": "ENUM",
+            "enumValues": [
+              "TRAVEL",
+              "MEALS",
+              "EQUIPMENT",
+              "TRAINING",
+              "OTHER"
+            ],
+            "required": true,
+            "defaultValue": "OTHER"
+          },
+          {
+            "name": "spentOn",
+            "type": "LOCAL_DATE",
+            "required": true
+          },
+          {
+            "name": "status",
+            "type": "ENUM",
+            "enumValues": [
+              "DRAFT",
+              "SUBMITTED",
+              "APPROVED",
+              "REJECTED",
+              "PAID"
+            ],
+            "required": true,
+            "defaultValue": "DRAFT",
+            "enumLabels": {
+              "SUBMITTED": "Waiting for approval",
+              "REJECTED": "Sent back"
+            }
+          },
+          {
+            "name": "assignee",
+            "type": "STRING",
+            "length": 120
+          },
+          {
+            "name": "dueDate",
+            "type": "LOCAL_DATE"
+          },
+          {
+            "name": "approvedAmount",
+            "type": "BIG_DECIMAL",
+            "min": 0
+          },
+          {
+            "name": "rejectionReason",
+            "type": "TEXT"
+          }
+        ],
+        "relations": [
+          {
+            "type": "MANY_TO_ONE",
+            "fieldName": "costCenter",
+            "targetEntity": "CostCenter",
+            "required": true
+          }
+        ],
+        "formSections": [
+          {
+            "title": "The expense",
+            "fields": [
+              "title",
+              "amount",
+              "category",
+              "spentOn",
+              "costCenter"
+            ]
+          },
+          {
+            "title": "Review",
+            "fields": [
+              "assignee",
+              "dueDate"
+            ]
+          }
+        ],
+        "workflow": {
+          "statusField": "status",
+          "assigneeField": "assignee",
+          "dueField": "dueDate",
+          "transitions": [
+            {
+              "name": "submit",
+              "label": "Submit",
+              "from": [
+                "DRAFT"
+              ],
+              "to": "SUBMITTED"
+            },
+            {
+              "name": "approve",
+              "label": "Approve",
+              "from": [
+                "SUBMITTED"
+              ],
+              "to": "APPROVED",
+              "roles": [
+                "ADMIN"
+              ],
+              "requires": [
+                "approvedAmount"
+              ]
+            },
+            {
+              "name": "reject",
+              "label": "Send back",
+              "from": [
+                "SUBMITTED"
+              ],
+              "to": "REJECTED",
+              "roles": [
+                "ADMIN"
+              ],
+              "requires": [
+                "rejectionReason"
+              ]
+            },
+            {
+              "name": "reopen",
+              "label": "Reopen",
+              "from": [
+                "REJECTED"
+              ],
+              "to": "DRAFT"
+            },
+            {
+              "name": "pay",
+              "label": "Mark paid",
+              "from": [
+                "APPROVED"
+              ],
+              "to": "PAID",
+              "roles": [
+                "ADMIN"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "pages": [
+      {
+        "id": "home",
+        "type": "dashboard",
+        "title": "Expense approvals",
+        "dateRange": "12m",
+        "widgets": [
+          {
+            "kind": "kpi",
+            "entity": "ExpenseClaim",
+            "title": "Claims",
+            "dateField": "spentOn",
+            "compare": true,
+            "trend": "month"
+          },
+          {
+            "kind": "kpi",
+            "entity": "ExpenseClaim",
+            "title": "Claimed",
+            "agg": "sum",
+            "field": "amount",
+            "dateField": "spentOn",
+            "trend": "month"
+          },
+          {
+            "kind": "kpi",
+            "entity": "ExpenseClaim",
+            "title": "Waiting for approval",
+            "dateField": "spentOn",
+            "presetFilter": {
+              "status": "SUBMITTED"
+            }
+          },
+          {
+            "kind": "kpi",
+            "entity": "ExpenseClaim",
+            "title": "Approved",
+            "agg": "sum",
+            "field": "approvedAmount",
+            "dateField": "spentOn",
+            "presetFilter": {
+              "status": "APPROVED,PAID"
+            }
+          },
+          {
+            "kind": "donut",
+            "entity": "ExpenseClaim",
+            "groupBy": "status",
+            "dateField": "spentOn"
+          },
+          {
+            "kind": "top",
+            "entity": "ExpenseClaim",
+            "title": "Spend by cost center",
+            "groupBy": "costCenter",
+            "agg": "sum",
+            "field": "amount",
+            "limit": 5,
+            "dateField": "spentOn"
+          },
+          {
+            "kind": "activity",
+            "title": "Latest changes",
+            "span": 2
+          },
+          {
+            "kind": "links",
+            "title": "Get going",
+            "pages": [
+              "new-claim",
+              "my-tasks"
+            ],
+            "span": 2
+          }
+        ]
+      },
+      {
+        "id": "my-tasks",
+        "type": "inbox",
+        "title": "My tasks",
+        "group": "Claims",
+        "entity": "ExpenseClaim",
+        "queues": [
+          "mine",
+          "unassigned",
+          "open"
+        ],
+        "cardFields": [
+          "title",
+          "amount",
+          "costCenter"
+        ]
+      },
+      {
+        "id": "new-claim",
+        "type": "form",
+        "title": "New claim",
+        "group": "Claims",
+        "entity": "ExpenseClaim"
+      },
+      {
+        "id": "claims",
+        "type": "entity-list",
+        "group": "Claims",
+        "entity": "ExpenseClaim",
+        "columns": [
+          "title",
+          "amount",
+          "status",
+          "costCenter",
+          "assignee",
+          "dueDate"
+        ],
+        "sort": {
+          "field": "spentOn",
+          "dir": "desc"
+        }
+      },
+      {
+        "id": "cost-centers",
+        "type": "entity-list",
+        "group": "Admin",
+        "entity": "CostCenter"
+      },
+      {
+        "id": "claim",
+        "type": "record",
+        "entity": "ExpenseClaim"
+      },
+      {
+        "id": "cost-center",
+        "type": "record",
+        "entity": "CostCenter"
+      }
+    ],
+    "settings": {
+      "scaffold": [
+        "audit",
+        "optimisticLocking",
+        "csvExport",
+        "seedData"
       ]
     }
   }

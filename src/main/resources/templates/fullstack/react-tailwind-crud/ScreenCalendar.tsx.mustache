@@ -157,9 +157,9 @@ export function {{PageName}}Screen({ query, onQueryChange{{#needsNavigate}}, onN
 {{^hasRecordPage}}
         onOpen={setDetail}
 {{/hasRecordPage}}
-{{#calendarCreatesInWizard}}
-        onCreate={() => onNavigate('{{wizardPageId}}')}
-{{/calendarCreatesInWizard}}
+{{#calendarCreatesInPage}}
+        onCreate={() => onNavigate('{{createPageId}}')}
+{{/calendarCreatesInPage}}
 {{#calendarCreatesInDrawer}}
         onCreate={createOn}
 {{/calendarCreatesInDrawer}}

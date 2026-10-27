@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -51,7 +52,8 @@ public final class FullstackRequestValidator {
                       Set<String> memberNames, List<FullstackStarterRequest.RelationDefinitionDto> rawRelations,
                       boolean readOnly, String viewQuery, List<String> listViews,
                       String label, String labelPlural, Map<String, Boolean> opts,
-                      List<FullstackStarterRequest.FormSectionDto> rawSections) {}
+                      List<FullstackStarterRequest.FormSectionDto> rawSections,
+                      FullstackStarterRequest.WorkflowDto rawWorkflow, int pkCount) {}
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
@@ -274,7 +276,7 @@ public final class FullstackRequestValidator {
                     ? null : e.labelPlural().trim();
             parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
                     readOnly, viewQuery, resolveListViews(e), label, labelPlural,
-                    parseEntityOpts(e.opts(), name), e.formSections()));
+                    parseEntityOpts(e.opts(), name), e.formSections(), e.workflow(), pkCount));
         }
 
         // Pass 2 — resolve and validate relations now that all entity names are known.
@@ -292,7 +294,8 @@ public final class FullstackRequestValidator {
             checkVersionName(p.name(), p.fields(), relations, p.readOnly(), p.viewQuery(), p.opts(), body);
             result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
                     p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts(),
-                    parseFormSections(p.rawSections(), p.name(), p.fields(), relations)));
+                    parseFormSections(p.rawSections(), p.name(), p.fields(), relations),
+                    parseWorkflow(p.rawWorkflow(), p.name(), p.fields(), relations, p.readOnly(), p.pkCount())));
         }
         return result;
     }
@@ -367,6 +370,132 @@ public final class FullstackRequestValidator {
             out.add(new EntityDefinition.FormSection(title, names));
         }
         return out;
+    }
+
+    static final int MAX_TRANSITIONS = 20;
+    static final int MAX_TRANSITION_LABEL = 40;
+    private static final java.util.regex.Pattern TRANSITION_NAME = java.util.regex.Pattern.compile("^[a-z][A-Za-z0-9]{0,39}$");
+    /** The roles a transition may be limited to: the ldap-auth {@code Constants}. */
+    static final List<String> WORKFLOW_ROLES = List.of("ADMIN", "USER");
+
+    /**
+     * An entity's workflow, with every name canonicalized. A workflow changes a row's status, so
+     * the entity must be writable, table-backed and single-keyed (transitions address one row);
+     * its status is a filterable enum (the list, the inbox and the board filter by it). Messages
+     * read {@code Entity 'X' workflow: …}.
+     */
+    static EntityDefinition.Workflow parseWorkflow(FullstackStarterRequest.WorkflowDto raw, String entity,
+                                                   List<FieldDefinition> fields, List<RelationDefinition> relations,
+                                                   boolean readOnly, int pkCount) {
+        if (raw == null) return null;
+        String where = "Entity '" + entity + "' workflow: ";
+        if (readOnly) throw new WizardArgumentException(where + "a read-only entity cannot change state");
+        if (pkCount != 1) throw new WizardArgumentException(where + "needs a single primary key — a transition addresses one row");
+        Map<String, FieldDefinition> byLower = new LinkedHashMap<>();
+        for (FieldDefinition f : fields) byLower.put(f.name().toLowerCase(Locale.ROOT), f);
+        Map<String, RelationDefinition> relationsByLower = new LinkedHashMap<>();
+        for (RelationDefinition r : relations) {
+            if (r.type() == RelationType.MANY_TO_ONE) relationsByLower.put(r.fieldName().toLowerCase(Locale.ROOT), r);
+        }
+
+        String statusName = raw.statusField() == null ? "" : raw.statusField().trim();
+        if (statusName.isEmpty()) throw new WizardArgumentException(where + "statusField is required");
+        FieldDefinition status = byLower.get(statusName.toLowerCase(Locale.ROOT));
+        if (status == null) throw new WizardArgumentException(where + "statusField '" + statusName + "' is not a field of " + entity);
+        if (status.primaryKey() || status.type() != FieldType.ENUM || !status.filterable()) {
+            throw new WizardArgumentException(where + "statusField '" + status.name() + "' must be a filterable, non-key enum field");
+        }
+        List<String> states = status.enumValues().stream().map(v -> v.toUpperCase(Locale.ROOT)).toList();
+        java.util.function.Function<String, String> state = v -> {
+            String s = v == null ? "" : v.trim().toUpperCase(Locale.ROOT);
+            if (!states.contains(s)) {
+                throw new WizardArgumentException(where + "'" + v + "' is not a state of " + status.name() + " ("
+                        + String.join(", ", states) + ")");
+            }
+            return s;
+        };
+        String initial = raw.initial() == null || raw.initial().isBlank()
+                ? (status.defaultValue() != null ? status.defaultValue() : states.get(0))
+                : state.apply(raw.initial());
+        if (status.defaultValue() != null && !status.defaultValue().equals(initial)) {
+            throw new WizardArgumentException(where + "initial '" + initial + "' differs from " + status.name()
+                    + "'s default '" + status.defaultValue() + "' — a new row starts in one of them");
+        }
+
+        String assignee = null;
+        if (raw.assigneeField() != null && !raw.assigneeField().isBlank()) {
+            FieldDefinition f = byLower.get(raw.assigneeField().trim().toLowerCase(Locale.ROOT));
+            if (f == null || f.primaryKey() || f.unique() || f.type() != FieldType.STRING) {
+                throw new WizardArgumentException(where + "assigneeField '" + raw.assigneeField().trim()
+                        + "' must be a non-key, non-unique text field of " + entity + " (it holds a user id)");
+            }
+            assignee = f.name();
+            // The inbox queue rides in the `inbox` request parameter, which a filter of that name would shadow.
+            if (byLower.containsKey("inbox")) {
+                throw new WizardArgumentException(where + "a field named 'inbox' clashes with the inbox queue parameter — rename it");
+            }
+        }
+        String due = null;
+        if (raw.dueField() != null && !raw.dueField().isBlank()) {
+            FieldDefinition f = byLower.get(raw.dueField().trim().toLowerCase(Locale.ROOT));
+            if (f == null || f.primaryKey() || !f.type().isTemporal()) {
+                throw new WizardArgumentException(where + "dueField '" + raw.dueField().trim() + "' must be a non-key date field of " + entity);
+            }
+            due = f.name();
+        }
+
+        List<FullstackStarterRequest.TransitionDto> rawTransitions = raw.transitions() == null ? List.of() : raw.transitions();
+        if (rawTransitions.isEmpty()) throw new WizardArgumentException(where + "needs at least one transition");
+        if (rawTransitions.size() > MAX_TRANSITIONS) {
+            throw new WizardArgumentException(where + "has more than " + MAX_TRANSITIONS + " transitions");
+        }
+        Set<String> names = new HashSet<>();
+        List<EntityDefinition.Transition> transitions = new ArrayList<>();
+        for (int i = 0; i < rawTransitions.size(); i++) {
+            FullstackStarterRequest.TransitionDto t = rawTransitions.get(i);
+            if (t == null) throw new WizardArgumentException(where + "transitions[" + i + "] is null");
+            String name = t.name() == null ? "" : t.name().trim();
+            if (!TRANSITION_NAME.matcher(name).matches()) {
+                throw new WizardArgumentException(where + "transition name '" + name
+                        + "' must start with a lower-case letter, then letters and digits (max 40)");
+            }
+            if (!names.add(name)) throw new WizardArgumentException(where + "two transitions are named '" + name + "'");
+            String at = where + "transition '" + name + "' ";
+            String label = t.label() == null || t.label().isBlank() ? null : t.label().trim();
+            if (label != null && label.length() > MAX_TRANSITION_LABEL) {
+                throw new WizardArgumentException(at + "has a label over " + MAX_TRANSITION_LABEL + " characters");
+            }
+            if (t.from() == null || t.from().isEmpty()) throw new WizardArgumentException(at + "needs the states it moves 'from'");
+            Set<String> from = new LinkedHashSet<>();
+            for (String f : t.from()) from.add(state.apply(f));
+            if (t.to() == null || t.to().isBlank()) throw new WizardArgumentException(at + "needs the state it moves 'to'");
+            String to = state.apply(t.to());
+            if (from.contains(to)) throw new WizardArgumentException(at + "moves from " + to + " to itself");
+            Set<String> roles = new LinkedHashSet<>();
+            for (String r : t.roles() == null ? List.<String>of() : t.roles()) {
+                String role = r == null ? "" : r.trim().toUpperCase(Locale.ROOT);
+                if (!WORKFLOW_ROLES.contains(role)) {
+                    throw new WizardArgumentException(at + "has an unknown role '" + r + "' (expected ADMIN or USER)");
+                }
+                roles.add(role);
+            }
+            List<String> requires = new ArrayList<>();
+            for (String r : t.requires() == null ? List.<String>of() : t.requires()) {
+                String key = r == null ? "" : r.trim().toLowerCase(Locale.ROOT);
+                FieldDefinition f = byLower.get(key);
+                RelationDefinition rel = relationsByLower.get(key);
+                String canonical = f != null ? f.name() : rel != null ? rel.fieldName() : null;
+                if (canonical == null) throw new WizardArgumentException(at + "requires '" + r + "', which is not a field or relation of " + entity);
+                if (f != null && (f.primaryKey() || f.readOnly() || f.name().equals(status.name()))) {
+                    throw new WizardArgumentException(at + "requires '" + f.name() + "', which a transition cannot set"
+                            + (f.name().equals(status.name()) ? " (it is the status the transition changes)" : " (a key or read-only field)"));
+                }
+                if (requires.contains(canonical)) throw new WizardArgumentException(at + "requires '" + canonical + "' twice");
+                requires.add(canonical);
+            }
+            transitions.add(new EntityDefinition.Transition(name, label, List.copyOf(from), to, List.copyOf(roles), requires));
+        }
+        return new EntityDefinition.Workflow(status.name(), initial, assignee, due, transitions);
     }
 
     /**

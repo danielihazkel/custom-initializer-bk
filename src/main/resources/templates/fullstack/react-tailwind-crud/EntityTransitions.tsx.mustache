@@ -1,0 +1,118 @@
+import { useState } from 'react'
+import { toast } from 'sonner'
+{{#workflowRequiresFields}}import { ApiError } from '@shared/api'
+{{/workflowRequiresFields}}import { useMe } from '@shared/api/me'
+import { t } from '@shared/i18n'
+{{#workflowRequiresFields}}import { FormDrawer } from '@shared/ui'
+{{/workflowRequiresFields}}import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+import { {{EntityName}}Workflow{{#workflowRequiresFields}}, type {{EntityName}}Transition{{/workflowRequiresFields}} } from '../model/workflow'
+{{#workflowRequiresFields}}import { {{EntityName}}Form } from './{{EntityName}}Form'
+{{/workflowRequiresFields}}
+
+interface Props {
+  row: {{EntityName}}
+  /** The row as the server saved it after a move{{#hasAssignee}}, a claim or a release{{/hasAssignee}}. */
+  onDone: (next: {{EntityName}}) => void
+  /** Smaller buttons, for a row of a table. */
+  compact?: boolean
+}
+
+/**
+ * The workflow moves the row can make now, for the signed-in user, as buttons{{#hasAssignee}} — with Claim
+ * and Release for its assignment{{/hasAssignee}}. A move that asks for fields opens them in a drawer first.
+ * Nothing when there is nothing to do.
+ */
+export function {{EntityName}}Transitions({ row, onDone, compact = false }: Props) {
+  const me = useMe()
+  const [busy, setBusy] = useState(false)
+{{#workflowRequiresFields}}
+  const [asking, setAsking] = useState<{{EntityName}}Transition | null>(null)
+  const [draft, setDraft] = useState<Partial<{{EntityName}}>>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
+{{/workflowRequiresFields}}
+  const moves = {{EntityName}}Workflow.available(row, me.roles)
+{{#hasAssignee}}
+  const assignee = {{EntityName}}Workflow.assigneeOf(row)
+  const canClaim = me.id != null && assignee == null && {{EntityName}}Workflow.isOpen(row)
+  const canRelease = me.id != null && assignee === me.id
+{{/hasAssignee}}
+
+  async function act(work: () => Promise<{{EntityName}}>, done: string) {
+    setBusy(true)
+    try {
+      const next = await work()
+      toast.success(done)
+{{#workflowRequiresFields}}
+      setAsking(null)
+{{/workflowRequiresFields}}
+      onDone(next)
+    } catch (e) {
+{{#workflowRequiresFields}}
+      // A move's own fields come back per field and show under them in its drawer.
+      if (e instanceof ApiError && e.fieldErrors) {
+        setErrors(e.fieldErrors)
+        return
+      }
+{{/workflowRequiresFields}}
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (moves.length === 0{{#hasAssignee}} && !canClaim && !canRelease{{/hasAssignee}}) return null
+  const button = compact
+    ? 'rounded-md border border-border px-2 py-1 text-xs font-medium text-fg transition-colors hover:bg-surface-2 disabled:opacity-50'
+    : 'rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-2 disabled:opacity-50'
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-workflow-actions>
+{{#hasAssignee}}
+      {canClaim && (
+        <button type="button" disabled={busy} className={button} onClick={() => void act(() => {{EntityName}}Workflow.claim(row), t('claimed'))}>
+          {t('claim')}
+        </button>
+      )}
+      {canRelease && (
+        <button type="button" disabled={busy} className={button} onClick={() => void act(() => {{EntityName}}Workflow.release(row), t('released'))}>
+          {t('release')}
+        </button>
+      )}
+{{/hasAssignee}}
+      {moves.map(move => (
+        <button
+          key={move.name}
+          type="button"
+          disabled={busy}
+          className={button}
+{{#workflowRequiresFields}}
+          onClick={() => {
+            if (move.requires.length > 0) {
+              setDraft({ ...row })
+              setErrors({})
+              setAsking(move)
+            } else {
+              void act(() => {{EntityName}}Workflow.run(row, move.name), t('xDone', { x: move.label }))
+            }
+          }}
+{{/workflowRequiresFields}}
+{{^workflowRequiresFields}}
+          onClick={() => void act(() => {{EntityName}}Workflow.run(row, move.name), t('xDone', { x: move.label }))}
+{{/workflowRequiresFields}}
+        >
+          {move.label}
+        </button>
+      ))}
+{{#workflowRequiresFields}}
+      <FormDrawer
+        open={asking !== null}
+        title={asking?.label ?? ''}
+        onClose={() => setAsking(null)}
+        onSave={() => { if (asking) void act(() => {{EntityName}}Workflow.run(row, asking.name, draft), t('xDone', { x: asking.label })) }}
+        saving={busy}
+      >
+        {asking && <{{EntityName}}Form value={draft} onChange={setDraft} errors={errors} isNew={false} only={asking.requires} />}
+      </FormDrawer>
+{{/workflowRequiresFields}}
+    </div>
+  )
+}

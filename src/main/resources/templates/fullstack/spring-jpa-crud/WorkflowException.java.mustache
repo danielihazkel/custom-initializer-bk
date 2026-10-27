@@ -1,0 +1,44 @@
+package {{packageName}}.web;
+
+import java.util.Map;
+
+/**
+ * A workflow refused a move: the row is in another state (409), the caller lacks the role the
+ * transition needs (403) or is not signed in (401), or fields the transition asks for were left
+ * empty (400, each named in {@link #errors()}). ApiExceptionHandler answers it as a problem detail.
+ */
+public class WorkflowException extends RuntimeException {
+
+    private final int status;
+    private final Map<String, String> errors;
+
+    private WorkflowException(int status, String message, Map<String, String> errors) {
+        super(message);
+        this.status = status;
+        this.errors = Map.copyOf(errors);
+    }
+
+    public static WorkflowException wrongState(String message) {
+        return new WorkflowException(409, message, Map.of());
+    }
+
+    public static WorkflowException forbidden(String message) {
+        return new WorkflowException(403, message, Map.of());
+    }
+
+    public static WorkflowException unauthenticated() {
+        return new WorkflowException(401, "Sign in to do this", Map.of());
+    }
+
+    public static WorkflowException missing(Map<String, String> errors) {
+        return new WorkflowException(400, "Fill in what this step asks for", errors);
+    }
+
+    public int status() {
+        return status;
+    }
+
+    public Map<String, String> errors() {
+        return errors;
+    }
+}

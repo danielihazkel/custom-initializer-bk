@@ -4,3 +4,7 @@ export { {{EntityName}}Detail } from './ui/{{EntityName}}Detail'
 {{#importApplicable}}
 export { IMPORT_FIELDS as {{EntityName}}ImportFields } from './model/importFields'
 {{/importApplicable}}
+{{#hasWorkflow}}
+export { {{EntityName}}Workflow, type {{EntityName}}Transition } from './model/workflow'
+export { {{EntityName}}Transitions } from './ui/{{EntityName}}Transitions'
+{{/hasWorkflow}}

@@ -304,10 +304,10 @@ class DataSeederTest {
     }
 
     @Test
-    void seedsTheSevenFullstackExamplesInOrder() {
+    void seedsTheEightFullstackExamplesInOrder() {
         assertThat(fullstackExampleRepo.findAllByOrderBySortOrderAscIdAsc())
                 .extracting(e -> e.getExampleId())
-                .containsExactly("blog", "orders", "tickets", "inventory", "enrolments", "reporting", "projects");
+                .containsExactly("blog", "orders", "tickets", "inventory", "enrolments", "reporting", "projects", "approvals");
         assertThat(fullstackExampleRepo.findAll()).allSatisfy(e -> {
             assertThat(e.isEnabled()).isTrue();
             assertThat(e.getEntities()).startsWith("[");

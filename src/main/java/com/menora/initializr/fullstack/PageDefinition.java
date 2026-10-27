@@ -190,6 +190,9 @@ public record PageDefinition(
     /** A {@link Type#CONTENT} page's text; null on any other page. */
     public ContentSpec content() { return spec instanceof ContentSpec c ? c : null; }
 
+    /** A {@link Type#INBOX} page's settings; null on any other page. */
+    public InboxSpec inbox() { return spec instanceof InboxSpec i ? i : null; }
+
     /** A {@link Type#SEARCH} page's settings; null on any other page. */
     public SearchSpec search() { return spec instanceof SearchSpec s ? s : null; }
 
@@ -200,7 +203,35 @@ public record PageDefinition(
     public List<ListAction> hiddenActions() { return spec instanceof ListSpec l ? l.hideActions() : List.of(); }
 
     /** The settings only one page type has, kept apart so the record does not grow a field per type. */
-    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec, DashboardSpec, ListSpec {}
+    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec, DashboardSpec, ListSpec, InboxSpec {}
+
+    /**
+     * @param queues     the queues the inbox offers as tabs, the first opening
+     * @param cardFields the columns before the status, assignee and due date: field and relation
+     *                   names, the first naming the row
+     */
+    public record InboxSpec(List<InboxQueue> queues, List<String> cardFields) implements Spec {
+        public InboxSpec {
+            queues = List.copyOf(queues);
+            cardFields = List.copyOf(cardFields);
+        }
+    }
+
+    /** An inbox queue, as the generated list endpoint's {@code inbox} parameter names it. */
+    public enum InboxQueue {
+        /** The user's own unfinished rows. */
+        MINE("mine"),
+        /** Unfinished rows nobody has claimed. */
+        UNASSIGNED("unassigned"),
+        /** Every unfinished row. */
+        OPEN("open");
+
+        private final String wire;
+
+        InboxQueue(String wire) { this.wire = wire; }
+
+        public String wire() { return wire; }
+    }
 
     /** @param hideActions what an entity-list page leaves out of its list, in {@link ListAction} order */
     public record ListSpec(List<ListAction> hideActions) implements Spec {
@@ -355,7 +386,11 @@ public record PageDefinition(
         /** A CSV upload that creates rows of one entity, checked before anything is saved. */
         IMPORT("import"),
         /** One search box over several entities, the matches grouped by entity. */
-        SEARCH("search");
+        SEARCH("search"),
+        /** One entity's whole form on a page: New (and Edit, by id) open it instead of the drawer. */
+        FORM("form"),
+        /** A workflow's task list: the rows assigned to the user, nobody's, or every open one. */
+        INBOX("inbox");
 
         private final String wire;
 

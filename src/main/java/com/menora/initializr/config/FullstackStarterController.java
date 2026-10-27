@@ -203,6 +203,14 @@ public class FullstackStarterController {
                         + "' has roles, which need the ldap-auth or ldap-auth-rest dependency");
             }
         });
+        // So are a workflow's role-limited transitions: the generated service asks the user's groups.
+        for (EntityDefinition e : entities) {
+            if (e.workflow() == null || ldap) continue;
+            e.workflow().transitions().stream().filter(t -> !t.roles().isEmpty()).findFirst().ifPresent(t -> {
+                throw new WizardArgumentException("Entity '" + e.name() + "' workflow: transition '" + t.name()
+                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency");
+            });
+        }
         optionsContext.populate(body.opts());
         optionsContext.setDepartment(body.department());
         // The `openapi` scaffold opt enriches generated controllers with springdoc @Tag/@Operation
@@ -446,6 +454,9 @@ public class FullstackStarterController {
                 && (request.getDependencies().contains("ldap-auth")
                         || request.getDependencies().contains("ldap-auth-rest"));
         projectCtx.put("hasLdapAuth", hasLdapAuth);
+        // The API client sends the dev user's `userinfo` header when something reads it: the ldap
+        // permission check, or a workflow (who claims a row, whose inbox).
+        projectCtx.put("sendsDevUser", hasLdapAuth || Boolean.TRUE.equals(projectCtx.get("hasWorkflows")));
         // Opt-in scaffolding flags must be set on the frontend context too — the per-entity FE
         // templates gate audit columns / inverse-collection counts on these. The backend config
         // sets its own copy; the two render paths do not share a context.

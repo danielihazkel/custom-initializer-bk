@@ -3,7 +3,8 @@ package {{controllerPackage}};
 import {{dtoPackage}}.{{EntityName}}Dto;
 import {{servicePackage}}.{{EntityName}}Service;
 {{#hasCompositePk}}import {{entityPackage}}.{{keyClassName}};
-{{/hasCompositePk}}
+{{/hasCompositePk}}{{#hasWorkflow}}import {{packageName}}.web.CurrentUser;
+{{/hasWorkflow}}
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -44,9 +45,11 @@ public class {{EntityName}}Controller {
     public Page<{{EntityName}}Dto> list(
             @RequestParam(required = false) String q,
 {{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isRelationFilter}},
-{{/filterFields}}            Pageable pageable) {
+{{/filterFields}}{{#hasAssignee}}            @RequestParam(required = false) String inbox,
+            @RequestHeader(value = "userinfo", required = false) String workflowUser,
+{{/hasAssignee}}            Pageable pageable) {
         Pageable effective = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sortOf(pageable));
-{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
+{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#hasAssignee}}inbox, CurrentUser.idOf(workflowUser), {{/hasAssignee}}{{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
         return service.findAll(q, filters, effective).map({{EntityName}}Dto::from);
 {{/hasFilters}}{{^hasFilters}}        return service.findAll(q, effective).map({{EntityName}}Dto::from);
 {{/hasFilters}}    }
@@ -57,13 +60,15 @@ public class {{EntityName}}Controller {
     public StatsResponse stats(
             @RequestParam(required = false) String q,
 {{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isRelationFilter}},
-{{/filterFields}}            @RequestParam(required = false) String groupBy,
+{{/filterFields}}{{#hasAssignee}}            @RequestParam(required = false) String inbox,
+            @RequestHeader(value = "userinfo", required = false) String workflowUser,
+{{/hasAssignee}}            @RequestParam(required = false) String groupBy,
             @RequestParam(required = false) String bucket,
             @RequestParam(required = false) String agg,
             @RequestParam(required = false) String field,
             @RequestParam(required = false) Integer top,
             @RequestParam(required = false) String series) {
-{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
+{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#hasAssignee}}inbox, CurrentUser.idOf(workflowUser), {{/hasAssignee}}{{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
 {{/hasFilters}}        List<{{EntityName}}Service.StatsBucket> buckets =
                 service.stats(q, {{#hasFilters}}filters, {{/hasFilters}}groupBy, bucket, agg, field, top, series);
         // An empty group (avg/min/max over no rows) has no value: it adds nothing, and a total made
@@ -86,8 +91,10 @@ public class {{EntityName}}Controller {
     public ResponseEntity<StreamingResponseBody> exportCsv(
             @RequestParam(required = false) String q,
 {{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isRelationFilter}},
-{{/filterFields}}            Pageable pageable) {
-{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
+{{/filterFields}}{{#hasAssignee}}            @RequestParam(required = false) String inbox,
+            @RequestHeader(value = "userinfo", required = false) String workflowUser,
+{{/hasAssignee}}            Pageable pageable) {
+{{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#hasAssignee}}inbox, CurrentUser.idOf(workflowUser), {{/hasAssignee}}{{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
 {{/hasFilters}}        Sort sort = sortOf(pageable);
         // Streamed in fixed-size chunks so memory stays bounded regardless of table size; each
         // chunk is its own read-only transaction, so no session is held open across the response.
@@ -216,7 +223,31 @@ public class {{EntityName}}Controller {
     public {{EntityName}}Dto restore(@PathVariable {{pkField.javaType}} id) {
         return {{EntityName}}Dto.from(service.restore(id));
     }
-{{/softDeleteApplicable}}{{/hasCompositePk}}{{#bulkDeleteApplicable}}
+{{/softDeleteApplicable}}{{#hasWorkflow}}
+    /** Moves the row by one of its workflow's transitions; the body carries the fields it asks for. */
+{{#optScaffoldOpenApi}}    @Operation(summary = "Move a {{EntityName}} by a workflow transition")
+{{/optScaffoldOpenApi}}    @PostMapping("/{id}/transitions/{name}")
+    public {{EntityName}}Dto transition(@PathVariable {{pkField.javaType}} id, @PathVariable String name,
+                                        @RequestBody(required = false) {{EntityName}}Dto values,
+                                        @RequestHeader(value = "userinfo", required = false) String user) {
+        return {{EntityName}}Dto.from(service.transition(id, name, values == null ? null : values.toEntity(), CurrentUser.idOf(user)));
+    }
+{{#hasAssignee}}
+
+    /** Assigns the row to the caller. */
+{{#optScaffoldOpenApi}}    @Operation(summary = "Claim a {{EntityName}}")
+{{/optScaffoldOpenApi}}    @PostMapping("/{id}/claim")
+    public {{EntityName}}Dto claim(@PathVariable {{pkField.javaType}} id, @RequestHeader(value = "userinfo", required = false) String user) {
+        return {{EntityName}}Dto.from(service.claim(id, CurrentUser.idOf(user)));
+    }
+
+    /** Gives the row back to the unassigned queue. */
+{{#optScaffoldOpenApi}}    @Operation(summary = "Release a {{EntityName}}")
+{{/optScaffoldOpenApi}}    @PostMapping("/{id}/release")
+    public {{EntityName}}Dto release(@PathVariable {{pkField.javaType}} id, @RequestHeader(value = "userinfo", required = false) String user) {
+        return {{EntityName}}Dto.from(service.release(id, CurrentUser.idOf(user)));
+    }
+{{/hasAssignee}}{{/hasWorkflow}}{{/hasCompositePk}}{{#bulkDeleteApplicable}}
 {{#optScaffoldOpenApi}}    @Operation(summary = "Bulk delete {{EntityName}} records by id")
 {{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
 {{/optScaffoldSecured}}    @DeleteMapping("/bulk")

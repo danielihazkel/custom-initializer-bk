@@ -99,6 +99,8 @@ public final class EntityScaffoldContext {
             entityViews.add(view);
         }
         ctx.put("entities", entityViews);
+        // Any workflow: the shared WorkflowException, CurrentUser and GET /api/me (both render paths).
+        ctx.put("hasWorkflows", entities.stream().anyMatch(e -> e.workflow() != null));
         // Demo-data seeding order (optScaffoldSeedData): parents before children, writable only.
         List<Map<String, Object>> seedViews = buildSeedOrder(entities, entityViews);
         ctx.put("seedEntities", seedViews);
@@ -155,6 +157,8 @@ public final class EntityScaffoldContext {
             pv.put("pageIsContent", p.type() == PageDefinition.Type.CONTENT);
             pv.put("pageIsImport", p.type() == PageDefinition.Type.IMPORT);
             pv.put("pageIsSearch", p.type() == PageDefinition.Type.SEARCH);
+            pv.put("pageIsForm", p.type() == PageDefinition.Type.FORM);
+            pv.put("pageIsInbox", p.type() == PageDefinition.Type.INBOX);
             pv.put("hasPageDescription", p.description() != null);
             pv.put("pageDescriptionExpr", p.description() == null ? null : tsString(p.description()));
             pv.put("needsNavigate", false);
@@ -192,11 +196,11 @@ public final class EntityScaffoldContext {
                     pv.put("hasImportPage", importPage != null);
                     pv.put("importPageId", importPage);
                     if (importPage != null) pv.put("needsNavigate", true);
-                    // New opens the entity's wizard page, when it has one.
-                    String wizard = links.wizardPageOf(p.entity());
-                    pv.put("hasWizard", wizard != null);
-                    pv.put("wizardPageId", wizard);
-                    if (wizard != null) pv.put("needsNavigate", true);
+                    // New opens the entity's create page (a wizard or a form), when it has one.
+                    String create = links.createPageOf(p.entity());
+                    pv.put("hasCreatePage", create != null);
+                    pv.put("createPageId", create);
+                    if (create != null) pv.put("needsNavigate", true);
                     // How the list opens (each absent: the EntityPage default). Column and field
                     // names are validated identifiers; the sort object matches the generated SortSpec.
                     pv.put("hasColumns", !p.columns().isEmpty());
@@ -300,12 +304,14 @@ public final class EntityScaffoldContext {
                     pv.put("backPageId", back);
                     // A writable entity's record page edits (form drawer) and deletes the row itself.
                     boolean recordMutable = Boolean.TRUE.equals(ev.get("mutable"));
-                    // With a wizard page, Edit reopens the row in the wizard's steps instead.
-                    String editWizard = recordMutable ? links.wizardPageOf(p.entity()) : null;
+                    // With a create page, Edit reopens the row there (#/<page>/<id>) instead.
+                    String editPage = recordMutable ? links.createPageOf(p.entity()) : null;
                     pv.put("recordMutable", recordMutable);
-                    pv.put("recordEditsInWizard", editWizard != null);
-                    pv.put("recordEditsInDrawer", recordMutable && editWizard == null);
-                    pv.put("wizardPageId", editWizard);
+                    // The record's workflow moves sit by its Edit and Delete.
+                    pv.put("recordHasWorkflow", Boolean.TRUE.equals(ev.get("hasWorkflow")));
+                    pv.put("recordEditsInPage", editPage != null);
+                    pv.put("recordEditsInDrawer", recordMutable && editPage == null);
+                    pv.put("createPageId", editPage);
                     // Previous / Next walk the rows of the list the record was opened from.
                     pv.put("recordHasIcons", true);
                     // The record's state at a glance: its first two enum fields as chips by the heading.
@@ -362,6 +368,18 @@ public final class EntityScaffoldContext {
                     Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
                     putWizard(pv, p, ev, links, summaries);
                     pv.put("navIcon", "Wand2");
+                    defaultTitleExpr = "t('newX', { x: " + tsString((String) ev.get("entityLabel")) + " })";
+                }
+                case INBOX -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    putInbox(pv, p, ev, links, summaries);
+                    pv.put("navIcon", "Inbox");
+                    defaultTitleExpr = "t('myTasks')";
+                }
+                case FORM -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    putForm(pv, p, ctx, ev, links, summaries);
+                    pv.put("navIcon", "FilePlus");
                     defaultTitleExpr = "t('newX', { x: " + tsString((String) ev.get("entityLabel")) + " })";
                 }
                 case CALENDAR -> {
@@ -497,8 +515,8 @@ public final class EntityScaffoldContext {
             String routeProps = "";
             if (Boolean.TRUE.equals(pv.get("pageIsTabs"))) {
                 routeProps = " tab={route.arg} onTabChange={tab => go('" + pv.get("pageId") + "', tab)}";
-            } else if (Boolean.TRUE.equals(pv.get("wizardEditable"))) {
-                // #/<wizard>/<id> edits that row; a new id is a fresh wizard.
+            } else if (Boolean.TRUE.equals(pv.get("wizardEditable")) || Boolean.TRUE.equals(pv.get("formEditable"))) {
+                // #/<wizard>/<id> edits that row; a new id is a fresh wizard (a form likewise).
                 routeProps = " key={route.arg ?? ''} editId={route.arg}";
             } else if (Boolean.TRUE.equals(pv.get("pageIsMasterDetail"))) {
                 // The selected parent is the route arg (#/customers/42).
@@ -524,7 +542,8 @@ public final class EntityScaffoldContext {
             } else if (Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"))) {
                 // The report's filter bar likewise (#/revenue?region=NORTH).
                 routeProps = " query={route.query} onQueryChange={setQuery}";
-            } else if (Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))) {
+            } else if (Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))
+                    || Boolean.TRUE.equals(pv.get("pageIsInbox"))) {
                 // A calendar's day and view (#/schedule?_date=2026-09-01&_mode=week) and a search's
                 // words (#/find?q=acme) likewise.
                 routeProps = " query={route.query} onQueryChange={setQuery}";
@@ -537,7 +556,8 @@ public final class EntityScaffoldContext {
             boolean dashboardPeriod = !dashboardQuery && Boolean.TRUE.equals(pv.get("pageIsDashboard")) && Boolean.TRUE.equals(pv.get("hasDateRange"));
             boolean reportQuery = Boolean.TRUE.equals(pv.get("pageIsReport")) && Boolean.TRUE.equals(pv.get("hasFilters"));
             boolean listState = Boolean.TRUE.equals(pv.get("listKeepsState"));
-            boolean ownQuery = Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"));
+            boolean ownQuery = Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))
+                    || Boolean.TRUE.equals(pv.get("pageIsInbox"));
             List<String> screenParams = new ArrayList<>();
             if (Boolean.TRUE.equals(pv.get("detailSide"))) screenParams.addAll(List.of("selectedId", "onSelect"));
             if (listState) screenParams.addAll(List.of("query", "onQueryChange"));
@@ -570,6 +590,7 @@ public final class EntityScaffoldContext {
                     || Boolean.TRUE.equals(pv.get("pageIsReport")) || Boolean.TRUE.equals(pv.get("pageIsWizard"))
                     || Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsBoard"))
                     || Boolean.TRUE.equals(pv.get("pageIsImport")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))
+                    || Boolean.TRUE.equals(pv.get("pageIsForm")) || Boolean.TRUE.equals(pv.get("pageIsInbox"))
                     || exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
         }
 
@@ -578,9 +599,10 @@ public final class EntityScaffoldContext {
         List<Map<String, Object>> records = all.stream().filter(v -> Boolean.TRUE.equals(v.get("pageIsRecord"))).toList();
         List<Map<String, Object>> routes = new ArrayList<>(nav);
         routes.addAll(records);
-        // A hidden wizard is still a route: a list page's New opens it. So is a hidden search page:
-        // the header's search box opens it.
-        all.stream().filter(v -> (Boolean.TRUE.equals(v.get("pageIsWizard")) || Boolean.TRUE.equals(v.get("pageIsSearch")))
+        // A hidden wizard or form is still a route: a list page's New opens it. So is a hidden search
+        // page: the header's search box opens it.
+        all.stream().filter(v -> (Boolean.TRUE.equals(v.get("pageIsWizard")) || Boolean.TRUE.equals(v.get("pageIsForm"))
+                        || Boolean.TRUE.equals(v.get("pageIsSearch")))
                         && Boolean.TRUE.equals(v.get("hidden")))
                 .forEach(routes::add);
         ctx.put("pages", all);
@@ -611,6 +633,7 @@ public final class EntityScaffoldContext {
         putNavGroups(ctx, nav);
         ctx.put("hasDashboardPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsDashboard"))));
         ctx.put("hasReportPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsReport"))));
+        ctx.put("hasInboxPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsInbox"))));
         // widgets.tsx backs both the dashboard screens and the report screen's chart.
         ctx.put("hasWidgets", Boolean.TRUE.equals(ctx.get("hasDashboardPages"))
                 || Boolean.TRUE.equals(ctx.get("hasReportPages"))
@@ -620,8 +643,9 @@ public final class EntityScaffoldContext {
                         || Boolean.TRUE.equals(v.get("tabsUseRangeParams"))));
         // links.tsx (the launcher tiles) only for a dashboard that has a links widget.
         ctx.put("hasLinksWidgets", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("usesLinks"))));
-        // Per-entity contexts read this: an entity with a wizard gets the stepped form and the
-        // list page's onCreate.
+        // Per-entity contexts read these: an entity with a create page gets the list page's
+        // onCreate, and one with a wizard the stepped form.
+        ctx.put(CREATE_PAGES_KEY, links.createPageByEntity());
         ctx.put(WIZARD_PAGES_KEY, links.wizardPageByEntity());
         // Per-entity contexts read this too: a relation to an entity with a record page links there.
         ctx.put(RECORD_PAGES_KEY, links.recordPageByEntity());
@@ -771,7 +795,7 @@ public final class EntityScaffoldContext {
      */
     private record PageLinks(Map<String, String> recordPageByEntity, Map<String, String> homeByEntity,
                              Map<String, String> listPageByEntity, Map<String, String> wizardPageByEntity,
-                             Map<String, String> importPageByEntity) {
+                             Map<String, String> createPageByEntity, Map<String, String> importPageByEntity) {
 
         static PageLinks of(List<PageDefinition> pages) {
             Map<String, String> records = new LinkedHashMap<>();
@@ -800,7 +824,12 @@ public final class EntityScaffoldContext {
                 if (p.type() == PageDefinition.Type.WIZARD) wizards.put(p.entity(), p.id());
                 if (p.type() == PageDefinition.Type.IMPORT) imports.put(p.entity(), p.id());
             }
-            return new PageLinks(records, homes, lists, wizards, imports);
+            // The page that creates (and edits) an entity's rows: its wizard or its form (never both).
+            Map<String, String> creates = new LinkedHashMap<>(wizards);
+            for (PageDefinition p : pages) {
+                if (p.type() == PageDefinition.Type.FORM) creates.put(p.entity(), p.id());
+            }
+            return new PageLinks(records, homes, lists, wizards, creates, imports);
         }
 
         /** The entity's import page — where its list page's Import goes — or null. */
@@ -811,8 +840,9 @@ public final class EntityScaffoldContext {
         /** The entity's first visible list page — what a drill-down opens, filtered — or null. */
         String listPageOf(String entity) { return listPageByEntity.get(entity); }
 
-        /** The entity's wizard page — where its list page's New goes — or null. */
-        String wizardPageOf(String entity) { return wizardPageByEntity.get(entity); }
+        /** The entity's create page — where its list page's New, a calendar's day and a record's
+         *  Edit go — or null. */
+        String createPageOf(String entity) { return createPageByEntity.get(entity); }
 
         String homeOf(String entity) { return homeByEntity.get(entity); }
     }
@@ -840,12 +870,12 @@ public final class EntityScaffoldContext {
         putRowNaming(pv, ev, summary);
         putRecordLink(pv, "", p.entity(), links, summaries);
         boolean mutable = Boolean.TRUE.equals(ev.get("mutable"));
-        String wizard = mutable ? links.wizardPageOf(p.entity()) : null;
+        String create = mutable ? links.createPageOf(p.entity()) : null;
         pv.put("calendarCreates", mutable);
-        pv.put("calendarCreatesInWizard", wizard != null);
-        pv.put("calendarCreatesInDrawer", mutable && wizard == null);
-        pv.put("wizardPageId", wizard);
-        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")) || wizard != null);
+        pv.put("calendarCreatesInPage", create != null);
+        pv.put("calendarCreatesInDrawer", mutable && create == null);
+        pv.put("createPageId", create);
+        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")) || create != null);
     }
 
     /** A board page: its lanes (with their labels and limits) and what a card shows. */
@@ -881,39 +911,8 @@ public final class EntityScaffoldContext {
         pv.put("laneSize", spec.laneSize());
         pv.put("hasWipLimits", !spec.wipLimits().isEmpty());
         // What a card shows, as TS expressions over its row `r`, the first as the heading.
-        List<Map<String, Object>> cards = new ArrayList<>();
         Set<String> labelImports = new TreeSet<>();
-        for (int i = 0; i < spec.cardFields().size(); i++) {
-            String name = spec.cardFields().get(i);
-            Map<String, Object> cv = new LinkedHashMap<>();
-            Map<String, Object> f = fields.get(name);
-            String render;
-            String label;
-            if (f != null) {
-                label = (String) f.get("label");
-                String none = "r." + name + " == null ? '\u2014' : ";
-                if (Boolean.TRUE.equals(f.get("isEnum"))) {
-                    labelImports.add(f.get("enumTypeName") + "Labels");
-                    render = none + f.get("enumTypeName") + "Labels[r." + name + "]";
-                } else if (Boolean.TRUE.equals(f.get("isBoolean"))) {
-                    render = none + "r." + name + " ? t('trueLabel') : t('falseLabel')";
-                } else if (Boolean.TRUE.equals(f.get("isDateTime"))) {
-                    render = none + "String(r." + name + ").replace('T', ' ').slice(0, 16)";
-                } else {
-                    render = none + "String(r." + name + ")";
-                }
-            } else {
-                Map<String, Object> r = relations.get(name);
-                label = (String) r.get("FieldName");
-                String fk = "r." + r.get("fkFieldName");
-                String id = fk + " == null ? '\u2014' : '#' + String(" + fk + ")";
-                render = Boolean.TRUE.equals(r.get("hasTargetLabel")) ? "r." + name + "Label ?? (" + id + ")" : id;
-            }
-            cv.put("renderTs", render);
-            cv.put("labelTs", escapeTsSingleQuoted(label));
-            cv.put("isHeading", i == 0);
-            cards.add(cv);
-        }
+        List<Map<String, Object>> cards = cardViews(spec.cardFields(), fields, relations, labelImports);
         pv.put("cardFields", cards);
         pv.put("cardLabelImports", String.join(", ", labelImports));
         pv.put("hasCardLabelImports", !labelImports.isEmpty());
@@ -925,6 +924,11 @@ public final class EntityScaffoldContext {
         putRowNaming(pv, ev, summary);
         putRecordLink(pv, "", p.entity(), links, summaries);
         pv.put("boardMutable", Boolean.TRUE.equals(ev.get("mutable")));
+        // Lanes of the workflow's status: a card moves by the transition between them, and the quick
+        // look (no record page) offers the row's moves.
+        boolean workflow = Boolean.TRUE.equals(ev.get("hasWorkflow"));
+        pv.put("boardIsWorkflow", workflow && spec.laneField().equals(ev.get("workflowStatusField")));
+        pv.put("boardHasWorkflow", workflow);
         pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")));
         pv.put("hasCardDetails", cards.size() > 1);
         // The screen imports `t` only when something calls it (the generated lint rejects an unused
@@ -1143,6 +1147,10 @@ public final class EntityScaffoldContext {
             // A kpi's change against the previous period: the same params, one period back. The
             // picker's "all time" has no previous period, so the tile then shows no change.
             wv.put("hasCompare", w.compare());
+            // A kpi's sparkline: its bucket over the date kept in groupBy, with the tile's params.
+            boolean trend = w.kind() == PageDefinition.WidgetKind.KPI && w.bucket() != null;
+            wv.put("hasTrend", trend);
+            wv.put("trendOn", trend ? w.groupBy() : null);
             wv.put("compareParamsExpr", w.compare() ? params(preset, rangeExpr(ev, w.dateField(), true), dash) : null);
             wv.put("target", w.target() == null ? null : w.target().toPlainString());
             // A widget's drillTo (a list or report page of its entity) replaces the entity's home.
@@ -1605,6 +1613,205 @@ public final class EntityScaffoldContext {
         pv.put("wizardHasProps", editable || Boolean.TRUE.equals(pv.get("needsNavigate")));
     }
 
+    /**
+     * An entity's workflow as the templates read it: the status field (marked read-only and as the
+     * workflow's status on its view), its states as Java and TS literals, each transition with its
+     * from/to/roles/requires spelled for both, and the assignee and due fields.
+     */
+    private static void putWorkflow(Map<String, Object> view, EntityDefinition entity, EntityDefinition.Workflow wf,
+                                    List<Map<String, Object>> fieldViews) {
+        Map<String, Object> status = fieldViews.stream().filter(fv -> wf.statusField().equals(fv.get("name"))).findFirst().orElseThrow();
+        status.put("isReadOnly", true);
+        status.put("isWorkflowStatus", true);
+        String pascal = Naming.toPascalCase(entity.name());
+        String enumType = (String) status.get("enumTypeName");
+        java.util.function.Function<String, String> javaState = s -> pascal + "." + enumType + "." + s;
+        java.util.function.Function<java.util.Collection<String>, String> tsList =
+                xs -> String.join(", ", xs.stream().map(x -> "'" + x + "'").toList());
+        view.put("workflowStatusField", wf.statusField());
+        view.put("WorkflowStatusName", status.get("Name"));
+        view.put("workflowEnumType", enumType);
+        view.put("workflowInitial", wf.initial());
+        view.put("workflowInitialJava", javaState.apply(wf.initial()));
+        view.put("workflowOpenStatesJava", String.join(", ", wf.openStates().stream().map(javaState).toList()));
+        view.put("workflowOpenStatesTs", tsList.apply(wf.openStates()));
+        Map<String, String> relationIds = new LinkedHashMap<>();
+        for (RelationDefinition r : entity.relations()) relationIds.put(r.fieldName(), Naming.toCamelCase(r.fieldName()) + "Id");
+        List<Map<String, Object>> transitions = new ArrayList<>();
+        boolean usesRoles = false;
+        boolean requiresAny = false;
+        for (int i = 0; i < wf.transitions().size(); i++) {
+            EntityDefinition.Transition t = wf.transitions().get(i);
+            Map<String, Object> tv = new LinkedHashMap<>();
+            tv.put("name", t.name());
+            tv.put("labelTs", tsString(t.label() != null ? t.label() : humanizeIdentifier(t.name())));
+            tv.put("fromJava", String.join(", ", t.from().stream().map(javaState).toList()));
+            tv.put("fromTs", tsList.apply(t.from()));
+            tv.put("to", t.to());
+            tv.put("toJava", javaState.apply(t.to()));
+            tv.put("hasRoles", !t.roles().isEmpty());
+            tv.put("rolesJava", String.join(", ", t.roles().stream().map(r -> "\"" + r + "\"").toList()));
+            tv.put("rolesTs", tsList.apply(t.roles()));
+            List<Map<String, Object>> requires = new ArrayList<>();
+            for (String name : t.requires()) {
+                Map<String, Object> rv = new LinkedHashMap<>();
+                boolean relation = relationIds.containsKey(name);
+                rv.put("Name", Naming.toPascalCase(name));
+                // The key a 400 reports it under: the form's own (a relation's picker is `<name>Id`).
+                rv.put("key", relation ? relationIds.get(name) : name);
+                requires.add(rv);
+            }
+            tv.put("requires", requires);
+            tv.put("hasRequires", !requires.isEmpty());
+            // The form fields the transition's drawer shows (a relation by its field name, as `only` takes it).
+            tv.put("requiresTs", tsList.apply(t.requires()));
+            tv.put("last", i == wf.transitions().size() - 1);
+            usesRoles |= !t.roles().isEmpty();
+            requiresAny |= !requires.isEmpty();
+            transitions.add(tv);
+        }
+        view.put("workflowTransitions", transitions);
+        view.put("workflowUsesRoles", usesRoles);
+        view.put("workflowRequiresFields", requiresAny);
+        view.put("hasAssignee", wf.assigneeField() != null);
+        view.put("assigneeField", wf.assigneeField());
+        view.put("AssigneeName", wf.assigneeField() == null ? null : Naming.toPascalCase(wf.assigneeField()));
+        view.put("hasDue", wf.dueField() != null);
+        view.put("dueField", wf.dueField());
+        // Demo rows: a third each for the dev user, nobody and someone else, so every inbox queue has rows.
+        if (wf.assigneeField() != null) {
+            fieldViews.stream().filter(fv -> wf.assigneeField().equals(fv.get("name"))).findFirst()
+                    .ifPresent(fv -> fv.put("seedExpr", "i % 3 == 1 ? \"dev-user\" : i % 3 == 2 ? null : \"user\" + i"));
+        }
+    }
+
+    /** {@code submitForReview} → "Submit for review". */
+    static String humanizeIdentifier(String name) {
+        String spaced = name.replaceAll("([a-z0-9])([A-Z])", "$1 $2").toLowerCase(Locale.ROOT);
+        return Character.toUpperCase(spaced.charAt(0)) + spaced.substring(1);
+    }
+
+    /** Board cards' and inbox rows' cells, as TS expressions over the row `r`, the first naming it;
+     *  the enum label maps they read are added to `labelImports`. */
+    private static List<Map<String, Object>> cardViews(List<String> names, Map<String, Map<String, Object>> fields,
+                                                       Map<String, Map<String, Object>> relations, Set<String> labelImports) {
+        List<Map<String, Object>> cards = new ArrayList<>();
+        for (int i = 0; i < names.size(); i++) {
+            String name = names.get(i);
+            Map<String, Object> cv = new LinkedHashMap<>();
+            Map<String, Object> f = fields.get(name);
+            String render;
+            String label;
+            if (f != null) {
+                label = (String) f.get("label");
+                String none = "r." + name + " == null ? '\u2014' : ";
+                if (Boolean.TRUE.equals(f.get("isEnum"))) {
+                    labelImports.add(f.get("enumTypeName") + "Labels");
+                    render = none + f.get("enumTypeName") + "Labels[r." + name + "]";
+                } else if (Boolean.TRUE.equals(f.get("isBoolean"))) {
+                    render = none + "r." + name + " ? t('trueLabel') : t('falseLabel')";
+                } else if (Boolean.TRUE.equals(f.get("isDateTime"))) {
+                    render = none + "String(r." + name + ").replace('T', ' ').slice(0, 16)";
+                } else {
+                    render = none + "String(r." + name + ")";
+                }
+            } else {
+                Map<String, Object> r = relations.get(name);
+                label = (String) r.get("FieldName");
+                String fk = "r." + r.get("fkFieldName");
+                String id = fk + " == null ? '\u2014' : '#' + String(" + fk + ")";
+                render = Boolean.TRUE.equals(r.get("hasTargetLabel")) ? "r." + name + "Label ?? (" + id + ")" : id;
+            }
+            cv.put("renderTs", render);
+            cv.put("labelTs", escapeTsSingleQuoted(label));
+            cv.put("isHeading", i == 0);
+            cards.add(cv);
+        }
+        return cards;
+    }
+
+    /** An inbox page: its queues, its row cells, the workflow's status, assignee and due columns,
+     *  the sort and preset it lists with, and where a row opens. */
+    @SuppressWarnings("unchecked")
+    private static void putInbox(Map<String, Object> pv, PageDefinition p, Map<String, Object> ev, PageLinks links,
+                                 Map<String, Map<String, Object>> summaries) {
+        PageDefinition.InboxSpec spec = p.inbox();
+        Map<String, Object> summary = summaries.get(p.entity().toLowerCase(Locale.ROOT));
+        putEntityNames(pv, ev);
+        Map<String, Map<String, Object>> fields = new LinkedHashMap<>();
+        for (Map<String, Object> f : (List<Map<String, Object>>) ev.get("fields")) fields.put((String) f.get("name"), f);
+        Map<String, Map<String, Object>> relations = new LinkedHashMap<>();
+        for (Map<String, Object> r : (List<Map<String, Object>>) ev.get("relations")) relations.put((String) r.get("fieldName"), r);
+        Set<String> labelImports = new TreeSet<>();
+        pv.put("cardFields", cardViews(spec.cardFields(), fields, relations, labelImports));
+        Map<String, Object> status = fields.get((String) ev.get("workflowStatusField"));
+        labelImports.add(status.get("enumTypeName") + "Labels");
+        pv.put("cardLabelImports", String.join(", ", labelImports));
+        pv.put("statusField", status.get("name"));
+        pv.put("statusLabelTs", escapeTsSingleQuoted((String) status.get("label")));
+        pv.put("statusLabels", status.get("enumTypeName") + "Labels");
+        Map<String, Object> assignee = fields.get((String) ev.get("assigneeField"));
+        pv.put("assigneeField", assignee.get("name"));
+        pv.put("assigneeLabelTs", escapeTsSingleQuoted((String) assignee.get("label")));
+        Object dueName = ev.get("dueField");
+        pv.put("hasDue", dueName != null);
+        if (dueName != null) {
+            Map<String, Object> due = fields.get((String) dueName);
+            pv.put("dueField", due.get("name"));
+            pv.put("dueLabelTs", escapeTsSingleQuoted((String) due.get("label")));
+        }
+        List<Map<String, Object>> queues = new ArrayList<>();
+        for (PageDefinition.InboxQueue q : spec.queues()) {
+            Map<String, Object> qv = new LinkedHashMap<>();
+            qv.put("value", q.wire());
+            qv.put("labelKey", switch (q) {
+                case MINE -> "myTasks";
+                case UNASSIGNED -> "unassignedTasks";
+                case OPEN -> "allOpenTasks";
+            });
+            queues.add(qv);
+        }
+        pv.put("queues", queues);
+        pv.put("queueTypeTs", String.join(" | ", spec.queues().stream().map(q -> "'" + q.wire() + "'").toList()));
+        pv.put("sortParam", p.sort().field() + "," + (p.sort().desc() ? "desc" : "asc"));
+        pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
+        pv.put("presetFilterOrEmptyTs", p.presetFilter().isEmpty() ? "{}" : presetFilterTs(p.presetFilter(), ev));
+        pv.put("presetUsesPeriod", presetHasPeriod(p.presetFilter()));
+        putRowNaming(pv, ev, summary);
+        putRecordLink(pv, "", p.entity(), links, summaries);
+        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")));
+    }
+
+    /** A form page: the entity's whole form, creating at #/<page> and editing at #/<page>/<id>. */
+    private static void putForm(Map<String, Object> pv, PageDefinition p, Map<String, Object> ctx, Map<String, Object> ev,
+                                PageLinks links, Map<String, Map<String, Object>> summaries) {
+        pv.put("EntityName", ev.get("EntityName"));
+        pv.put("entityNameKebab", ev.get("entityNameKebab"));
+        pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
+        pv.put("entityLabelExpr", tsString((String) ev.get("entityLabel")));
+        // The form starts from the fields' defaults, as the entity page's New does.
+        List<String> defaults = new ArrayList<>();
+        for (Map<String, Object> fv : (List<Map<String, Object>>) ev.get("fields")) {
+            if (Boolean.TRUE.equals(fv.get("hasDefault"))) defaults.add(fv.get("name") + ": " + fv.get("defaultTs"));
+        }
+        pv.put("initialTs", defaults.isEmpty() ? "{}" : "{ " + String.join(", ", defaults) + " }");
+        // Saved, a row opens its record page; else the entity's home; else the form starts over.
+        putRecordLink(pv, "", p.entity(), links, summaries);
+        String home = links.homeOf(p.entity());
+        pv.put("hasBack", home != null);
+        pv.put("backPageId", home);
+        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")) || home != null);
+        // A single-key entity's form also edits: #/<form>/<id> loads the row and saves it with a PUT.
+        boolean editable = !Boolean.TRUE.equals(ev.get("hasCompositePk"));
+        pv.put("formEditable", editable);
+        pv.put("formHasProps", editable || Boolean.TRUE.equals(pv.get("needsNavigate")));
+        // A stale save (optimistic locking, as the entity resolves the opt) offers the two ways out.
+        Object lockingOverride = ev.get("optimisticLockingOverride");
+        boolean locking = lockingOverride != null ? Boolean.TRUE.equals(lockingOverride)
+                : Boolean.TRUE.equals(ctx.get("optScaffoldOptimisticLocking"));
+        pv.put("formLocking", editable && locking && !Boolean.TRUE.equals(ev.get("isView")));
+    }
+
     /** A record page's header tiles: a count (or aggregate) of each related list's rows for the
      *  record, through the list's filter param; a tile whose list is a tab opens that tab. */
     private static void putHeaderStats(Map<String, Object> pv, PageDefinition p,
@@ -1834,6 +2041,10 @@ public final class EntityScaffoldContext {
      *  context, for {@link #buildEntityContext}. Not referenced by any template. */
     private static final String WIZARD_PAGES_KEY = "__wizardPages";
 
+    /** Internal key under which the entity → create page (wizard or form) lookup rides in the
+     *  (frontend) project context, for {@link #buildEntityContext}. Not referenced by any template. */
+    private static final String CREATE_PAGES_KEY = "__createPages";
+
     /** Internal key under which the entity → record page lookup rides in the (frontend) project
      *  context: a relation whose target has a record page renders as a link to it. Not referenced
      *  by any template. */
@@ -1929,6 +2140,10 @@ public final class EntityScaffoldContext {
             s.put("tableRef", SqlNames.javaLiteral(tableRefOf(e)));
             s.put("pkColumn", pk == null ? "id" : SqlNames.javaLiteral(columnOf(pk)));
             s.put("labelColumn", labelField == null ? null : SqlNames.javaLiteral(columnOf(labelField)));
+            // Whether optimistic locking can apply to it (a writable table) and its own override:
+            // a relation to a versioned entity must point at a managed reference, not an id stub.
+            s.put("lockable", !e.readOnly() && !e.isView());
+            s.put("lockingOverride", e.opts().get("optimisticLocking"));
             summaries.put(e.name().toLowerCase(Locale.ROOT), s);
         }
         return summaries;
@@ -2047,12 +2262,13 @@ public final class EntityScaffoldContext {
         // Page layouts only: the list page can be scoped to one parent through a relation filter
         // (master-detail and record pages), so it takes a `scope` prop.
         ctx.put("pageScopeable", Boolean.TRUE.equals(projectContext.get("hasPages")) && !entity.relations().isEmpty());
-        // An entity with a wizard page: its form takes `only` (one step's fields) and its list page
-        // takes `onCreate` (New opens the wizard instead of the drawer).
+        // An entity with a create page: its list page takes `onCreate` (New opens that page instead
+        // of the drawer). With a wizard its form also takes `only` (one step's fields).
+        Map<String, String> creates = (Map<String, String>) projectContext.get(CREATE_PAGES_KEY);
+        ctx.put("hasCreatePage", creates != null && creates.containsKey(entity.name()));
         Map<String, String> wizards = (Map<String, String>) projectContext.get(WIZARD_PAGES_KEY);
-        boolean hasWizard = wizards != null && wizards.containsKey(entity.name());
-        ctx.put("hasWizardPage", hasWizard);
-        ctx.put("formHasSteps", hasWizard);
+        ctx.put("formHasSteps", (wizards != null && wizards.containsKey(entity.name()))
+                || Boolean.TRUE.equals(ctx.get("workflowRequiresFields")));
         // An entity with an import page: its list page takes `onImport` (Import opens that page
         // instead of the drawer).
         Map<String, String> imports = (Map<String, String>) projectContext.get(IMPORT_PAGES_KEY);
@@ -2104,7 +2320,23 @@ public final class EntityScaffoldContext {
         boolean importApplicable = Boolean.TRUE.equals(ctx.get("optScaffoldCsvImport")) && mutable;
         ctx.put("importApplicable", importApplicable);
         ctx.put("importValidates", importApplicable && Boolean.TRUE.equals(ctx.get("hasValidation")));
-        ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable);
+        // A relation set from an id alone is a stub without the target's version, which Hibernate
+        // takes for an unsaved row when the target is versioned (optimistic locking) — every save of
+        // such a relation failed. The service swaps those stubs for managed references.
+        boolean projectLocking = Boolean.TRUE.equals(projectContext.get("optScaffoldOptimisticLocking"));
+        boolean lockedRelations = false;
+        for (Map<String, Object> rel : (List<Map<String, Object>>) ctx.get("relations")) {
+            Map<String, Object> target = summaries == null ? null
+                    : summaries.get(String.valueOf(rel.get("targetEntity")).toLowerCase(Locale.ROOT));
+            Object override = target == null ? null : target.get("lockingOverride");
+            boolean locked = target != null && Boolean.TRUE.equals(target.get("lockable"))
+                    && (override != null ? Boolean.TRUE.equals(override) : projectLocking);
+            rel.put("targetLocked", locked);
+            lockedRelations |= locked;
+        }
+        ctx.put("hasLockedRelations", lockedRelations && mutable);
+        ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable
+                || (lockedRelations && mutable));
         // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
         // besides the audit rows — so it imports t / LOCALE exactly when one of them is drawn
         // (the generated lint rejects an unused import).
@@ -2229,6 +2461,12 @@ public final class EntityScaffoldContext {
                 imports.add(f.type().javaImport());
             }
         }
+        // A workflow's status changes by its transitions only: locked like a read-only field (no PUT,
+        // bulk or inline edit, no import column) — on the view, not the field, so demo data still
+        // cycles the states — and hidden from the form.
+        EntityDefinition.Workflow workflow = entity.workflow();
+        view.put("hasWorkflow", workflow != null);
+        if (workflow != null) putWorkflow(view, entity, workflow, fieldViews);
         // Re-tag last on nonPkViews
         for (int i = 0; i < nonPkViews.size(); i++) {
             nonPkViews.get(i).put("lastNonPk", i == nonPkViews.size() - 1);
@@ -2361,6 +2599,7 @@ public final class EntityScaffoldContext {
         // where the opt overrides are normally applied. null = inherit the project flag.
         view.put("csvExportOverride", entity.opts().get("csvExport"));
         view.put("softDeleteOverride", entity.opts().get("softDelete"));
+        view.put("optimisticLockingOverride", entity.opts().get("optimisticLocking"));
 
         // Kanban board view (listView == "kanban"): reuse the breakdown field as the grouping
         // column and turn its distinct values into lanes. Dragging a card writes the new lane value
@@ -2392,6 +2631,8 @@ public final class EntityScaffoldContext {
         }
         view.put("kanbanColumns", kanbanColumns);
         view.put("kanbanEnumTypeName", kanbanIsEnum ? breakdown.get("enumTypeName") : null);
+        // A board over the workflow's status moves a card by the transition between its lanes.
+        view.put("kanbanIsWorkflow", workflow != null && breakdown != null && workflow.statusField().equals(breakdown.get("name")));
 
         // Calendar view (listView == "calendar"): bucket records onto a month grid by their first
         // temporal (LOCAL_DATE / LOCAL_DATE_TIME) field. No writable requirement — it only reads.
@@ -2726,6 +2967,8 @@ public final class EntityScaffoldContext {
         fv.put("label", (f.label() != null && !f.label().isBlank()) ? f.label() : pascalName);
         // Locked-after-create read-only: the form disables it on edit and Service.update skips it.
         fv.put("isReadOnly", f.readOnly());
+        // A workflow's status: set by its transitions only (see putWorkflow).
+        fv.put("isWorkflowStatus", false);
         fv.put("isEditable", !f.readOnly());
 
         String javaType;

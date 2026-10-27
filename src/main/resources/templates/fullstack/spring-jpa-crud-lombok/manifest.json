@@ -88,6 +88,36 @@
       "gatedBy": "hasLdapAuth"
     },
     {
+      "source": "WorkflowException.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/web/WorkflowException.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 12,
+      "gatedBy": "hasWorkflows"
+    },
+    {
+      "source": "CurrentUser.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/web/CurrentUser.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 13,
+      "gatedBy": "hasWorkflows"
+    },
+    {
+      "source": "CurrentUserController.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/web/CurrentUserController.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 14,
+      "gatedBy": "hasWorkflows"
+    },
+    {
       "source": "EntityId.java.mustache",
       "path": "src/main/java/{{entityPackagePath}}/{{EntityName}}Id.java",
       "perEntity": true,

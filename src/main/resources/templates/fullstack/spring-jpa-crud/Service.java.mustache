@@ -4,7 +4,9 @@ import {{entityPackage}}.{{EntityName}};
 {{#hasCompositePk}}import {{entityPackage}}.{{keyClassName}};
 {{/hasCompositePk}}import {{repositoryPackage}}.{{EntityName}}Repository;
 import {{packageName}}.web.ResourceNotFoundException;
-{{#mutable}}{{^pkField.isGenerated}}import {{packageName}}.web.ResourceConflictException;
+{{#workflowUsesRoles}}import {{packageName}}.web.CurrentUser;
+{{/workflowUsesRoles}}{{#hasWorkflow}}import {{packageName}}.web.WorkflowException;
+{{/hasWorkflow}}{{#mutable}}{{^pkField.isGenerated}}import {{packageName}}.web.ResourceConflictException;
 {{/pkField.isGenerated}}{{/mutable}}{{#lockingApplicable}}import org.springframework.orm.ObjectOptimisticLockingFailureException;
 {{/lockingApplicable}}{{#hasStringFields}}import java.util.Locale;
 {{/hasStringFields}}import org.springframework.data.domain.Page;
@@ -36,18 +38,22 @@ public class {{EntityName}}Service {
     private final {{EntityName}}Repository repository;
 {{#usesEntityManager}}    private final EntityManager entityManager;
 {{/usesEntityManager}}{{#importValidates}}    private final jakarta.validation.Validator validator;
-{{/importValidates}}
+{{/importValidates}}{{#workflowUsesRoles}}    private final CurrentUser currentUser;
+{{/workflowUsesRoles}}
     public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#importValidates}},
-                                 jakarta.validation.Validator validator{{/importValidates}}) {
+                                 jakarta.validation.Validator validator{{/importValidates}}{{#workflowUsesRoles}}, CurrentUser currentUser{{/workflowUsesRoles}}) {
         this.repository = repository;
 {{#usesEntityManager}}        this.entityManager = entityManager;
 {{/usesEntityManager}}{{#importValidates}}        this.validator = validator;
-{{/importValidates}}    }
+{{/importValidates}}{{#workflowUsesRoles}}        this.currentUser = currentUser;
+{{/workflowUsesRoles}}    }
 {{#hasFilters}}
     /** Type-aware filter parameters bound from the request query string. Null fields are ignored;
      *  an enum or relation filter holds every value asked for ({@code status=OPEN,CLOSED}), any of which matches. */
     public record Filters(
-{{#filterFields}}            {{#isEnumFilter}}List<{{javaType}}> {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{javaType}} {{name}}Min, {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{javaType}} {{name}}From, {{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}List<{{javaType}}> {{name}}{{/isRelationFilter}}{{^last}},{{/last}}
+{{#hasAssignee}}            // The inbox queue (mine / unassigned / open) and who "mine" is.
+            String inbox, String me,
+{{/hasAssignee}}{{#filterFields}}            {{#isEnumFilter}}List<{{javaType}}> {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{javaType}} {{name}}Min, {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{javaType}} {{name}}From, {{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}List<{{javaType}}> {{name}}{{/isRelationFilter}}{{^last}},{{/last}}
 {{/filterFields}}    ) {}
 
     @Transactional(readOnly = true)
@@ -73,7 +79,8 @@ public class {{EntityName}}Service {
 {{/isNumericFilter}}{{#isTemporalFilter}}        if (filters.{{name}}From() != null) specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}From()));
         if (filters.{{name}}To() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}To()));
 {{/isTemporalFilter}}{{#isRelationFilter}}        if (filters.{{name}}() != null && !filters.{{name}}().isEmpty()) specs.add((root, query, cb) -> root.get("{{relationField}}").get("{{targetPkName}}").in(filters.{{name}}()));
-{{/isRelationFilter}}{{/filterFields}}        if (specs.isEmpty()) return null;
+{{/isRelationFilter}}{{/filterFields}}{{#hasAssignee}}        if (filters.inbox() != null && !filters.inbox().isBlank()) specs.add(inboxOf(filters.inbox(), filters.me()));
+{{/hasAssignee}}        if (specs.isEmpty()) return null;
         Specification<{{EntityName}}> combined = specs.get(0);
         for (int i = 1; i < specs.size(); i++) combined = combined.and(specs.get(i));
         return combined;
@@ -283,13 +290,15 @@ public class {{EntityName}}Service {
 
 {{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
 {{#lockingApplicable}}        entity.setVersion(null); // a new row starts at version 0, whatever the client sent
-{{/lockingApplicable}}{{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
+{{/lockingApplicable}}{{#hasWorkflow}}        entity.set{{WorkflowStatusName}}({{workflowInitialJava}}); // the workflow decides where a new row starts
+{{/hasWorkflow}}{{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}{{^pkField.isGenerated}}        // Client-supplied key: save() would silently merge over an existing row, so refuse with a 409.
         {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
         if (id != null && repository.existsById(id)) {
             throw new ResourceConflictException("{{EntityName}} " + id + " already exists");
         }
-{{/pkField.isGenerated}}        return repository.save(entity);
+{{/pkField.isGenerated}}{{#hasLockedRelations}}        withReferences(entity);
+{{/hasLockedRelations}}        return repository.save(entity);
     }
 {{#importApplicable}}
 
@@ -321,8 +330,10 @@ public class {{EntityName}}Service {
                 errors.add(new ImportError(row, "{{fkFieldName}}", "no {{targetEntity}} " + dto.{{fkFieldName}}()));
             }
 {{/relations}}            {{EntityName}} entity = dto.toEntity();
-{{#lockingApplicable}}            entity.setVersion(null);
-{{/lockingApplicable}}{{#pkField.isGenerated}}            entity.set{{pkField.Name}}(null);
+{{#hasLockedRelations}}            withReferences(entity);
+{{/hasLockedRelations}}{{#lockingApplicable}}            entity.setVersion(null);
+{{/lockingApplicable}}{{#hasWorkflow}}            entity.set{{WorkflowStatusName}}({{workflowInitialJava}});
+{{/hasWorkflow}}{{#pkField.isGenerated}}            entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}{{^pkField.isGenerated}}            {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
             if (id != null && !keys.add(id)) {
                 errors.add(new ImportError(row, null, "has the same key as an earlier row: " + id));
@@ -338,7 +349,8 @@ public class {{EntityName}}Service {
 
     public {{EntityName}} update({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id, {{EntityName}} updated) {
         {{EntityName}} existing = findById(id);
-{{#lockingApplicable}}        // The client sends the version it read: an older one means someone saved in between, so
+{{#hasLockedRelations}}        withReferences(updated);
+{{/hasLockedRelations}}{{#lockingApplicable}}        // The client sends the version it read: an older one means someone saved in between, so
         // refuse instead of overwriting their change (409, "stale"). No version = last write wins.
         if (updated.getVersion() != null && !updated.getVersion().equals(existing.getVersion())) {
             throw new ObjectOptimisticLockingFailureException({{EntityName}}.class, id);
@@ -347,8 +359,113 @@ public class {{EntityName}}Service {
 {{/isReadOnly}}{{/nonPkFields}}{{#relations}}        existing.set{{FieldName}}(updated.get{{FieldName}}());
 {{/relations}}        return repository.save(existing);
     }
+{{#hasWorkflow}}
 
-    /** Loads first so a missing id surfaces as a 404 (ResourceNotFoundException) rather than a
+    /** The states a row can still move on from; the others are final. */
+    private static final java.util.Set<{{EntityName}}.{{workflowEnumType}}> OPEN_STATES =
+            java.util.EnumSet.of({{workflowOpenStatesJava}});
+
+    /**
+     * Moves a row by one of its workflow's transitions — the only way its {{workflowStatusField}} changes
+     * (an update leaves it alone). The row must be in one of the transition's states (409), the
+     * caller must hold one of its roles (403, or 401 without a user) and the fields it asks for
+     * must be filled in (400, each named).
+     */
+    public {{EntityName}} transition({{pkField.javaType}} id, String name, {{EntityName}} values, String user) {
+        {{EntityName}} existing = findById(id);
+        {{EntityName}} given = values == null ? new {{EntityName}}() : values;
+{{#hasLockedRelations}}        withReferences(given);
+{{/hasLockedRelations}}        switch (name) {
+{{#workflowTransitions}}            case "{{name}}" -> {
+                requireState(existing, "{{name}}", {{fromJava}});
+{{#hasRoles}}                requireRole(user, "{{name}}", {{rolesJava}});
+{{/hasRoles}}{{#hasRequires}}                java.util.Map<String, String> missing = new java.util.LinkedHashMap<>();
+{{#requires}}                if (blank(given.get{{Name}}())) missing.put("{{key}}", "is required");
+{{/requires}}                if (!missing.isEmpty()) throw WorkflowException.missing(missing);
+{{#requires}}                existing.set{{Name}}(given.get{{Name}}());
+{{/requires}}{{/hasRequires}}                existing.set{{WorkflowStatusName}}({{toJava}});
+            }
+{{/workflowTransitions}}            default -> throw new IllegalArgumentException("Unknown transition: " + name);
+        }
+        return repository.save(existing);
+    }
+
+    private static void requireState({{EntityName}} row, String transition, {{EntityName}}.{{workflowEnumType}}... from) {
+        for ({{EntityName}}.{{workflowEnumType}} state : from) {
+            if (state == row.get{{WorkflowStatusName}}()) return;
+        }
+        throw WorkflowException.wrongState("'" + transition + "' does not apply to a {{EntityName}} that is " + row.get{{WorkflowStatusName}}());
+    }
+{{#workflowUsesRoles}}
+
+    private void requireRole(String user, String transition, String... roles) {
+        if (user == null) throw WorkflowException.unauthenticated();
+        java.util.Set<String> held = currentUser.roles(user);
+        for (String role : roles) {
+            if (held.contains(role)) return;
+        }
+        throw WorkflowException.forbidden("'" + transition + "' needs the " + String.join(" or ", roles) + " role");
+    }
+{{/workflowUsesRoles}}
+{{#workflowRequiresFields}}
+
+    private static boolean blank(Object value) {
+        return value == null || (value instanceof String s && s.isBlank());
+    }
+{{/workflowRequiresFields}}
+{{#hasAssignee}}
+
+    /** Takes an unassigned, unfinished row for the caller (409 when someone else has it). */
+    public {{EntityName}} claim({{pkField.javaType}} id, String user) {
+        if (user == null) throw WorkflowException.unauthenticated();
+        {{EntityName}} existing = findById(id);
+        if (!OPEN_STATES.contains(existing.get{{WorkflowStatusName}}())) {
+            throw WorkflowException.wrongState("This {{EntityName}} is " + existing.get{{WorkflowStatusName}}() + ", so there is nothing left to do");
+        }
+        String holder = existing.get{{AssigneeName}}();
+        if (holder != null && !holder.isBlank() && !holder.equals(user)) {
+            throw WorkflowException.wrongState("Already assigned to " + holder);
+        }
+        existing.set{{AssigneeName}}(user);
+        return repository.save(existing);
+    }
+
+    /** Gives a row back to the unassigned queue — only the user it is assigned to can. */
+    public {{EntityName}} release({{pkField.javaType}} id, String user) {
+        if (user == null) throw WorkflowException.unauthenticated();
+        {{EntityName}} existing = findById(id);
+        if (!user.equals(existing.get{{AssigneeName}}())) {
+            throw WorkflowException.forbidden("Only the user it is assigned to can release it");
+        }
+        existing.set{{AssigneeName}}(null);
+        return repository.save(existing);
+    }
+
+    /** An inbox queue: the caller's unfinished rows, the unfinished rows nobody has, or every unfinished row. */
+    private static Specification<{{EntityName}}> inboxOf(String queue, String me) {
+        return switch (queue) {
+            case "mine" -> (root, query, cb) -> me == null ? cb.disjunction()
+                    : cb.and(cb.equal(root.get("{{assigneeField}}"), me), root.get("{{workflowStatusField}}").in(OPEN_STATES));
+            case "unassigned" -> (root, query, cb) -> cb.and(
+                    cb.or(cb.isNull(root.get("{{assigneeField}}")), cb.equal(root.get("{{assigneeField}}"), "")),
+                    root.get("{{workflowStatusField}}").in(OPEN_STATES));
+            case "open" -> (root, query, cb) -> root.get("{{workflowStatusField}}").in(OPEN_STATES);
+            default -> throw new IllegalArgumentException("Unknown inbox queue '" + queue + "' (expected mine, unassigned or open)");
+        };
+    }
+{{/hasAssignee}}
+{{/hasWorkflow}}
+
+{{#hasLockedRelations}}
+    /** A relation set from an id alone points at a stub without its version, which Hibernate takes
+     *  for an unsaved row when the target is versioned: swap each for a reference to the real row. */
+    private void withReferences({{EntityName}} entity) {
+{{#relations}}{{#targetLocked}}        if (entity.get{{FieldName}}() != null) {
+            entity.set{{FieldName}}(entityManager.getReference({{entityPackage}}.{{targetEntity}}.class, entity.get{{FieldName}}().get{{TargetPkName}}()));
+        }
+{{/targetLocked}}{{/relations}}    }
+
+{{/hasLockedRelations}}    /** Loads first so a missing id surfaces as a 404 (ResourceNotFoundException) rather than a
      *  500 from deleteById's EmptyResultDataAccessException. */
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
         repository.delete(findById(id));

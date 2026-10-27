@@ -354,9 +354,51 @@ function Tile({ onOpen, className, children }: { onOpen?: () => void; className:
   )
 }
 
+/** A kpi's trend: the same number per day/month/year over `on`, as a small line under it. Not
+ *  interactive — the tile itself is the button. Under two points there is no line to draw, so it
+ *  keeps its height empty (the tiles in a row stay level). */
+function KpiSparkline({ title, path, on, bucket, agg, field, params }: {
+  title: string
+  path: string
+  on: string
+  bucket: string
+  agg?: string
+  field?: string
+  params: string
+}) {
+  const { stats, failed } = useStats(path, statsQuery(`groupBy=${on}`, `bucket=${bucket}`, aggQuery(agg, field), params))
+  const data = fillBuckets((stats?.buckets ?? []).map(b => ({ key: b.key, label: b.key, value: b.value ?? 0 })), bucket, agg)
+    .filter(d => d.key !== '')
+  if (failed || data.length < 2) return <div className="mt-3 h-10" aria-hidden="true" />
+  const values = data.map(d => d.value)
+  const max = Math.max(...values)
+  const min = Math.min(...values)
+  const span = max - min || 1
+  const points = data.map((d, i) => `${((i / (data.length - 1)) * 100).toFixed(1)},${(36 - ((d.value - min) / span) * 32).toFixed(1)}`)
+  return (
+    <svg
+      viewBox="0 0 100 40"
+      preserveAspectRatio="none"
+      className="mt-3 h-10 w-full"
+      role="img"
+      aria-label={t('xOverTime', { x: title })}
+    >
+      <polyline
+        points={points.join(' ')}
+        className="stroke-brand"
+        fill="none"
+        strokeWidth={2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  )
+}
+
 /** A single number: the record count, or an aggregate of one numeric column — optionally with the
- *  change against the previous period. */
-export function KpiTile({ title, path, agg, field, params = '', compareParams, onOpen, className = '' }: {
+ *  change against the previous period, and a sparkline of it over time. */
+export function KpiTile({ title, path, agg, field, params = '', compareParams, trendOn, trendBucket = 'month', onOpen, className = '' }: {
   title: string
   path: string
   /** sum/avg/min/max over `field`; omitted counts records. */
@@ -366,6 +408,10 @@ export function KpiTile({ title, path, agg, field, params = '', compareParams, o
   params?: string
   /** The same params over the previous period; given, the tile shows the change against it. */
   compareParams?: string
+  /** The date column a sparkline under the number plots over; omitted, there is none. */
+  trendOn?: string
+  /** The sparkline's buckets: day, month or year. */
+  trendBucket?: string
   onOpen?: () => void
   /** Grid placement (the widget's span). */
   className?: string
@@ -388,6 +434,9 @@ export function KpiTile({ title, path, agg, field, params = '', compareParams, o
           {change > 0 ? '▲' : change < 0 ? '▼' : '–'} {formatStat(Math.abs(change))}%{' '}
           <span className="font-normal text-muted">{t('vsPrevious')}</span>
         </div>
+      )}
+      {trendOn && !failed && (
+        <KpiSparkline title={title} path={path} on={trendOn} bucket={trendBucket} agg={agg} field={field} params={params} />
       )}
     </Tile>
   )

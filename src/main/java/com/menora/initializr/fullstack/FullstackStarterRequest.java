@@ -179,7 +179,22 @@ public record FullstackStarterRequest(
             // The form in titled sections: each lists field names and MANY_TO_ONE relation field
             // names, each at most once. The drawer form, the record's details and a wizard without
             // its own steps follow them; whatever no section lists comes after, untitled.
-            List<FormSectionDto> formSections) {
+            List<FormSectionDto> formSections,
+            // A workflow over one enum field: its states, the moves between them (each optionally
+            // limited to roles and asking for fields) and who the row is assigned to. Null: none.
+            // Left out of the request echoed into menora-model.json when absent, so it keeps its bytes.
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            WorkflowDto workflow) {
+
+        /** Every property but {@code workflow} (no workflow). */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql, String listView,
+                                   List<String> listViews, String label, String labelPlural,
+                                   Map<String, Boolean> opts, List<FormSectionDto> formSections) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
+                    label, labelPlural, opts, formSections, null);
+        }
 
         /** Every property but {@code formSections} (one untitled form). */
         public EntityDefinitionDto(String name, String tableName, String schema,
@@ -188,7 +203,7 @@ public record FullstackStarterRequest(
                                    List<String> listViews, String label, String labelPlural,
                                    Map<String, Boolean> opts) {
             this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
-                    label, labelPlural, opts, null);
+                    label, labelPlural, opts, null, null);
         }
 
         /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql/listView(s)). */
@@ -239,6 +254,21 @@ public record FullstackStarterRequest(
 
     /** A titled group of an entity's form: field and relation names, in order. */
     public record FormSectionDto(String title, List<String> fields) {}
+
+    /**
+     * An entity's workflow ("human tasks"): {@code statusField} is an enum whose values are the
+     * states; a new row starts in {@code initial} (default: the field's default value, else its first
+     * value) and only {@code transitions} change it. {@code assigneeField} (a text field holding the
+     * user id from the {@code userinfo} header) enables claim/release and the inbox queues;
+     * {@code dueField} (a date) is what an inbox sorts and flags overdue by.
+     */
+    public record WorkflowDto(String statusField, String initial, String assigneeField, String dueField,
+                              List<TransitionDto> transitions) {}
+
+    /** One move of a workflow: from any of {@code from} to {@code to}, by a user holding one of
+     *  {@code roles} (none: anyone), asking for the {@code requires} fields and relations. */
+    public record TransitionDto(String name, String label, List<String> from, String to, List<String> roles,
+                                List<String> requires) {}
 
     /**
      * One page of the generated frontend. {@code type} is {@code entity-list}, {@code dashboard},
@@ -340,7 +370,31 @@ public record FullstackStarterRequest(
             List<String> filters,
             // entity-list: the actions this page leaves out of its list — new, edit, delete,
             // export, import, bulk. Presentation only: the API still answers them.
-            List<String> hideActions) {
+            List<String> hideActions,
+            // inbox: the queues it offers as tabs — mine, unassigned, open — the first opening
+            // (default: mine, unassigned). `cardFields`, `presetFilter` and `sort` apply too. Left out of
+            // the request echoed into menora-model.json when absent, so it keeps its bytes.
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            List<String> queues) {
+
+        /** Every property but an inbox's queues. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize, String detail, Boolean showParent,
+                                 Integer refreshSeconds, String dateField, String endField, List<String> modes,
+                                 String laneField, List<String> lanes, List<String> cardFields,
+                                 Map<String, Integer> wipLimits, Integer laneSize, String body,
+                                 List<String> entities, Integer perEntity, Boolean shellSearch, List<String> filters,
+                                 List<String> hideActions) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, detail, showParent, refreshSeconds, dateField, endField, modes, laneField, lanes,
+                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, hideActions, null);
+        }
 
         /** Every property but a list page's hidden actions. */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
@@ -357,7 +411,7 @@ public record FullstackStarterRequest(
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
                     childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
                     pageSize, detail, showParent, refreshSeconds, dateField, endField, modes, laneField, lanes,
-                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, null);
+                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, null, null);
         }
 
         /** Every property but the dashboard filters. */
@@ -503,7 +557,19 @@ public record FullstackStarterRequest(
             String drillTo,
             // activity: the entities whose latest changes it lists (each needs the audit opt).
             // Absent: every entity the audit opt applies to.
-            List<String> entities) {
+            List<String> entities,
+            // kpi: a sparkline under the number, its values bucketed by day/month/year over a date
+            // (the picker's date field, else `dateField`, else the entity's first date).
+            String trend) {
+
+        /** The widget as layouts before KPI trends spell it. */
+        public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
+                         String field, String bucket, Integer span, Map<String, String> presetFilter,
+                         String sortBy, String dateField, Boolean compare, String target, String series, String text,
+                         List<String> pages, List<String> columns, SortDto sort, String drillTo, List<String> entities) {
+            this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, series, text, pages, columns, sort, drillTo, entities, null);
+        }
 
         /** The widget as layouts before activity feeds spell it. */
         public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
@@ -511,7 +577,7 @@ public record FullstackStarterRequest(
                          String sortBy, String dateField, Boolean compare, String target, String series, String text,
                          List<String> pages, List<String> columns, SortDto sort, String drillTo) {
             this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
-                    compare, target, series, text, pages, columns, sort, drillTo, null);
+                    compare, target, series, text, pages, columns, sort, drillTo, null, null);
         }
 
         /** The widget as layouts before {@code drillTo} spell it. */
@@ -520,7 +586,7 @@ public record FullstackStarterRequest(
                          String sortBy, String dateField, Boolean compare, String target, String series, String text,
                          List<String> pages, List<String> columns, SortDto sort) {
             this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
-                    compare, target, series, text, pages, columns, sort, null, null);
+                    compare, target, series, text, pages, columns, sort, null, null, null);
         }
 
         /** The widget as layouts before links and lists spell it. */
