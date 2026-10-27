@@ -141,6 +141,10 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{#hasCompare}}
           compareParams={ period === 'all' ? undefined : {{compareParamsExpr}} }
 {{/hasCompare}}
+{{#hasTrend}}
+          trendOn="{{trendOn}}"
+          trendBucket="{{bucket}}"
+{{/hasTrend}}
 {{#hasSpanClass}}
           className="{{spanClass}}"
 {{/hasSpanClass}}

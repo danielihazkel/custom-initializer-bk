@@ -1278,7 +1278,8 @@
             "entity": "Sale",
             "title": "Total revenue",
             "agg": "sum",
-            "field": "amount"
+            "field": "amount",
+            "trend": "month"
           },
           {
             "kind": "kpi",

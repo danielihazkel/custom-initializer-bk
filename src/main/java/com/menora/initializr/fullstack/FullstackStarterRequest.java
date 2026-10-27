@@ -503,7 +503,19 @@ public record FullstackStarterRequest(
             String drillTo,
             // activity: the entities whose latest changes it lists (each needs the audit opt).
             // Absent: every entity the audit opt applies to.
-            List<String> entities) {
+            List<String> entities,
+            // kpi: a sparkline under the number, its values bucketed by day/month/year over a date
+            // (the picker's date field, else `dateField`, else the entity's first date).
+            String trend) {
+
+        /** The widget as layouts before KPI trends spell it. */
+        public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
+                         String field, String bucket, Integer span, Map<String, String> presetFilter,
+                         String sortBy, String dateField, Boolean compare, String target, String series, String text,
+                         List<String> pages, List<String> columns, SortDto sort, String drillTo, List<String> entities) {
+            this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
+                    compare, target, series, text, pages, columns, sort, drillTo, entities, null);
+        }
 
         /** The widget as layouts before activity feeds spell it. */
         public WidgetDto(String kind, String entity, String title, String agg, String groupBy, Integer limit,
@@ -511,7 +523,7 @@ public record FullstackStarterRequest(
                          String sortBy, String dateField, Boolean compare, String target, String series, String text,
                          List<String> pages, List<String> columns, SortDto sort, String drillTo) {
             this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
-                    compare, target, series, text, pages, columns, sort, drillTo, null);
+                    compare, target, series, text, pages, columns, sort, drillTo, null, null);
         }
 
         /** The widget as layouts before {@code drillTo} spell it. */
@@ -520,7 +532,7 @@ public record FullstackStarterRequest(
                          String sortBy, String dateField, Boolean compare, String target, String series, String text,
                          List<String> pages, List<String> columns, SortDto sort) {
             this(kind, entity, title, agg, groupBy, limit, field, bucket, span, presetFilter, sortBy, dateField,
-                    compare, target, series, text, pages, columns, sort, null, null);
+                    compare, target, series, text, pages, columns, sort, null, null, null);
         }
 
         /** The widget as layouts before links and lists spell it. */

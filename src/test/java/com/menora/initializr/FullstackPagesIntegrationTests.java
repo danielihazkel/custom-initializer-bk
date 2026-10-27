@@ -1155,6 +1155,64 @@ class FullstackPagesIntegrationTests {
         assertWidgetRejected(Map.of("kind", "recent", "entity", "Ticket", "sortBy", "updatedAt"), "sortBy");
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void fullstackEndpoint_kpiDrawsATrendSparkline() throws Exception {
+        Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");
+        Map<String, Object> overview = page(body, "overview");
+        withoutDashboardFiltersAndDrillTo(overview);
+        List<Map<String, Object>> widgets = new ArrayList<>((List<Map<String, Object>>) overview.get("widgets"));
+        // No period picker: the first date of the entity, or the one named.
+        widgets.add(Map.of("kind", "kpi", "entity", "Ticket", "title", "Trend", "trend", "month"));
+        widgets.add(Map.of("kind", "kpi", "entity", "Ticket", "title", "Daily", "trend", "DAY", "dateField", "DUEAT"));
+        overview.put("widgets", widgets);
+        Map<String, String> files = generate(body);
+
+        String screen = files.get(FE + "src/app/screens/OverviewScreen.tsx").replace("\r\n", "\n");
+        assertThat(screen)
+                .contains("        <KpiTile\n          title={ 'Trend' }\n          path=\"/api/tickets\"\n"
+                        + "          trendOn=\"dueAt\"\n          trendBucket=\"month\"\n")
+                .contains("          title={ 'Daily' }\n          path=\"/api/tickets\"\n"
+                        + "          trendOn=\"dueAt\"\n          trendBucket=\"day\"\n");
+        assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
+                .contains("function KpiSparkline(")
+                .contains("useStats(path, statsQuery(`groupBy=${on}`, `bucket=${bucket}`, aggQuery(agg, field), params))")
+                .contains("{trendOn && !failed && (");
+    }
+
+    @Test
+    void fullstackEndpoint_kpiTrendPlotsOverThePeriodDate() throws Exception {
+        // The Sales reporting example's revenue tile has a monthly trend, limited to the picker's
+        // period over soldOn and to the region filter, like the number above it.
+        Map<String, String> files = generate(exampleBody("reporting", "react-tailwind-crud"));
+        String dashboard = files.get(FE + "src/app/screens/ReportScreen.tsx").replace("\r\n", "\n");
+        assertThat(dashboard)
+                .contains("          title={ 'Total revenue' }\n          path=\"/api/sales\"\n"
+                        + "          agg=\"sum\"\n          field=\"amount\"\n"
+                        + "          params={ statsQuery(rangeParams('soldOn', false, period), dashParams(['region'])) }\n"
+                        + "          trendOn=\"soldOn\"\n          trendBucket=\"month\"\n");
+        assertThat(dashboard.split("trendOn=", -1)).hasSize(2);
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsInvalidKpiTrend() {
+        assertWidgetRejected(Map.of("kind", "bar", "entity", "Ticket", "trend", "month"),
+                "only a kpi widget takes 'trend'");
+        assertWidgetRejected(Map.of("kind", "kpi", "entity", "Ticket", "trend", "week"),
+                "unknown trend 'week' (expected day, month or year)");
+        assertWidgetRejected(Map.of("kind", "kpi", "entity", "Team", "trend", "month"),
+                "'trend' needs a date field on Team to plot over time");
+        assertWidgetRejected(Map.of("kind", "kpi", "entity", "Ticket", "trend", "month", "dateField", "subject"),
+                "dateField 'subject' must be a non-key date field to plot the trend over");
+        assertWidgetRejected(Map.of("kind", "text", "text", "Hi", "trend", "month"),
+                "a text widget takes only 'text', 'title' and 'span'");
+        assertWidgetRejected(Map.of("kind", "list", "entity", "Ticket", "trend", "month"),
+                "a list widget takes only");
+        // A dateField without a picker still means nothing on a tile without a trend.
+        assertWidgetRejected(Map.of("kind", "kpi", "entity", "Ticket", "dateField", "dueAt"),
+                "'dateField' applies to the dashboard's dateRange, which is not set");
+    }
+
     @SuppressWarnings("unchecked")
     private void assertWidgetRejected(Map<String, Object> widget, String expectedMessage) {
         Map<String, Object> body = exampleBody("tickets", "react-tailwind-crud");

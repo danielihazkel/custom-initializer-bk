@@ -1143,6 +1143,10 @@ public final class EntityScaffoldContext {
             // A kpi's change against the previous period: the same params, one period back. The
             // picker's "all time" has no previous period, so the tile then shows no change.
             wv.put("hasCompare", w.compare());
+            // A kpi's sparkline: its bucket over the date kept in groupBy, with the tile's params.
+            boolean trend = w.kind() == PageDefinition.WidgetKind.KPI && w.bucket() != null;
+            wv.put("hasTrend", trend);
+            wv.put("trendOn", trend ? w.groupBy() : null);
             wv.put("compareParamsExpr", w.compare() ? params(preset, rangeExpr(ev, w.dateField(), true), dash) : null);
             wv.put("target", w.target() == null ? null : w.target().toPlainString());
             // A widget's drillTo (a list or report page of its entity) replaces the entity's home.

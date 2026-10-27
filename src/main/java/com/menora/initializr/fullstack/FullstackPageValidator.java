@@ -961,6 +961,14 @@ public final class FullstackPageValidator {
             if (kind != PageDefinition.WidgetKind.LINE && trimToNull(w.bucket()) != null) {
                 throw new WizardArgumentException(prefix + ": only a line widget takes 'bucket'");
             }
+            // A kpi's sparkline: kept in the bucket and groupBy a kpi has no other use for.
+            String rawTrend = trimToNull(w.trend());
+            if (rawTrend != null) {
+                if (kind != PageDefinition.WidgetKind.KPI) {
+                    throw new WizardArgumentException(prefix + ": only a kpi widget takes 'trend'");
+                }
+                bucket = parseBucket(prefix, rawTrend, "trend");
+            }
             int limit = 0;
             if (kind == PageDefinition.WidgetKind.RECENT || kind == PageDefinition.WidgetKind.TOP) {
                 limit = w.limit() == null ? DEFAULT_RECENT_LIMIT : w.limit();
@@ -980,7 +988,12 @@ public final class FullstackPageValidator {
             } else if (trimToNull(w.sortBy()) != null) {
                 throw new WizardArgumentException(prefix + ": only a recent widget takes 'sortBy'");
             }
-            String dateField = dateField(prefix, entity, trimToNull(w.dateField()), hasDateRange);
+            // Without a picker, a trend's dateField only names the date it plots over.
+            boolean trendDate = bucket != null && kind == PageDefinition.WidgetKind.KPI && !hasDateRange;
+            String dateField = trendDate ? null : dateField(prefix, entity, trimToNull(w.dateField()), hasDateRange);
+            if (bucket != null && kind == PageDefinition.WidgetKind.KPI) {
+                groupBy = trendOn(prefix, entity, dateField, trendDate ? trimToNull(w.dateField()) : null);
+            }
             boolean compare = Boolean.TRUE.equals(w.compare());
             if (compare) {
                 if (kind != PageDefinition.WidgetKind.KPI) {
@@ -1111,7 +1124,7 @@ public final class FullstackPageValidator {
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
                 || trimToNull(w.series()) != null || (w.pages() != null && !w.pages().isEmpty())
-                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null) {
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null || trimToNull(w.trend()) != null) {
             throw new WizardArgumentException(prefix + ": a text widget takes only 'text', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.TEXT) : w.span();
@@ -1159,7 +1172,7 @@ public final class FullstackPageValidator {
                 || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
                 || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
                 || trimToNull(w.series()) != null || trimToNull(w.text()) != null
-                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null) {
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null || trimToNull(w.trend()) != null) {
             throw new WizardArgumentException(prefix + ": a links widget takes only 'pages', 'title' and 'span'");
         }
         int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.LINKS) : w.span();
@@ -1181,7 +1194,8 @@ public final class FullstackPageValidator {
         if (trimToNull(w.agg()) != null || trimToNull(w.field()) != null || trimToNull(w.groupBy()) != null
                 || trimToNull(w.bucket()) != null || trimToNull(w.sortBy()) != null || trimToNull(w.dateField()) != null
                 || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null || trimToNull(w.series()) != null
-                || trimToNull(w.text()) != null || (w.pages() != null && !w.pages().isEmpty())) {
+                || trimToNull(w.text()) != null || (w.pages() != null && !w.pages().isEmpty())
+                || trimToNull(w.trend()) != null) {
             throw new WizardArgumentException(prefix
                     + ": a list widget takes only 'entity', 'columns', 'sort', 'presetFilter', 'limit', 'title' and 'span'");
         }
@@ -1305,7 +1319,7 @@ public final class FullstackPageValidator {
                 || trimToNull(w.sortBy()) != null || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare())
                 || trimToNull(w.target()) != null || trimToNull(w.series()) != null || trimToNull(w.text()) != null
                 || (w.pages() != null && !w.pages().isEmpty()) || (w.columns() != null && !w.columns().isEmpty())
-                || w.sort() != null || trimToNull(w.drillTo()) != null) {
+                || w.sort() != null || trimToNull(w.drillTo()) != null || trimToNull(w.trend()) != null) {
             throw new WizardArgumentException(prefix + ": an activity widget takes only 'entities', 'limit', 'title' and 'span'");
         }
         List<String> names = new ArrayList<>();
@@ -1413,12 +1427,37 @@ public final class FullstackPageValidator {
 
     /** A line's bucket granularity. Absent means {@code month}. */
     private static PageDefinition.Bucket parseBucket(String prefix, String rawBucket) {
+        return parseBucket(prefix, rawBucket, "bucket");
+    }
+
+    private static PageDefinition.Bucket parseBucket(String prefix, String rawBucket, String prop) {
         String b = trimToNull(rawBucket);
         if (b == null) return PageDefinition.Bucket.MONTH;
         for (PageDefinition.Bucket bucket : PageDefinition.Bucket.values()) {
             if (bucket.wire().equalsIgnoreCase(b)) return bucket;
         }
-        throw new WizardArgumentException(prefix + ": unknown bucket '" + b + "' (expected day, month or year)");
+        throw new WizardArgumentException(prefix + ": unknown " + prop + " '" + b + "' (expected day, month or year)");
+    }
+
+    /**
+     * The date a kpi's sparkline plots over: the date the dashboard's picker limits it by (so the
+     * line covers the period on screen), else the {@code dateField} it names, else the entity's
+     * first non-key date.
+     */
+    private static String trendOn(String prefix, EntityDefinition entity, String pickerDate, String requested) {
+        if (pickerDate != null) return pickerDate;
+        if (requested != null) {
+            FieldDefinition field = fieldOf(prefix, entity, requested, "dateField");
+            if (field.primaryKey() || !field.type().isTemporal()) {
+                throw new WizardArgumentException(prefix + ": dateField '" + requested
+                        + "' must be a non-key date field to plot the trend over");
+            }
+            return field.name();
+        }
+        return entity.fields().stream().filter(f -> !f.primaryKey() && f.type().isTemporal()).findFirst()
+                .map(FieldDefinition::name)
+                .orElseThrow(() -> new WizardArgumentException(prefix + ": 'trend' needs a date field on "
+                        + entity.name() + " to plot over time"));
     }
 
     /** A line plots a temporal field over time — the entity's first, when omitted. */
