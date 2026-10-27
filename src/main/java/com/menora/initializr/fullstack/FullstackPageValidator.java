@@ -1662,8 +1662,11 @@ public final class FullstackPageValidator {
                                                    List<FullstackStarterRequest.StepDto> raw) {
         Map<String, String> askable = new LinkedHashMap<>();
         List<String> required = new ArrayList<>();
+        // A workflow's status starts in its initial state and moves only by transitions.
+        String status = entity.workflow() == null ? null : entity.workflow().statusField();
         for (FieldDefinition f : entity.fields()) {
             if (f.primaryKey() && f.generated()) continue;
+            if (f.name().equals(status)) continue;
             askable.put(f.name().toLowerCase(Locale.ROOT), f.name());
             if (f.required() || f.primaryKey()) required.add(f.name());
         }
@@ -1680,7 +1683,8 @@ public final class FullstackPageValidator {
             List<PageDefinition.Step> out = new ArrayList<>();
             Set<String> placed = new HashSet<>();
             for (EntityDefinition.FormSection section : entity.formSections()) {
-                out.add(new PageDefinition.Step(section.title(), section.fields()));
+                List<String> asked = section.fields().stream().filter(f -> !f.equals(status)).toList();
+                if (!asked.isEmpty()) out.add(new PageDefinition.Step(section.title(), asked));
                 section.fields().forEach(f -> placed.add(f.toLowerCase(Locale.ROOT)));
             }
             List<String> rest = askable.values().stream().filter(f -> !placed.contains(f.toLowerCase(Locale.ROOT))).toList();
@@ -1709,6 +1713,9 @@ public final class FullstackPageValidator {
             List<String> fields = new ArrayList<>();
             for (String name : step.fields()) {
                 String canonical = name == null ? null : askable.get(name.trim().toLowerCase(Locale.ROOT));
+                if (canonical == null && status != null && name != null && status.equalsIgnoreCase(name.trim())) {
+                    throw new WizardArgumentException(stepPrefix + ": '" + status + "' is set by the workflow, so a step cannot ask for it");
+                }
                 if (canonical == null) {
                     throw new WizardArgumentException(stepPrefix + ": '" + name + "' is not a field of the "
                             + entity.name() + " form");

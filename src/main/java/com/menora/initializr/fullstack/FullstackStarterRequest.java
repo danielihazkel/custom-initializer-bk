@@ -179,7 +179,20 @@ public record FullstackStarterRequest(
             // The form in titled sections: each lists field names and MANY_TO_ONE relation field
             // names, each at most once. The drawer form, the record's details and a wizard without
             // its own steps follow them; whatever no section lists comes after, untitled.
-            List<FormSectionDto> formSections) {
+            List<FormSectionDto> formSections,
+            // A workflow over one enum field: its states, the moves between them (each optionally
+            // limited to roles and asking for fields) and who the row is assigned to. Null: none.
+            WorkflowDto workflow) {
+
+        /** Every property but {@code workflow} (no workflow). */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql, String listView,
+                                   List<String> listViews, String label, String labelPlural,
+                                   Map<String, Boolean> opts, List<FormSectionDto> formSections) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
+                    label, labelPlural, opts, formSections, null);
+        }
 
         /** Every property but {@code formSections} (one untitled form). */
         public EntityDefinitionDto(String name, String tableName, String schema,
@@ -188,7 +201,7 @@ public record FullstackStarterRequest(
                                    List<String> listViews, String label, String labelPlural,
                                    Map<String, Boolean> opts) {
             this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
-                    label, labelPlural, opts, null);
+                    label, labelPlural, opts, null, null);
         }
 
         /** Back-compat overload for table-backed entities (no readOnly/viewQuery/sourceSql/listView(s)). */
@@ -239,6 +252,21 @@ public record FullstackStarterRequest(
 
     /** A titled group of an entity's form: field and relation names, in order. */
     public record FormSectionDto(String title, List<String> fields) {}
+
+    /**
+     * An entity's workflow ("human tasks"): {@code statusField} is an enum whose values are the
+     * states; a new row starts in {@code initial} (default: the field's default value, else its first
+     * value) and only {@code transitions} change it. {@code assigneeField} (a text field holding the
+     * user id from the {@code userinfo} header) enables claim/release and the inbox queues;
+     * {@code dueField} (a date) is what an inbox sorts and flags overdue by.
+     */
+    public record WorkflowDto(String statusField, String initial, String assigneeField, String dueField,
+                              List<TransitionDto> transitions) {}
+
+    /** One move of a workflow: from any of {@code from} to {@code to}, by a user holding one of
+     *  {@code roles} (none: anyone), asking for the {@code requires} fields and relations. */
+    public record TransitionDto(String name, String label, List<String> from, String to, List<String> roles,
+                                List<String> requires) {}
 
     /**
      * One page of the generated frontend. {@code type} is {@code entity-list}, {@code dashboard},

@@ -203,6 +203,14 @@ public class FullstackStarterController {
                         + "' has roles, which need the ldap-auth or ldap-auth-rest dependency");
             }
         });
+        // So are a workflow's role-limited transitions: the generated service asks the user's groups.
+        for (EntityDefinition e : entities) {
+            if (e.workflow() == null || ldap) continue;
+            e.workflow().transitions().stream().filter(t -> !t.roles().isEmpty()).findFirst().ifPresent(t -> {
+                throw new WizardArgumentException("Entity '" + e.name() + "' workflow: transition '" + t.name()
+                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency");
+            });
+        }
         optionsContext.populate(body.opts());
         optionsContext.setDepartment(body.department());
         // The `openapi` scaffold opt enriches generated controllers with springdoc @Tag/@Operation
