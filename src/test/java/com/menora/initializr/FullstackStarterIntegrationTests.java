@@ -2654,6 +2654,32 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_optimisticLockingSavesRelationsToVersionedEntities() throws Exception {
+        // A relation set from an id alone is a stub with no version: Hibernate took it for an unsaved
+        // row once the target was versioned, so every create/update/import of the relation failed
+        // (409, "A required value is missing"). The service now swaps it for a managed reference.
+        Map<String, Object> body = FullstackWorkflowTests.claims(false);
+        body.put("opts", Map.of("scaffold", List.of("optimisticLocking", "csvImport")));
+        Map<String, String> files = generateZip(body);
+        String service = files.get("claims/backend/src/main/java/com/menora/claims/service/ExpenseClaimService.java").replace("\r\n", "\n");
+        assertThat(service)
+                .contains("    private void withReferences(ExpenseClaim entity) {\n"
+                        + "        if (entity.getCostCenter() != null) {\n"
+                        + "            entity.setCostCenter(entityManager.getReference(com.menora.claims.entity.CostCenter.class, entity.getCostCenter().getId()));\n")
+                .contains("        withReferences(entity);\n        return repository.save(entity);")
+                .contains("        ExpenseClaim existing = findById(id);\n        withReferences(updated);\n")
+                .contains("            ExpenseClaim entity = dto.toEntity();\n            withReferences(entity);\n");
+        // Without locking on the target, the stub is fine and the service keeps its bytes.
+        Map<String, Object> unlocked = FullstackWorkflowTests.claims(false);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> center = ((List<Map<String, Object>>) unlocked.get("entities")).get(0);
+        center.put("opts", Map.of("optimisticLocking", false));
+        unlocked.put("opts", Map.of("scaffold", List.of("optimisticLocking")));
+        assertThat(generateZip(unlocked).get("claims/backend/src/main/java/com/menora/claims/service/ExpenseClaimService.java"))
+                .doesNotContain("withReferences");
+    }
+
+    @Test
     void fullstackEndpoint_optimisticLockingVersionsWritableEntities() throws Exception {
         // Invoice inherits the project opt; Note opts out; Summary is a read-only view.
         Map<String, Object> invoice = new LinkedHashMap<>();

@@ -297,7 +297,8 @@ public class {{EntityName}}Service {
         if (id != null && repository.existsById(id)) {
             throw new ResourceConflictException("{{EntityName}} " + id + " already exists");
         }
-{{/pkField.isGenerated}}        return repository.save(entity);
+{{/pkField.isGenerated}}{{#hasLockedRelations}}        withReferences(entity);
+{{/hasLockedRelations}}        return repository.save(entity);
     }
 {{#importApplicable}}
 
@@ -329,7 +330,8 @@ public class {{EntityName}}Service {
                 errors.add(new ImportError(row, "{{fkFieldName}}", "no {{targetEntity}} " + dto.{{fkFieldName}}()));
             }
 {{/relations}}            {{EntityName}} entity = dto.toEntity();
-{{#lockingApplicable}}            entity.setVersion(null);
+{{#hasLockedRelations}}            withReferences(entity);
+{{/hasLockedRelations}}{{#lockingApplicable}}            entity.setVersion(null);
 {{/lockingApplicable}}{{#hasWorkflow}}            entity.set{{WorkflowStatusName}}({{workflowInitialJava}});
 {{/hasWorkflow}}{{#pkField.isGenerated}}            entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}{{^pkField.isGenerated}}            {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
@@ -347,7 +349,8 @@ public class {{EntityName}}Service {
 
     public {{EntityName}} update({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id, {{EntityName}} updated) {
         {{EntityName}} existing = findById(id);
-{{#lockingApplicable}}        // The client sends the version it read: an older one means someone saved in between, so
+{{#hasLockedRelations}}        withReferences(updated);
+{{/hasLockedRelations}}{{#lockingApplicable}}        // The client sends the version it read: an older one means someone saved in between, so
         // refuse instead of overwriting their change (409, "stale"). No version = last write wins.
         if (updated.getVersion() != null && !updated.getVersion().equals(existing.getVersion())) {
             throw new ObjectOptimisticLockingFailureException({{EntityName}}.class, id);
@@ -371,7 +374,8 @@ public class {{EntityName}}Service {
     public {{EntityName}} transition({{pkField.javaType}} id, String name, {{EntityName}} values, String user) {
         {{EntityName}} existing = findById(id);
         {{EntityName}} given = values == null ? new {{EntityName}}() : values;
-        switch (name) {
+{{#hasLockedRelations}}        withReferences(given);
+{{/hasLockedRelations}}        switch (name) {
 {{#workflowTransitions}}            case "{{name}}" -> {
                 requireState(existing, "{{name}}", {{fromJava}});
 {{#hasRoles}}                requireRole(user, "{{name}}", {{rolesJava}});
@@ -452,7 +456,16 @@ public class {{EntityName}}Service {
 {{/hasAssignee}}
 {{/hasWorkflow}}
 
-    /** Loads first so a missing id surfaces as a 404 (ResourceNotFoundException) rather than a
+{{#hasLockedRelations}}
+    /** A relation set from an id alone points at a stub without its version, which Hibernate takes
+     *  for an unsaved row when the target is versioned: swap each for a reference to the real row. */
+    private void withReferences({{EntityName}} entity) {
+{{#relations}}{{#targetLocked}}        if (entity.get{{FieldName}}() != null) {
+            entity.set{{FieldName}}(entityManager.getReference({{entityPackage}}.{{targetEntity}}.class, entity.get{{FieldName}}().get{{TargetPkName}}()));
+        }
+{{/targetLocked}}{{/relations}}    }
+
+{{/hasLockedRelations}}    /** Loads first so a missing id surfaces as a 404 (ResourceNotFoundException) rather than a
      *  500 from deleteById's EmptyResultDataAccessException. */
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
         repository.delete(findById(id));

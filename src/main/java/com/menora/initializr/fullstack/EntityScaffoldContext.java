@@ -2063,6 +2063,10 @@ public final class EntityScaffoldContext {
             s.put("tableRef", SqlNames.javaLiteral(tableRefOf(e)));
             s.put("pkColumn", pk == null ? "id" : SqlNames.javaLiteral(columnOf(pk)));
             s.put("labelColumn", labelField == null ? null : SqlNames.javaLiteral(columnOf(labelField)));
+            // Whether optimistic locking can apply to it (a writable table) and its own override:
+            // a relation to a versioned entity must point at a managed reference, not an id stub.
+            s.put("lockable", !e.readOnly() && !e.isView());
+            s.put("lockingOverride", e.opts().get("optimisticLocking"));
             summaries.put(e.name().toLowerCase(Locale.ROOT), s);
         }
         return summaries;
@@ -2239,7 +2243,23 @@ public final class EntityScaffoldContext {
         boolean importApplicable = Boolean.TRUE.equals(ctx.get("optScaffoldCsvImport")) && mutable;
         ctx.put("importApplicable", importApplicable);
         ctx.put("importValidates", importApplicable && Boolean.TRUE.equals(ctx.get("hasValidation")));
-        ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable);
+        // A relation set from an id alone is a stub without the target's version, which Hibernate
+        // takes for an unsaved row when the target is versioned (optimistic locking) — every save of
+        // such a relation failed. The service swaps those stubs for managed references.
+        boolean projectLocking = Boolean.TRUE.equals(projectContext.get("optScaffoldOptimisticLocking"));
+        boolean lockedRelations = false;
+        for (Map<String, Object> rel : (List<Map<String, Object>>) ctx.get("relations")) {
+            Map<String, Object> target = summaries == null ? null
+                    : summaries.get(String.valueOf(rel.get("targetEntity")).toLowerCase(Locale.ROOT));
+            Object override = target == null ? null : target.get("lockingOverride");
+            boolean locked = target != null && Boolean.TRUE.equals(target.get("lockable"))
+                    && (override != null ? Boolean.TRUE.equals(override) : projectLocking);
+            rel.put("targetLocked", locked);
+            lockedRelations |= locked;
+        }
+        ctx.put("hasLockedRelations", lockedRelations && mutable);
+        ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable
+                || (lockedRelations && mutable));
         // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
         // besides the audit rows — so it imports t / LOCALE exactly when one of them is drawn
         // (the generated lint rejects an unused import).
