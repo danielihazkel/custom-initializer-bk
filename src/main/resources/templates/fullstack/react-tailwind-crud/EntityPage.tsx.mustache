@@ -88,10 +88,10 @@ type ListAction = 'new' | 'edit' | 'delete' | 'export' | 'import' | 'bulk'
   /** Import opens the entity's import page instead of the import drawer. */
   onImport?: () => void
 {{/hasImportPage}}
-{{#hasWizardPage}}
+{{#hasCreatePage}}
   /** New opens the entity's wizard page instead of the form drawer. */
   onCreate?: () => void
-{{/hasWizardPage}}
+{{/hasCreatePage}}
 {{#listUrlState}}
   /** Where the list opens, from the route: search, sort, page, rows per page, view, filters. */
   listState?: ListState
@@ -130,7 +130,7 @@ function oneValue(value: string | undefined): boolean {
   return !!value && !value.includes(',')
 }
 
-{{/fromFiltersChecksOne}}{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasWizardPage}}, onCreate{{/hasWizardPage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}}{{#listActionsConfigurable}}, hideActions{{/listActionsConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+{{/fromFiltersChecksOne}}{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasCreatePage}}, onCreate{{/hasCreatePage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}}{{#listActionsConfigurable}}, hideActions{{/listActionsConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
   // This browser's own settings for the list — rows per page, sort, view, hidden columns — saved as
   // they change; the list opens with them unless the route says otherwise.
   const [prefs] = useState(() => readListPrefs('{{entityNameKebab}}', columns.flatMap(c => c.sortKey ? [c.sortKey] : []), {{{viewModesTs}}}))
@@ -564,7 +564,7 @@ function oneValue(value: string | undefined): boolean {
   const filtered = debouncedSearch !== ''{{#hasFilters}} || Object.values(filters).some(v => v !== ''){{/hasFilters}}
 {{#listActionsConfigurable}}  // What this list page leaves out (its hideActions): the buttons go; the API still answers them.
   const can = (action: ListAction) => !hideActions?.includes(action)
-{{/listActionsConfigurable}}{{#mutable}}  const emptyAction = {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{ label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasWizardPage}}openNew{{/hasWizardPage}}{{#hasWizardPage}}onCreate ?? openNew{{/hasWizardPage}} }
+{{/listActionsConfigurable}}{{#mutable}}  const emptyAction = {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{ label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasCreatePage}}openNew{{/hasCreatePage}}{{#hasCreatePage}}onCreate ?? openNew{{/hasCreatePage}} }
 {{#listActionsConfigurable}}  const editRow = can('edit') ? openEdit : undefined
   const deleteRow = can('delete') ? setPendingDelete : undefined
 {{/listActionsConfigurable}}{{/mutable}}{{#viewTable}}  // The Columns menu: hide columns, or forget everything this browser saved for the list.
@@ -665,7 +665,7 @@ function oneValue(value: string | undefined): boolean {
 {{#listActionsConfigurable}}          )}
 {{/listActionsConfigurable}}{{/importApplicable}}{{#mutable}}{{#listActionsConfigurable}}          {can('new') && (
 {{/listActionsConfigurable}}          <button
-            {{^hasWizardPage}}onClick={openNew}{{/hasWizardPage}}{{#hasWizardPage}}onClick={onCreate ?? openNew}{{/hasWizardPage}}
+            {{^hasCreatePage}}onClick={openNew}{{/hasCreatePage}}{{#hasCreatePage}}onClick={onCreate ?? openNew}{{/hasCreatePage}}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
           >
             <Plus className="h-4 w-4" />

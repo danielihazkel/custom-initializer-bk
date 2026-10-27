@@ -227,7 +227,7 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
             </button>
             <button
               type="button"
-              onClick={() => {{#recordEditsInWizard}}onNavigate('{{wizardPageId}}', recordId){{/recordEditsInWizard}}{{#recordEditsInDrawer}}{ setEditing({ ...record }); setFormErrors({}) }{{/recordEditsInDrawer}} }
+              onClick={() => {{#recordEditsInPage}}onNavigate('{{createPageId}}', recordId){{/recordEditsInPage}}{{#recordEditsInDrawer}}{ setEditing({ ...record }); setFormErrors({}) }{{/recordEditsInDrawer}} }
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
             >
               <Pencil className="h-4 w-4" />

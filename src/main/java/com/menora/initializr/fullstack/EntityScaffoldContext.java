@@ -192,11 +192,11 @@ public final class EntityScaffoldContext {
                     pv.put("hasImportPage", importPage != null);
                     pv.put("importPageId", importPage);
                     if (importPage != null) pv.put("needsNavigate", true);
-                    // New opens the entity's wizard page, when it has one.
-                    String wizard = links.wizardPageOf(p.entity());
-                    pv.put("hasWizard", wizard != null);
-                    pv.put("wizardPageId", wizard);
-                    if (wizard != null) pv.put("needsNavigate", true);
+                    // New opens the entity's create page (a wizard or a form), when it has one.
+                    String create = links.createPageOf(p.entity());
+                    pv.put("hasCreatePage", create != null);
+                    pv.put("createPageId", create);
+                    if (create != null) pv.put("needsNavigate", true);
                     // How the list opens (each absent: the EntityPage default). Column and field
                     // names are validated identifiers; the sort object matches the generated SortSpec.
                     pv.put("hasColumns", !p.columns().isEmpty());
@@ -300,12 +300,12 @@ public final class EntityScaffoldContext {
                     pv.put("backPageId", back);
                     // A writable entity's record page edits (form drawer) and deletes the row itself.
                     boolean recordMutable = Boolean.TRUE.equals(ev.get("mutable"));
-                    // With a wizard page, Edit reopens the row in the wizard's steps instead.
-                    String editWizard = recordMutable ? links.wizardPageOf(p.entity()) : null;
+                    // With a create page, Edit reopens the row there (#/<page>/<id>) instead.
+                    String editPage = recordMutable ? links.createPageOf(p.entity()) : null;
                     pv.put("recordMutable", recordMutable);
-                    pv.put("recordEditsInWizard", editWizard != null);
-                    pv.put("recordEditsInDrawer", recordMutable && editWizard == null);
-                    pv.put("wizardPageId", editWizard);
+                    pv.put("recordEditsInPage", editPage != null);
+                    pv.put("recordEditsInDrawer", recordMutable && editPage == null);
+                    pv.put("createPageId", editPage);
                     // Previous / Next walk the rows of the list the record was opened from.
                     pv.put("recordHasIcons", true);
                     // The record's state at a glance: its first two enum fields as chips by the heading.
@@ -620,8 +620,9 @@ public final class EntityScaffoldContext {
                         || Boolean.TRUE.equals(v.get("tabsUseRangeParams"))));
         // links.tsx (the launcher tiles) only for a dashboard that has a links widget.
         ctx.put("hasLinksWidgets", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("usesLinks"))));
-        // Per-entity contexts read this: an entity with a wizard gets the stepped form and the
-        // list page's onCreate.
+        // Per-entity contexts read these: an entity with a create page gets the list page's
+        // onCreate, and one with a wizard the stepped form.
+        ctx.put(CREATE_PAGES_KEY, links.createPageByEntity());
         ctx.put(WIZARD_PAGES_KEY, links.wizardPageByEntity());
         // Per-entity contexts read this too: a relation to an entity with a record page links there.
         ctx.put(RECORD_PAGES_KEY, links.recordPageByEntity());
@@ -771,7 +772,7 @@ public final class EntityScaffoldContext {
      */
     private record PageLinks(Map<String, String> recordPageByEntity, Map<String, String> homeByEntity,
                              Map<String, String> listPageByEntity, Map<String, String> wizardPageByEntity,
-                             Map<String, String> importPageByEntity) {
+                             Map<String, String> createPageByEntity, Map<String, String> importPageByEntity) {
 
         static PageLinks of(List<PageDefinition> pages) {
             Map<String, String> records = new LinkedHashMap<>();
@@ -800,7 +801,9 @@ public final class EntityScaffoldContext {
                 if (p.type() == PageDefinition.Type.WIZARD) wizards.put(p.entity(), p.id());
                 if (p.type() == PageDefinition.Type.IMPORT) imports.put(p.entity(), p.id());
             }
-            return new PageLinks(records, homes, lists, wizards, imports);
+            // The page that creates (and edits) an entity's rows: its wizard. An entity has one at most.
+            Map<String, String> creates = new LinkedHashMap<>(wizards);
+            return new PageLinks(records, homes, lists, wizards, creates, imports);
         }
 
         /** The entity's import page — where its list page's Import goes — or null. */
@@ -811,8 +814,9 @@ public final class EntityScaffoldContext {
         /** The entity's first visible list page — what a drill-down opens, filtered — or null. */
         String listPageOf(String entity) { return listPageByEntity.get(entity); }
 
-        /** The entity's wizard page — where its list page's New goes — or null. */
-        String wizardPageOf(String entity) { return wizardPageByEntity.get(entity); }
+        /** The entity's create page — where its list page's New, a calendar's day and a record's
+         *  Edit go — or null. */
+        String createPageOf(String entity) { return createPageByEntity.get(entity); }
 
         String homeOf(String entity) { return homeByEntity.get(entity); }
     }
@@ -840,12 +844,12 @@ public final class EntityScaffoldContext {
         putRowNaming(pv, ev, summary);
         putRecordLink(pv, "", p.entity(), links, summaries);
         boolean mutable = Boolean.TRUE.equals(ev.get("mutable"));
-        String wizard = mutable ? links.wizardPageOf(p.entity()) : null;
+        String create = mutable ? links.createPageOf(p.entity()) : null;
         pv.put("calendarCreates", mutable);
-        pv.put("calendarCreatesInWizard", wizard != null);
-        pv.put("calendarCreatesInDrawer", mutable && wizard == null);
-        pv.put("wizardPageId", wizard);
-        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")) || wizard != null);
+        pv.put("calendarCreatesInPage", create != null);
+        pv.put("calendarCreatesInDrawer", mutable && create == null);
+        pv.put("createPageId", create);
+        pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")) || create != null);
     }
 
     /** A board page: its lanes (with their labels and limits) and what a card shows. */
@@ -1838,6 +1842,10 @@ public final class EntityScaffoldContext {
      *  context, for {@link #buildEntityContext}. Not referenced by any template. */
     private static final String WIZARD_PAGES_KEY = "__wizardPages";
 
+    /** Internal key under which the entity → create page (wizard or form) lookup rides in the
+     *  (frontend) project context, for {@link #buildEntityContext}. Not referenced by any template. */
+    private static final String CREATE_PAGES_KEY = "__createPages";
+
     /** Internal key under which the entity → record page lookup rides in the (frontend) project
      *  context: a relation whose target has a record page renders as a link to it. Not referenced
      *  by any template. */
@@ -2051,12 +2059,12 @@ public final class EntityScaffoldContext {
         // Page layouts only: the list page can be scoped to one parent through a relation filter
         // (master-detail and record pages), so it takes a `scope` prop.
         ctx.put("pageScopeable", Boolean.TRUE.equals(projectContext.get("hasPages")) && !entity.relations().isEmpty());
-        // An entity with a wizard page: its form takes `only` (one step's fields) and its list page
-        // takes `onCreate` (New opens the wizard instead of the drawer).
+        // An entity with a create page: its list page takes `onCreate` (New opens that page instead
+        // of the drawer). With a wizard its form also takes `only` (one step's fields).
+        Map<String, String> creates = (Map<String, String>) projectContext.get(CREATE_PAGES_KEY);
+        ctx.put("hasCreatePage", creates != null && creates.containsKey(entity.name()));
         Map<String, String> wizards = (Map<String, String>) projectContext.get(WIZARD_PAGES_KEY);
-        boolean hasWizard = wizards != null && wizards.containsKey(entity.name());
-        ctx.put("hasWizardPage", hasWizard);
-        ctx.put("formHasSteps", hasWizard);
+        ctx.put("formHasSteps", wizards != null && wizards.containsKey(entity.name()));
         // An entity with an import page: its list page takes `onImport` (Import opens that page
         // instead of the drawer).
         Map<String, String> imports = (Map<String, String>) projectContext.get(IMPORT_PAGES_KEY);
