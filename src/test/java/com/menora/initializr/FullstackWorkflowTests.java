@@ -246,6 +246,41 @@ class FullstackWorkflowTests {
         assertBadRequest(wizard, "'status' is set by the workflow, so a step cannot ask for it");
     }
 
+    @Test
+    void approvalsExample_putsTheWorkflowOnEveryPageItReaches() throws Exception {
+        // The seeded Approvals example: a trend on the dashboard, an inbox, a form page for new
+        // claims and a record page with the moves, over a five-step workflow with a final state.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "seedData")));
+        Map<String, String> files = generate(body);
+        String be = "support/backend/src/main/java/com/menora/support/";
+        String fe = "support/frontend/src/";
+        assertThat(files.get(fe + "features/expense-claim-form/model/workflow.ts"))
+                .contains("  { name: 'approve', label: 'Approve', from: ['SUBMITTED'], to: 'APPROVED', roles: ['ADMIN'], requires: ['approvedAmount'] },")
+                .contains("  { name: 'pay', label: 'Mark paid', from: ['APPROVED'], to: 'PAID', roles: ['ADMIN'], requires: [] },");
+        assertThat(files.get(be + "service/ExpenseClaimService.java"))
+                // Paid is final: nothing leaves it, so it is not an open state.
+                .contains("java.util.EnumSet.of(ExpenseClaim.ExpenseClaimStatusType.DRAFT, ExpenseClaim.ExpenseClaimStatusType.SUBMITTED, "
+                        + "ExpenseClaim.ExpenseClaimStatusType.REJECTED, ExpenseClaim.ExpenseClaimStatusType.APPROVED);")
+                .contains("requireRole(user, \"pay\", \"ADMIN\");");
+        assertThat(files.get(be + "config/DemoDataLoader.java")).contains("\"dev-user\"");
+        assertThat(files.get(fe + "app/screens/HomeScreen.tsx"))
+                .contains("trendOn=\"spentOn\"")
+                .contains("trendBucket=\"month\"")
+                .contains("ActivityFeed");
+        assertThat(files.get(fe + "app/screens/MyTasksScreen.tsx"))
+                .contains("type Queue = 'mine' | 'unassigned' | 'open'")
+                .contains("onClick={() => onNavigate('claim', String(r.id))}");
+        assertThat(files.get(fe + "app/screens/NewClaimScreen.tsx"))
+                .contains("release.current = holdLeave()")
+                .contains("onNavigate('claim', String(saved.id))");
+        // The form page takes over New on the list and Edit on the record page.
+        assertThat(files.get(fe + "app/screens/ClaimsScreen.tsx")).contains("onCreate={() => onNavigate('new-claim')}");
+        assertThat(files.get(fe + "app/screens/ClaimScreen.tsx"))
+                .contains("<ExpenseClaimTransitions row={record} onDone={setRecord} />")
+                .contains("onNavigate('new-claim', recordId)");
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     /** Expense claims and the cost centers they are charged to; with or without the claim workflow. */

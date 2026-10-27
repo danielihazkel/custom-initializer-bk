@@ -288,6 +288,44 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendApprovalsInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Approvals example with its own opts: a KPI trend and an activity feed, an inbox, a
+        // form page that takes over New and the record's Edit, a kanban over the workflow's status.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "seedData")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraApprovalsInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same on the Menora set in Hebrew, right to left: the workflow's and the inbox's
+        // strings come from the Hebrew table.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-menora-digital-crud");
+        body.put("locale", "he");
+        body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "seedData", "rtl")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendClassicWorkflowInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Approvals entities without a page layout: the classic shell's entity pages carry the
+        // status cell, the moves in the quick look and the kanban over the workflow.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
+        body.put("pages", List.of());
+        body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "inlineEdit", "bulkUpdate")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendClassicCsvImportInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // The csvImport opt without a page layout: every list page gets Import in a drawer.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-tailwind-crud");
