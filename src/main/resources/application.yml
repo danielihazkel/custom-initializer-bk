@@ -28,6 +28,11 @@ admin:
 spring:
   cache:
     type: jcache
+  servlet:
+    multipart:
+      # Design-kit assets (AssetValidator.MAX_BYTES is 2 MB; a little room for the form fields).
+      max-file-size: 3MB
+      max-request-size: 4MB
   datasource:
     url: jdbc:h2:file:./data/initializr
     driver-class-name: org.h2.Driver

@@ -2,6 +2,11 @@ package com.menora.initializr.config;
 
 import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.VersionService;
+import com.menora.initializr.design.DesignKitException;
+import com.menora.initializr.design.DesignKitService;
+import com.menora.initializr.design.KitCssWriter;
+import com.menora.initializr.design.KitWriter;
+import com.menora.initializr.design.ResolvedKit;
 import com.menora.initializr.db.entity.ColorPaletteEntity;
 import com.menora.initializr.db.entity.EntityTemplateFileEntity;
 import com.menora.initializr.db.entity.EntityTemplateSetDefaultDepEntity;
@@ -86,6 +91,8 @@ public class FullstackStarterController {
     private final VersionService versionService;
     private final DependencyConfigService configService;
     private final DepartmentResolver departmentResolver;
+    private final DesignKitService designKits;
+    private final KitWriter kitWriter;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                       InitializrMetadataProvider metadataProvider,
@@ -99,7 +106,9 @@ public class FullstackStarterController {
                                       FrontendProperties frontendProperties,
                                       VersionService versionService,
                                       DependencyConfigService configService,
-                                      DepartmentResolver departmentResolver) {
+                                      DepartmentResolver departmentResolver,
+                                      DesignKitService designKits,
+                                      KitWriter kitWriter) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
@@ -113,6 +122,8 @@ public class FullstackStarterController {
         this.versionService = versionService;
         this.configService = configService;
         this.departmentResolver = departmentResolver;
+        this.designKits = designKits;
+        this.kitWriter = kitWriter;
     }
 
     @PostMapping("/starter-fullstack.zip")
@@ -180,7 +191,12 @@ public class FullstackStarterController {
         List<EntityDefinition> entities = FullstackPageValidator.applyPageImplications(validated, pages);
         PageDefinition.Nav nav = FullstackPageValidator.validateNav(body.nav(), pages);
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
-        String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
+        // A design kit restyles one frontend set: it picks the set, and naming another is a 400.
+        ResolvedKit kit = resolveKit(body.designKit());
+        String frontendSetKey = kit == null ? orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET)
+                : kitSet(kit, body.frontendTemplateSet());
+        // Without an explicit palette a kit's own default applies (else the catalog default).
+        String colorPalette = body.colorPalette() == null && kit != null ? kit.defaultPaletteId() : body.colorPalette();
 
         // Resolve both sets up front so a missing/wrong-kind key fails fast with a clear 400,
         // instead of silently producing an empty frontend or an un-scaffolded backend.
@@ -242,8 +258,8 @@ public class FullstackStarterController {
         }
 
         // Frontend — rendered inline outside the Initializr pipeline.
-        renderFrontend(frontendSet, request, entities, pages, nav, domainPackage, body.colorPalette(),
-                body.dashboardTitle(), body.dashboardOverview(), locale, tempDir.resolve("frontend"));
+        renderFrontend(frontendSet, request, entities, pages, nav, domainPackage, colorPalette,
+                body.dashboardTitle(), body.dashboardOverview(), locale, kit, tempDir.resolve("frontend"));
 
         // Root files
         Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
@@ -416,7 +432,7 @@ public class FullstackStarterController {
     private void renderFrontend(EntityTemplateSetEntity set, WebProjectRequest request,
                                 List<EntityDefinition> entities, List<PageDefinition> pages, PageDefinition.Nav nav,
                                 String domainPackage, String colorPaletteId, String dashboardTitle, String dashboardOverview,
-                                String locale, Path targetDir) throws IOException {
+                                String locale, ResolvedKit kit, Path targetDir) throws IOException {
         // 1. Substrate — reuse the standalone frontend generator.
         FrontendProjectDescription desc = buildFrontendDescription(request, colorPaletteId);
         if (set.getDesignSystem() == EntityTemplateSetEntity.DesignSystem.MENORA_DIGITAL) {
@@ -501,6 +517,29 @@ public class FullstackStarterController {
         // Tailwind v4 stack) — fold the substrate's eslint/prettier/husky packages and scripts back
         // in so the eslint.config.js / .husky/pre-commit it wrote actually work.
         frontendGenerator.mergeSubstrateTooling(targetDir, desc.getDependencies());
+        // 4. A design kit restyles the result: index.css from its tokens, its font, its assets.
+        if (kit != null) {
+            kitWriter.apply(kit, KitCssWriter.values(palette.getPrimary(), palette.getSecondary(),
+                    palette.getAccent(), palette.getError()), targetDir);
+        }
+    }
+
+    /** The request's design kit, or null; a kit that cannot generate is a 400. */
+    private ResolvedKit resolveKit(String ref) {
+        if (ref == null || ref.isBlank()) return null;
+        try {
+            return designKits.resolve(ref, false);
+        } catch (DesignKitException e) {
+            throw new WizardArgumentException(e.getMessage());
+        }
+    }
+
+    private static String kitSet(ResolvedKit kit, String requestedSet) {
+        if (requestedSet != null && !requestedSet.isBlank() && !requestedSet.equals(kit.baseSetKey())) {
+            throw new WizardArgumentException("Design kit '" + kit.key() + "' styles the frontend set '"
+                    + kit.baseSetKey() + "', not '" + requestedSet + "'");
+        }
+        return kit.baseSetKey();
     }
 
     /**

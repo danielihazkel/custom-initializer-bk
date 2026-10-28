@@ -1,0 +1,100 @@
+{
+  "contractVersion" : 1,
+  "tokenSchema" : {
+    "schema" : "menora-design-tokens/1",
+    "required" : [ {
+      "name" : "color-brand",
+      "type" : "color",
+      "description" : "Identity colour: active nav, focus, charts, links"
+    }, {
+      "name" : "color-brand-deep",
+      "type" : "color",
+      "description" : "Brand hover/pressed shade"
+    }, {
+      "name" : "color-primary",
+      "type" : "color",
+      "description" : "Primary action fill (New, Save, Edit)"
+    }, {
+      "name" : "color-primary-deep",
+      "type" : "color",
+      "description" : "Primary action hover"
+    }, {
+      "name" : "color-on-primary",
+      "type" : "color",
+      "description" : "Text on a primary action"
+    }, {
+      "name" : "color-ink",
+      "type" : "color",
+      "description" : "Dark chrome (sidebar, header band)"
+    }, {
+      "name" : "color-ink-soft",
+      "type" : "color",
+      "description" : "Raised dark chrome"
+    }, {
+      "name" : "color-gold",
+      "type" : "color",
+      "description" : "Highlight accent"
+    }, {
+      "name" : "color-success",
+      "type" : "color",
+      "description" : "Positive state"
+    }, {
+      "name" : "color-danger",
+      "type" : "color",
+      "description" : "Destructive / error state"
+    }, {
+      "name" : "color-canvas",
+      "type" : "color",
+      "description" : "Page ground"
+    }, {
+      "name" : "color-surface",
+      "type" : "color",
+      "description" : "Cards, tables, drawers"
+    }, {
+      "name" : "color-surface-2",
+      "type" : "color",
+      "description" : "Subtle fills, hover rows"
+    }, {
+      "name" : "color-fg",
+      "type" : "color",
+      "description" : "Body text"
+    }, {
+      "name" : "color-muted",
+      "type" : "color",
+      "description" : "Secondary text"
+    }, {
+      "name" : "color-border",
+      "type" : "color",
+      "description" : "Hairlines and borders"
+    }, {
+      "name" : "color-ring",
+      "type" : "color",
+      "description" : "Focus ring"
+    }, {
+      "name" : "font-sans",
+      "type" : "font",
+      "description" : "The app's typeface stack"
+    } ],
+    "namePattern" : "^(color|font|text|radius|shadow|spacing|leading|tracking|font-weight|ease|blur|drop-shadow|inset-shadow)-[a-z0-9]+(-[a-z0-9]+)*$",
+    "types" : [ "color", "font", "radius", "shadow", "length", "number" ],
+    "paletteReferences" : [ "{palette.primary}", "{palette.secondary}", "{palette.accent|<fallback>}", "{palette.error|<fallback>}" ]
+  },
+  "pageTypes" : [ "entity-list", "dashboard", "tabs", "master-detail", "record", "report", "wizard", "calendar", "board", "content", "import", "search", "form", "inbox" ],
+  "widgetKinds" : [ "kpi", "bar", "line", "recent", "top", "progress", "donut", "stacked", "text", "links", "list", "pivot", "activity" ],
+  "chartKinds" : [ "bar", "donut", "stacked", "line", "area", "table" ],
+  "aggs" : [ "count", "sum", "avg", "min", "max" ],
+  "buckets" : [ "day", "month", "year" ],
+  "dateRanges" : [ "all", "7d", "30d", "90d", "ytd", "12m" ],
+  "navStyles" : [ "sidebar", "topbar" ],
+  "navIcons" : [ "BarChart3", "Building2", "Calendar", "Columns3", "FilePlus", "FileText", "Inbox", "Layers", "LayoutDashboard", "ListChecks", "Package", "PanelLeft", "Search", "Settings", "ShoppingCart", "Star", "Table2", "Tag", "Ticket", "Truck", "Upload", "Users", "Wallet", "Wand2" ],
+  "assetRoles" : [ "LOGO", "FAVICON", "FONT", "ICON", "IMAGE" ],
+  "assetTypes" : [ "image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/x-icon", "font/woff2", "font/woff" ],
+  "limits" : {
+    "assetBytes" : 2097152,
+    "versionAssetBytes" : 10485760,
+    "kitCssBytes" : 65536,
+    "tokens" : 200,
+    "tokenValueChars" : 300
+  },
+  "slots" : [ ]
+}

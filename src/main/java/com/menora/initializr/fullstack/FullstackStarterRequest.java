@@ -57,7 +57,25 @@ public record FullstackStarterRequest(
         // The generator UI's own snapshot of the model (its `menora-fullstack-model/1` export),
         // written verbatim to the zip's menora-model.json so the project can be reopened in the
         // editor. Never read by validation or generation. Absent: the file holds this request.
-        com.fasterxml.jackson.databind.JsonNode editorModel) {
+        com.fasterxml.jackson.databind.JsonNode editorModel,
+        // The design kit that styles the frontend: "key" (its latest published version) or
+        // "key@N". Absent: the frontend set's own look, byte for byte as before kits existed.
+        String designKit) {
+
+    /** Every property but {@code designKit}. */
+    public FullstackStarterRequest(
+            String groupId, String artifactId, String name, String description, String packageName,
+            String domainPackage, String type, String language, String bootVersion, String packaging,
+            String javaVersion, String version, String configurationFileFormat, List<String> dependencies,
+            Map<String, List<String>> opts, String backendTemplateSet, String frontendTemplateSet,
+            String colorPalette, String dashboardTitle, String dashboardOverview, String locale,
+            String department, List<EntityDefinitionDto> entities, List<PageDefinitionDto> pages, NavDto nav,
+            com.fasterxml.jackson.databind.JsonNode editorModel) {
+        this(groupId, artifactId, name, description, packageName, domainPackage, type, language,
+                bootVersion, packaging, javaVersion, version, configurationFileFormat, dependencies,
+                opts, backendTemplateSet, frontendTemplateSet, colorPalette, dashboardTitle,
+                dashboardOverview, locale, department, entities, pages, nav, editorModel, null);
+    }
 
     /** Every property but {@code editorModel}. */
     public FullstackStarterRequest(
@@ -70,7 +88,7 @@ public record FullstackStarterRequest(
         this(groupId, artifactId, name, description, packageName, domainPackage, type, language,
                 bootVersion, packaging, javaVersion, version, configurationFileFormat, dependencies,
                 opts, backendTemplateSet, frontendTemplateSet, colorPalette, dashboardTitle,
-                dashboardOverview, locale, department, entities, pages, nav, null);
+                dashboardOverview, locale, department, entities, pages, nav, null, null);
     }
 
     /** Every property but {@code nav}. */

@@ -69,6 +69,22 @@ public class PackageJsonBuilder {
         return finish(root);
     }
 
+    /**
+     * Swaps the app's self-hosted font: every {@code @fontsource} runtime dependency gives way to
+     * {@code fontPackage@version} (a design kit's font). Same formatting as {@link #build}.
+     */
+    public String replaceFonts(String existingJson, String fontPackage, String version) throws IOException {
+        ObjectNode root = (ObjectNode) MAPPER.readTree(existingJson);
+        ObjectNode deps = root.has("dependencies") ? (ObjectNode) root.get("dependencies") : root.putObject("dependencies");
+        List<String> fonts = new java.util.ArrayList<>();
+        deps.fieldNames().forEachRemaining(name -> {
+            if (name.startsWith("@fontsource/") || name.startsWith("@fontsource-variable/")) fonts.add(name);
+        });
+        fonts.forEach(deps::remove);
+        deps.put(fontPackage, version);
+        return finish(root);
+    }
+
     private static void apply(ObjectNode root, List<BuildCustomizationEntity> customizations, boolean overwrite) {
         ObjectNode deps = (ObjectNode) root.get("dependencies");
         if (deps == null) {

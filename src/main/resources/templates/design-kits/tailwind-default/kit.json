@@ -1,0 +1,36 @@
+{
+  "key": "tailwind-default",
+  "name": "Menora default",
+  "description": "The default fullstack look: a navy sidebar with the selected palette's brand colour, Inter, light and dark.",
+  "baseSet": "react-tailwind-crud",
+  "sortOrder": 10,
+  "tokens": {
+    "$schema": "menora-design-tokens/1",
+    "tokens": [
+      { "name": "color-brand", "value": "{palette.primary}", "group": "Brand" },
+      { "name": "color-brand-deep", "value": "color-mix(in srgb, {palette.primary} 85%, black)", "group": "Brand" },
+      { "name": "color-primary", "value": "{palette.primary}", "group": "Brand" },
+      { "name": "color-primary-deep", "value": "color-mix(in srgb, {palette.primary} 85%, black)", "group": "Brand" },
+      { "name": "color-on-primary", "value": "#ffffff", "group": "Brand" },
+      { "name": "color-ink", "value": "#2B2F4C", "group": "Brand" },
+      { "name": "color-ink-soft", "value": "color-mix(in srgb, #2B2F4C 86%, white)", "group": "Brand" },
+      { "name": "color-gold", "value": "{palette.secondary}", "group": "Brand" },
+      { "name": "color-success", "value": "{palette.accent|#16a34a}", "group": "Brand" },
+      { "name": "color-danger", "value": "{palette.error|#dc2626}", "group": "Brand" },
+      { "name": "color-canvas", "value": "#f6f7f9", "dark": "#0b1120", "group": "Neutral chrome" },
+      { "name": "color-surface", "value": "#ffffff", "dark": "#111827", "group": "Neutral chrome" },
+      { "name": "color-surface-2", "value": "#f1f5f9", "dark": "#1b2435", "group": "Neutral chrome" },
+      { "name": "color-fg", "value": "#0f172a", "dark": "#e8edf5", "group": "Neutral chrome" },
+      { "name": "color-muted", "value": "#64748b", "dark": "#94a3b8", "group": "Neutral chrome" },
+      { "name": "color-border", "value": "#e6e9ee", "dark": "#243049", "group": "Neutral chrome" },
+      { "name": "color-ring", "value": "{palette.primary}", "group": "Neutral chrome" },
+      { "name": "font-sans", "value": "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif", "group": "Type" }
+    ]
+  },
+  "manifest": {
+    "imports": [],
+    "fonts": { "package": "@fontsource/inter", "version": "^5.0.18", "weights": [400, 500, 600, 700] }
+  },
+  "css": "kit.css",
+  "assets": []
+}

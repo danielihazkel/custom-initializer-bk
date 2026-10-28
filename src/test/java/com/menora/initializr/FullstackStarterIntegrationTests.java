@@ -1174,7 +1174,7 @@ class FullstackStarterIntegrationTests {
                 .contains("--radius-2xl:         30px")
                 .contains("'Assistant'")
                 // dark mode re-points the same tokens to the design system's dark values
-                .contains("--color-brand:        #a393ff").contains("--color-canvas:       #1e1e2f")
+                .contains("--color-brand:      #a393ff").contains("--color-canvas:     #1e1e2f")
                 .doesNotContain("#9A83F7").doesNotContain("#2B2F4C");
 
         assertThat(entries.get("shop/frontend/package.json"))

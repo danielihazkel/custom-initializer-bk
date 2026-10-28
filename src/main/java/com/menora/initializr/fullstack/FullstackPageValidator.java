@@ -64,7 +64,7 @@ public final class FullstackPageValidator {
     /** The lucide icons a page may put in the nav. The shell imports exactly the ones in use, so the
      *  list is a whitelist rather than "any lucide name": a typo would otherwise fail the build of the
      *  generated project instead of the request. */
-    static final List<String> NAV_ICONS = List.of(
+    public static final List<String> NAV_ICONS = List.of(
             "BarChart3", "Building2", "Calendar", "Columns3", "FilePlus", "FileText", "Inbox", "Layers", "LayoutDashboard",
             "ListChecks", "Package", "PanelLeft", "Search", "Settings", "ShoppingCart", "Star", "Table2", "Tag",
             "Ticket", "Truck", "Upload", "Users", "Wallet", "Wand2");

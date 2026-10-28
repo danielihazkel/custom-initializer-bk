@@ -99,7 +99,7 @@ a7dcbec57f8f94942602013bfc17201f5759b6a76f38322cc7b5a204a9a47be3  golden-blog/fr
 9b8b98b100c500d9dfd4bdcf5aab03cfd0b4ec4c8b13d4db107573aaf7df6363  golden-blog/frontend/src/features/post-form/model/validate.ts
 edb88d0976586c09bc0f688f26350ef556d1075ece70c37d8d06ec2bb72998c9  golden-blog/frontend/src/features/post-form/ui/PostDetail.tsx
 d569805391f9179473e4ab227358fb22803699f7f8b6e205cb6ce7e43ce6b106  golden-blog/frontend/src/features/post-form/ui/PostForm.tsx
-2282317ff999f6c5758d41f966ff7adc010d282c72376ee0ac8a7d9470d00efb  golden-blog/frontend/src/index.css
+b790d61a9da1feab8aca5d33d880b630300a84c2f6f3131f87940820dd6b0dc8  golden-blog/frontend/src/index.css
 dd596a1459bf26fd044ea233a820404cb2a54f0a438f9dc97b8538b165f0ea3e  golden-blog/frontend/src/main.tsx
 f33251b158fd83b7be8ed5a2e445f5454031d1e765847b731eeba42d8c8c32bc  golden-blog/frontend/src/pages/README.md
 89a1f9fae508ca371c496da6b0353221c96994325d5794a3e7348d5055c29513  golden-blog/frontend/src/pages/author/index.ts

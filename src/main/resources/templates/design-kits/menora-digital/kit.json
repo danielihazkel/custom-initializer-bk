@@ -1,0 +1,49 @@
+{
+  "key": "menora-digital",
+  "name": "Menora Digital",
+  "description": "The Menora Mivtachim customer-site design system: purple identity, one yellow action per view, Assistant, Hebrew and right-to-left.",
+  "baseSet": "react-menora-digital-crud",
+  "sortOrder": 20,
+  "tokens": {
+    "$schema": "menora-design-tokens/1",
+    "tokens": [
+      { "name": "color-brand", "value": "#684eed", "dark": "#a393ff", "group": "Brand" },
+      { "name": "color-brand-deep", "value": "#5a3fd6", "dark": "#8f7cf5", "group": "Brand" },
+      { "name": "color-ink", "value": "#37374e", "dark": "#12121c", "group": "Brand" },
+      { "name": "color-ink-soft", "value": "color-mix(in srgb, #37374e 86%, white)", "dark": "color-mix(in srgb, #12121c 80%, white)", "group": "Brand" },
+      { "name": "color-gold", "value": "#ffc700", "group": "Brand" },
+      { "name": "color-primary", "value": "#ffc700", "group": "Brand" },
+      { "name": "color-primary-deep", "value": "#ffc700", "group": "Brand" },
+      { "name": "color-on-primary", "value": "#37374e", "group": "Brand" },
+      { "name": "color-success", "value": "{palette.accent|#16a34a}", "group": "Brand" },
+      { "name": "color-danger", "value": "{palette.error|#dc2626}", "group": "Brand" },
+      { "name": "color-canvas", "value": "#f8f8f8", "dark": "#1e1e2f", "group": "Neutral chrome" },
+      { "name": "color-surface", "value": "#ffffff", "dark": "#2b2b41", "group": "Neutral chrome" },
+      { "name": "color-surface-2", "value": "#f4f1ff", "dark": "#272341", "group": "Neutral chrome" },
+      { "name": "color-fg", "value": "#37374e", "dark": "#f1f0f7", "group": "Neutral chrome" },
+      { "name": "color-muted", "value": "#725a89", "dark": "#b8acd6", "group": "Neutral chrome" },
+      { "name": "color-border", "value": "#725a891f", "dark": "#ffffff1f", "group": "Neutral chrome" },
+      { "name": "color-ring", "value": "#684eed", "dark": "#a393ff", "group": "Neutral chrome" },
+      { "name": "radius-lg", "value": "10px", "group": "Radius" },
+      { "name": "radius-xl", "value": "20px", "group": "Radius" },
+      { "name": "radius-2xl", "value": "30px", "group": "Radius" },
+      { "name": "shadow-card", "value": "0 27px 36px 0 rgba(55, 56, 78, 0.10)", "dark": "0 27px 36px 0 rgba(0, 0, 0, 0.35)", "group": "Shadow" },
+      { "name": "shadow-menu", "value": "0 14px 44px 0 rgba(118, 118, 130, 0.12)", "dark": "0 14px 44px 0 rgba(0, 0, 0, 0.45)", "group": "Shadow" },
+      { "name": "shadow-cta", "value": "0 8px 13px -3px #fbe38e", "dark": "0 8px 16px -3px rgba(255, 199, 0, 0.28)", "group": "Shadow" },
+      { "name": "shadow-chat", "value": "0 6px 37px 2px #fbe38e", "dark": "0 6px 37px 2px rgba(255, 199, 0, 0.22)", "group": "Shadow" },
+      { "name": "font-sans", "value": "'Almoni', 'Assistant', Arial, sans-serif", "group": "Type" }
+    ]
+  },
+  "manifest": {
+    "imports": ["./shared/ui/menora/tokens.css", "./shared/ui/menora/components.css"],
+    "fonts": {
+      "package": "@fontsource/assistant",
+      "version": "^5.0.0",
+      "weights": [300, 400, 500, 600, 700],
+      "comment": "Assistant is the self-hosted fallback for the licensed Almoni brand face (see src/shared/ui/menora/tokens.css)."
+    },
+    "defaults": { "locale": "he", "rtl": true }
+  },
+  "css": "kit.css",
+  "assets": []
+}
