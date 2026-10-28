@@ -260,6 +260,9 @@ class GeneratedFrontendBuildSmokeTests {
         pages.removeIf(p -> "people".equals(p.get("id")));
         pages.add(new LinkedHashMap<>(Map.of("id", "new-task", "type", "form", "entity", "Task")));
         pages.add(new LinkedHashMap<>(Map.of("id", "new-person", "type", "form", "entity", "Person")));
+        // A master-detail parent with a form page: its New goes there, its card's Edit is a drawer.
+        pages.add(new LinkedHashMap<>(Map.of("id", "owners", "type", "master-detail", "parent", "Person",
+                "child", "Project", "showParent", true)));
         Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);

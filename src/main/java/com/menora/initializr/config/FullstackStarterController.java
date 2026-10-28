@@ -127,7 +127,7 @@ public class FullstackStarterController {
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .body(zipBytes);
         } finally {
-            FileSystemUtils.deleteRecursively(tempDir);
+            GeneratedProjectFiles.deleteLater(tempDir);
             entityContext.clear();
             optionsContext.clear();
         }
@@ -153,7 +153,7 @@ public class FullstackStarterController {
                     .map(ProjectPreviewController.PreviewFile::path).sorted().toList();
             return new ProjectPreviewController.PreviewResponse(files, PreviewTreeBuilder.buildTree(paths));
         } finally {
-            FileSystemUtils.deleteRecursively(tempDir);
+            GeneratedProjectFiles.deleteLater(tempDir);
             entityContext.clear();
             optionsContext.clear();
         }
@@ -235,9 +235,9 @@ public class FullstackStarterController {
         // (registered in spring.factories) picks up the populated context.
         Path backendDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
         try {
-            GeneratedProjectFiles.copyDirectory(backendDir, tempDir.resolve("backend"));
+            GeneratedProjectFiles.moveDirectory(backendDir, tempDir.resolve("backend"));
         } finally {
-            // cleanTempFiles deletes the tree *and* drops the invoker's map entry for it.
+            // cleanTempFiles drops the invoker's map entry and deletes what the move left behind.
             invoker.cleanTempFiles(backendDir);
         }
 

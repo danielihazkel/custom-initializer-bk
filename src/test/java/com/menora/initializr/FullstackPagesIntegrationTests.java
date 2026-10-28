@@ -767,7 +767,7 @@ class FullstackPagesIntegrationTests {
         String screen = files.get(FE + "src/app/screens/CustomersScreen.tsx");
         assertThat(screen)
                 .contains("import { useEffect, useState } from 'react'")
-                .contains("import { Pencil } from 'lucide-react'")
+                .contains("import { Pencil, Plus } from 'lucide-react'")
                 .contains("import { api, ApiError } from '@shared/api'")
                 .contains("import { CustomerDetail, CustomerForm, validateCustomer } from '@features/customer-form'")
                 .contains("import { Alert, EmptyState, Skeleton, FormDrawer } from '@shared/ui'")
@@ -776,19 +776,50 @@ class FullstackPagesIntegrationTests {
                 .contains("{parent ? <CustomerDetail value={parent} /> : parentFailed ? (")
                 .contains("onClick={() => setParentAttempt(a => a + 1)}")
                 .contains("const saved = await api.put<Customer>(`/api/customers/${encodeURIComponent(selectedId)}`, editing)")
-                .contains("title={t('editX', { x: 'Customer' })}");
+                .contains("title={creating ? t('newX', { x: 'Customer' }) : t('editX', { x: 'Customer' })}");
+        // A parent shown only here has to be creatable here: New opens the same drawer and posts.
+        assertThat(screen)
+                .contains("const newParent = (): Partial<Customer> => ({})")
+                .contains("onClick={ openNew }")
+                .contains("{t('newX', { x: 'Customer' })}")
+                .contains("const created = await api.post<Customer>('/api/customers', editing)")
+                .contains("select(String(created.id))")
+                .contains("onClick={() => { setFormErrors({}); setCreating(false); setEditing({ ...parent }) }}")
+                .contains("onSave={creating ? createParent : saveParent}")
+                .contains("isNew={ creating }");
 
-        // Without the flag the screen keeps its bytes; a read-only parent shows the card without Edit.
+        // Without the card the screen keeps New (a create-only drawer) but no Edit.
         Map<String, Object> plain = exampleBody("orders", "react-tailwind-crud");
         page(plain, "customers").remove("showParent");
         String plainScreen = generate(plain).get(FE + "src/app/screens/CustomersScreen.tsx");
-        assertThat(plainScreen).doesNotContain("data-parent-card").doesNotContain("@shared/api").doesNotContain("FormDrawer");
+        assertThat(plainScreen)
+                .doesNotContain("data-parent-card")
+                .doesNotContain("Pencil")
+                .doesNotContain("saveParent")
+                .doesNotContain("creating")
+                .doesNotContain("CustomerDetail")
+                .contains("import { Plus } from 'lucide-react'")
+                .contains("import { CustomerForm, validateCustomer } from '@features/customer-form'")
+                .contains("onSave={createParent}")
+                .contains("isNew={ true }");
+        // A read-only parent shows the card with neither Edit nor New.
         Map<String, Object> readOnly = exampleBody("orders", "react-tailwind-crud");
         entities(readOnly).stream().filter(e -> "Customer".equals(e.get("name"))).forEach(e -> e.put("readOnly", true));
         assertThat(generate(readOnly).get(FE + "src/app/screens/CustomersScreen.tsx"))
                 .contains("data-parent-card")
                 .doesNotContain("Pencil")
+                .doesNotContain("Plus")
+                .doesNotContain("newX")
                 .doesNotContain("FormDrawer");
+        // A parent with a form page creates there; the drawer only edits.
+        Map<String, Object> withForm = exampleBody("orders", "react-tailwind-crud");
+        pages(withForm).add(new LinkedHashMap<>(Map.of("id", "new-customer", "type", "form", "entity", "Customer", "hidden", true)));
+        assertThat(generate(withForm).get(FE + "src/app/screens/CustomersScreen.tsx"))
+                .contains("onClick={ () => onNavigate('new-customer') }")
+                .contains("onSave={saveParent}")
+                .contains("isNew={ false }")
+                .doesNotContain("createParent")
+                .doesNotContain("newParent");
         assertOrdersRejected(p -> p.put("showParent", true), "(entity-list) does not take 'showParent'");
     }
 

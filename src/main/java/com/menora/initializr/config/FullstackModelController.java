@@ -68,6 +68,11 @@ public class FullstackModelController {
             return new ModelSummary(e.getId(), e.getName(), e.getDescription(), e.getEntityCount(),
                     e.getCreatedBy(), e.getCreatedAt(), e.getUpdatedAt());
         }
+
+        static ModelSummary of(FullstackModelRepository.Summary s) {
+            return new ModelSummary(s.getId(), s.getName(), s.getDescription(), s.getEntityCount(),
+                    s.getCreatedBy(), s.getCreatedAt(), s.getUpdatedAt());
+        }
     }
 
     public record ModelDetail(Long id, String name, String description, int entityCount,
@@ -81,7 +86,7 @@ public class FullstackModelController {
 
     @GetMapping
     public List<ModelSummary> list() {
-        return repo.findAllByOrderByUpdatedAtDesc().stream().map(ModelSummary::of).toList();
+        return repo.findAllSummariesByOrderByUpdatedAtDesc().stream().map(ModelSummary::of).toList();
     }
 
     @GetMapping("/{id}")

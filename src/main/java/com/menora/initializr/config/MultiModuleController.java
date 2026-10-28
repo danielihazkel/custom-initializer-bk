@@ -13,7 +13,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.FileSystemUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -143,11 +142,11 @@ public class MultiModuleController {
                         deleteTestClass(moduleDir);
                     }
 
-                    // Copy generated module into the temp dir under the module artifact ID
+                    // Move the generated module into the temp dir under the module artifact ID
                     Path targetModuleDir = tempDir.resolve(moduleArtifactId);
-                    GeneratedProjectFiles.copyDirectory(moduleDir, targetModuleDir);
+                    GeneratedProjectFiles.moveDirectory(moduleDir, targetModuleDir);
                 } finally {
-                    // cleanTempFiles deletes the tree *and* drops the invoker's map entry for it.
+                    // cleanTempFiles drops the invoker's map entry and deletes what the move left behind.
                     invoker.cleanTempFiles(moduleDir);
                 }
             }
@@ -165,7 +164,7 @@ public class MultiModuleController {
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .body(zipBytes);
         } finally {
-            FileSystemUtils.deleteRecursively(tempDir);
+            GeneratedProjectFiles.deleteLater(tempDir);
         }
     }
 
@@ -241,9 +240,9 @@ public class MultiModuleController {
                         deleteMainClass(moduleDir);
                         deleteTestClass(moduleDir);
                     }
-                    GeneratedProjectFiles.copyDirectory(moduleDir, tempDir.resolve(moduleArtifactId));
+                    GeneratedProjectFiles.moveDirectory(moduleDir, tempDir.resolve(moduleArtifactId));
                 } finally {
-                    // cleanTempFiles deletes the tree *and* drops the invoker's map entry for it.
+                    // cleanTempFiles drops the invoker's map entry and deletes what the move left behind.
                     invoker.cleanTempFiles(moduleDir);
                 }
             }
@@ -265,7 +264,7 @@ public class MultiModuleController {
             return new MultiModulePreviewResponse(files,
                     PreviewTreeBuilder.buildTree(files.stream().map(ProjectPreviewController.PreviewFile::path).sorted().toList()));
         } finally {
-            FileSystemUtils.deleteRecursively(tempDir);
+            GeneratedProjectFiles.deleteLater(tempDir);
         }
     }
 

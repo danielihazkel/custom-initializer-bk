@@ -1,5 +1,22 @@
 server:
   port: 8080
+  # Previews carry every generated file's content as JSON (hundreds of KB); gzip them and the
+  # metadata. Zips are application/octet-stream — already compressed, so never listed here.
+  compression:
+    enabled: true
+    min-response-size: 2KB
+    mime-types:
+      - application/json
+      - application/problem+json
+      - application/hal+json
+      - application/vnd.initializr.v2+json
+      - application/vnd.initializr.v2.1+json
+      - application/vnd.initializr.v2.2+json
+      - application/vnd.initializr.v2.3+json
+      - text/plain
+      - text/html
+      - text/css
+      - application/javascript
 
 admin:
   password: changeme
@@ -20,6 +37,10 @@ spring:
     hibernate:
       ddl-auto: validate
     show-sql: false
+    # Off: with open-in-view every request keeps a pooled connection from its first query to the
+    # end of the response — a generation would hold one through rendering and zipping, capping
+    # concurrent generations at the pool size. Anything serialized must be fetched up front.
+    open-in-view: false
   flyway:
     baseline-on-migrate: true
     baseline-version: 1

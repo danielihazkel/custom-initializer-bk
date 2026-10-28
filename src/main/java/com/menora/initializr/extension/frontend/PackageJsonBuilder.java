@@ -3,8 +3,8 @@ package com.menora.initializr.extension.frontend;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.menora.initializr.config.CompiledTemplates;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
-import com.samskivert.mustache.Mustache;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -35,7 +35,6 @@ import java.util.TreeMap;
 @Component
 public class PackageJsonBuilder {
 
-    private static final Mustache.Compiler MUSTACHE = Mustache.compiler().escapeHTML(false);
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT);
 
@@ -43,7 +42,7 @@ public class PackageJsonBuilder {
                         Map<String, Object> mustacheContext,
                         List<BuildCustomizationEntity> customizations) throws IOException {
 
-        String rendered = MUSTACHE.compile(baselineTemplate).execute(mustacheContext);
+        String rendered = CompiledTemplates.render(baselineTemplate, mustacheContext);
         ObjectNode root = (ObjectNode) MAPPER.readTree(rendered);
         apply(root, customizations, true);
         return finish(root);
