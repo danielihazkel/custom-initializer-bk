@@ -1,0 +1,28 @@
+/* Kept for templates that reference the default set's gradient utilities — flat Menora surfaces here. */
+.bg-app-shell {
+  background-color: var(--color-ink);
+}
+.bg-app-bar {
+  background-color: var(--color-surface);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  background-color: var(--color-canvas);
+  color: var(--color-fg);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Thin, theme-aware scrollbars so the dark mode doesn't show bright gutters. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}

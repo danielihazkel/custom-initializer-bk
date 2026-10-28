@@ -2,6 +2,7 @@ package com.menora.initializr.db;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.menora.initializr.design.DesignKitService;
 import com.menora.initializr.db.entity.*;
 import com.menora.initializr.db.repository.*;
 import com.menora.initializr.db.seed.CatalogManifests.*;
@@ -50,6 +51,7 @@ public class DataSeeder implements SmartInitializingSingleton {
     private final VersionDefinitionRepository versionRepo;
     private final DepartmentRepository departmentRepo;
     private final FullstackExampleRepository fullstackExampleRepo;
+    private final DesignKitService designKitService;
 
     public DataSeeder(DependencyGroupRepository groupRepo,
                       DependencyEntryRepository entryRepo,
@@ -67,7 +69,8 @@ public class DataSeeder implements SmartInitializingSingleton {
                       ColorPaletteRepository colorPaletteRepo,
                       VersionDefinitionRepository versionRepo,
                       DepartmentRepository departmentRepo,
-                      FullstackExampleRepository fullstackExampleRepo) {
+                      FullstackExampleRepository fullstackExampleRepo,
+                      DesignKitService designKitService) {
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
         this.fileContribRepo = fileContribRepo;
@@ -85,6 +88,7 @@ public class DataSeeder implements SmartInitializingSingleton {
         this.versionRepo = versionRepo;
         this.departmentRepo = departmentRepo;
         this.fullstackExampleRepo = fullstackExampleRepo;
+        this.designKitService = designKitService;
     }
 
     @Override
@@ -99,6 +103,8 @@ public class DataSeeder implements SmartInitializingSingleton {
             seedVersionsIfMissing();
             seedDepartmentsIfMissing();
             seedFullstackExamplesIfMissing();
+            // Built-in design kits: v1 on a fresh DB, a new version when a release changed one.
+            designKitService.seedBuiltIns();
 
             if (groupRepo.count() > 0) {
                 log.info("Database already seeded — skipping main DataSeeder");

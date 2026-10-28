@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ScreenHeader } from '@shared/ui/ScreenHeader'
 {{#recordHasIcons}}
 import { {{#hasBack}}ArrowLeft, {{/hasBack}}ChevronLeft, ChevronRight, {{#recordMutable}}Pencil, Trash2, {{/recordMutable}}} from 'lucide-react'
 {{/recordHasIcons}}
@@ -170,25 +171,15 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
         {t('back')}
       </button>
 {{/hasBack}}
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="text-xs font-medium uppercase tracking-wider text-muted">{ {{pageTitleExpr}} }</div>
-          {record == null && !error
-            ? <Skeleton className="mt-1 h-8 w-56" />
-            : <h1 className="mt-1 text-2xl font-semibold tracking-tight text-fg">{heading}</h1>}
-{{#hasStatusFields}}
-          {record && (
-            <div className="mt-2 flex flex-wrap gap-2">
-{{#statusFields}}
-              {record.{{name}} != null && <span className="rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-medium text-brand">{ {{enumTypeName}}Labels[record.{{name}}] }</span>}
-{{/statusFields}}
-            </div>
-          )}
-{{/hasStatusFields}}
+      <div className="mb-6">
+      <ScreenHeader
+        eyebrow={ {{pageTitleExpr}} }
+        title={heading}
+        loading={record == null && !error}
 {{#hasPageDescription}}
-          <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+        description={ {{pageDescriptionExpr}} }
 {{/hasPageDescription}}
-        </div>
+        actions={<>
         {at >= 0 && siblings.length > 1 && (
           <div className="flex items-center gap-1 text-sm text-muted" data-record-siblings>
             <button
@@ -239,6 +230,18 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
           </div>
         )}
 {{/recordMutable}}
+        </>}
+      >
+{{#hasStatusFields}}
+          {record && (
+            <div className="mt-2 flex flex-wrap gap-2">
+{{#statusFields}}
+              {record.{{name}} != null && <span className="rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-medium text-brand">{ {{enumTypeName}}Labels[record.{{name}}] }</span>}
+{{/statusFields}}
+            </div>
+          )}
+{{/hasStatusFields}}
+      </ScreenHeader>
       </div>
 {{#hasHeaderStats}}
       {/* Numbers over the record's related rows; a tile opens its list's tab. */}

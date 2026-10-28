@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.admin.dto.ConfigurationExport;
 import com.menora.initializr.admin.dto.ConfigurationExport.*;
 import com.menora.initializr.config.DatabaseInitializrMetadataProvider;
+import com.menora.initializr.design.DesignKitException;
+import com.menora.initializr.design.DesignKitTransfer;
 import com.menora.initializr.db.entity.*;
 import com.menora.initializr.db.repository.*;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
@@ -35,6 +37,7 @@ public class ConfigurationExportImportService {
     private final DepartmentRepository departmentRepo;
     private final FullstackExampleRepository fullstackExampleRepo;
     private final ObjectMapper objectMapper;
+    private final DesignKitTransfer designKitTransfer;
 
     public ConfigurationExportImportService(InitializrMetadataProvider metadataProvider,
                                              DependencyGroupRepository groupRepo,
@@ -54,7 +57,8 @@ public class ConfigurationExportImportService {
                                              VersionDefinitionRepository versionRepo,
                                              DepartmentRepository departmentRepo,
                                              FullstackExampleRepository fullstackExampleRepo,
-                                             ObjectMapper objectMapper) {
+                                             ObjectMapper objectMapper,
+                                             DesignKitTransfer designKitTransfer) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -74,6 +78,7 @@ public class ConfigurationExportImportService {
         this.departmentRepo = departmentRepo;
         this.fullstackExampleRepo = fullstackExampleRepo;
         this.objectMapper = objectMapper;
+        this.designKitTransfer = designKitTransfer;
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -314,6 +319,10 @@ public class ConfigurationExportImportService {
                     fe.setEnabled(e.isEnabled());
                     return fe;
                 }).toList());
+
+        DesignKitTransfer.Export kits = designKitTransfer.export();
+        export_.setDesignKits(kits.kits());
+        export_.setDesignAssetBlobs(kits.blobs());
 
         return export_;
     }
@@ -599,6 +608,17 @@ public class ConfigurationExportImportService {
             }
         }
 
+        // Design kits merge rather than wipe (published versions are immutable and pinned).
+        // Backward-compatible: older exports predate the field.
+        int designKitVersions = 0;
+        if (data.getDesignKits() != null) {
+            try {
+                designKitVersions = designKitTransfer.merge(new DesignKitTransfer.Export(data.getDesignKits(), data.getDesignAssetBlobs()));
+            } catch (DesignKitException e) {
+                throw new IllegalArgumentException(e.getMessage(), e);
+            }
+        }
+
         // Refresh metadata cache
         if (metadataProvider instanceof DatabaseInitializrMetadataProvider dbProvider) {
             dbProvider.refresh();
@@ -623,6 +643,7 @@ public class ConfigurationExportImportService {
         counts.put("versionDefinitions", safe(data.getVersionDefinitions()).size());
         counts.put("departments", safe(data.getDepartments()).size());
         counts.put("fullstackExamples", safe(data.getFullstackExamples()).size());
+        counts.put("designKitVersions", designKitVersions);
         return counts;
     }
 
@@ -636,6 +657,11 @@ public class ConfigurationExportImportService {
     private void validate(ConfigurationExport data) {
         if (data.getVersion() != 1) {
             throw new IllegalArgumentException("Unsupported export version: " + data.getVersion());
+        }
+        try {
+            designKitTransfer.check(data.getDesignKits());
+        } catch (DesignKitException e) {
+            throw new IllegalArgumentException(e.getMessage(), e);
         }
 
         // Check for duplicate group names

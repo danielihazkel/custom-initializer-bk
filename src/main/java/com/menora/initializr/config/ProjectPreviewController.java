@@ -1,5 +1,6 @@
 package com.menora.initializr.config;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.spring.initializr.metadata.InitializrMetadata;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
 import io.spring.initializr.web.project.ProjectGenerationInvoker;
@@ -71,6 +72,14 @@ public class ProjectPreviewController {
     // ── Response records ─────────────────────────────────────────────────────
 
     public record PreviewResponse(List<PreviewFile> files, List<TreeNode> tree) {}
-    public record PreviewFile(String path, String content) {}
+    /** One generated file. {@code base64} is set only when the caller asked for binaries (the
+     *  fullstack preview's {@code assets=true}, for the design runtime), so other answers keep
+     *  their shape. */
+    public record PreviewFile(String path, String content,
+                              @JsonInclude(JsonInclude.Include.NON_NULL) String base64) {
+        public PreviewFile(String path, String content) {
+            this(path, content, null);
+        }
+    }
     public record TreeNode(String name, String path, String type, List<TreeNode> children) {}
 }

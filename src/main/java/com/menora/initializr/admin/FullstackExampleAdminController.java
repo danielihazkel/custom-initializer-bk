@@ -62,7 +62,7 @@ public class FullstackExampleAdminController {
     /** Keys an example's {@code settings} object may carry — the editor state it applies on load. */
     static final Set<String> SETTINGS_STRING_KEYS = Set.of(
             "dashboardTitle", "dashboardOverview", "locale", "backendTemplateSet", "frontendTemplateSet",
-            "colorPalette");
+            "colorPalette", "designKit");
     static final Pattern SCAFFOLD_OPT = Pattern.compile("^[a-zA-Z]{1,40}$");
 
     @GetMapping
@@ -221,6 +221,9 @@ public class FullstackExampleAdminController {
                 }
                 if (key.equals("locale") && !Set.of("en", "he").contains(v.asText())) {
                     throw new InvalidExampleException("settings.locale must be 'en' or 'he'");
+                }
+                if (key.equals("designKit") && !v.asText().matches("^[a-z][a-z0-9-]{1,48}(@[1-9]\\d{0,5})?$")) {
+                    throw new InvalidExampleException("settings.designKit must be a design kit key, or key@version");
                 }
             } else if (key.equals("nav")) {
                 // The shell's navigation for a layout: a style and whether nav sections fold.

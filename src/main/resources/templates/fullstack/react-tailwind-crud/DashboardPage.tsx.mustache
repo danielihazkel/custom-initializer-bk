@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, LayoutGrid, Table2 } from 'lucide-react'
 import { api } from '@shared/api'
 import { t } from '@shared/i18n'
 {{#entities}}{{#breakdownEnumTypeName}}import { {{breakdownEnumTypeName}}Labels } from '@entities/{{entityNameKebab}}'
 {{/breakdownEnumTypeName}}{{/entities}}
+import { DashboardFrame, DashboardSection, StatCard, ChartCard } from '@shared/ui/ClassicDashboard'
 
 interface CardDef {
   label: string
@@ -75,60 +75,14 @@ function useBreakdown(path: string, field: string, labels?: Record<string, strin
   return { data, failed }
 }
 
-function BarChart({ data }: { data: { label: string; count: number }[] }) {
-  const max = data.reduce((m, d) => Math.max(m, d.count), 0) || 1
-  return (
-    <div className="space-y-2">
-      {data.map(d => (
-        <div key={d.label} className="flex items-center gap-3 text-sm">
-          <div className="w-28 shrink-0 truncate text-muted" title={d.label}>{d.label}</div>
-          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
-            <div className="h-full rounded-full bg-brand" style={{ width: `${(d.count / max) * 100}%` }} />
-          </div>
-          <div className="w-8 shrink-0 text-end tabular-nums text-fg">{d.count}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ChartCard({ chart }: { chart: ChartDef }) {
+function Breakdown({ chart }: { chart: ChartDef }) {
   const { data, failed } = useBreakdown(chart.path, chart.field, chart.labels)
-  return (
-    <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
-      <div className="mb-4 text-sm font-semibold text-fg">{chart.label}</div>
-      {failed ? (
-        <div className="text-sm text-muted">{t('couldNotLoad')}</div>
-      ) : data == null ? (
-        <div className="text-sm text-muted">…</div>
-      ) : data.length === 0 ? (
-        <div className="text-sm text-muted">{t('noRecordsYetDot')}</div>
-      ) : (
-        <BarChart data={data} />
-      )}
-    </div>
-  )
+  return <ChartCard label={chart.label} data={data} failed={failed} />
 }
 
-function StatCard({ card, onNavigate }: { card: CardDef; onNavigate: (view: string) => void }) {
+function Count({ card, onNavigate }: { card: CardDef; onNavigate: (view: string) => void }) {
   const { count, failed } = useCount(card.path)
-  return (
-    <button
-      onClick={() => onNavigate(card.view)}
-      className="group flex flex-col rounded-2xl border border-border bg-surface p-5 text-start shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-md"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10 text-brand">
-          <Table2 className="h-5 w-5" />
-        </div>
-        <ArrowRight className="h-4 w-4 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
-      </div>
-      <div className="mt-4 text-3xl font-semibold tabular-nums tracking-tight text-fg">
-        {failed ? '—' : count == null ? <span className="text-muted">…</span> : count}
-      </div>
-      <div className="mt-1 text-sm text-muted">{card.label}</div>
-    </button>
-  )
+  return <StatCard label={card.label} count={count} failed={failed} onOpen={() => onNavigate(card.view)} />
 }
 
 interface Props {
@@ -137,33 +91,21 @@ interface Props {
 
 export function DashboardPage({ onNavigate }: Props) {
   return (
-    <div className="mx-auto max-w-6xl p-4 md:p-8">
-      <div className="mb-8 overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-ink to-ink-soft p-6 text-white shadow-sm md:p-8">
-        <div className="flex items-center gap-2 text-gold">
-          <LayoutGrid className="h-5 w-5" />
-          <span className="text-xs font-semibold uppercase tracking-wider">{t('overview')}</span>
-        </div>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">{{#dashboardTitle}}{{dashboardTitle}}{{/dashboardTitle}}{{^dashboardTitle}}{t('welcomeTo', { name: '{{artifactId}}' })}{{/dashboardTitle}}</h1>
-        <p className="mt-1 max-w-xl text-sm text-slate-300">
-          {{#dashboardOverview}}{{dashboardOverview}}{{/dashboardOverview}}{{^dashboardOverview}}{t('manageBlurb')}{{/dashboardOverview}}
-        </p>
-      </div>
-
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">{t('collections')}</h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <DashboardFrame
+      title={ {{#dashboardTitleExpr}}{{dashboardTitleExpr}}{{/dashboardTitleExpr}}{{^dashboardTitleExpr}}t('welcomeTo', { name: '{{artifactId}}' }){{/dashboardTitleExpr}} }
+      lead={ {{#dashboardOverviewExpr}}{{dashboardOverviewExpr}}{{/dashboardOverviewExpr}}{{^dashboardOverviewExpr}}t('manageBlurb'){{/dashboardOverviewExpr}} }
+      shortcuts={CARDS.map(card => ({ label: card.label, onOpen: () => onNavigate(card.view) }))}
+    >
+      <DashboardSection title={t('collections')} kind="stats">
         {CARDS.map(card => (
-          <StatCard key={card.view} card={card} onNavigate={onNavigate} />
+          <Count key={card.view} card={card} onNavigate={onNavigate} />
         ))}
-      </div>
-
+      </DashboardSection>
       {CHARTS.length > 0 && (
-        <>
-          <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-muted">{t('breakdowns')}</h2>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {CHARTS.map(chart => <ChartCard key={chart.label} chart={chart} />)}
-          </div>
-        </>
+        <DashboardSection title={t('breakdowns')} kind="charts">
+          {CHARTS.map(chart => <Breakdown key={chart.label} chart={chart} />)}
+        </DashboardSection>
       )}
-    </div>
+    </DashboardFrame>
   )
 }

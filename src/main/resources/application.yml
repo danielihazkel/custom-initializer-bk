@@ -17,6 +17,7 @@ server:
       - text/html
       - text/css
       - application/javascript
+      - text/javascript
 
 admin:
   password: changeme
@@ -28,6 +29,12 @@ admin:
 spring:
   cache:
     type: jcache
+  servlet:
+    multipart:
+      # Design-kit assets (AssetValidator.MAX_BYTES is 2 MB) and .menora-kit.zip archives (a version holds
+      # at most 10 MB of assets; KitArchive bounds what it unpacks).
+      max-file-size: 16MB
+      max-request-size: 17MB
   datasource:
     url: jdbc:h2:file:./data/initializr
     driver-class-name: org.h2.Driver

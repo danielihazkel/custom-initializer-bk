@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ScreenHeader } from '@shared/ui/ScreenHeader'
 import { toast } from 'sonner'
 import { api, ApiError } from '@shared/api'
 import { t } from '@shared/i18n'
@@ -174,12 +175,7 @@ export function {{PageName}}Screen({{#wizardHasProps}}{ {{#wizardEditable}}editI
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">{{#wizardEditable}}{editId != null ? t('editX', { x: {{entityLabelExpr}} }) : {{pageTitleExpr}} }{{/wizardEditable}}{{^wizardEditable}}{ {{pageTitleExpr}} }{{/wizardEditable}}</h1>
-{{#hasPageDescription}}
-        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
-{{/hasPageDescription}}
-      </div>
+      <ScreenHeader title={{#wizardEditable}}{editId != null ? t('editX', { x: {{entityLabelExpr}} }) : {{pageTitleExpr}} }{{/wizardEditable}}{{^wizardEditable}}{ {{pageTitleExpr}} }{{/wizardEditable}}{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}} />
 
       <ol className="flex flex-wrap gap-2" aria-label={t('stepXOfY', { x: Math.min(step + 1, STEPS.length + 1), y: STEPS.length + 1 })}>
         {[...STEPS.map(s => s.title), t('review')].map((title, i) => (

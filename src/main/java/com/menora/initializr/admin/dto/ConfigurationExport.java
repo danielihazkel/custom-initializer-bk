@@ -2,6 +2,7 @@ package com.menora.initializr.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.menora.initializr.design.DesignKitTransfer;
 
 import java.util.List;
 
@@ -26,6 +27,10 @@ public class ConfigurationExport {
     private List<VersionExport> versionDefinitions;
     private List<DepartmentExport> departments;
     private List<FullstackExampleExport> fullstackExamples;
+    /** Custom design kits (built-ins come from the classpath); merged on import, never wiped. */
+    private List<DesignKitTransfer.KitExport> designKits;
+    /** Asset bytes the kits' versions reference, each once. */
+    private List<DesignKitTransfer.BlobExport> designAssetBlobs;
 
     // ── Getters/Setters ──────────────────────────────────────────────────────
 
@@ -67,6 +72,10 @@ public class ConfigurationExport {
     public void setDepartments(List<DepartmentExport> departments) { this.departments = departments; }
     public List<FullstackExampleExport> getFullstackExamples() { return fullstackExamples; }
     public void setFullstackExamples(List<FullstackExampleExport> fullstackExamples) { this.fullstackExamples = fullstackExamples; }
+    public List<DesignKitTransfer.KitExport> getDesignKits() { return designKits; }
+    public void setDesignKits(List<DesignKitTransfer.KitExport> designKits) { this.designKits = designKits; }
+    public List<DesignKitTransfer.BlobExport> getDesignAssetBlobs() { return designAssetBlobs; }
+    public void setDesignAssetBlobs(List<DesignKitTransfer.BlobExport> designAssetBlobs) { this.designAssetBlobs = designAssetBlobs; }
 
     // ── Inner DTOs ───────────────────────────────────────────────────────────
 

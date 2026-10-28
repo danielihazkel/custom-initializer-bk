@@ -1,0 +1,21 @@
+{
+  "protocolVersion": 4,
+  "buildHash": "52b2ab9a22d52c09",
+  "bytes": 1482738,
+  "fonts": [
+    "inter-latin-400-normal.woff2",
+    "inter-latin-500-normal.woff2",
+    "inter-latin-600-normal.woff2",
+    "inter-latin-700-normal.woff2",
+    "assistant-latin-300-normal.woff2",
+    "assistant-hebrew-300-normal.woff2",
+    "assistant-latin-400-normal.woff2",
+    "assistant-hebrew-400-normal.woff2",
+    "assistant-latin-500-normal.woff2",
+    "assistant-hebrew-500-normal.woff2",
+    "assistant-latin-600-normal.woff2",
+    "assistant-hebrew-600-normal.woff2",
+    "assistant-latin-700-normal.woff2",
+    "assistant-hebrew-700-normal.woff2"
+  ]
+}

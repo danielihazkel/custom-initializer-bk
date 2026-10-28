@@ -4,60 +4,39 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * Menora design tokens (Tailwind v4 @theme).
- *
- * Brand/gold/success/danger come from the selected color palette at generation time
- * (primary → brand, secondary → gold highlight, accent → success, error → danger); the
- * hover/active shades are derived with color-mix. The dark "ink" shell (sidebar/header)
- * is a FIXED Menora navy for every palette — the brand colour supplies the accent on top
- * of it, which keeps the chrome readable no matter how bright the palette's secondary is.
- * The neutral "surface" tokens drive the light/dark UI chrome (page background, cards,
- * text, borders) and are re-pointed for dark mode in the `.dark` block below — so every
- * surface-aware utility flips automatically.
- *
- * Generated utilities: bg-brand / bg-brand-deep, bg-ink / bg-ink-soft, text-gold,
- * text-success / bg-success, bg-danger, plus bg-canvas, bg-surface, bg-surface-2,
- * text-fg, text-muted, border-border, ring-ring. The signature Menora purple→gold
- * gradient is exposed as the plain utilities `.bg-app-shell` (vertical) and `.bg-app-bar`
- * (horizontal), defined outside `@theme` below.
- *
- * Semantic ACTION tokens (bg-primary / text-on-primary / hover:bg-primary-deep) drive the
- * primary buttons (New / Save / Edit / empty-state CTA). Here they alias the brand colour with
- * white text; a design-system variant set (e.g. Menora Digital) re-points them — yellow with
- * ink text — without touching the shared components.
+ * Design tokens (Tailwind v4 @theme). Each becomes utilities — bg-brand, text-fg, border-border,
+ * rounded-xl, shadow-card, font-sans, … — and the `.dark` block below re-points them for dark mode.
  */
 @theme {
-  --color-brand:      {{palette.primary}};
-  --color-brand-deep: color-mix(in srgb, {{palette.primary}} 85%, black);
+  --color-brand:        {{palette.primary}};
+  --color-brand-deep:   color-mix(in srgb, {{palette.primary}} 85%, black);
   --color-primary:      {{palette.primary}};
   --color-primary-deep: color-mix(in srgb, {{palette.primary}} 85%, black);
   --color-on-primary:   #ffffff;
-  --color-ink:        #2B2F4C;
-  --color-ink-soft:   color-mix(in srgb, #2B2F4C 86%, white);
-  --color-gold:       {{palette.secondary}};
-  --color-success:    {{#hasPaletteAccent}}{{palette.accent}}{{/hasPaletteAccent}}{{^hasPaletteAccent}}#16a34a{{/hasPaletteAccent}};
-  --color-danger:     {{#hasPaletteError}}{{palette.error}}{{/hasPaletteError}}{{^hasPaletteError}}#dc2626{{/hasPaletteError}};
+  --color-ink:          #2B2F4C;
+  --color-ink-soft:     color-mix(in srgb, #2B2F4C 86%, white);
+  --color-gold:         {{palette.secondary}};
+  --color-success:      {{#hasPaletteAccent}}{{palette.accent}}{{/hasPaletteAccent}}{{^hasPaletteAccent}}#16a34a{{/hasPaletteAccent}};
+  --color-danger:       {{#hasPaletteError}}{{palette.error}}{{/hasPaletteError}}{{^hasPaletteError}}#dc2626{{/hasPaletteError}};
 
-  /* Neutral chrome — light defaults (flipped under .dark). */
-  --color-canvas:     #f6f7f9;
-  --color-surface:    #ffffff;
-  --color-surface-2:  #f1f5f9;
-  --color-fg:         #0f172a;
-  --color-muted:      #64748b;
-  --color-border:     #e6e9ee;
-  --color-ring:       {{palette.primary}};
+  --color-canvas:       #f6f7f9;
+  --color-surface:      #ffffff;
+  --color-surface-2:    #f1f5f9;
+  --color-fg:           #0f172a;
+  --color-muted:        #64748b;
+  --color-border:       #e6e9ee;
+  --color-ring:         {{palette.primary}};
 
-  --font-sans:        'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-sans:          'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
-/* Dark chrome: brand/ink/gold stay constant; only the neutral surfaces flip. */
 .dark {
-  --color-canvas:     #0b1120;
-  --color-surface:    #111827;
-  --color-surface-2:  #1b2435;
-  --color-fg:         #e8edf5;
-  --color-muted:      #94a3b8;
-  --color-border:     #243049;
+  --color-canvas:    #0b1120;
+  --color-surface:   #111827;
+  --color-surface-2: #1b2435;
+  --color-fg:        #e8edf5;
+  --color-muted:     #94a3b8;
+  --color-border:    #243049;
 }
 
 /*

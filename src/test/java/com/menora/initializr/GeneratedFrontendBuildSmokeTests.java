@@ -1,5 +1,8 @@
 package com.menora.initializr;
 
+import com.menora.initializr.design.DesignKitService;
+import com.menora.initializr.design.DesignTokens;
+import com.menora.initializr.design.KitManifest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
@@ -19,6 +22,8 @@ import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -57,6 +62,8 @@ class GeneratedFrontendBuildSmokeTests {
 
     @Autowired
     private TestRestTemplate rest;
+    @Autowired
+    private DesignKitService designKits;
 
     @Test
     void baselineFrontendProjectInstallsAndBuilds(@TempDir Path workDir) throws Exception {
@@ -160,6 +167,74 @@ class GeneratedFrontendBuildSmokeTests {
         // The tailwind shell's other navigation: a top bar with folding sections.
         body.put("nav", Map.of("style", "topbar", "collapsibleGroups", true));
         Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendCustomKitInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // A design kit cloned from the default one, with its own brand colour and dark canvas, another
+        // @fontsource font, an uploaded font file (@font-face) and a logo: the generated index.css,
+        // main.tsx, package.json and assets must still type-check, lint and bundle.
+        String key = "smoke-kit-" + System.nanoTime() % 100000;
+        designKits.create(new DesignKitService.CreateKit(key, "Smoke kit", null, "tailwind-default"), "smoke");
+        DesignTokens tokens = designKits.draft(key).tokens();
+        designKits.saveDraft(key, new DesignKitService.SaveDraft(new DesignTokens(DesignTokens.SCHEMA, tokens.tokens().stream()
+                .map(t -> switch (t.name()) {
+                    case "color-brand" -> new DesignTokens.Token(t.name(), t.type(), "#0f766e", t.dark(), t.group());
+                    case "color-canvas" -> new DesignTokens.Token(t.name(), t.type(), t.value(), "#101820", t.group());
+                    case "font-sans" -> new DesignTokens.Token(t.name(), t.type(), "'Brand Sans', 'Roboto', Arial, sans-serif", t.dark(), t.group());
+                    default -> t;
+                }).toList()),
+                new KitManifest(List.of(), new KitManifest.Fonts("@fontsource/roboto", "^5.0.8", List.of(400, 700), null), null),
+                null, null));
+        byte[] woff2 = new byte[64];
+        woff2[0] = 'w'; woff2[1] = 'O'; woff2[2] = 'F'; woff2[3] = '2';
+        designKits.putAsset(key, "src/assets/fonts/brand-sans.woff2", "FONT", "{\"family\":\"Brand Sans\",\"weight\":400}", woff2);
+        designKits.putAsset(key, "public/smoke-logo.svg", "LOGO", null,
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 4 1\"><rect width=\"4\" height=\"1\"/></svg>".getBytes(StandardCharsets.UTF_8));
+        designKits.publish(key, "smoke", "smoke");
+
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
+        body.put("designKit", key);
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+        try (var css = Files.list(project.resolve("dist/assets"))) {
+            String built = css.filter(f -> f.toString().endsWith(".css"))
+                    .map(f -> { try { return Files.readString(f); } catch (IOException e) { throw new UncheckedIOException(e); } })
+                    .reduce("", String::concat);
+            assertThat(built).contains("0f766e").contains("Brand Sans");
+        }
+    }
+
+    @Test
+    void fullstackFrontendCustomKitComponentsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // A kit that replaces a component (Badge, with a JSX style={{...}} object a mustache template
+        // could not hold) and adds a helper it imports: the zip carries both, and the project still
+        // type-checks, lints with no warnings and bundles.
+        String key = "smoke-comp-" + System.nanoTime() % 100000;
+        designKits.create(new DesignKitService.CreateKit(key, "Smoke components", null, "tailwind-default"), "smoke");
+        designKits.putComponentFile(key, "src/shared/ui/kit/tone.ts", com.menora.initializr.design.KitComponentsTests.TONE);
+        designKits.putComponentFile(key, "src/shared/ui/Badge.tsx", com.menora.initializr.design.KitComponentsTests.BADGE);
+        // ...and a nav icon of its own, which the first nav page takes.
+        designKits.putComponentFile(key, "src/shared/ui/kit/navIcons.tsx", com.menora.initializr.design.DesignSystemsTests.NAV_ICONS);
+        KitManifest manifest = designKits.draft(key).manifest();
+        designKits.saveDraft(key, new DesignKitService.SaveDraft(null, new KitManifest(manifest.imports(), manifest.fonts(),
+                manifest.defaults(), manifest.traits(), new KitManifest.NavIcons("src/shared/ui/kit/navIcons.tsx", List.of("ShieldIcon"))), null, null));
+        designKits.publish(key, "smoke", "smoke");
+
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
+        body.put("designKit", key);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> pages = (List<Map<String, Object>>) body.get("pages");
+        pages.stream().filter(p -> !Boolean.TRUE.equals(p.get("hidden")) && !"record".equals(p.get("type"))).findFirst()
+                .orElseThrow().put("icon", "ShieldIcon");
+        Path project = postAndExtractFrontend(workDir, body);
+        assertThat(Files.readString(project.resolve("src/shared/ui/Badge.tsx"))).contains("data-kit-badge");
+        assertThat(Files.readString(project.resolve("src/app/App.tsx"))).contains("import { ShieldIcon } from '@shared/ui/kit/navIcons'");
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
         runPnpm(project, "run", "build");

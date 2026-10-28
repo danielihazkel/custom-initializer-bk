@@ -65,11 +65,14 @@ public final class GeneratedProjectFiles {
      * Read a generated file as UTF-8 text for the preview response. Binary content (or an
      * unreadable file) yields a placeholder rather than failing the whole preview.
      */
+    /** What {@link #readSafely} answers for a file that is not UTF-8 text. */
+    public static final String BINARY_PLACEHOLDER = "[binary file]";
+
     public static String readSafely(Path path) {
         try {
             return Files.readString(path, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            return "[binary file]";
+            return BINARY_PLACEHOLDER;
         }
     }
 

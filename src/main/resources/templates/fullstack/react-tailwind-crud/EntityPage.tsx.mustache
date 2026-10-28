@@ -1,5 +1,4 @@
 import { {{#calendarRanged}}useCallback, {{/calendarRanged}}useEffect, useState } from 'react'
-import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#importApplicable}}Upload, {{/importApplicable}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}PencilLine, {{/viewTable}}{{/bulkUpdateApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
 {{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
@@ -7,7 +6,9 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 {{/hasEnumFields}}
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#listUrlState}}type ListState, {{/listUrlState}}{{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
-import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
+import { ListFrame, ListHeader } from '@shared/ui/ListHeader'
+{{#bulkSelectApplicable}}{{#viewTable}}import { SelectionBar } from '@shared/ui/SelectionBar'
+{{/viewTable}}{{/bulkSelectApplicable}}import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
 import { {{EntityName}}Detail{{#hasWorkflow}}, {{EntityName}}Transitions{{/hasWorkflow}}{{#kanbanIsWorkflow}}, {{EntityName}}Workflow{{/kanbanIsWorkflow}} } from '@features/{{entityNameKebab}}-form'
 {{#kanbanIsWorkflow}}
 import { useMe } from '@shared/api/me'
@@ -26,13 +27,16 @@ import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail
 type ListColumn = Column<{{EntityName}}> & { key: string }
 
 {{/listConfigurable}}const columns: {{#listConfigurable}}ListColumn[]{{/listConfigurable}}{{^listConfigurable}}Column<{{EntityName}}>[]{{/listConfigurable}} = [
-{{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : {{#isEnum}}{{enumTypeName}}Labels[r.{{name}}]{{/isEnum}}{{^isEnum}}String(r.{{name}}){{/isEnum}} },
+{{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{label}}', sortKey: '{{name}}'{{#isNumeric}}, numeric: true{{/isNumeric}}{{#isTemporal}}, numeric: true{{/isTemporal}}{{#isUuid}}, numeric: true{{/isUuid}}{{#isEnum}}, chip: true{{/isEnum}}{{#isBoolean}}, chip: true{{/isBoolean}}, render: r => r.{{name}} == null ? '—' : {{#isEnum}}{{enumTypeName}}Labels[r.{{name}}]{{/isEnum}}{{^isEnum}}String(r.{{name}}){{/isEnum}} },
 {{/fields}}{{#relations}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => {{#targetHasRecordPage}}r.{{fkFieldName}} == null ? '—' : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(r.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}r.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(r.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} },
-{{/relations}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
-  { {{#listConfigurable}}key: 'updatedAt', {{/listConfigurable}}label: t('updated'), sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
-{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
+{{/relations}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', numeric: true, render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
+  { {{#listConfigurable}}key: 'updatedAt', {{/listConfigurable}}label: t('updated'), sortKey: 'updatedAt', numeric: true, render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
+{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{CollectionField}}', numeric: true, render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
 {{/inverseRelations}}{{/optScaffoldInverse}}]
-{{#hasFilters}}
+{{#hasViewToggle}}
+// The enabled list views, in order: the header's view switch.
+const VIEWS: { id: {{viewModeType}}; label: string }[] = [{{#viewTable}}{ id: 'table', label: t('tableView') }, {{/viewTable}}{{#viewCards}}{ id: 'cards', label: t('cardView') }, {{/viewCards}}{{#viewKanban}}{ id: 'kanban', label: t('boardView') }, {{/viewKanban}}{{#viewCalendar}}{ id: 'calendar', label: t('calendarView') }, {{/viewCalendar}}]
+{{/hasViewToggle}}{{#hasFilters}}
 const filterDescriptors: FilterDescriptor[] = [
 {{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
 {{/filterFields}}]
@@ -615,92 +619,36 @@ function oneValue(value: string | undefined): boolean {
   }
 
   return (
-    <div className="mx-auto max-w-6xl p-4 md:p-8">
-      <div className="mb-6 flex items-end justify-between">
-        <div>
+    <ListFrame>
+      <ListHeader
 {{#hasPages}}
-          {!embedded && <h1 className="text-2xl font-semibold tracking-tight text-fg">{title ?? '{{entityLabelPlural}}'}</h1>}
-          {description && <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p>}
+        title={embedded ? undefined : title ?? '{{entityLabelPlural}}'}
+        description={description}
 {{/hasPages}}
 {{^hasPages}}
-          <h1 className="text-2xl font-semibold tracking-tight text-fg">{{entityLabelPlural}}</h1>
+        title="{{entityLabelPlural}}"
 {{/hasPages}}
-          <p className="mt-1 text-sm text-muted">
-            {totalElements} {t(totalElements === 1 ? 'record' : 'records')}{{#isView}} · {t('readOnlyView')}{{/isView}}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-{{#hasViewToggle}}          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
-{{#viewTable}}            <button
-              onClick={() => setViewMode('table')}
-              aria-pressed={viewMode === 'table'}
-              className={`rounded-md p-1.5 transition-colors ${viewMode === 'table' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
-              title={t('tableView')}
-              aria-label={t('tableView')}
-            >
-              <Table2 className="h-4 w-4" />
-            </button>
-{{/viewTable}}{{#viewCards}}            <button
-              onClick={() => setViewMode('cards')}
-              aria-pressed={viewMode === 'cards'}
-              className={`rounded-md p-1.5 transition-colors ${viewMode === 'cards' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
-              title={t('cardView')}
-              aria-label={t('cardView')}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
-{{/viewCards}}{{#viewKanban}}            <button
-              onClick={() => setViewMode('kanban')}
-              aria-pressed={viewMode === 'kanban'}
-              className={`rounded-md p-1.5 transition-colors ${viewMode === 'kanban' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
-              title={t('boardView')}
-              aria-label={t('boardView')}
-            >
-              <Columns3 className="h-4 w-4" />
-            </button>
-{{/viewKanban}}{{#viewCalendar}}            <button
-              onClick={() => setViewMode('calendar')}
-              aria-pressed={viewMode === 'calendar'}
-              className={`rounded-md p-1.5 transition-colors ${viewMode === 'calendar' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
-              title={t('calendarView')}
-              aria-label={t('calendarView')}
-            >
-              <Calendar className="h-4 w-4" />
-            </button>
-{{/viewCalendar}}          </div>
-{{/hasViewToggle}}{{#optScaffoldCsvExport}}{{#listActionsConfigurable}}          {can('export') && (
-{{/listActionsConfigurable}}          <button
-            onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))}
-            disabled={download.busy}
-            aria-busy={download.busy}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
-            title={t('exportCsv')}
-          >
-            <Download className="h-4 w-4" />
-            {download.busy ? t('exporting') : t('export')}
-          </button>
-{{#listActionsConfigurable}}          )}
-{{/listActionsConfigurable}}{{/optScaffoldCsvExport}}{{#importApplicable}}{{#listActionsConfigurable}}          {can('import') && (
-{{/listActionsConfigurable}}          <button
-            onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) }
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
-            title={t('importCsv')}
-          >
-            <Upload className="h-4 w-4" />
-            {t('import')}
-          </button>
-{{#listActionsConfigurable}}          )}
-{{/listActionsConfigurable}}{{/importApplicable}}{{#mutable}}{{#listActionsConfigurable}}          {can('new') && (
-{{/listActionsConfigurable}}          <button
-            {{^hasCreatePage}}onClick={openNew}{{/hasCreatePage}}{{#hasCreatePage}}onClick={onCreate ?? openNew}{{/hasCreatePage}}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
-          >
-            <Plus className="h-4 w-4" />
-            {t('newX', { x: '{{entityLabel}}' })}
-          </button>
-{{#listActionsConfigurable}}          )}
-{{/listActionsConfigurable}}{{/mutable}}        </div>
-      </div>
+        count={totalElements}
+{{#isView}}
+        readOnlyView
+{{/isView}}
+{{#hasViewToggle}}
+        views={VIEWS}
+        view={viewMode}
+        onViewChange={id => setViewMode(id as {{viewModeType}})}
+{{/hasViewToggle}}
+{{#optScaffoldCsvExport}}
+        onExport={ {{#listActionsConfigurable}}!can('export') ? undefined : {{/listActionsConfigurable}}() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv')) }
+        exporting={download.busy}
+{{/optScaffoldCsvExport}}
+{{#importApplicable}}
+        onImport={ {{#listActionsConfigurable}}!can('import') ? undefined : {{/listActionsConfigurable}}{{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) }
+{{/importApplicable}}
+{{#mutable}}
+        onCreate={ {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{{#hasCreatePage}}onCreate ?? {{/hasCreatePage}}openNew }
+        createLabel={t('newX', { x: '{{entityLabel}}' })}
+{{/mutable}}
+      />
 
       {error && (
         <Alert>
@@ -713,56 +661,22 @@ function oneValue(value: string | undefined): boolean {
         <FilterBar filters={{#pageScopeable}}{visibleFilters}{{/pageScopeable}}{{^pageScopeable}}{filterDescriptors}{{/pageScopeable}} values={filters} onChange={setFilters} />
       </div>
 {{/hasFilters}}{{#bulkSelectApplicable}}{{#viewTable}}      {selected.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/40 bg-brand/5 px-4 py-2.5">
-          <span className="text-sm font-medium text-fg">{t('nSelected', { n: selected.length })}</span>
-          <div className="flex flex-wrap items-center gap-2">
-{{#bulkUpdateApplicable}}            <select
-              value={bulkField}
-              onChange={e => { setBulkField(e.target.value); setBulkValue('') }}
-              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-fg"
-              aria-label={t('fieldToEdit')}
-            >
-              <option value="">{t('setField')}</option>
-{{#bulkUpdatableFields}}              <option value="{{name}}">{{label}}</option>
-{{/bulkUpdatableFields}}            </select>
-            {bulkField && (() => {
-              const meta = BULK_FIELDS[bulkField]
-              if (!meta) return null
-              const cls = 'rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-fg'
-              if (meta.kind === 'boolean') return (
-                <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label={t('newValue')}>
-                  <option value="">—</option>
-                  <option value="true">{t('trueLabel')}</option>
-                  <option value="false">{t('falseLabel')}</option>
-                </select>
-              )
-              if (meta.kind === 'enum') return (
-                <select value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} aria-label={t('newValue')}>
-                  <option value="">—</option>
-                  {meta.options!.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              )
-              const type = meta.kind === 'number' ? 'number' : meta.kind === 'date' ? 'date' : meta.kind === 'datetime' ? 'datetime-local' : 'text'
-              return <input type={type} value={bulkValue} onChange={e => setBulkValue(e.target.value)} className={cls} placeholder={t('newValue')} aria-label={t('newValue')} />
-            })()}
-            <button
-              onClick={runBulkUpdate}
-              disabled={!bulkField || bulkUpdating}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-50"
-            >
-              <PencilLine className="h-4 w-4" />
-              {t('apply')}
-            </button>
-{{/bulkUpdateApplicable}}            <button onClick={() => setSelected([])} className="rounded-lg px-3 py-1.5 text-sm text-muted transition-colors hover:text-fg">{t('clear')}</button>
-{{#bulkDeleteApplicable}}            <button
-              onClick={() => setBulkConfirm(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-white transition-colors hover:opacity-90"
-            >
-              <Trash2 className="h-4 w-4" />
-              {t('delete')}
-            </button>
-{{/bulkDeleteApplicable}}          </div>
-        </div>
+        <SelectionBar
+          count={selected.length}
+          onClear={() => setSelected([])}
+{{#bulkDeleteApplicable}}
+          onDelete={() => setBulkConfirm(true)}
+{{/bulkDeleteApplicable}}
+{{#bulkUpdateApplicable}}
+          fields={BULK_FIELDS}
+          field={bulkField}
+          onFieldChange={f => { setBulkField(f); setBulkValue('') }}
+          value={bulkValue}
+          onValueChange={setBulkValue}
+          onApply={runBulkUpdate}
+          applying={bulkUpdating}
+{{/bulkUpdateApplicable}}
+        />
       )}
 {{/viewTable}}{{/bulkSelectApplicable}}
 {{#listSideDetail}}
@@ -828,6 +742,7 @@ function oneValue(value: string | undefined): boolean {
         />
       ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
         <Table
+          caption="{{entityLabelPlural}}"
           columns={{#inlineEditApplicable}}{{#listActionsConfigurable}}{can('edit') ? inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}}) : {{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}}}{{/listActionsConfigurable}}{{^listActionsConfigurable}}{inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}})}{{/listActionsConfigurable}}{{/inlineEditApplicable}}{{^inlineEditApplicable}}{{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}{{/inlineEditApplicable}}
           columnMenu={columnMenu}
           rows={items}
@@ -982,6 +897,6 @@ function oneValue(value: string | undefined): boolean {
         )}
 {{/hasWorkflow}}
       </DetailDrawer>
-    </div>
+    </ListFrame>
   )
 }

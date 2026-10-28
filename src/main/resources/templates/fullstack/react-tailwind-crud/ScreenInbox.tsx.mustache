@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ScreenHeader } from '@shared/ui/ScreenHeader'
 import { api } from '@shared/api'
 import { t } from '@shared/i18n'
 import { Skeleton{{^hasRecordPage}}, DetailDrawer{{/hasRecordPage}} } from '@shared/ui'
@@ -105,12 +106,7 @@ export function {{PageName}}Screen({ query, onQueryChange{{#needsNavigate}}, onN
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
-{{#hasPageDescription}}
-        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
-{{/hasPageDescription}}
-      </div>
+      <ScreenHeader title={ {{pageTitleExpr}} }{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}} />
       <div className="flex flex-wrap gap-1 border-b border-border" role="tablist" aria-label={ {{pageTitleExpr}} }>
         {QUEUES.map(q => (
           <button

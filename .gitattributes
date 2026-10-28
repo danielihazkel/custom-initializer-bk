@@ -1,0 +1,3 @@
+# The design preview runtime is a build artifact of the design-studio repo, checked by hash
+# (DesignRuntimeManifestTest): keep its bytes exactly as built.
+src/main/resources/static/design-runtime/** -text

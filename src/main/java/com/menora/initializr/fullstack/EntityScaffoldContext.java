@@ -123,6 +123,28 @@ public final class EntityScaffoldContext {
         putPageContext(ctx, pages, null);
     }
 
+    /**
+     * The nav icons a design kit brings ({@code KitManifest.NavIcons}): the ones the nav uses are
+     * imported from the kit's own module instead of lucide-react. Runs after {@link #putPageContext}.
+     */
+    public static void putKitNavIcons(Map<String, Object> ctx, String module, List<String> names) {
+        if (!Boolean.TRUE.equals(ctx.get("hasPages")) || module == null || names == null || names.isEmpty()) return;
+        String imports = (String) ctx.get("navIconImports");
+        Set<String> lucide = new TreeSet<>();
+        Set<String> kit = new TreeSet<>();
+        for (String icon : imports.split(",\\s*")) {
+            if (icon.isEmpty()) continue;
+            (names.contains(icon) ? kit : lucide).add(icon);
+        }
+        if (kit.isEmpty()) return;
+        ctx.put("navIconImports", String.join(", ", lucide));
+        ctx.put("hasLucideNavIcons", !lucide.isEmpty());
+        ctx.put("hasKitNavIcons", true);
+        ctx.put("kitNavIconImports", String.join(", ", kit));
+        // src/shared/ui/acme/navIcons.tsx → @shared/ui/acme/navIcons
+        ctx.put("kitNavIconModule", "@shared/" + module.substring("src/shared/".length(), module.lastIndexOf('.')));
+    }
+
     /** As above, with the shell's navigation settings (null: a sidebar whose sections do not fold). */
     public static void putPageContext(Map<String, Object> ctx, List<PageDefinition> pages, PageDefinition.Nav navSettings) {
         ctx.put("hasPages", !pages.isEmpty());
@@ -649,11 +671,12 @@ public final class EntityScaffoldContext {
         // ...and its `setQuery` (a route rewrite) only when a routed screen keeps state in the hash.
         ctx.put("hasQueryScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("takesQuery"))));
         ctx.put("initialPageId", nav.get(0).get("pageId"));
-        // The lucide names the shell imports: the nav icons in use plus its own chrome, sorted.
-        // A top bar has no off-canvas menu to open, so it imports no Menu icon.
-        Set<String> icons = new TreeSet<>(navTopbar ? List.of("Moon", "Sun") : List.of("Menu", "Moon", "Sun"));
+        // The lucide names App imports for its nav: the icons in use, sorted (the Shell brings its own).
+        Set<String> icons = new TreeSet<>();
         nav.forEach(v -> icons.add((String) v.get("navIcon")));
         ctx.put("navIconImports", String.join(", ", icons));
+        ctx.put("hasLucideNavIcons", !icons.isEmpty());
+        ctx.put("hasKitNavIcons", false);
         putNavGroups(ctx, nav);
         ctx.put("hasDashboardPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsDashboard"))));
         ctx.put("hasReportPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsReport"))));
@@ -2058,7 +2081,7 @@ public final class EntityScaffoldContext {
         return defaults.isEmpty() ? "{}" : "{ " + String.join(", ", defaults) + " }";
     }
 
-    static String tsString(String s) {
+    public static String tsString(String s) {
         return "'" + escapeTsSingleQuoted(s).replace("\r", "").replace("\n", "\\n") + "'";
     }
 

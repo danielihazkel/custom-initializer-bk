@@ -469,11 +469,9 @@ class DataSeederTest {
     }
 
     @Test
-    void menoraDigitalFullstackSetAuthorsItsSharedUiAndBorrowsTheRest() {
-        // The variant set authors the theme/shell/dashboard/main/package files plus the Menora-skinned
-        // shared UI (Table, CardGrid, EmptyState, FilterBar, drawers, dialog, Badge) and the entity page,
-        // and borrows everything else from react-tailwind-crud via sourceSet — so it must carry exactly
-        // the same file paths.
+    void menoraDigitalFullstackSetIsTheDefaultSetsFiles() {
+        // The Menora look is the menora-digital design kit on react-tailwind-crud; the set that stands
+        // for it borrows every file from react-tailwind-crud via sourceSet — the same paths and bytes.
         EntityTemplateSetEntity set = templateSetRepo.findBySetKey("react-menora-digital-crud").orElseThrow();
         assertThat(set.getKind()).isEqualTo(EntityTemplateSetEntity.Kind.FRONTEND_REACT);
         assertThat(set.getDesignSystem()).isEqualTo(EntityTemplateSetEntity.DesignSystem.MENORA_DIGITAL);
@@ -485,26 +483,11 @@ class DataSeederTest {
                 .map(f -> f.getPathTemplate()).toList();
         assertThat(menoraPaths).containsExactlyInAnyOrderElementsOf(tailwindPaths);
 
-        // Authored content wraps the design-system ports (same exports, superset props); borrowed
-        // content is copied verbatim at seed time.
-        assertThat(templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()))
-                .filteredOn(f -> f.getPathTemplate().equals("src/shared/ui/Table.tsx"))
-                .singleElement()
-                .satisfies(f -> assertThat(f.getContent()).contains("onSortChange").contains("MenoraTable"));
-        assertThat(templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()))
-                .filteredOn(f -> f.getPathTemplate().equals("src/pages/{{entityNameKebab}}/ui/{{EntityName}}Page.tsx"))
-                .singleElement()
-                .satisfies(f -> assertThat(f.getContent()).contains("<SectionHeader"));
-        String borrowedKanban = templateFileRepo.findBySetIdOrderBySortOrderAsc(tailwindId).stream()
-                .filter(f -> f.getPathTemplate().equals("src/shared/ui/KanbanBoard.tsx")).findFirst().orElseThrow().getContent();
-        assertThat(templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()))
-                .filteredOn(f -> f.getPathTemplate().equals("src/shared/ui/KanbanBoard.tsx"))
-                .singleElement()
-                .satisfies(f -> assertThat(f.getContent()).isEqualTo(borrowedKanban));
-        assertThat(templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId()))
-                .filteredOn(f -> f.getPathTemplate().equals("src/index.css"))
-                .singleElement()
-                .satisfies(f -> assertThat(f.getContent()).contains("--color-primary:      #ffc700"));
+        // (Per-page screens share one path pattern; their gate tells them apart.)
+        java.util.Map<String, String> tailwind = new java.util.HashMap<>();
+        templateFileRepo.findBySetIdOrderBySortOrderAsc(tailwindId).forEach(f -> tailwind.put(f.getPathTemplate() + "|" + f.getGatedBy(), f.getContent()));
+        templateFileRepo.findBySetIdOrderBySortOrderAsc(set.getId())
+                .forEach(f -> assertThat(f.getContent()).as(f.getPathTemplate()).isEqualTo(tailwind.get(f.getPathTemplate() + "|" + f.getGatedBy())));
     }
 
     // ── Fullstack template-set default deps ─────────────────────────────────────

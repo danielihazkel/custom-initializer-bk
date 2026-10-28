@@ -1,0 +1,31 @@
+/*
+ * Menora signature gradient (purple → purple → gold), mirroring colors.ts
+ * appBarGradient / sideBarGradient. Defined as plain utilities (not @theme tokens)
+ * because Tailwind v4 only generates colour utilities from @theme colours.
+ */
+.bg-app-shell {
+  background-image: linear-gradient(to bottom, var(--color-brand) 0%, var(--color-brand) 75%, var(--color-gold) 100%);
+}
+.bg-app-bar {
+  background-image: linear-gradient(to right, var(--color-brand) 0%, var(--color-brand) 75%, var(--color-gold) 100%);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-canvas);
+  color: var(--color-fg);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Thin, theme-aware scrollbars so the dark mode doesn't show bright gutters. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
