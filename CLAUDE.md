@@ -481,6 +481,8 @@ Tests use `src/test/resources/application.properties` which configures an in-mem
 - `admin/AdminApiIntegrationTests` (`MockMvc`) — auth gate (login, 401), validation (400) and orphan-conflict (409) error paths, `/admin/refresh`.
 - `admin/ConfigurationExportImportServiceTest` — export → import round-trip preserves row counts and content (runs `@Transactional` so the destructive import rolls back).
 
+**Golden output (`FullstackGoldenOutputTests`).** Per-file sha256 manifests of the whole fullstack zip in `src/test/resources/golden/fullstack/<example>__<set>__<locale>__<layout|classic>.sha`: every seeded example × both frontend sets × en / he+RTL × its layout and the classic shell (60 cases, ~60 s), hashed after `\r\n` → `\n`. Any template change that alters output fails here, listing each added (`+`), removed (`-`) and changed (`~`) file per case. After an intended change, run `mvn test -Dtest=FullstackGoldenOutputTests -Dgolden.update=true` and review the manifest diff in the commit. `generationIsDeterministic` guards the premise. This is P1.0 of the design-kit work (`../DESIGN_STUDIO_PLAN.md`): kit canonicalization commits change the manifests deliberately, everything else must not.
+
 **Regression guards added alongside the fixes they pin:**
 - `InvokerTempFileCleanupTests` — the invoker's `temporaryFiles` map is empty after `cleanTempFiles` (reflective; the map is private).
 - `config/GenerationContextCleanupTests` — the filter clears all five ThreadLocal contexts, on both the success and the exception path.
