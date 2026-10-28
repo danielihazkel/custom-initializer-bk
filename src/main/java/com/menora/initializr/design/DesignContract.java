@@ -24,6 +24,7 @@ public final class DesignContract {
     public static Map<String, Object> describe() {
         Map<String, Object> c = new LinkedHashMap<>();
         c.put("contractVersion", DesignKitService.CONTRACT_VERSION);
+        c.put("runtimeProtocol", DesignRuntimeFilter.PROTOCOL_VERSION);
         Map<String, Object> tokens = new LinkedHashMap<>();
         tokens.put("schema", DesignTokens.SCHEMA);
         tokens.put("required", TokenSchema.REQUIRED);
@@ -49,7 +50,8 @@ public final class DesignContract {
         limits.put("tokens", TokenValidator.MAX_TOKENS);
         limits.put("tokenValueChars", TokenValidator.MAX_VALUE);
         c.put("limits", limits);
-        // Component slots arrive with the preview runtime (P2); a kit has none yet.
+        // Kits own no component files until component editing (P3): the preview runtime renders
+        // the generated app itself, so every component comes from the kit's base template set.
         c.put("slots", List.of());
         return c;
     }

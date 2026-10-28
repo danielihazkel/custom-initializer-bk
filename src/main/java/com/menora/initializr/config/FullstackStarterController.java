@@ -41,6 +41,7 @@ import org.springframework.util.FileSystemUtils;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
@@ -48,6 +49,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -144,20 +146,54 @@ public class FullstackStarterController {
         }
     }
 
+    /** Binaries the design runtime may ask for ({@code assets=true}): the frontend's public files
+     *  (logos) and {@code src/assets/**} (kit fonts and images), up to this many bytes in all. */
+    static final long PREVIEW_ASSET_BYTES = 12L * 1024 * 1024;
+
     @PostMapping("/starter-fullstack.preview")
-    public ProjectPreviewController.PreviewResponse preview(@RequestBody FullstackStarterRequest body) throws IOException {
+    public ProjectPreviewController.PreviewResponse preview(@RequestBody FullstackStarterRequest body,
+                                                            @RequestParam(defaultValue = "false") boolean assets) throws IOException {
+        return previewOf(body, assets, false);
+    }
+
+    /**
+     * The Design Studio's preview: the same answer, but the request's {@code designKit} may name a
+     * kit's draft ({@code key@draft}), which the public endpoints refuse. Under {@code /admin}, so
+     * it takes the admin token.
+     */
+    @PostMapping("/admin/design/preview")
+    public ProjectPreviewController.PreviewResponse previewWithDraft(@RequestBody FullstackStarterRequest body,
+                                                                     @RequestParam(defaultValue = "true") boolean assets) throws IOException {
+        return previewOf(body, assets, true);
+    }
+
+    private ProjectPreviewController.PreviewResponse previewOf(FullstackStarterRequest body, boolean assets, boolean allowDraftKit) throws IOException {
         Path tempDir = Files.createTempDirectory("fullstack-preview-");
         try {
-            buildArtifacts(body, tempDir);
+            buildArtifacts(body, tempDir, allowDraftKit);
 
             List<ProjectPreviewController.PreviewFile> files = new ArrayList<>();
             final Path root = tempDir;
+            long[] assetBytes = {0};
             try (Stream<Path> walk = Files.walk(tempDir)) {
                 walk.filter(Files::isRegularFile)
                         .sorted()
                         .forEach(p -> {
                             String rel = root.relativize(p).toString().replace('\\', '/');
-                            files.add(new ProjectPreviewController.PreviewFile(rel, GeneratedProjectFiles.readSafely(p)));
+                            String content = GeneratedProjectFiles.readSafely(p);
+                            String base64 = null;
+                            if (assets && GeneratedProjectFiles.BINARY_PLACEHOLDER.equals(content) && isRuntimeAsset(rel)) {
+                                try {
+                                    byte[] bytes = Files.readAllBytes(p);
+                                    if (assetBytes[0] + bytes.length <= PREVIEW_ASSET_BYTES) {
+                                        assetBytes[0] += bytes.length;
+                                        base64 = Base64.getEncoder().encodeToString(bytes);
+                                    }
+                                } catch (IOException e) {
+                                    log.warn("Preview asset {} unreadable: {}", rel, e.getMessage());
+                                }
+                            }
+                            files.add(new ProjectPreviewController.PreviewFile(rel, content, base64));
                         });
             }
             List<String> paths = files.stream()
@@ -168,6 +204,10 @@ public class FullstackStarterController {
             entityContext.clear();
             optionsContext.clear();
         }
+    }
+
+    private static boolean isRuntimeAsset(String rel) {
+        return rel.matches("(?:[^/]+/)?frontend/(?:public|src/assets)/.+");
     }
 
     /** The request's {@code opts.scaffold} names, for the page validator: a list page may only show
@@ -185,6 +225,10 @@ public class FullstackStarterController {
      * thread-local contexts in a {@code finally}.
      */
     private WebProjectRequest buildArtifacts(FullstackStarterRequest body, Path tempDir) throws IOException {
+        return buildArtifacts(body, tempDir, false);
+    }
+
+    private WebProjectRequest buildArtifacts(FullstackStarterRequest body, Path tempDir, boolean allowDraftKit) throws IOException {
         List<EntityDefinition> validated = FullstackRequestValidator.validateAndConvert(body);
         List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), validated, scaffoldOptsOf(body));
         // An import page switches on its entity's csvImport option, for both render paths.
@@ -192,7 +236,7 @@ public class FullstackStarterController {
         PageDefinition.Nav nav = FullstackPageValidator.validateNav(body.nav(), pages);
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         // A design kit restyles one frontend set: it picks the set, and naming another is a 400.
-        ResolvedKit kit = resolveKit(body.designKit());
+        ResolvedKit kit = resolveKit(body.designKit(), allowDraftKit);
         String frontendSetKey = kit == null ? orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET)
                 : kitSet(kit, body.frontendTemplateSet());
         // Without an explicit palette a kit's own default applies (else the catalog default).
@@ -525,10 +569,10 @@ public class FullstackStarterController {
     }
 
     /** The request's design kit, or null; a kit that cannot generate is a 400. */
-    private ResolvedKit resolveKit(String ref) {
+    private ResolvedKit resolveKit(String ref, boolean allowDraft) {
         if (ref == null || ref.isBlank()) return null;
         try {
-            return designKits.resolve(ref, false);
+            return designKits.resolve(ref, allowDraft);
         } catch (DesignKitException e) {
             throw new WizardArgumentException(e.getMessage());
         }
