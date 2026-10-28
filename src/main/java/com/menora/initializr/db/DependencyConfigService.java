@@ -78,18 +78,26 @@ public class DependencyConfigService {
                         LinkedHashMap::new, Collectors.toList()));
     }
 
+    /** A group with those of its entries that are of the group's kind. */
+    public record GroupEntries(DependencyGroupEntity group, List<DependencyEntryEntity> entries) {}
+
     /** Returns all backend dependency groups with their entries eagerly loaded, ordered for metadata building. */
     @Transactional(readOnly = true)
-    public List<DependencyGroupEntity> getAllGroupsWithEntries() {
+    public List<GroupEntries> getAllGroupsWithEntries() {
         return getAllGroupsWithEntries(ProjectKind.BACKEND);
     }
 
     /** Returns dependency groups (filtered by kind) with their entries eagerly loaded. */
     @Transactional(readOnly = true)
-    public List<DependencyGroupEntity> getAllGroupsWithEntries(ProjectKind kind) {
+    public List<GroupEntries> getAllGroupsWithEntries(ProjectKind kind) {
+        // Entries on a group can include cross-kind rows when seeded carelessly, so filter them into a
+        // new list. Never removeIf on g.getEntries(): it is an orphanRemoval collection, and when this
+        // runs inside a caller's write transaction (an admin save → refreshMetadata) the removed rows
+        // are deleted on commit.
         return groupRepo.findAllWithEntriesSortedByKind(kind).stream()
-                // entries on a group can include cross-kind rows when seeded carelessly; filter here too.
-                .peek(g -> g.getEntries().removeIf(e -> e.getProjectKind() != kind))
+                .map(g -> new GroupEntries(g, g.getEntries().stream()
+                        .filter(e -> e.getProjectKind() == kind)
+                        .toList()))
                 .collect(Collectors.toList());
     }
 

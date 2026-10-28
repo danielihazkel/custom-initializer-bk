@@ -219,8 +219,8 @@ public class FrontendStarterController {
 
     private Map<String, DependencyEntryEntity> entriesById() {
         Map<String, DependencyEntryEntity> out = new LinkedHashMap<>();
-        for (DependencyGroupEntity g : configService.getAllGroupsWithEntries(ProjectKind.FRONTEND)) {
-            for (DependencyEntryEntity e : g.getEntries()) {
+        for (DependencyConfigService.GroupEntries g : configService.getAllGroupsWithEntries(ProjectKind.FRONTEND)) {
+            for (DependencyEntryEntity e : g.entries()) {
                 out.put(e.getDepId(), e);
             }
         }
@@ -251,17 +251,18 @@ public class FrontendStarterController {
         root.put("pinned", properties.getPinned());
 
         // Dependency catalog: groups → entries → sub-options
-        List<DependencyGroupEntity> groups = configService.getAllGroupsWithEntries(ProjectKind.FRONTEND);
+        List<DependencyConfigService.GroupEntries> groups = configService.getAllGroupsWithEntries(ProjectKind.FRONTEND);
         Map<String, List<DependencySubOptionEntity>> subOptsByDep =
                 configService.getAllSubOptions(ProjectKind.FRONTEND);
 
         List<Map<String, Object>> groupsOut = new ArrayList<>();
-        for (DependencyGroupEntity g : groups) {
+        for (DependencyConfigService.GroupEntries kindGroup : groups) {
+            DependencyGroupEntity g = kindGroup.group();
             Map<String, Object> gOut = new LinkedHashMap<>();
             gOut.put("name", g.getName());
             gOut.put("sortOrder", g.getSortOrder());
             List<Map<String, Object>> entriesOut = new ArrayList<>();
-            for (DependencyEntryEntity e : g.getEntries()) {
+            for (DependencyEntryEntity e : kindGroup.entries()) {
                 if (!versionFilter.matches(e, resolvedReactVersion)) continue;
                 Map<String, Object> eOut = new LinkedHashMap<>();
                 eOut.put("id", e.getDepId());

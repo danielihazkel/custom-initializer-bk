@@ -357,6 +357,8 @@ Sub-options are managed via `/admin/sub-options`.
 
 The provider caches the metadata. Call `POST /admin/refresh` to invalidate the cache after DB changes.
 
+`DependencyConfigService.getAllGroupsWithEntries(kind)` returns `GroupEntries(group, entries)`, with the group's entries of that kind filtered into a **new** list. Admin writes rebuild the metadata inside their own transaction, and `DependencyGroupEntity.entries` is an orphanRemoval collection. The rebuild used to `removeIf` cross-kind rows from it, which deleted them from the database whenever groups were reordered. Never mutate that collection on a read path. This is pinned by `GroupReorderKeepsCrossKindEntriesTests`.
+
 A dependency that fails to build (bad `compatibilityRange`, bad `scope`, …) is skipped rather than taking the catalog down, but it then silently vanishes from `/metadata/client`. The skipped rows are recorded in `DatabaseInitializrMetadataProvider.getLoadFailures()` and returned by `/admin/refresh` as `{"message": …, "failed": […]}`; the admin UI shows them as an error toast.
 
 ### Dependency Version Compatibility Ranges

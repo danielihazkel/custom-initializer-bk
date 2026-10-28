@@ -117,14 +117,15 @@ public class DatabaseInitializrMetadataProvider implements InitializrMetadataPro
     }
 
     private List<DependencyGroup> loadGroupsFromDb() {
-        List<DependencyGroupEntity> entities = configService.getAllGroupsWithEntries();
+        List<DependencyConfigService.GroupEntries> entities = configService.getAllGroupsWithEntries();
         List<DependencyGroup> groups = new ArrayList<>();
         List<LoadFailure> failures = new ArrayList<>();
 
-        for (DependencyGroupEntity ge : entities) {
+        for (DependencyConfigService.GroupEntries kindGroup : entities) {
+            DependencyGroupEntity ge = kindGroup.group();
             DependencyGroup group = DependencyGroup.create(ge.getName());
 
-            for (DependencyEntryEntity ee : ge.getEntries()) {
+            for (DependencyEntryEntity ee : kindGroup.entries()) {
                 try {
                     Dependency dep = new Dependency();
                     dep.setId(ee.getDepId());
