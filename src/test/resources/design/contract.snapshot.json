@@ -1,6 +1,6 @@
 {
   "contractVersion" : 1,
-  "runtimeProtocol" : 3,
+  "runtimeProtocol" : 4,
   "tokenSchema" : {
     "schema" : "menora-design-tokens/1",
     "required" : [ {
@@ -88,7 +88,7 @@
   "dateRanges" : [ "all", "7d", "30d", "90d", "ytd", "12m" ],
   "navStyles" : [ "sidebar", "topbar" ],
   "navIcons" : [ "BarChart3", "Building2", "Calendar", "Columns3", "FilePlus", "FileText", "Inbox", "Layers", "LayoutDashboard", "ListChecks", "Package", "PanelLeft", "Search", "Settings", "ShoppingCart", "Star", "Table2", "Tag", "Ticket", "Truck", "Upload", "Users", "Wallet", "Wand2" ],
-  "assetRoles" : [ "LOGO", "FAVICON", "FONT", "ICON", "IMAGE" ],
+  "assetRoles" : [ "LOGO", "FAVICON", "FONT", "ICON", "IMAGE", "THUMBNAIL" ],
   "assetTypes" : [ "image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/x-icon", "font/woff2", "font/woff" ],
   "limits" : {
     "assetBytes" : 2097152,
@@ -105,6 +105,8 @@
     "refused" : [ "calls fetch() — components get their data from the generator's hooks (@shared/api)", "opens a network connection", "imports a module at run time (import())", "evaluates code from a string", "writes raw HTML", "reads or writes cookies", "reaches another window" ],
     "slotExports" : "exactly the exports of the file it replaces",
     "maxFileBytes" : 262144,
-    "maxFiles" : 200
+    "maxFiles" : 200,
+    "navIcons" : "manifest navIcons {module, names}: up to 24 components named <Name>Icon exported by one .tsx helper; pages may then name them as nav icons",
+    "thumbnail" : "an asset at kit/thumbnail.<png|jpg|webp|svg> (role THUMBNAIL) pictures the kit in the generator; it is not written into the app"
   }
 }

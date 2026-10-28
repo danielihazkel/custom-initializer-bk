@@ -219,12 +219,22 @@ class GeneratedFrontendBuildSmokeTests {
         designKits.create(new DesignKitService.CreateKit(key, "Smoke components", null, "tailwind-default"), "smoke");
         designKits.putComponentFile(key, "src/shared/ui/kit/tone.ts", com.menora.initializr.design.KitComponentsTests.TONE);
         designKits.putComponentFile(key, "src/shared/ui/Badge.tsx", com.menora.initializr.design.KitComponentsTests.BADGE);
+        // ...and a nav icon of its own, which the first nav page takes.
+        designKits.putComponentFile(key, "src/shared/ui/kit/navIcons.tsx", com.menora.initializr.design.DesignSystemsTests.NAV_ICONS);
+        KitManifest manifest = designKits.draft(key).manifest();
+        designKits.saveDraft(key, new DesignKitService.SaveDraft(null, new KitManifest(manifest.imports(), manifest.fonts(),
+                manifest.defaults(), manifest.traits(), new KitManifest.NavIcons("src/shared/ui/kit/navIcons.tsx", List.of("ShieldIcon"))), null, null));
         designKits.publish(key, "smoke", "smoke");
 
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
         body.put("designKit", key);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> pages = (List<Map<String, Object>>) body.get("pages");
+        pages.stream().filter(p -> !Boolean.TRUE.equals(p.get("hidden")) && !"record".equals(p.get("type"))).findFirst()
+                .orElseThrow().put("icon", "ShieldIcon");
         Path project = postAndExtractFrontend(workDir, body);
         assertThat(Files.readString(project.resolve("src/shared/ui/Badge.tsx"))).contains("data-kit-badge");
+        assertThat(Files.readString(project.resolve("src/app/App.tsx"))).contains("import { ShieldIcon } from '@shared/ui/kit/navIcons'");
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
         runPnpm(project, "run", "build");

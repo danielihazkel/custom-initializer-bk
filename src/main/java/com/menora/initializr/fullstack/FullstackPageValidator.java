@@ -95,6 +95,15 @@ public final class FullstackPageValidator {
      */
     public static List<PageDefinition> validateAndConvert(List<PageDefinitionDto> raw, List<EntityDefinition> entities,
                                                           Set<String> scaffoldOpts) {
+        return validateAndConvert(raw, entities, scaffoldOpts, List.of());
+    }
+
+    /**
+     * @param kitIcons the nav icons the request's design kit brings (its {@code navIcons}), allowed
+     *                 beside {@link #NAV_ICONS}
+     */
+    public static List<PageDefinition> validateAndConvert(List<PageDefinitionDto> raw, List<EntityDefinition> entities,
+                                                          Set<String> scaffoldOpts, List<String> kitIcons) {
         if (raw == null || raw.isEmpty()) return List.of();
         if (raw.size() > MAX_PAGES) {
             throw new WizardArgumentException("At most " + MAX_PAGES + " pages are allowed");
@@ -154,7 +163,7 @@ public final class FullstackPageValidator {
             anyVisible |= !hidden;
             rejectForeignProps(id, type, p);
             String group = navGroup(id, type, hidden, p.group());
-            String icon = navIcon(id, type, hidden, p.icon());
+            String icon = navIcon(id, type, hidden, p.icon(), kitIcons);
             PageDefinition page = switch (type) {
                 case ENTITY_LIST -> {
                     String prefix = "Page '" + id + "'";
@@ -440,14 +449,17 @@ public final class FullstackPageValidator {
                 : "Page '" + id + "' is hidden, so it takes no nav ";
     }
 
-    /** A nav icon: one of {@link #NAV_ICONS}, matched ignoring case and returned as declared. */
-    private static String navIcon(String id, PageDefinition.Type type, boolean hidden, String raw) {
+    /** A nav icon: one of {@link #NAV_ICONS} or the kit's, matched ignoring case and returned as declared. */
+    private static String navIcon(String id, PageDefinition.Type type, boolean hidden, String raw, List<String> kitIcons) {
         String icon = trimToNull(raw);
         if (icon == null) return null;
         if (hidden) throw new WizardArgumentException(offNav(id, type) + "'icon'");
-        return NAV_ICONS.stream().filter(i -> i.equalsIgnoreCase(icon)).findFirst()
+        List<String> allowed = new ArrayList<>(NAV_ICONS);
+        allowed.addAll(kitIcons);
+        return allowed.stream().filter(i -> i.equalsIgnoreCase(icon)).findFirst()
                 .orElseThrow(() -> new WizardArgumentException("Page '" + id + "': unknown icon '" + icon
-                        + "' (expected one of " + String.join(", ", NAV_ICONS) + ")"));
+                        + "' (expected one of " + String.join(", ", allowed)
+                        + (kitIcons.isEmpty() ? "" : ", the last " + kitIcons.size() + " from the design kit") + ")"));
     }
 
     /** A property that belongs to another page type is a mistake worth reporting, not ignoring. */

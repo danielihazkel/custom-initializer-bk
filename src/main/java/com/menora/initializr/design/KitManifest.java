@@ -17,17 +17,24 @@ import java.util.List;
  *       look its fallback sketch draws ({@code tailwind} or {@code menora}), and whether the
  *       kit's {@code Shell} honours the request's {@code nav} options (when it does not, the
  *       UI does not offer them). Absent = a tailwind-like shell that honours them.</li>
+ *   <li>{@code navIcons} — icons the kit adds to the ones a page may put in the nav: components
+ *       named {@code <Name>Icon}, exported by one of its helper files ({@code module}); the
+ *       generated shell imports the ones in use from there instead of lucide-react.</li>
  * </ul>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record KitManifest(List<String> imports, Fonts fonts, Defaults defaults, Traits traits) {
+public record KitManifest(List<String> imports, Fonts fonts, Defaults defaults, Traits traits, NavIcons navIcons) {
 
     public KitManifest {
         imports = imports == null ? List.of() : List.copyOf(imports);
     }
 
     public KitManifest(List<String> imports, Fonts fonts, Defaults defaults) {
-        this(imports, fonts, defaults, null);
+        this(imports, fonts, defaults, null, null);
+    }
+
+    public KitManifest(List<String> imports, Fonts fonts, Defaults defaults, Traits traits) {
+        this(imports, fonts, defaults, traits, null);
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -47,5 +54,16 @@ public record KitManifest(List<String> imports, Fonts fonts, Defaults defaults, 
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Traits(String sketch, Boolean navOptions) {
+    }
+
+    /** A kit nav icon's name: a component name ending in {@code Icon}, so it never meets a lucide one. */
+    public static final java.util.regex.Pattern NAV_ICON_NAME = java.util.regex.Pattern.compile("^[A-Z][A-Za-z0-9]{0,38}Icon$");
+    public static final int MAX_NAV_ICONS = 24;
+
+    /** {@code module}: the helper file that exports every name ({@code src/shared/ui/acme/navIcons.tsx}). */
+    public record NavIcons(String module, List<String> names) {
+        public NavIcons {
+            names = names == null ? List.of() : List.copyOf(names);
+        }
     }
 }

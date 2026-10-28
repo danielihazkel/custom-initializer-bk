@@ -15,6 +15,8 @@ public final class AssetValidator {
     public static final int MAX_BYTES = 2 * 1024 * 1024;
     public static final int MAX_VERSION_BYTES = 10 * 1024 * 1024;
     private static final Pattern PATH = Pattern.compile("^(public|src/assets)/[a-z0-9_-]+(/[a-z0-9_-]+)*\\.[a-z0-9]+$");
+    /** The kit's picture in the generator's look list: never written into a generated app. */
+    public static final Pattern THUMBNAIL = Pattern.compile("^kit/thumbnail\\.(png|jpg|jpeg|webp|svg)$");
     private static final Pattern SVG_DANGER = Pattern.compile(
             "(?is)<\\s*script|\\son[a-z]+\\s*=|<\\s*foreignObject|javascript:|(href|src)\\s*=\\s*[\"']\\s*(https?:|//|data:text)|<!ENTITY");
 
@@ -23,9 +25,13 @@ public final class AssetValidator {
 
     /** The content type the bytes are, checked against the path; throws with a reason otherwise. */
     public static String check(String targetPath, DesignKitAssetEntity.Role role, byte[] bytes) {
-        if (targetPath == null || !PATH.matcher(targetPath).matches()) {
-            throw DesignKitException.badRequest("asset path must be public/<name>.<ext> or src/assets/<dir>/<name>.<ext> "
-                    + "(lower-case letters, digits, '-', '_')");
+        boolean thumbnail = targetPath != null && THUMBNAIL.matcher(targetPath).matches();
+        if (targetPath == null || !(thumbnail || PATH.matcher(targetPath).matches())) {
+            throw DesignKitException.badRequest("asset path must be public/<name>.<ext>, src/assets/<dir>/<name>.<ext> "
+                    + "(lower-case letters, digits, '-', '_') or kit/thumbnail.<png|jpg|webp|svg>");
+        }
+        if (thumbnail != (role == DesignKitAssetEntity.Role.THUMBNAIL)) {
+            throw DesignKitException.badRequest(thumbnail ? "kit/thumbnail.* takes the THUMBNAIL role" : "the THUMBNAIL role is for kit/thumbnail.<png|jpg|webp|svg>");
         }
         if (bytes == null || bytes.length == 0) throw DesignKitException.badRequest("asset is empty");
         if (bytes.length > MAX_BYTES) throw DesignKitException.badRequest("asset is larger than " + MAX_BYTES / 1024 / 1024 + " MB");

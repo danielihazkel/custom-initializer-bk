@@ -161,6 +161,41 @@ public final class TokenValidator {
         if (t != null && t.sketch() != null && !KitManifest.SKETCHES.contains(t.sketch())) {
             errors.add("manifest: traits.sketch must be one of " + String.join(", ", KitManifest.SKETCHES));
         }
+        KitManifest.NavIcons icons = m.navIcons();
+        if (icons != null) {
+            if (icons.module() == null || !KitSourceValidator.HELPER.matcher(icons.module()).matches() || !icons.module().endsWith(".tsx")) {
+                errors.add("manifest: navIcons.module must be one of the kit's .tsx helper files (src/shared/ui/<kit>/navIcons.tsx)");
+            }
+            if (icons.names().isEmpty()) errors.add("manifest: navIcons.names needs at least one icon");
+            if (icons.names().size() > KitManifest.MAX_NAV_ICONS) {
+                errors.add("manifest: a kit may add at most " + KitManifest.MAX_NAV_ICONS + " nav icons");
+            }
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (String name : icons.names()) {
+                if (name == null || !KitManifest.NAV_ICON_NAME.matcher(name).matches()) {
+                    errors.add("manifest: nav icon '" + name + "' must be a component name ending in Icon (ShieldIcon)");
+                } else if (!seen.add(name.toLowerCase(java.util.Locale.ROOT))) {
+                    errors.add("manifest: nav icon '" + name + "' is listed twice");
+                }
+            }
+        }
+    }
+
+    /**
+     * What is wrong with a manifest's nav icons against the version's files: the module must be
+     * one of them and export every name.
+     */
+    public static List<String> navIconProblems(KitManifest manifest, java.util.Map<String, String> files) {
+        if (manifest == null || manifest.navIcons() == null || manifest.navIcons().module() == null) return List.of();
+        KitManifest.NavIcons icons = manifest.navIcons();
+        String source = files.get(icons.module());
+        if (source == null) return List.of("manifest: navIcons.module " + icons.module() + " is not one of the kit's files");
+        java.util.Set<String> exports = KitSourceValidator.exportsOf(source);
+        List<String> out = new ArrayList<>();
+        for (String name : icons.names()) {
+            if (name != null && !exports.contains(name)) out.add("manifest: nav icon " + name + " is not exported by " + icons.module());
+        }
+        return out;
     }
 
     private static void checkCss(String css, List<String> errors) {

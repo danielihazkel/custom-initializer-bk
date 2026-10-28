@@ -39,7 +39,12 @@ export default function App() {
 }
 {{/hasPages}}
 {{#hasPages}}
+{{#hasLucideNavIcons}}
 import { {{navIconImports}} } from 'lucide-react'
+{{/hasLucideNavIcons}}
+{{#hasKitNavIcons}}
+import { {{kitNavIconImports}} } from '{{kitNavIconModule}}'
+{{/hasKitNavIcons}}
 import { t } from '@shared/i18n'
 import { Shell, type ShellNavItem } from '@shared/ui/Shell'
 import { PageNotice } from '@shared/ui/PageNotice'

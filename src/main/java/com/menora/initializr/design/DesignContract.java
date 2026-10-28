@@ -61,6 +61,9 @@ public final class DesignContract {
         components.put("slotExports", "exactly the exports of the file it replaces");
         components.put("maxFileBytes", KitSourceValidator.MAX_FILE_BYTES);
         components.put("maxFiles", KitSourceValidator.MAX_FILES);
+        components.put("navIcons", "manifest navIcons {module, names}: up to " + KitManifest.MAX_NAV_ICONS
+                + " components named <Name>Icon exported by one .tsx helper; pages may then name them as nav icons");
+        components.put("thumbnail", "an asset at kit/thumbnail.<png|jpg|webp|svg> (role THUMBNAIL) pictures the kit in the generator; it is not written into the app");
         c.put("components", components);
         return c;
     }

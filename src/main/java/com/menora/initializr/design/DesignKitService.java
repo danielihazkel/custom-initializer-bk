@@ -86,7 +86,8 @@ public class DesignKitService {
                              boolean enabled, int sortOrder, String defaultPaletteId, String clonedFrom,
                              Integer latestVersion, boolean hasDraft, boolean paletteAware,
                              KitManifest.Defaults defaults, boolean defaultKit, KitManifest.Traits traits,
-                             List<String> aliases, Map<String, String> swatch, List<DeprecatedVersion> deprecated) {
+                             List<String> aliases, Map<String, String> swatch, List<DeprecatedVersion> deprecated,
+                             String thumbnail, List<String> navIcons) {
     }
 
     /** A published version that still generates but is no longer offered, and why. */
@@ -131,7 +132,11 @@ public class DesignKitService {
                        List<Map<String, String>> assets, List<Map<String, String>> files) {
     }
 
-    public record CreateKit(String key, String name, String description, String cloneFrom) {
+    /** {@code cloneFrom} copies a version; {@code baseSetKey} instead starts a blank kit on that set. */
+    public record CreateKit(String key, String name, String description, String cloneFrom, String baseSetKey) {
+        public CreateKit(String key, String name, String description, String cloneFrom) {
+            this(key, name, description, cloneFrom, null);
+        }
     }
 
     /** {@code defaultKit: true} makes the kit the house kit (the one before stops being it). */
@@ -173,7 +178,13 @@ public class DesignKitService {
         }
         if (kits.findByKitKey(key).isPresent()) throw DesignKitException.conflict("A kit with key '" + key + "' already exists");
         String name = requireName(body.name());
-        if (trim(body.cloneFrom()) == null) throw DesignKitException.badRequest("cloneFrom is required (a kit key, or key@version)");
+        if (trim(body.cloneFrom()) != null && trim(body.baseSetKey()) != null) {
+            throw DesignKitException.badRequest("Give cloneFrom (a kit to copy) or baseSetKey (a blank kit), not both");
+        }
+        if (trim(body.baseSetKey()) != null) return createBlank(key, name, body, user);
+        if (trim(body.cloneFrom()) == null) {
+            throw DesignKitException.badRequest("cloneFrom (a kit key, or key@version) or baseSetKey (a blank kit) is required");
+        }
         Ref ref = Ref.parse(body.cloneFrom());
         DesignKitEntity source = kit(ref.key());
         DesignKitVersionEntity from = ref.version() == null ? latest(source)
@@ -194,6 +205,52 @@ public class DesignKitService {
         kits.save(k);
         copyInto(from, newDraft(k, null, user));
         return summary(k);
+    }
+
+    /**
+     * A blank kit on a base set: only the tokens the generator's files use, at the values of the
+     * set's own built-in kit (so it generates as that kit does until it is edited), and its font —
+     * no kit CSS, no component files, no assets, no defaults.
+     */
+    private KitSummary createBlank(String key, String name, CreateKit body, String user) {
+        String setKey = trim(body.baseSetKey());
+        DesignKitEntity own = kits.findAllByOrderBySortOrderAscIdAsc().stream()
+                .filter(k -> k.isBuiltIn() && setKey.equals(k.getBaseSetKey())
+                        && !BuiltInKits.FOR_DESIGN_SYSTEM.containsValue(k.getKitKey()))
+                .findFirst()
+                .orElseThrow(() -> DesignKitException.badRequest("baseSetKey must be a frontend template set a kit can style ("
+                        + String.join(", ", baseSets()) + ")"));
+        DesignKitVersionEntity from = latest(own)
+                .orElseThrow(() -> DesignKitException.conflict("Kit '" + own.getKitKey() + "' has no published version"));
+        DesignTokens ownTokens = tokensOf(from);
+        List<DesignTokens.Token> required = TokenSchema.REQUIRED.stream()
+                .map(r -> ownTokens.tokens().stream().filter(t -> t.name().equals(r.name())).findFirst().orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        DesignKitEntity k = new DesignKitEntity();
+        k.setKitKey(key);
+        k.setName(name);
+        k.setDescription(description(body.description()));
+        k.setBaseSetKey(setKey);
+        k.setDefaultPaletteId(own.getDefaultPaletteId());
+        k.setSortOrder(own.getSortOrder() + 1);
+        k.setCreatedBy(user);
+        k.setCreatedAt(Instant.now());
+        k.setUpdatedAt(k.getCreatedAt());
+        kits.save(k);
+        DesignKitVersionEntity d = newDraft(k, null, user);
+        d.setTokens(json(new DesignTokens(DesignTokens.SCHEMA, required)));
+        d.setManifest(json(new KitManifest(List.of(), manifestOf(from).fonts(), null)));
+        versions.save(d);
+        return summary(k);
+    }
+
+    /** The frontend sets a blank kit can start on: those with a built-in kit of their own. */
+    private List<String> baseSets() {
+        return kits.findAllByOrderBySortOrderAscIdAsc().stream()
+                .filter(k -> k.isBuiltIn() && !BuiltInKits.FOR_DESIGN_SYSTEM.containsValue(k.getKitKey()))
+                .map(DesignKitEntity::getBaseSetKey).distinct().toList();
     }
 
     @Transactional
@@ -713,6 +770,9 @@ public class DesignKitService {
             putFile(d, f.path(), KitSourceValidator.kindOf(f.path(), slots) == KitSourceValidator.Kind.SLOT
                     ? DesignKitFileEntity.Role.SLOT : DesignKitFileEntity.Role.HELPER, f.content());
         }
+        Map<String, String> imported = new LinkedHashMap<>();
+        content.files().forEach(f -> imported.put(f.path(), f.content()));
+        problems.addAll(TokenValidator.navIconProblems(content.manifest(), imported));
         long total = 0;
         for (ResolvedKit.Asset a : content.assets()) {
             try {
@@ -788,6 +848,10 @@ public class DesignKitService {
                 putFile(d, f.path(), KitSourceValidator.kindOf(f.path(), slots) == KitSourceValidator.Kind.SLOT
                         ? DesignKitFileEntity.Role.SLOT : DesignKitFileEntity.Role.HELPER, f.content());
             }
+            Map<String, String> seeded = new LinkedHashMap<>();
+            loaded.files().forEach(f -> seeded.put(f.path(), f.content()));
+            List<String> iconProblems = TokenValidator.navIconProblems(def.manifest(), seeded);
+            if (!iconProblems.isEmpty()) throw new IllegalStateException("Built-in design kit " + key + " is invalid: " + iconProblems);
             for (BuiltInKits.LoadedAsset a : loaded.assets()) {
                 DesignKitAssetEntity.Role role = parseRole(a.role());
                 String sha = storeBlob(a.content(), AssetValidator.check(a.targetPath(), role, a.content()));
@@ -963,6 +1027,7 @@ public class DesignKitService {
         // export it renamed, is a problem to fix before the next publish.
         Map<String, KitSourceValidator.Slot> slots = slots(k.getBaseSetKey());
         for (DesignKitFileEntity f : componentFiles(v)) problems.addAll(KitSourceValidator.check(f.getPath(), f.getContent(), slots));
+        problems.addAll(TokenValidator.navIconProblems(manifest, fileMap(v)));
         for (DesignKitAssetEntity a : assets.findByVersionIdOrderByTargetPathAsc(v.getId())) {
             if (a.getRole() == DesignKitAssetEntity.Role.FONT) {
                 try {
@@ -1035,7 +1100,18 @@ public class DesignKitService {
                 versions.findByKitIdAndStatusOrderByVersionDesc(k.getId(), Status.PUBLISHED).stream()
                         .filter(DesignKitVersionEntity::isDeprecated)
                         .map(v -> new DeprecatedVersion(v.getVersion(), v.getDeprecationNote()))
-                        .toList());
+                        .toList(),
+                latest.flatMap(v -> assets.findByVersionIdOrderByTargetPathAsc(v.getId()).stream()
+                        .filter(a -> a.getRole() == DesignKitAssetEntity.Role.THUMBNAIL).findFirst())
+                        .map(a -> "/metadata/design/assets/" + a.getBlobSha256()).orElse(null),
+                manifest == null || manifest.navIcons() == null ? List.of() : manifest.navIcons().names());
+    }
+
+    /** A version's component files, path → source. */
+    private Map<String, String> fileMap(DesignKitVersionEntity v) {
+        Map<String, String> out = new LinkedHashMap<>();
+        componentFiles(v).forEach(f -> out.put(f.getPath(), f.getContent()));
+        return out;
     }
 
     private VersionView view(DesignKitEntity k, DesignKitVersionEntity v) {

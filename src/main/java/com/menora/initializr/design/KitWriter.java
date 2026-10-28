@@ -45,6 +45,7 @@ public class KitWriter {
             }
         }
         for (ResolvedKit.Asset a : kit.assets()) {
+            if ("THUMBNAIL".equals(a.role())) continue;
             Path target = frontendDir.resolve(a.targetPath()).normalize();
             if (!target.startsWith(frontendDir)) throw DesignKitException.badRequest("asset path escapes the project: " + a.targetPath());
             GeneratedProjectFiles.createParentDirectories(target);

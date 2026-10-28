@@ -14,7 +14,8 @@ import jakarta.persistence.Table;
 @Table(name = "initializer_design_kit_asset")
 public class DesignKitAssetEntity {
 
-    public enum Role { LOGO, FAVICON, FONT, ICON, IMAGE }
+    /** THUMBNAIL: the kit's picture in the generator's look list, never written into the app. */
+    public enum Role { LOGO, FAVICON, FONT, ICON, IMAGE, THUMBNAIL }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

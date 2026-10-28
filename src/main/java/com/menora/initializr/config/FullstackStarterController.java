@@ -5,6 +5,7 @@ import com.menora.initializr.db.VersionService;
 import com.menora.initializr.design.DesignKitException;
 import com.menora.initializr.design.DesignKitService;
 import com.menora.initializr.design.KitCssWriter;
+import com.menora.initializr.design.KitManifest;
 import com.menora.initializr.design.KitWriter;
 import com.menora.initializr.design.ResolvedKit;
 import com.menora.initializr.db.entity.ColorPaletteEntity;
@@ -324,14 +325,10 @@ public class FullstackStarterController {
 
     private WebProjectRequest buildArtifacts(FullstackStarterRequest body, Path tempDir, boolean allowDraftKit) throws IOException {
         List<EntityDefinition> validated = FullstackRequestValidator.validateAndConvert(body);
-        List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), validated, scaffoldOptsOf(body));
-        // An import page switches on its entity's csvImport option, for both render paths.
-        List<EntityDefinition> entities = FullstackPageValidator.applyPageImplications(validated, pages);
-        PageDefinition.Nav nav = FullstackPageValidator.validateNav(body.nav(), pages);
-        String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         // A design kit restyles one frontend set: it picks the set, and naming another is a 400.
         // A set that stands for a built-in kit (Menora Digital) is that kit on the kit's base set.
-        // Naming neither generates with the house kit, when it styles the set asked for.
+        // Naming neither generates with the house kit, when it styles the set asked for. Resolved
+        // before the pages, because a page may take one of the kit's own nav icons.
         ResolvedKit kit = resolveKit(body.designKit(), allowDraftKit);
         if (kit == null) {
             String alias = designKits.kitOfSet(body.frontendTemplateSet())
@@ -339,6 +336,13 @@ public class FullstackStarterController {
                     .orElse(null);
             if (alias != null) kit = resolveKit(alias, false);
         }
+        KitManifest.NavIcons kitIcons = kit == null || kit.manifest() == null ? null : kit.manifest().navIcons();
+        List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), validated, scaffoldOptsOf(body),
+                kitIcons == null ? List.of() : kitIcons.names());
+        // An import page switches on its entity's csvImport option, for both render paths.
+        List<EntityDefinition> entities = FullstackPageValidator.applyPageImplications(validated, pages);
+        PageDefinition.Nav nav = FullstackPageValidator.validateNav(body.nav(), pages);
+        String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         String frontendSetKey = kit == null ? orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET)
                 : kitSet(kit, body.frontendTemplateSet());
         // Without an explicit palette a kit's own default applies (else the catalog default).
@@ -650,6 +654,8 @@ public class FullstackStarterController {
         // → hasPages=false, the classic shell. Runs last: a report screen resolves its Export
         // button from optScaffoldCsvExport, which is only in the context by this point.
         EntityScaffoldContext.putPageContext(projectCtx, pages, nav);
+        KitManifest.NavIcons kitIcons = kit == null || kit.manifest() == null ? null : kit.manifest().navIcons();
+        if (kitIcons != null) EntityScaffoldContext.putKitNavIcons(projectCtx, kitIcons.module(), kitIcons.names());
         log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());

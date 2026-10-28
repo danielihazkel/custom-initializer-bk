@@ -217,6 +217,97 @@ public class DesignSystemsTests {
         mvc.perform(get("/admin/design/kits/menora-digital/archive")).andExpect(status().isUnauthorized());
     }
 
+    /** A kit nav icon: a lucide-shaped component, so the Shell's {@code LucideIcon} prop takes it. */
+    public static final String NAV_ICONS = """
+            import { createLucideIcon } from 'lucide-react'
+
+            export const ShieldIcon = createLucideIcon('ShieldIcon', [
+              ['path', { d: 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z', key: 'shield' }],
+            ])
+            """;
+    public static final byte[] PNG = java.util.Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+
+    @Test
+    void aBlankKitStartsFromTheBaseSetsRequiredTokens() throws Exception {
+        String key = "blank-" + SEQ.incrementAndGet();
+        DesignKitService.KitSummary blank = service.create(new DesignKitService.CreateKit(key, "Blank", null, null, "react-tailwind-crud"), "test");
+        assertThat(blank.baseSetKey()).isEqualTo("react-tailwind-crud");
+        assertThat(blank.clonedFrom()).isNull();
+        DesignKitService.VersionView draft = service.draft(key);
+        assertThat(draft.tokens().tokens()).extracting(DesignTokens.Token::name)
+                .containsExactlyElementsOf(TokenSchema.REQUIRED.stream().map(TokenSchema.Required::name).toList());
+        assertThat(draft.tokens().tokens()).filteredOn(t -> t.name().equals("color-brand"))
+                .extracting(DesignTokens.Token::value).containsExactly("{palette.primary}");
+        assertThat(draft.css()).isEmpty();
+        assertThat(draft.files()).isEmpty();
+        assertThat(draft.assets()).isEmpty();
+        assertThat(draft.manifest().fonts()).isEqualTo(service.version("tailwind-default", "latest").manifest().fonts());
+        assertThat(service.validateDraft(key).ok()).isTrue();
+        service.publish(key, "blank", "test");
+        assertThat(generate(Map.of("designKit", key)).get("frontend/src/index.css")).contains("--color-canvas:");
+
+        assertThatThrownBy(() -> service.create(new DesignKitService.CreateKit("blank-x", "X", null, null, "react-menora-digital-crud"), "test"))
+                .hasMessageContaining("react-tailwind-crud");
+        assertThatThrownBy(() -> service.create(new DesignKitService.CreateKit("blank-y", "Y", null, "tailwind-default", "react-tailwind-crud"), "test"))
+                .hasMessageContaining("not both");
+        assertThatThrownBy(() -> service.create(new DesignKitService.CreateKit("blank-z", "Z", null, null, null), "test"))
+                .hasMessageContaining("baseSetKey");
+    }
+
+    @Test
+    void aThumbnailPicturesTheKitButStaysOutOfTheApp() throws Exception {
+        String key = publishedClone("#0f766e");
+        service.openDraft(key, null, "test");
+        assertThatThrownBy(() -> service.putAsset(key, "kit/thumbnail.png", "IMAGE", null, PNG)).hasMessageContaining("THUMBNAIL");
+        assertThatThrownBy(() -> service.putAsset(key, "public/thumb.png", "THUMBNAIL", null, PNG)).hasMessageContaining("THUMBNAIL");
+        DesignKitService.AssetView thumb = service.putAsset(key, "kit/thumbnail.png", "THUMBNAIL", null, PNG);
+        assertThat(service.get(key).thumbnail()).isNull();
+        service.publish(key, "with a picture", "test");
+        assertThat(service.get(key).thumbnail()).isEqualTo("/metadata/design/assets/" + thumb.sha256());
+        mvc.perform(get("/metadata/design/kits")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.key == '" + key + "')].thumbnail").value(thumb.url()));
+        Map<String, String> files = generate(Map.of("designKit", key));
+        assertThat(files.keySet()).noneMatch(p -> p.contains("thumbnail"));
+    }
+
+    @Test
+    void aKitAddsNavIconsAPageMayName() throws Exception {
+        String key = publishedClone("#7c3aed");
+        service.openDraft(key, null, "test");
+        KitManifest base = service.draft(key).manifest();
+        KitManifest withIcons = new KitManifest(base.imports(), base.fonts(), base.defaults(), base.traits(),
+                new KitManifest.NavIcons("src/shared/ui/acme/navIcons.tsx", List.of("ShieldIcon", "CoinIcon")));
+        service.saveDraft(key, new DesignKitService.SaveDraft(null, withIcons, null, null));
+        // The module must exist and export every name.
+        assertThat(service.validateDraft(key).problems()).anyMatch(p -> p.contains("not one of the kit's files"));
+        service.putComponentFile(key, "src/shared/ui/acme/navIcons.tsx", NAV_ICONS);
+        assertThat(service.validateDraft(key).problems()).containsExactly("manifest: nav icon CoinIcon is not exported by src/shared/ui/acme/navIcons.tsx");
+        service.saveDraft(key, new DesignKitService.SaveDraft(null, new KitManifest(base.imports(), base.fonts(), base.defaults(), base.traits(),
+                new KitManifest.NavIcons("src/shared/ui/acme/navIcons.tsx", List.of("ShieldIcon"))), null, null));
+        assertThat(service.validateDraft(key).ok()).isTrue();
+        assertThat(TokenValidator.validate(service.draft(key).tokens(), new KitManifest(List.of(), null, null, null,
+                new KitManifest.NavIcons("src/shared/ui/Shell.tsx", List.of("Users", "AIcon", "AIcon"))), ""))
+                .contains("manifest: navIcons.module must be one of the kit's .tsx helper files (src/shared/ui/<kit>/navIcons.tsx)",
+                        "manifest: nav icon 'Users' must be a component name ending in Icon (ShieldIcon)",
+                        "manifest: nav icon 'AIcon' is listed twice");
+        service.publish(key, "icons", "test");
+        assertThat(service.get(key).navIcons()).containsExactly("ShieldIcon");
+
+        List<Map<String, Object>> pages = List.of(
+                Map.of("id", "notes", "type", "entity-list", "entity", "Note", "icon", "shieldicon"),
+                Map.of("id", "home", "type", "dashboard", "widgets", List.of(Map.of("kind", "kpi", "entity", "Note"))));
+        String app = generate(Map.of("designKit", key, "pages", pages)).get("frontend/src/app/App.tsx");
+        assertThat(app).contains("import { LayoutDashboard } from 'lucide-react'\nimport { ShieldIcon } from '@shared/ui/acme/navIcons'\n")
+                .contains("icon: ShieldIcon }");
+        // Without the kit the name is unknown, and the error names the icons there are.
+        Map<String, Object> body = new LinkedHashMap<>(Map.of("artifactId", "systems", "packageName", "com.menora.systems", "pages", pages,
+                "entities", List.of(Map.of("name", "Note", "fields", List.of(Map.of("name", "id", "type", "Long", "primaryKey", true, "generated", true))))));
+        mvc.perform(post("/starter-fullstack.zip").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(org.hamcrest.Matchers.containsString("unknown icon 'shieldicon'")));
+    }
+
     private String publishedClone(String brand) {
         String key = "sys-" + SEQ.incrementAndGet() + "-" + System.nanoTime() % 100000;
         service.create(new DesignKitService.CreateKit(key, "Systems", null, "tailwind-default"), "test");
