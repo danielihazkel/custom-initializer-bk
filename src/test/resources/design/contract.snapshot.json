@@ -1,6 +1,6 @@
 {
   "contractVersion" : 1,
-  "runtimeProtocol" : 2,
+  "runtimeProtocol" : 3,
   "tokenSchema" : {
     "schema" : "menora-design-tokens/1",
     "required" : [ {
