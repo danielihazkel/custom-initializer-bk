@@ -60,6 +60,13 @@ public class DesignKitVersionEntity {
     @Column(length = 1000)
     private String notes;
 
+    /** Still generates for the models pinned to it, but is no longer offered. Not part of the checksum. */
+    @Column(nullable = false)
+    private boolean deprecated;
+
+    @Column(name = "deprecation_note", length = 500)
+    private String deprecationNote;
+
     @Column(name = "created_by", length = 255)
     private String createdBy;
 
@@ -99,6 +106,10 @@ public class DesignKitVersionEntity {
     public void setChecksum(String checksum) { this.checksum = checksum; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+    public boolean isDeprecated() { return deprecated; }
+    public void setDeprecated(boolean deprecated) { this.deprecated = deprecated; }
+    public String getDeprecationNote() { return deprecationNote; }
+    public void setDeprecationNote(String deprecationNote) { this.deprecationNote = deprecationNote; }
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
     public Instant getCreatedAt() { return createdAt; }

@@ -77,11 +77,24 @@ public class DesignKitService {
 
     // ── Views ───────────────────────────────────────────────────────────────
 
+    /**
+     * A kit as the lists show it. {@code defaultKit}: the house kit (a request naming none generates
+     * with it); {@code aliases}: the frontend sets that generate as this kit; {@code swatch}: the
+     * light values of {@link #SWATCH} as the latest version has them ({@code {palette.*}} left in).
+     */
     public record KitSummary(String key, String name, String description, String baseSetKey, boolean builtIn,
                              boolean enabled, int sortOrder, String defaultPaletteId, String clonedFrom,
                              Integer latestVersion, boolean hasDraft, boolean paletteAware,
-                             KitManifest.Defaults defaults) {
+                             KitManifest.Defaults defaults, boolean defaultKit, KitManifest.Traits traits,
+                             List<String> aliases, Map<String, String> swatch, List<DeprecatedVersion> deprecated) {
     }
+
+    /** A published version that still generates but is no longer offered, and why. */
+    public record DeprecatedVersion(int version, String note) {
+    }
+
+    /** The tokens a kit's swatch shows, in order: the shell's ground, identity, action, page. */
+    static final List<String> SWATCH = List.of("color-ink", "color-brand", "color-primary", "color-canvas");
 
     public record AssetView(String targetPath, String role, String contentType, long sizeBytes, String sha256,
                             String meta, String url) {
@@ -105,7 +118,7 @@ public class DesignKitService {
     }
 
     public record VersionSummary(Integer version, String status, String checksum, String notes,
-                                 Instant publishedAt, String publishedBy) {
+                                 Instant publishedAt, String publishedBy, boolean deprecated, String deprecationNote) {
     }
 
     public record ValidationReport(boolean ok, List<String> problems) {
@@ -121,7 +134,15 @@ public class DesignKitService {
     public record CreateKit(String key, String name, String description, String cloneFrom) {
     }
 
-    public record UpdateKit(String name, String description, Boolean enabled, Integer sortOrder, String defaultPaletteId) {
+    /** {@code defaultKit: true} makes the kit the house kit (the one before stops being it). */
+    public record UpdateKit(String name, String description, Boolean enabled, Integer sortOrder, String defaultPaletteId,
+                            Boolean defaultKit) {
+        public UpdateKit(String name, String description, Boolean enabled, Integer sortOrder, String defaultPaletteId) {
+            this(name, description, enabled, sortOrder, defaultPaletteId, null);
+        }
+    }
+
+    public record Deprecate(Boolean deprecated, String note) {
     }
 
     public record SaveDraft(DesignTokens tokens, KitManifest manifest, String css, String notes) {
@@ -186,6 +207,22 @@ public class DesignKitService {
         } else if (body.name() != null || body.description() != null || body.defaultPaletteId() != null) {
             throw DesignKitException.conflict("Built-in kit '" + key + "' is read-only — clone it to change it");
         }
+        if (Boolean.FALSE.equals(body.enabled()) && k.isDefaultKit()) {
+            throw DesignKitException.conflict("'" + key + "' is the house kit — make another kit the house kit before disabling it");
+        }
+        if (Boolean.FALSE.equals(body.defaultKit()) && k.isDefaultKit()) {
+            throw DesignKitException.conflict("There is always a house kit — make another kit the house kit instead");
+        }
+        if (Boolean.TRUE.equals(body.defaultKit()) && !k.isDefaultKit()) {
+            boolean enabled = body.enabled() == null ? k.isEnabled() : body.enabled();
+            if (!enabled) throw DesignKitException.conflict("A disabled kit cannot be the house kit");
+            if (latest(k).isEmpty()) throw DesignKitException.conflict("Publish '" + key + "' before making it the house kit");
+            kits.findAll().stream().filter(DesignKitEntity::isDefaultKit).forEach(other -> {
+                other.setDefaultKit(false);
+                kits.save(other);
+            });
+            k.setDefaultKit(true);
+        }
         if (body.enabled() != null) k.setEnabled(body.enabled());
         if (body.sortOrder() != null) k.setSortOrder(body.sortOrder());
         k.setUpdatedAt(Instant.now());
@@ -196,6 +233,7 @@ public class DesignKitService {
     public void delete(String key) {
         DesignKitEntity k = kit(key);
         if (k.isBuiltIn()) throw DesignKitException.conflict("Built-in kit '" + key + "' cannot be deleted (disable it instead)");
+        if (k.isDefaultKit()) throw DesignKitException.conflict("'" + key + "' is the house kit — make another kit the house kit before deleting it");
         kits.delete(k);
     }
 
@@ -316,9 +354,36 @@ public class DesignKitService {
     public List<VersionSummary> versions(String key) {
         DesignKitEntity k = kit(key);
         return versions.findByKitIdAndStatusOrderByVersionDesc(k.getId(), Status.PUBLISHED).stream()
-                .map(v -> new VersionSummary(v.getVersion(), v.getStatus().name(), v.getChecksum(), v.getNotes(),
-                        v.getPublishedAt(), v.getPublishedBy()))
+                .map(this::versionSummary)
                 .toList();
+    }
+
+    /**
+     * Deprecates a published version (or takes the mark back). A deprecated version still
+     * generates — models and examples pinned to it keep working — but the generator offers the
+     * latest instead. The latest version cannot be deprecated: publish a newer one first, or
+     * disable the kit. Metadata, not content: the checksum does not change.
+     */
+    @Transactional
+    public VersionSummary deprecate(String key, int version, Deprecate body) {
+        DesignKitEntity k = kit(key);
+        DesignKitVersionEntity v = published(k, version);
+        boolean on = body == null || body.deprecated() == null || body.deprecated();
+        if (on && latest(k).map(l -> l.getId().equals(v.getId())).orElse(false)) {
+            throw DesignKitException.conflict("v" + version + " is the latest version of '" + key
+                    + "' — publish a newer version first, or disable the kit");
+        }
+        String note = body == null ? null : trim(body.note());
+        if (note != null && note.length() > 500) throw DesignKitException.badRequest("note must be at most 500 characters");
+        v.setDeprecated(on);
+        v.setDeprecationNote(on ? note : null);
+        versions.save(v);
+        return versionSummary(v);
+    }
+
+    private VersionSummary versionSummary(DesignKitVersionEntity v) {
+        return new VersionSummary(v.getVersion(), v.getStatus().name(), v.getChecksum(), v.getNotes(),
+                v.getPublishedAt(), v.getPublishedBy(), v.isDeprecated(), v.getDeprecationNote());
     }
 
     /** One version: a number, {@code latest} or {@code draft}. */
@@ -425,6 +490,20 @@ public class DesignKitService {
         return sets.findBySetKey(setKey)
                 .map(EntityTemplateSetEntity::getDesignSystem)
                 .map(BuiltInKits.FOR_DESIGN_SYSTEM::get);
+    }
+
+    /**
+     * The house kit for a request that names no kit, on the frontend set it generates: the kit
+     * marked as the house kit, when it is enabled, published and styles that set. Otherwise none —
+     * the set's own files, which for the shipped set are {@code tailwind-default}'s bytes.
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> houseKitFor(String setKey) {
+        return kits.findAll().stream()
+                .filter(k -> k.isDefaultKit() && k.isEnabled() && k.getBaseSetKey().equals(setKey))
+                .filter(k -> latest(k).isPresent())
+                .map(DesignKitEntity::getKitKey)
+                .findFirst();
     }
 
     /** The frontend set a kit styles, if the kit exists. */
@@ -542,6 +621,129 @@ public class DesignKitService {
         return out;
     }
 
+    // ── Archives (.menora-kit.zip) ──────────────────────────────────────────
+
+    /** A version's whole content, as an archive carries it ({@code version} null for a draft). */
+    public record KitContent(String key, String name, String description, String baseSetKey, String defaultPaletteId,
+                             Integer version, String notes, DesignTokens tokens, KitManifest manifest, String css,
+                             List<ResolvedKit.File> files, List<ResolvedKit.Asset> assets) {
+        public KitContent {
+            files = files == null ? List.of() : List.copyOf(files);
+            assets = assets == null ? List.of() : List.copyOf(assets);
+        }
+    }
+
+    /** One version ({@code latest}, {@code draft} or a number) with every file and asset read. */
+    @Transactional(readOnly = true)
+    public KitContent content(String key, String which) {
+        DesignKitEntity k = kit(key);
+        DesignKitVersionEntity v = select(k, which);
+        List<ResolvedKit.Asset> av = assets.findByVersionIdOrderByTargetPathAsc(v.getId()).stream()
+                .map(a -> {
+                    DesignAssetBlobEntity b = blobs.findById(a.getBlobSha256()).orElseThrow();
+                    return new ResolvedKit.Asset(a.getTargetPath(), a.getRole().name(), b.getContentType(), a.getMeta(), b.getContent());
+                })
+                .toList();
+        List<ResolvedKit.File> fv = componentFiles(v).stream()
+                .map(f -> new ResolvedKit.File(f.getPath(), f.getRole().name(), f.getContent()))
+                .toList();
+        return new KitContent(k.getKitKey(), k.getName(), k.getDescription(), k.getBaseSetKey(), k.getDefaultPaletteId(),
+                v.getVersion(), v.getNotes(), tokensOf(v), manifestOf(v), cssOf(v), fv, av);
+    }
+
+    /**
+     * Brings an archived version in as a <b>draft</b> — nothing is published until someone has
+     * looked at it. Into a new kit ({@code asKey}, else the archive's key) when the key is free;
+     * into an existing custom kit's new draft otherwise (409 when it already has one, or is a
+     * built-in). Every file and asset passes the same checks as one saved in the Studio, so a
+     * refused archive leaves nothing behind.
+     */
+    @Transactional
+    public KitSummary importContent(KitContent content, String asKey, String user) {
+        if (content == null) throw DesignKitException.badRequest("The archive is empty");
+        String key = trim(asKey) != null ? trim(asKey) : trim(content.key());
+        if (key == null || !KEY.matcher(key).matches()) {
+            throw DesignKitException.badRequest("key must be 2–49 lower-case letters, digits and '-', starting with a letter");
+        }
+        String base = trim(content.baseSetKey());
+        if (base == null || sets.findBySetKey(base).filter(set -> set.getKind() == EntityTemplateSetEntity.Kind.FRONTEND_REACT).isEmpty()) {
+            throw DesignKitException.badRequest("The archive styles the frontend set '" + base + "', which this generator does not have");
+        }
+        if (content.tokens() == null || content.manifest() == null) throw DesignKitException.badRequest("The archive has no tokens or manifest");
+        DesignKitEntity k = kits.findByKitKey(key).orElse(null);
+        DesignKitVersionEntity d;
+        if (k == null) {
+            k = new DesignKitEntity();
+            k.setKitKey(key);
+            k.setName(requireName(content.name()));
+            k.setDescription(description(content.description()));
+            k.setBaseSetKey(base);
+            k.setDefaultPaletteId(trim(content.defaultPaletteId()));
+            if (content.key() != null && content.version() != null) {
+                String from = content.key() + "@" + content.version();
+                k.setClonedFrom(from.length() > 80 ? null : from);
+            }
+            k.setSortOrder(100);
+            k.setCreatedBy(user);
+            k.setCreatedAt(Instant.now());
+            k.setUpdatedAt(k.getCreatedAt());
+            kits.save(k);
+            d = newDraft(k, null, user);
+        } else {
+            if (k.isBuiltIn()) throw DesignKitException.conflict("Built-in kit '" + key + "' is read-only — import the archive under another key");
+            if (!k.getBaseSetKey().equals(base)) {
+                throw DesignKitException.conflict("Kit '" + key + "' styles '" + k.getBaseSetKey() + "', the archive '" + base + "'");
+            }
+            if (draftOf(k).isPresent()) throw DesignKitException.conflict("Kit '" + key + "' already has a draft — publish or discard it first");
+            d = newDraft(k, latest(k).map(DesignKitVersionEntity::getVersion).orElse(null), user);
+        }
+        List<String> problems = new ArrayList<>(TokenValidator.validate(content.tokens(), content.manifest(), content.css() == null ? "" : content.css()));
+        d.setTokens(json(content.tokens()));
+        d.setManifest(json(content.manifest()));
+        if (content.notes() != null) d.setNotes(content.notes().length() > 1000 ? content.notes().substring(0, 1000) : content.notes());
+        if (content.css() != null && !content.css().isEmpty()) putFile(d, KIT_CSS, DesignKitFileEntity.Role.CSS, content.css());
+        Map<String, KitSourceValidator.Slot> slots = slots(base);
+        if (content.files().size() > KitSourceValidator.MAX_FILES) problems.add("an archive may hold at most " + KitSourceValidator.MAX_FILES + " component files");
+        for (ResolvedKit.File f : content.files()) {
+            List<String> fileProblems = KitSourceValidator.check(f.path(), f.content(), slots);
+            if (!fileProblems.isEmpty()) {
+                problems.addAll(fileProblems);
+                continue;
+            }
+            putFile(d, f.path(), KitSourceValidator.kindOf(f.path(), slots) == KitSourceValidator.Kind.SLOT
+                    ? DesignKitFileEntity.Role.SLOT : DesignKitFileEntity.Role.HELPER, f.content());
+        }
+        long total = 0;
+        for (ResolvedKit.Asset a : content.assets()) {
+            try {
+                DesignKitAssetEntity.Role role = parseRole(a.role());
+                String type = AssetValidator.check(a.targetPath(), role, a.content());
+                if (a.meta() != null && a.meta().length() > 1000) throw DesignKitException.badRequest(a.targetPath() + ": meta must be at most 1000 characters");
+                if (role == DesignKitAssetEntity.Role.FONT) fontFace(a.targetPath(), a.meta());
+                total += a.content().length;
+                DesignKitAssetEntity row = new DesignKitAssetEntity();
+                row.setVersionId(d.getId());
+                row.setTargetPath(a.targetPath());
+                row.setRole(role);
+                row.setBlobSha256(storeBlob(a.content(), type));
+                row.setMeta(trim(a.meta()));
+                assets.save(row);
+            } catch (DesignKitException e) {
+                problems.add(a.targetPath() + ": " + e.getMessage());
+            }
+        }
+        if (total > AssetValidator.MAX_VERSION_BYTES) {
+            problems.add("a kit version may hold at most " + AssetValidator.MAX_VERSION_BYTES / 1024 / 1024 + " MB of assets");
+        }
+        if (!problems.isEmpty()) {
+            // Thrown out of the transaction, so the new kit or draft is rolled back with it.
+            throw DesignKitException.invalid(problems);
+        }
+        d.setUpdatedAt(Instant.now());
+        versions.save(d);
+        return summary(k);
+    }
+
     // ── Built-in kits ───────────────────────────────────────────────────────
 
     /**
@@ -606,6 +808,13 @@ public class DesignKitService {
             int next = current.map(v -> v.getVersion() + 1).orElse(1);
             seal(d, next, SYSTEM);
             log.info("Published built-in design kit {}@{}", key, next);
+        }
+        // There is always a house kit: the default look, unless an admin picked another one.
+        if (kits.findAll().stream().noneMatch(DesignKitEntity::isDefaultKit)) {
+            kits.findByKitKey(BuiltInKits.HOUSE).filter(DesignKitEntity::isBuiltIn).ifPresent(k -> {
+                k.setDefaultKit(true);
+                kits.save(k);
+            });
         }
     }
 
@@ -808,10 +1017,25 @@ public class DesignKitService {
         KitManifest manifest = latest.map(this::manifestOf).orElse(null);
         boolean paletteAware = latest.map(v -> v.getTokens().contains("{palette.primary}")
                 || v.getTokens().contains("{palette.secondary}")).orElse(false);
+        Map<String, String> swatch = new LinkedHashMap<>();
+        latest.map(this::tokensOf).ifPresent(t -> SWATCH.forEach(name -> t.tokens().stream()
+                .filter(x -> x.name().equals(name)).findFirst().ifPresent(x -> swatch.put(name, x.value()))));
+        // The frontend sets that stand for this (built-in) kit and generate as it.
+        List<String> aliases = !k.isBuiltIn() ? List.of() : BuiltInKits.FOR_DESIGN_SYSTEM.entrySet().stream()
+                .filter(e -> e.getValue().equals(k.getKitKey()))
+                .flatMap(e -> sets.findAllByKindOrderBySortOrderAsc(EntityTemplateSetEntity.Kind.FRONTEND_REACT).stream()
+                        .filter(set -> set.getDesignSystem() == e.getKey())
+                        .map(EntityTemplateSetEntity::getSetKey))
+                .toList();
         return new KitSummary(k.getKitKey(), k.getName(), k.getDescription(), k.getBaseSetKey(), k.isBuiltIn(),
                 k.isEnabled(), k.getSortOrder(), k.getDefaultPaletteId(), k.getClonedFrom(),
                 latest.map(DesignKitVersionEntity::getVersion).orElse(null), draftOf(k).isPresent(), paletteAware,
-                manifest == null ? null : manifest.defaults());
+                manifest == null ? null : manifest.defaults(), k.isDefaultKit(),
+                manifest == null ? null : manifest.traits(), aliases, swatch,
+                versions.findByKitIdAndStatusOrderByVersionDesc(k.getId(), Status.PUBLISHED).stream()
+                        .filter(DesignKitVersionEntity::isDeprecated)
+                        .map(v -> new DeprecatedVersion(v.getVersion(), v.getDeprecationNote()))
+                        .toList());
     }
 
     private VersionView view(DesignKitEntity k, DesignKitVersionEntity v) {

@@ -182,8 +182,8 @@ public class KitComponentsTests {
         DesignKitService.Components c = service.components("menora-digital");
         assertThat(c.baseSetKey()).isEqualTo("react-tailwind-crud");
         assertThat(c.slots()).filteredOn(DesignKitService.SlotView::replaced).extracting(DesignKitService.SlotView::path)
-                .contains("src/shared/ui/Shell.tsx", "src/shared/ui/ListHeader.tsx", "src/shared/ui/Table.tsx", "src/shared/ui/links.tsx")
-                .hasSize(15);
+                .contains("src/shared/ui/Shell.tsx", "src/shared/ui/ListHeader.tsx", "src/shared/ui/Table.tsx", "src/shared/ui/links.tsx", "src/shared/ui/ScreenHeader.tsx")
+                .hasSize(16);
         assertThat(c.helpers()).extracting(DesignKitService.FileView::path)
                 .contains("src/shared/ui/menora/index.ts", "src/shared/ui/menora/Button.tsx", "src/shared/ui/menora/tokens.css")
                 .hasSize(22);

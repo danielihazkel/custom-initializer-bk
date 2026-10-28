@@ -157,6 +157,10 @@ public final class TokenValidator {
         if (d != null && d.locale() != null && !d.locale().equals("en") && !d.locale().equals("he")) {
             errors.add("manifest: defaults.locale must be 'en' or 'he'");
         }
+        KitManifest.Traits t = m.traits();
+        if (t != null && t.sketch() != null && !KitManifest.SKETCHES.contains(t.sketch())) {
+            errors.add("manifest: traits.sketch must be one of " + String.join(", ", KitManifest.SKETCHES));
+        }
     }
 
     private static void checkCss(String css, List<String> errors) {

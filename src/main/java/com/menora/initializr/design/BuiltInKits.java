@@ -20,6 +20,9 @@ public final class BuiltInKits {
 
     public static final List<String> KEYS = List.of("tailwind-default", "menora-digital");
 
+    /** The house kit on a fresh database: a request naming no kit generates with it (see V25). */
+    public static final String HOUSE = "tailwind-default";
+
     /** The built-in kit that implements a set's design system: such a set generates as the kit. */
     public static final java.util.Map<EntityTemplateSetEntity.DesignSystem, String> FOR_DESIGN_SYSTEM =
             java.util.Map.of(EntityTemplateSetEntity.DesignSystem.MENORA_DIGITAL, "menora-digital");

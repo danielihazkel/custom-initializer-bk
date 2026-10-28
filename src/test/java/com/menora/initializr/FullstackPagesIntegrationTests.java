@@ -114,7 +114,7 @@ class FullstackPagesIntegrationTests {
                 .contains("import { t } from '@shared/i18n'")
                 .contains("import { TicketStatusTypeLabels, TicketPriorityTypeLabels } from '@entities/ticket'")
                 .contains("export function OverviewScreen({ onNavigate }: Props)")
-                .contains("text-fg\">{ 'Support overview' }</h1>")
+                .contains("<ScreenHeader\n          title={ 'Support overview' }")
                 .contains("title={ 'Agents' }\n          path=\"/api/agents\"\n          onOpen={() => onNavigate('agents')}")
                 .contains("title={ 'Tickets' }\n          path=\"/api/tickets\"\n          onOpen={() => onNavigate('queue')}")
                 .contains("title={ 'Teams' }\n          path=\"/api/teams\"\n          onOpen={() => onNavigate('teams')}")
@@ -384,7 +384,7 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/shared/ui/Shell.tsx"))
                 .contains("items.map(({ id, label }) => ({ label, href: `#/${id}`, current: current === id, onClick: () => go(id) }))");
         assertThat(files.get(FE + "src/app/screens/DeskScreen.tsx"))
-                .contains("<p className=\"mt-1 max-w-2xl text-sm text-muted\">{ 'Orders at a glance: volume, status mix and the latest orders.' }</p>")
+                .contains("description={ 'Orders at a glance: volume, status mix and the latest orders.' }")
                 .contains("path=\"/api/orders\"\n          onOpen={() => onNavigate('orders')}")
                 .contains("path=\"/api/customers\"\n          onOpen={() => onNavigate('customers')}");
         assertThat(files.get(FE + "src/app/screens/CustomersScreen.tsx")).contains("<OrderPage");
@@ -693,12 +693,14 @@ class FullstackPagesIntegrationTests {
         pages.get(2).put("chart", Map.of("groupBy", "soldOn", "bucket", "month"));
         Map<String, String> files = generate(body);
 
-        assertThat(files.get(FE + "src/app/screens/RevenueScreen.tsx"))
+        String revenue = files.get(FE + "src/app/screens/RevenueScreen.tsx");
+        // One chart: no title of its own (the screen's heading is the ScreenHeader's).
+        assertThat(revenue.substring(revenue.indexOf("<ReportChart"))).doesNotContain("title=");
+        assertThat(revenue)
                 .contains("rollup=\"groupBy=soldOn&bucket=month\"\n        search={search}\n        line\n")
                 // Counting rows, so the value column is headed "Rows" and no labels are imported.
                 .contains("valueLabel={ t('rows') }")
-                // One chart: no title, no grid.
-                .doesNotContain("title=")
+                // …and no grid.
                 .doesNotContain("lg:grid-cols-2")
                 .doesNotContain("@entities/sale");
     }

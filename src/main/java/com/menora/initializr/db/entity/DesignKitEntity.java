@@ -48,6 +48,10 @@ public class DesignKitEntity {
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
+    /** The house kit: what a request naming no kit generates with (at most one). */
+    @Column(name = "default_kit", nullable = false)
+    private boolean defaultKit;
+
     @Column(name = "created_by", length = 255)
     private String createdBy;
 
@@ -77,6 +81,8 @@ public class DesignKitEntity {
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    public boolean isDefaultKit() { return defaultKit; }
+    public void setDefaultKit(boolean defaultKit) { this.defaultKit = defaultKit; }
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
     public Instant getCreatedAt() { return createdAt; }

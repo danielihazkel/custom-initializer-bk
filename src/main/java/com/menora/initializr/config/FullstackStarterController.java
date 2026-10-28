@@ -79,7 +79,7 @@ public class FullstackStarterController {
     private static final Logger log = LoggerFactory.getLogger(FullstackStarterController.class);
 
     private static final String DEFAULT_BACKEND_SET = "spring-jpa-crud";
-    private static final String DEFAULT_FRONTEND_SET = "react-tailwind-crud";
+    public static final String DEFAULT_FRONTEND_SET = "react-tailwind-crud";
 
     private final ProjectGenerationInvoker<ProjectRequest> invoker;
     private final InitializrMetadataProvider metadataProvider;
@@ -331,9 +331,12 @@ public class FullstackStarterController {
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         // A design kit restyles one frontend set: it picks the set, and naming another is a 400.
         // A set that stands for a built-in kit (Menora Digital) is that kit on the kit's base set.
+        // Naming neither generates with the house kit, when it styles the set asked for.
         ResolvedKit kit = resolveKit(body.designKit(), allowDraftKit);
         if (kit == null) {
-            String alias = designKits.kitOfSet(body.frontendTemplateSet()).orElse(null);
+            String alias = designKits.kitOfSet(body.frontendTemplateSet())
+                    .or(() -> designKits.houseKitFor(orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET)))
+                    .orElse(null);
             if (alias != null) kit = resolveKit(alias, false);
         }
         String frontendSetKey = kit == null ? orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET)

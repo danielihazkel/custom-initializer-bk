@@ -47,6 +47,7 @@
     { "source": "Shell.tsx", "path": "src/shared/ui/Shell.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147 },
     { "source": "PageNotice.tsx", "path": "src/shared/ui/PageNotice.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "gatedBy": "hasPages" },
     { "source": "PageHeader.tsx", "path": "src/shared/ui/PageHeader.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "gatedBy": "hasTabsPages" },
+    { "source": "ScreenHeader.tsx", "path": "src/shared/ui/ScreenHeader.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "gatedBy": "hasPages" },
     { "source": "Tabs.tsx", "path": "src/shared/ui/Tabs.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "gatedBy": "hasTabsPages" },
     { "source": "ListHeader.tsx", "path": "src/shared/ui/ListHeader.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147 },
     { "source": "SelectionBar.tsx", "path": "src/shared/ui/SelectionBar.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147 },

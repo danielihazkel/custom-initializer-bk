@@ -45,6 +45,7 @@
     {"source": "Shell.tsx", "path": "src/shared/ui/Shell.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "sourceSet": "react-tailwind-crud"},
     {"source": "PageNotice.tsx", "path": "src/shared/ui/PageNotice.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "gatedBy": "hasPages", "sourceSet": "react-tailwind-crud"},
     {"source": "PageHeader.tsx", "path": "src/shared/ui/PageHeader.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "gatedBy": "hasTabsPages", "sourceSet": "react-tailwind-crud"},
+    {"source": "ScreenHeader.tsx", "path": "src/shared/ui/ScreenHeader.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "gatedBy": "hasPages", "sourceSet": "react-tailwind-crud"},
     {"source": "Tabs.tsx", "path": "src/shared/ui/Tabs.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "gatedBy": "hasTabsPages", "sourceSet": "react-tailwind-crud"},
     {"source": "ListHeader.tsx", "path": "src/shared/ui/ListHeader.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "sourceSet": "react-tailwind-crud"},
     {"source": "SelectionBar.tsx", "path": "src/shared/ui/SelectionBar.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "sourceSet": "react-tailwind-crud"},

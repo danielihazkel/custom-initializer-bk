@@ -34,10 +34,10 @@ public class DesignKitTransfer {
                             String clonedFrom, boolean enabled, int sortOrder, List<VersionExport> versions) {
     }
 
-    /** {@code version} null is the kit's draft. */
+    /** {@code version} null is the kit's draft; {@code deprecated} null in exports made before V25. */
     public record VersionExport(Integer version, Integer basedOnVersion, int contractVersion, String tokens, String manifest,
                                 String checksum, String notes, String publishedBy, Instant publishedAt,
-                                List<FileExport> files, List<AssetExport> assets) {
+                                List<FileExport> files, List<AssetExport> assets, Boolean deprecated, String deprecationNote) {
     }
 
     public record FileExport(String path, String role, String content) {
@@ -89,7 +89,7 @@ public class DesignKitTransfer {
                         v.getManifest(), v.getChecksum(), v.getNotes(), v.getPublishedBy(), v.getPublishedAt(),
                         files.findByVersionIdOrderByPathAsc(v.getId()).stream()
                                 .map(f -> new FileExport(f.getPath(), f.getRole().name(), f.getContent())).toList(),
-                        as));
+                        as, v.isDeprecated() ? true : null, v.getDeprecationNote()));
             }
             out.add(new KitExport(k.getKitKey(), k.getName(), k.getDescription(), k.getBaseSetKey(), k.getDefaultPaletteId(),
                     k.getClonedFrom(), k.isEnabled(), k.getSortOrder(), vs));
@@ -160,6 +160,8 @@ public class DesignKitTransfer {
                 v.setTokens(ve.tokens());
                 v.setManifest(ve.manifest());
                 v.setNotes(ve.notes());
+                v.setDeprecated(Boolean.TRUE.equals(ve.deprecated()));
+                v.setDeprecationNote(Boolean.TRUE.equals(ve.deprecated()) ? ve.deprecationNote() : null);
                 v.setCreatedBy("import");
                 v.setCreatedAt(Instant.now());
                 v.setUpdatedAt(v.getCreatedAt());

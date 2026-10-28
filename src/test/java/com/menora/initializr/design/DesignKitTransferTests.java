@@ -58,7 +58,7 @@ class DesignKitTransferTests {
         DesignKitTransfer.VersionExport v = mine.versions().get(0);
         DesignKitTransfer.VersionExport tampered = new DesignKitTransfer.VersionExport(v.version(), v.basedOnVersion(),
                 v.contractVersion(), v.tokens(), v.manifest(), "0".repeat(64), v.notes(), v.publishedBy(), v.publishedAt(),
-                v.files(), v.assets());
+                v.files(), v.assets(), v.deprecated(), v.deprecationNote());
         DesignKitTransfer.KitExport changed = new DesignKitTransfer.KitExport(mine.key(), mine.name(), mine.description(),
                 mine.baseSetKey(), mine.defaultPaletteId(), mine.clonedFrom(), mine.enabled(), mine.sortOrder(), List.of(tampered));
         assertThatThrownBy(() -> transfer.check(List.of(changed)))

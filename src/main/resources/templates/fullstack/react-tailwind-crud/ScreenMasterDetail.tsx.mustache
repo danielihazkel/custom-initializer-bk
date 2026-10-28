@@ -1,4 +1,5 @@
 import { {{#usesEffect}}useEffect, {{/usesEffect}}useState } from 'react'
+import { ScreenHeader } from '@shared/ui/ScreenHeader'
 {{#parentIconImports}}
 import { {{parentIconImports}} } from 'lucide-react'
 {{/parentIconImports}}
@@ -164,10 +165,7 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
-{{#hasPageDescription}}
-        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
-{{/hasPageDescription}}
+        <ScreenHeader title={ {{pageTitleExpr}} }{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}} />
       </div>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="self-start overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">

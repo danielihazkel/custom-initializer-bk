@@ -42,7 +42,8 @@
       "weights": [300, 400, 500, 600, 700],
       "comment": "Assistant is the self-hosted fallback for the licensed Almoni brand face (see src/shared/ui/menora/tokens.css)."
     },
-    "defaults": { "locale": "he", "rtl": true }
+    "defaults": { "locale": "he", "rtl": true },
+    "traits": { "sketch": "menora", "navOptions": false }
   },
   "css": "kit.css",
   "files": [
@@ -56,6 +57,7 @@
     {"path": "src/shared/ui/FormDrawer.tsx", "source": "templates/design-kits/menora-digital/components/FormDrawer.tsx"},
     {"path": "src/shared/ui/ListHeader.tsx", "source": "templates/design-kits/menora-digital/components/ListHeader.tsx"},
     {"path": "src/shared/ui/PageHeader.tsx", "source": "templates/design-kits/menora-digital/components/PageHeader.tsx"},
+    {"path": "src/shared/ui/ScreenHeader.tsx", "source": "templates/design-kits/menora-digital/components/ScreenHeader.tsx"},
     {"path": "src/shared/ui/SelectionBar.tsx", "source": "templates/design-kits/menora-digital/components/SelectionBar.tsx"},
     {"path": "src/shared/ui/Shell.tsx", "source": "templates/design-kits/menora-digital/components/Shell.tsx"},
     {"path": "src/shared/ui/Table.tsx", "source": "templates/design-kits/menora-digital/components/Table.tsx"},

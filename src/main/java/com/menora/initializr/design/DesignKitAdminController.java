@@ -1,6 +1,10 @@
 package com.menora.initializr.design;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,9 +33,13 @@ public class DesignKitAdminController {
     private static final String ADMIN = "admin";
 
     private final DesignKitService service;
+    private final DesignKitUsage usage;
+    private final ObjectMapper mapper;
 
-    public DesignKitAdminController(DesignKitService service) {
+    public DesignKitAdminController(DesignKitService service, DesignKitUsage usage, ObjectMapper mapper) {
         this.service = service;
+        this.usage = usage;
+        this.mapper = mapper;
     }
 
     @GetMapping
@@ -158,5 +166,37 @@ public class DesignKitAdminController {
     @GetMapping("/{key}/diff")
     public DesignKitService.Diff diff(@PathVariable String key, @RequestParam String from, @RequestParam String to) {
         return service.diff(key, from, to);
+    }
+
+    /** Marks a published version deprecated ({@code {"deprecated": false}} takes the mark back). */
+    @PostMapping("/{key}/versions/{version}/deprecate")
+    public DesignKitService.VersionSummary deprecate(@PathVariable String key, @PathVariable int version,
+                                                     @RequestBody(required = false) DesignKitService.Deprecate body) {
+        return service.deprecate(key, version, body);
+    }
+
+    /** The examples and team models that generate with the kit, and the version each is on. */
+    @GetMapping("/{key}/usage")
+    public DesignKitUsage.Usage usage(@PathVariable String key) {
+        return usage.of(key);
+    }
+
+    /** One version as a {@code .menora-kit.zip} ({@code latest}, a number or {@code draft}). */
+    @GetMapping("/{key}/archive")
+    public ResponseEntity<byte[]> archive(@PathVariable String key, @RequestParam(defaultValue = "latest") String version) {
+        DesignKitService.KitContent content = service.content(key, version);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(KitArchive.fileName(content)).build().toString())
+                .body(KitArchive.write(content, mapper));
+    }
+
+    /** Brings a {@code .menora-kit.zip} in as a draft: a new kit, or a new draft of a custom one. */
+    @PostMapping("/import")
+    public ResponseEntity<DesignKitService.KitSummary> importArchive(@RequestParam("file") MultipartFile file,
+                                                                     @RequestParam(required = false) String key) throws IOException {
+        DesignKitService.KitContent content = KitArchive.read(file.getBytes(), mapper);
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.importContent(content, key, ADMIN));
     }
 }

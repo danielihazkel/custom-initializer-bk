@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ScreenHeader } from '@shared/ui/ScreenHeader'
 import { ArrowUpRight, Search } from 'lucide-react'
 {{#searchGroups}}
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
@@ -129,12 +130,7 @@ export function {{PageName}}Screen({ query, onQueryChange{{#needsNavigate}}, onN
   const found = results != null && [{{#searchGroups}}results.g{{groupIndex}}, {{/searchGroups}}].some(p => p.totalElements > 0)
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
-{{#hasPageDescription}}
-        <p className="mt-1 text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
-{{/hasPageDescription}}
-      </div>
+      <ScreenHeader title={ {{pageTitleExpr}} }{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}} />
       <div className="relative">
         <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
         <input

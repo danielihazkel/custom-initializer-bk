@@ -1,3 +1,4 @@
+import { ScreenHeader } from '@shared/ui/ScreenHeader'
 {{#usesT}}
 import { t } from '@shared/i18n'
 
@@ -13,10 +14,7 @@ interface Props {
 export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
   return (
     <div className="mx-auto max-w-3xl p-4 md:p-8">
-      <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
-{{#hasPageDescription}}
-      <p className="mt-1 text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
-{{/hasPageDescription}}
+      <ScreenHeader title={ {{pageTitleExpr}} }{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}} />
       <article className="mt-6 space-y-4 rounded-2xl border border-border bg-surface p-6 shadow-sm">
 {{{contentJsx}}}      </article>
     </div>
