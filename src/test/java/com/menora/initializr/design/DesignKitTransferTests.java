@@ -29,6 +29,7 @@ class DesignKitTransferTests {
         String key = "xfer-" + System.nanoTime() % 100000;
         service.create(new DesignKitService.CreateKit(key, "Transfer", null, "tailwind-default"), "t");
         service.putAsset(key, "public/brand.svg", "LOGO", null, FullstackDesignKitTests.SVG);
+        service.putComponentFile(key, "src/shared/ui/kit/tone.ts", KitComponentsTests.TONE);
         String checksum = service.publish(key, null, "t").checksum();
 
         DesignKitTransfer.Export export = transfer.export();
@@ -45,6 +46,7 @@ class DesignKitTransferTests {
         assertThat(transfer.merge(new DesignKitTransfer.Export(List.of(mine), export.blobs()))).isEqualTo(1);
         assertThat(service.version(key, "1").checksum()).isEqualTo(checksum);
         assertThat(service.version(key, "1").assets()).hasSize(1);
+        assertThat(service.fileContent(key, "1", "src/shared/ui/kit/tone.ts")).isEqualTo(KitComponentsTests.TONE);
     }
 
     @Test

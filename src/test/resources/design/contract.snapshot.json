@@ -97,5 +97,14 @@
     "tokens" : 200,
     "tokenValueChars" : 300
   },
-  "slots" : [ ]
+  "components" : {
+    "slotPattern" : "^src/shared/ui/[A-Za-z0-9_-]+\\.tsx$",
+    "helperPattern" : "^src/shared/ui/kit/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\\.(?:tsx|ts)$",
+    "allowedImports" : [ "react", "react-dom", "react-dom/client", "react/jsx-runtime", "lucide-react", "clsx", "sonner" ],
+    "alsoAllowed" : [ "@shared/…", "relative paths inside src/shared" ],
+    "refused" : [ "calls fetch() — components get their data from the generator's hooks (@shared/api)", "opens a network connection", "imports a module at run time (import())", "evaluates code from a string", "writes raw HTML", "reads or writes cookies", "reaches another window" ],
+    "slotExports" : "exactly the exports of the file it replaces",
+    "maxFileBytes" : 262144,
+    "maxFiles" : 200
+  }
 }

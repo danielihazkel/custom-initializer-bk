@@ -211,6 +211,26 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendCustomKitComponentsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // A kit that replaces a component (Badge, with a JSX style={{...}} object a mustache template
+        // could not hold) and adds a helper it imports: the zip carries both, and the project still
+        // type-checks, lints with no warnings and bundles.
+        String key = "smoke-comp-" + System.nanoTime() % 100000;
+        designKits.create(new DesignKitService.CreateKit(key, "Smoke components", null, "tailwind-default"), "smoke");
+        designKits.putComponentFile(key, "src/shared/ui/kit/tone.ts", com.menora.initializr.design.KitComponentsTests.TONE);
+        designKits.putComponentFile(key, "src/shared/ui/Badge.tsx", com.menora.initializr.design.KitComponentsTests.BADGE);
+        designKits.publish(key, "smoke", "smoke");
+
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
+        body.put("designKit", key);
+        Path project = postAndExtractFrontend(workDir, body);
+        assertThat(Files.readString(project.resolve("src/shared/ui/Badge.tsx"))).contains("data-kit-badge");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendMenoraPageLayoutsInstallAndBuild(@TempDir Path workDir) throws Exception {
         // The Tickets layout on the Menora set: its own Tabs-port screen over preset-filtered list
         // pages, plus the borrowed dashboard and master-detail screens; locking and inline edit on

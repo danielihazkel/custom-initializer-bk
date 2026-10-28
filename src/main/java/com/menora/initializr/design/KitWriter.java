@@ -13,8 +13,10 @@ import java.util.List;
 /**
  * Applies a design kit to a rendered fullstack frontend, after its template set and the substrate
  * tooling are in place: {@code src/index.css} from the kit's tokens, {@code src/main.tsx} and the
- * {@code package.json} font for its typeface, and its asset files. A built-in kit reproduces its
- * set's own files byte for byte ({@code BuiltInKitParityTests}).
+ * {@code package.json} font for its typeface, its asset files, and its component files — a slot
+ * only where the set wrote that component under this request's flags (a gated file the set left
+ * out stays out), a helper always. A built-in kit reproduces its set's own files byte for byte
+ * ({@code BuiltInKitParityTests}); built-ins own no component files.
  */
 @Component
 public class KitWriter {
@@ -47,6 +49,12 @@ public class KitWriter {
             if (!target.startsWith(frontendDir)) throw DesignKitException.badRequest("asset path escapes the project: " + a.targetPath());
             GeneratedProjectFiles.createParentDirectories(target);
             Files.write(target, a.content());
+        }
+        for (ResolvedKit.File f : kit.files()) {
+            Path target = frontendDir.resolve(f.path()).normalize();
+            if (!target.startsWith(frontendDir)) throw DesignKitException.badRequest("kit file path escapes the project: " + f.path());
+            if ("SLOT".equals(f.role()) && !Files.exists(target)) continue;
+            write(target, f.content());
         }
     }
 

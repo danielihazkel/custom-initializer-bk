@@ -98,6 +98,36 @@ public class DesignKitAdminController {
         return ResponseEntity.noContent().build();
     }
 
+    /** The kit's base-set slots (and which it replaces) and its helpers. */
+    @GetMapping("/{key}/components")
+    public DesignKitService.Components components(@PathVariable String key) {
+        return service.components(key);
+    }
+
+    /** A slot's source in the base set. */
+    @GetMapping("/{key}/components/base")
+    public Map<String, String> baseSource(@PathVariable String key, @RequestParam String path) {
+        return Map.of("path", path, "content", service.baseSource(key, path));
+    }
+
+    /** A component file of a version: {@code draft} (default), {@code latest} or a number. */
+    @GetMapping("/{key}/files")
+    public Map<String, String> file(@PathVariable String key, @RequestParam String path,
+                                    @RequestParam(defaultValue = "draft") String version) {
+        return Map.of("path", path, "content", service.fileContent(key, version, path));
+    }
+
+    @PutMapping("/{key}/draft/files")
+    public DesignKitService.FileView putFile(@PathVariable String key, @RequestParam String path, @RequestBody Map<String, String> body) {
+        return service.putComponentFile(key, path, body == null ? null : body.get("content"));
+    }
+
+    @DeleteMapping("/{key}/draft/files")
+    public ResponseEntity<Void> deleteFile(@PathVariable String key, @RequestParam String path) {
+        service.deleteComponentFile(key, path);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{key}/draft/validate")
     public DesignKitService.ValidationReport validate(@PathVariable String key) {
         return service.validateDraft(key);

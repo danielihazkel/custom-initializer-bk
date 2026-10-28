@@ -50,9 +50,18 @@ public final class DesignContract {
         limits.put("tokens", TokenValidator.MAX_TOKENS);
         limits.put("tokenValueChars", TokenValidator.MAX_VALUE);
         c.put("limits", limits);
-        // Kits own no component files until component editing (P3): the preview runtime renders
-        // the generated app itself, so every component comes from the kit's base template set.
-        c.put("slots", List.of());
+        // A kit's own component files (P3). The slots themselves depend on the base set's rows, so
+        // they are listed per kit (GET /admin/design/kits/{key}/components), not here.
+        Map<String, Object> components = new LinkedHashMap<>();
+        components.put("slotPattern", KitSourceValidator.SLOT.pattern());
+        components.put("helperPattern", KitSourceValidator.HELPER.pattern());
+        components.put("allowedImports", KitSourceValidator.PACKAGES);
+        components.put("alsoAllowed", List.of("@shared/…", "relative paths inside src/shared"));
+        components.put("refused", List.copyOf(KitSourceValidator.BANNED.values()));
+        components.put("slotExports", "exactly the exports of the file it replaces");
+        components.put("maxFileBytes", KitSourceValidator.MAX_FILE_BYTES);
+        components.put("maxFiles", KitSourceValidator.MAX_FILES);
+        c.put("components", components);
         return c;
     }
 }

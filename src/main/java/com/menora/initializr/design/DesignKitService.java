@@ -11,6 +11,10 @@ import com.menora.initializr.db.entity.DesignKitVersionEntity.Status;
 import com.menora.initializr.db.repository.DesignAssetBlobRepository;
 import com.menora.initializr.db.repository.DesignKitAssetRepository;
 import com.menora.initializr.db.repository.DesignKitFileRepository;
+import com.menora.initializr.db.repository.EntityTemplateFileRepository;
+import com.menora.initializr.db.entity.EntityTemplateFileEntity;
+import com.menora.initializr.db.entity.EntityTemplateSetEntity;
+import com.menora.initializr.db.entity.FileContributionEntity;
 import com.menora.initializr.db.repository.DesignKitRepository;
 import com.menora.initializr.db.repository.DesignKitVersionRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetRepository;
@@ -30,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -54,15 +59,17 @@ public class DesignKitService {
     private final DesignKitAssetRepository assets;
     private final DesignAssetBlobRepository blobs;
     private final EntityTemplateSetRepository sets;
+    private final EntityTemplateFileRepository templateFiles;
     private final ObjectMapper mapper;
 
     public DesignKitService(DesignKitRepository kits, DesignKitVersionRepository versions, DesignKitFileRepository files,
                             DesignKitAssetRepository assets, DesignAssetBlobRepository blobs,
-                            EntityTemplateSetRepository sets, ObjectMapper mapper) {
+                            EntityTemplateSetRepository sets, EntityTemplateFileRepository templateFiles, ObjectMapper mapper) {
         this.kits = kits;
         this.versions = versions;
         this.files = files;
         this.assets = assets;
+        this.templateFiles = templateFiles;
         this.blobs = blobs;
         this.sets = sets;
         this.mapper = mapper;
@@ -82,7 +89,19 @@ public class DesignKitService {
 
     public record VersionView(String key, Integer version, String status, Integer basedOnVersion, String checksum,
                               String notes, Instant createdAt, Instant publishedAt, String publishedBy,
-                              DesignTokens tokens, KitManifest manifest, String css, List<AssetView> assets) {
+                              DesignTokens tokens, KitManifest manifest, String css, List<AssetView> assets,
+                              List<FileView> files) {
+    }
+
+    /** One of a version's component files (its content is read on its own). */
+    public record FileView(String path, String role, int bytes, String sha256) {
+    }
+
+    /** A slot of the kit's base set, and whether the version shown replaces it. */
+    public record SlotView(String path, List<String> exports, String gatedBy, int bytes, boolean replaced) {
+    }
+
+    public record Components(String baseSetKey, List<SlotView> slots, List<FileView> helpers) {
     }
 
     public record VersionSummary(Integer version, String status, String checksum, String notes,
@@ -96,7 +115,7 @@ public class DesignKitService {
     }
 
     public record Diff(String from, String to, List<TokenChange> tokens, boolean manifestChanged, boolean cssChanged,
-                       List<Map<String, String>> assets) {
+                       List<Map<String, String>> assets, List<Map<String, String>> files) {
     }
 
     public record CreateKit(String key, String name, String description, String cloneFrom) {
@@ -334,8 +353,17 @@ public class DesignKitService {
         });
         assetsB.keySet().stream().filter(p -> !assetsA.containsKey(p))
                 .forEach(p -> assetChanges.add(Map.of("path", p, "change", "added")));
+        Map<String, String> filesA = componentShas(a);
+        Map<String, String> filesB = componentShas(b);
+        List<Map<String, String>> fileChanges = new ArrayList<>();
+        filesA.forEach((p, sha) -> {
+            if (!filesB.containsKey(p)) fileChanges.add(Map.of("path", p, "change", "removed"));
+            else if (!filesB.get(p).equals(sha)) fileChanges.add(Map.of("path", p, "change", "changed"));
+        });
+        filesB.keySet().stream().filter(p -> !filesA.containsKey(p))
+                .forEach(p -> fileChanges.add(Map.of("path", p, "change", "added")));
         return new Diff(label(a), label(b), changes, !Objects.equals(a.getManifest(), b.getManifest()),
-                !Objects.equals(cssOf(a), cssOf(b)), assetChanges);
+                !Objects.equals(cssOf(a), cssOf(b)), assetChanges, fileChanges);
     }
 
     @Transactional(readOnly = true)
@@ -379,8 +407,120 @@ public class DesignKitService {
                     return new ResolvedKit.Asset(a.getTargetPath(), a.getRole().name(), b.getContentType(), a.getMeta(), b.getContent());
                 })
                 .toList();
+        List<ResolvedKit.File> resolvedFiles = componentFiles(v).stream()
+                .map(f -> new ResolvedKit.File(f.getPath(), f.getRole().name(), f.getContent()))
+                .toList();
         return new ResolvedKit(k.getKitKey(), v.getVersion(), k.getName(), k.getBaseSetKey(), k.getDefaultPaletteId(),
-                tokensOf(v), manifestOf(v), cssOf(v), resolvedAssets);
+                tokensOf(v), manifestOf(v), cssOf(v), resolvedAssets, resolvedFiles);
+    }
+
+    // ── Component files (P3) ────────────────────────────────────────────────
+
+    /**
+     * The slots of a frontend template set: its plain {@code .tsx} components under
+     * {@code src/shared/ui/} (not per entity, not per page, written verbatim), with the names they
+     * export — what the generator's glue imports from them.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, KitSourceValidator.Slot> slots(String setKey) {
+        Map<String, KitSourceValidator.Slot> out = new LinkedHashMap<>();
+        sets.findBySetKey(setKey).ifPresent(set -> templateFiles.findBySetIdOrderBySortOrderAsc(set.getId()).stream()
+                .filter(f -> !f.isPerEntity() && !f.isPerPage()
+                        && f.getSubstitutionType() == FileContributionEntity.SubstitutionType.NONE
+                        && KitSourceValidator.SLOT.matcher(f.getPathTemplate()).matches())
+                .sorted(java.util.Comparator.comparing(EntityTemplateFileEntity::getPathTemplate))
+                .forEach(f -> out.put(f.getPathTemplate(), new KitSourceValidator.Slot(f.getPathTemplate(),
+                        List.copyOf(KitSourceValidator.exportsOf(f.getContent())), f.getGatedBy(),
+                        f.getContent().getBytes(StandardCharsets.UTF_8).length))));
+        return out;
+    }
+
+    /** The kit's components: its base set's slots (which the draft — else the latest version —
+     *  replaces) and its helpers. */
+    @Transactional(readOnly = true)
+    public Components components(String key) {
+        DesignKitEntity k = kit(key);
+        Optional<DesignKitVersionEntity> v = draftOf(k).or(() -> latest(k));
+        Set<String> replaced = new java.util.HashSet<>();
+        List<FileView> helpers = new ArrayList<>();
+        v.ifPresent(version -> componentFiles(version).forEach(f -> {
+            if (f.getRole() == DesignKitFileEntity.Role.SLOT) replaced.add(f.getPath());
+            else helpers.add(fileView(f));
+        }));
+        List<SlotView> slotViews = slots(k.getBaseSetKey()).values().stream()
+                .map(s -> new SlotView(s.path(), s.exports(), s.gatedBy(), s.bytes(), replaced.contains(s.path())))
+                .toList();
+        return new Components(k.getBaseSetKey(), slotViews, helpers);
+    }
+
+    /** The base set's own source of a slot — what a kit starts from, and returns to on a reset. */
+    @Transactional(readOnly = true)
+    public String baseSource(String key, String path) {
+        DesignKitEntity k = kit(key);
+        if (!slots(k.getBaseSetKey()).containsKey(path)) throw DesignKitException.notFound("'" + path + "' is not a component of " + k.getBaseSetKey());
+        EntityTemplateSetEntity set = sets.findBySetKey(k.getBaseSetKey()).orElseThrow();
+        return templateFiles.findBySetIdOrderBySortOrderAsc(set.getId()).stream()
+                .filter(f -> f.getPathTemplate().equals(path)).findFirst().orElseThrow().getContent();
+    }
+
+    /** A component file of a version ({@code draft}, {@code latest} or a number). */
+    @Transactional(readOnly = true)
+    public String fileContent(String key, String which, String path) {
+        DesignKitEntity k = kit(key);
+        DesignKitVersionEntity v = select(k, which);
+        return files.findByVersionIdAndPath(v.getId(), path)
+                .filter(f -> f.getRole() != DesignKitFileEntity.Role.CSS)
+                .map(DesignKitFileEntity::getContent)
+                .orElseThrow(() -> DesignKitException.notFound(label(v) + " has no file " + path));
+    }
+
+    /** Saves a component file into the draft: a slot replacement or a helper, checked first. */
+    @Transactional
+    public FileView putComponentFile(String key, String path, String content) {
+        DesignKitEntity k = editable(key);
+        DesignKitVersionEntity d = requireDraft(k);
+        Map<String, KitSourceValidator.Slot> slots = slots(k.getBaseSetKey());
+        List<String> problems = KitSourceValidator.check(path, content, slots);
+        if (!problems.isEmpty()) throw DesignKitException.invalid(problems);
+        boolean isNew = files.findByVersionIdAndPath(d.getId(), path).isEmpty();
+        if (isNew && componentFiles(d).size() >= KitSourceValidator.MAX_FILES) {
+            throw DesignKitException.badRequest("a kit version may hold at most " + KitSourceValidator.MAX_FILES + " component files");
+        }
+        DesignKitFileEntity.Role role = KitSourceValidator.kindOf(path, slots) == KitSourceValidator.Kind.SLOT
+                ? DesignKitFileEntity.Role.SLOT : DesignKitFileEntity.Role.HELPER;
+        putFile(d, path, role, content);
+        d.setUpdatedAt(Instant.now());
+        versions.save(d);
+        return fileView(files.findByVersionIdAndPath(d.getId(), path).orElseThrow());
+    }
+
+    /** Drops a component file from the draft: a slot goes back to the base set's. */
+    @Transactional
+    public void deleteComponentFile(String key, String path) {
+        DesignKitEntity k = editable(key);
+        DesignKitVersionEntity d = requireDraft(k);
+        DesignKitFileEntity f = files.findByVersionIdAndPath(d.getId(), path)
+                .filter(x -> x.getRole() != DesignKitFileEntity.Role.CSS)
+                .orElseThrow(() -> DesignKitException.notFound("The draft has no file " + path));
+        files.delete(f);
+        d.setUpdatedAt(Instant.now());
+        versions.save(d);
+    }
+
+    private List<DesignKitFileEntity> componentFiles(DesignKitVersionEntity v) {
+        return files.findByVersionIdOrderByPathAsc(v.getId()).stream()
+                .filter(f -> f.getRole() != DesignKitFileEntity.Role.CSS)
+                .toList();
+    }
+
+    private FileView fileView(DesignKitFileEntity f) {
+        return new FileView(f.getPath(), f.getRole().name(), f.getContent().getBytes(StandardCharsets.UTF_8).length, f.getSha256());
+    }
+
+    private Map<String, String> componentShas(DesignKitVersionEntity v) {
+        Map<String, String> out = new LinkedHashMap<>();
+        componentFiles(v).forEach(f -> out.put(f.getPath(), f.getSha256()));
+        return out;
     }
 
     // ── Built-in kits ───────────────────────────────────────────────────────
@@ -584,6 +724,10 @@ public class DesignKitService {
         if (sets.findBySetKey(k.getBaseSetKey()).isEmpty()) {
             problems.add("base template set '" + k.getBaseSetKey() + "' does not exist");
         }
+        // Component files are checked against the base set as it is now: a slot it dropped, or an
+        // export it renamed, is a problem to fix before the next publish.
+        Map<String, KitSourceValidator.Slot> slots = slots(k.getBaseSetKey());
+        for (DesignKitFileEntity f : componentFiles(v)) problems.addAll(KitSourceValidator.check(f.getPath(), f.getContent(), slots));
         for (DesignKitAssetEntity a : assets.findByVersionIdOrderByTargetPathAsc(v.getId())) {
             if (a.getRole() == DesignKitAssetEntity.Role.FONT) {
                 try {
@@ -648,7 +792,7 @@ public class DesignKitService {
         List<AssetView> av = assets.findByVersionIdOrderByTargetPathAsc(v.getId()).stream().map(this::assetView).toList();
         return new VersionView(k.getKitKey(), v.getVersion(), v.getStatus().name(), v.getBasedOnVersion(), v.getChecksum(),
                 v.getNotes(), v.getCreatedAt(), v.getPublishedAt(), v.getPublishedBy(), tokensOf(v), manifestOf(v),
-                cssOf(v), av);
+                cssOf(v), av, componentFiles(v).stream().map(this::fileView).toList());
     }
 
     private AssetView assetView(DesignKitAssetEntity a) {
