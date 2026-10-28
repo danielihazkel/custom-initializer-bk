@@ -14,7 +14,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The shipped frontend sets' {@code index.css.mustache} and {@code main.tsx} ARE their built-in
+ * The shipped frontend set's {@code index.css.mustache} and {@code main.tsx} ARE its built-in
  * kit, written by {@link KitCssWriter} (palette as mustache tags) and {@link KitEntryWriter}. So a
  * request without a kit and one naming the built-in kit generate the same bytes — and a token
  * edit to a built-in kit's {@code kit.json} must be carried into its set's template.
@@ -28,10 +28,14 @@ class BuiltInKitTemplateSyncTest {
 
     @Test
     void setTemplatesAreTheirBuiltInKits() throws IOException {
+        java.util.Set<String> sets = new java.util.HashSet<>();
         for (String key : BuiltInKits.KEYS) {
             BuiltInKits.Loaded kit = BuiltInKits.load(key, mapper);
             BuiltInKits.Definition d = kit.definition();
             assertThat(TokenValidator.validate(d.tokens(), d.manifest(), kit.css())).as(key).isEmpty();
+            // A set's templates are its first built-in kit; a later kit on the same set (menora-digital
+            // on react-tailwind-crud) is written over them at generation time and has no templates.
+            if (!sets.add(d.baseSet())) continue;
 
             String css = KitCssWriter.write(d.tokens(), d.manifest(), List.of(), kit.css(), KitCssWriter.MUSTACHE);
             String main = KitEntryWriter.write(d.manifest().fonts());

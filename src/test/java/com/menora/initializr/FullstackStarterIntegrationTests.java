@@ -1057,9 +1057,10 @@ class FullstackStarterIntegrationTests {
 
         // The shell uses logical utilities (converted from physical border-l/ml/left/text-right),
         // and the Toaster flips to the RTL-appropriate corner.
-        String app = entries.get("shop/frontend/src/app/App.tsx");
-        assertThat(app).contains("border-s-2").doesNotContain("border-l-2");
-        assertThat(app).contains("position={ 'top-left' }");
+        String shell = entries.get("shop/frontend/src/shared/ui/Shell.tsx");
+        assertThat(shell).contains("border-s-2").doesNotContain("border-l-2");
+        assertThat(shell).contains("position={rtl ? 'top-left' : 'top-right'}");
+        assertThat(entries.get("shop/frontend/src/app/App.tsx")).contains(" onNavigate={go} rtl>");
         assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
                 .contains("sticky end-0").doesNotContain("sticky right-0");
     }
@@ -1084,7 +1085,7 @@ class FullstackStarterIntegrationTests {
         assertThat(indexHtml).contains("lang=\"en\"").doesNotContain("dir=\"rtl\"");
         // Logical utilities are always emitted (they behave identically in LTR).
         assertThat(entries.get("shop/frontend/src/app/App.tsx"))
-                .contains("position={ 'top-right' }");
+                .contains(" onNavigate={go}>").doesNotContain(" rtl");
     }
 
     @Test
@@ -1128,12 +1129,12 @@ class FullstackStarterIntegrationTests {
                 .contains("#FEDB41");  // gold highlight (palette secondary)
 
         // Components reference the brand tokens, not the old emerald defaults.
-        String app = entries.get("shop/frontend/src/app/App.tsx");
+        String app = entries.get("shop/frontend/src/shared/ui/Shell.tsx");
         assertThat(app).contains("bg-app-shell").contains("text-gold").contains("border-gold");
         assertThat(app).doesNotContain("emerald");
         // Primary actions use the semantic action tokens (aliased to brand + white text in this set).
         assertThat(css).contains("--color-primary:").contains("--color-on-primary:   #ffffff");
-        assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx")).contains("bg-primary").contains("text-on-primary");
+        assertThat(entries.get("shop/frontend/src/shared/ui/ListHeader.tsx")).contains("bg-primary").contains("text-on-primary");
         assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("bg-primary");
         // The default set does not pull in the Menora Digital design-system dep.
         assertThat(entries).doesNotContainKey("shop/frontend/public/menora-mivtachim-logo.png");
@@ -1183,29 +1184,30 @@ class FullstackStarterIntegrationTests {
 
         // Shell: the design system's NavLinks / ThemeToggle / Footer, and NO floating chat launcher —
         // that is the marketing site's contact control, not an admin app's.
-        String app = entries.get("shop/frontend/src/app/App.tsx");
-        assertThat(app)
+        assertThat(entries.get("shop/frontend/src/shared/ui/Shell.tsx"))
                 .contains("/menora-mivtachim-logo.png")
                 .contains("<NavLinks").contains("<ThemeToggle").contains("<Footer")
-                .contains("UserPage").contains("OrderPage")
-                .contains("position={ 'top-left' }")
+                .contains("position={rtl ? 'top-left' : 'top-right'}")
                 .doesNotContain("<ChatLauncher").doesNotContain("bg-app-shell");
+        assertThat(entries.get("shop/frontend/src/app/App.tsx")).contains("UserPage").contains("OrderPage").contains(" rtl>");
 
         // Dashboard: the Hero (yellow full stop, no CTA) and an ActionPanel with one yellow disc per
         // entity — not a single primary pill bound to the first entity.
-        String dashboard = entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx");
-        assertThat(dashboard)
-                .contains("<Hero").contains("<ActionPanel").contains("<SectionHeader")
-                .contains("label: 'Users'").contains("label: 'Orders'")
-                .contains("t('welcomeTo', { name: 'shop' }) + '.'")
+        assertThat(entries.get("shop/frontend/src/shared/ui/ClassicDashboard.tsx"))
+                .contains("<Hero title={`${title}.`} lead={lead} />").contains("<ActionPanel").contains("<SectionHeader")
                 .doesNotContain("bg-primary px-8");
+        assertThat(entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx"))
+                .contains("label: 'Users'").contains("label: 'Orders'")
+                .contains("title={ t('welcomeTo', { name: 'shop' }) }")
+                .contains("shortcuts={CARDS.map(card => ({ label: card.label, onOpen: () => onNavigate(card.view) }))}");
 
         // Authored shared UI wraps the design-system ports; borrowed files are present and unchanged.
         assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
                 .contains("onSortChange").contains("MenoraTable").contains("caption");
         assertThat(entries).containsKey("shop/frontend/src/shared/api/useResource.ts");
         assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx"))
-                .contains("<SectionHeader title=\"Users\"").contains("caption=\"Users\"").contains("variant=\"primary\"");
+                .contains("title=\"Users\"").contains("caption=\"Users\"").contains("createLabel={t('newX', { x: 'User' })}");
+        assertThat(entries.get("shop/frontend/src/shared/ui/ListHeader.tsx")).contains("<SectionHeader").contains("variant=\"primary\"");
         assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("mn-btn--primary");
         // vite.config.ts is borrowed as a mustache row (sourceSet) and rendered, not copied raw.
         assertThat(entries.get("shop/frontend/vite.config.ts"))
@@ -2333,7 +2335,7 @@ class FullstackStarterIntegrationTests {
                 .contains("useState<'cards'>((prefs.view as 'cards' | undefined) ?? openingView)")
                 .contains("<CardGrid")
                 .doesNotContain("<Table")
-                .doesNotContain("aria-pressed={viewMode === 'cards'}")   // no toggle button
+                .doesNotContain("views={VIEWS}")   // no view switch
                 .contains("onView={setDetailRow}")
                 .contains("<ProductDetail value={detailRow} />");
         assertThat(entries).containsKey("shop/frontend/src/features/product-form/ui/ProductDetail.tsx");
@@ -2343,9 +2345,10 @@ class FullstackStarterIntegrationTests {
                 .doesNotContain("<CardGrid");
 
         // The enum field drives a dashboard breakdown chart; Plain (no enum/boolean) gets none.
+        assertThat(entries.get("shop/frontend/src/shared/ui/ClassicDashboard.tsx")).contains("function BarChart");
         String dashboard = entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx");
         assertThat(dashboard)
-                .contains("function BarChart")
+                .contains("<ChartCard label={chart.label} data={data} failed={failed} />")
                 .contains("label: t('xByY', { x: 'Products', y: 'Status' })")
                 .contains("field: 'status'")
                 // Grouped by the backend's rollup, so the chart is exact rather than a sample.
@@ -2411,9 +2414,9 @@ class FullstackStarterIntegrationTests {
                 .contains("KanbanBoard, FilterBar")
                 .contains("<KanbanBoard")
                 .contains("groupField=\"status\"")
-                .contains("aria-label={t('tableView')}")            // toggle bar present (2 views)
-                .contains("aria-label={t('boardView')}")
-                .doesNotContain("aria-label={t('cardView')}")       // cards not selected
+                // the view switch has both views (and not the cards it was not given)
+                .contains("const VIEWS: { id: 'table' | 'kanban'; label: string }[] = [{ id: 'table', label: t('tableView') }, { id: 'kanban', label: t('boardView') }, ]")
+                .contains("        views={VIEWS}\n        view={viewMode}\n")
                 .doesNotContain("<CardGrid")
                 .doesNotContain("<CalendarView")
                 .contains("<FilterBar filters={filterDescriptors}")
@@ -2449,7 +2452,7 @@ class FullstackStarterIntegrationTests {
                 .contains("{t('retry')}</button>")
                 // A failed export is told, and the button says it is busy meanwhile.
                 .contains("  const download = useDownload()")
-                .contains("onClick={() => download.run(() => exportCsv('tasks.csv'))}");
+                .contains("onExport={ () => download.run(() => exportCsv('tasks.csv')) }\n        exporting={download.busy}\n");
         assertThat(entries.get("ops/frontend/src/shared/ui/KanbanBoard.tsx"))
                 .contains("if (loading && rows.length === 0) {")
                 .contains("t('nMoreShowInList', { n: hidden })")
@@ -3125,8 +3128,9 @@ class FullstackStarterIntegrationTests {
                 .doesNotContain("'Dashboard'");
         assertThat(entries.get("shop/frontend/src/pages/task/ui/TaskPage.tsx"))
                 .contains("t('newX', { x: 'Task' })")
-                .contains("t(totalElements === 1 ? 'record' : 'records')")
+                .contains("count={totalElements}")
                 .doesNotContain("New Task");
+        assertThat(entries.get("shop/frontend/src/shared/ui/ListHeader.tsx")).contains("t(count === 1 ? 'record' : 'records')");
         assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
                 .contains("import { t } from '../i18n'")
                 .contains("placeholder={t('search')}");
@@ -3161,8 +3165,8 @@ class FullstackStarterIntegrationTests {
         // The Menora-authored shell and dashboard go through t() like the default set's.
         assertThat(entries.get("shop/frontend/src/app/App.tsx"))
                 .contains("import { t } from '@shared/i18n'")
-                .contains("ariaLabel={t('main')}")
                 .contains("label: t('dashboard')");
+        assertThat(entries.get("shop/frontend/src/shared/ui/Shell.tsx")).contains("ariaLabel={t('main')}");
         assertThat(entries.get("shop/frontend/src/pages/dashboard/ui/DashboardPage.tsx"))
                 .contains("t('welcomeTo', { name: 'shop' })")
                 .contains("title={t('collections')}");
@@ -3309,7 +3313,7 @@ class FullstackStarterIntegrationTests {
                 .contains("render: r => r.status == null ? '—' : TaskStatusTypeLabels[r.status] }")
                 .contains("options: [{ value: 'OPEN', label: 'Open' }, { value: 'IN_REVIEW', label: 'In review' }, { value: 'DONE', label: 'Won\\'t fix' }]")
                 .contains("options?: { value: string; label: string }[] }> = {")
-                .contains("<option key={o.value} value={o.value}>{o.label}</option>")
+                .contains("fields={BULK_FIELDS}")
                 .contains("groupValues={[{ value: 'OPEN', label: 'Open' }, { value: 'IN_REVIEW', label: 'In review' }, { value: 'DONE', label: 'Won\\'t fix' }]}");
         // Boolean lanes go through i18n, never a hardcoded True/False.
         assertThat(entries.get("ops/frontend/src/pages/flag/ui/FlagPage.tsx"))

@@ -10,6 +10,10 @@ export interface Column<T> {
   render: (row: T) => ReactNode
   width?: string
   sortKey?: string
+  /** A number, date, id or code (a kit may align it; this table leaves it as it is). */
+  numeric?: boolean
+  /** A short status or category value (a kit may draw it as a chip). */
+  chip?: boolean
 }
 
 export interface SortSpec {
@@ -38,6 +42,8 @@ export interface PaginationProps {
 }
 
 interface Props<T extends object> {
+  /** The collection's name, for screen readers. */
+  caption?: string
   columns: Column<T>[]
   rows: T[]
   /** Stable identity for a row (its primary key, joined for composite keys). Drives React keys so
@@ -130,7 +136,7 @@ export function Table<T extends object>({
   columns, rows, rowKey, onView, onEdit, onDelete, loading,
   sort, onSortChange, search, onSearchChange, pagination, searchable = true,
   selectable = false, isRowSelected, onToggleRow, allOnPageSelected, onToggleAllOnPage,
-  filtered = false, emptyAction, columnMenu,
+  filtered = false, emptyAction, columnMenu, caption,
 }: Props<T>) {
   const rootRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -176,6 +182,7 @@ export function Table<T extends object>({
       <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
+            {caption && <caption className="sr-only">{caption}</caption>}
             <thead className="sticky top-0 z-10">
               <tr className="border-b border-border bg-surface-2">
                 {selectable && (

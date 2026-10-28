@@ -47,7 +47,7 @@ class DesignKitAdminApiTests {
                         .content("{\"key\":\"" + key + "\",\"name\":\"Api kit\",\"cloneFrom\":\"menora-digital\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.hasDraft").value(true))
-                .andExpect(jsonPath("$.baseSetKey").value("react-menora-digital-crud"));
+                .andExpect(jsonPath("$.baseSetKey").value("react-tailwind-crud"));
         mvc.perform(post("/admin/design/kits").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"key\":\"" + key + "\",\"name\":\"Again\",\"cloneFrom\":\"menora-digital\"}"))
                 .andExpect(status().isConflict())

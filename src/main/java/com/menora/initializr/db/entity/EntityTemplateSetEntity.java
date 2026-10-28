@@ -21,8 +21,9 @@ public class EntityTemplateSetEntity {
     }
 
     /**
-     * Design system a FRONTEND_REACT set targets. Descriptive only — the templates' actual
-     * rendering is whatever the set's files contain. Always null on BACKEND_JAVA sets.
+     * Design system a FRONTEND_REACT set targets. Descriptive, except where a built-in design kit
+     * implements it ({@code BuiltInKits.FOR_DESIGN_SYSTEM}: MENORA_DIGITAL): such a set generates
+     * as that kit on the kit's base set. Always null on BACKEND_JAVA sets.
      */
     public enum DesignSystem {
         TAILWIND,

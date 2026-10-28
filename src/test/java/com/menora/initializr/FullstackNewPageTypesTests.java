@@ -107,7 +107,11 @@ class FullstackNewPageTypesTests {
         assertThat(files.get(FE + "src/app/App.tsx"))
                 .contains("go('find', undefined, words ? { q: words } : {})")
                 .contains("<FindScreen query={route.query} onQueryChange={setQuery} onNavigate={goView} />");
-        assertThat(generate(planning("react-menora-digital-crud")).get(FE + "src/app/App.tsx"))
+        // The Menora shell draws the same search as its SearchField port.
+        Map<String, String> menora = generate(planning("react-menora-digital-crud"));
+        assertThat(menora.get(FE + "src/app/App.tsx"))
+                .contains("onSearch={words => go('find', undefined, words ? { q: words } : {})}");
+        assertThat(menora.get(FE + "src/shared/ui/Shell.tsx"))
                 .contains("import { DropdownMenu, NavLinks, SearchField, ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'")
                 .contains("<SearchField")
                 .contains("const [shellQ, setShellQ] = useState('')");
@@ -126,7 +130,7 @@ class FullstackNewPageTypesTests {
         assertThat(files).doesNotContainKey(FE + "src/features/project-form/model/importFields.ts");
         // The list page's Import goes to the import page; elsewhere (a tab, a related list) a drawer.
         assertThat(files.get(FE + "src/pages/task/ui/TaskPage.tsx"))
-                .contains("onClick={ onImport ?? (() => setImporting(true)) }")
+                .contains("onImport={ onImport ?? (() => setImporting(true)) }")
                 .contains("<CsvImport");
         assertThat(files.get(FE + "src/app/screens/TasksScreen.tsx")).contains("onImport={() => onNavigate('import-tasks')}");
         assertThat(files.get(FE + "src/pages/project/ui/ProjectPage.tsx")).doesNotContain("CsvImport");
@@ -158,7 +162,7 @@ class FullstackNewPageTypesTests {
         assertThat(files).containsKeys(FE + "src/shared/ui/csv.ts", FE + "src/shared/ui/CsvImport.tsx",
                 FE + "src/features/project-form/model/importFields.ts");
         assertThat(files.get(FE + "src/pages/project/ui/ProjectPage.tsx"))
-                .contains("onClick={ (() => setImporting(true)) }")
+                .contains("onImport={ (() => setImporting(true)) }")
                 .contains("toast.success(t('importDone', { n, x: 'Projects' }))");
         assertThat(files.get(FE + "src/pages/person/ui/PersonPage.tsx")).doesNotContain("CsvImport");
         assertThat(files.get(BE + "controller/PersonController.java")).doesNotContain("/import");

@@ -161,10 +161,17 @@ public final class TokenValidator {
 
     private static void checkCss(String css, List<String> errors) {
         if (css.length() > MAX_CSS) errors.add("kit CSS is larger than " + (MAX_CSS / 1024) + " KB");
+        cssProblems(css).forEach(p -> errors.add("kit CSS " + p));
+    }
+
+    /** What a kit stylesheet may not do (the generated app is offline). */
+    static List<String> cssProblems(String css) {
+        List<String> errors = new ArrayList<>();
         String lower = css.toLowerCase();
-        if (lower.contains("@import")) errors.add("kit CSS may not @import (the generated app is offline; add a manifest import instead)");
-        if (lower.matches("(?s).*url\\(\\s*['\"]?(https?:|//).*")) errors.add("kit CSS may not load remote URLs (the generated app is offline)");
-        if (!balancedBraces(css)) errors.add("kit CSS has unbalanced braces");
+        if (lower.contains("@import")) errors.add("may not @import (the generated app is offline; add a manifest import instead)");
+        if (lower.matches("(?s).*url\\(\\s*['\"]?(https?:|//).*")) errors.add("may not load remote URLs (the generated app is offline)");
+        if (!balancedBraces(css)) errors.add("has unbalanced braces");
+        return errors;
     }
 
     private static boolean balancedBraces(String css) {

@@ -414,6 +414,25 @@ public class DesignKitService {
                 tokensOf(v), manifestOf(v), cssOf(v), resolvedAssets, resolvedFiles);
     }
 
+    /**
+     * The built-in kit a frontend set stands for, if any: a set tagged with a design system that
+     * a built-in kit implements (Menora Digital) is that kit on the kit's base set — generating it
+     * means generating the base set with the kit.
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> kitOfSet(String setKey) {
+        if (setKey == null || setKey.isBlank()) return Optional.empty();
+        return sets.findBySetKey(setKey)
+                .map(EntityTemplateSetEntity::getDesignSystem)
+                .map(BuiltInKits.FOR_DESIGN_SYSTEM::get);
+    }
+
+    /** The frontend set a kit styles, if the kit exists. */
+    @Transactional(readOnly = true)
+    public Optional<String> baseSetOf(String kitKey) {
+        return kits.findByKitKey(kitKey).map(DesignKitEntity::getBaseSetKey);
+    }
+
     // ── Component files (P3) ────────────────────────────────────────────────
 
     /**
@@ -560,6 +579,13 @@ public class DesignKitService {
             d.setTokens(json(def.tokens()));
             d.setManifest(json(def.manifest()));
             putFile(d, KIT_CSS, DesignKitFileEntity.Role.CSS, loaded.css());
+            Map<String, KitSourceValidator.Slot> slots = slots(def.baseSet());
+            for (BuiltInKits.LoadedFile f : loaded.files()) {
+                List<String> fileProblems = KitSourceValidator.check(f.path(), f.content(), slots);
+                if (!fileProblems.isEmpty()) throw new IllegalStateException("Built-in design kit " + key + " is invalid: " + fileProblems);
+                putFile(d, f.path(), KitSourceValidator.kindOf(f.path(), slots) == KitSourceValidator.Kind.SLOT
+                        ? DesignKitFileEntity.Role.SLOT : DesignKitFileEntity.Role.HELPER, f.content());
+            }
             for (BuiltInKits.LoadedAsset a : loaded.assets()) {
                 DesignKitAssetEntity.Role role = parseRole(a.role());
                 String sha = storeBlob(a.content(), AssetValidator.check(a.targetPath(), role, a.content()));

@@ -46,6 +46,9 @@ public class KitComponentsTests {
             """;
     public static final String TONE = "export function tone(): string {\n  return 'rounded-full px-2 text-xs font-semibold'\n}\n";
 
+    /** Keeps the keys of the kits a run creates apart (nanoTime alone repeats on a coarse clock). */
+    private static final java.util.concurrent.atomic.AtomicInteger SEQ = new java.util.concurrent.atomic.AtomicInteger();
+
     @Autowired
     private DesignKitService service;
     @Autowired
@@ -57,11 +60,12 @@ public class KitComponentsTests {
     void everyComponentOfBothSetsPassesTheRulesAsItIs() {
         for (String set : List.of("react-tailwind-crud", "react-menora-digital-crud")) {
             Map<String, KitSourceValidator.Slot> slots = service.slots(set);
+            String kit = kitOn(set);
             assertThat(slots).as(set).containsKeys("src/shared/ui/Table.tsx", "src/shared/ui/widgets.tsx", "src/shared/ui/Badge.tsx")
                     .doesNotContainKeys("src/shared/ui/stats.ts", "src/shared/ui/index.ts");
             assertThat(slots.get("src/shared/ui/widgets.tsx").exports()).contains("KpiTile", "ReportChart", "PeriodSelect");
             for (KitSourceValidator.Slot slot : slots.values()) {
-                String source = service.baseSource(kitOn(set), slot.path());
+                String source = service.baseSource(kit, slot.path());
                 assertThat(KitSourceValidator.check(slot.path(), source, slots)).as(set + " " + slot.path()).isEmpty();
             }
         }
@@ -86,7 +90,18 @@ public class KitComponentsTests {
                 .anySatisfy(p -> assertThat(p).contains("import()"));
         // Words in comments are not code; strings are kept whole.
         assertThat(KitSourceValidator.check(path, "// no fetch() here, no eval()\n" + BADGE, slots)).isEmpty();
+        // A string that says "import" is not an import.
+        assertThat(KitSourceValidator.check(path, BADGE.replace("{children}</span>", "{children}{String(['import', \"import\"])}</span>"), slots)).isEmpty();
         assertThat(KitSourceValidator.check("src/shared/ui/kit/tone.ts", TONE, slots)).isEmpty();
+        // Helpers live in a folder of their own (any lower-case name), stylesheets included.
+        assertThat(KitSourceValidator.check("src/shared/ui/brand/tone.ts", TONE, slots)).isEmpty();
+        assertThat(KitSourceValidator.check("src/shared/ui/brand/brand.css", ".x { color: red }", slots)).isEmpty();
+        assertThat(KitSourceValidator.check("src/shared/ui/brand/brand.css", "@import 'x.css';", slots))
+                .anySatisfy(p -> assertThat(p).contains("may not @import"));
+        assertThat(KitSourceValidator.check("src/shared/ui/brand/brand.css", ".x { background: url(https://cdn.example/x.png) }", slots))
+                .anySatisfy(p -> assertThat(p).contains("remote URLs"));
+        assertThat(KitSourceValidator.check("src/shared/ui/Brand/tone.ts", TONE, slots)).isNotEmpty();
+        assertThat(KitSourceValidator.check("src/shared/ui/tone.ts", TONE, slots)).isNotEmpty();
         assertThat(KitSourceValidator.importAllowed("src/shared/ui/kit/a/b.ts", "../../../api")).isTrue();
         assertThat(KitSourceValidator.importAllowed("src/shared/ui/Badge.tsx", "@shared/i18n")).isTrue();
     }
@@ -126,12 +141,19 @@ public class KitComponentsTests {
 
     @Test
     void theStudioApiListsReadsWritesAndResetsComponents() throws Exception {
-        String key = kitOn("react-menora-digital-crud");
+        String key = kitOn("react-tailwind-crud");
         String auth = "Bearer " + login();
         mvc.perform(get("/admin/design/kits/" + key + "/components").header("Authorization", auth))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.baseSetKey").value("react-menora-digital-crud"))
+                .andExpect(jsonPath("$.baseSetKey").value("react-tailwind-crud"))
                 .andExpect(jsonPath("$.slots[?(@.path == 'src/shared/ui/Table.tsx')].replaced").value(false));
+        // A clone of the Menora kit starts with the Menora components as its own.
+        String menora = "comp-mn-" + SEQ.incrementAndGet() + "-" + System.nanoTime() % 100000;
+        service.create(new DesignKitService.CreateKit(menora, "Menora clone", null, "menora-digital"), "test");
+        mvc.perform(get("/admin/design/kits/" + menora + "/components").header("Authorization", auth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slots[?(@.path == 'src/shared/ui/Table.tsx')].replaced").value(true))
+                .andExpect(jsonPath("$.helpers.length()").value(22));
         String base = json.readTree(mvc.perform(get("/admin/design/kits/" + key + "/components/base").param("path", "src/shared/ui/Badge.tsx").header("Authorization", auth))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).get("content").asText();
         assertThat(base).contains("export function Badge");
@@ -155,12 +177,92 @@ public class KitComponentsTests {
         mvc.perform(get("/admin/design/kits/" + key + "/components")).andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void theMenoraKitIsTheDefaultSetWithItsOwnComponents() throws Exception {
+        DesignKitService.Components c = service.components("menora-digital");
+        assertThat(c.baseSetKey()).isEqualTo("react-tailwind-crud");
+        assertThat(c.slots()).filteredOn(DesignKitService.SlotView::replaced).extracting(DesignKitService.SlotView::path)
+                .contains("src/shared/ui/Shell.tsx", "src/shared/ui/ListHeader.tsx", "src/shared/ui/Table.tsx", "src/shared/ui/links.tsx")
+                .hasSize(15);
+        assertThat(c.helpers()).extracting(DesignKitService.FileView::path)
+                .contains("src/shared/ui/menora/index.ts", "src/shared/ui/menora/Button.tsx", "src/shared/ui/menora/tokens.css")
+                .hasSize(22);
+        // The set that stands for the kit generates as the kit — no design-system dependency in
+        // the substrate: the kit brings the ports, the stylesheets, the font and the logo.
+        Map<String, Object> body = new LinkedHashMap<>(Map.of("artifactId", "kitted", "packageName", "com.menora.kitted",
+                "bootVersion", "3.2.1", "frontendTemplateSet", "react-menora-digital-crud"));
+        body.put("entities", List.of(Map.of("name", "Note", "fields", List.of(
+                Map.of("name", "id", "type", "Long", "primaryKey", true, "generated", true),
+                Map.of("name", "title", "type", "String")))));
+        Map<String, String> bySet = zip(body);
+        body.remove("frontendTemplateSet");
+        body.put("designKit", "menora-digital");
+        Map<String, String> byKit = zip(body);
+        assertThat(bySet.keySet()).isEqualTo(byKit.keySet());
+        bySet.forEach((path, content) -> {
+            if (!path.endsWith("menora-model.json")) assertThat(byKit.get(path)).as(path).isEqualTo(content);
+        });
+        assertThat(bySet.get("frontend/src/shared/ui/Shell.tsx")).contains("useMenoraTheme");
+        assertThat(bySet.get("frontend/src/index.css")).contains("@import './shared/ui/menora/tokens.css';");
+        assertThat(bySet).containsKeys("frontend/src/shared/ui/menora/components.css", "frontend/public/menora-mivtachim-logo.png");
+        // …and a custom kit on the same base set may be named with it.
+        String key = kitOn("react-tailwind-crud");
+        service.publish(key, "first", "test");
+        body.put("designKit", key);
+        body.put("frontendTemplateSet", "react-menora-digital-crud");
+        assertThat(zip(body).get("frontend/src/shared/ui/Shell.tsx")).doesNotContain("useMenoraTheme");
+    }
+
+    @Test
+    void tryGeneratesEveryExampleWithTheKit() throws Exception {
+        String auth = "Bearer " + login();
+        String key = kitOn("react-tailwind-crud");
+        service.putComponentFile(key, "src/shared/ui/kit/tone.ts", TONE);
+        service.putComponentFile(key, "src/shared/ui/Badge.tsx", BADGE);
+        JsonNode report = json.readTree(mvc.perform(post("/admin/design/try").header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"designKit\":\"" + key + "@draft\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(report.get("designKit").asText()).isEqualTo(key + "@draft");
+        assertThat(report.get("baseSetKey").asText()).isEqualTo("react-tailwind-crud");
+        JsonNode results = report.get("results");
+        int examples = FullstackExampleRequests.examples().size();
+        int layouts = (int) FullstackExampleRequests.examples().stream().filter(FullstackExampleRequests::hasPages).count();
+        assertThat(results).hasSize(examples + layouts);
+        for (JsonNode r : results) {
+            assertThat(r.get("ok").asBoolean()).as(r.get("exampleId").asText() + " " + r.get("error")).isTrue();
+            assertThat(r.get("files").asInt()).isGreaterThan(50);
+            assertThat(r.get("kitFiles").toString()).contains("src/shared/ui/Badge.tsx").contains("src/shared/ui/kit/tone.ts");
+        }
+        // The Menora kit tries in Hebrew, right to left, writing its own shell everywhere.
+        JsonNode menora = json.readTree(mvc.perform(post("/admin/design/try").header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"designKit\":\"menora-digital\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        for (JsonNode r : menora.get("results")) {
+            assertThat(r.get("ok").asBoolean()).as(r.toString()).isTrue();
+            assertThat(r.get("kitFiles").toString()).contains("src/shared/ui/Shell.tsx").contains("src/shared/ui/menora/index.ts");
+        }
+        mvc.perform(post("/admin/design/try").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON).content("{\"designKit\":\"nope\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/admin/design/try").contentType(MediaType.APPLICATION_JSON).content("{\"designKit\":\"menora-digital\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
     /** A new kit with a draft open, on the set's built-in kit. */
     private String kitOn(String set) {
-        String key = "comp-" + System.nanoTime() % 1000000;
+        String key = "comp-" + SEQ.incrementAndGet() + "-" + System.nanoTime() % 100000;
         service.create(new DesignKitService.CreateKit(key, "Components", null,
                 set.equals("react-tailwind-crud") ? "tailwind-default" : "menora-digital"), "test");
         return key;
+    }
+
+    /** The zip of a fullstack request, by path below the artifact folder (line endings as LF). */
+    private Map<String, String> zip(Map<String, Object> body) throws Exception {
+        byte[] zip = mvc.perform(post("/starter-fullstack.zip").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        Map<String, String> files = new TreeMap<>();
+        FullstackExampleRequests.unzip(zip).forEach((path, bytes) ->
+                files.put(path.substring(path.indexOf('/') + 1), new String(bytes, StandardCharsets.UTF_8).replace("\r\n", "\n")));
+        return files;
     }
 
     private Map<String, String> generate(String kit, List<String> scaffold) throws Exception {

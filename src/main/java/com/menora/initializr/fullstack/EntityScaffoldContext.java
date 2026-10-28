@@ -649,9 +649,8 @@ public final class EntityScaffoldContext {
         // ...and its `setQuery` (a route rewrite) only when a routed screen keeps state in the hash.
         ctx.put("hasQueryScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("takesQuery"))));
         ctx.put("initialPageId", nav.get(0).get("pageId"));
-        // The lucide names the shell imports: the nav icons in use plus its own chrome, sorted.
-        // A top bar has no off-canvas menu to open, so it imports no Menu icon.
-        Set<String> icons = new TreeSet<>(navTopbar ? List.of("Moon", "Sun") : List.of("Menu", "Moon", "Sun"));
+        // The lucide names App imports for its nav: the icons in use, sorted (the Shell brings its own).
+        Set<String> icons = new TreeSet<>();
         nav.forEach(v -> icons.add((String) v.get("navIcon")));
         ctx.put("navIconImports", String.join(", ", icons));
         putNavGroups(ctx, nav);
@@ -2058,7 +2057,7 @@ public final class EntityScaffoldContext {
         return defaults.isEmpty() ? "{}" : "{ " + String.join(", ", defaults) + " }";
     }
 
-    static String tsString(String s) {
+    public static String tsString(String s) {
         return "'" + escapeTsSingleQuoted(s).replace("\r", "").replace("\n", "\\n") + "'";
     }
 

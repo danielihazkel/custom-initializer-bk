@@ -13,7 +13,9 @@ import java.util.regex.Pattern;
 /**
  * The rules for a design kit's own component files (P3). A kit may replace a <b>slot</b> — one of
  * its base set's plain {@code .tsx} components under {@code src/shared/ui/} — and add
- * <b>helpers</b> under {@code src/shared/ui/kit/}. The generator's glue (screens, shell, entity
+ * <b>helpers</b> in a folder of its own under {@code src/shared/ui/} ({@code kit/}, {@code menora/}, …
+ * — the base sets keep no folders there): components and modules ({@code .tsx}, {@code .ts}) and
+ * stylesheets ({@code .css}, which the kit's manifest imports). The generator's glue (screens, shell, entity
  * pages) imports the slots by name, so a slot keeps exactly the exports of the file it replaces;
  * the code is copied into every zip generated with the kit and runs in the preview runtime, so it
  * may import only the bundled packages and the project's own {@code src/shared}, and may not reach
@@ -27,8 +29,8 @@ public final class KitSourceValidator {
 
     /** Where a slot lives: a component of the base set. */
     public static final Pattern SLOT = Pattern.compile("^src/shared/ui/[A-Za-z0-9_-]+\\.tsx$");
-    /** Where a kit's own helpers live. */
-    public static final Pattern HELPER = Pattern.compile("^src/shared/ui/kit/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\\.(?:tsx|ts)$");
+    /** Where a kit's own helpers live: a folder of its own under src/shared/ui/. */
+    public static final Pattern HELPER = Pattern.compile("^src/shared/ui/[a-z][a-z0-9_-]*/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\\.(?:tsx|ts|css)$");
 
     /** Bare imports a kit file may use: what the generated package.json installs and the runtime bundles. */
     public static final List<String> PACKAGES = List.of("react", "react-dom", "react-dom/client", "react/jsx-runtime", "lucide-react", "clsx", "sonner");
@@ -46,8 +48,9 @@ public final class KitSourceValidator {
         BANNED.put(Pattern.compile("\\bwindow\\s*\\.\\s*(?:top|parent|opener)\\b"), "reaches another window");
     }
 
+    // `import` not inside a word and not right after a quote: t('import') is a string, not a statement.
     private static final Pattern IMPORT = Pattern.compile(
-            "(?:\\bimport\\b[^'\";]*?\\bfrom\\s*|\\bexport\\b[^'\";]*?\\bfrom\\s*|\\bimport\\s*|\\brequire\\s*\\(\\s*)['\"]([^'\"]+)['\"]");
+            "(?:(?<![\\w.$'\"`])import\\b[^'\";]*?\\bfrom\\s*|\\bexport\\b[^'\";]*?\\bfrom\\s*|(?<![\\w.$'\"`])import\\s*|\\brequire\\s*\\(\\s*)['\"]([^'\"]+)['\"]");
     private static final Pattern EXPORT_DECL = Pattern.compile(
             "\\bexport\\s+(?:declare\\s+)?(?:default\\s+)?(?:async\\s+)?(?:function\\s*\\*?|const|let|var|class|interface|type|enum|abstract\\s+class)\\s+([A-Za-z_$][\\w$]*)");
     private static final Pattern EXPORT_LIST = Pattern.compile("\\bexport\\s+(?:type\\s+)?\\{([^}]*)\\}");
@@ -78,7 +81,7 @@ public final class KitSourceValidator {
         Kind kind = kindOf(path, slots);
         if (kind == null) {
             problems.add(path + ": a kit may replace a component of its base set (" + String.join(", ", slotNames(slots))
-                    + ") or add a helper under src/shared/ui/kit/ (.tsx or .ts)");
+                    + ") or add a helper in a folder of its own under src/shared/ui/ (src/shared/ui/kit/…: .tsx, .ts or .css)");
             return problems;
         }
         if (content == null || content.isBlank()) {
@@ -87,6 +90,11 @@ public final class KitSourceValidator {
         }
         if (content.getBytes(StandardCharsets.UTF_8).length > MAX_FILE_BYTES) {
             problems.add(path + ": larger than " + MAX_FILE_BYTES / 1024 + " KB");
+        }
+        if (path.endsWith(".css")) {
+            // A stylesheet is spliced into nothing and runs nothing: it only must not reach out.
+            TokenValidator.cssProblems(content).forEach(p -> problems.add(path + ": " + p));
+            return problems;
         }
         String code = stripComments(content);
         for (Map.Entry<Pattern, String> banned : BANNED.entrySet()) {

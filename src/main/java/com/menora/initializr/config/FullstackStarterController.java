@@ -16,6 +16,9 @@ import com.menora.initializr.db.repository.ColorPaletteRepository;
 import com.menora.initializr.db.repository.EntityTemplateFileRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetDefaultDepRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetRepository;
+import com.menora.initializr.db.repository.FullstackExampleRepository;
+import com.menora.initializr.db.entity.FullstackExampleEntity;
+import com.menora.initializr.design.DesignKitException;
 import com.menora.initializr.extension.frontend.FrontendMustacheContext;
 import com.menora.initializr.extension.frontend.FrontendProjectDescription;
 import com.menora.initializr.extension.frontend.FrontendProjectGenerator;
@@ -77,8 +80,6 @@ public class FullstackStarterController {
 
     private static final String DEFAULT_BACKEND_SET = "spring-jpa-crud";
     private static final String DEFAULT_FRONTEND_SET = "react-tailwind-crud";
-    /** Standalone design-system dep reused by template sets tagged {@code MENORA_DIGITAL}. */
-    private static final String DESIGN_MENORA_DIGITAL_DEP = "design-menora-digital";
 
     private final ProjectGenerationInvoker<ProjectRequest> invoker;
     private final InitializrMetadataProvider metadataProvider;
@@ -95,6 +96,7 @@ public class FullstackStarterController {
     private final DepartmentResolver departmentResolver;
     private final DesignKitService designKits;
     private final KitWriter kitWriter;
+    private final FullstackExampleRepository examples;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                       InitializrMetadataProvider metadataProvider,
@@ -110,7 +112,8 @@ public class FullstackStarterController {
                                       DependencyConfigService configService,
                                       DepartmentResolver departmentResolver,
                                       DesignKitService designKits,
-                                      KitWriter kitWriter) {
+                                      KitWriter kitWriter,
+                                      FullstackExampleRepository examples) {
         this.invoker = invoker;
         this.metadataProvider = metadataProvider;
         this.optionsContext = optionsContext;
@@ -126,6 +129,7 @@ public class FullstackStarterController {
         this.departmentResolver = departmentResolver;
         this.designKits = designKits;
         this.kitWriter = kitWriter;
+        this.examples = examples;
     }
 
     @PostMapping("/starter-fullstack.zip")
@@ -165,6 +169,96 @@ public class FullstackStarterController {
     public ProjectPreviewController.PreviewResponse previewWithDraft(@RequestBody FullstackStarterRequest body,
                                                                      @RequestParam(defaultValue = "true") boolean assets) throws IOException {
         return previewOf(body, assets, true);
+    }
+
+    /** {@code POST /admin/design/try}: which kit to try ({@code key}, {@code key@N}, {@code key@draft}). */
+    public record TryRequest(String designKit) {
+    }
+
+    /** One example generated with the kit: whether it did, why not, and which of the kit's files it wrote. */
+    public record TryResult(String exampleId, String name, boolean layout, boolean ok, String error,
+                            int files, List<String> kitFiles, long millis) {
+    }
+
+    public record TryReport(String designKit, String baseSetKey, List<TryResult> results) {
+    }
+
+    /**
+     * The Design Studio's "try generate": every enabled example — with its layout and, when it has
+     * one, as the classic shell too — generated with the kit (a draft as well), in the kit's own
+     * language and direction. A failure is reported per example rather than thrown, so one run
+     * shows everything a kit breaks; the kit's component files are type-checked by the preview,
+     * not here.
+     */
+    @PostMapping("/admin/design/try")
+    public TryReport tryKit(@RequestBody TryRequest body) {
+        if (body == null || body.designKit() == null || body.designKit().isBlank()) {
+            throw new WizardArgumentException("designKit is required (key, key@version or key@draft)");
+        }
+        ResolvedKit kit = resolveKit(body.designKit(), true);
+        var defaults = kit.manifest() == null ? null : kit.manifest().defaults();
+        // The kit's own language and direction, as the generator switches them on when it is picked.
+        String locale = defaults == null ? null : defaults.locale();
+        boolean rtl = defaults != null && Boolean.TRUE.equals(defaults.rtl());
+        List<TryResult> results = new ArrayList<>();
+        for (FullstackExampleEntity example : examples.findByEnabledTrueOrderBySortOrderAscIdAsc()) {
+            boolean hasPages = example.getPages() != null && !example.getPages().isBlank() && !example.getPages().trim().equals("[]");
+            for (boolean layout : hasPages ? List.of(true, false) : List.of(false)) {
+                results.add(tryExample(example, layout, body.designKit().trim(), locale, rtl, kit));
+            }
+        }
+        return new TryReport(kit.key() + "@" + (kit.version() == null ? "draft" : kit.version()), kit.baseSetKey(), results);
+    }
+
+    private TryResult tryExample(FullstackExampleEntity example, boolean layout, String ref, String locale, boolean rtl, ResolvedKit kit) {
+        long start = System.nanoTime();
+        Path tempDir = null;
+        try {
+            Map<String, Object> settings = example.getSettings() == null || example.getSettings().isBlank()
+                    ? Map.of() : MODEL_MAPPER.readValue(example.getSettings(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            Map<String, Object> request = new LinkedHashMap<>();
+            request.put("artifactId", "try-" + example.getExampleId());
+            request.put("packageName", "com.menora.trykit");
+            request.put("bootVersion", metadataProvider.get().getBootVersions().getDefault().getId());
+            request.put("designKit", ref);
+            request.put("locale", locale != null ? locale : settings.getOrDefault("locale", "en"));
+            for (String key : List.of("dashboardTitle", "dashboardOverview", "colorPalette", "backendTemplateSet")) {
+                if (settings.get(key) != null) request.put(key, settings.get(key));
+            }
+            List<Object> scaffold = new ArrayList<>(settings.get("scaffold") instanceof List<?> l ? l : List.of());
+            if (rtl && !scaffold.contains("rtl")) scaffold.add("rtl");
+            request.put("opts", Map.of("scaffold", scaffold));
+            request.put("entities", MODEL_MAPPER.readTree(example.getEntities()));
+            if (layout) {
+                request.put("pages", MODEL_MAPPER.readTree(example.getPages()));
+                if (settings.get("nav") != null) request.put("nav", settings.get("nav"));
+            }
+            FullstackStarterRequest req = MODEL_MAPPER.convertValue(request, FullstackStarterRequest.class);
+            tempDir = Files.createTempDirectory("fullstack-try-");
+            buildArtifacts(req, tempDir, true);
+            Path frontend = tempDir.resolve("frontend");
+            List<String> written = kit.files().stream().map(ResolvedKit.File::path)
+                    .filter(p -> Files.exists(frontend.resolve(p))).toList();
+            int count;
+            try (Stream<Path> walk = Files.walk(tempDir)) {
+                count = (int) walk.filter(Files::isRegularFile).count();
+            }
+            return new TryResult(example.getExampleId(), example.getName(), layout, true, null, count, written, millisSince(start));
+        } catch (WizardArgumentException | DesignKitException | IllegalArgumentException e) {
+            return new TryResult(example.getExampleId(), example.getName(), layout, false, e.getMessage(), 0, List.of(), millisSince(start));
+        } catch (Exception e) {
+            log.warn("Trying kit {} on example {} failed", ref, example.getExampleId(), e);
+            return new TryResult(example.getExampleId(), example.getName(), layout, false,
+                    e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()), 0, List.of(), millisSince(start));
+        } finally {
+            if (tempDir != null) GeneratedProjectFiles.deleteLater(tempDir);
+            entityContext.clear();
+            optionsContext.clear();
+        }
+    }
+
+    private static long millisSince(long start) {
+        return (System.nanoTime() - start) / 1_000_000;
     }
 
     private ProjectPreviewController.PreviewResponse previewOf(FullstackStarterRequest body, boolean assets, boolean allowDraftKit) throws IOException {
@@ -236,7 +330,12 @@ public class FullstackStarterController {
         PageDefinition.Nav nav = FullstackPageValidator.validateNav(body.nav(), pages);
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         // A design kit restyles one frontend set: it picks the set, and naming another is a 400.
+        // A set that stands for a built-in kit (Menora Digital) is that kit on the kit's base set.
         ResolvedKit kit = resolveKit(body.designKit(), allowDraftKit);
+        if (kit == null) {
+            String alias = designKits.kitOfSet(body.frontendTemplateSet()).orElse(null);
+            if (alias != null) kit = resolveKit(alias, false);
+        }
         String frontendSetKey = kit == null ? orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET)
                 : kitSet(kit, body.frontendTemplateSet());
         // Without an explicit palette a kit's own default applies (else the catalog default).
@@ -479,14 +578,6 @@ public class FullstackStarterController {
                                 String locale, ResolvedKit kit, Path targetDir) throws IOException {
         // 1. Substrate — reuse the standalone frontend generator.
         FrontendProjectDescription desc = buildFrontendDescription(request, colorPaletteId);
-        if (set.getDesignSystem() == EntityTemplateSetEntity.DesignSystem.MENORA_DIGITAL) {
-            // The Menora Digital set builds on the standalone design-system dep: selecting it here
-            // lays down the tokens/component ports under src/shared/ui/menora/, the brand logo in
-            // public/, and the @fontsource/assistant npm dep — the overlay then re-skins the
-            // Tailwind theme/shell on top. (Its substrate index.css/App.tsx/HomePage are overwritten
-            // or deleted by the overlay exactly like the default set's.)
-            desc.getDependencies().add(DESIGN_MENORA_DIGITAL_DEP);
-        }
         frontendGenerator.renderInto(targetDir, desc);
         // The standalone landing page is replaced by the per-entity pages below.
         FileSystemUtils.deleteRecursively(targetDir.resolve("src/pages/home"));
@@ -544,6 +635,9 @@ public class FullstackStarterController {
         // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.
         putIfPresent(projectCtx, "dashboardTitle", dashboardTitle);
         putIfPresent(projectCtx, "dashboardOverview", dashboardOverview);
+        // The same as TS string literals, for the classic dashboard's props.
+        if (projectCtx.get("dashboardTitle") instanceof String title) projectCtx.put("dashboardTitleExpr", EntityScaffoldContext.tsString(title));
+        if (projectCtx.get("dashboardOverview") instanceof String lead) projectCtx.put("dashboardOverviewExpr", EntityScaffoldContext.tsString(lead));
         // Chrome-string language. The overlay's src/shared/i18n/strings.ts ships both tables and
         // picks one on `isHebrew`; `locale` is also the BCP-47 tag the generated app hands to Intl.
         // Frontend-only — the backend's ProblemDetail messages stay English.
@@ -578,8 +672,10 @@ public class FullstackStarterController {
         }
     }
 
-    private static String kitSet(ResolvedKit kit, String requestedSet) {
-        if (requestedSet != null && !requestedSet.isBlank() && !requestedSet.equals(kit.baseSetKey())) {
+    private String kitSet(ResolvedKit kit, String requestedSet) {
+        // A set standing for a built-in kit names that kit's base set (a kit cloned from it fits).
+        String named = designKits.kitOfSet(requestedSet).flatMap(designKits::baseSetOf).orElse(requestedSet);
+        if (named != null && !named.isBlank() && !named.equals(kit.baseSetKey())) {
             throw new WizardArgumentException("Design kit '" + kit.key() + "' styles the frontend set '"
                     + kit.baseSetKey() + "', not '" + requestedSet + "'");
         }
@@ -590,9 +686,8 @@ public class FullstackStarterController {
      * Builds the {@link FrontendProjectDescription} that drives substrate generation. The paired
      * backend is known from the same request, so dev {@code .env}/Vite-proxy wiring is enabled by
      * default. No frontend deps are defaulted here — the fullstack styling/tooling stack ships via the
-     * overlay and the {@code __common__} substrate, not via selectable frontend dependencies. The one
-     * exception is added by {@link #renderFrontend}: a set tagged {@code MENORA_DIGITAL} pulls in the
-     * standalone {@code design-menora-digital} dep so its tokens/components/logo are reused.
+     * overlay and the {@code __common__} substrate, not via selectable frontend dependencies (a
+     * design kit brings its own components, stylesheets and assets — see {@code KitWriter}).
      */
     private FrontendProjectDescription buildFrontendDescription(WebProjectRequest request, String colorPaletteId) {
         FrontendProjectDescription desc = new FrontendProjectDescription();

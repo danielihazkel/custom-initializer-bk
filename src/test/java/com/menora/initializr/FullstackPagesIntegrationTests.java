@@ -57,7 +57,7 @@ class FullstackPagesIntegrationTests {
         // gathers its pages where the group first appears), with their icons.
         String app = files.get(FE + "src/app/App.tsx");
         assertThat(app)
-                .contains("import { Inbox, LayoutDashboard, Menu, Moon, PanelLeft, Sun, Users } from 'lucide-react'")
+                .contains("import { Inbox, LayoutDashboard, PanelLeft, Users } from 'lucide-react'")
                 .contains("import { useRoute, type View } from '@app/route'")
                 .contains("import { OverviewScreen } from '@app/screens/OverviewScreen'")
                 .contains("import { QueueScreen } from '@app/screens/QueueScreen'")
@@ -98,7 +98,8 @@ class FullstackPagesIntegrationTests {
                 .contains("function useTabCounts(active: number): Record<string, number> {")
                 .contains("api.get<{ totalElements: number }>(`${c.path}?size=1${c.params ? '&' + c.params : ''}`)")
                 .contains("const counts = useTabCounts(active)")
-                .contains("{counts[tab.id] != null && (");
+                .contains("items={TABS.map(x => ({ ...x, count: counts[x.id] }))}");
+        assertThat(files.get(FE + "src/shared/ui/Tabs.tsx")).contains("{tab.count != null && (");
         // A preset list merges the route's filters over its own.
         assertThat(files.get(FE + "src/app/screens/TicketsOpenScreen.tsx"))
                 .contains("key={JSON.stringify(filters ?? {})}")
@@ -137,9 +138,9 @@ class FullstackPagesIntegrationTests {
         assertThat(queue)
                 .contains("import { TicketsOpenScreen } from './TicketsOpenScreen'")
                 .contains("{ id: 'tickets-in-progress', label: 'In progress' },")
-                .contains("aria-label={ 'Ticket queue' }")
+                .contains("ariaLabel={ 'Ticket queue' }")
                 // The tabs page's title heads it; the embedded lists drop their own heading.
-                .contains("<h1 className=\"text-2xl font-semibold tracking-tight text-fg\">{ 'Ticket queue' }</h1>")
+                .contains("<PageHeader title={ 'Ticket queue' } />")
                 .contains("{active === 2 && (")
                 .contains("<TicketsAllScreen embedded />")
                 .doesNotContain("onNavigate")
@@ -174,8 +175,7 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/pages/ticket/ui/TicketPage.tsx"))
                 .contains("export function TicketPage({ initialFilters, scope, onOpenRecord, title, description, embedded }: TicketPageProps = {}) {")
                 .contains("useState<FilterValues>(initialFilters ?? {})")
-                .contains("{!embedded && <h1 className=\"text-2xl font-semibold tracking-tight text-fg\">{title ?? 'Tickets'}</h1>}")
-                .contains("{description && <p className=\"mt-1 max-w-2xl text-sm text-muted\">{description}</p>}");
+                .contains("        title={embedded ? undefined : title ?? 'Tickets'}\n        description={description}\n");
         // An entity without relations takes neither filters nor a scope.
         assertThat(files.get(FE + "src/pages/team/ui/TeamPage.tsx"))
                 .contains("export function TeamPage({ onOpenRecord, title, description, embedded }: TeamPageProps = {}) {")
@@ -208,8 +208,8 @@ class FullstackPagesIntegrationTests {
         Map<String, String> files = generate(body);
 
         assertThat(files.get(FE + "src/app/App.tsx"))
-                .contains("import { LayoutDashboard, Menu, Moon, Sun, Table2 } from 'lucide-react'")
-                .contains("const go = (id: View) => {")
+                .contains("import { LayoutDashboard, Table2 } from 'lucide-react'")
+                .contains("const go = (id: string) => setView(id as View)")
                 .contains("{current?.label ?? t('dashboard')}")
                 .doesNotContain("goView")
                 .contains("import { DashboardPage } from '@pages/dashboard'")
@@ -352,34 +352,37 @@ class FullstackPagesIntegrationTests {
     @Test
     void fullstackEndpoint_menoraSetSkinsTabsPagesAndBorrowsTheRest() throws Exception {
         Map<String, String> tickets = generate(tabsOnlyTickets(exampleBody("tickets", "react-menora-digital-crud")));
+        // One tabs screen for both sets; the Menora PageHeader and Tabs are the SectionHeader and the
+        // Tabs port, which takes string labels, so the tab counts ride inside them.
         assertThat(tickets.get(FE + "src/app/screens/QueueScreen.tsx"))
-                .contains("import { SectionHeader, Tabs } from '@shared/ui/menora'")
-                .contains("{ id: 'tickets-open', label: 'Open', panelId: 'tickets-open-panel' },")
-                .contains("<SectionHeader title={ 'Ticket queue' } align=\"start\" />")
-                // The Menora Tabs port takes string labels, so the tab counts ride inside them.
+                .isEqualTo(generate(tabsOnlyTickets(exampleBody("tickets", "react-tailwind-crud"))).get(FE + "src/app/screens/QueueScreen.tsx"))
                 .contains("{ id: 'tickets-open', path: '/api/tickets', params: 'status=OPEN' },")
-                .contains("const items = TABS.map(x => counts[x.id] == null ? x : { ...x, label: `${x.label} (${counts[x.id]})` })")
-                .contains("<Tabs items={items} activeIndex={active} onChange={setActive} ariaLabel={ 'Ticket queue' } bare />")
+                .contains("<Tabs items={TABS.map(x => ({ ...x, count: counts[x.id] }))} active={active} onChange={setActive} ariaLabel={ 'Ticket queue' } />")
                 .contains("<TicketsOpenScreen embedded />");
+        assertThat(tickets.get(FE + "src/shared/ui/PageHeader.tsx")).contains("<SectionHeader title={title} align=\"start\" />");
+        assertThat(tickets.get(FE + "src/shared/ui/Tabs.tsx"))
+                .contains("label: x.count == null ? x.label : `${x.label} (${x.count})`, panelId: `${x.id}-panel`");
+        assertThat(tickets.get(FE + "src/shared/ui/ListHeader.tsx")).contains("{title && <SectionHeader title={title} align=\"start\" />}");
         assertThat(tickets.get(FE + "src/pages/ticket/ui/TicketPage.tsx"))
-                .contains("{!embedded && <SectionHeader title={title ?? 'Tickets'} align=\"start\" />}");
+                .contains("title={embedded ? undefined : title ?? 'Tickets'}");
         // Grouped nav: a group is a caret item opening a DropdownMenu of its pages' links.
-        assertThat(tickets.get(FE + "src/app/App.tsx"))
-                .contains("import { DropdownMenu, NavLinks, ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'")
+        assertThat(tickets.get(FE + "src/shared/ui/Shell.tsx"))
+                .contains("import { DropdownMenu, NavLinks, SearchField, ThemeToggle, Footer, useMenoraTheme } from '@shared/ui/menora'")
                 .contains("<nav className=\"mn mn-nav\" aria-label={t('main')}>")
                 .contains("groups={[{ items: section.items.map(({ id, label }) => ({ label, href: `#/${id}` })) }]}")
-                .contains("<NavLinks ariaLabel={section.label || t('main')} items={linksOf(section.items)} stacked />")
-                .doesNotContain("const navItems");
+                .contains("<NavLinks ariaLabel={section.label || t('main')} items={linksOf(section.items)} stacked />");
 
         Map<String, String> files = generate(exampleBody("orders", "react-menora-digital-crud"));
         assertThat(files.get(FE + "src/app/App.tsx"))
                 .contains("import { OrderScreen } from '@app/screens/OrderScreen'")
-                .contains("{ id: 'desk', label: 'Sales desk' },")
+                .contains("{ id: 'desk', label: 'Sales desk', icon: LayoutDashboard },")
                 .contains("const go = (id: View, arg?: string, query: Record<string, string> = {}) => {")
                 .contains("{view === 'order' && route.arg && <OrderScreen key={route.arg} recordId={route.arg} onNavigate={goView} />}")
                 .contains("{current?.label ?? RECORD_TITLES[view] ?? t('dashboard')}")
-                .contains("items.map(({ id, label }) => ({ label, href: `#/${id}`, current: view === id, onClick: () => go(id) }))")
-                .doesNotContain("DashboardPage");
+                .doesNotContain("DashboardPage")
+                .isEqualTo(generate(exampleBody("orders", "react-tailwind-crud")).get(FE + "src/app/App.tsx"));
+        assertThat(files.get(FE + "src/shared/ui/Shell.tsx"))
+                .contains("items.map(({ id, label }) => ({ label, href: `#/${id}`, current: current === id, onClick: () => go(id) }))");
         assertThat(files.get(FE + "src/app/screens/DeskScreen.tsx"))
                 .contains("<p className=\"mt-1 max-w-2xl text-sm text-muted\">{ 'Orders at a glance: volume, status mix and the latest orders.' }</p>")
                 .contains("path=\"/api/orders\"\n          onOpen={() => onNavigate('orders')}")
@@ -404,7 +407,7 @@ class FullstackPagesIntegrationTests {
         String app = files.get(FE + "src/app/App.tsx");
         assertThat(app)
                 .contains("import { OrderScreen } from '@app/screens/OrderScreen'")
-                .contains("import { LayoutDashboard, ListChecks, Menu, Moon, Package, ShoppingCart, Sun, Users, Wand2 } from 'lucide-react'")
+                .contains("import { LayoutDashboard, ListChecks, Package, ShoppingCart, Users, Wand2 } from 'lucide-react'")
                 .contains("{ id: 'customers', label: 'Customers', icon: Users },")
                 .contains("const RECORD_TITLES: Partial<Record<View, string>> = {\n  'order': 'Order',\n}")
                 .contains("const go = (id: View, arg?: string, query: Record<string, string> = {}) => {\n"
@@ -724,26 +727,25 @@ class FullstackPagesIntegrationTests {
     void fullstackEndpoint_rendersATopbarNav() throws Exception {
         Map<String, Object> body = exampleBody("orders", "react-tailwind-crud");
         body.put("nav", Map.of("style", "topbar", "collapsibleGroups", true));
-        String topbar = generate(body).get(FE + "src/app/App.tsx");
-        assertThat(topbar)
-                .contains("import { LayoutDashboard, ListChecks, Moon, Package, ShoppingCart, Sun, Users, Wand2 } from 'lucide-react'")
+        Map<String, String> topbarFiles = generate(body);
+        assertThat(topbarFiles.get(FE + "src/app/App.tsx"))
+                .contains("import { LayoutDashboard, ListChecks, Package, ShoppingCart, Users, Wand2 } from 'lucide-react'")
+                .contains("      navStyle=\"topbar\"\n      collapsibleGroups\n");
+        // The Shell draws all three layouts, so its bytes do not depend on the setting.
+        assertThat(topbarFiles.get(FE + "src/shared/ui/Shell.tsx"))
                 .contains("<nav className=\"flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto\" aria-label={t('navigation')}>")
-                .doesNotContain("setNavOpen")
-                .doesNotContain("const sidebar = (")
-                .doesNotContain("<details");
+                .contains("collapsibleGroups && section.label ? (\n            <details key={i} open className=\"space-y-0.5\">")
+                .contains("const [navOpen, setNavOpen] = useState(false)");
 
         // A sidebar with folding sections keeps the off-canvas menu and folds the labelled groups.
         body.put("nav", Map.of("collapsibleGroups", true));
         String folding = generate(body).get(FE + "src/app/App.tsx");
-        assertThat(folding)
-                .contains("import { LayoutDashboard, ListChecks, Menu, Moon, Package, ShoppingCart, Sun, Users, Wand2 } from 'lucide-react'")
-                .contains("<details key={i} open className=\"space-y-0.5\">")
-                .contains("const sidebar = (");
+        assertThat(folding).contains("      collapsibleGroups\n").doesNotContain("navStyle");
 
         // Absent (or the defaults spelled out), the shell is the one it always was.
         body.remove("nav");
         String plain = generate(body).get(FE + "src/app/App.tsx");
-        assertThat(plain).doesNotContain("<details").doesNotContain("t('navigation')").contains("const [navOpen, setNavOpen] = useState(false)");
+        assertThat(plain).doesNotContain("collapsibleGroups").doesNotContain("navStyle");
         body.put("nav", Map.of("style", "sidebar"));
         assertThat(generate(body).get(FE + "src/app/App.tsx")).isEqualTo(plain);
         assertThat(files(body).get(FE + "src/shared/i18n/strings.ts")).contains("navigation: 'Navigation',");
@@ -1273,7 +1275,7 @@ class FullstackPagesIntegrationTests {
                     .contains("const editRow = can('edit') ? openEdit : undefined")
                     .contains("          onEdit={editRow}\n          onDelete={deleteRow}\n")
                     .contains("selectable={can('bulk')}")
-                    .contains("{can('export') && ")
+                    .contains("onExport={ !can('export') ? undefined : () => download.run(() => exportCsv('orders.csv')) }")
                     .contains("const emptyAction = !can('new') ? undefined : { label:");
             // Every other entity's page keeps its bytes.
             assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx")).as(set)
@@ -1746,10 +1748,11 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/features/customer-form/ui/CustomerForm.tsx"))
                 .contains("export function CustomerForm({ value, onChange, errors, isNew }: Props) {")
                 .doesNotContain("show(");
-        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx")).contains("onClick={onCreate ?? openNew}");
+        assertThat(files.get(FE + "src/pages/order/ui/OrderPage.tsx")).contains("onCreate={ onCreate ?? openNew }");
         assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx"))
-                .contains("onClick={openNew}")
-                .doesNotContain("onCreate");
+                .contains("onCreate={ openNew }")
+                .doesNotContain("onCreate?:")
+                .doesNotContain("onCreate ??");
         assertThat(files.get(FE + "src/app/screens/OrdersScreen.tsx")).contains("onCreate={() => onNavigate('new-order')}");
         assertThat(files.get(FE + "src/app/App.tsx")).contains("{ id: 'new-order', label: 'New order', icon: Wand2 },");
         assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("stepXOfY: 'Step {x} of {y}',");
@@ -1914,22 +1917,25 @@ class FullstackPagesIntegrationTests {
         Map<String, String> files = generate(exampleBody("orders", "react-tailwind-crud"));
         String app = files.get(FE + "src/app/App.tsx");
         assertThat(app)
-                .contains("function PageNotice(")
+                .contains("import { PageNotice } from '@shared/ui/PageNotice'")
                 .contains("{route.notFound != null ? (")
                 .contains("hint={t('pageNotFoundHint', { x: route.notFound })}")
                 // The order record page sits under the orders list.
                 .contains("const RECORD_PARENTS: Partial<Record<View, View>> = {\n  'order': 'orders',\n}")
                 .contains("const crumb = parentId ? NAV.find(n => n.id === parentId) : undefined")
-                // A new page opens at its top.
-                .contains("  useEffect(() => {\n    mainRef.current?.scrollTo(0, 0)\n    window.scrollTo(0, 0)\n  }, [view])")
-                .contains("<main ref={mainRef} className=\"flex-1 overflow-auto bg-canvas\">");
+                .contains("      crumb={crumb}\n");
+        // A new page opens at its top.
+        assertThat(files.get(FE + "src/shared/ui/Shell.tsx"))
+                .contains("  useEffect(() => {\n    mainRef.current?.scrollTo(0, 0)\n    window.scrollTo(0, 0)\n  }, [current])")
+                .contains("<main ref={mainRef} className=\"flex-1 overflow-auto bg-canvas\">")
+                .contains("<nav aria-label={t('breadcrumb')}");
         assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("pageNotFound: 'Page not found',");
 
         Map<String, String> menora = generate(exampleBody("orders", "react-menora-digital-crud"));
-        assertThat(menora.get(FE + "src/app/App.tsx"))
-                .contains("import { useEffect, useRef, useState } from 'react'")
+        assertThat(menora.get(FE + "src/app/App.tsx")).isEqualTo(app);
+        assertThat(menora.get(FE + "src/shared/ui/Shell.tsx"))
+                .contains("import { useEffect, useRef, useState, type ReactNode } from 'react'")
                 .contains("<main ref={mainRef} className=\"flex-1 overflow-auto\">")
-                .contains("{route.notFound != null ? (")
                 .contains("<nav aria-label={t('breadcrumb')}");
     }
 

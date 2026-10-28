@@ -1,8 +1,8 @@
 {
   "key": "menora-digital",
   "name": "Menora Digital",
-  "description": "The Menora Mivtachim customer-site design system: purple identity, one yellow action per view, Assistant, Hebrew and right-to-left.",
-  "baseSet": "react-menora-digital-crud",
+  "description": "The Menora Mivtachim customer-site design system on the default app: purple identity, one yellow action per view, its own shell, list header, tables and drawers, Assistant, Hebrew and right-to-left.",
+  "baseSet": "react-tailwind-crud",
   "sortOrder": 20,
   "tokens": {
     "$schema": "menora-design-tokens/1",
@@ -45,5 +45,46 @@
     "defaults": { "locale": "he", "rtl": true }
   },
   "css": "kit.css",
-  "assets": []
+  "files": [
+    {"path": "src/shared/ui/Badge.tsx", "source": "templates/design-kits/menora-digital/components/Badge.tsx"},
+    {"path": "src/shared/ui/CardGrid.tsx", "source": "templates/design-kits/menora-digital/components/CardGrid.tsx"},
+    {"path": "src/shared/ui/ClassicDashboard.tsx", "source": "templates/design-kits/menora-digital/components/ClassicDashboard.tsx"},
+    {"path": "src/shared/ui/ConfirmDialog.tsx", "source": "templates/design-kits/menora-digital/components/ConfirmDialog.tsx"},
+    {"path": "src/shared/ui/DetailDrawer.tsx", "source": "templates/design-kits/menora-digital/components/DetailDrawer.tsx"},
+    {"path": "src/shared/ui/EmptyState.tsx", "source": "templates/design-kits/menora-digital/components/EmptyState.tsx"},
+    {"path": "src/shared/ui/FilterBar.tsx", "source": "templates/design-kits/menora-digital/components/FilterBar.tsx"},
+    {"path": "src/shared/ui/FormDrawer.tsx", "source": "templates/design-kits/menora-digital/components/FormDrawer.tsx"},
+    {"path": "src/shared/ui/ListHeader.tsx", "source": "templates/design-kits/menora-digital/components/ListHeader.tsx"},
+    {"path": "src/shared/ui/PageHeader.tsx", "source": "templates/design-kits/menora-digital/components/PageHeader.tsx"},
+    {"path": "src/shared/ui/SelectionBar.tsx", "source": "templates/design-kits/menora-digital/components/SelectionBar.tsx"},
+    {"path": "src/shared/ui/Shell.tsx", "source": "templates/design-kits/menora-digital/components/Shell.tsx"},
+    {"path": "src/shared/ui/Table.tsx", "source": "templates/design-kits/menora-digital/components/Table.tsx"},
+    {"path": "src/shared/ui/Tabs.tsx", "source": "templates/design-kits/menora-digital/components/Tabs.tsx"},
+    {"path": "src/shared/ui/links.tsx", "source": "templates/design-kits/menora-digital/components/links.tsx"},
+    {"path": "src/shared/ui/menora/tokens.css", "source": "static-configs/frontend/design-menora-digital/tokens.css"},
+    {"path": "src/shared/ui/menora/components.css", "source": "static-configs/frontend/design-menora-digital/components.css"},
+    {"path": "src/shared/ui/menora/Button.tsx", "source": "static-configs/frontend/design-menora-digital/Button.tsx"},
+    {"path": "src/shared/ui/menora/NavLinks.tsx", "source": "static-configs/frontend/design-menora-digital/NavLinks.tsx"},
+    {"path": "src/shared/ui/menora/ActionDisc.tsx", "source": "static-configs/frontend/design-menora-digital/ActionDisc.tsx"},
+    {"path": "src/shared/ui/menora/ServiceBubble.tsx", "source": "static-configs/frontend/design-menora-digital/ServiceBubble.tsx"},
+    {"path": "src/shared/ui/menora/MagazineCard.tsx", "source": "static-configs/frontend/design-menora-digital/MagazineCard.tsx"},
+    {"path": "src/shared/ui/menora/CarouselArrow.tsx", "source": "static-configs/frontend/design-menora-digital/CarouselArrow.tsx"},
+    {"path": "src/shared/ui/menora/ChatLauncher.tsx", "source": "static-configs/frontend/design-menora-digital/ChatLauncher.tsx"},
+    {"path": "src/shared/ui/menora/Hero.tsx", "source": "static-configs/frontend/design-menora-digital/Hero.tsx"},
+    {"path": "src/shared/ui/menora/useMenoraTheme.ts", "source": "static-configs/frontend/design-menora-digital/useMenoraTheme.ts"},
+    {"path": "src/shared/ui/menora/ThemeToggle.tsx", "source": "static-configs/frontend/design-menora-digital/ThemeToggle.tsx"},
+    {"path": "src/shared/ui/menora/SectionHeader.tsx", "source": "static-configs/frontend/design-menora-digital/SectionHeader.tsx"},
+    {"path": "src/shared/ui/menora/ActionPanel.tsx", "source": "static-configs/frontend/design-menora-digital/ActionPanel.tsx"},
+    {"path": "src/shared/ui/menora/Tabs.tsx", "source": "static-configs/frontend/design-menora-digital/Tabs.tsx"},
+    {"path": "src/shared/ui/menora/DropdownMenu.tsx", "source": "static-configs/frontend/design-menora-digital/DropdownMenu.tsx"},
+    {"path": "src/shared/ui/menora/SearchField.tsx", "source": "static-configs/frontend/design-menora-digital/SearchField.tsx"},
+    {"path": "src/shared/ui/menora/ExpertTip.tsx", "source": "static-configs/frontend/design-menora-digital/ExpertTip.tsx"},
+    {"path": "src/shared/ui/menora/Chip.tsx", "source": "static-configs/frontend/design-menora-digital/Chip.tsx"},
+    {"path": "src/shared/ui/menora/Footer.tsx", "source": "static-configs/frontend/design-menora-digital/Footer.tsx"},
+    {"path": "src/shared/ui/menora/Table.tsx", "source": "static-configs/frontend/design-menora-digital/Table.tsx"},
+    {"path": "src/shared/ui/menora/index.ts", "source": "static-configs/frontend/design-menora-digital/index.ts"}
+  ],
+  "assets": [
+    { "targetPath": "public/menora-mivtachim-logo.png", "role": "LOGO", "source": "static-configs/frontend/design-menora-digital/menora-mivtachim-logo.png" }
+  ]
 }

@@ -10,6 +10,8 @@ import { api } from '@shared/api'
 {{#tabsUseRangeParams}}
 import { rangeParams{{#tabsUseStatsQuery}}, statsQuery{{/tabsUseStatsQuery}} } from '@shared/ui/stats'
 {{/tabsUseRangeParams}}
+import { PageHeader } from '@shared/ui/PageHeader'
+import { Tabs } from '@shared/ui/Tabs'
 {{#tabs}}
 import { {{TargetName}}Screen } from './{{TargetName}}Screen'
 {{/tabs}}
@@ -31,7 +33,7 @@ const COUNTED = [
 ]
 
 /** One count per listed tab, fetched again whenever the open tab changes — an edit in the open
- *  tab may have moved rows between the others. A count that fails leaves its chip out. */
+ *  tab may have moved rows between the others. A count that fails leaves its tab bare. */
 function useTabCounts(active: number): Record<string, number> {
   const [counts, setCounts] = useState<Record<string, number>>({})
   useEffect(() => {
@@ -66,39 +68,8 @@ export function {{PageName}}Screen({ tab: openTab, onTabChange{{#needsNavigate}}
 {{/hasTabCounts}}
   return (
     <div>
-      <div className="px-4 pt-4 md:px-8 md:pt-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
-{{#hasPageDescription}}
-        <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
-{{/hasPageDescription}}
-      </div>
-      <div
-        role="tablist"
-        aria-label={ {{pageTitleExpr}} }
-        className="mt-4 flex gap-1 overflow-x-auto border-b border-border bg-surface px-4 md:px-8"
-      >
-        {TABS.map((tab, i) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            id={`${tab.id}-tab`}
-            aria-selected={active === i}
-            aria-controls={`${tab.id}-panel`}
-            onClick={() => setActive(i)}
-            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
-              active === i ? 'border-brand text-fg' : 'border-transparent text-muted hover:text-fg'
-            }`}
-          >
-            {tab.label}
-{{#hasTabCounts}}
-            {counts[tab.id] != null && (
-              <span className="ms-1.5 rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] tabular-nums text-muted">{counts[tab.id]}</span>
-            )}
-{{/hasTabCounts}}
-          </button>
-        ))}
-      </div>
+      <PageHeader title={ {{pageTitleExpr}} }{{#hasPageDescription}} description={ {{pageDescriptionExpr}} }{{/hasPageDescription}} />
+      <Tabs items={{#hasTabCounts}}{TABS.map(x => ({ ...x, count: counts[x.id] }))}{{/hasTabCounts}}{{^hasTabCounts}}{TABS}{{/hasTabCounts}} active={active} onChange={setActive} ariaLabel={ {{pageTitleExpr}} } />
 {{#tabs}}
       {active === {{tabIndex}} && (
         <div role="tabpanel" id="{{tabId}}-panel" aria-labelledby="{{tabId}}-tab">

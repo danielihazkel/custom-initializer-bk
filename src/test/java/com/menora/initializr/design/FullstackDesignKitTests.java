@@ -73,8 +73,9 @@ class FullstackDesignKitTests {
         assertBadRequest(Map.of("designKit", "no-such-kit"), "Unknown design kit 'no-such-kit'");
         assertBadRequest(Map.of("designKit", key + "@9"), "has no version 9");
         assertBadRequest(Map.of("designKit", key + "@draft"), "drafts can only be tried");
-        assertBadRequest(Map.of("designKit", key, "frontendTemplateSet", "react-menora-digital-crud"),
-                "styles the frontend set 'react-tailwind-crud', not 'react-menora-digital-crud'");
+        // (react-menora-digital-crud would fit: it stands for the menora-digital kit, on the same base set.)
+        assertBadRequest(Map.of("designKit", key, "frontendTemplateSet", "spring-jpa-crud"),
+                "styles the frontend set 'react-tailwind-crud', not 'spring-jpa-crud'");
         assertBadRequest(Map.of("designKit", "Bad Key"), "is not a design kit");
     }
 
