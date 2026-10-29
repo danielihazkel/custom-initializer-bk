@@ -72,12 +72,12 @@ export function Shell({ appName, sections, current, title, crumb, onNavigate, on
         aria-current={active ? 'page' : undefined}
         className={topbar
           ? `flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-3 text-sm transition-colors ${
-            active ? 'border-gold font-medium text-white' : 'border-transparent text-slate-300 hover:text-white'
+            active ? 'border-gold font-medium text-on-shell' : 'border-transparent text-on-shell-muted hover:text-on-shell'
           }`
           : `flex w-full items-center gap-3 rounded-lg border-s-2 px-3 py-2 text-sm transition-colors ${
             active
-              ? 'border-gold bg-ink-soft font-medium text-white'
-              : 'border-transparent text-slate-300 hover:bg-ink-soft hover:text-white'
+              ? 'border-gold bg-ink-soft font-medium text-on-shell'
+              : 'border-transparent text-on-shell-muted hover:bg-ink-soft hover:text-on-shell'
           }`}
       >
         <Icon className={`h-4 w-4 ${active ? 'text-gold' : ''}`} />
@@ -88,13 +88,13 @@ export function Shell({ appName, sections, current, title, crumb, onNavigate, on
 
   const sidebar = (
     <>
-      <div className="flex items-center gap-2.5 border-b border-white/10 px-5 py-5">
+      <div className="flex items-center gap-2.5 border-b border-on-shell/10 px-5 py-5">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white p-1.5 shadow-sm">
           <img src="/logo.png" alt={appName} className="h-full w-auto" />
         </div>
         <div className="leading-tight">
           <div className="font-semibold tracking-tight">{appName}</div>
-          <div className="text-[11px] uppercase tracking-wider text-slate-400">{t('admin')}</div>
+          <div className="text-[11px] uppercase tracking-wider text-on-shell-muted/80">{t('admin')}</div>
         </div>
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
@@ -102,20 +102,20 @@ export function Shell({ appName, sections, current, title, crumb, onNavigate, on
           // A labelled section folds; a run of ungrouped pages has nothing to fold under.
           collapsibleGroups && section.label ? (
             <details key={i} open className="space-y-0.5">
-              <summary className="cursor-pointer select-none px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</summary>
+              <summary className="cursor-pointer select-none px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-on-shell-muted/70">{section.label}</summary>
               {section.items.map(link)}
             </details>
           ) : (
             <div key={i} className="space-y-0.5">
               {section.label && (
-                <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</div>
+                <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-on-shell-muted/70">{section.label}</div>
               )}
               {section.items.map(link)}
             </div>
           ),
         )}
       </nav>
-      <div className="border-t border-white/10 px-5 py-3 text-[11px] text-white/70">
+      <div className="border-t border-on-shell/10 px-5 py-3 text-[11px] text-on-shell/70">
         v0.0.1
       </div>
     </>
@@ -126,7 +126,7 @@ export function Shell({ appName, sections, current, title, crumb, onNavigate, on
       {!topbar && (
         <>
           {/* Static sidebar (tablet and up) */}
-          <aside className="hidden w-64 flex-col bg-app-shell text-slate-100 md:flex">
+          <aside className="hidden w-64 flex-col bg-gradient-to-b from-shell from-75% to-shell-end text-on-shell md:flex">
             {sidebar}
           </aside>
 
@@ -139,7 +139,7 @@ export function Shell({ appName, sections, current, title, crumb, onNavigate, on
               onClick={() => setNavOpen(false)}
             />
             <aside
-              className={`absolute start-0 top-0 flex h-full w-64 flex-col bg-app-shell text-slate-100 shadow-2xl transition-transform duration-200 ease-out ${
+              className={`absolute start-0 top-0 flex h-full w-64 flex-col bg-gradient-to-b from-shell from-75% to-shell-end text-on-shell shadow-2xl transition-transform duration-200 ease-out ${
                 navOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full'
               }`}
             >
@@ -152,7 +152,7 @@ export function Shell({ appName, sections, current, title, crumb, onNavigate, on
       <div className="flex flex-1 flex-col overflow-hidden">
         {topbar && (
           // Top bar: the brand, then every nav section in a row that scrolls sideways on a phone.
-          <div className="bg-app-shell text-slate-100">
+          <div className="bg-gradient-to-b from-shell from-75% to-shell-end text-on-shell">
             <div className="flex items-center gap-4 px-4 md:px-8">
               <div className="flex shrink-0 items-center gap-2.5 py-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white p-1 shadow-sm">
@@ -164,7 +164,7 @@ export function Shell({ appName, sections, current, title, crumb, onNavigate, on
                 {sections.map((section, i) => (
                   <div key={i} className="flex items-stretch gap-1">
                     {section.label && (
-                      <span className="self-center whitespace-nowrap ps-2 pe-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</span>
+                      <span className="self-center whitespace-nowrap ps-2 pe-1 text-[10px] font-semibold uppercase tracking-wider text-on-shell-muted/70">{section.label}</span>
                     )}
                     {section.items.map(link)}
                   </div>

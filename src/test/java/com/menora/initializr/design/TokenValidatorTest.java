@@ -83,6 +83,22 @@ class TokenValidatorTest {
                 .contains("--color-success: var(--palette-accent, #16a34a);");
     }
 
+    @Test
+    void aKitKeepingTheBaseShellGetsTheShellTokensItLacks() {
+        DesignTokens older = new DesignTokens(DesignTokens.SCHEMA, List.of(
+                new DesignTokens.Token("color-brand", null, "#123456", null, "Brand"),
+                new DesignTokens.Token("color-on-shell", null, "#000000", null, "Shell")));
+        DesignTokens filled = TokenSchema.withShellDefaults(older, false);
+        assertThat(filled.tokens()).extracting(DesignTokens.Token::name)
+                .containsExactly("color-brand", "color-on-shell", "color-shell", "color-shell-end", "color-on-shell-muted");
+        // What the shell drew before the tokens existed: the brand → gold band.
+        assertThat(filled.tokens().get(2).value()).isEqualTo("var(--color-brand)");
+        assertThat(filled.tokens().get(3).value()).isEqualTo("var(--color-gold)");
+        assertThat(TokenSchema.withShellDefaults(older, true)).isSameAs(older);
+        // The built-in default kit names them all, so it gains nothing.
+        assertThat(TokenSchema.withShellDefaults(base.definition().tokens(), false)).isSameAs(base.definition().tokens());
+    }
+
     private static List<String> problems(String name, String value) {
         List<DesignTokens.Token> tokens = new ArrayList<>();
         for (TokenSchema.Required r : TokenSchema.REQUIRED) {

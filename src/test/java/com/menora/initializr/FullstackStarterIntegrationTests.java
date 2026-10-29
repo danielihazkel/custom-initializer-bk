@@ -1125,15 +1125,18 @@ class FullstackStarterIntegrationTests {
                 .contains("@theme")
                 .contains("--color-brand:")
                 .contains("#9A83F7")   // Menora purple (palette primary → brand)
-                .contains("#2B2F4C")   // fixed navy shell (ink)
-                .contains("#FEDB41");  // gold highlight (palette secondary)
+                .contains("#2B2F4C")   // navy ink (the classic dashboard's heading band)
+                .contains("#FEDB41")   // gold highlight (palette secondary)
+                // The shell band: brand fading to gold, through the shell tokens.
+                .containsPattern("--color-shell:\\s+var\\(--color-brand\\);")
+                .containsPattern("--color-shell-end:\\s+var\\(--color-gold\\);");
 
         // Components reference the brand tokens, not the old emerald defaults.
         String app = entries.get("shop/frontend/src/shared/ui/Shell.tsx");
-        assertThat(app).contains("bg-app-shell").contains("text-gold").contains("border-gold");
+        assertThat(app).contains("from-shell").contains("to-shell-end").contains("text-on-shell").contains("text-gold").contains("border-gold");
         assertThat(app).doesNotContain("emerald");
         // Primary actions use the semantic action tokens (aliased to brand + white text in this set).
-        assertThat(css).contains("--color-primary:").contains("--color-on-primary:   #ffffff");
+        assertThat(css).contains("--color-primary:").containsPattern("--color-on-primary:\\s+#ffffff");
         assertThat(entries.get("shop/frontend/src/shared/ui/ListHeader.tsx")).contains("bg-primary").contains("text-on-primary");
         assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("bg-primary");
         // The default set does not pull in the Menora Digital design-system dep.

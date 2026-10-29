@@ -30,7 +30,7 @@ public class DesignRuntimeFilter extends OncePerRequestFilter {
     /** The postMessage protocol the shipped runtime speaks; pinned against its
      *  runtime-manifest.json by {@code DesignRuntimeManifestTest}, and against the generator UI's
      *  host copy through the contract fixture. */
-    public static final int PROTOCOL_VERSION = 4;
+    public static final int PROTOCOL_VERSION = 5;
 
     public static final String CSP = String.join("; ",
             "default-src 'none'",

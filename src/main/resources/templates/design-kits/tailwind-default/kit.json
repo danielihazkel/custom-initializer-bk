@@ -1,7 +1,7 @@
 {
   "key": "tailwind-default",
   "name": "Menora default",
-  "description": "The default fullstack look: a navy sidebar with the selected palette's brand colour, Inter, light and dark.",
+  "description": "The default fullstack look: a shell band in the selected palette's brand colour, Inter, light and dark.",
   "baseSet": "react-tailwind-crud",
   "sortOrder": 10,
   "tokens": {
@@ -17,6 +17,10 @@
       { "name": "color-gold", "value": "{palette.secondary}", "group": "Brand" },
       { "name": "color-success", "value": "{palette.accent|#16a34a}", "group": "Brand" },
       { "name": "color-danger", "value": "{palette.error|#dc2626}", "group": "Brand" },
+      { "name": "color-shell", "value": "var(--color-brand)", "group": "Shell" },
+      { "name": "color-shell-end", "value": "var(--color-gold)", "group": "Shell" },
+      { "name": "color-on-shell", "value": "#ffffff", "group": "Shell" },
+      { "name": "color-on-shell-muted", "value": "#cbd5e1", "group": "Shell" },
       { "name": "color-canvas", "value": "#f6f7f9", "dark": "#0b1120", "group": "Neutral chrome" },
       { "name": "color-surface", "value": "#ffffff", "dark": "#111827", "group": "Neutral chrome" },
       { "name": "color-surface-2", "value": "#f1f5f9", "dark": "#1b2435", "group": "Neutral chrome" },

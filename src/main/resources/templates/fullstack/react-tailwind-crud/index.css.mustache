@@ -8,26 +8,31 @@
  * rounded-xl, shadow-card, font-sans, … — and the `.dark` block below re-points them for dark mode.
  */
 @theme {
-  --color-brand:        {{palette.primary}};
-  --color-brand-deep:   color-mix(in srgb, {{palette.primary}} 85%, black);
-  --color-primary:      {{palette.primary}};
-  --color-primary-deep: color-mix(in srgb, {{palette.primary}} 85%, black);
-  --color-on-primary:   #ffffff;
-  --color-ink:          #2B2F4C;
-  --color-ink-soft:     color-mix(in srgb, #2B2F4C 86%, white);
-  --color-gold:         {{palette.secondary}};
-  --color-success:      {{#hasPaletteAccent}}{{palette.accent}}{{/hasPaletteAccent}}{{^hasPaletteAccent}}#16a34a{{/hasPaletteAccent}};
-  --color-danger:       {{#hasPaletteError}}{{palette.error}}{{/hasPaletteError}}{{^hasPaletteError}}#dc2626{{/hasPaletteError}};
+  --color-brand:          {{palette.primary}};
+  --color-brand-deep:     color-mix(in srgb, {{palette.primary}} 85%, black);
+  --color-primary:        {{palette.primary}};
+  --color-primary-deep:   color-mix(in srgb, {{palette.primary}} 85%, black);
+  --color-on-primary:     #ffffff;
+  --color-ink:            #2B2F4C;
+  --color-ink-soft:       color-mix(in srgb, #2B2F4C 86%, white);
+  --color-gold:           {{palette.secondary}};
+  --color-success:        {{#hasPaletteAccent}}{{palette.accent}}{{/hasPaletteAccent}}{{^hasPaletteAccent}}#16a34a{{/hasPaletteAccent}};
+  --color-danger:         {{#hasPaletteError}}{{palette.error}}{{/hasPaletteError}}{{^hasPaletteError}}#dc2626{{/hasPaletteError}};
 
-  --color-canvas:       #f6f7f9;
-  --color-surface:      #ffffff;
-  --color-surface-2:    #f1f5f9;
-  --color-fg:           #0f172a;
-  --color-muted:        #64748b;
-  --color-border:       #e6e9ee;
-  --color-ring:         {{palette.primary}};
+  --color-shell:          var(--color-brand);
+  --color-shell-end:      var(--color-gold);
+  --color-on-shell:       #ffffff;
+  --color-on-shell-muted: #cbd5e1;
 
-  --font-sans:          'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --color-canvas:         #f6f7f9;
+  --color-surface:        #ffffff;
+  --color-surface-2:      #f1f5f9;
+  --color-fg:             #0f172a;
+  --color-muted:          #64748b;
+  --color-border:         #e6e9ee;
+  --color-ring:           {{palette.primary}};
+
+  --font-sans:            'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .dark {
@@ -37,18 +42,6 @@
   --color-fg:        #e8edf5;
   --color-muted:     #94a3b8;
   --color-border:    #243049;
-}
-
-/*
- * Menora signature gradient (purple → purple → gold), mirroring colors.ts
- * appBarGradient / sideBarGradient. Defined as plain utilities (not @theme tokens)
- * because Tailwind v4 only generates colour utilities from @theme colours.
- */
-.bg-app-shell {
-  background-image: linear-gradient(to bottom, var(--color-brand) 0%, var(--color-brand) 75%, var(--color-gold) 100%);
-}
-.bg-app-bar {
-  background-image: linear-gradient(to right, var(--color-brand) 0%, var(--color-brand) 75%, var(--color-gold) 100%);
 }
 
 html, body, #root {

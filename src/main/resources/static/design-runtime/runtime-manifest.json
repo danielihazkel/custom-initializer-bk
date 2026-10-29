@@ -1,7 +1,7 @@
 {
-  "protocolVersion": 4,
-  "buildHash": "52b2ab9a22d52c09",
-  "bytes": 1482738,
+  "protocolVersion": 5,
+  "buildHash": "0695e0813a435605",
+  "bytes": 1487228,
   "fonts": [
     "inter-latin-400-normal.woff2",
     "inter-latin-500-normal.woff2",

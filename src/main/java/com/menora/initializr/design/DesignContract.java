@@ -28,6 +28,8 @@ public final class DesignContract {
         Map<String, Object> tokens = new LinkedHashMap<>();
         tokens.put("schema", DesignTokens.SCHEMA);
         tokens.put("required", TokenSchema.REQUIRED);
+        // Painted by the base sets' own Shell, defaulted for a kit that keeps it and names none.
+        tokens.put("shell", TokenSchema.SHELL);
         tokens.put("namePattern", TokenSchema.NAME.pattern());
         tokens.put("types", TokenSchema.TYPES);
         tokens.put("paletteReferences", List.of("{palette.primary}", "{palette.secondary}",
@@ -58,6 +60,15 @@ public final class DesignContract {
         components.put("allowedImports", KitSourceValidator.PACKAGES);
         components.put("alsoAllowed", List.of("@shared/…", "relative paths inside src/shared"));
         components.put("refused", List.copyOf(KitSourceValidator.BANNED.values()));
+        // The same checks as patterns (Java regex syntax, which JavaScript reads too), so the
+        // Studio can flag a file while it is typed instead of only when it is saved.
+        components.put("refusedPatterns", KitSourceValidator.BANNED.entrySet().stream()
+                .map(e -> {
+                    Map<String, String> rule = new LinkedHashMap<>();
+                    rule.put("pattern", e.getKey().pattern());
+                    rule.put("message", e.getValue());
+                    return rule;
+                }).toList());
         components.put("slotExports", "exactly the exports of the file it replaces");
         components.put("maxFileBytes", KitSourceValidator.MAX_FILE_BYTES);
         components.put("maxFiles", KitSourceValidator.MAX_FILES);

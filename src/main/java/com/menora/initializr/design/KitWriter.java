@@ -34,7 +34,9 @@ public class KitWriter {
                 .filter(a -> "FONT".equals(a.role()))
                 .map(a -> service.fontFace(a.targetPath(), a.meta()))
                 .toList();
-        write(frontendDir.resolve("src/index.css"), KitCssWriter.write(kit.tokens(), kit.manifest(), faces, kit.css(), palette));
+        boolean ownShell = kit.files().stream().anyMatch(f -> "SLOT".equals(f.role()) && TokenSchema.SHELL_SLOT.equals(f.path()));
+        write(frontendDir.resolve("src/index.css"), KitCssWriter.write(
+                TokenSchema.withShellDefaults(kit.tokens(), ownShell), kit.manifest(), faces, kit.css(), palette));
 
         KitManifest.Fonts fonts = kit.manifest().fonts();
         if (fonts != null) {

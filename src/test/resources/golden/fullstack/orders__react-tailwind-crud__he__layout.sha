@@ -112,7 +112,7 @@ b65676a8a6ab93d7e2a2287776f8bbb2b752031888cd0b94569aea97348e6e0a  golden-orders/
 d67b395aa69171e5c365d70fe2407c543e4b0718bcd1a68b1cd75e1349cb19ba  golden-orders/frontend/src/features/product-form/model/validate.ts
 61e4a3715a97938e5667946a88b460fdb1aef47f5d4b2b4302a28e3effa68940  golden-orders/frontend/src/features/product-form/ui/ProductDetail.tsx
 f6ba9823b289a4b5b1aa8dcd43abb59b5bbf8ef86f24c65cde0f9388a9a99694  golden-orders/frontend/src/features/product-form/ui/ProductForm.tsx
-b790d61a9da1feab8aca5d33d880b630300a84c2f6f3131f87940820dd6b0dc8  golden-orders/frontend/src/index.css
+c572da93b2a7c19429f572076ffd6a17f5c93ae340756c192b9f12cf23eec722  golden-orders/frontend/src/index.css
 dd596a1459bf26fd044ea233a820404cb2a54f0a438f9dc97b8538b165f0ea3e  golden-orders/frontend/src/main.tsx
 f33251b158fd83b7be8ed5a2e445f5454031d1e765847b731eeba42d8c8c32bc  golden-orders/frontend/src/pages/README.md
 09ad0fb946d5d3aabbd970a92d7f3c7530c715e521f7ec16aa78b4f0b5917b81  golden-orders/frontend/src/pages/customer/index.ts
@@ -152,7 +152,7 @@ f0e6667af803bf5c68b42459937d78b6893addde6d465cad3c05e2768b1b2769  golden-orders/
 dd1fc0a250d6088bfd0b3910cd1602bd859f46b0175cdd5b118425823cae2617  golden-orders/frontend/src/shared/ui/RelationPicker.tsx
 04064535e18ef2ef9102f92cf4c19802e4dfa7b27a88aa29edc86a4e48e7549c  golden-orders/frontend/src/shared/ui/ScreenHeader.tsx
 363bb0f7ddfd39a3d302e16521306da90b66b97897d692c8b11a92ee4d3d52a5  golden-orders/frontend/src/shared/ui/SelectionBar.tsx
-edfb3c570a4f28b2302bf433e95b53454b69259adb8c377956168f844b8e8f82  golden-orders/frontend/src/shared/ui/Shell.tsx
+c0608d3ad7cdaa1a0b42ffdb39cc6127cf0999b737a77c10df1fe7bae9ec5b10  golden-orders/frontend/src/shared/ui/Shell.tsx
 a9fb00f2f5dad34d192b8f5fa2f155737eee9674224ab244c52dce8cad403037  golden-orders/frontend/src/shared/ui/Skeleton.tsx
 f3a2a37c21dbfca0baa4e604e674f05780460f3636d46857db73fce454ed45f6  golden-orders/frontend/src/shared/ui/Table.tsx
 8ae35916b7d1744df84298c41dfb41512479fe8635ebc96809fe735723d77653  golden-orders/frontend/src/shared/ui/index.ts

@@ -256,6 +256,33 @@ public class DesignSystemsTests {
     }
 
     @Test
+    void theShellIsPaintedWithItsOwnTokensWhichAKitMayLeaveOut() throws Exception {
+        // A blank kit names only the required tokens: the shell gets the colours it always had.
+        String key = "shell-" + SEQ.incrementAndGet();
+        service.create(new DesignKitService.CreateKit(key, "Shell", null, null, "react-tailwind-crud"), "test");
+        service.publish(key, "blank", "test");
+        Map<String, String> files = generate(Map.of("designKit", key));
+        assertThat(files.get("frontend/src/index.css"))
+                .contains("--color-shell:", "var(--color-brand);", "--color-shell-end:", "var(--color-gold);", "--color-on-shell-muted:");
+        assertThat(files.get("frontend/src/shared/ui/Shell.tsx")).contains("from-shell", "to-shell-end", "text-on-shell");
+
+        // A kit that sets one paints the shell with it.
+        String own = publishedClone("#0f766e");
+        service.openDraft(own, null, "test");
+        List<DesignTokens.Token> tokens = new java.util.ArrayList<>(service.draft(own).tokens().tokens());
+        tokens.replaceAll(t -> t.name().equals("color-shell") ? new DesignTokens.Token(t.name(), t.type(), "#123456", null, t.group()) : t);
+        service.saveDraft(own, new DesignKitService.SaveDraft(new DesignTokens(DesignTokens.SCHEMA, tokens), null, null, null));
+        service.publish(own, "shell", "test");
+        assertThat(generate(Map.of("designKit", own)).get("frontend/src/index.css")).containsPattern("--color-shell:\\s+#123456;");
+
+        // A kit with a Shell of its own paints it as it likes: no shell tokens are added for it.
+        service.openDraft(key, null, "test");
+        service.putComponentFile(key, TokenSchema.SHELL_SLOT, service.baseSource(key, TokenSchema.SHELL_SLOT).replace("from-shell", "from-brand"));
+        service.publish(key, "own shell", "test");
+        assertThat(generate(Map.of("designKit", key)).get("frontend/src/index.css")).doesNotContain("--color-shell");
+    }
+
+    @Test
     void aThumbnailPicturesTheKitButStaysOutOfTheApp() throws Exception {
         String key = publishedClone("#0f766e");
         service.openDraft(key, null, "test");
