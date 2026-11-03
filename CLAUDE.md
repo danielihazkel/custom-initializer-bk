@@ -47,7 +47,7 @@ When a project is generated, the framework spins up a child Spring application c
 
 - **`dynamicFileContributor`** (`ProjectContributor`) — for each selected dependency (plus the special `__common__` entry), writes/merges all associated `FileContributionEntity` records into the generated project
 - **`dynamicDeleteContributor`** (`ProjectContributor`, `@Order(LOWEST_PRECEDENCE)`) — runs after everything else to delete files registered with `DELETE` type (e.g. `application.properties` written by the framework). `DELETE` is handled **only** here, never in the write pass, and it applies the same `isGatedOut` sub-option/`javaVersion` gating and the same `resolveTargetPath` (`{{packagePath}}`) resolution as the write pass — the two share one predicate so they can't drift
-- **`dynamicBuildCustomizer`** (`BuildCustomizer<MavenBuild>`) — applies all `BuildCustomizationEntity` records (add dependency, exclude dependency, add repository). Like the file contributor, it skips a record whose `subOptionId` is set unless that sub-option was selected (`optionsContext.hasOption(depId, subOptionId)`) — e.g. `mapstruct`'s processor deps, or a database dep's secondary-datasource config, are added only with the matching sub-option
+- **`dynamicBuildCustomizer`** (`BuildCustomizer<MavenBuild>`) — applies all `BuildCustomizationEntity` records (add dependency, exclude dependency, add repository, import a BOM). Like the file contributor, it skips a record whose `subOptionId` is set unless that sub-option was selected (`optionsContext.hasOption(depId, subOptionId)`) — e.g. `mapstruct`'s processor deps, or a database dep's secondary-datasource config, are added only with the matching sub-option
 
 ### FileContributionEntity — File Types
 
@@ -74,6 +74,18 @@ default to null (= applies to every version):
 
 To add a Node version, seed a matching `Dockerfile-node<v>` row in `catalog/frontend/file-contributions.json`
 — a version with no matching row generates no Dockerfile. Both columns round-trip through admin export/import.
+
+### Local Vault connection (every backend)
+
+Every generated backend — `/starter.zip`, the wizard, each multi-module module and the fullstack `backend/` — can read its secrets from Vault on a developer's machine. It is all `__common__` catalog rows, so it reaches every path through `DynamicProjectGenerationConfiguration`:
+
+- **pom** — an `ADD_BOM` row imports `spring-cloud-dependencies` (`<spring-cloud.version>2023.0.3</spring-cloud.version>`, right for Boot 3.2.x; edit the row when a Boot 3.4/3.5 version is added), and an `EXCLUDE_DEPENDENCY` row adds `spring-cloud-starter-vault-config` (BOM-managed, no version) without `httpclient5`.
+- **`application.yaml`** — `templates/application-base.mustache` turns Vault off by default: `spring.cloud.vault.enabled: false` and `management.health.vault.enabled: false` (written into the base template, not a `YAML_MERGE` row, so the file keeps its comments).
+- **`src/main/resources/application-vault-local.yaml`** (`templates/vault/`) — the `vault-local` profile: Vault on, TOKEN auth, namespace `${VAULT_NAMESPACE:{{department}}/int-lan-01}`, `spring.config.import: vault://secretvars/{{artifactId}}`.
+- **`config/VaultLocalEnvironmentPostProcessor.java`** + **`META-INF/spring.factories`** registering it — activates `vault-local` when `VAULT_TOKEN` is in the environment or in a `.env` in the working directory (never under the `test` profile), ordered before config-data loading so the profile file is read.
+- **`.env`** (`static-configs/common/vault/.env`, `VAULT_TOKEN=`) at the project root, git-ignored by the `dynamicGitIgnoreCustomizer` bean — it adds a `Local secrets` section with `.env` whenever a selected, non-gated row targets `.env`, so deleting that row in admin drops the ignore entry too. The fullstack root `.gitignore` names `backend/.env` (never a bare `.env`, which would hide the frontend's committed `.env` files).
+
+**Upgraded DBs** keep their old `__common__` rows and `application-base` content until re-seeded or edited in admin. Pinned by `generatedProjectContainsLocalVaultConnection`, the fullstack/multi-module checks and `DataSeederTest`; built for real by `GeneratedBackendBuildSmokeTests`.
 
 ### Template Substitution
 
@@ -109,7 +121,7 @@ Runs at startup as a `SmartInitializingSingleton`. If all DB tables are empty it
 |----------|----------|-------|
 | `dependencies.json` | `seedDependencyCatalog()` | Groups + entries; `compatibilityRange`/`starter` are plain fields. FE entries carry no Maven coords; the three React-19-sensitive design systems (`design-mui`/`design-chakra`/`design-mantine`) set `compatibilityRange: "[18.0.0,19.0.0)"`. `design-menora-digital` (the Menora Mivtachim customer-site brand system, see *Menora Digital* below) is plain CSS and carries no range |
 | `file-contributions.json` | common + per-dep file contributions | Each row points at its content file via `contentResource` (a classpath path under `static-configs/*` or `templates/*`); the content itself stays in that file. Small inline strings (FSD barrels, layer READMEs, `.env` templates) use the `content` field instead. `DELETE` rows have no `contentResource`. An optional `javaVersion` (backend) or `nodeVersion` (frontend) field pins a row to one runtime version — see *Version Gating* above. `application.yaml` base keeps `sortOrder: -1`, the `application.properties` `DELETE` keeps `sortOrder: 9999` |
-| `build-customizations.json` | `seedBuildCustomizations()` / FE `feNpm`/`feVitePlugin`/`feNpmScript` | `type` = `ADD_DEPENDENCY` / `EXCLUDE_DEPENDENCY` / `ADD_REPOSITORY` (backend) or `ADD_NPM_DEPENDENCY` / `ADD_VITE_PLUGIN` / `ADD_NPM_SCRIPT` (frontend). FE rows reuse the Maven columns: npm dep = `mavenArtifactId` (package) + `version` (semver) + `scope` (`dev`/blank) + optional `subOptionId` gate; vite plugin = `mavenGroupId` (import path) + `mavenArtifactId` (binding) + `version` (call expr); npm script = `mavenArtifactId` (name) + `version` (command) |
+| `build-customizations.json` | `seedBuildCustomizations()` / FE `feNpm`/`feVitePlugin`/`feNpmScript` | `type` = `ADD_DEPENDENCY` / `EXCLUDE_DEPENDENCY` / `ADD_REPOSITORY` / `ADD_BOM` (backend; `ADD_BOM` = `mavenGroupId`/`mavenArtifactId`/`version`, imported into `<dependencyManagement>` with the version in a pom property named after the artifact — `spring-cloud-dependencies` → `spring-cloud.version`) or `ADD_NPM_DEPENDENCY` / `ADD_VITE_PLUGIN` / `ADD_NPM_SCRIPT` (frontend). FE rows reuse the Maven columns: npm dep = `mavenArtifactId` (package) + `version` (semver) + `scope` (`dev`/blank) + optional `subOptionId` gate; vite plugin = `mavenGroupId` (import path) + `mavenArtifactId` (binding) + `version` (call expr); npm script = `mavenArtifactId` (name) + `version` (command) |
 | `sub-options.json` | `seedSubOptions()` / FE `feSubOption` | |
 | `compatibility.json` | `seedCompatibilityRules()` / FE `feCompat` | one file per kind: `catalog/compatibility.json` (backend) and `catalog/frontend/compatibility.json` (FE) |
 

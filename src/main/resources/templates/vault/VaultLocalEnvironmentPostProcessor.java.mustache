@@ -1,0 +1,96 @@
+package {{packageName}}.config;
+
+import java.io.IOException;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+
+import org.apache.commons.logging.Log;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.config.ConfigDataEnvironmentPostProcessor;
+import org.springframework.boot.env.EnvironmentPostProcessor;
+import org.springframework.boot.logging.DeferredLogFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.util.StringUtils;
+
+/**
+ * Activates the {@code vault-local} profile when a {@code VAULT_TOKEN} is available, so secrets are loaded
+ * from Vault for local runs in any IDE. The token (and optional {@code VAULT_NAMESPACE}) is taken from the
+ * environment, or from a git-ignored {@code .env} file in the working directory. Never activates under the
+ * {@code test} profile. Runs before config data loading so that {@code application-vault-local.yaml} is picked up.
+ */
+public class VaultLocalEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
+
+    static final String PROFILE = "vault-local";
+    static final String ENV_FILE = ".env";
+    private static final String[] KEYS = {"VAULT_TOKEN", "VAULT_NAMESPACE"};
+
+    private final Log log;
+
+    public VaultLocalEnvironmentPostProcessor(DeferredLogFactory logFactory) {
+        this.log = logFactory.getLog(VaultLocalEnvironmentPostProcessor.class);
+    }
+
+    @Override
+    public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+        if (Arrays.asList(environment.getActiveProfiles()).contains("test")) {
+            log.info("Vault local: 'test' profile active, skipping '" + PROFILE + "' profile");
+            return;
+        }
+        boolean tokenFromEnvironment = StringUtils.hasText(environment.getProperty("VAULT_TOKEN"));
+        if (!tokenFromEnvironment) {
+            loadFromEnvFile(environment);
+        }
+        if (!StringUtils.hasText(environment.getProperty("VAULT_TOKEN"))) {
+            log.info("Vault local: VAULT_TOKEN not found in environment or " + ENV_FILE
+                    + ", '" + PROFILE + "' profile not activated");
+            return;
+        }
+        environment.addActiveProfile(PROFILE);
+        String namespace = environment.getProperty("VAULT_NAMESPACE");
+        log.info("Vault local: activated '" + PROFILE + "' profile (VAULT_TOKEN from "
+                + (tokenFromEnvironment ? "environment" : ENV_FILE + " file")
+                + ", VAULT_NAMESPACE=" + (StringUtils.hasText(namespace) ? namespace : "<not set, using default>") + ")");
+    }
+
+    private void loadFromEnvFile(ConfigurableEnvironment environment) {
+        Path file = Path.of(ENV_FILE);
+        if (!Files.isRegularFile(file)) {
+            log.info("Vault local: no " + ENV_FILE + " file found at " + file.toAbsolutePath());
+            return;
+        }
+        Properties props = new Properties();
+        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            props.load(reader);
+        } catch (IOException e) {
+            log.warn("Vault local: failed to read " + file.toAbsolutePath() + ": " + e.getMessage());
+            return;
+        }
+        Map<String, Object> values = new HashMap<>();
+        for (String key : KEYS) {
+            String value = props.getProperty(key);
+            if (StringUtils.hasText(value) && !StringUtils.hasText(environment.getProperty(key))) {
+                values.put(key, value.trim());
+            }
+        }
+        if (values.isEmpty()) {
+            log.info("Vault local: " + file.toAbsolutePath() + " found but no usable keys loaded (expected: "
+                    + String.join(", ", KEYS) + ")");
+            return;
+        }
+        environment.getPropertySources().addLast(new MapPropertySource("vaultLocalEnvFile", values));
+        log.info("Vault local: loaded " + values.keySet() + " from " + file.toAbsolutePath());
+    }
+
+    @Override
+    public int getOrder() {
+        return ConfigDataEnvironmentPostProcessor.ORDER - 1;
+    }
+}

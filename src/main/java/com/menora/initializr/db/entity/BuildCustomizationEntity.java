@@ -14,6 +14,9 @@ import org.hibernate.annotations.ColumnDefault;
  *   <li>BACKEND + ADD_DEPENDENCY: {@code mavenGroupId}, {@code mavenArtifactId}, {@code version}, {@code scope}.</li>
  *   <li>BACKEND + ADD_REPOSITORY: {@code repoId}, {@code repoName}, {@code repoUrl}, {@code snapshotsEnabled}.</li>
  *   <li>BACKEND + EXCLUDE_DEPENDENCY: {@code excludeFromGroupId/ArtifactId} + {@code mavenGroupId/ArtifactId}.</li>
+ *   <li>BACKEND + ADD_BOM: {@code mavenGroupId}, {@code mavenArtifactId}, {@code version} — imported into
+ *       {@code <dependencyManagement>} with its version held in a pom property named after the artifact
+ *       ({@code spring-cloud-dependencies} → {@code spring-cloud.version}).</li>
  *   <li>FRONTEND + ADD_NPM_DEPENDENCY: {@code mavenArtifactId} = npm package name,
  *       {@code version} = semver range, {@code scope} = "dev" (devDependencies) or empty (dependencies).</li>
  *   <li>FRONTEND + ADD_VITE_PLUGIN: {@code mavenGroupId} = import module path (e.g. "@vitejs/plugin-react"),
@@ -40,6 +43,7 @@ public class BuildCustomizationEntity {
         ADD_DEPENDENCY,
         ADD_REPOSITORY,
         EXCLUDE_DEPENDENCY,
+        ADD_BOM,
         ADD_NPM_DEPENDENCY,
         ADD_VITE_PLUGIN,
         ADD_NPM_SCRIPT
