@@ -188,6 +188,70 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void generatedProjectContainsLocalVaultConnection() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("web");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        try {
+            // pom: spring-cloud BOM imported through a version property, vault-config starter
+            // without its own version (BOM-managed) and with httpclient5 excluded.
+            String pom = Files.readString(projectDir.resolve("pom.xml")).replace("\r\n", "\n");
+            assertThat(pom).contains("<spring-cloud.version>2023.0.3</spring-cloud.version>");
+            assertThat(pom).containsPattern("(?s)<dependencyManagement>.*"
+                    + "<groupId>org\\.springframework\\.cloud</groupId>\\s*"
+                    + "<artifactId>spring-cloud-dependencies</artifactId>\\s*"
+                    + "<version>\\$\\{spring-cloud\\.version}</version>\\s*"
+                    + "<type>pom</type>\\s*<scope>import</scope>");
+            assertThat(pom).containsPattern("(?s)<artifactId>spring-cloud-starter-vault-config</artifactId>\\s*"
+                    + "<exclusions>\\s*<exclusion>\\s*"
+                    + "<groupId>org\\.apache\\.httpcomponents\\.client5</groupId>\\s*"
+                    + "<artifactId>httpclient5</artifactId>");
+
+            // .env at the root, git-ignored
+            assertThat(Files.readString(projectDir.resolve(".env"))).startsWith("VAULT_TOKEN=");
+            assertThat(Files.readAllLines(projectDir.resolve(".gitignore"))).contains(".env");
+
+            // vault-local profile, department + artifact substituted
+            String profile = Files.readString(projectDir.resolve("src/main/resources/application-vault-local.yaml"));
+            assertThat(profile)
+                    .contains("namespace: ${VAULT_NAMESPACE:lts/int-lan-01}")
+                    .contains("token: ${VAULT_TOKEN}")
+                    .contains("import: vault://secretvars/demo")
+                    .doesNotContain("{{");
+
+            // post-processor in the project's package, registered for Boot
+            String epp = Files.readString(projectDir.resolve(
+                    "src/main/java/com/menora/demo/config/VaultLocalEnvironmentPostProcessor.java"));
+            assertThat(epp).startsWith("package com.menora.demo.config;")
+                    .contains("class VaultLocalEnvironmentPostProcessor implements EnvironmentPostProcessor");
+            assertThat(Files.readString(projectDir.resolve("src/main/resources/META-INF/spring.factories"))
+                    .replace("\r\n", "\n"))
+                    .contains("org.springframework.boot.env.EnvironmentPostProcessor=\\\n"
+                            + "  com.menora.demo.config.VaultLocalEnvironmentPostProcessor");
+
+            // Vault is off by default, health indicator too
+            @SuppressWarnings("unchecked")
+            Map<String, Object> yaml = new org.yaml.snakeyaml.Yaml().load(
+                    Files.readString(projectDir.resolve("src/main/resources/application.yaml")));
+            assertThat(nested(yaml, "spring", "cloud", "vault", "enabled")).isEqualTo(false);
+            assertThat(nested(yaml, "management", "health", "vault", "enabled")).isEqualTo(false);
+        } finally {
+            invoker.cleanTempFiles(projectDir);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object nested(Map<String, Object> map, String... keys) {
+        Object cur = map;
+        for (String k : keys) {
+            if (!(cur instanceof Map)) return null;
+            cur = ((Map<String, Object>) cur).get(k);
+        }
+        return cur;
+    }
+
+    @Test
     void kafkaDependencyInjectsConfigFiles() throws Exception {
         WebProjectRequest request = createBaseRequest();
         request.getDependencies().add("kafka");

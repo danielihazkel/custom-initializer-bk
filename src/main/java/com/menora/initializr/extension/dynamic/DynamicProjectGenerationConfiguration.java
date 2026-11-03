@@ -21,7 +21,10 @@ import com.menora.initializr.sql.GeneratedJavaFile;
 import com.menora.initializr.sql.SqlDepOptions;
 import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
+import io.spring.initializr.generator.buildsystem.BillOfMaterials;
 import io.spring.initializr.generator.buildsystem.Dependency;
+import io.spring.initializr.generator.spring.scm.git.GitIgnoreCustomizer;
+import io.spring.initializr.generator.version.VersionProperty;
 import io.spring.initializr.generator.version.VersionReference;
 import io.spring.initializr.generator.buildsystem.DependencyScope;
 import io.spring.initializr.generator.buildsystem.MavenRepository;
@@ -196,6 +199,16 @@ public class DynamicProjectGenerationConfiguration {
                         }
                         build.repositories().add(bc.getRepoId(), repoBuilder.build());
                     }
+                    case ADD_BOM -> {
+                        // The version lives in a pom property (<spring-cloud.version>), the way
+                        // a hand-written pom imports a BOM, so a team can bump it in one place.
+                        String property = bomVersionProperty(bc.getMavenArtifactId());
+                        build.properties().version(VersionProperty.of(property), bc.getVersion());
+                        build.boms().add(bc.getMavenArtifactId(),
+                                BillOfMaterials.withCoordinates(bc.getMavenGroupId(), bc.getMavenArtifactId())
+                                        .version(VersionReference.ofProperty(property)));
+                    }
+                    default -> { /* FRONTEND types — applied by PackageJsonBuilder / ViteConfigBuilder */ }
                 }
             }
 
@@ -410,7 +423,38 @@ public class DynamicProjectGenerationConfiguration {
         };
     }
 
+    /**
+     * Git-ignores the project's {@code .env} when a file contribution writes one (the local
+     * Vault connection's {@code VAULT_TOKEN} file). Keyed off the selected rows rather than
+     * hard-coded, so removing the {@code .env} row in admin removes the ignore entry with it.
+     */
+    @Bean
+    GitIgnoreCustomizer dynamicGitIgnoreCustomizer(
+            ProjectDescription description,
+            SelectedFileContributions selectedFileContributions,
+            ProjectOptionsContext optionsContext) {
+        return gitIgnore -> {
+            boolean writesEnvFile = selectedFileContributions.rows().stream()
+                    .filter(fc -> fc.getFileType() != FileContributionEntity.FileType.DELETE)
+                    .filter(fc -> ENV_FILE.equals(fc.getTargetPath()))
+                    .anyMatch(fc -> !isGatedOut(fc, description, optionsContext));
+            if (writesEnvFile) {
+                gitIgnore.addSectionIfAbsent("Local secrets").add(ENV_FILE);
+            }
+        };
+    }
+
+    private static final String ENV_FILE = ".env";
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /** {@code spring-cloud-dependencies} → {@code spring-cloud.version}; {@code foo-bom} → {@code foo-bom.version}. */
+    static String bomVersionProperty(String artifactId) {
+        String base = artifactId.endsWith("-dependencies")
+                ? artifactId.substring(0, artifactId.length() - "-dependencies".length())
+                : artifactId;
+        return base + ".version";
+    }
 
     private Set<String> selectedDepIds(ProjectDescription description) {
         return description.getRequestedDependencies().keySet();

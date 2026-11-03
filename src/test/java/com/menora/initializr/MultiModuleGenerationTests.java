@@ -43,6 +43,9 @@ class MultiModuleGenerationTests {
 
         List<String> entries = entryNames(response.getBody());
         assertThat(entries).contains("myapp/pom.xml", "myapp/myapp-api/pom.xml", "myapp/myapp-core/pom.xml");
+        // Every module runs through __common__, so each carries the local Vault connection.
+        assertThat(entries).contains("myapp/myapp-api/.env", "myapp/myapp-core/.env",
+                "myapp/myapp-api/src/main/resources/application-vault-local.yaml");
     }
 
     @Test

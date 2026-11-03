@@ -13,5 +13,7 @@
   { "depId": "ldap-auth", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-aop", "sortOrder": 1 },
   { "depId": "ldap-auth-rest", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-aop", "sortOrder": 0 },
   { "depId": "__common__", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.apache.logging.log4j", "mavenArtifactId": "log4j-layout-template-json", "sortOrder": 5 },
+  { "depId": "__common__", "type": "ADD_BOM", "mavenGroupId": "org.springframework.cloud", "mavenArtifactId": "spring-cloud-dependencies", "version": "2023.0.3", "sortOrder": 6 },
+  { "depId": "__common__", "type": "EXCLUDE_DEPENDENCY", "excludeFromGroupId": "org.springframework.cloud", "excludeFromArtifactId": "spring-cloud-starter-vault-config", "mavenGroupId": "org.apache.httpcomponents.client5", "mavenArtifactId": "httpclient5", "sortOrder": 7 },
   { "depId": "logging", "type": "ADD_DEPENDENCY", "mavenGroupId": "org.apache.kafka", "mavenArtifactId": "kafka-clients", "sortOrder": 1 }
 ]

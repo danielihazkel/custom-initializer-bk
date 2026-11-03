@@ -585,7 +585,7 @@ public class FullstackStarterController {
     }
 
     private static final String ROOT_GITIGNORE =
-            "# Maven\nbackend/target/\n\n# Node\nfrontend/node_modules/\nfrontend/dist/\n\n# IDE\n.idea/\n.vscode/\n*.iml\n";
+            "# Maven\nbackend/target/\n\n# Local secrets (VAULT_TOKEN for the vault-local profile)\nbackend/.env\n\n# Node\nfrontend/node_modules/\nfrontend/dist/\n\n# IDE\n.idea/\n.vscode/\n*.iml\n";
 
     private static String orDefault(String v, String fallback) {
         return (v == null || v.isBlank()) ? fallback : v;
