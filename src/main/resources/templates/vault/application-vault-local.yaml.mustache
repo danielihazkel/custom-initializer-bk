@@ -1,0 +1,16 @@
+# Local-only: loaded automatically when the VAULT_TOKEN env var is set (see VaultLocalEnvironmentPostProcessor).
+# Optional: VAULT_NAMESPACE to choose the environment, e.g. {{department}}/qa-lan-01 (default {{department}}/int-lan-01).
+spring:
+  cloud:
+    vault:
+      enabled: true
+      uri: https://vault-k8s.menora.co.il
+      namespace: ${VAULT_NAMESPACE:{{department}}/int-lan-01}
+      authentication: TOKEN
+      token: ${VAULT_TOKEN}
+      fail-fast: true
+      kv:
+        enabled: true
+        backend-version: 3
+  config:
+    import: vault://secretvars/{{artifactId}}

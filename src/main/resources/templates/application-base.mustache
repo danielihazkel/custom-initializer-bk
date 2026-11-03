@@ -2,6 +2,15 @@
 spring:
   application:
     name: {{artifactId}}
+  cloud:
+    vault:
+      # Enabled only for local runs via the vault-local profile (see application-vault-local.yaml)
+      enabled: false
 
 server:
   port: ${PORT:8080}
+
+management:
+  health:
+    vault:
+      enabled: false

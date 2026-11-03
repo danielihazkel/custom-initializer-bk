@@ -171,10 +171,12 @@ class DataSeederTest {
         // Dockerfile-java17, Dockerfile-java21, Jenkinsfile, k8s/values.yaml,
         // + Menora JSON logging defaults: logFormat.json, detailedLogFormat.json, log4j2-spring.xml,
         // + DELETE application.properties, + DELETE mvnw / mvnw.cmd /
-        // .mvn/wrapper/maven-wrapper.properties (strip the framework's Maven wrapper).
+        // .mvn/wrapper/maven-wrapper.properties (strip the framework's Maven wrapper),
+        // + the local Vault connection: .env, application-vault-local.yaml,
+        // VaultLocalEnvironmentPostProcessor, META-INF/spring.factories.
         // (countByDependencyId would also count the FRONTEND __common__ rows, so scope to BACKEND.)
         assertThat(fileContribRepo.findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
-                java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND)).hasSize(16);
+                java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND)).hasSize(20);
     }
 
     @Test
@@ -222,11 +224,12 @@ class DataSeederTest {
     @Test
     void commonBuildCustomizationsSeeded() {
         // menora-release repo, menora-snapshot repo, exclude logging, add log4j2, add lombok,
-        // add log4j-layout-template-json (JSON logging is now a default)
+        // add log4j-layout-template-json (JSON logging is now a default),
+        // + the local Vault connection: spring-cloud BOM, vault-config starter (minus httpclient5)
         List<BuildCustomizationEntity> common = buildCustomRepo
                 .findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
                         java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND);
-        assertThat(common).hasSize(6);
+        assertThat(common).hasSize(8);
 
         assertThat(common).anySatisfy(c -> {
             assertThat(c.getCustomizationType())
