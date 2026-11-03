@@ -67,7 +67,7 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.keySet()).anyMatch(p -> p.equals("shop/.gitignore"));
         // The backend carries the local Vault connection; its .env stays out of git
         // (backend/.gitignore lists it, and the root names it without touching frontend/.env*).
-        assertThat(entries.get("shop/backend/.env")).startsWith("VAULT_TOKEN=");
+        assertThat(entries.get("shop/backend/.env")).contains("VAULT_TOKEN=").doesNotContain("{{");
         assertThat(entries.get("shop/backend/.gitignore")).contains(".env");
         assertThat(entries.get("shop/.gitignore")).contains("backend/.env").doesNotContain("\n.env");
         assertThat(entries).containsKey("shop/backend/src/main/resources/application-vault-local.yaml");
