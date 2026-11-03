@@ -208,8 +208,14 @@ class ProjectGenerationIntegrationTests {
                     + "<groupId>org\\.apache\\.httpcomponents\\.client5</groupId>\\s*"
                     + "<artifactId>httpclient5</artifactId>");
 
-            // .env at the root, git-ignored
-            assertThat(Files.readString(projectDir.resolve(".env"))).startsWith("VAULT_TOKEN=");
+            // .env at the root, git-ignored; its namespace hint follows the department
+            String env = Files.readString(projectDir.resolve(".env")).replace("\r\n", "\n");
+            assertThat(env)
+                    .startsWith("# Local-only, git-ignored. Do not commit.\n")
+                    .contains("\nVAULT_TOKEN=\n")
+                    .contains("(default: lts/int-lan-01)")
+                    .contains("\n#VAULT_NAMESPACE=lts/qa-lan-01")
+                    .doesNotContain("{{");
             assertThat(Files.readAllLines(projectDir.resolve(".gitignore"))).contains(".env");
 
             // vault-local profile, department + artifact substituted

@@ -8,7 +8,7 @@
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/Dockerfile-java21.mustache", "targetPath": "Dockerfile", "substitutionType": "MUSTACHE", "javaVersion": "21", "sortOrder": 6 },
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/Jenkinsfile.mustache", "targetPath": "k8s/Jenkinsfile", "substitutionType": "MUSTACHE", "sortOrder": 7 },
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/k8s-values.mustache", "targetPath": "k8s/values.yaml", "substitutionType": "MUSTACHE", "sortOrder": 8 },
-  { "depId": "__common__", "fileType": "STATIC_COPY", "contentResource": "static-configs/common/vault/.env", "targetPath": ".env", "substitutionType": "NONE", "sortOrder": 9 },
+  { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/vault/env.mustache", "targetPath": ".env", "substitutionType": "MUSTACHE", "sortOrder": 9 },
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/vault/application-vault-local.yaml.mustache", "targetPath": "src/main/resources/application-vault-local.yaml", "substitutionType": "MUSTACHE", "sortOrder": 10 },
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/vault/VaultLocalEnvironmentPostProcessor.java.mustache", "targetPath": "src/main/java/{{packagePath}}/config/VaultLocalEnvironmentPostProcessor.java", "substitutionType": "MUSTACHE", "sortOrder": 11 },
   { "depId": "__common__", "fileType": "TEMPLATE", "contentResource": "templates/vault/spring.factories.mustache", "targetPath": "src/main/resources/META-INF/spring.factories", "substitutionType": "MUSTACHE", "sortOrder": 12 },
