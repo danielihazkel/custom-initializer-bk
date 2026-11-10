@@ -20,6 +20,7 @@ import com.menora.initializr.fullstack.FullstackRenderer;
 import com.menora.initializr.fullstack.FullstackPageValidator;
 import com.menora.initializr.fullstack.FullstackRequestValidator;
 import com.menora.initializr.fullstack.PageDefinition;
+import com.menora.initializr.fullstack.ScaffoldOption;
 import com.menora.initializr.fullstack.FullstackStarterRequest;
 import io.spring.initializr.metadata.InitializrMetadata;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
@@ -462,26 +463,17 @@ public class FullstackStarterController {
         // Opt-in scaffolding flags must be set on the frontend context too — the per-entity FE
         // templates gate audit columns / inverse-collection counts on these. The backend config
         // sets its own copy; the two render paths do not share a context.
-        projectCtx.put("optScaffoldTests", optionsContext.hasOption("scaffold", "tests"));
-        projectCtx.put("optScaffoldAudit", optionsContext.hasOption("scaffold", "audit"));
-        projectCtx.put("optScaffoldSoftDelete", optionsContext.hasOption("scaffold", "softDelete"));
-        projectCtx.put("optScaffoldInverse", optionsContext.hasOption("scaffold", "inverseCollections"));
+        ScaffoldOption.putFlags(projectCtx, optionsContext, ScaffoldOption.Side.FRONTEND);
         // CSV export button + bulk-delete selection UI. Mirrors the backend config — the FE per-entity
         // page gates the Export button on optScaffoldCsvExport and the row checkboxes on the per-entity
         // bulkDeleteApplicable (derived in EntityScaffoldContext from optScaffoldBulkDelete).
-        projectCtx.put("optScaffoldCsvExport", optionsContext.hasOption("scaffold", "csvExport"));
-        projectCtx.put("optScaffoldCsvImport", optionsContext.hasOption("scaffold", "csvImport"));
         EntityScaffoldContext.putCsvImport(projectCtx, entities);
-        projectCtx.put("optScaffoldBulkDelete", optionsContext.hasOption("scaffold", "bulkDelete"));
         // Bulk field-edit selection UI. Like bulkDelete, narrowed per entity in EntityScaffoldContext
         // (bulkUpdateApplicable) to writable, single-PK entities that have ≥1 editable non-PK field.
-        projectCtx.put("optScaffoldBulkUpdate", optionsContext.hasOption("scaffold", "bulkUpdate"));
         // The record's version rides along in the DTO; the page turns a stale 409 into the
         // conflict dialog. Mirrors the backend config.
-        projectCtx.put("optScaffoldOptimisticLocking", optionsContext.hasOption("scaffold", "optimisticLocking"));
         EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
         // Table cells edited in place (frontend only — saved through the existing PUT).
-        projectCtx.put("optScaffoldInlineEdit", optionsContext.hasOption("scaffold", "inlineEdit"));
         EntityScaffoldContext.putInlineEdit(projectCtx, entities);
         // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.
         putIfPresent(projectCtx, "dashboardTitle", dashboardTitle);
@@ -594,7 +586,7 @@ public class FullstackStarterController {
     }
 
     /** Supported chrome-string languages of the generated frontend (see {@code i18n-strings.ts.mustache}). */
-    private static final Set<String> SUPPORTED_LOCALES = Set.of("en", "he");
+    private static final Set<String> SUPPORTED_LOCALES = Set.copyOf(com.menora.initializr.fullstack.FullstackSchema.LOCALES);
 
     /** Blank → {@code en}; anything outside {@link #SUPPORTED_LOCALES} is a 400, never a silent fallback. */
     private static String resolveLocale(String raw) {

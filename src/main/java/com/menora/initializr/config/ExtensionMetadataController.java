@@ -255,6 +255,17 @@ public class ExtensionMetadataController {
         return new ImportDdlResponse(toWire(result.entities()), result.note());
     }
 
+    /**
+     * What a fullstack request may say — field types, page types, widget kinds, limits, name rules,
+     * reserved names, scaffold options — read from the constants the validators enforce. The
+     * editor derives its own lists from this document; see
+     * {@link com.menora.initializr.fullstack.FullstackSchema}.
+     */
+    @GetMapping("/metadata/fullstack/schema")
+    public Map<String, Object> fullstackSchema() {
+        return com.menora.initializr.fullstack.FullstackSchema.document();
+    }
+
     private static List<EntityWire> toWire(List<EntityDefinition> defs) {
         List<EntityWire> wire = new ArrayList<>(defs.size());
         for (EntityDefinition d : defs) {

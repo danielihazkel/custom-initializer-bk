@@ -445,6 +445,49 @@ class FullstackRequestValidatorTest {
     }
 
     @Test
+    void rejects_unknownProjectScaffoldOption() {
+        var note = entity("Note", List.of(pk()));
+        // A misspelt option used to be ignored: the project came out without soft delete, silently.
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(
+                reqWithScaffold(List.of("audit", "softdelete"), List.of(note))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("Unknown scaffold option 'softdelete' in opts.scaffold[1]")
+                .hasMessageContaining("softDelete");
+        // Every option the registry lists is accepted, the frontend-only ones included.
+        assertThat(FullstackRequestValidator.validateAndConvert(
+                reqWithScaffold(ScaffoldOption.keys(), List.of(note)))).hasSize(1);
+    }
+
+    @Test
+    void scaffoldOptionsReachTheRenderPathThatReadsThem() {
+        java.util.function.Function<ScaffoldOption.Side, List<String>> read = side ->
+                java.util.Arrays.stream(ScaffoldOption.values())
+                        .filter(o -> o.flag() != null && o.readBy(side)).map(ScaffoldOption::key).sorted().toList();
+        // The backend templates never read inlineEdit; the frontend ones never read the
+        // backend-only options. (rtl is no template flag at all.)
+        assertThat(read.apply(ScaffoldOption.Side.BACKEND)).containsExactly(
+                "audit", "bulkDelete", "bulkUpdate", "csvExport", "csvImport", "inverseCollections",
+                "openapi", "optimisticLocking", "secured", "seedData", "softDelete", "tests");
+        assertThat(read.apply(ScaffoldOption.Side.FRONTEND)).containsExactly(
+                "audit", "bulkDelete", "bulkUpdate", "csvExport", "csvImport", "inlineEdit",
+                "inverseCollections", "optimisticLocking", "softDelete", "tests");
+    }
+
+    @Test
+    void namesAreAsciiIdentifiers() {
+        // Java would take these; file names, URLs and column names derived from them would not travel.
+        for (String name : List.of("לקוח", "Kundeß", "Café")) {
+            assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                    entity(name, List.of(pk()))))))
+                    .as(name)
+                    .isInstanceOf(WizardArgumentException.class)
+                    .hasMessageContaining("is not a valid identifier");
+        }
+        assertThat(FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Order_2$", List.of(pk(), field("unit_price", "BigDecimal"))))))).hasSize(1);
+    }
+
+    @Test
     void rejects_entityNamedLikeATypeTheGeneratedCodeUses() {
         for (String name : List.of("Page", "List", "Entity", "Table", "String", "page", "Dashboard", "State", "Me")) {
             assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(

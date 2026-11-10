@@ -37,20 +37,7 @@ public final class EntityScaffoldContext {
      * to. Ordered so error messages list them deterministically. Options that are inherently
      * project-wide (openapi, secured, inverseCollections, seedData, rtl) are deliberately absent.
      */
-    public static final Map<String, String> SCAFFOLD_OPT_FLAGS;
-    static {
-        Map<String, String> m = new LinkedHashMap<>();
-        m.put("audit", "optScaffoldAudit");
-        m.put("softDelete", "optScaffoldSoftDelete");
-        m.put("csvExport", "optScaffoldCsvExport");
-        m.put("bulkDelete", "optScaffoldBulkDelete");
-        m.put("bulkUpdate", "optScaffoldBulkUpdate");
-        m.put("tests", "optScaffoldTests");
-        m.put("csvImport", "optScaffoldCsvImport");
-        m.put("optimisticLocking", "optScaffoldOptimisticLocking");
-        m.put("inlineEdit", "optScaffoldInlineEdit");
-        SCAFFOLD_OPT_FLAGS = java.util.Collections.unmodifiableMap(m);
-    }
+    public static final Map<String, String> SCAFFOLD_OPT_FLAGS = ScaffoldOption.perEntityFlags();
 
     private EntityScaffoldContext() {}
 

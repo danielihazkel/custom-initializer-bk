@@ -853,7 +853,7 @@ public final class FullstackPageValidator {
         return String.join(",", ids);
     }
 
-    private static final Set<String> PRESET_PERIODS = Set.of("7d", "30d", "90d", "ytd", "12m");
+    static final Set<String> PRESET_PERIODS = Set.of("7d", "30d", "90d", "ytd", "12m");
 
     /** The wire id of a period preset ({@code last:30d} → {@code 30d}, {@code ytd}), or null for anything else. */
     private static String presetPeriod(String value) {

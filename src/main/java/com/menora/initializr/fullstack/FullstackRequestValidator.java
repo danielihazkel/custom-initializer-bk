@@ -45,6 +45,7 @@ public final class FullstackRequestValidator {
         if (raw == null || raw.isEmpty()) {
             throw new WizardArgumentException("At least one entity is required");
         }
+        checkScaffoldOptions(body);
 
         // Relations reference other entities, so collect everything first (pass 1: names + fields)
         // and resolve/validate relations once all entity names are known (pass 2).
@@ -316,6 +317,23 @@ public final class FullstackRequestValidator {
         return result;
     }
 
+    /**
+     * The project's {@code opts.scaffold} names must be options the generator has. They used to be
+     * read by name and anything else ignored, so a misspelt {@code softdelete} generated a project
+     * without soft delete and said nothing.
+     */
+    private static void checkScaffoldOptions(FullstackStarterRequest body) {
+        List<String> scaffold = body.opts() == null ? null : body.opts().get("scaffold");
+        if (scaffold == null) return;
+        for (int i = 0; i < scaffold.size(); i++) {
+            String key = scaffold.get(i);
+            if (key == null || !ScaffoldOption.isKnown(key)) {
+                throw new WizardArgumentException("Unknown scaffold option '" + key + "' in opts.scaffold[" + i
+                        + "] (known: " + String.join(", ", ScaffoldOption.keys()) + ")");
+            }
+        }
+    }
+
     /** Whether a scaffold option is on for an entity: its own override, else the project's. */
     private static boolean scaffoldOn(String key, EntityDefinition entity, FullstackStarterRequest body) {
         Boolean override = entity.opts() == null ? null : entity.opts().get(key);
@@ -456,7 +474,7 @@ public final class FullstackRequestValidator {
 
     static final int MAX_TRANSITIONS = 20;
     static final int MAX_TRANSITION_LABEL = 40;
-    private static final java.util.regex.Pattern TRANSITION_NAME = java.util.regex.Pattern.compile("^[a-z][A-Za-z0-9]{0,39}$");
+    static final java.util.regex.Pattern TRANSITION_NAME = java.util.regex.Pattern.compile("^[a-z][A-Za-z0-9]{0,39}$");
     /** The roles a transition may be limited to: the ldap-auth {@code Constants}. */
     static final List<String> WORKFLOW_ROLES = List.of("ADMIN", "USER");
 
@@ -820,12 +838,16 @@ public final class FullstackRequestValidator {
         }
     }
 
+    /**
+     * The names a model may use: ASCII Java identifiers. Java itself allows any Unicode letter,
+     * but these names become file names, URL segments, table and column names and JSON keys, and
+     * the editor has always held them to ASCII — one rule on both sides (a label carries the
+     * display text, in any script).
+     */
+    static final String IDENTIFIER_RULE = "^[A-Za-z_$][A-Za-z0-9_$]*$";
+    private static final Pattern IDENTIFIER = Pattern.compile(IDENTIFIER_RULE);
+
     static boolean isValidJavaIdentifier(String s) {
-        if (s == null || s.isEmpty()) return false;
-        if (!Character.isJavaIdentifierStart(s.charAt(0))) return false;
-        for (int i = 1; i < s.length(); i++) {
-            if (!Character.isJavaIdentifierPart(s.charAt(i))) return false;
-        }
-        return true;
+        return s != null && IDENTIFIER.matcher(s).matches();
     }
 }

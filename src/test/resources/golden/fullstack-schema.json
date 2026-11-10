@@ -1,0 +1,590 @@
+{
+  "version" : 1,
+  "names" : {
+    "identifier" : "^[A-Za-z_$][A-Za-z0-9_$]*$",
+    "reservedKeywords" : [
+      "abstract",
+      "assert",
+      "boolean",
+      "break",
+      "byte",
+      "case",
+      "catch",
+      "char",
+      "class",
+      "const",
+      "continue",
+      "default",
+      "do",
+      "double",
+      "else",
+      "enum",
+      "extends",
+      "false",
+      "final",
+      "finally",
+      "float",
+      "for",
+      "goto",
+      "if",
+      "implements",
+      "import",
+      "instanceof",
+      "int",
+      "interface",
+      "long",
+      "native",
+      "new",
+      "null",
+      "package",
+      "permits",
+      "private",
+      "protected",
+      "public",
+      "record",
+      "return",
+      "sealed",
+      "short",
+      "static",
+      "strictfp",
+      "super",
+      "switch",
+      "synchronized",
+      "this",
+      "throw",
+      "throws",
+      "transient",
+      "true",
+      "try",
+      "var",
+      "void",
+      "volatile",
+      "while",
+      "yield"
+    ],
+    "reservedEntityNames" : [
+      "alert",
+      "allargsconstructor",
+      "apierror",
+      "arraylist",
+      "arrowupright",
+      "auditingentitylistener",
+      "autowired",
+      "bigdecimal",
+      "boardlane",
+      "boardview",
+      "boolean",
+      "bulkfieldkind",
+      "card",
+      "chevronright",
+      "column",
+      "commandlinerunner",
+      "component",
+      "conditionalonproperty",
+      "createddate",
+      "criteriaquery",
+      "csvimport",
+      "currentuser",
+      "dashboard",
+      "data",
+      "decimalmax",
+      "decimalmin",
+      "demodataloader",
+      "detail",
+      "detaildrawer",
+      "download",
+      "email",
+      "emptystate",
+      "entity",
+      "entitylisteners",
+      "entitymanager",
+      "entityname",
+      "enumerated",
+      "enumtype",
+      "exception",
+      "expression",
+      "fetchtype",
+      "field",
+      "filterdescriptor",
+      "filters",
+      "filtervalues",
+      "formdrawer",
+      "formula",
+      "generatedvalue",
+      "generationtype",
+      "hibernatecriteriabuilder",
+      "id",
+      "idclass",
+      "illegalargumentexception",
+      "immutable",
+      "importerror",
+      "inlinecell",
+      "inlinekind",
+      "instant",
+      "integer",
+      "joincolumn",
+      "jpa",
+      "jparepository",
+      "jpaspecificationexecutor",
+      "kpitile",
+      "lanestate",
+      "lastmodifieddate",
+      "ldap",
+      "list",
+      "listaction",
+      "listcolumn",
+      "localdate",
+      "localdatetime",
+      "locale",
+      "logger",
+      "loggerfactory",
+      "long",
+      "manytoone",
+      "math",
+      "max",
+      "me",
+      "memo",
+      "min",
+      "mockito",
+      "mockmvc",
+      "modifying",
+      "noargsconstructor",
+      "notnull",
+      "number",
+      "object",
+      "objectoptimisticlockingfailureexception",
+      "onetomany",
+      "override",
+      "page",
+      "pageable",
+      "pageimpl",
+      "pageof",
+      "pageparams",
+      "pagerequest",
+      "param",
+      "path",
+      "pattern",
+      "permission",
+      "predicate",
+      "props",
+      "query",
+      "queue",
+      "reactnode",
+      "resource",
+      "resourceconflictexception",
+      "resourcenotfoundexception",
+      "rest",
+      "resultgroup",
+      "results",
+      "root",
+      "row",
+      "schedulemode",
+      "scheduleview",
+      "search",
+      "sectionheader",
+      "selection",
+      "service",
+      "size",
+      "sortspec",
+      "specification",
+      "sqldelete",
+      "sqlrestriction",
+      "stalenotice",
+      "state",
+      "statsbucket",
+      "string",
+      "stringbuilder",
+      "subselect",
+      "table",
+      "temporalaccessor",
+      "transactional",
+      "trash2",
+      "tuple",
+      "uuid",
+      "version",
+      "webmvctest",
+      "workflowexception"
+    ],
+    "generatedClassSuffixes" : [
+      "Dto",
+      "Service",
+      "Controller",
+      "Repository",
+      "Id"
+    ],
+    "sqlName" : "[A-Za-z_$#@][A-Za-z0-9_$#@]{0,127}|\"[A-Za-z0-9_$#@ .-]{1,128}\"|`[A-Za-z0-9_$#@ .-]{1,128}`|\\[[A-Za-z0-9_$#@ .-]{1,128}]",
+    "pageId" : "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+    "transitionName" : "^[a-z][A-Za-z0-9]{0,39}$"
+  },
+  "fieldTypes" : [
+    {
+      "type" : "STRING",
+      "tsType" : "string",
+      "aliases" : [ ]
+    },
+    {
+      "type" : "TEXT",
+      "tsType" : "string",
+      "aliases" : [
+        "LONGTEXT",
+        "CLOB"
+      ]
+    },
+    {
+      "type" : "LONG",
+      "tsType" : "number",
+      "aliases" : [ ]
+    },
+    {
+      "type" : "INTEGER",
+      "tsType" : "number",
+      "aliases" : [
+        "INT"
+      ]
+    },
+    {
+      "type" : "BOOLEAN",
+      "tsType" : "boolean",
+      "aliases" : [
+        "BOOL"
+      ]
+    },
+    {
+      "type" : "LOCAL_DATE",
+      "tsType" : "string",
+      "aliases" : [
+        "DATE"
+      ]
+    },
+    {
+      "type" : "LOCAL_DATE_TIME",
+      "tsType" : "string",
+      "aliases" : [
+        "DATETIME",
+        "TIMESTAMP"
+      ]
+    },
+    {
+      "type" : "BIG_DECIMAL",
+      "tsType" : "number",
+      "aliases" : [
+        "DECIMAL",
+        "NUMERIC"
+      ]
+    },
+    {
+      "type" : "UUID",
+      "tsType" : "string",
+      "aliases" : [
+        "GUID"
+      ]
+    },
+    {
+      "type" : "ENUM",
+      "tsType" : "string",
+      "aliases" : [ ]
+    }
+  ],
+  "relationTypes" : [
+    "MANY_TO_ONE"
+  ],
+  "scaffoldOptions" : [
+    {
+      "key" : "audit",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "softDelete",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "csvExport",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "bulkDelete",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "bulkUpdate",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "tests",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "csvImport",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "optimisticLocking",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "inlineEdit",
+      "perEntity" : true,
+      "backend" : false,
+      "frontend" : true
+    },
+    {
+      "key" : "inverseCollections",
+      "perEntity" : false,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "openapi",
+      "perEntity" : false,
+      "backend" : true,
+      "frontend" : false
+    },
+    {
+      "key" : "secured",
+      "perEntity" : false,
+      "backend" : true,
+      "frontend" : false
+    },
+    {
+      "key" : "seedData",
+      "perEntity" : false,
+      "backend" : true,
+      "frontend" : false
+    },
+    {
+      "key" : "rtl",
+      "perEntity" : false,
+      "backend" : false,
+      "frontend" : false
+    }
+  ],
+  "locales" : [
+    "en",
+    "he"
+  ],
+  "roles" : [
+    "ADMIN",
+    "USER"
+  ],
+  "listViews" : [
+    "table",
+    "cards",
+    "kanban",
+    "calendar"
+  ],
+  "pageTypes" : [
+    "entity-list",
+    "dashboard",
+    "tabs",
+    "master-detail",
+    "record",
+    "report",
+    "wizard",
+    "calendar",
+    "board",
+    "content",
+    "import",
+    "search",
+    "form",
+    "inbox"
+  ],
+  "widgetKinds" : [
+    "kpi",
+    "bar",
+    "line",
+    "recent",
+    "top",
+    "progress",
+    "donut",
+    "stacked",
+    "text",
+    "links",
+    "list",
+    "pivot",
+    "activity"
+  ],
+  "aggregates" : [
+    "count",
+    "sum",
+    "avg",
+    "min",
+    "max"
+  ],
+  "buckets" : [
+    "day",
+    "month",
+    "year"
+  ],
+  "dateRanges" : [
+    "all",
+    "7d",
+    "30d",
+    "90d",
+    "ytd",
+    "12m"
+  ],
+  "chartKinds" : [
+    {
+      "kind" : "bar",
+      "overGroups" : true,
+      "overTime" : false
+    },
+    {
+      "kind" : "donut",
+      "overGroups" : true,
+      "overTime" : false
+    },
+    {
+      "kind" : "stacked",
+      "overGroups" : true,
+      "overTime" : false
+    },
+    {
+      "kind" : "line",
+      "overGroups" : false,
+      "overTime" : true
+    },
+    {
+      "kind" : "area",
+      "overGroups" : false,
+      "overTime" : true
+    },
+    {
+      "kind" : "table",
+      "overGroups" : true,
+      "overTime" : true
+    }
+  ],
+  "calendarModes" : [
+    "month",
+    "week",
+    "agenda",
+    "timeline"
+  ],
+  "navStyles" : [
+    "sidebar",
+    "topbar"
+  ],
+  "listDetails" : [
+    "drawer",
+    "side",
+    "record"
+  ],
+  "listActions" : [
+    "new",
+    "edit",
+    "delete",
+    "export",
+    "import",
+    "bulk"
+  ],
+  "inboxQueues" : [
+    "mine",
+    "unassigned",
+    "open"
+  ],
+  "navIcons" : [
+    "BarChart3",
+    "Building2",
+    "Calendar",
+    "Columns3",
+    "FilePlus",
+    "FileText",
+    "Inbox",
+    "Layers",
+    "LayoutDashboard",
+    "ListChecks",
+    "Package",
+    "PanelLeft",
+    "Search",
+    "Settings",
+    "ShoppingCart",
+    "Star",
+    "Table2",
+    "Tag",
+    "Ticket",
+    "Truck",
+    "Upload",
+    "Users",
+    "Wallet",
+    "Wand2"
+  ],
+  "choices" : {
+    "listPageSizes" : [
+      10,
+      20,
+      50,
+      100
+    ],
+    "refreshSeconds" : [
+      30,
+      60,
+      300,
+      900
+    ],
+    "laneSizes" : [
+      10,
+      20,
+      50
+    ],
+    "presetPeriods" : [
+      "12m",
+      "30d",
+      "7d",
+      "90d",
+      "ytd"
+    ]
+  },
+  "limits" : {
+    "maxPages" : 30,
+    "maxTitle" : 80,
+    "maxDescription" : 300,
+    "maxGroup" : 40,
+    "maxWidgets" : 24,
+    "maxSpan" : 4,
+    "maxText" : 2000,
+    "maxLinks" : 8,
+    "defaultListLimit" : 10,
+    "maxRecentLimit" : 20,
+    "defaultRecentLimit" : 5,
+    "defaultActivityLimit" : 10,
+    "minActivityLimit" : 5,
+    "maxActivityEntities" : 6,
+    "maxDashboardFilters" : 4,
+    "minTabs" : 2,
+    "maxTabs" : 6,
+    "maxCharts" : 4,
+    "maxSteps" : 8,
+    "defaultStepSize" : 4,
+    "maxHeaderStats" : 4,
+    "maxBody" : 8000,
+    "defaultLaneSize" : 20,
+    "maxCardFields" : 4,
+    "maxWipLimit" : 999,
+    "maxSearchEntities" : 8,
+    "minPerEntity" : 3,
+    "maxPerEntity" : 10,
+    "defaultPerEntity" : 5,
+    "maxFormSections" : 6,
+    "maxSectionTitle" : 60,
+    "maxEnumLabel" : 80,
+    "maxTransitions" : 20,
+    "maxTransitionLabel" : 40
+  }
+}

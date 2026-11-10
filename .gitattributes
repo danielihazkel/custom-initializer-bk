@@ -1,2 +1,3 @@
-# Golden hash manifests are compared byte for byte; keep them LF on every checkout.
+# Golden hash manifests and documents are compared byte for byte; keep them LF on every checkout.
 *.sha text eol=lf
+src/test/resources/golden/*.json text eol=lf

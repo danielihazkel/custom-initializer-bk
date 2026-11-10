@@ -60,16 +60,29 @@ public enum FieldType {
             if (t.name().equals(key)) return t;
             if (t.javaType.equalsIgnoreCase(raw.trim())) return t;
         }
-        // Convenience aliases
-        return switch (key) {
-            case "INT" -> INTEGER;
-            case "BOOL" -> BOOLEAN;
-            case "DATE" -> LOCAL_DATE;
-            case "DATETIME", "TIMESTAMP" -> LOCAL_DATE_TIME;
-            case "DECIMAL", "NUMERIC" -> BIG_DECIMAL;
-            case "LONGTEXT", "CLOB" -> TEXT;
-            case "GUID" -> UUID;
-            default -> throw new IllegalArgumentException("Unknown field type: " + raw);
-        };
+        FieldType alias = ALIASES.get(key);
+        if (alias == null) throw new IllegalArgumentException("Unknown field type: " + raw);
+        return alias;
+    }
+
+    /**
+     * Convenience spellings {@link #forWireString} takes besides a type's own name and its Java
+     * type, upper-cased — the SQL-ish names people type and paste. Served to the editor with the
+     * schema, so its quick-add accepts the same ones.
+     */
+    public static final java.util.Map<String, FieldType> ALIASES;
+    static {
+        java.util.Map<String, FieldType> m = new java.util.LinkedHashMap<>();
+        m.put("INT", INTEGER);
+        m.put("BOOL", BOOLEAN);
+        m.put("DATE", LOCAL_DATE);
+        m.put("DATETIME", LOCAL_DATE_TIME);
+        m.put("TIMESTAMP", LOCAL_DATE_TIME);
+        m.put("DECIMAL", BIG_DECIMAL);
+        m.put("NUMERIC", BIG_DECIMAL);
+        m.put("LONGTEXT", TEXT);
+        m.put("CLOB", TEXT);
+        m.put("GUID", UUID);
+        ALIASES = java.util.Collections.unmodifiableMap(m);
     }
 }

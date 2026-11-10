@@ -10,6 +10,7 @@ import com.menora.initializr.db.repository.EntityTemplateSetRepository;
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
 import com.menora.initializr.fullstack.FullstackRenderer;
+import com.menora.initializr.fullstack.ScaffoldOption;
 import com.menora.initializr.sql.SqlNames;
 import io.spring.initializr.generator.project.ProjectDescription;
 import io.spring.initializr.generator.project.ProjectGenerationConfiguration;
@@ -90,39 +91,30 @@ public class FullstackProjectGenerationConfiguration {
             // gatedBy flag on a template file toggles whether it is rendered. Uses spring-boot-
             // starter-test, which the Initializr framework adds to every generated project.
             departmentResolver.putVars(projectCtx, optionsContext.department());
-            projectCtx.put("optScaffoldTests", optionsContext.hasOption("scaffold", "tests"));
-            projectCtx.put("optScaffoldAudit", optionsContext.hasOption("scaffold", "audit"));
-            projectCtx.put("optScaffoldSoftDelete", optionsContext.hasOption("scaffold", "softDelete"));
-            projectCtx.put("optScaffoldInverse", optionsContext.hasOption("scaffold", "inverseCollections"));
+            // Every opt the backend templates read, from the one registry (ScaffoldOption).
+            ScaffoldOption.putFlags(projectCtx, optionsContext, ScaffoldOption.Side.BACKEND);
             // Springdoc annotations (@Tag/@Operation). The `openapi` dep is force-added in
             // FullstackStarterController when this opt is set, so the swagger imports resolve.
-            projectCtx.put("optScaffoldOpenApi", optionsContext.hasOption("scaffold", "openapi"));
             // Per-endpoint @RequiresPermission. The security.* classes only exist when an
             // ldap-auth variant (direct bind or REST) is on the build, so the flag requires one —
             // otherwise the imports wouldn't resolve.
             // With an ldap-auth variant the backend also answers /api/me/roles (page roles in the UI).
             projectCtx.put("hasLdapAuth", description.getRequestedDependencies().containsKey("ldap-auth")
                     || description.getRequestedDependencies().containsKey("ldap-auth-rest"));
-            projectCtx.put("optScaffoldSecured",
-                    optionsContext.hasOption("scaffold", "secured")
+            projectCtx.put(ScaffoldOption.SECURED.flag(),
+                    optionsContext.hasOption("scaffold", ScaffoldOption.SECURED.key())
                             && (description.getRequestedDependencies().containsKey("ldap-auth")
                                     || description.getRequestedDependencies().containsKey("ldap-auth-rest")));
             // CSV export endpoint + per-entity bulk-delete endpoint. Neither needs an extra
             // dependency (plain Spring Web + Spring Data). bulkDelete is further narrowed per entity
             // to writable, single-PK entities in EntityScaffoldContext (bulkDeleteApplicable).
-            projectCtx.put("optScaffoldCsvExport", optionsContext.hasOption("scaffold", "csvExport"));
-            projectCtx.put("optScaffoldCsvImport", optionsContext.hasOption("scaffold", "csvImport"));
-            projectCtx.put("optScaffoldBulkDelete", optionsContext.hasOption("scaffold", "bulkDelete"));
             // Bulk field-edit endpoint. Narrowed per entity in EntityScaffoldContext (bulkUpdateApplicable)
             // to writable, single-PK entities with ≥1 editable non-PK field. No extra dependency.
-            projectCtx.put("optScaffoldBulkUpdate", optionsContext.hasOption("scaffold", "bulkUpdate"));
             // @Version + a 409 for a stale update. Narrowed per entity (lockingApplicable);
             // hasOptimisticLocking gates the shared stale-update handler.
-            projectCtx.put("optScaffoldOptimisticLocking", optionsContext.hasOption("scaffold", "optimisticLocking"));
             EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
             // Demo rows on first start (config/DemoDataLoader, a CommandLineRunner). Backend-only;
             // the seeding order/expressions come from EntityScaffoldContext (seedEntities/seedExpr).
-            projectCtx.put("optScaffoldSeedData", optionsContext.hasOption("scaffold", "seedData"));
             // Boot 3.4 deprecated @MockBean in favour of Spring Framework 6.2's @MockitoBean and
             // Boot 4 removes it — pick the annotation the generated slice test uses by platform version.
             projectCtx.put("useMockitoBean", usesMockitoBean(description.getPlatformVersion()));
