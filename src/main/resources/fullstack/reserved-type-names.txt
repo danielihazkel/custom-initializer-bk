@@ -12,6 +12,7 @@ AllArgsConstructor
 ApiError
 ArrayList
 ArrowUpRight
+AttachmentField
 AuditingEntityListener
 Autowired
 BoardLane
@@ -149,6 +150,7 @@ State
 Dashboard
 
 # a class the project already has, whose bean name the entity's would take
+Attachment
 CurrentUser
 Ldap
 Me

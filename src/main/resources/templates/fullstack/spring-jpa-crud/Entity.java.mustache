@@ -53,7 +53,12 @@ import org.hibernate.annotations.Formula;
     @Formula("(select t.{{targetLabelColumn}} from {{targetTableRef}} t where t.{{targetPkColumn}} = {{joinColumn}})")
     private String {{fieldName}}Label;
 
-{{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}    @CreatedDate
+{{/hasTargetLabel}}{{/relations}}{{#attachmentFields}}    /** Name of the file in {{name}}, read by the database on load — the attachment itself is fetched
+     *  only when someone opens it. */
+    @org.hibernate.annotations.Formula("(select a.file_name from app_attachment a where a.id = {{column}})")
+    private String {{nameField}};
+
+{{/attachmentFields}}{{#auditApplicable}}    @CreatedDate
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
 
@@ -103,7 +108,11 @@ import org.hibernate.annotations.Formula;
         return {{fieldName}}Label;
     }
 
-{{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}    public Instant getCreatedAt() {
+{{/hasTargetLabel}}{{/relations}}{{#attachmentFields}}    public String get{{NameField}}() {
+        return {{nameField}};
+    }
+
+{{/attachmentFields}}{{#auditApplicable}}    public Instant getCreatedAt() {
         return createdAt;
     }
 

@@ -9,7 +9,9 @@ export const {{enumTypeName}}Options: { value: {{enumTypeName}}; label: string }
 
 export interface {{EntityName}} {
 {{#fields}}  {{name}}{{^isRequired}}?{{/isRequired}}: {{#isEnum}}{{enumTypeName}}{{/isEnum}}{{^isEnum}}{{tsType}}{{/isEnum}} | null
-{{/fields}}{{#relations}}  {{fkFieldName}}{{^required}}?{{/required}}: {{targetPkTsType}} | null
+{{#isAttachment}}  /** Read-only name of the file in {{name}} (which holds its id), set by the API. */
+  {{nameField}}?: string | null
+{{/isAttachment}}{{/fields}}{{#relations}}  {{fkFieldName}}{{^required}}?{{/required}}: {{targetPkTsType}} | null
 {{#hasTargetLabel}}  /** Read-only display label of the referenced {{targetEntity}} ({{targetLabelField}}), set by the API. */
   {{fieldName}}Label?: string | null
 {{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}  createdAt?: string | null

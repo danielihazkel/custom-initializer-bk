@@ -39,10 +39,14 @@ public class {{EntityName}}Service {
 {{#usesEntityManager}}    private final EntityManager entityManager;
 {{/usesEntityManager}}{{#importValidates}}    private final jakarta.validation.Validator validator;
 {{/importValidates}}{{#workflowUsesRoles}}    private final CurrentUser currentUser;
-{{/workflowUsesRoles}}
+{{/workflowUsesRoles}}{{#hasAttachmentFields}}    private final {{packageName}}.attachment.AttachmentStorage attachments;
+{{/hasAttachmentFields}}
     public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#importValidates}},
-                                 jakarta.validation.Validator validator{{/importValidates}}{{#workflowUsesRoles}}, CurrentUser currentUser{{/workflowUsesRoles}}) {
+                                 jakarta.validation.Validator validator{{/importValidates}}{{#workflowUsesRoles}}, CurrentUser currentUser{{/workflowUsesRoles}}{{#hasAttachmentFields}},
+                                 {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachmentFields}}) {
         this.repository = repository;
+{{#hasAttachmentFields}}        this.attachments = attachments;
+{{/hasAttachmentFields}}
 {{#usesEntityManager}}        this.entityManager = entityManager;
 {{/usesEntityManager}}{{#importValidates}}        this.validator = validator;
 {{/importValidates}}{{#workflowUsesRoles}}        this.currentUser = currentUser;
@@ -355,7 +359,11 @@ public class {{EntityName}}Service {
         if (updated.getVersion() != null && !updated.getVersion().equals(existing.getVersion())) {
             throw new ObjectOptimisticLockingFailureException({{EntityName}}.class, id);
         }
-{{/lockingApplicable}}{{#nonPkFields}}{{^isReadOnly}}        existing.set{{Name}}(updated.get{{Name}}());
+{{/lockingApplicable}}{{#attachmentFields}}{{^isReadOnly}}        // A file that is replaced or removed is not kept.
+        if (existing.get{{Name}}() != null && !existing.get{{Name}}().equals(updated.get{{Name}}())) {
+            attachments.delete(existing.get{{Name}}());
+        }
+{{/isReadOnly}}{{/attachmentFields}}{{#nonPkFields}}{{^isReadOnly}}        existing.set{{Name}}(updated.get{{Name}}());
 {{/isReadOnly}}{{/nonPkFields}}{{#relations}}        existing.set{{FieldName}}(updated.get{{FieldName}}());
 {{/relations}}        return repository.save(existing);
     }
@@ -468,8 +476,12 @@ public class {{EntityName}}Service {
 {{/hasLockedRelations}}    /** Loads first so a missing id surfaces as a 404 (ResourceNotFoundException) rather than a
      *  500 from deleteById's EmptyResultDataAccessException. */
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
-        repository.delete(findById(id));
-    }
+{{^hasAttachmentFields}}        repository.delete(findById(id));
+{{/hasAttachmentFields}}{{#hasAttachmentFields}}        {{EntityName}} existing = findById(id);
+        repository.delete(existing);
+{{^softDeleteApplicable}}        // The record's files go with it. (A soft-deleted record keeps them, for a restore.)
+{{#attachmentFields}}        attachments.delete(existing.get{{Name}}());
+{{/attachmentFields}}{{/softDeleteApplicable}}{{/hasAttachmentFields}}    }
 {{#softDeleteApplicable}}
     /** Un-deletes a soft-deleted record (the frontend's Undo after delete). 404 when no row has
      *  that id; restoring a live row is a harmless no-op. */
@@ -482,8 +494,13 @@ public class {{EntityName}}Service {
 {{/softDeleteApplicable}}
 {{#bulkDeleteApplicable}}
     public void deleteAll(java.util.List<{{pkField.javaType}}> ids) {
+{{^hasAttachmentFields}}        repository.deleteAllById(ids);
+{{/hasAttachmentFields}}{{#hasAttachmentFields}}        java.util.List<{{EntityName}}> rows = repository.findAllById(ids);
         repository.deleteAllById(ids);
-    }
+{{^softDeleteApplicable}}        for ({{EntityName}} row : rows) {
+{{#attachmentFields}}            attachments.delete(row.get{{Name}}());
+{{/attachmentFields}}        }
+{{/softDeleteApplicable}}{{/hasAttachmentFields}}    }
 {{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}
     /** Sets a single whitelisted {@code field} to {@code value} on every listed record. The raw
      *  JSON scalar is coerced to the field's type; an unknown field name throws (→ 400 at the

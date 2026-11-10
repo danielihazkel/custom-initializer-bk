@@ -27,10 +27,13 @@ public class DemoDataLoader implements CommandLineRunner {
     static final int ROWS = 8;
 
 {{#seedEntities}}    private final {{EntityName}}Repository {{entityName}}Repository;
-{{/seedEntities}}
-    public DemoDataLoader({{#seedEntities}}{{EntityName}}Repository {{entityName}}Repository{{^seedLast}}, {{/seedLast}}{{/seedEntities}}) {
+{{/seedEntities}}{{#hasAttachments}}    private final {{packageName}}.attachment.AttachmentStorage attachments;
+{{/hasAttachments}}
+    public DemoDataLoader({{#seedEntities}}{{EntityName}}Repository {{entityName}}Repository{{^seedLast}}, {{/seedLast}}{{/seedEntities}}{{#hasAttachments}},
+                          {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachments}}) {
 {{#seedEntities}}        this.{{entityName}}Repository = {{entityName}}Repository;
-{{/seedEntities}}    }
+{{/seedEntities}}{{#hasAttachments}}        this.attachments = attachments;
+{{/hasAttachments}}    }
 
     @Override
     public void run(String... args) {
@@ -51,7 +54,22 @@ public class DemoDataLoader implements CommandLineRunner {
         log.info("Demo data: seeded {} rows per entity", ROWS);
     }
 
-    /** "{base} {i}", truncated to {max} characters while keeping the row number so values stay unique. */
+{{#hasAttachments}}    /** A one-pixel PNG: what a required image field holds in the demo rows. */
+    private static final byte[] SAMPLE_IMAGE = java.util.Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+
+    /** Stores a placeholder picture for a required image field and answers its id. */
+    private java.util.UUID sampleImage(int i) {
+        return attachments.store("sample-" + i + ".png", "image/png", SAMPLE_IMAGE).id();
+    }
+
+    /** Stores a placeholder file for a required file field and answers its id. */
+    private java.util.UUID sampleFile(int i) {
+        byte[] content = ("Demo file " + i + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return attachments.store("sample-" + i + ".txt", "text/plain", content).id();
+    }
+
+{{/hasAttachments}}    /** "{base} {i}", truncated to {max} characters while keeping the row number so values stay unique. */
     static String label(String base, int i, int max) {
         String s = base + " " + i;
         if (s.length() <= max) {

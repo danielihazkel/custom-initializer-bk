@@ -6,6 +6,6 @@ import type { ImportField } from '@shared/ui/csv'
  * ignoring case, spaces and punctuation — so a file exported from this app imports as it is.
  */
 export const IMPORT_FIELDS: ImportField[] = [
-{{#fields}}{{^isGenerated}}{{^isReadOnly}}  { name: '{{name}}', label: '{{label}}', kind: '{{importKind}}', required: {{#isRequired}}true{{/isRequired}}{{^isRequired}}false{{/isRequired}}{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
-{{/isReadOnly}}{{/isGenerated}}{{/fields}}{{#relations}}  { name: '{{fkFieldName}}', label: '{{FieldName}}', kind: 'relation', required: {{#required}}true{{/required}}{{^required}}false{{/required}}, also: ['{{fieldName}}'], numeric: {{#isTargetPkNumeric}}true{{/isTargetPkNumeric}}{{^isTargetPkNumeric}}false{{/isTargetPkNumeric}} },
+{{#fields}}{{^isGenerated}}{{^isReadOnly}}{{^isAttachment}}  { name: '{{name}}', label: '{{label}}', kind: '{{importKind}}', required: {{#isRequired}}true{{/isRequired}}{{^isRequired}}false{{/isRequired}}{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
+{{/isAttachment}}{{/isReadOnly}}{{/isGenerated}}{{/fields}}{{#relations}}  { name: '{{fkFieldName}}', label: '{{FieldName}}', kind: 'relation', required: {{#required}}true{{/required}}{{^required}}false{{/required}}, also: ['{{fieldName}}'], numeric: {{#isTargetPkNumeric}}true{{/isTargetPkNumeric}}{{^isTargetPkNumeric}}false{{/isTargetPkNumeric}} },
 {{/relations}}]

@@ -40,7 +40,12 @@ public enum FieldType {
     MONEY("BigDecimal", "number", "java.math.BigDecimal"),
     // Long text written in Markdown — the content page's subset — shown formatted in the detail
     // view. Stored, searched and edited like TEXT.
-    MARKDOWN("String", "string", "java.lang.String");
+    MARKDOWN("String", "string", "java.lang.String"),
+    // An uploaded file, and one that must be a picture. The column holds the id of a row in the
+    // generated attachment table (a UUID, null without a file); the file itself is uploaded on
+    // its own and fetched only when opened. Neither searched, filtered, sorted on nor bulk-edited.
+    FILE("java.util.UUID", "string", null),
+    IMAGE("java.util.UUID", "string", null);
 
     private final String javaType;
     private final String tsType;
@@ -67,6 +72,9 @@ public enum FieldType {
     public boolean isMoney() { return this == MONEY; }
     public boolean isTime() { return this == LOCAL_TIME; }
     public boolean isInstant() { return this == INSTANT; }
+    /** A file or an image: an attachment id. */
+    public boolean isAttachment() { return this == FILE || this == IMAGE; }
+    public boolean isImage() { return this == IMAGE; }
     public boolean isBoolean() { return this == BOOLEAN; }
     public boolean isTemporal() { return this == LOCAL_DATE || this == LOCAL_DATE_TIME; }
     public boolean isEnum() { return this == ENUM; }
@@ -80,7 +88,7 @@ public enum FieldType {
      * instant are not fit for.
      */
     public boolean keyable() {
-        return this != LOCAL_TIME && this != INSTANT && this != MONEY && this != MARKDOWN;
+        return this != LOCAL_TIME && this != INSTANT && this != MONEY && this != MARKDOWN && !isAttachment();
     }
 
     /**
@@ -88,7 +96,7 @@ public enum FieldType {
      * suits neither a formatted text nor a time the browser must convert.
      */
     public boolean bulkEditable() {
-        return this != LOCAL_TIME && this != INSTANT && this != MARKDOWN;
+        return this != LOCAL_TIME && this != INSTANT && this != MARKDOWN && !isAttachment();
     }
 
     /** Lenient parse — accepts canonical names ({@code "STRING"}), Java-style ({@code "String"}),
@@ -128,6 +136,9 @@ public enum FieldType {
         m.put("TIME", LOCAL_TIME);
         m.put("RICH_TEXT", MARKDOWN);
         m.put("RICHTEXT", MARKDOWN);
+        m.put("ATTACHMENT", FILE);
+        m.put("PHOTO", IMAGE);
+        m.put("PICTURE", IMAGE);
         ALIASES = java.util.Collections.unmodifiableMap(m);
     }
 }

@@ -1,0 +1,44 @@
+package {{packageName}}.attachment;
+
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Optional;
+import java.util.UUID;
+
+/** Keeps uploaded files in the application's own database ({@code app_attachment}). */
+@Component
+public class DbAttachmentStorage implements AttachmentStorage {
+
+    private final AttachmentRepository repository;
+
+    public DbAttachmentStorage(AttachmentRepository repository) {
+        this.repository = repository;
+    }
+
+    @Override
+    @Transactional
+    public Info store(String fileName, String contentType, byte[] content) {
+        Attachment saved = repository.save(new Attachment(UUID.randomUUID(), fileName, contentType, content));
+        return new Info(saved.getId(), saved.getFileName(), saved.getContentType(), saved.getSize());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Info> describe(UUID id) {
+        return repository.describe(id);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Stored> load(UUID id) {
+        return repository.findById(id).map(a -> new Stored(
+                new Info(a.getId(), a.getFileName(), a.getContentType(), a.getSize()), a.getContent()));
+    }
+
+    @Override
+    @Transactional
+    public void delete(UUID id) {
+        if (id != null && repository.existsById(id)) repository.deleteById(id);
+    }
+}

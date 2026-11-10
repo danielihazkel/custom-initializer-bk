@@ -1,5 +1,12 @@
 import { LOCALE } from '@shared/i18n'
 
+const BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '').replace(/\/+$/, '')
+
+/** Where an uploaded file (a file or image field's value) is read from. */
+export function attachmentUrl(id: string): string {
+  return `${BASE}/api/attachments/${encodeURIComponent(id)}`
+}
+
 /** An amount in its currency, written for the app's locale: 1234.5 → "₪1,234.50". */
 export function formatMoney(value: number | string, currency: string): string {
   const amount = typeof value === 'number' ? value : Number(value)

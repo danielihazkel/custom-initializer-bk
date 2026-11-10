@@ -2156,7 +2156,7 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/format.ts"))
                 .anyMatch(p -> p.endsWith("frontend/src/shared/ui/Markdown.tsx"));
         assertThat(contentEndingWith(entries, "/ui/ShiftPage.tsx"))
-                .contains("import { formatInstant, formatMoney } from '@shared/ui/format'")
+                .contains("import { attachmentUrl, formatInstant, formatMoney } from '@shared/ui/format'")
                 // The currency is upper-cased, and ILS when a money field names none.
                 .contains("render: r => r.rate == null ? '—' : formatMoney(r.rate, 'USD')")
                 .contains("formatMoney(r.bonus, 'ILS')")
@@ -2179,6 +2179,69 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_fileAndImageFields() throws Exception {
+        Map<String, String> entries = generateZip(FullstackExampleRequests.fieldTypesBody("react-tailwind-crud"));
+
+        // The attachment package ships because a field needs it: a table behind a storage interface.
+        for (String file : List.of("Attachment", "AttachmentRepository", "AttachmentStorage", "DbAttachmentStorage",
+                "AttachmentController", "AttachmentConfig")) {
+            assertThat(entries.keySet()).as(file)
+                    .anyMatch(p -> p.endsWith("backend/src/main/java/com/menora/rota/attachment/" + file + ".java"));
+        }
+        assertThat(contentEndingWith(entries, "/attachment/Attachment.java"))
+                .contains("@Table(name = \"app_attachment\")")
+                // A binary column, not a large object (which is an oid on PostgreSQL).
+                .contains("@JdbcTypeCode(SqlTypes.LONG32VARBINARY)")
+                .doesNotContain("@Lob");
+        assertThat(contentEndingWith(entries, "/attachment/AttachmentController.java"))
+                .contains("@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)")
+                // Never served as a page: nosniff, and inline only for what its bytes say is a picture.
+                .contains("\"X-Content-Type-Options\", \"nosniff\"")
+                .contains("image != null ? ContentDisposition.inline() : ContentDisposition.attachment()");
+
+        // The field is the attachment's id; the entity reads the file's name beside it.
+        assertThat(contentEndingWith(entries, "/entity/Shift.java"))
+                .contains("@Column(name = \"contract\")")
+                .contains("private java.util.UUID contract;")
+                .contains("@Column(name = \"photo\", nullable = false)")
+                .contains("@org.hibernate.annotations.Formula(\"(select a.file_name from app_attachment a where a.id = photo)\")")
+                .contains("private String photoName;")
+                .contains("public String getContractName()");
+        assertThat(contentEndingWith(entries, "/dto/ShiftDto.java"))
+                .contains("java.util.UUID contract")
+                .contains("String contractName,")
+                .contains("String photoName) {")
+                .contains("entity.getPhotoName()");
+        // A replaced or deleted record's files go with it; bulk edit and demo data leave files alone.
+        assertThat(contentEndingWith(entries, "/service/ShiftService.java"))
+                .contains("com.menora.rota.attachment.AttachmentStorage attachments")
+                .contains("if (existing.getContract() != null && !existing.getContract().equals(updated.getContract())) {")
+                .contains("attachments.delete(existing.getPhoto());")
+                .doesNotContain("case \"contract\"").doesNotContain("case \"photo\"");
+        assertThat(contentEndingWith(entries, "/web/ApiExceptionHandler.java"))
+                .contains("MaxUploadSizeExceededException").contains("HttpStatus.PAYLOAD_TOO_LARGE");
+
+        // Frontend: the upload call, the field component and its strings.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/AttachmentField.tsx"));
+        assertThat(contentEndingWith(entries, "/shared/api/client.ts"))
+                .contains("async function upload<T>(path: string, file: File").contains("  upload,");
+        assertThat(contentEndingWith(entries, "/shared/i18n/strings.ts"))
+                .contains("chooseFile: 'Choose a file'").contains("chooseImage: 'בחירת תמונה'");
+        assertThat(contentEndingWith(entries, "/ui/ShiftForm.tsx"))
+                .contains("import { AttachmentField } from '@shared/ui/AttachmentField'")
+                .contains("name={value.contractName}")
+                .contains("onChange={(id, name) => onChange({ ...value, photo: id, photoName: name })}");
+        assertThat(contentEndingWith(entries, "/ui/ShiftPage.tsx"))
+                .contains("<a href={attachmentUrl(r.contract)}")
+                .contains("<img src={attachmentUrl(r.photo)} alt={r.photoName ?? ''}");
+        assertThat(contentEndingWith(entries, "/model/types.ts"))
+                .contains("photo: string | null").contains("photoName?: string | null");
+        // A CSV carries no files.
+        assertThat(contentEndingWith(entries, "/model/importFields.ts"))
+                .doesNotContain("'contract'").doesNotContain("'photo'");
+    }
+
+    @Test
     void fullstackEndpoint_projectsWithoutTheNewTypesShipNoneOfTheirFiles() throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("artifactId", "plain");
@@ -2187,7 +2250,9 @@ class FullstackStarterIntegrationTests {
         body.put("entities", List.of(Map.of("name", "Note", "fields", List.of(pkField(),
                 Map.of("name", "body", "type", "TEXT"), Map.of("name", "price", "type", "BIG_DECIMAL")))));
         Map<String, String> entries = generateZip(body);
-        assertThat(entries.keySet()).noneMatch(p -> p.endsWith("/format.ts") || p.endsWith("/Markdown.tsx"));
+        assertThat(entries.keySet()).noneMatch(p -> p.endsWith("/format.ts") || p.endsWith("/Markdown.tsx")
+                || p.endsWith("/AttachmentField.tsx") || p.contains("/attachment/"));
+        assertThat(contentEndingWith(entries, "/shared/api/client.ts")).doesNotContain("upload");
         assertThat(contentEndingWith(entries, "/ui/NotePage.tsx")).doesNotContain("@shared/ui/format");
     }
 
@@ -2203,7 +2268,10 @@ class FullstackStarterIntegrationTests {
                 new Bad(Map.of("name", "amount", "type", "MONEY", "defaultValue", "1.005"), "more than two decimals"),
                 new Bad(Map.of("name", "opens", "type", "LOCAL_TIME", "defaultValue", "9 o'clock"), "not a valid LOCAL_TIME"),
                 new Bad(Map.of("name", "seenAt", "type", "INSTANT", "defaultValue", "2026-01-31"), "not a valid INSTANT"),
-                new Bad(Map.of("name", "notes", "type", "MARKDOWN", "length", 50), "length only allowed on STRING"))) {
+                new Bad(Map.of("name", "notes", "type", "MARKDOWN", "length", 50), "length only allowed on STRING"),
+                new Bad(Map.of("name", "scan", "type", "FILE", "defaultValue", "x.pdf"), "a file is uploaded, not typed"),
+                new Bad(Map.of("name", "scan", "type", "IMAGE", "unique", true), "unique does not apply"),
+                new Bad(Map.of("name", "scan", "type", "FILE", "primaryKey", true), "cannot be the primary key"))) {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("artifactId", "demo");
             body.put("packageName", "com.menora.demo");

@@ -205,6 +205,14 @@ public final class FullstackRequestValidator {
                             }
                         }
 
+                        if (type.isAttachment() && viewQuery != null) {
+                            throw new WizardArgumentException("a " + type + " field needs a table to keep its file's id in, "
+                                    + "which a SELECT-backed view is not (field '" + fname + "' on entity '" + name + "')").on("type");
+                        }
+                        if (type.isAttachment() && Boolean.TRUE.equals(f.unique())) {
+                            throw new WizardArgumentException("unique does not apply to a " + type + " field: every upload "
+                                    + "is its own file (field '" + fname + "' on entity '" + name + "')").on("type");
+                        }
                         if (isPk && !type.keyable()) {
                             throw new WizardArgumentException("a " + type + " field cannot be the primary key (field '"
                                     + fname + "' on entity '" + name + "')").on("type");
@@ -421,6 +429,11 @@ public final class FullstackRequestValidator {
                         .anyMatch(f -> !f.primaryKey() && f.type() == FieldType.STRING);
                 if (targetHasLabel) {
                     generated.add(new String[] {r.fieldName() + "Label", "the label of relation '" + r.fieldName() + "'"});
+                }
+            }
+            for (FieldDefinition f : e.fields()) {
+                if (f.type().isAttachment()) {
+                    generated.add(new String[] {f.name() + "Name", "the file name of '" + f.name() + "'"});
                 }
             }
             boolean mutable = !e.readOnly() && e.viewQuery() == null;
@@ -726,6 +739,8 @@ public final class FullstackRequestValidator {
                 case LOCAL_TIME -> java.time.LocalTime.parse(v).toString();
                 // ISO-8601 in UTC: "2026-01-31T08:00:00Z".
                 case INSTANT -> java.time.Instant.parse(v).toString();
+                case FILE, IMAGE -> throw new WizardArgumentException("defaultValue is not allowed on a " + type
+                        + " field — a file is uploaded, not typed" + where).on("defaultValue");
                 case BOOLEAN -> {
                     if (!v.equalsIgnoreCase("true") && !v.equalsIgnoreCase("false")) {
                         throw new NumberFormatException();

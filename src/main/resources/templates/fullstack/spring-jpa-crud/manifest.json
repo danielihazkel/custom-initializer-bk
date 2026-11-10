@@ -31,6 +31,60 @@
       "gatedBy": "optScaffoldAudit"
     },
     {
+      "source": "Attachment.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/Attachment.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "AttachmentRepository.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachmentRepository.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "AttachmentStorage.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachmentStorage.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "DbAttachmentStorage.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/DbAttachmentStorage.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "AttachmentController.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachmentController.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "AttachmentConfig.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachmentConfig.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
       "source": "DemoDataLoader.java.mustache",
       "path": "src/main/java/{{packagePath}}/config/DemoDataLoader.java",
       "perEntity": false,

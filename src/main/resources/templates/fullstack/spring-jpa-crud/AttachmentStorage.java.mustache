@@ -1,0 +1,29 @@
+package {{packageName}}.attachment;
+
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Where uploaded files are kept. The application talks to this, never to a table or a disk, so
+ * moving the files is one class: implement it, mark the implementation {@code @Primary}.
+ */
+public interface AttachmentStorage {
+
+    /** What a stored file is. */
+    record Info(UUID id, String fileName, String contentType, long size) {
+    }
+
+    /** A stored file with its bytes. */
+    record Stored(Info info, byte[] content) {
+    }
+
+    /** Keeps a file and answers what it was stored as. */
+    Info store(String fileName, String contentType, byte[] content);
+
+    Optional<Info> describe(UUID id);
+
+    Optional<Stored> load(UUID id);
+
+    /** Forgets a file. Unknown ids are ignored: the record that named it is going anyway. */
+    void delete(UUID id);
+}

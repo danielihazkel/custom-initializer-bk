@@ -57,7 +57,13 @@ public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
-    @ExceptionHandler(ResourceNotFoundException.class)
+{{#hasAttachments}}    /** An upload over the limit (app.attachments.max-size). */
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ProblemDetail handleUploadTooLarge(org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
+        return problem(HttpStatus.PAYLOAD_TOO_LARGE, "The file is larger than this application accepts");
+    }
+
+{{/hasAttachments}}    @ExceptionHandler(ResourceNotFoundException.class)
     public ProblemDetail handleNotFound(ResourceNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage());
     }

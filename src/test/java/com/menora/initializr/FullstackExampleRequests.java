@@ -95,6 +95,8 @@ public final class FullstackExampleRequests {
         fields.add(Map.of("name", "rate", "type", "MONEY", "currency", "usd", "required", true, "min", 0));
         fields.add(Map.of("name", "bonus", "type", "MONEY", "defaultValue", "12.5"));
         fields.add(Map.of("name", "notes", "type", "MARKDOWN"));
+        fields.add(Map.of("name", "contract", "type", "FILE"));
+        fields.add(Map.of("name", "photo", "type", "IMAGE", "required", true));
         fields.add(Map.of("name", "status", "type", "ENUM", "enumValues", List.of("PLANNED", "DONE")));
         Map<String, Object> shift = new LinkedHashMap<>();
         shift.put("name", "Shift");

@@ -68,6 +68,8 @@
       "apierror",
       "arraylist",
       "arrowupright",
+      "attachment",
+      "attachmentfield",
       "auditingentitylistener",
       "autowired",
       "bigdecimal",
@@ -309,6 +311,21 @@
       "aliases" : [
         "RICH_TEXT",
         "RICHTEXT"
+      ]
+    },
+    {
+      "type" : "FILE",
+      "tsType" : "string",
+      "aliases" : [
+        "ATTACHMENT"
+      ]
+    },
+    {
+      "type" : "IMAGE",
+      "tsType" : "string",
+      "aliases" : [
+        "PHOTO",
+        "PICTURE"
       ]
     }
   ],

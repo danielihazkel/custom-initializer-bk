@@ -1,0 +1,82 @@
+package {{packageName}}.attachment;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.Length;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * An uploaded file: what {@link DbAttachmentStorage} keeps. A record's file or image field holds
+ * this row's id, so the file is fetched only when someone opens it.
+ *
+ * <p>The bytes live in this table. That needs nothing but the database the application already
+ * has — and it means files are backed up with the data and grow it. To keep them elsewhere
+ * (a volume, an object store) write another {@link AttachmentStorage} and mark it
+ * {@code @Primary}; nothing else here changes.
+ */
+@Entity
+@Table(name = "app_attachment")
+public class Attachment {
+
+    @Id
+    private UUID id;
+
+    @Column(name = "file_name", nullable = false, length = 255)
+    private String fileName;
+
+    @Column(name = "content_type", nullable = false, length = 150)
+    private String contentType;
+
+    @Column(name = "size_bytes", nullable = false)
+    private long size;
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
+    /** A binary column sized for whole files (bytea / blob / varbinary(max)), not a large object. */
+    @JdbcTypeCode(SqlTypes.LONG32VARBINARY)
+    @Column(name = "content", nullable = false, length = Length.LONG32)
+    private byte[] content;
+
+    protected Attachment() {
+    }
+
+    Attachment(UUID id, String fileName, String contentType, byte[] content) {
+        this.id = id;
+        this.fileName = fileName;
+        this.contentType = contentType;
+        this.content = content;
+        this.size = content.length;
+        this.createdAt = Instant.now();
+    }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public String getFileName() {
+        return fileName;
+    }
+
+    public String getContentType() {
+        return contentType;
+    }
+
+    public long getSize() {
+        return size;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public byte[] getContent() {
+        return content;
+    }
+}

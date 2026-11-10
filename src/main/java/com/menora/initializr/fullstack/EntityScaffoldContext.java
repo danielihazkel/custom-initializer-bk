@@ -87,7 +87,11 @@ public final class EntityScaffoldContext {
         }
         ctx.put("entities", entityViews);
         // The shared frontend files a field type brings: format.ts (money, instants) and Markdown.tsx.
-        ctx.put("hasFormatHelpers", entities.stream().flatMap(e -> e.fields().stream())
+        boolean attachments = entities.stream().flatMap(e -> e.fields().stream()).anyMatch(f -> f.type().isAttachment());
+        // File and image fields: the attachment package on the backend, the upload call and the
+        // AttachmentField on the frontend (both render paths read it).
+        ctx.put("hasAttachments", attachments);
+        ctx.put("hasFormatHelpers", attachments || entities.stream().flatMap(e -> e.fields().stream())
                 .anyMatch(f -> f.type().isMoney() || f.type().isInstant()));
         ctx.put("hasMarkdownFields", entities.stream().flatMap(e -> e.fields().stream())
                 .anyMatch(f -> f.type().isMarkdown()));
@@ -2396,6 +2400,7 @@ public final class EntityScaffoldContext {
         // renderer its detail draws, and the instant conversion its form does — each imported only
         // where used, for the same lint.
         List<String> formatImports = new ArrayList<>();
+        if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isAttachment")))) formatImports.add("attachmentUrl");
         if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isInstant")))) formatImports.add("formatInstant");
         if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isMoney")))) formatImports.add("formatMoney");
         ctx.put("usesFormat", !formatImports.isEmpty());
@@ -2560,6 +2565,10 @@ public final class EntityScaffoldContext {
         view.put("hasBulkUpdatableFields", !bulkUpdatableViews.isEmpty());
 
         view.put("fields", fieldViews);
+        List<Map<String, Object>> attachmentViews = fieldViews.stream()
+                .filter(fv -> Boolean.TRUE.equals(fv.get("isAttachment"))).toList();
+        view.put("attachmentFields", attachmentViews);
+        view.put("hasAttachmentFields", !attachmentViews.isEmpty());
         view.put("hasFieldDefaults", fieldViews.stream().anyMatch(m -> Boolean.TRUE.equals(m.get("hasDefault"))));
         view.put("nonPkFields", nonPkViews);
         view.put("pkField", pkView);
@@ -3064,6 +3073,12 @@ public final class EntityScaffoldContext {
         fv.put("isTime", f.type().isTime());
         fv.put("isInstant", f.type().isInstant());
         fv.put("bulkEditable", f.type().bulkEditable());
+        // A file or image: the field holds an attachment id, and the entity reads the file's name
+        // beside it (nameField) for the list, the detail and the form to show.
+        fv.put("isAttachment", f.type().isAttachment());
+        fv.put("isImage", f.type().isImage());
+        fv.put("nameField", f.name() + "Name");
+        fv.put("NameField", pascalName + "Name");
         // The TS that draws a non-null value of this field: a list cell reads it off `r`, the
         // detail view off `value`.
         fv.put("cellTs", cellTs(f, enumTypeName));
@@ -3154,6 +3169,8 @@ public final class EntityScaffoldContext {
             case LOCAL_DATE_TIME -> "datetime-local";
             case STRING -> f.email() ? "email" : "text";
             case MONEY -> "number";
+            // Drawn by the AttachmentField component; no input of its own.
+            case FILE, IMAGE -> "text";
             case LOCAL_TIME -> "time";
             // The browser's own zone; the form converts to and from UTC (format.ts).
             case INSTANT -> "datetime-local";
@@ -3167,6 +3184,7 @@ public final class EntityScaffoldContext {
         return switch (type) {
             case MONEY -> List.of("formatMoney");
             case INSTANT -> List.of("formatInstant");
+            case FILE, IMAGE -> List.of("attachmentUrl");
             default -> List.of();
         };
     }
@@ -3178,6 +3196,12 @@ public final class EntityScaffoldContext {
             case ENUM -> enumTypeName + "Labels[" + v + "]";
             case MONEY -> "formatMoney(" + v + ", '" + f.currency() + "')";
             case INSTANT -> "formatInstant(" + v + ")";
+            // The file's name, opening the file; a small picture for an image.
+            case FILE -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\" "
+                    + "onClick={e => e.stopPropagation()} className=\"font-medium text-brand hover:underline\">{"
+                    + v + "Name ?? String(" + v + ")}</a>";
+            case IMAGE -> "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
+                    + "className=\"h-8 w-8 rounded object-cover\" />";
             case STRING, TEXT, MARKDOWN, LONG, INTEGER, BOOLEAN, LOCAL_DATE, LOCAL_DATE_TIME, LOCAL_TIME,
                     BIG_DECIMAL, UUID -> "String(" + v + ")";
         };
@@ -3195,6 +3219,11 @@ public final class EntityScaffoldContext {
             case LOCAL_DATE_TIME -> "new Date(" + v + ").toLocaleString(LOCALE)";
             case MONEY -> "formatMoney(" + v + ", '" + f.currency() + "')";
             case INSTANT -> "formatInstant(" + v + ")";
+            case FILE -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\" "
+                    + "className=\"font-medium text-brand hover:underline\">{" + v + "Name ?? String(" + v + ")}</a>";
+            case IMAGE -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\">"
+                    + "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
+                    + "className=\"max-h-48 rounded-lg border border-border\" /></a>";
             case STRING, LONG, INTEGER, LOCAL_TIME, BIG_DECIMAL, UUID -> "String(" + v + ")";
         };
     }
@@ -3210,6 +3239,8 @@ public final class EntityScaffoldContext {
             case ENUM -> "enum";
             // A time and an instant are sent as typed; the server's own parse answers a bad one.
             case STRING, TEXT, MARKDOWN, UUID, LOCAL_TIME, INSTANT -> "string";
+            // Never offered to an import (a CSV carries no files); the id's own type, for completeness.
+            case FILE, IMAGE -> "string";
         };
     }
 
@@ -3225,7 +3256,7 @@ public final class EntityScaffoldContext {
             case LOCAL_TIME -> "java.time.LocalTime.parse(value.toString())";
             case INSTANT -> "java.time.Instant.parse(value.toString())";
             case LONG, INTEGER -> javaType + ".valueOf(value.toString())";
-            case UUID -> "java.util.UUID.fromString(value.toString())";
+            case UUID, FILE, IMAGE -> "java.util.UUID.fromString(value.toString())";
             case LOCAL_DATE -> "java.time.LocalDate.parse(value.toString())";
             case LOCAL_DATE_TIME -> "java.time.LocalDateTime.parse(value.toString())";
             case STRING, TEXT, MARKDOWN -> "value.toString()";
@@ -3254,6 +3285,8 @@ public final class EntityScaffoldContext {
             case LOCAL_DATE -> (qualified ? "java.time." : "") + "LocalDate.parse(\"" + v + "\")";
             case LOCAL_DATE_TIME -> (qualified ? "java.time." : "") + "LocalDateTime.parse(\"" + v + "\")";
             case UUID -> "java.util.UUID.fromString(\"" + v + "\")";
+            // The validator refuses a default on an attachment; nothing to initialize.
+            case FILE, IMAGE -> "null";
             case ENUM -> enumRef + "." + v;
         };
     }
@@ -3301,6 +3334,10 @@ public final class EntityScaffoldContext {
             case LOCAL_DATE -> "java.time.LocalDate.now().minusDays(i)";
             case LOCAL_DATE_TIME -> "java.time.LocalDateTime.now().minusHours(i)";
             case UUID -> "java.util.UUID.randomUUID()";
+            // Demo rows carry no files — unless the field demands one, and then a placeholder
+            // the loader stores (its sampleFile / sampleImage).
+            case FILE -> f.required() ? "sampleFile(i)" : "null";
+            case IMAGE -> f.required() ? "sampleImage(i)" : "null";
         };
     }
 

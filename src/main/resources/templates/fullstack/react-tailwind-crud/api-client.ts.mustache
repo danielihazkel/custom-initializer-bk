@@ -118,11 +118,32 @@ async function download(path: string, filename: string): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
-export const api = {
+{{#hasAttachments}}/** Sends one file as multipart form data (a file or image field's upload) and returns the JSON answer. */
+async function upload<T>(path: string, file: File, fields?: Record<string, string>): Promise<T> {
+  const form = new FormData()
+  form.append('file', file)
+  for (const [name, value] of Object.entries(fields ?? {})) form.append(name, value)
+  // No content-type header: the browser writes the multipart boundary itself.
+  const headers: Record<string, string> = {}
+{{#sendsDevUser}}
+  if (import.meta.env.DEV) {
+    headers['userinfo'] = import.meta.env.VITE_DEV_USERINFO ?? 'dev-user'
+  }
+{{/sendsDevUser}}
+  const res = await send(path, { method: 'POST', headers: Object.keys(headers).length > 0 ? headers : undefined, body: form })
+  if (!res.ok) {
+    const problem = await res.json().catch(() => null) as { detail?: string } | null
+    throw new ApiError(res.status, failureMessage(res.status, String(problem?.detail ?? '')))
+  }
+  return res.json() as Promise<T>
+}
+
+{{/hasAttachments}}export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   del: (path: string, body?: unknown) => request<void>('DELETE', path, body),
   download,
-}
+{{#hasAttachments}}  upload,
+{{/hasAttachments}}}

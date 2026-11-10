@@ -23,7 +23,8 @@ public record {{EntityName}}Dto(
         java.time.Instant createdAt,
         java.time.Instant updatedAt{{/auditApplicable}}{{#lockingApplicable}},
         Long version{{/lockingApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
-        int {{collectionField}}Count{{/inverseRelations}}{{/optScaffoldInverse}}) {
+        int {{collectionField}}Count{{/inverseRelations}}{{/optScaffoldInverse}}{{#attachmentFields}},
+        String {{nameField}}{{/attachmentFields}}) {
 
     public static {{EntityName}}Dto from({{EntityName}} entity) {
         return new {{EntityName}}Dto(
@@ -34,7 +35,8 @@ public record {{EntityName}}Dto(
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(){{/auditApplicable}}{{#lockingApplicable}},
                 entity.getVersion(){{/lockingApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
-                entity.get{{CollectionField}}Count() == null ? 0 : entity.get{{CollectionField}}Count().intValue(){{/inverseRelations}}{{/optScaffoldInverse}}
+                entity.get{{CollectionField}}Count() == null ? 0 : entity.get{{CollectionField}}Count().intValue(){{/inverseRelations}}{{/optScaffoldInverse}}{{#attachmentFields}},
+                entity.get{{NameField}}(){{/attachmentFields}}
         );
     }
 
