@@ -66,223 +66,231 @@ public final class FullstackRequestValidator {
         Set<String> viewLowerNames = new HashSet<>();
         List<Parsed> parsed = new ArrayList<>(raw.size());
         for (int ei = 0; ei < raw.size(); ei++) {
-            FullstackStarterRequest.EntityDefinitionDto e = raw.get(ei);
-            if (e == null) throw new WizardArgumentException("entities[" + ei + "] is null");
-            if (e.name() == null || e.name().isBlank()) {
-                throw new WizardArgumentException("entities[" + ei + "].name is required");
-            }
-            String name = e.name().trim();
-            if (!isValidJavaIdentifier(name)) {
-                throw new WizardArgumentException("entities[" + ei + "].name '" + name + "' is not a valid identifier");
-            }
-            if (RESERVED_JAVA_KEYWORDS.contains(name.toLowerCase(Locale.ROOT))) {
-                throw new WizardArgumentException("entities[" + ei + "].name '" + name + "' is a reserved keyword");
-            }
-            String taken = ReservedNames.reasonFor(name);
-            if (taken != null) {
-                throw new WizardArgumentException("entities[" + ei + "].name '" + name + "' cannot be used: it is "
-                        + taken + " — pick another name (a label can still say '" + name + "')");
-            }
-            String lower = name.toLowerCase(Locale.ROOT);
-            if (!seenLowerNames.add(lower)) {
-                throw new WizardArgumentException("Duplicate entity name (case-insensitive): " + name);
-            }
-            canonicalByLower.put(lower, name);
+            try {
+                FullstackStarterRequest.EntityDefinitionDto e = raw.get(ei);
+                if (e == null) throw new WizardArgumentException("entities[" + ei + "] is null");
+                if (e.name() == null || e.name().isBlank()) {
+                    throw new WizardArgumentException("entities[" + ei + "].name is required").on("name");
+                }
+                String name = e.name().trim();
+                if (!isValidJavaIdentifier(name)) {
+                    throw new WizardArgumentException("entities[" + ei + "].name '" + name + "' is not a valid identifier").on("name");
+                }
+                if (RESERVED_JAVA_KEYWORDS.contains(name.toLowerCase(Locale.ROOT))) {
+                    throw new WizardArgumentException("entities[" + ei + "].name '" + name + "' is a reserved keyword").on("name");
+                }
+                String taken = ReservedNames.reasonFor(name);
+                if (taken != null) {
+                    throw new WizardArgumentException("entities[" + ei + "].name '" + name + "' cannot be used: it is "
+                            + taken + " — pick another name (a label can still say '" + name + "')").on("name");
+                }
+                String lower = name.toLowerCase(Locale.ROOT);
+                if (!seenLowerNames.add(lower)) {
+                    throw new WizardArgumentException("Duplicate entity name (case-insensitive): " + name).on("name");
+                }
+                canonicalByLower.put(lower, name);
 
-            // A SELECT-backed view maps to @Subselect and is inherently read-only.
-            String viewQuery = (e.viewQuery() == null || e.viewQuery().isBlank())
-                    ? null : e.viewQuery().trim();
-            boolean readOnly = viewQuery != null || Boolean.TRUE.equals(e.readOnly());
-            if (viewQuery != null) viewLowerNames.add(lower);
+                // A SELECT-backed view maps to @Subselect and is inherently read-only.
+                String viewQuery = (e.viewQuery() == null || e.viewQuery().isBlank())
+                        ? null : e.viewQuery().trim();
+                boolean readOnly = viewQuery != null || Boolean.TRUE.equals(e.readOnly());
+                if (viewQuery != null) viewLowerNames.add(lower);
 
-            List<FullstackStarterRequest.FieldDefinitionDto> rawFields = e.fields();
-            if (rawFields == null || rawFields.isEmpty()) {
-                throw new WizardArgumentException("entities[" + ei + "] '" + name + "' has no fields");
-            }
-
-            int pkCount = 0;
-            boolean anyGenerated = false;
-            Set<String> seenFieldNames = new HashSet<>();
-            List<FieldDefinition> fields = new ArrayList<>(rawFields.size());
-            for (int fi = 0; fi < rawFields.size(); fi++) {
-                FullstackStarterRequest.FieldDefinitionDto f = rawFields.get(fi);
-                if (f == null) {
-                    throw new WizardArgumentException("entities[" + ei + "].fields[" + fi + "] is null");
-                }
-                if (f.name() == null || f.name().isBlank()) {
-                    throw new WizardArgumentException("entities[" + ei + "].fields[" + fi + "].name is required");
-                }
-                String fname = f.name().trim();
-                if (!isValidJavaIdentifier(fname)) {
-                    throw new WizardArgumentException("Field name '" + fname + "' is not a valid identifier (entity '" + name + "')");
-                }
-                if (RESERVED_JAVA_KEYWORDS.contains(fname.toLowerCase(Locale.ROOT))) {
-                    throw new WizardArgumentException("Field name '" + fname + "' is a reserved keyword (entity '" + name + "')");
-                }
-                if (!seenFieldNames.add(fname.toLowerCase(Locale.ROOT))) {
-                    throw new WizardArgumentException("Duplicate field name '" + fname + "' (entity '" + name + "')");
+                List<FullstackStarterRequest.FieldDefinitionDto> rawFields = e.fields();
+                if (rawFields == null || rawFields.isEmpty()) {
+                    throw new WizardArgumentException("entities[" + ei + "] '" + name + "' has no fields");
                 }
 
-                FieldType type;
-                try {
-                    type = FieldType.forWireString(f.type());
-                } catch (IllegalArgumentException iae) {
-                    throw new WizardArgumentException("entity '" + name + "' field '" + fname + "': " + iae.getMessage());
-                }
-
-                boolean isPk = Boolean.TRUE.equals(f.primaryKey());
-                if (isPk) pkCount++;
-
-                if (type == FieldType.ENUM) {
-                    if (f.enumValues() == null || f.enumValues().isEmpty()) {
-                        throw new WizardArgumentException("ENUM field '" + fname + "' on entity '" + name + "' requires enumValues");
-                    }
-                    for (String v : f.enumValues()) {
-                        if (v == null || v.isBlank() || !isValidJavaIdentifier(v)) {
-                            throw new WizardArgumentException("Invalid enum constant '" + v + "' on field '" + fname + "'");
-                        }
-                        // Exact-case: Java keywords are all lower-case, so the conventional upper-case
-                        // constants (NEW, DEFAULT, CLASS) are fine — only a literal `new` would not compile.
-                        if (RESERVED_JAVA_KEYWORDS.contains(v)) {
-                            throw new WizardArgumentException("Enum constant '" + v + "' is a reserved keyword (field '" + fname + "' on entity '" + name + "')");
-                        }
-                    }
-                } else if (f.enumValues() != null && !f.enumValues().isEmpty()) {
-                    throw new WizardArgumentException("enumValues only allowed when type=ENUM (field '" + fname + "' on entity '" + name + "')");
-                }
-                if (type != FieldType.ENUM && f.enumLabels() != null && !f.enumLabels().isEmpty()) {
-                    throw new WizardArgumentException("enumLabels only allowed when type=ENUM (field '" + fname + "' on entity '" + name + "')");
-                }
-                Map<String, String> enumLabels = type == FieldType.ENUM
-                        ? canonicalEnumLabels(f.enumLabels(), f.enumValues(), fname, name)
-                        : Map.of();
-
-                if (f.length() != null && type != FieldType.STRING) {
-                    throw new WizardArgumentException("length only allowed on STRING fields (field '" + fname + "' on entity '" + name + "')");
-                }
-                if (f.length() != null && f.length() <= 0) {
-                    throw new WizardArgumentException("length must be positive (field '" + fname + "' on entity '" + name + "')");
-                }
-
-                // Numeric bounds: only on numeric types, and min <= max when both are present.
-                if ((f.min() != null || f.max() != null) && !type.isNumeric()) {
-                    throw new WizardArgumentException("min/max only allowed on numeric fields (field '" + fname + "' on entity '" + name + "')");
-                }
-                // Integral types render the bounds into @Min/@Max (long-valued), so a fractional bound
-                // would not compile; decimals are only meaningful on BIG_DECIMAL (@DecimalMin/@DecimalMax).
-                if (type != FieldType.BIG_DECIMAL) {
-                    for (BigDecimal bound : new BigDecimal[] {f.min(), f.max()}) {
-                        if (bound == null) continue;
-                        if (bound.stripTrailingZeros().scale() > 0) {
-                            throw new WizardArgumentException("min/max must be whole numbers on integral fields (field '" + fname + "' on entity '" + name + "')");
-                        }
-                        try {
-                            if (type == FieldType.INTEGER) bound.intValueExact(); else bound.longValueExact();
-                        } catch (ArithmeticException ae) {
-                            throw new WizardArgumentException("min/max is out of range for " + type + " (field '" + fname + "' on entity '" + name + "')");
-                        }
-                    }
-                }
-                if (f.min() != null && f.max() != null && f.min().compareTo(f.max()) > 0) {
-                    throw new WizardArgumentException("min must be <= max (field '" + fname + "' on entity '" + name + "')");
-                }
-
-                // Regex pattern + email: only on STRING; pattern must be a compilable regex.
-                boolean isEmail = Boolean.TRUE.equals(f.email());
-                if (f.pattern() != null && !f.pattern().isBlank() && type != FieldType.STRING) {
-                    throw new WizardArgumentException("pattern only allowed on STRING fields (field '" + fname + "' on entity '" + name + "')");
-                }
-                if (isEmail && type != FieldType.STRING) {
-                    throw new WizardArgumentException("email only allowed on STRING fields (field '" + fname + "' on entity '" + name + "')");
-                }
-                if (f.pattern() != null && !f.pattern().isBlank()) {
+                int pkCount = 0;
+                boolean anyGenerated = false;
+                Set<String> seenFieldNames = new HashSet<>();
+                List<FieldDefinition> fields = new ArrayList<>(rawFields.size());
+                for (int fi = 0; fi < rawFields.size(); fi++) {
                     try {
-                        Pattern.compile(f.pattern());
-                    } catch (PatternSyntaxException pse) {
-                        throw new WizardArgumentException("pattern is not a valid regex (field '" + fname + "' on entity '" + name + "'): " + pse.getDescription());
+                        FullstackStarterRequest.FieldDefinitionDto f = rawFields.get(fi);
+                        if (f == null) {
+                            throw new WizardArgumentException("entities[" + ei + "].fields[" + fi + "] is null");
+                        }
+                        if (f.name() == null || f.name().isBlank()) {
+                            throw new WizardArgumentException("entities[" + ei + "].fields[" + fi + "].name is required").on("name");
+                        }
+                        String fname = f.name().trim();
+                        if (!isValidJavaIdentifier(fname)) {
+                            throw new WizardArgumentException("Field name '" + fname + "' is not a valid identifier (entity '" + name + "')").on("name");
+                        }
+                        if (RESERVED_JAVA_KEYWORDS.contains(fname.toLowerCase(Locale.ROOT))) {
+                            throw new WizardArgumentException("Field name '" + fname + "' is a reserved keyword (entity '" + name + "')").on("name");
+                        }
+                        if (!seenFieldNames.add(fname.toLowerCase(Locale.ROOT))) {
+                            throw new WizardArgumentException("Duplicate field name '" + fname + "' (entity '" + name + "')").on("name");
+                        }
+
+                        FieldType type;
+                        try {
+                            type = FieldType.forWireString(f.type());
+                        } catch (IllegalArgumentException iae) {
+                            throw new WizardArgumentException("entity '" + name + "' field '" + fname + "': " + iae.getMessage()).on("type");
+                        }
+
+                        boolean isPk = Boolean.TRUE.equals(f.primaryKey());
+                        if (isPk) pkCount++;
+
+                        if (type == FieldType.ENUM) {
+                            if (f.enumValues() == null || f.enumValues().isEmpty()) {
+                                throw new WizardArgumentException("ENUM field '" + fname + "' on entity '" + name + "' requires enumValues").on("enumValues");
+                            }
+                            for (String v : f.enumValues()) {
+                                if (v == null || v.isBlank() || !isValidJavaIdentifier(v)) {
+                                    throw new WizardArgumentException("Invalid enum constant '" + v + "' on field '" + fname + "'").on("enumValues");
+                                }
+                                // Exact-case: Java keywords are all lower-case, so the conventional upper-case
+                                // constants (NEW, DEFAULT, CLASS) are fine — only a literal `new` would not compile.
+                                if (RESERVED_JAVA_KEYWORDS.contains(v)) {
+                                    throw new WizardArgumentException("Enum constant '" + v + "' is a reserved keyword (field '" + fname + "' on entity '" + name + "')").on("enumValues");
+                                }
+                            }
+                        } else if (f.enumValues() != null && !f.enumValues().isEmpty()) {
+                            throw new WizardArgumentException("enumValues only allowed when type=ENUM (field '" + fname + "' on entity '" + name + "')").on("enumValues");
+                        }
+                        if (type != FieldType.ENUM && f.enumLabels() != null && !f.enumLabels().isEmpty()) {
+                            throw new WizardArgumentException("enumLabels only allowed when type=ENUM (field '" + fname + "' on entity '" + name + "')").on("enumLabels");
+                        }
+                        Map<String, String> enumLabels = type == FieldType.ENUM
+                                ? canonicalEnumLabels(f.enumLabels(), f.enumValues(), fname, name)
+                                : Map.of();
+
+                        if (f.length() != null && type != FieldType.STRING) {
+                            throw new WizardArgumentException("length only allowed on STRING fields (field '" + fname + "' on entity '" + name + "')").on("length");
+                        }
+                        if (f.length() != null && f.length() <= 0) {
+                            throw new WizardArgumentException("length must be positive (field '" + fname + "' on entity '" + name + "')").on("length");
+                        }
+
+                        // Numeric bounds: only on numeric types, and min <= max when both are present.
+                        if ((f.min() != null || f.max() != null) && !type.isNumeric()) {
+                            throw new WizardArgumentException("min/max only allowed on numeric fields (field '" + fname + "' on entity '" + name + "')");
+                        }
+                        // Integral types render the bounds into @Min/@Max (long-valued), so a fractional bound
+                        // would not compile; decimals are only meaningful on BIG_DECIMAL (@DecimalMin/@DecimalMax).
+                        if (type != FieldType.BIG_DECIMAL) {
+                            for (BigDecimal bound : new BigDecimal[] {f.min(), f.max()}) {
+                                if (bound == null) continue;
+                                if (bound.stripTrailingZeros().scale() > 0) {
+                                    throw new WizardArgumentException("min/max must be whole numbers on integral fields (field '" + fname + "' on entity '" + name + "')");
+                                }
+                                try {
+                                    if (type == FieldType.INTEGER) bound.intValueExact(); else bound.longValueExact();
+                                } catch (ArithmeticException ae) {
+                                    throw new WizardArgumentException("min/max is out of range for " + type + " (field '" + fname + "' on entity '" + name + "')");
+                                }
+                            }
+                        }
+                        if (f.min() != null && f.max() != null && f.min().compareTo(f.max()) > 0) {
+                            throw new WizardArgumentException("min must be <= max (field '" + fname + "' on entity '" + name + "')");
+                        }
+
+                        // Regex pattern + email: only on STRING; pattern must be a compilable regex.
+                        boolean isEmail = Boolean.TRUE.equals(f.email());
+                        if (f.pattern() != null && !f.pattern().isBlank() && type != FieldType.STRING) {
+                            throw new WizardArgumentException("pattern only allowed on STRING fields (field '" + fname + "' on entity '" + name + "')").on("pattern");
+                        }
+                        if (isEmail && type != FieldType.STRING) {
+                            throw new WizardArgumentException("email only allowed on STRING fields (field '" + fname + "' on entity '" + name + "')");
+                        }
+                        if (f.pattern() != null && !f.pattern().isBlank()) {
+                            try {
+                                Pattern.compile(f.pattern());
+                            } catch (PatternSyntaxException pse) {
+                                throw new WizardArgumentException("pattern is not a valid regex (field '" + fname + "' on entity '" + name + "'): " + pse.getDescription()).on("pattern");
+                            }
+                        }
+
+                        boolean isGenerated = Boolean.TRUE.equals(f.generated());
+                        if (isGenerated) {
+                            anyGenerated = true;
+                            if (!isPk) {
+                                throw new WizardArgumentException("'generated' only applies to the primary key (field '" + fname + "' on entity '" + name + "')");
+                            }
+                            if (type != FieldType.LONG && type != FieldType.INTEGER && type != FieldType.UUID) {
+                                throw new WizardArgumentException("a generated primary key must be of type LONG, INTEGER, or UUID (field '" + fname + "' on entity '" + name + "')");
+                            }
+                        }
+
+                        String pattern = (f.pattern() == null || f.pattern().isBlank()) ? null : f.pattern();
+                        String label = (f.label() == null || f.label().isBlank()) ? null : f.label().trim();
+                        String defaultValue = normalizeDefault(f.defaultValue(), type, isGenerated, f.length(),
+                                f.enumValues(), fname, name);
+                        String column = parseColumnName(f.column(), "column", fname, name);
+                        if (column != null && viewQuery != null) {
+                            throw new WizardArgumentException("Field '" + fname + "' on entity '" + name
+                                    + "' sets a column, but a SELECT-backed view maps fields by their names");
+                        }
+                        fields.add(new FieldDefinition(
+                                fname,
+                                type,
+                                isPk,
+                                isGenerated,
+                                Boolean.TRUE.equals(f.required()),
+                                Boolean.TRUE.equals(f.unique()),
+                                f.length(),
+                                f.min(),
+                                f.max(),
+                                pattern,
+                                isEmail,
+                                f.enumValues() == null ? List.of() : List.copyOf(f.enumValues()),
+                                // Per-field search/filter opt-out: default true (current behavior) when the
+                                // wire omits the flag, unlike the default-false required/unique above.
+                                f.searchable() == null || f.searchable(),
+                                f.filterable() == null || f.filterable(),
+                                // Per-field display label (null when omitted → templates fall back to
+                                // PascalCase name) and read-only flag (default false, like required/unique).
+                                label,
+                                Boolean.TRUE.equals(f.readOnly()),
+                                defaultValue,
+                                enumLabels,
+                                column));
+                    } catch (WizardArgumentException problem) {
+                        throw problem.at("fields[" + fi + "]");
                     }
                 }
 
-                boolean isGenerated = Boolean.TRUE.equals(f.generated());
-                if (isGenerated) {
-                    anyGenerated = true;
-                    if (!isPk) {
-                        throw new WizardArgumentException("'generated' only applies to the primary key (field '" + fname + "' on entity '" + name + "')");
-                    }
-                    if (type != FieldType.LONG && type != FieldType.INTEGER && type != FieldType.UUID) {
-                        throw new WizardArgumentException("a generated primary key must be of type LONG, INTEGER, or UUID (field '" + fname + "' on entity '" + name + "')");
-                    }
+                if (pkCount == 0) {
+                    throw new WizardArgumentException("Entity '" + name + "' has no primary key field");
                 }
-
-                String pattern = (f.pattern() == null || f.pattern().isBlank()) ? null : f.pattern();
-                String label = (f.label() == null || f.label().isBlank()) ? null : f.label().trim();
-                String defaultValue = normalizeDefault(f.defaultValue(), type, isGenerated, f.length(),
-                        f.enumValues(), fname, name);
-                String column = parseColumnName(f.column(), "column", fname, name);
-                if (column != null && viewQuery != null) {
-                    throw new WizardArgumentException("Field '" + fname + "' on entity '" + name
-                            + "' sets a column, but a SELECT-backed view maps fields by their names");
+                // Composite keys are allowed (rendered via @IdClass), but a generated key requires a
+                // single PK — JPA IDENTITY generation cannot target one column of a composite key.
+                if (pkCount > 1 && anyGenerated) {
+                    throw new WizardArgumentException("Entity '" + name + "' has a generated primary key combined with a composite key (a generated key requires a single primary key)");
                 }
-                fields.add(new FieldDefinition(
-                        fname,
-                        type,
-                        isPk,
-                        isGenerated,
-                        Boolean.TRUE.equals(f.required()),
-                        Boolean.TRUE.equals(f.unique()),
-                        f.length(),
-                        f.min(),
-                        f.max(),
-                        pattern,
-                        isEmail,
-                        f.enumValues() == null ? List.of() : List.copyOf(f.enumValues()),
-                        // Per-field search/filter opt-out: default true (current behavior) when the
-                        // wire omits the flag, unlike the default-false required/unique above.
-                        f.searchable() == null || f.searchable(),
-                        f.filterable() == null || f.filterable(),
-                        // Per-field display label (null when omitted → templates fall back to
-                        // PascalCase name) and read-only flag (default false, like required/unique).
-                        label,
-                        Boolean.TRUE.equals(f.readOnly()),
-                        defaultValue,
-                        enumLabels,
-                        column));
-            }
+                // A @Subselect view has no underlying table column to auto-generate.
+                if (viewQuery != null && anyGenerated) {
+                    throw new WizardArgumentException("Entity '" + name + "' is a SELECT-backed view and cannot have a generated primary key");
+                }
+                pkCountByLower.put(lower, pkCount);
 
-            if (pkCount == 0) {
-                throw new WizardArgumentException("Entity '" + name + "' has no primary key field");
+                String tableName = (e.tableName() == null || e.tableName().isBlank())
+                        ? null : e.tableName().trim();
+                String schema = (e.schema() == null || e.schema().isBlank())
+                        ? null : e.schema().trim();
+                // Both end up in Java string literals and native SQL, like a column name.
+                if (tableName != null && !SQL_NAME.matcher(tableName).matches()) {
+                    throw new WizardArgumentException("tableName '" + tableName + "' on entity '" + name
+                            + "' is not a valid table name (" + SQL_NAME_RULE + ")").on("tableName");
+                }
+                if (schema != null && !SQL_NAME.matcher(schema).matches()) {
+                    throw new WizardArgumentException("schema '" + schema + "' on entity '" + name
+                            + "' is not a valid schema name (" + SQL_NAME_RULE + ")").on("schema");
+                }
+                // Optional entity display labels — blank → null (templates fall back to the name).
+                String label = (e.label() == null || e.label().isBlank()) ? null : e.label().trim();
+                String labelPlural = (e.labelPlural() == null || e.labelPlural().isBlank())
+                        ? null : e.labelPlural().trim();
+                parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
+                        readOnly, viewQuery, resolveListViews(e), label, labelPlural,
+                        parseEntityOpts(e.opts(), name), e.formSections(), e.workflow(), pkCount));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("entities[" + ei + "]");
             }
-            // Composite keys are allowed (rendered via @IdClass), but a generated key requires a
-            // single PK — JPA IDENTITY generation cannot target one column of a composite key.
-            if (pkCount > 1 && anyGenerated) {
-                throw new WizardArgumentException("Entity '" + name + "' has a generated primary key combined with a composite key (a generated key requires a single primary key)");
-            }
-            // A @Subselect view has no underlying table column to auto-generate.
-            if (viewQuery != null && anyGenerated) {
-                throw new WizardArgumentException("Entity '" + name + "' is a SELECT-backed view and cannot have a generated primary key");
-            }
-            pkCountByLower.put(lower, pkCount);
-
-            String tableName = (e.tableName() == null || e.tableName().isBlank())
-                    ? null : e.tableName().trim();
-            String schema = (e.schema() == null || e.schema().isBlank())
-                    ? null : e.schema().trim();
-            // Both end up in Java string literals and native SQL, like a column name.
-            if (tableName != null && !SQL_NAME.matcher(tableName).matches()) {
-                throw new WizardArgumentException("tableName '" + tableName + "' on entity '" + name
-                        + "' is not a valid table name (" + SQL_NAME_RULE + ")");
-            }
-            if (schema != null && !SQL_NAME.matcher(schema).matches()) {
-                throw new WizardArgumentException("schema '" + schema + "' on entity '" + name
-                        + "' is not a valid schema name (" + SQL_NAME_RULE + ")");
-            }
-            // Optional entity display labels — blank → null (templates fall back to the name).
-            String label = (e.label() == null || e.label().isBlank()) ? null : e.label().trim();
-            String labelPlural = (e.labelPlural() == null || e.labelPlural().isBlank())
-                    ? null : e.labelPlural().trim();
-            parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
-                    readOnly, viewQuery, resolveListViews(e), label, labelPlural,
-                    parseEntityOpts(e.opts(), name), e.formSections(), e.workflow(), pkCount));
         }
 
         // An entity may not be named like a class another entity generates (OrderDto beside Order).
@@ -291,27 +299,33 @@ public final class FullstackRequestValidator {
             if (owner != null) {
                 throw new WizardArgumentException("entities[" + p.ei() + "].name '" + p.name()
                         + "' cannot be used: entity '" + canonicalByLower.get(owner)
-                        + "' already generates a class of that name — pick another name");
+                        + "' already generates a class of that name — pick another name",
+                        "entities[" + p.ei() + "].name");
             }
         }
 
         // Pass 2 — resolve and validate relations now that all entity names are known.
         List<EntityDefinition> result = new ArrayList<>(parsed.size());
         for (Parsed p : parsed) {
-            // A @Subselect view can't own a foreign-key join column (v1 — no relations on views).
-            if (p.viewQuery() != null && p.rawRelations() != null && !p.rawRelations().isEmpty()) {
-                throw new WizardArgumentException("Entity '" + p.name()
-                        + "' is a SELECT-backed view and cannot declare relations");
+            try {
+                // A @Subselect view can't own a foreign-key join column (v1 — no relations on views).
+                if (p.viewQuery() != null && p.rawRelations() != null && !p.rawRelations().isEmpty()) {
+                    throw new WizardArgumentException("Entity '" + p.name()
+                            + "' is a SELECT-backed view and cannot declare relations");
+                }
+                List<RelationDefinition> relations =
+                        parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
+                                pkCountByLower, viewLowerNames);
+                checkColumnClashes(p.name(), p.fields(), relations);
+                checkVersionName(p.name(), p.fields(), relations, p.readOnly(), p.viewQuery(), p.opts(), body);
+                result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
+                        p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts(),
+                        parseFormSections(p.rawSections(), p.name(), p.fields(), relations),
+                        at("workflow", () -> parseWorkflow(p.rawWorkflow(), p.name(), p.fields(), relations,
+                                p.readOnly(), p.pkCount()))));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("entities[" + p.ei() + "]");
             }
-            List<RelationDefinition> relations =
-                    parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
-                            pkCountByLower, viewLowerNames);
-            checkColumnClashes(p.name(), p.fields(), relations);
-            checkVersionName(p.name(), p.fields(), relations, p.readOnly(), p.viewQuery(), p.opts(), body);
-            result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
-                    p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts(),
-                    parseFormSections(p.rawSections(), p.name(), p.fields(), relations),
-                    parseWorkflow(p.rawWorkflow(), p.name(), p.fields(), relations, p.readOnly(), p.pkCount())));
         }
         checkGeneratedMemberClashes(result, body);
         return result;
@@ -329,8 +343,18 @@ public final class FullstackRequestValidator {
             String key = scaffold.get(i);
             if (key == null || !ScaffoldOption.isKnown(key)) {
                 throw new WizardArgumentException("Unknown scaffold option '" + key + "' in opts.scaffold[" + i
-                        + "] (known: " + String.join(", ", ScaffoldOption.keys()) + ")");
+                        + "] (known: " + String.join(", ", ScaffoldOption.keys()) + ")",
+                        "opts.scaffold[" + i + "]");
             }
+        }
+    }
+
+    /** Runs one section of the request, naming it in the path of whatever it rejects. */
+    private static <T> T at(String segment, java.util.function.Supplier<T> section) {
+        try {
+            return section.get();
+        } catch (WizardArgumentException problem) {
+            throw problem.at(segment);
         }
     }
 
@@ -394,7 +418,8 @@ public final class FullstackRequestValidator {
                 String clash = members.putIfAbsent(g[0].toLowerCase(Locale.ROOT), g[1]);
                 if (clash != null) {
                     throw new WizardArgumentException("Entity '" + e.name() + "': " + clash + " clashes with '"
-                            + g[0] + "', which the generator adds as " + g[1] + " — rename it");
+                            + g[0] + "', which the generator adds as " + g[1] + " — rename it")
+                            .at("entities[" + entities.indexOf(e) + "]");
                 }
             }
         }
@@ -447,27 +472,31 @@ public final class FullstackRequestValidator {
         Set<String> seen = new HashSet<>();
         List<EntityDefinition.FormSection> out = new ArrayList<>();
         for (int i = 0; i < raw.size(); i++) {
-            FullstackStarterRequest.FormSectionDto section = raw.get(i);
-            String where = "Entity '" + entity + "' form section " + (i + 1);
-            String title = section == null || section.title() == null ? "" : section.title().trim();
-            if (title.isEmpty()) throw new WizardArgumentException(where + " needs a title");
-            if (title.length() > MAX_SECTION_TITLE) {
-                throw new WizardArgumentException(where + " has a title over " + MAX_SECTION_TITLE + " characters");
-            }
-            List<String> names = new ArrayList<>();
-            for (String name : section.fields() == null ? List.<String>of() : section.fields()) {
-                String canonical = name == null ? null : askable.get(name.trim().toLowerCase(Locale.ROOT));
-                if (canonical == null) {
-                    throw new WizardArgumentException(where + " ('" + title + "') lists '" + name
-                            + "', which is not one of its fields or relations");
+            try {
+                FullstackStarterRequest.FormSectionDto section = raw.get(i);
+                String where = "Entity '" + entity + "' form section " + (i + 1);
+                String title = section == null || section.title() == null ? "" : section.title().trim();
+                if (title.isEmpty()) throw new WizardArgumentException(where + " needs a title");
+                if (title.length() > MAX_SECTION_TITLE) {
+                    throw new WizardArgumentException(where + " has a title over " + MAX_SECTION_TITLE + " characters");
                 }
-                if (!seen.add(canonical)) {
-                    throw new WizardArgumentException("Entity '" + entity + "' lists '" + canonical + "' in two form sections");
+                List<String> names = new ArrayList<>();
+                for (String name : section.fields() == null ? List.<String>of() : section.fields()) {
+                    String canonical = name == null ? null : askable.get(name.trim().toLowerCase(Locale.ROOT));
+                    if (canonical == null) {
+                        throw new WizardArgumentException(where + " ('" + title + "') lists '" + name
+                                + "', which is not one of its fields or relations");
+                    }
+                    if (!seen.add(canonical)) {
+                        throw new WizardArgumentException("Entity '" + entity + "' lists '" + canonical + "' in two form sections");
+                    }
+                    names.add(canonical);
                 }
-                names.add(canonical);
+                if (names.isEmpty()) throw new WizardArgumentException(where + " ('" + title + "') lists no fields");
+                out.add(new EntityDefinition.FormSection(title, names));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("formSections[" + i + "]");
             }
-            if (names.isEmpty()) throw new WizardArgumentException(where + " ('" + title + "') lists no fields");
-            out.add(new EntityDefinition.FormSection(title, names));
         }
         return out;
     }
@@ -552,48 +581,52 @@ public final class FullstackRequestValidator {
         Set<String> names = new HashSet<>();
         List<EntityDefinition.Transition> transitions = new ArrayList<>();
         for (int i = 0; i < rawTransitions.size(); i++) {
-            FullstackStarterRequest.TransitionDto t = rawTransitions.get(i);
-            if (t == null) throw new WizardArgumentException(where + "transitions[" + i + "] is null");
-            String name = t.name() == null ? "" : t.name().trim();
-            if (!TRANSITION_NAME.matcher(name).matches()) {
-                throw new WizardArgumentException(where + "transition name '" + name
-                        + "' must start with a lower-case letter, then letters and digits (max 40)");
-            }
-            if (!names.add(name)) throw new WizardArgumentException(where + "two transitions are named '" + name + "'");
-            String at = where + "transition '" + name + "' ";
-            String label = t.label() == null || t.label().isBlank() ? null : t.label().trim();
-            if (label != null && label.length() > MAX_TRANSITION_LABEL) {
-                throw new WizardArgumentException(at + "has a label over " + MAX_TRANSITION_LABEL + " characters");
-            }
-            if (t.from() == null || t.from().isEmpty()) throw new WizardArgumentException(at + "needs the states it moves 'from'");
-            Set<String> from = new LinkedHashSet<>();
-            for (String f : t.from()) from.add(state.apply(f));
-            if (t.to() == null || t.to().isBlank()) throw new WizardArgumentException(at + "needs the state it moves 'to'");
-            String to = state.apply(t.to());
-            if (from.contains(to)) throw new WizardArgumentException(at + "moves from " + to + " to itself");
-            Set<String> roles = new LinkedHashSet<>();
-            for (String r : t.roles() == null ? List.<String>of() : t.roles()) {
-                String role = r == null ? "" : r.trim().toUpperCase(Locale.ROOT);
-                if (!WORKFLOW_ROLES.contains(role)) {
-                    throw new WizardArgumentException(at + "has an unknown role '" + r + "' (expected ADMIN or USER)");
+            try {
+                FullstackStarterRequest.TransitionDto t = rawTransitions.get(i);
+                if (t == null) throw new WizardArgumentException(where + "transitions[" + i + "] is null");
+                String name = t.name() == null ? "" : t.name().trim();
+                if (!TRANSITION_NAME.matcher(name).matches()) {
+                    throw new WizardArgumentException(where + "transition name '" + name
+                            + "' must start with a lower-case letter, then letters and digits (max 40)");
                 }
-                roles.add(role);
-            }
-            List<String> requires = new ArrayList<>();
-            for (String r : t.requires() == null ? List.<String>of() : t.requires()) {
-                String key = r == null ? "" : r.trim().toLowerCase(Locale.ROOT);
-                FieldDefinition f = byLower.get(key);
-                RelationDefinition rel = relationsByLower.get(key);
-                String canonical = f != null ? f.name() : rel != null ? rel.fieldName() : null;
-                if (canonical == null) throw new WizardArgumentException(at + "requires '" + r + "', which is not a field or relation of " + entity);
-                if (f != null && (f.primaryKey() || f.readOnly() || f.name().equals(status.name()))) {
-                    throw new WizardArgumentException(at + "requires '" + f.name() + "', which a transition cannot set"
-                            + (f.name().equals(status.name()) ? " (it is the status the transition changes)" : " (a key or read-only field)"));
+                if (!names.add(name)) throw new WizardArgumentException(where + "two transitions are named '" + name + "'");
+                String at = where + "transition '" + name + "' ";
+                String label = t.label() == null || t.label().isBlank() ? null : t.label().trim();
+                if (label != null && label.length() > MAX_TRANSITION_LABEL) {
+                    throw new WizardArgumentException(at + "has a label over " + MAX_TRANSITION_LABEL + " characters");
                 }
-                if (requires.contains(canonical)) throw new WizardArgumentException(at + "requires '" + canonical + "' twice");
-                requires.add(canonical);
+                if (t.from() == null || t.from().isEmpty()) throw new WizardArgumentException(at + "needs the states it moves 'from'");
+                Set<String> from = new LinkedHashSet<>();
+                for (String f : t.from()) from.add(state.apply(f));
+                if (t.to() == null || t.to().isBlank()) throw new WizardArgumentException(at + "needs the state it moves 'to'");
+                String to = state.apply(t.to());
+                if (from.contains(to)) throw new WizardArgumentException(at + "moves from " + to + " to itself");
+                Set<String> roles = new LinkedHashSet<>();
+                for (String r : t.roles() == null ? List.<String>of() : t.roles()) {
+                    String role = r == null ? "" : r.trim().toUpperCase(Locale.ROOT);
+                    if (!WORKFLOW_ROLES.contains(role)) {
+                        throw new WizardArgumentException(at + "has an unknown role '" + r + "' (expected ADMIN or USER)");
+                    }
+                    roles.add(role);
+                }
+                List<String> requires = new ArrayList<>();
+                for (String r : t.requires() == null ? List.<String>of() : t.requires()) {
+                    String key = r == null ? "" : r.trim().toLowerCase(Locale.ROOT);
+                    FieldDefinition f = byLower.get(key);
+                    RelationDefinition rel = relationsByLower.get(key);
+                    String canonical = f != null ? f.name() : rel != null ? rel.fieldName() : null;
+                    if (canonical == null) throw new WizardArgumentException(at + "requires '" + r + "', which is not a field or relation of " + entity);
+                    if (f != null && (f.primaryKey() || f.readOnly() || f.name().equals(status.name()))) {
+                        throw new WizardArgumentException(at + "requires '" + f.name() + "', which a transition cannot set"
+                                + (f.name().equals(status.name()) ? " (it is the status the transition changes)" : " (a key or read-only field)"));
+                    }
+                    if (requires.contains(canonical)) throw new WizardArgumentException(at + "requires '" + canonical + "' twice");
+                    requires.add(canonical);
+                }
+                transitions.add(new EntityDefinition.Transition(name, label, List.copyOf(from), to, List.copyOf(roles), requires));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("transitions[" + i + "]");
             }
-            transitions.add(new EntityDefinition.Transition(name, label, List.copyOf(from), to, List.copyOf(roles), requires));
         }
         return new EntityDefinition.Workflow(status.name(), initial, assignee, due, transitions);
     }
@@ -624,16 +657,16 @@ public final class FullstackRequestValidator {
             }
             if (constant == null) {
                 throw new WizardArgumentException("enumLabels key '" + key + "' is not one of the enumValues "
-                        + enumValues + " (field '" + fieldName + "' on entity '" + entityName + "')");
+                        + enumValues + " (field '" + fieldName + "' on entity '" + entityName + "')").on("enumLabels");
             }
             String label = e.getValue() == null ? "" : e.getValue().trim();
             if (label.isEmpty()) {
                 throw new WizardArgumentException("enumLabels['" + key + "'] must not be blank (field '"
-                        + fieldName + "' on entity '" + entityName + "')");
+                        + fieldName + "' on entity '" + entityName + "')").on("enumLabels");
             }
             if (label.length() > MAX_ENUM_LABEL_LENGTH) {
                 throw new WizardArgumentException("enumLabels['" + key + "'] is longer than " + MAX_ENUM_LABEL_LENGTH
-                        + " characters (field '" + fieldName + "' on entity '" + entityName + "')");
+                        + " characters (field '" + fieldName + "' on entity '" + entityName + "')").on("enumLabels");
             }
             byConstant.put(constant, label);
         }
@@ -645,14 +678,14 @@ public final class FullstackRequestValidator {
         if (raw == null || raw.isBlank()) return null;
         String where = " (field '" + fname + "' on entity '" + entityName + "')";
         if (generated) {
-            throw new WizardArgumentException("defaultValue is not allowed on a generated primary key" + where);
+            throw new WizardArgumentException("defaultValue is not allowed on a generated primary key" + where).on("defaultValue");
         }
         String v = raw.trim();
         try {
             return switch (type) {
                 case STRING, TEXT -> {
                     if (length != null && raw.length() > length) {
-                        throw new WizardArgumentException("defaultValue exceeds length " + length + where);
+                        throw new WizardArgumentException("defaultValue exceeds length " + length + where).on("defaultValue");
                     }
                     yield raw;
                 }
@@ -674,13 +707,13 @@ public final class FullstackRequestValidator {
                         if (c != null && c.equalsIgnoreCase(v)) yield c.toUpperCase(Locale.ROOT);
                     }
                     throw new WizardArgumentException("defaultValue '" + v + "' is not one of the enumValues "
-                            + values + where);
+                            + values + where).on("defaultValue");
                 }
             };
         } catch (NumberFormatException | DateTimeParseException e) {
-            throw new WizardArgumentException("defaultValue '" + v + "' is not a valid " + type + where);
+            throw new WizardArgumentException("defaultValue '" + v + "' is not a valid " + type + where).on("defaultValue");
         } catch (IllegalArgumentException e) { // UUID.fromString
-            throw new WizardArgumentException("defaultValue '" + v + "' is not a valid " + type + where);
+            throw new WizardArgumentException("defaultValue '" + v + "' is not a valid " + type + where).on("defaultValue");
         }
     }
 
@@ -730,60 +763,64 @@ public final class FullstackRequestValidator {
         }
         List<RelationDefinition> relations = new ArrayList<>(rawRelations.size());
         for (int ri = 0; ri < rawRelations.size(); ri++) {
-            FullstackStarterRequest.RelationDefinitionDto r = rawRelations.get(ri);
-            if (r == null) {
-                throw new WizardArgumentException("entity '" + entityName + "' relations[" + ri + "] is null");
-            }
-            RelationType type;
             try {
-                type = RelationType.forWireString(r.type());
-            } catch (IllegalArgumentException iae) {
-                throw new WizardArgumentException("entity '" + entityName + "' relation: " + iae.getMessage());
-            }
-            if (type != RelationType.MANY_TO_ONE) {
-                throw new WizardArgumentException("entity '" + entityName + "' relation type " + type
-                        + " is not supported yet (only MANY_TO_ONE)");
-            }
+                FullstackStarterRequest.RelationDefinitionDto r = rawRelations.get(ri);
+                if (r == null) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relations[" + ri + "] is null");
+                }
+                RelationType type;
+                try {
+                    type = RelationType.forWireString(r.type());
+                } catch (IllegalArgumentException iae) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relation: " + iae.getMessage()).on("type");
+                }
+                if (type != RelationType.MANY_TO_ONE) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relation type " + type
+                            + " is not supported yet (only MANY_TO_ONE)").on("type");
+                }
 
-            if (r.fieldName() == null || r.fieldName().isBlank()) {
-                throw new WizardArgumentException("entity '" + entityName + "' relations[" + ri + "].fieldName is required");
-            }
-            String fieldName = r.fieldName().trim();
-            if (!isValidJavaIdentifier(fieldName)) {
-                throw new WizardArgumentException("Relation field name '" + fieldName + "' is not a valid identifier (entity '" + entityName + "')");
-            }
-            if (RESERVED_JAVA_KEYWORDS.contains(fieldName.toLowerCase(Locale.ROOT))) {
-                throw new WizardArgumentException("Relation field name '" + fieldName + "' is a reserved keyword (entity '" + entityName + "')");
-            }
-            // Collide against scalar fields and earlier relations (memberNames accumulates both).
-            if (!memberNames.add(fieldName.toLowerCase(Locale.ROOT))) {
-                throw new WizardArgumentException("Relation field name '" + fieldName + "' collides with another field/relation (entity '" + entityName + "')");
-            }
+                if (r.fieldName() == null || r.fieldName().isBlank()) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relations[" + ri + "].fieldName is required").on("fieldName");
+                }
+                String fieldName = r.fieldName().trim();
+                if (!isValidJavaIdentifier(fieldName)) {
+                    throw new WizardArgumentException("Relation field name '" + fieldName + "' is not a valid identifier (entity '" + entityName + "')").on("fieldName");
+                }
+                if (RESERVED_JAVA_KEYWORDS.contains(fieldName.toLowerCase(Locale.ROOT))) {
+                    throw new WizardArgumentException("Relation field name '" + fieldName + "' is a reserved keyword (entity '" + entityName + "')").on("fieldName");
+                }
+                // Collide against scalar fields and earlier relations (memberNames accumulates both).
+                if (!memberNames.add(fieldName.toLowerCase(Locale.ROOT))) {
+                    throw new WizardArgumentException("Relation field name '" + fieldName + "' collides with another field/relation (entity '" + entityName + "')").on("fieldName");
+                }
 
-            if (r.targetEntity() == null || r.targetEntity().isBlank()) {
-                throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName + "' requires a targetEntity");
-            }
-            String targetLower = r.targetEntity().trim().toLowerCase(Locale.ROOT);
-            String canonicalTarget = canonicalByLower.get(targetLower);
-            if (canonicalTarget == null) {
-                throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
-                        + "' targets unknown entity '" + r.targetEntity().trim() + "'");
-            }
-            // A single <field>Id foreign key cannot address a composite primary key, so a relation
-            // may not point at a composite-PK entity in v1.
-            Integer targetPkCount = pkCountByLower.get(targetLower);
-            if (targetPkCount != null && targetPkCount > 1) {
-                throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
-                        + "' targets composite-PK entity '" + canonicalTarget + "' — not supported");
-            }
-            if (viewLowerNames.contains(targetLower)) {
-                throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
-                        + "' targets SELECT-backed view '" + canonicalTarget + "' — not supported");
-            }
+                if (r.targetEntity() == null || r.targetEntity().isBlank()) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName + "' requires a targetEntity").on("targetEntity");
+                }
+                String targetLower = r.targetEntity().trim().toLowerCase(Locale.ROOT);
+                String canonicalTarget = canonicalByLower.get(targetLower);
+                if (canonicalTarget == null) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                            + "' targets unknown entity '" + r.targetEntity().trim() + "'");
+                }
+                // A single <field>Id foreign key cannot address a composite primary key, so a relation
+                // may not point at a composite-PK entity in v1.
+                Integer targetPkCount = pkCountByLower.get(targetLower);
+                if (targetPkCount != null && targetPkCount > 1) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                            + "' targets composite-PK entity '" + canonicalTarget + "' — not supported");
+                }
+                if (viewLowerNames.contains(targetLower)) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                            + "' targets SELECT-backed view '" + canonicalTarget + "' — not supported");
+                }
 
-            relations.add(new RelationDefinition(type, fieldName, canonicalTarget,
-                    Boolean.TRUE.equals(r.required()),
-                    parseColumnName(r.joinColumn(), "joinColumn", fieldName, entityName)));
+                relations.add(new RelationDefinition(type, fieldName, canonicalTarget,
+                        Boolean.TRUE.equals(r.required()),
+                        parseColumnName(r.joinColumn(), "joinColumn", fieldName, entityName)));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("relations[" + ri + "]");
+            }
         }
         return relations;
     }
@@ -806,7 +843,7 @@ public final class FullstackRequestValidator {
         String column = raw.trim();
         if (!SQL_NAME.matcher(column).matches()) {
             throw new WizardArgumentException(prop + " '" + column + "' of '" + member + "' on entity '" + entity
-                    + "' is not a valid column name (" + SQL_NAME_RULE + ")");
+                    + "' is not a valid column name (" + SQL_NAME_RULE + ")").on(prop);
         }
         return column;
     }

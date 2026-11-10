@@ -179,7 +179,12 @@ public class FullstackStarterController {
         List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), validated, scaffoldOptsOf(body));
         // An import page switches on its entity's csvImport option, for both render paths.
         List<EntityDefinition> entities = FullstackPageValidator.applyPageImplications(validated, pages);
-        PageDefinition.Nav nav = FullstackPageValidator.validateNav(body.nav(), pages);
+        PageDefinition.Nav nav;
+        try {
+            nav = FullstackPageValidator.validateNav(body.nav(), pages);
+        } catch (WizardArgumentException e) {
+            throw e.at("nav");
+        }
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
 
@@ -201,7 +206,8 @@ public class FullstackStarterController {
         pages.stream().filter(p -> !p.roles().isEmpty()).findFirst().ifPresent(p -> {
             if (!ldap) {
                 throw new WizardArgumentException("Page '" + p.id()
-                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency");
+                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency",
+                        "pages[" + pages.indexOf(p) + "].roles");
             }
         });
         // So are a workflow's role-limited transitions: the generated service asks the user's groups.
@@ -209,7 +215,8 @@ public class FullstackStarterController {
             if (e.workflow() == null || ldap) continue;
             e.workflow().transitions().stream().filter(t -> !t.roles().isEmpty()).findFirst().ifPresent(t -> {
                 throw new WizardArgumentException("Entity '" + e.name() + "' workflow: transition '" + t.name()
-                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency");
+                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency",
+                        "entities[" + entities.indexOf(e) + "].workflow");
             });
         }
         optionsContext.populate(body.opts());
@@ -283,10 +290,10 @@ public class FullstackStarterController {
     /** Resolves a template set by key and asserts its kind, throwing HTTP 400 otherwise. */
     private EntityTemplateSetEntity requireSet(String setKey, EntityTemplateSetEntity.Kind kind, String fieldName) {
         EntityTemplateSetEntity set = setRepo.findBySetKey(setKey).orElseThrow(() ->
-                new WizardArgumentException(fieldName + " '" + setKey + "' not found"));
+                new WizardArgumentException(fieldName + " '" + setKey + "' not found", fieldName));
         if (set.getKind() != kind) {
             throw new WizardArgumentException(fieldName + " '" + setKey
-                    + "' is not a " + kind + " set (kind=" + set.getKind() + ")");
+                    + "' is not a " + kind + " set (kind=" + set.getKind() + ")", fieldName);
         }
         return set;
     }
@@ -308,7 +315,7 @@ public class FullstackStarterController {
         if (!canonical.equals(value) && capability.get(canonical) != null) {
             return canonical;
         }
-        throw new WizardArgumentException(fieldName + " '" + value + "' is not a known version");
+        throw new WizardArgumentException(fieldName + " '" + value + "' is not a known version", fieldName);
     }
 
     /**
@@ -323,11 +330,11 @@ public class FullstackStarterController {
         }
         String domain = requested.trim();
         if (!isValidPackageName(domain)) {
-            throw new WizardArgumentException("domainPackage '" + domain + "' is not a valid Java package");
+            throw new WizardArgumentException("domainPackage '" + domain + "' is not a valid Java package", "domainPackage");
         }
         if (!domain.equals(basePackage) && !domain.startsWith(basePackage + ".")) {
             throw new WizardArgumentException("domainPackage '" + domain
-                    + "' must be the base package '" + basePackage + "' or a sub-package of it");
+                    + "' must be the base package '" + basePackage + "' or a sub-package of it", "domainPackage");
         }
         return domain;
     }
@@ -351,6 +358,9 @@ public class FullstackStarterController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("error", "Invalid request");
         body.put("detail", ex.getMessage());
+        // Where in the request the problem is (entities[1].fields[3], pages[2].widgets[0], …), so a
+        // client can put the message on what caused it. Absent for a problem with the whole request.
+        if (ex.path() != null) body.put("path", ex.path());
         return ResponseEntity.badRequest().body(body);
     }
 
@@ -593,7 +603,7 @@ public class FullstackStarterController {
         String locale = orDefault(raw, "en").trim().toLowerCase(java.util.Locale.ROOT);
         if (!SUPPORTED_LOCALES.contains(locale)) {
             throw new WizardArgumentException("locale '" + raw + "' is not supported (expected one of "
-                    + String.join(", ", SUPPORTED_LOCALES.stream().sorted().toList()) + ")");
+                    + String.join(", ", SUPPORTED_LOCALES.stream().sorted().toList()) + ")", "locale");
         }
         return locale;
     }

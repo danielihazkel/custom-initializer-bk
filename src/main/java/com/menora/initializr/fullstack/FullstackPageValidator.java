@@ -109,19 +109,23 @@ public final class FullstackPageValidator {
         // checked against a page declared after it.
         Map<String, String> entityById = new HashMap<>();
         for (int pi = 0; pi < raw.size(); pi++) {
-            PageDefinitionDto p = raw.get(pi);
-            if (p == null) throw new WizardArgumentException("pages[" + pi + "] is null");
-            String id = trimToNull(p.id());
-            if (id == null) throw new WizardArgumentException("pages[" + pi + "].id is required");
-            if (id.length() > 40 || !PAGE_ID.matcher(id).matches()) {
-                throw new WizardArgumentException("Page id '" + id
-                        + "' must be lower-case letters and digits separated by single '-', starting with a letter (max 40)");
+            try {
+                PageDefinitionDto p = raw.get(pi);
+                if (p == null) throw new WizardArgumentException("pages[" + pi + "] is null");
+                String id = trimToNull(p.id());
+                if (id == null) throw new WizardArgumentException("pages[" + pi + "].id is required");
+                if (id.length() > 40 || !PAGE_ID.matcher(id).matches()) {
+                    throw new WizardArgumentException("Page id '" + id
+                            + "' must be lower-case letters and digits separated by single '-', starting with a letter (max 40)");
+                }
+                if (typeById.containsKey(id)) throw new WizardArgumentException("Duplicate page id '" + id + "'");
+                typeById.put(id, parseType(id, p.type()));
+                hiddenById.put(id, Boolean.TRUE.equals(p.hidden()) || typeById.get(id) == PageDefinition.Type.RECORD);
+                EntityDefinition shown = p.entity() == null ? null : entitiesByLower.get(p.entity().trim().toLowerCase(Locale.ROOT));
+                if (shown != null) entityById.put(id, shown.name());
+            } catch (WizardArgumentException problem) {
+                throw problem.at("pages[" + pi + "]");
             }
-            if (typeById.containsKey(id)) throw new WizardArgumentException("Duplicate page id '" + id + "'");
-            typeById.put(id, parseType(id, p.type()));
-            hiddenById.put(id, Boolean.TRUE.equals(p.hidden()) || typeById.get(id) == PageDefinition.Type.RECORD);
-            EntityDefinition shown = p.entity() == null ? null : entitiesByLower.get(p.entity().trim().toLowerCase(Locale.ROOT));
-            if (shown != null) entityById.put(id, shown.name());
         }
         // Decided here, before any page is checked in depth: a layout with nothing in the nav gets
         // this message rather than one about a widget that happens to point at a hidden page.
@@ -137,215 +141,219 @@ public final class FullstackPageValidator {
         String searchPage = null;
         boolean anyVisible = false;
         for (PageDefinitionDto p : raw) {
-            String id = p.id().trim();
-            PageDefinition.Type type = typeById.get(id);
-            String title = checkLength(trimToNull(p.title()), MAX_TITLE, "Page '" + id + "' title");
-            String description = checkLength(trimToNull(p.description()), MAX_DESCRIPTION,
-                    "Page '" + id + "' description");
-            boolean hidden = Boolean.TRUE.equals(p.hidden());
-            if (type == PageDefinition.Type.RECORD) {
-                // A record page opens with a record id, so there is nothing to show from the nav.
-                if (Boolean.FALSE.equals(p.hidden())) {
-                    throw new WizardArgumentException("Page '" + id
-                            + "' (record) cannot be in the navigation: it opens from a row of its entity");
-                }
-                hidden = true;
-            }
-            anyVisible |= !hidden;
-            rejectForeignProps(id, type, p);
-            String group = navGroup(id, type, hidden, p.group());
-            String icon = navIcon(id, type, hidden, p.icon());
-            PageDefinition page = switch (type) {
-                case ENTITY_LIST -> {
-                    String prefix = "Page '" + id + "'";
-                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
-                    boolean audit = auditApplies(entity, scaffoldOpts);
-                    PageDefinition.Detail detail = detail(prefix, p.detail());
-                    // A side pane addresses its row by one key in the route.
-                    if (detail == PageDefinition.Detail.SIDE) requireSinglePk(prefix, entity);
-                    yield new PageDefinition(id, type, title, description, hidden, entity.name(),
-                            presetFilter(prefix, entity, p.presetFilter(), entitiesByLower), null, null)
-                            .withListPresentation(columns(prefix, entity, p.columns(), audit),
-                                    sort(prefix, entity, p.sort(), audit), view(prefix, entity, p.view()),
-                                    pageSize(prefix, p.pageSize()))
-                            .withDetail(detail)
-                            .withSpec(listSpec(prefix, entity, p.hideActions(), scaffoldOpts));
-                }
-                case DASHBOARD -> {
-                    PageDefinition.DateRange range = parseDateRange(id, p.dateRange());
-                    List<PageDefinition.Widget> widgets = widgets(id, p.widgets(), entitiesByLower, range != null,
-                            typeById, hiddenById, entityById, scaffoldOpts);
-                    if (range != null && widgets.stream().allMatch(w -> w.dateField() == null)) {
-                        throw new WizardArgumentException("Page '" + id + "' has a dateRange, but none of its widgets"
-                                + " counts an entity with a filterable date field for it to limit");
+            try {
+                String id = p.id().trim();
+                PageDefinition.Type type = typeById.get(id);
+                String title = checkLength(trimToNull(p.title()), MAX_TITLE, "Page '" + id + "' title");
+                String description = checkLength(trimToNull(p.description()), MAX_DESCRIPTION,
+                        "Page '" + id + "' description");
+                boolean hidden = Boolean.TRUE.equals(p.hidden());
+                if (type == PageDefinition.Type.RECORD) {
+                    // A record page opens with a record id, so there is nothing to show from the nav.
+                    if (Boolean.FALSE.equals(p.hidden())) {
+                        throw new WizardArgumentException("Page '" + id
+                                + "' (record) cannot be in the navigation: it opens from a row of its entity");
                     }
-                    Integer refresh = p.refreshSeconds();
-                    if (refresh != null && !REFRESH_SECONDS.contains(refresh)) {
-                        throw new WizardArgumentException("Page '" + id + "': refreshSeconds must be one of 30, 60, 300 or 900, got " + refresh);
+                    hidden = true;
+                }
+                anyVisible |= !hidden;
+                rejectForeignProps(id, type, p);
+                String group = navGroup(id, type, hidden, p.group());
+                String icon = navIcon(id, type, hidden, p.icon());
+                PageDefinition page = switch (type) {
+                    case ENTITY_LIST -> {
+                        String prefix = "Page '" + id + "'";
+                        EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                        boolean audit = auditApplies(entity, scaffoldOpts);
+                        PageDefinition.Detail detail = detail(prefix, p.detail());
+                        // A side pane addresses its row by one key in the route.
+                        if (detail == PageDefinition.Detail.SIDE) requireSinglePk(prefix, entity);
+                        yield new PageDefinition(id, type, title, description, hidden, entity.name(),
+                                presetFilter(prefix, entity, p.presetFilter(), entitiesByLower), null, null)
+                                .withListPresentation(columns(prefix, entity, p.columns(), audit),
+                                        sort(prefix, entity, p.sort(), audit), view(prefix, entity, p.view()),
+                                        pageSize(prefix, p.pageSize()))
+                                .withDetail(detail)
+                                .withSpec(listSpec(prefix, entity, p.hideActions(), scaffoldOpts));
                     }
-                    if (refresh != null && widgets.stream().noneMatch(w -> w.kind() != PageDefinition.WidgetKind.TEXT
-                            && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.LIST)) {
-                        throw new WizardArgumentException("Page '" + id + "' refreshes every " + refresh
-                                + " seconds, but none of its widgets shows data to reload");
-                    }
-                    List<String> filters = dashboardFilters(id, p.filters(), widgets, entitiesByLower);
-                    yield new PageDefinition(id, type, title, description, hidden, null, null, widgets, null)
-                            .withDateRange(range)
-                            .withRefreshSeconds(refresh)
-                            .withSpec(filters.isEmpty() ? null : new PageDefinition.DashboardSpec(filters));
-                }
-                case TABS -> {
-                    // No entity to borrow a name from, so the nav label has to be given.
-                    if (title == null) throw new WizardArgumentException("Page '" + id + "' (tabs) needs a title");
-                    yield new PageDefinition(id, type, title, description, hidden, null, null, null,
-                            tabs(id, p.tabs(), typeById));
-                }
-                case MASTER_DETAIL -> {
-                    String prefix = "Page '" + id + "' (master-detail)";
-                    EntityDefinition parent = requireEntity(entitiesByLower, p.parent(), prefix + " parent");
-                    EntityDefinition child = requireEntity(entitiesByLower, p.child(), prefix + " child");
-                    requireSinglePk(prefix, parent);
-                    String via = via(prefix, child, parent, trimToNull(p.via()));
-                    // The child list may open with its own columns and sort, like an entity-list page.
-                    boolean childAudit = auditApplies(child, scaffoldOpts);
-                    yield new PageDefinition(id, type, title, description, hidden, null, null, null, null,
-                            parent.name(), child.name(), via, null, null, null, null, null, null, null)
-                            .withShowParent(Boolean.TRUE.equals(p.showParent()))
-                            .withListPresentation(columns(prefix + " child", child, p.columns(), childAudit),
-                                    sort(prefix + " child", child, p.sort(), childAudit), null, null);
-                }
-                case REPORT -> {
-                    String prefix = "Page '" + id + "' (report)";
-                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
-                    yield new PageDefinition(id, type, title, description, hidden, entity.name(),
-                            presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower), charts(prefix, entity, p));
-                }
-                case RECORD -> {
-                    String prefix = "Page '" + id + "' (record)";
-                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
-                    requireSinglePk(prefix, entity);
-                    String previous = recordPageByEntity.putIfAbsent(entity.name(), id);
-                    if (previous != null) {
-                        throw new WizardArgumentException(prefix + ": " + entity.name()
-                                + " already has a record page ('" + previous + "')");
-                    }
-                    List<PageDefinition.ChildTab> childTabs = childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower, scaffoldOpts);
-                    yield new PageDefinition(id, type, title, description, true, entity.name(), null, null, null,
-                            null, null, null, childTabs, null, null, null, null, null,
-                            headerStats(prefix, entity, p.headerStats(), childTabs, entitiesByLower));
-                }
-                case WIZARD -> {
-                    String prefix = "Page '" + id + "' (wizard)";
-                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
-                    if (entity.readOnly()) {
-                        throw new WizardArgumentException(prefix + ": " + entity.name()
-                                + " is read-only, so there is nothing to create");
-                    }
-                    checkOneCreatePage(prefix, entity, id, type, createPageByEntity, typeById);
-                    yield PageDefinition.wizard(id, title, description, hidden, entity.name(),
-                            steps(prefix, entity, p.steps()));
-                }
-                case FORM -> {
-                    String prefix = "Page '" + id + "' (form)";
-                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
-                    if (entity.readOnly()) {
-                        throw new WizardArgumentException(prefix + ": " + entity.name()
-                                + " is read-only, so there is nothing to create");
-                    }
-                    checkOneCreatePage(prefix, entity, id, type, createPageByEntity, typeById);
-                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), null, null, null);
-                }
-                case INBOX -> {
-                    String prefix = "Page '" + id + "' (inbox)";
-                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
-                    EntityDefinition.Workflow wf = entity.workflow();
-                    if (wf == null || wf.assigneeField() == null) {
-                        throw new WizardArgumentException(prefix + ": " + entity.name()
-                                + " has no workflow with an assignee — an inbox lists rows by who they are assigned to");
-                    }
-                    List<String> shown = List.of(wf.statusField(), wf.assigneeField(), wf.dueField() == null ? "" : wf.dueField());
-                    List<String> defaults = defaultCardFields(entity, wf.statusField()).stream()
-                            .filter(f -> !shown.contains(f)).toList();
-                    List<String> cards = cardFields(prefix, entity, p.cardFields(), defaults);
-                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
-                    // Soonest due first; without a due date, the newest first.
-                    PageDefinition.ListSort sort = p.sort() != null
-                            ? sort(prefix, entity, p.sort(), auditApplies(entity, scaffoldOpts))
-                            : wf.dueField() != null ? new PageDefinition.ListSort(wf.dueField(), false)
-                            : new PageDefinition.ListSort(entity.fields().stream().filter(FieldDefinition::primaryKey)
-                                    .findFirst().orElseThrow().name(), true);
-                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), preset, null, null)
-                            .withListPresentation(null, sort, null, null)
-                            .withSpec(new PageDefinition.InboxSpec(inboxQueues(prefix, p.queues()), cards));
-                }
-                case CALENDAR -> {
-                    String prefix = "Page '" + id + "' (calendar)";
-                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
-                    PageDefinition.CalendarSpec spec = calendar(prefix, entity, p);
-                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
-                    for (String field : java.util.stream.Stream.of(spec.dateField(), spec.endField()).filter(java.util.Objects::nonNull).toList()) {
-                        if (preset.keySet().stream().anyMatch(k -> k.equals(field) || k.equals(field + "From") || k.equals(field + "To"))) {
-                            throw new WizardArgumentException(prefix + ": presetFilter cannot name '" + field
-                                    + "' — the calendar's own range sets it");
+                    case DASHBOARD -> {
+                        PageDefinition.DateRange range = parseDateRange(id, p.dateRange());
+                        List<PageDefinition.Widget> widgets = widgets(id, p.widgets(), entitiesByLower, range != null,
+                                typeById, hiddenById, entityById, scaffoldOpts);
+                        if (range != null && widgets.stream().allMatch(w -> w.dateField() == null)) {
+                            throw new WizardArgumentException("Page '" + id + "' has a dateRange, but none of its widgets"
+                                    + " counts an entity with a filterable date field for it to limit");
                         }
+                        Integer refresh = p.refreshSeconds();
+                        if (refresh != null && !REFRESH_SECONDS.contains(refresh)) {
+                            throw new WizardArgumentException("Page '" + id + "': refreshSeconds must be one of 30, 60, 300 or 900, got " + refresh);
+                        }
+                        if (refresh != null && widgets.stream().noneMatch(w -> w.kind() != PageDefinition.WidgetKind.TEXT
+                                && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.LIST)) {
+                            throw new WizardArgumentException("Page '" + id + "' refreshes every " + refresh
+                                    + " seconds, but none of its widgets shows data to reload");
+                        }
+                        List<String> filters = dashboardFilters(id, p.filters(), widgets, entitiesByLower);
+                        yield new PageDefinition(id, type, title, description, hidden, null, null, widgets, null)
+                                .withDateRange(range)
+                                .withRefreshSeconds(refresh)
+                                .withSpec(filters.isEmpty() ? null : new PageDefinition.DashboardSpec(filters));
                     }
-                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), preset, null, null)
-                            .withSpec(spec);
-                }
-                case BOARD -> {
-                    String prefix = "Page '" + id + "' (board)";
-                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
-                    PageDefinition.BoardSpec spec = board(prefix, entity, p);
-                    Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
-                    if (preset.containsKey(spec.laneField())) {
-                        throw new WizardArgumentException(prefix + ": presetFilter cannot name '" + spec.laneField()
-                                + "' — the lanes already split by it");
+                    case TABS -> {
+                        // No entity to borrow a name from, so the nav label has to be given.
+                        if (title == null) throw new WizardArgumentException("Page '" + id + "' (tabs) needs a title");
+                        yield new PageDefinition(id, type, title, description, hidden, null, null, null,
+                                tabs(id, p.tabs(), typeById));
                     }
-                    PageDefinition.ListSort sort = sort(prefix, entity, p.sort(), auditApplies(entity, scaffoldOpts));
-                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), preset, null, null)
-                            .withListPresentation(null, sort, null, null)
-                            .withSpec(spec);
-                }
-                case CONTENT -> {
-                    String prefix = "Page '" + id + "' (content)";
-                    // No entity to borrow a name from, so the nav label has to be given.
-                    if (title == null) throw new WizardArgumentException(prefix + " needs a title");
-                    yield new PageDefinition(id, type, title, description, hidden, null, null, null, null)
-                            .withSpec(new PageDefinition.ContentSpec(body(prefix, p.body(), typeById, hiddenById)));
-                }
-                case IMPORT -> {
-                    String prefix = "Page '" + id + "' (import)";
-                    EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
-                    if (entity.readOnly()) {
-                        throw new WizardArgumentException(prefix + ": " + entity.name()
-                                + " is read-only, so there is nothing to import");
+                    case MASTER_DETAIL -> {
+                        String prefix = "Page '" + id + "' (master-detail)";
+                        EntityDefinition parent = requireEntity(entitiesByLower, p.parent(), prefix + " parent");
+                        EntityDefinition child = requireEntity(entitiesByLower, p.child(), prefix + " child");
+                        requireSinglePk(prefix, parent);
+                        String via = via(prefix, child, parent, trimToNull(p.via()));
+                        // The child list may open with its own columns and sort, like an entity-list page.
+                        boolean childAudit = auditApplies(child, scaffoldOpts);
+                        yield new PageDefinition(id, type, title, description, hidden, null, null, null, null,
+                                parent.name(), child.name(), via, null, null, null, null, null, null, null)
+                                .withShowParent(Boolean.TRUE.equals(p.showParent()))
+                                .withListPresentation(columns(prefix + " child", child, p.columns(), childAudit),
+                                        sort(prefix + " child", child, p.sort(), childAudit), null, null);
                     }
-                    if (Boolean.FALSE.equals(entity.opts().get("csvImport"))) {
-                        throw new WizardArgumentException(prefix + " imports " + entity.name()
-                                + ", whose csvImport option is off");
+                    case REPORT -> {
+                        String prefix = "Page '" + id + "' (report)";
+                        EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                        yield new PageDefinition(id, type, title, description, hidden, entity.name(),
+                                presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower), charts(prefix, entity, p));
                     }
-                    String previous = importPageByEntity.putIfAbsent(entity.name(), id);
-                    if (previous != null) {
-                        throw new WizardArgumentException(prefix + ": " + entity.name()
-                                + " already has an import page ('" + previous + "')");
+                    case RECORD -> {
+                        String prefix = "Page '" + id + "' (record)";
+                        EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                        requireSinglePk(prefix, entity);
+                        String previous = recordPageByEntity.putIfAbsent(entity.name(), id);
+                        if (previous != null) {
+                            throw new WizardArgumentException(prefix + ": " + entity.name()
+                                    + " already has a record page ('" + previous + "')");
+                        }
+                        List<PageDefinition.ChildTab> childTabs = childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower, scaffoldOpts);
+                        yield new PageDefinition(id, type, title, description, true, entity.name(), null, null, null,
+                                null, null, null, childTabs, null, null, null, null, null,
+                                headerStats(prefix, entity, p.headerStats(), childTabs, entitiesByLower));
                     }
-                    yield new PageDefinition(id, type, title, description, hidden, entity.name(), null, null, null);
-                }
-                case SEARCH -> {
-                    String prefix = "Page '" + id + "' (search)";
-                    if (searchPage != null) {
-                        throw new WizardArgumentException(prefix + ": a layout has one search page ('" + searchPage
-                                + "' already is) — the header search box opens it");
+                    case WIZARD -> {
+                        String prefix = "Page '" + id + "' (wizard)";
+                        EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                        if (entity.readOnly()) {
+                            throw new WizardArgumentException(prefix + ": " + entity.name()
+                                    + " is read-only, so there is nothing to create");
+                        }
+                        checkOneCreatePage(prefix, entity, id, type, createPageByEntity, typeById);
+                        yield PageDefinition.wizard(id, title, description, hidden, entity.name(),
+                                steps(prefix, entity, p.steps()));
                     }
-                    searchPage = id;
-                    PageDefinition.SearchSpec spec = search(prefix, p, entities, entitiesByLower);
-                    if (hidden && !spec.shellSearch()) {
-                        throw new WizardArgumentException(prefix + " is hidden, so it needs shellSearch: nothing else opens it");
+                    case FORM -> {
+                        String prefix = "Page '" + id + "' (form)";
+                        EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                        if (entity.readOnly()) {
+                            throw new WizardArgumentException(prefix + ": " + entity.name()
+                                    + " is read-only, so there is nothing to create");
+                        }
+                        checkOneCreatePage(prefix, entity, id, type, createPageByEntity, typeById);
+                        yield new PageDefinition(id, type, title, description, hidden, entity.name(), null, null, null);
                     }
-                    yield new PageDefinition(id, type, title, description, hidden, null, null, null, null).withSpec(spec);
-                }
-            };
-            pages.add(page.withNav(group, icon).withRoles(roles(id, p.roles())));
+                    case INBOX -> {
+                        String prefix = "Page '" + id + "' (inbox)";
+                        EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                        EntityDefinition.Workflow wf = entity.workflow();
+                        if (wf == null || wf.assigneeField() == null) {
+                            throw new WizardArgumentException(prefix + ": " + entity.name()
+                                    + " has no workflow with an assignee — an inbox lists rows by who they are assigned to");
+                        }
+                        List<String> shown = List.of(wf.statusField(), wf.assigneeField(), wf.dueField() == null ? "" : wf.dueField());
+                        List<String> defaults = defaultCardFields(entity, wf.statusField()).stream()
+                                .filter(f -> !shown.contains(f)).toList();
+                        List<String> cards = cardFields(prefix, entity, p.cardFields(), defaults);
+                        Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
+                        // Soonest due first; without a due date, the newest first.
+                        PageDefinition.ListSort sort = p.sort() != null
+                                ? sort(prefix, entity, p.sort(), auditApplies(entity, scaffoldOpts))
+                                : wf.dueField() != null ? new PageDefinition.ListSort(wf.dueField(), false)
+                                : new PageDefinition.ListSort(entity.fields().stream().filter(FieldDefinition::primaryKey)
+                                        .findFirst().orElseThrow().name(), true);
+                        yield new PageDefinition(id, type, title, description, hidden, entity.name(), preset, null, null)
+                                .withListPresentation(null, sort, null, null)
+                                .withSpec(new PageDefinition.InboxSpec(inboxQueues(prefix, p.queues()), cards));
+                    }
+                    case CALENDAR -> {
+                        String prefix = "Page '" + id + "' (calendar)";
+                        EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                        PageDefinition.CalendarSpec spec = calendar(prefix, entity, p);
+                        Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
+                        for (String field : java.util.stream.Stream.of(spec.dateField(), spec.endField()).filter(java.util.Objects::nonNull).toList()) {
+                            if (preset.keySet().stream().anyMatch(k -> k.equals(field) || k.equals(field + "From") || k.equals(field + "To"))) {
+                                throw new WizardArgumentException(prefix + ": presetFilter cannot name '" + field
+                                        + "' — the calendar's own range sets it");
+                            }
+                        }
+                        yield new PageDefinition(id, type, title, description, hidden, entity.name(), preset, null, null)
+                                .withSpec(spec);
+                    }
+                    case BOARD -> {
+                        String prefix = "Page '" + id + "' (board)";
+                        EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                        PageDefinition.BoardSpec spec = board(prefix, entity, p);
+                        Map<String, String> preset = presetFilter("Page '" + id + "'", entity, p.presetFilter(), entitiesByLower);
+                        if (preset.containsKey(spec.laneField())) {
+                            throw new WizardArgumentException(prefix + ": presetFilter cannot name '" + spec.laneField()
+                                    + "' — the lanes already split by it");
+                        }
+                        PageDefinition.ListSort sort = sort(prefix, entity, p.sort(), auditApplies(entity, scaffoldOpts));
+                        yield new PageDefinition(id, type, title, description, hidden, entity.name(), preset, null, null)
+                                .withListPresentation(null, sort, null, null)
+                                .withSpec(spec);
+                    }
+                    case CONTENT -> {
+                        String prefix = "Page '" + id + "' (content)";
+                        // No entity to borrow a name from, so the nav label has to be given.
+                        if (title == null) throw new WizardArgumentException(prefix + " needs a title");
+                        yield new PageDefinition(id, type, title, description, hidden, null, null, null, null)
+                                .withSpec(new PageDefinition.ContentSpec(body(prefix, p.body(), typeById, hiddenById)));
+                    }
+                    case IMPORT -> {
+                        String prefix = "Page '" + id + "' (import)";
+                        EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                        if (entity.readOnly()) {
+                            throw new WizardArgumentException(prefix + ": " + entity.name()
+                                    + " is read-only, so there is nothing to import");
+                        }
+                        if (Boolean.FALSE.equals(entity.opts().get("csvImport"))) {
+                            throw new WizardArgumentException(prefix + " imports " + entity.name()
+                                    + ", whose csvImport option is off");
+                        }
+                        String previous = importPageByEntity.putIfAbsent(entity.name(), id);
+                        if (previous != null) {
+                            throw new WizardArgumentException(prefix + ": " + entity.name()
+                                    + " already has an import page ('" + previous + "')");
+                        }
+                        yield new PageDefinition(id, type, title, description, hidden, entity.name(), null, null, null);
+                    }
+                    case SEARCH -> {
+                        String prefix = "Page '" + id + "' (search)";
+                        if (searchPage != null) {
+                            throw new WizardArgumentException(prefix + ": a layout has one search page ('" + searchPage
+                                    + "' already is) — the header search box opens it");
+                        }
+                        searchPage = id;
+                        PageDefinition.SearchSpec spec = search(prefix, p, entities, entitiesByLower);
+                        if (hidden && !spec.shellSearch()) {
+                            throw new WizardArgumentException(prefix + " is hidden, so it needs shellSearch: nothing else opens it");
+                        }
+                        yield new PageDefinition(id, type, title, description, hidden, null, null, null, null).withSpec(spec);
+                    }
+                };
+                pages.add(page.withNav(group, icon).withRoles(roles(id, p.roles())));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("pages[" + raw.indexOf(p) + "]");
+            }
         }
         if (!anyVisible) throw new WizardArgumentException("At least one page must be visible in the navigation");
         // A list that opens rows on the record page needs one for its entity.
@@ -923,140 +931,144 @@ public final class FullstackPageValidator {
         }
         List<PageDefinition.Widget> out = new ArrayList<>(raw.size());
         for (int wi = 0; wi < raw.size(); wi++) {
-            WidgetDto w = raw.get(wi);
-            String prefix = "Page '" + id + "' widgets[" + wi + "]";
-            if (w == null) throw new WizardArgumentException(prefix + " is null");
-            PageDefinition.WidgetKind kind = parseKind(prefix, w.kind());
-            if (kind == PageDefinition.WidgetKind.ACTIVITY) {
-                out.add(activityWidget(prefix, w, entitiesByLower, scaffoldOpts));
-                continue;
-            }
-            if (w.entities() != null && !w.entities().isEmpty()) {
-                throw new WizardArgumentException(prefix + ": only an activity widget takes 'entities'");
-            }
-            if (kind == PageDefinition.WidgetKind.TEXT) {
-                out.add(textWidget(prefix, w));
-                continue;
-            }
-            if (kind == PageDefinition.WidgetKind.LINKS) {
-                out.add(linksWidget(prefix, w, typeById, hiddenById));
-                continue;
-            }
-            if (kind == PageDefinition.WidgetKind.LIST) {
-                PageDefinition.Widget list = listWidget(prefix, w, entitiesByLower, scaffoldOpts);
-                out.add(withDrillTo(list, drillTo(prefix, w.drillTo(), list.entity(), typeById, hiddenById, entityById)));
-                continue;
-            }
-            if (trimToNull(w.text()) != null) {
-                throw new WizardArgumentException(prefix + ": only a text widget takes 'text'");
-            }
-            if (w.pages() != null && !w.pages().isEmpty()) {
-                throw new WizardArgumentException(prefix + ": only a links widget takes 'pages'");
-            }
-            if ((w.columns() != null && !w.columns().isEmpty()) || w.sort() != null) {
-                throw new WizardArgumentException(prefix + ": only a list widget takes 'columns' and 'sort'");
-            }
-            EntityDefinition entity = requireEntity(entitiesByLower, w.entity(), prefix);
-            String title = checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title");
-            boolean reduces = kind != PageDefinition.WidgetKind.RECENT;
-            // A tile against a target: the same reduction as a kpi, and the target it fills up to.
-            java.math.BigDecimal target = null;
-            if (kind == PageDefinition.WidgetKind.PROGRESS) {
-                target = progressTarget(prefix, trimToNull(w.target()));
-            } else if (trimToNull(w.target()) != null) {
-                throw new WizardArgumentException(prefix + ": only a progress widget takes 'target'");
-            }
-            PageDefinition.Agg agg = null;
-            String field = null;
-            if (reduces) {
-                agg = parseAgg(prefix, w.agg());
-                field = aggField(prefix, entity, agg, trimToNull(w.field()));
-            } else {
-                if (trimToNull(w.agg()) != null) {
-                    throw new WizardArgumentException(prefix + ": a recent widget lists rows, so it takes no 'agg'");
+            try {
+                WidgetDto w = raw.get(wi);
+                String prefix = "Page '" + id + "' widgets[" + wi + "]";
+                if (w == null) throw new WizardArgumentException(prefix + " is null");
+                PageDefinition.WidgetKind kind = parseKind(prefix, w.kind());
+                if (kind == PageDefinition.WidgetKind.ACTIVITY) {
+                    out.add(activityWidget(prefix, w, entitiesByLower, scaffoldOpts));
+                    continue;
                 }
-                if (trimToNull(w.field()) != null) {
-                    throw new WizardArgumentException(prefix + ": a recent widget lists rows, so it takes no 'field'");
+                if (w.entities() != null && !w.entities().isEmpty()) {
+                    throw new WizardArgumentException(prefix + ": only an activity widget takes 'entities'");
                 }
-            }
-            String groupBy = null;
-            String series = null;
-            PageDefinition.Bucket bucket = null;
-            switch (kind) {
-                case BAR, DONUT -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "group by");
-                case STACKED -> {
-                    groupBy = groupBy(prefix, entity, trimToNull(w.groupBy()));
-                    series = series(prefix, entity, groupBy, trimToNull(w.series()));
+                if (kind == PageDefinition.WidgetKind.TEXT) {
+                    out.add(textWidget(prefix, w));
+                    continue;
                 }
-                case TOP -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "rank by");
-                case PIVOT -> {
-                    groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "lay out in rows");
-                    series = pivotColumns(prefix, entity, groupBy, trimToNull(w.series()));
+                if (kind == PageDefinition.WidgetKind.LINKS) {
+                    out.add(linksWidget(prefix, w, typeById, hiddenById));
+                    continue;
                 }
-                case LINE -> {
-                    groupBy = dateGroupBy(prefix, entity, trimToNull(w.groupBy()));
-                    bucket = parseBucket(prefix, w.bucket());
+                if (kind == PageDefinition.WidgetKind.LIST) {
+                    PageDefinition.Widget list = listWidget(prefix, w, entitiesByLower, scaffoldOpts);
+                    out.add(withDrillTo(list, drillTo(prefix, w.drillTo(), list.entity(), typeById, hiddenById, entityById)));
+                    continue;
                 }
-                default -> {
-                    if (trimToNull(w.groupBy()) != null) {
-                        throw new WizardArgumentException(prefix + ": only a bar, donut, stacked, pivot, line or top widget takes 'groupBy'");
+                if (trimToNull(w.text()) != null) {
+                    throw new WizardArgumentException(prefix + ": only a text widget takes 'text'");
+                }
+                if (w.pages() != null && !w.pages().isEmpty()) {
+                    throw new WizardArgumentException(prefix + ": only a links widget takes 'pages'");
+                }
+                if ((w.columns() != null && !w.columns().isEmpty()) || w.sort() != null) {
+                    throw new WizardArgumentException(prefix + ": only a list widget takes 'columns' and 'sort'");
+                }
+                EntityDefinition entity = requireEntity(entitiesByLower, w.entity(), prefix);
+                String title = checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title");
+                boolean reduces = kind != PageDefinition.WidgetKind.RECENT;
+                // A tile against a target: the same reduction as a kpi, and the target it fills up to.
+                java.math.BigDecimal target = null;
+                if (kind == PageDefinition.WidgetKind.PROGRESS) {
+                    target = progressTarget(prefix, trimToNull(w.target()));
+                } else if (trimToNull(w.target()) != null) {
+                    throw new WizardArgumentException(prefix + ": only a progress widget takes 'target'");
+                }
+                PageDefinition.Agg agg = null;
+                String field = null;
+                if (reduces) {
+                    agg = parseAgg(prefix, w.agg());
+                    field = aggField(prefix, entity, agg, trimToNull(w.field()));
+                } else {
+                    if (trimToNull(w.agg()) != null) {
+                        throw new WizardArgumentException(prefix + ": a recent widget lists rows, so it takes no 'agg'");
+                    }
+                    if (trimToNull(w.field()) != null) {
+                        throw new WizardArgumentException(prefix + ": a recent widget lists rows, so it takes no 'field'");
                     }
                 }
-            }
-            if (kind != PageDefinition.WidgetKind.STACKED && kind != PageDefinition.WidgetKind.PIVOT
-                    && trimToNull(w.series()) != null) {
-                throw new WizardArgumentException(prefix + ": only a stacked or pivot widget takes 'series'");
-            }
-            if (kind != PageDefinition.WidgetKind.LINE && trimToNull(w.bucket()) != null) {
-                throw new WizardArgumentException(prefix + ": only a line widget takes 'bucket'");
-            }
-            // A kpi's sparkline: kept in the bucket and groupBy a kpi has no other use for.
-            String rawTrend = trimToNull(w.trend());
-            if (rawTrend != null) {
-                if (kind != PageDefinition.WidgetKind.KPI) {
-                    throw new WizardArgumentException(prefix + ": only a kpi widget takes 'trend'");
+                String groupBy = null;
+                String series = null;
+                PageDefinition.Bucket bucket = null;
+                switch (kind) {
+                    case BAR, DONUT -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "group by");
+                    case STACKED -> {
+                        groupBy = groupBy(prefix, entity, trimToNull(w.groupBy()));
+                        series = series(prefix, entity, groupBy, trimToNull(w.series()));
+                    }
+                    case TOP -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "rank by");
+                    case PIVOT -> {
+                        groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "lay out in rows");
+                        series = pivotColumns(prefix, entity, groupBy, trimToNull(w.series()));
+                    }
+                    case LINE -> {
+                        groupBy = dateGroupBy(prefix, entity, trimToNull(w.groupBy()));
+                        bucket = parseBucket(prefix, w.bucket());
+                    }
+                    default -> {
+                        if (trimToNull(w.groupBy()) != null) {
+                            throw new WizardArgumentException(prefix + ": only a bar, donut, stacked, pivot, line or top widget takes 'groupBy'");
+                        }
+                    }
                 }
-                bucket = parseBucket(prefix, rawTrend, "trend");
-            }
-            int limit = 0;
-            if (kind == PageDefinition.WidgetKind.RECENT || kind == PageDefinition.WidgetKind.TOP) {
-                limit = w.limit() == null ? DEFAULT_RECENT_LIMIT : w.limit();
-                if (limit < 1 || limit > MAX_RECENT_LIMIT) {
-                    throw new WizardArgumentException(prefix + ": limit must be between 1 and " + MAX_RECENT_LIMIT);
+                if (kind != PageDefinition.WidgetKind.STACKED && kind != PageDefinition.WidgetKind.PIVOT
+                        && trimToNull(w.series()) != null) {
+                    throw new WizardArgumentException(prefix + ": only a stacked or pivot widget takes 'series'");
                 }
-            } else if (w.limit() != null) {
-                throw new WizardArgumentException(prefix + ": only a recent or top widget takes 'limit'");
-            }
-            int span = w.span() == null ? PageDefinition.Widget.defaultSpan(kind) : w.span();
-            if (span < 1 || span > MAX_SPAN) {
-                throw new WizardArgumentException(prefix + ": span must be between 1 and " + MAX_SPAN);
-            }
-            String sortBy = null;
-            if (kind == PageDefinition.WidgetKind.RECENT) {
-                sortBy = sortBy(prefix, entity, trimToNull(w.sortBy()), auditApplies(entity, scaffoldOpts));
-            } else if (trimToNull(w.sortBy()) != null) {
-                throw new WizardArgumentException(prefix + ": only a recent widget takes 'sortBy'");
-            }
-            // Without a picker, a trend's dateField only names the date it plots over.
-            boolean trendDate = bucket != null && kind == PageDefinition.WidgetKind.KPI && !hasDateRange;
-            String dateField = trendDate ? null : dateField(prefix, entity, trimToNull(w.dateField()), hasDateRange);
-            if (bucket != null && kind == PageDefinition.WidgetKind.KPI) {
-                groupBy = trendOn(prefix, entity, dateField, trendDate ? trimToNull(w.dateField()) : null);
-            }
-            boolean compare = Boolean.TRUE.equals(w.compare());
-            if (compare) {
-                if (kind != PageDefinition.WidgetKind.KPI) {
-                    throw new WizardArgumentException(prefix + ": only a kpi widget takes 'compare'");
+                if (kind != PageDefinition.WidgetKind.LINE && trimToNull(w.bucket()) != null) {
+                    throw new WizardArgumentException(prefix + ": only a line widget takes 'bucket'");
                 }
-                // The previous period is the picker's, over the widget's date.
-                if (dateField == null) {
-                    throw new WizardArgumentException(prefix + ": 'compare' needs the dashboard's dateRange and a"
-                            + " filterable date field on " + entity.name() + " to compare periods by");
+                // A kpi's sparkline: kept in the bucket and groupBy a kpi has no other use for.
+                String rawTrend = trimToNull(w.trend());
+                if (rawTrend != null) {
+                    if (kind != PageDefinition.WidgetKind.KPI) {
+                        throw new WizardArgumentException(prefix + ": only a kpi widget takes 'trend'");
+                    }
+                    bucket = parseBucket(prefix, rawTrend, "trend");
                 }
+                int limit = 0;
+                if (kind == PageDefinition.WidgetKind.RECENT || kind == PageDefinition.WidgetKind.TOP) {
+                    limit = w.limit() == null ? DEFAULT_RECENT_LIMIT : w.limit();
+                    if (limit < 1 || limit > MAX_RECENT_LIMIT) {
+                        throw new WizardArgumentException(prefix + ": limit must be between 1 and " + MAX_RECENT_LIMIT);
+                    }
+                } else if (w.limit() != null) {
+                    throw new WizardArgumentException(prefix + ": only a recent or top widget takes 'limit'");
+                }
+                int span = w.span() == null ? PageDefinition.Widget.defaultSpan(kind) : w.span();
+                if (span < 1 || span > MAX_SPAN) {
+                    throw new WizardArgumentException(prefix + ": span must be between 1 and " + MAX_SPAN);
+                }
+                String sortBy = null;
+                if (kind == PageDefinition.WidgetKind.RECENT) {
+                    sortBy = sortBy(prefix, entity, trimToNull(w.sortBy()), auditApplies(entity, scaffoldOpts));
+                } else if (trimToNull(w.sortBy()) != null) {
+                    throw new WizardArgumentException(prefix + ": only a recent widget takes 'sortBy'");
+                }
+                // Without a picker, a trend's dateField only names the date it plots over.
+                boolean trendDate = bucket != null && kind == PageDefinition.WidgetKind.KPI && !hasDateRange;
+                String dateField = trendDate ? null : dateField(prefix, entity, trimToNull(w.dateField()), hasDateRange);
+                if (bucket != null && kind == PageDefinition.WidgetKind.KPI) {
+                    groupBy = trendOn(prefix, entity, dateField, trendDate ? trimToNull(w.dateField()) : null);
+                }
+                boolean compare = Boolean.TRUE.equals(w.compare());
+                if (compare) {
+                    if (kind != PageDefinition.WidgetKind.KPI) {
+                        throw new WizardArgumentException(prefix + ": only a kpi widget takes 'compare'");
+                    }
+                    // The previous period is the picker's, over the widget's date.
+                    if (dateField == null) {
+                        throw new WizardArgumentException(prefix + ": 'compare' needs the dashboard's dateRange and a"
+                                + " filterable date field on " + entity.name() + " to compare periods by");
+                    }
+                }
+                out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit, agg, field, bucket, span,
+                        presetFilter(prefix, entity, w.presetFilter(), entitiesByLower), sortBy, dateField, compare, target, series, null,
+                        null, null, null, drillTo(prefix, w.drillTo(), entity.name(), typeById, hiddenById, entityById)));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("widgets[" + wi + "]");
             }
-            out.add(new PageDefinition.Widget(kind, entity.name(), title, groupBy, limit, agg, field, bucket, span,
-                    presetFilter(prefix, entity, w.presetFilter(), entitiesByLower), sortBy, dateField, compare, target, series, null,
-                    null, null, null, drillTo(prefix, w.drillTo(), entity.name(), typeById, hiddenById, entityById)));
         }
         return out;
     }
@@ -1537,7 +1549,11 @@ public final class FullstackPageValidator {
         }
         List<PageDefinition.Chart> out = new ArrayList<>();
         for (int i = 0; i < p.charts().size(); i++) {
-            out.add(chart(prefix + " charts[" + i + "]", entity, p.charts().get(i)));
+            try {
+                out.add(chart(prefix + " charts[" + i + "]", entity, p.charts().get(i)));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("charts[" + i + "]");
+            }
         }
         return out;
     }
@@ -1662,22 +1678,26 @@ public final class FullstackPageValidator {
         Set<String> seen = new HashSet<>();
         List<PageDefinition.Tab> out = new ArrayList<>(raw.size());
         for (int ti = 0; ti < raw.size(); ti++) {
-            TabDto t = raw.get(ti);
-            String prefix = "Page '" + id + "' tabs[" + ti + "]";
-            if (t == null) throw new WizardArgumentException(prefix + " is null");
-            String target = trimToNull(t.page());
-            if (target == null) throw new WizardArgumentException(prefix + ": page is required");
-            PageDefinition.Type targetType = typeById.get(target);
-            if (targetType == null) throw new WizardArgumentException(prefix + ": no page with id '" + target + "'");
-            if (targetType == PageDefinition.Type.TABS) {
-                throw new WizardArgumentException(prefix + ": a tab cannot embed another tabs page ('" + target + "')");
+            try {
+                TabDto t = raw.get(ti);
+                String prefix = "Page '" + id + "' tabs[" + ti + "]";
+                if (t == null) throw new WizardArgumentException(prefix + " is null");
+                String target = trimToNull(t.page());
+                if (target == null) throw new WizardArgumentException(prefix + ": page is required");
+                PageDefinition.Type targetType = typeById.get(target);
+                if (targetType == null) throw new WizardArgumentException(prefix + ": no page with id '" + target + "'");
+                if (targetType == PageDefinition.Type.TABS) {
+                    throw new WizardArgumentException(prefix + ": a tab cannot embed another tabs page ('" + target + "')");
+                }
+                if (targetType == PageDefinition.Type.RECORD) {
+                    throw new WizardArgumentException(prefix + ": a tab cannot embed a record page ('" + target
+                            + "') — it needs a record id");
+                }
+                if (!seen.add(target)) throw new WizardArgumentException(prefix + ": page '" + target + "' is already a tab");
+                out.add(new PageDefinition.Tab(checkLength(trimToNull(t.title()), MAX_TITLE, prefix + " title"), target));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("tabs[" + ti + "]");
             }
-            if (targetType == PageDefinition.Type.RECORD) {
-                throw new WizardArgumentException(prefix + ": a tab cannot embed a record page ('" + target
-                        + "') — it needs a record id");
-            }
-            if (!seen.add(target)) throw new WizardArgumentException(prefix + ": page '" + target + "' is already a tab");
-            out.add(new PageDefinition.Tab(checkLength(trimToNull(t.title()), MAX_TITLE, prefix + " title"), target));
         }
         return out;
     }
@@ -1735,28 +1755,32 @@ public final class FullstackPageValidator {
         Set<String> seen = new HashSet<>();
         List<PageDefinition.Step> out = new ArrayList<>();
         for (int si = 0; si < raw.size(); si++) {
-            FullstackStarterRequest.StepDto step = raw.get(si);
-            String stepPrefix = prefix + " steps[" + si + "]";
-            if (step == null || step.fields() == null || step.fields().isEmpty()) {
-                throw new WizardArgumentException(stepPrefix + ": a step needs at least one field");
+            try {
+                FullstackStarterRequest.StepDto step = raw.get(si);
+                String stepPrefix = prefix + " steps[" + si + "]";
+                if (step == null || step.fields() == null || step.fields().isEmpty()) {
+                    throw new WizardArgumentException(stepPrefix + ": a step needs at least one field");
+                }
+                List<String> fields = new ArrayList<>();
+                for (String name : step.fields()) {
+                    String canonical = name == null ? null : askable.get(name.trim().toLowerCase(Locale.ROOT));
+                    if (canonical == null && status != null && name != null && status.equalsIgnoreCase(name.trim())) {
+                        throw new WizardArgumentException(stepPrefix + ": '" + status + "' is set by the workflow, so a step cannot ask for it");
+                    }
+                    if (canonical == null) {
+                        throw new WizardArgumentException(stepPrefix + ": '" + name + "' is not a field of the "
+                                + entity.name() + " form");
+                    }
+                    if (!seen.add(canonical)) {
+                        throw new WizardArgumentException(stepPrefix + ": '" + canonical + "' is already asked for");
+                    }
+                    fields.add(canonical);
+                }
+                out.add(new PageDefinition.Step(checkLength(trimToNull(step.title()), MAX_TITLE, stepPrefix + " title"),
+                        fields));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("steps[" + si + "]");
             }
-            List<String> fields = new ArrayList<>();
-            for (String name : step.fields()) {
-                String canonical = name == null ? null : askable.get(name.trim().toLowerCase(Locale.ROOT));
-                if (canonical == null && status != null && name != null && status.equalsIgnoreCase(name.trim())) {
-                    throw new WizardArgumentException(stepPrefix + ": '" + status + "' is set by the workflow, so a step cannot ask for it");
-                }
-                if (canonical == null) {
-                    throw new WizardArgumentException(stepPrefix + ": '" + name + "' is not a field of the "
-                            + entity.name() + " form");
-                }
-                if (!seen.add(canonical)) {
-                    throw new WizardArgumentException(stepPrefix + ": '" + canonical + "' is already asked for");
-                }
-                fields.add(canonical);
-            }
-            out.add(new PageDefinition.Step(checkLength(trimToNull(step.title()), MAX_TITLE, stepPrefix + " title"),
-                    fields));
         }
         for (String name : required) {
             if (!seen.contains(name)) {
@@ -1787,19 +1811,23 @@ public final class FullstackPageValidator {
             throw new WizardArgumentException(prefix + ": at most " + MAX_HEADER_STATS + " header stats are allowed");
         }
         for (int i = 0; i < raw.size(); i++) {
-            FullstackStarterRequest.HeaderStatDto s = raw.get(i);
-            String statPrefix = prefix + " headerStats[" + i + "]";
-            if (s == null) throw new WizardArgumentException(statPrefix + " is null");
-            EntityDefinition child = requireEntity(entitiesByLower, s.child(), statPrefix);
-            // An unnamed link follows the child's tab, so a tile counts exactly what its tab lists.
-            String requested = trimToNull(s.via());
-            String viaRel = requested != null ? linkVia(statPrefix, child, entity, requested)
-                    : childTabs.stream().filter(t -> t.entity().equals(child.name())).map(PageDefinition.ChildTab::via)
-                        .findFirst().orElseGet(() -> linkVia(statPrefix, child, entity, null));
-            PageDefinition.Agg agg = parseAgg(statPrefix, s.agg());
-            out.add(new PageDefinition.HeaderStat(child.name(), viaRel, agg,
-                    aggField(statPrefix, child, agg, trimToNull(s.field())),
-                    checkLength(trimToNull(s.title()), MAX_TITLE, statPrefix + " title")));
+            try {
+                FullstackStarterRequest.HeaderStatDto s = raw.get(i);
+                String statPrefix = prefix + " headerStats[" + i + "]";
+                if (s == null) throw new WizardArgumentException(statPrefix + " is null");
+                EntityDefinition child = requireEntity(entitiesByLower, s.child(), statPrefix);
+                // An unnamed link follows the child's tab, so a tile counts exactly what its tab lists.
+                String requested = trimToNull(s.via());
+                String viaRel = requested != null ? linkVia(statPrefix, child, entity, requested)
+                        : childTabs.stream().filter(t -> t.entity().equals(child.name())).map(PageDefinition.ChildTab::via)
+                            .findFirst().orElseGet(() -> linkVia(statPrefix, child, entity, null));
+                PageDefinition.Agg agg = parseAgg(statPrefix, s.agg());
+                out.add(new PageDefinition.HeaderStat(child.name(), viaRel, agg,
+                        aggField(statPrefix, child, agg, trimToNull(s.field())),
+                        checkLength(trimToNull(s.title()), MAX_TITLE, statPrefix + " title")));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("headerStats[" + i + "]");
+            }
         }
         return out;
     }
@@ -1866,18 +1894,22 @@ public final class FullstackPageValidator {
         } else {
             Set<String> seen = new HashSet<>();
             for (int i = 0; i < raw.size(); i++) {
-                String itemPrefix = prefix + " childTabs[" + i + "]";
-                FullstackStarterRequest.ChildTabDto item = raw.get(i);
-                if (item == null) throw new WizardArgumentException(itemPrefix + " is null");
-                EntityDefinition child = requireEntity(entitiesByLower, item.entity(), itemPrefix);
-                String viaRel = linkVia(itemPrefix, child, entity, trimToNull(item.via()));
-                if (!seen.add(child.name())) {
-                    throw new WizardArgumentException(itemPrefix + ": " + child.name() + " is already a tab");
+                try {
+                    String itemPrefix = prefix + " childTabs[" + i + "]";
+                    FullstackStarterRequest.ChildTabDto item = raw.get(i);
+                    if (item == null) throw new WizardArgumentException(itemPrefix + " is null");
+                    EntityDefinition child = requireEntity(entitiesByLower, item.entity(), itemPrefix);
+                    String viaRel = linkVia(itemPrefix, child, entity, trimToNull(item.via()));
+                    if (!seen.add(child.name())) {
+                        throw new WizardArgumentException(itemPrefix + ": " + child.name() + " is already a tab");
+                    }
+                    // How the related list opens: the columns and sort of an entity-list page.
+                    boolean audit = auditApplies(child, scaffoldOpts);
+                    out.add(new PageDefinition.ChildTab(child.name(), viaRel,
+                            columns(itemPrefix, child, item.columns(), audit), sort(itemPrefix, child, item.sort(), audit)));
+                } catch (WizardArgumentException problem) {
+                    throw problem.at("childTabs[" + i + "]");
                 }
-                // How the related list opens: the columns and sort of an entity-list page.
-                boolean audit = auditApplies(child, scaffoldOpts);
-                out.add(new PageDefinition.ChildTab(child.name(), viaRel,
-                        columns(itemPrefix, child, item.columns(), audit), sort(itemPrefix, child, item.sort(), audit)));
             }
         }
         if (out.size() > MAX_TABS - 1) {
