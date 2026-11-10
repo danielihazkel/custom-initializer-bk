@@ -1,5 +1,6 @@
 package com.menora.initializr.db.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -68,6 +69,19 @@ public class EntityTemplateFileEntity {
     @Column(name = "gated_by", length = 80)
     private String gatedBy;
 
+    /** {@link #seedHash} of a row an admin created or imported: never replaced by a shipped file. */
+    public static final String CUSTOM_SEED_HASH = "custom";
+
+    /**
+     * sha256 of the shipped content this row was last seeded with (line endings normalized), which
+     * is how {@code EntityTemplateSetSync} tells an untouched row — replaced when the release ships
+     * a newer file — from one an admin edited. Null only on rows from before {@code V26}. Never
+     * read from or written to the admin API's JSON.
+     */
+    @JsonIgnore
+    @Column(name = "seed_hash", length = 64)
+    private String seedHash;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Long getSetId() { return setId; }
@@ -89,5 +103,13 @@ public class EntityTemplateFileEntity {
     public String getGatedBy() { return gatedBy; }
     public void setGatedBy(String gatedBy) {
         this.gatedBy = (gatedBy == null || gatedBy.isBlank()) ? null : gatedBy;
+    }
+    public String getSeedHash() { return seedHash; }
+    public void setSeedHash(String seedHash) { this.seedHash = seedHash; }
+
+    /** A row nobody stamped was not seeded: an admin created or imported it. */
+    @PrePersist
+    void markCustomUnlessSeeded() {
+        if (seedHash == null) seedHash = CUSTOM_SEED_HASH;
     }
 }

@@ -44,6 +44,12 @@ spring:
   flyway:
     baseline-on-migrate: true
     baseline-version: 1
+    # Feature branches number their migrations independently (the design-kit branch holds V24/V25,
+    # this line continues at V26), and one database file is often run on more than one of them.
+    # So a migration applied by another branch is tolerated ("missing"/"future"), and one that
+    # arrives later with a lower number is still applied (out-of-order).
+    out-of-order: true
+    ignore-migration-patterns: "*:missing,*:future"
   h2:
     console:
       enabled: true

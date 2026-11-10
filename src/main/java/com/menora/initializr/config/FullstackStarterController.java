@@ -249,6 +249,8 @@ public class FullstackStarterController {
         Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
         Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
         Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body));
+        // One set of bytes whatever machine generated it — see normalizeLineEndings.
+        GeneratedProjectFiles.normalizeLineEndings(tempDir);
         return request;
     }
 

@@ -43,9 +43,7 @@ public class DataSeeder implements SmartInitializingSingleton {
     private final StarterTemplateDepRepository templateDepRepo;
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
-    private final EntityTemplateSetRepository entityTemplateSetRepo;
-    private final EntityTemplateFileRepository entityTemplateFileRepo;
-    private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
+    private final EntityTemplateSetSync templateSetSync;
     private final ColorPaletteRepository colorPaletteRepo;
     private final VersionDefinitionRepository versionRepo;
     private final DepartmentRepository departmentRepo;
@@ -61,9 +59,7 @@ public class DataSeeder implements SmartInitializingSingleton {
                       StarterTemplateDepRepository templateDepRepo,
                       ModuleTemplateRepository moduleRepo,
                       ModuleDependencyMappingRepository moduleMappingRepo,
-                      EntityTemplateSetRepository entityTemplateSetRepo,
-                      EntityTemplateFileRepository entityTemplateFileRepo,
-                      EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
+                      EntityTemplateSetSync templateSetSync,
                       ColorPaletteRepository colorPaletteRepo,
                       VersionDefinitionRepository versionRepo,
                       DepartmentRepository departmentRepo,
@@ -78,9 +74,7 @@ public class DataSeeder implements SmartInitializingSingleton {
         this.templateDepRepo = templateDepRepo;
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
-        this.entityTemplateSetRepo = entityTemplateSetRepo;
-        this.entityTemplateFileRepo = entityTemplateFileRepo;
-        this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
+        this.templateSetSync = templateSetSync;
         this.colorPaletteRepo = colorPaletteRepo;
         this.versionRepo = versionRepo;
         this.departmentRepo = departmentRepo;
@@ -95,10 +89,10 @@ public class DataSeeder implements SmartInitializingSingleton {
             // later releases (e.g. color_palette, entity_template_set) get populated
             // on existing installations without forcing a full re-seed.
             seedColorPalettes();
-            seedEntityTemplateSetsIfMissing();
+            templateSetSync.sync();
             seedVersionsIfMissing();
             seedDepartmentsIfMissing();
-            seedFullstackExamplesIfMissing();
+            syncFullstackExamples();
 
             if (groupRepo.count() > 0) {
                 log.info("Database already seeded — skipping main DataSeeder");
@@ -124,100 +118,6 @@ public class DataSeeder implements SmartInitializingSingleton {
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to seed database from classpath", e);
         }
-    }
-
-    /**
-     * Seeds the fullstack CRUD template sets from {@code templates/fullstack/&lt;set&gt;/manifest.json}.
-     * Independent of the main seeder's all-or-nothing guard so the new tables get populated
-     * on databases that already had the original catalog.
-     */
-    private void seedEntityTemplateSetsIfMissing() throws IOException {
-        if (entityTemplateSetRepo.count() > 0) {
-            log.debug("Entity template sets already present — skipping");
-            return;
-        }
-        log.info("Seeding entity template sets from classpath manifests");
-        seedEntityTemplateSet("templates/fullstack/spring-jpa-crud/");
-        seedEntityTemplateSet("templates/fullstack/spring-jpa-crud-lombok/");
-        seedEntityTemplateSet("templates/fullstack/react-tailwind-crud/");
-        seedEntityTemplateSet("templates/fullstack/react-menora-digital-crud/");
-    }
-
-    private void seedEntityTemplateSet(String baseDir) throws IOException {
-        String manifestJson = readClasspath(baseDir + "manifest.json");
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode root = mapper.readTree(manifestJson);
-
-        EntityTemplateSetEntity set = new EntityTemplateSetEntity();
-        set.setSetKey(root.get("setKey").asText());
-        set.setName(root.get("name").asText());
-        if (root.hasNonNull("description")) set.setDescription(root.get("description").asText());
-        set.setKind(EntityTemplateSetEntity.Kind.valueOf(root.get("kind").asText()));
-        set.setEnabled(true);
-        set.setSortOrder(root.hasNonNull("sortOrder") ? root.get("sortOrder").asInt() : 0);
-        if (root.hasNonNull("designSystem")) {
-            set.setDesignSystem(EntityTemplateSetEntity.DesignSystem.valueOf(root.get("designSystem").asText()));
-        }
-        if (root.hasNonNull("bootVersion")) set.setBootVersion(root.get("bootVersion").asText());
-        if (root.hasNonNull("javaVersion")) set.setJavaVersion(root.get("javaVersion").asText());
-        set = entityTemplateSetRepo.save(set);
-
-        JsonNode files = root.get("files");
-        if (files == null || !files.isArray()) {
-            log.warn("Template set '{}' has no 'files' array — set seeded with no contents", set.getSetKey());
-            return;
-        }
-        for (JsonNode f : files) {
-            EntityTemplateFileEntity row = new EntityTemplateFileEntity();
-            row.setSetId(set.getId());
-            row.setPathTemplate(f.get("path").asText());
-            JsonNode sourceNode = f.get("source");
-            if (sourceNode == null || sourceNode.asText().isBlank()) {
-                throw new IllegalStateException("Template set '" + set.getSetKey()
-                        + "' has a file entry with a missing/blank 'source' (path="
-                        + f.path("path").asText() + ")");
-            }
-            // A file may borrow its content from another set's directory via "sourceSet",
-            // so a variant set (e.g. spring-jpa-crud-lombok) only needs to author the files
-            // that actually differ and reuse the rest.
-            String sourceDir = f.hasNonNull("sourceSet")
-                    ? "templates/fullstack/" + f.get("sourceSet").asText() + "/"
-                    : baseDir;
-            String resourcePath = sourceDir + sourceNode.asText();
-            try {
-                row.setContent(readClasspath(resourcePath));
-            } catch (IOException e) {
-                throw new IllegalStateException("Template set '" + set.getSetKey()
-                        + "' references missing content file '" + sourceNode.asText()
-                        + "' (expected at " + resourcePath + ")", e);
-            }
-            row.setSubstitutionType(FileContributionEntity.SubstitutionType.valueOf(
-                    f.get("substitutionType").asText()));
-            row.setFileType(EntityTemplateFileEntity.FileType.valueOf(f.get("fileType").asText()));
-            row.setPerEntity(f.hasNonNull("perEntity") && f.get("perEntity").asBoolean());
-            row.setPerPage(f.hasNonNull("perPage") && f.get("perPage").asBoolean());
-            row.setSortOrder(f.hasNonNull("sortOrder") ? f.get("sortOrder").asInt() : 0);
-            row.setGatedBy(f.hasNonNull("gatedBy") ? f.get("gatedBy").asText() : null);
-            entityTemplateFileRepo.save(row);
-        }
-
-        JsonNode defaultDeps = root.get("defaultDeps");
-        int defaultDepCount = 0;
-        if (defaultDeps != null && defaultDeps.isArray()) {
-            int order = 0;
-            for (JsonNode d : defaultDeps) {
-                String depId = d.asText();
-                if (depId == null || depId.isBlank()) continue;
-                EntityTemplateSetDefaultDepEntity dd = new EntityTemplateSetDefaultDepEntity();
-                dd.setSetId(set.getId());
-                dd.setDepId(depId.trim());
-                dd.setSortOrder(order++);
-                entityTemplateSetDefaultDepRepo.save(dd);
-                defaultDepCount++;
-            }
-        }
-        log.info("Seeded entity template set '{}' with {} files and {} default deps",
-                set.getSetKey(), files.size(), defaultDepCount);
     }
 
     /**
@@ -591,27 +491,74 @@ public class DataSeeder implements SmartInitializingSingleton {
     }
 
     /**
-     * Seeds the Fullstack tab's "Start from → Examples" from {@code catalog/fullstack-examples.json}.
-     * Table-scoped like departments, so an example an admin deleted is not resurrected and an
-     * existing installation picks the table up on its next start.
+     * Seeds the Fullstack tab's "Start from → Examples" from {@code catalog/fullstack-examples.json}
+     * and keeps them in step with the release. An empty table gets every example. Otherwise an
+     * existing example an admin has not edited (its content still hashes to the
+     * {@code seedHash} it was seeded with, or it predates the hash) takes the shipped name,
+     * description, icon, entities, pages and settings; an edited one is kept, and so are its
+     * {@code sortOrder} and {@code enabled}. A shipped example with no row is not added back —
+     * an admin may have deleted it.
      */
-    private void seedFullstackExamplesIfMissing() throws IOException {
-        if (fullstackExampleRepo.count() > 0) return;
+    private void syncFullstackExamples() throws IOException {
+        boolean empty = fullstackExampleRepo.count() == 0;
+        if (!empty && !templateSetSync.enabled()) return;
         ObjectMapper mapper = new ObjectMapper();
         JsonNode root = mapper.readTree(readClasspath("catalog/fullstack-examples.json"));
+        int updated = 0;
         for (JsonNode ex : root) {
-            FullstackExampleEntity e = new FullstackExampleEntity();
-            e.setExampleId(ex.get("exampleId").asText());
-            e.setName(ex.get("name").asText());
-            e.setDescription(ex.path("description").asText(null));
-            e.setIcon(ex.path("icon").asText(null));
-            e.setSortOrder(ex.path("sortOrder").asInt(0));
-            e.setEnabled(ex.path("enabled").asBoolean(true));
-            e.setEntities(mapper.writeValueAsString(ex.get("entities")));
-            if (ex.hasNonNull("pages")) e.setPages(mapper.writeValueAsString(ex.get("pages")));
-            if (ex.hasNonNull("settings")) e.setSettings(mapper.writeValueAsString(ex.get("settings")));
+            String exampleId = ex.get("exampleId").asText();
+            FullstackExampleEntity e = empty ? null : fullstackExampleRepo.findByExampleId(exampleId).orElse(null);
+            if (e == null) {
+                if (!empty) continue;
+                e = new FullstackExampleEntity();
+                e.setExampleId(exampleId);
+                e.setSortOrder(ex.path("sortOrder").asInt(0));
+                e.setEnabled(ex.path("enabled").asBoolean(true));
+            } else {
+                String current = exampleHash(mapper, e);
+                boolean untouched = e.getSeedHash() == null || e.getSeedHash().equals(current);
+                if (!untouched) {
+                    FullstackExampleEntity shipped = shippedExample(mapper, ex, new FullstackExampleEntity());
+                    if (!current.equals(exampleHash(mapper, shipped))) {
+                        log.info("Fullstack example '{}': keeping the admin-edited version", exampleId);
+                        continue;
+                    }
+                }
+            }
+            String before = e.getId() == null ? null : exampleHash(mapper, e);
+            shippedExample(mapper, ex, e);
+            String shippedHash = exampleHash(mapper, e);
+            if (shippedHash.equals(before) && shippedHash.equals(e.getSeedHash())) continue;
+            if (before != null && !shippedHash.equals(before)) updated++;
+            e.setSeedHash(shippedHash);
             fullstackExampleRepo.save(e);
         }
+        if (updated > 0) log.info("Fullstack examples: {} updated to this release", updated);
+    }
+
+    /** Copies a shipped example's content (not its order or enabled flag) onto a row. */
+    private static FullstackExampleEntity shippedExample(ObjectMapper mapper, JsonNode ex, FullstackExampleEntity e)
+            throws IOException {
+        e.setName(ex.get("name").asText());
+        e.setDescription(ex.path("description").asText(null));
+        e.setIcon(ex.path("icon").asText(null));
+        e.setEntities(mapper.writeValueAsString(ex.get("entities")));
+        e.setPages(ex.hasNonNull("pages") ? mapper.writeValueAsString(ex.get("pages")) : null);
+        e.setSettings(ex.hasNonNull("settings") ? mapper.writeValueAsString(ex.get("settings")) : null);
+        return e;
+    }
+
+    /** Hash of what an example shows and generates, its JSON re-serialized so formatting is no edit. */
+    private static String exampleHash(ObjectMapper mapper, FullstackExampleEntity e) throws IOException {
+        StringBuilder text = new StringBuilder();
+        for (String part : new String[] {e.getName(), e.getDescription(), e.getIcon()}) {
+            text.append(part == null ? "" : part).append('\u0001');
+        }
+        for (String json : new String[] {e.getEntities(), e.getPages(), e.getSettings()}) {
+            text.append(json == null || json.isBlank() ? "" : mapper.writeValueAsString(mapper.readTree(json)))
+                    .append('\u0001');
+        }
+        return EntityTemplateSetSync.hash(text.toString());
     }
 
     private void colorPalette(String paletteId, String name, String description,
