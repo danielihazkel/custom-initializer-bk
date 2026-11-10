@@ -2076,13 +2076,13 @@ public final class FullstackPageValidator {
     static List<String> defaultCardFields(EntityDefinition entity, String laneField) {
         List<String> out = new ArrayList<>();
         FieldDefinition heading = entity.fields().stream()
-                .filter(f -> !f.primaryKey() && (f.type() == FieldType.STRING || f.type() == FieldType.TEXT))
+                .filter(f -> !f.primaryKey() && f.type().isTextual())
                 .findFirst()
                 .orElseGet(() -> entity.fields().stream().filter(FieldDefinition::primaryKey).findFirst().orElse(entity.fields().get(0)));
         out.add(heading.name());
         for (FieldDefinition f : entity.fields()) {
             if (out.size() >= 3) break;
-            if (f.primaryKey() || f.name().equals(laneField) || out.contains(f.name()) || f.type() == FieldType.TEXT) continue;
+            if (f.primaryKey() || f.name().equals(laneField) || out.contains(f.name()) || f.type().isText()) continue;
             out.add(f.name());
         }
         entity.relations().stream().filter(r -> r.type() == RelationType.MANY_TO_ONE).findFirst()
@@ -2158,7 +2158,7 @@ public final class FullstackPageValidator {
 
     /** Whether the entity's list endpoint searches text ({@code ?q=}): some searchable STRING/TEXT field. */
     static boolean searchable(EntityDefinition e) {
-        return e.fields().stream().anyMatch(f -> f.searchable() && (f.type() == FieldType.STRING || f.type() == FieldType.TEXT));
+        return e.fields().stream().anyMatch(f -> f.searchable() && f.type().isTextual());
     }
 
     /** The entity's field named {@code requested}, matched ignoring case (so a hand-typed

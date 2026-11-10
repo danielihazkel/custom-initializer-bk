@@ -93,6 +93,18 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
 
+    @ParameterizedTest(name = "Spring Boot {0}")
+    @ValueSource(strings = {"3.2.1", FullstackGoldenOutputTests.BOOT_35})
+    void roundNineFieldTypesCompileAndPassTheirTests(String bootVersion, @TempDir Path workDir) throws Exception {
+        // A time of day, an instant, money and Markdown through the entity, DTO, service (bulk
+        // edit, CSV import), demo data and the controller test — and the context load, which
+        // creates the schema, so the money column's precision and scale are really mapped.
+        Map<String, Object> body = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        body.put("bootVersion", bootVersion);
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        runMvn(postAndExtractBackend(workDir, body), "-B", "package");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private Path postAndExtractBackend(Path workDir, Map<String, Object> body) throws Exception {

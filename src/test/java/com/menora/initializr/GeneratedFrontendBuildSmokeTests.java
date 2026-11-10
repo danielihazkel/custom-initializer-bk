@@ -342,6 +342,25 @@ class GeneratedFrontendBuildSmokeTests {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    @Test
+    void fullstackFrontendRoundNineFieldTypesInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // The shared formatters and the Markdown renderer, the form's time and instant inputs,
+        // and the imports each page gates on use — type-checked and linted with no warnings.
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.fieldTypesBody("react-tailwind-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraRoundNineFieldTypesInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // The Menora set authors its own entity page; the shared files are borrowed.
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.fieldTypesBody("react-menora-digital-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
     /**
      * Lints the whole generated frontend with no warnings allowed: the screens gate their imports
      * (t, the enum label consts, onNavigate) on use, which only eslint's no-unused-vars catches, and

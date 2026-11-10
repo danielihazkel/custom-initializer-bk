@@ -52,6 +52,8 @@
     { "source": "ScheduleView.tsx", "path": "src/shared/ui/ScheduleView.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCalendarPages" },
     { "source": "BoardView.tsx", "path": "src/shared/ui/BoardView.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasBoardPages" },
     { "source": "csv.ts", "path": "src/shared/ui/csv.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCsvImport" },
+    { "source": "format.ts", "path": "src/shared/ui/format.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasFormatHelpers" },
+    { "source": "Markdown.tsx", "path": "src/shared/ui/Markdown.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasMarkdownFields" },
     { "source": "CsvImport.tsx", "path": "src/shared/ui/CsvImport.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCsvImport" },
     { "source": "InlineCell.tsx", "path": "src/shared/ui/InlineCell.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasInlineEdit" },
     { "source": "StaleNotice.tsx", "path": "src/shared/ui/StaleNotice.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasOptimisticLocking" },

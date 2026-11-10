@@ -724,7 +724,23 @@ public record FullstackStarterRequest(
             Map<String, String> enumLabels,
             // Optional database column as the schema spells it (the DDL import sets it);
             // omitted → the snake_case of name.
-            String column) {
+            String column,
+            // The ISO 4217 code of a MONEY field ("ILS", "USD"); omitted → ILS. MONEY only.
+            // Left out of the JSON when absent, so the request echoed into menora-model.json
+            // reads as it did before the attribute existed.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String currency) {
+
+        /** Back-compat constructor without {@code currency}. */
+        public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                                  String pattern, Boolean email, List<String> enumValues,
+                                  Boolean searchable, Boolean filterable, String label, Boolean readOnly,
+                                  String defaultValue, Map<String, String> enumLabels, String column) {
+            this(name, type, primaryKey, generated, required, unique, length, min, max,
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
+                    column, null);
+        }
 
         /** Back-compat constructor without {@code column} (derived from the name). */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,

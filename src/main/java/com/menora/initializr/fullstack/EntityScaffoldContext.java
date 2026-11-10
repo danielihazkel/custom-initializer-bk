@@ -86,6 +86,11 @@ public final class EntityScaffoldContext {
             entityViews.add(view);
         }
         ctx.put("entities", entityViews);
+        // The shared frontend files a field type brings: format.ts (money, instants) and Markdown.tsx.
+        ctx.put("hasFormatHelpers", entities.stream().flatMap(e -> e.fields().stream())
+                .anyMatch(f -> f.type().isMoney() || f.type().isInstant()));
+        ctx.put("hasMarkdownFields", entities.stream().flatMap(e -> e.fields().stream())
+                .anyMatch(f -> f.type().isMarkdown()));
         // Any workflow: the shared WorkflowException, CurrentUser and GET /api/me (both render paths).
         ctx.put("hasWorkflows", entities.stream().anyMatch(e -> e.workflow() != null));
         // Demo-data seeding order (optScaffoldSeedData): parents before children, writable only.
@@ -2387,6 +2392,17 @@ public final class EntityScaffoldContext {
         ctx.put("detailUsesT", audit || detailBool);
         ctx.put("detailUsesLocale", audit || detailDate);
         ctx.put("detailUsesI18n", audit || detailBool || detailDate);
+        // The shared formatters this entity's list and detail call (money, instants), the Markdown
+        // renderer its detail draws, and the instant conversion its form does — each imported only
+        // where used, for the same lint.
+        List<String> formatImports = new ArrayList<>();
+        if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isInstant")))) formatImports.add("formatInstant");
+        if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isMoney")))) formatImports.add("formatMoney");
+        ctx.put("usesFormat", !formatImports.isEmpty());
+        ctx.put("formatImports", String.join(", ", formatImports));
+        ctx.put("hasMarkdownField", detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isMarkdown"))));
+        ctx.put("formUsesInstant", detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isInstant"))
+                && !Boolean.TRUE.equals(f.get("isWorkflowStatus"))));
         // Bulk delete (opt-in) deletes by a list of single-column ids, so it is offered only for
         // writable, single-PK entities — a composite key can't be addressed by one id list.
         ctx.put("bulkDeleteApplicable",
@@ -2532,6 +2548,7 @@ public final class EntityScaffoldContext {
         List<Map<String, Object>> bulkUpdatableViews = new ArrayList<>();
         for (Map<String, Object> fv : nonPkViews) {
             if (Boolean.TRUE.equals(fv.get("isReadOnly"))) continue;
+            if (Boolean.FALSE.equals(fv.get("bulkEditable"))) continue;
             Map<String, Object> bf = new LinkedHashMap<>(fv);
             bf.put("bulkInputKind", bulkInputKind(fv));
             bulkUpdatableViews.add(bf);
@@ -3024,7 +3041,8 @@ public final class EntityScaffoldContext {
         fv.put("enumTypeName", enumTypeName);
 
         boolean isIntegral = f.type() == FieldType.LONG || f.type() == FieldType.INTEGER;
-        boolean isBigDecimal = f.type() == FieldType.BIG_DECIMAL;
+        // MONEY is a BigDecimal to every template that reads this flag (@DecimalMin, step="any", …).
+        boolean isBigDecimal = f.type().isDecimal();
         fv.put("isPrimaryKey", f.primaryKey());
         fv.put("isGenerated", f.generated());
         fv.put("isRequired", f.required());
@@ -3040,6 +3058,16 @@ public final class EntityScaffoldContext {
         fv.put("isDate", f.type() == FieldType.LOCAL_DATE);
         fv.put("isDateTime", f.type() == FieldType.LOCAL_DATE_TIME);
         fv.put("isEnum", f.type().isEnum());
+        fv.put("isMoney", f.type().isMoney());
+        fv.put("currency", f.currency());
+        fv.put("isMarkdown", f.type().isMarkdown());
+        fv.put("isTime", f.type().isTime());
+        fv.put("isInstant", f.type().isInstant());
+        fv.put("bulkEditable", f.type().bulkEditable());
+        // The TS that draws a non-null value of this field: a list cell reads it off `r`, the
+        // detail view off `value`.
+        fv.put("cellTs", cellTs(f, enumTypeName));
+        fv.put("detailTs", detailTs(f, enumTypeName));
         // What a template would otherwise spell out as a chain of type flags — where a type the
         // chain does not know renders nothing, and the generated file is broken. These come from
         // switches the compiler checks, so a new FieldType cannot be forgotten here.
@@ -3125,8 +3153,49 @@ public final class EntityScaffoldContext {
             case LOCAL_DATE -> "date";
             case LOCAL_DATE_TIME -> "datetime-local";
             case STRING -> f.email() ? "email" : "text";
+            case MONEY -> "number";
+            case LOCAL_TIME -> "time";
+            // The browser's own zone; the form converts to and from UTC (format.ts).
+            case INSTANT -> "datetime-local";
             // A textarea, a select — or a text box, for a UUID: no input type of their own.
-            case TEXT, UUID, BOOLEAN, ENUM -> "text";
+            case TEXT, MARKDOWN, UUID, BOOLEAN, ENUM -> "text";
+        };
+    }
+
+    /** The helpers of the generated {@code src/shared/lib/format.ts} a field's cell or detail calls. */
+    static List<String> formatHelpers(FieldType type) {
+        return switch (type) {
+            case MONEY -> List.of("formatMoney");
+            case INSTANT -> List.of("formatInstant");
+            default -> List.of();
+        };
+    }
+
+    /** What a list cell prints for a non-null value (the row is {@code r}). */
+    static String cellTs(FieldDefinition f, String enumTypeName) {
+        String v = "r." + f.name();
+        return switch (f.type()) {
+            case ENUM -> enumTypeName + "Labels[" + v + "]";
+            case MONEY -> "formatMoney(" + v + ", '" + f.currency() + "')";
+            case INSTANT -> "formatInstant(" + v + ")";
+            case STRING, TEXT, MARKDOWN, LONG, INTEGER, BOOLEAN, LOCAL_DATE, LOCAL_DATE_TIME, LOCAL_TIME,
+                    BIG_DECIMAL, UUID -> "String(" + v + ")";
+        };
+    }
+
+    /** What the detail view shows for a non-null value (the record is {@code value}). */
+    static String detailTs(FieldDefinition f, String enumTypeName) {
+        String v = "value." + f.name();
+        return switch (f.type()) {
+            case TEXT -> "<span className=\"whitespace-pre-wrap break-words\">{String(" + v + ")}</span>";
+            case MARKDOWN -> "<Markdown source={String(" + v + ")} />";
+            case ENUM -> enumTypeName + "Labels[" + v + "]";
+            case BOOLEAN -> "(" + v + " ? t('trueLabel') : t('falseLabel'))";
+            case LOCAL_DATE -> "new Date(`${" + v + "}T00:00:00`).toLocaleDateString(LOCALE)";
+            case LOCAL_DATE_TIME -> "new Date(" + v + ").toLocaleString(LOCALE)";
+            case MONEY -> "formatMoney(" + v + ", '" + f.currency() + "')";
+            case INSTANT -> "formatInstant(" + v + ")";
+            case STRING, LONG, INTEGER, LOCAL_TIME, BIG_DECIMAL, UUID -> "String(" + v + ")";
         };
     }
 
@@ -3134,12 +3203,13 @@ public final class EntityScaffoldContext {
     static String importKind(FieldType type) {
         return switch (type) {
             case LONG, INTEGER -> "integer";
-            case BIG_DECIMAL -> "number";
+            case BIG_DECIMAL, MONEY -> "number";
             case BOOLEAN -> "boolean";
             case LOCAL_DATE -> "date";
             case LOCAL_DATE_TIME -> "datetime";
             case ENUM -> "enum";
-            case STRING, TEXT, UUID -> "string";
+            // A time and an instant are sent as typed; the server's own parse answers a bad one.
+            case STRING, TEXT, MARKDOWN, UUID, LOCAL_TIME, INSTANT -> "string";
         };
     }
 
@@ -3151,25 +3221,38 @@ public final class EntityScaffoldContext {
         return switch (type) {
             case ENUM -> entityPascal + "." + enumTypeName + ".valueOf(value.toString())";
             case BOOLEAN -> "Boolean.valueOf(value.toString())";
-            case BIG_DECIMAL -> "new java.math.BigDecimal(value.toString())";
+            case BIG_DECIMAL, MONEY -> "new java.math.BigDecimal(value.toString())";
+            case LOCAL_TIME -> "java.time.LocalTime.parse(value.toString())";
+            case INSTANT -> "java.time.Instant.parse(value.toString())";
             case LONG, INTEGER -> javaType + ".valueOf(value.toString())";
             case UUID -> "java.util.UUID.fromString(value.toString())";
             case LOCAL_DATE -> "java.time.LocalDate.parse(value.toString())";
             case LOCAL_DATE_TIME -> "java.time.LocalDateTime.parse(value.toString())";
-            case STRING, TEXT -> "value.toString()";
+            case STRING, TEXT, MARKDOWN -> "value.toString()";
         };
     }
 
     static String defaultJavaExpression(FieldDefinition f, String enumRef) {
+        return defaultJavaExpression(f, enumRef, false);
+    }
+
+    /**
+     * A field's default as a Java expression. In the entity, where the field's type is imported, the
+     * type is named bare; {@code qualified} spells it out for a file that imports none of the field
+     * types — the demo-data loader, which did not compile for a decimal or date field with a default.
+     */
+    static String defaultJavaExpression(FieldDefinition f, String enumRef, boolean qualified) {
         String v = f.defaultValue();
         return switch (f.type()) {
-            case STRING, TEXT -> "\"" + escapeJavaLiteral(v) + "\"";
+            case STRING, TEXT, MARKDOWN -> "\"" + escapeJavaLiteral(v) + "\"";
             case LONG -> v + "L";
             case INTEGER -> v;
-            case BIG_DECIMAL -> "new BigDecimal(\"" + v + "\")";
+            case BIG_DECIMAL, MONEY -> "new " + (qualified ? "java.math." : "") + "BigDecimal(\"" + v + "\")";
+            case LOCAL_TIME -> "java.time.LocalTime.parse(\"" + v + "\")";
+            case INSTANT -> "java.time.Instant.parse(\"" + v + "\")";
             case BOOLEAN -> v;
-            case LOCAL_DATE -> "LocalDate.parse(\"" + v + "\")";
-            case LOCAL_DATE_TIME -> "LocalDateTime.parse(\"" + v + "\")";
+            case LOCAL_DATE -> (qualified ? "java.time." : "") + "LocalDate.parse(\"" + v + "\")";
+            case LOCAL_DATE_TIME -> (qualified ? "java.time." : "") + "LocalDateTime.parse(\"" + v + "\")";
             case UUID -> "java.util.UUID.fromString(\"" + v + "\")";
             case ENUM -> enumRef + "." + v;
         };
@@ -3180,7 +3263,7 @@ public final class EntityScaffoldContext {
     static String defaultTsLiteral(FieldDefinition f) {
         String v = f.defaultValue();
         return switch (f.type()) {
-            case LONG, INTEGER, BIG_DECIMAL, BOOLEAN -> v;
+            case LONG, INTEGER, BIG_DECIMAL, MONEY, BOOLEAN -> v;
             default -> "'" + v.replace("\\", "\\\\").replace("'", "\\'")
                     .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "'";
         };
@@ -3198,7 +3281,7 @@ public final class EntityScaffoldContext {
         // A declared default is the natural demo value — except on keys and unique columns, where
         // every row must differ, so those keep the row-numbered expressions below.
         if (f.hasDefault() && !f.primaryKey() && !f.unique()) {
-            return defaultJavaExpression(f, entityPascal + "." + enumTypeName);
+            return defaultJavaExpression(f, entityPascal + "." + enumTypeName, true);
         }
         String lbl = escapeStringLiteral(label == null ? f.name() : label);
         return switch (f.type()) {
@@ -3207,11 +3290,13 @@ public final class EntityScaffoldContext {
             case STRING -> f.email()
                     ? "\"user\" + i + \"@example.com\""
                     : "label(\"" + lbl + "\", i, " + (f.length() != null ? f.length() : "Integer.MAX_VALUE") + ")";
-            case TEXT -> "text(\"" + lbl + "\", i)";
+            case TEXT, MARKDOWN -> "text(\"" + lbl + "\", i)";
             case LONG -> "bounded(i, " + longLiteral(f.min()) + ", " + longLiteral(f.max()) + ")";
             case INTEGER -> "(int) bounded(i, " + longLiteral(f.min()) + ", " + longLiteral(f.max()) + ")";
-            case BIG_DECIMAL -> "java.math.BigDecimal.valueOf(bounded(i, " + longLiteral(f.min()) + ", "
+            case BIG_DECIMAL, MONEY -> "java.math.BigDecimal.valueOf(bounded(i, " + longLiteral(f.min()) + ", "
                     + longLiteral(f.max()) + "))";
+            case LOCAL_TIME -> "java.time.LocalTime.of(8 + (i % 10), 0)";
+            case INSTANT -> "java.time.Instant.now().minus(java.time.Duration.ofHours(i))";
             case BOOLEAN -> "i % 2 == 0";
             case LOCAL_DATE -> "java.time.LocalDate.now().minusDays(i)";
             case LOCAL_DATE_TIME -> "java.time.LocalDateTime.now().minusHours(i)";

@@ -76,6 +76,7 @@ Logger
 LoggerFactory
 Long
 ManyToOne
+Markdown
 Math
 Max
 Min

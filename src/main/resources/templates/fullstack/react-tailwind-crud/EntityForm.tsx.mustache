@@ -1,7 +1,8 @@
 import { Field, inputClass{{#formUsesPicker}}, RelationPicker{{/formUsesPicker}} } from '@shared/ui'
 {{#formUsesStrings}}import { t } from '@shared/i18n'
 {{/formUsesStrings}}{{#formUsesOptions}}import { useOptions } from '@shared/api'
-{{/formUsesOptions}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
+{{/formUsesOptions}}{{#formUsesInstant}}import { fromLocalInput, toLocalInput } from '@shared/ui/format'
+{{/formUsesInstant}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
 {{#fields}}{{#isEnum}}{{^isWorkflowStatus}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
 {{/isWorkflowStatus}}{{/isEnum}}{{/fields}}
 
@@ -83,9 +84,9 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         />
 {{/isText}}{{^isText}}        <input
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
-          type="{{inputType}}"{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{#isBigDecimal}} step="any"{{/isBigDecimal}}{{/isNumeric}}{{#hasPattern}} pattern={"{{patternEscaped}}"}{{/hasPattern}}
-          value={value.{{name}} == null ? '' : String(value.{{name}})}
-          onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}})}
+          type="{{inputType}}"{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{#isBigDecimal}}{{#isMoney}} step="0.01"{{/isMoney}}{{^isMoney}} step="any"{{/isMoney}}{{/isBigDecimal}}{{/isNumeric}}{{#hasPattern}} pattern={"{{patternEscaped}}"}{{/hasPattern}}
+          value={{#isInstant}}{toLocalInput(value.{{name}})}{{/isInstant}}{{^isInstant}}{value.{{name}} == null ? '' : String(value.{{name}})}{{/isInstant}}
+          onChange={e => set('{{name}}', {{#isInstant}}fromLocalInput(e.target.value){{/isInstant}}{{^isInstant}}{{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}}{{/isInstant}})}
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         />
 {{/isText}}      </Field>{{#formHasSteps}})}{{/formHasSteps}}

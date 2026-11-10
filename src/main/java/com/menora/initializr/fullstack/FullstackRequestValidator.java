@@ -172,7 +172,7 @@ public final class FullstackRequestValidator {
                         }
                         // Integral types render the bounds into @Min/@Max (long-valued), so a fractional bound
                         // would not compile; decimals are only meaningful on BIG_DECIMAL (@DecimalMin/@DecimalMax).
-                        if (type != FieldType.BIG_DECIMAL) {
+                        if (!type.isDecimal()) {
                             for (BigDecimal bound : new BigDecimal[] {f.min(), f.max()}) {
                                 if (bound == null) continue;
                                 if (bound.stripTrailingZeros().scale() > 0) {
@@ -203,6 +203,27 @@ public final class FullstackRequestValidator {
                             } catch (PatternSyntaxException pse) {
                                 throw new WizardArgumentException("pattern is not a valid regex (field '" + fname + "' on entity '" + name + "'): " + pse.getDescription()).on("pattern");
                             }
+                        }
+
+                        if (isPk && !type.keyable()) {
+                            throw new WizardArgumentException("a " + type + " field cannot be the primary key (field '"
+                                    + fname + "' on entity '" + name + "')").on("type");
+                        }
+                        // A MONEY field's currency: three letters, upper-cased; ILS when omitted.
+                        String currency = null;
+                        if (f.currency() != null && !f.currency().isBlank()) {
+                            if (!type.isMoney()) {
+                                throw new WizardArgumentException("currency only allowed on MONEY fields (field '"
+                                        + fname + "' on entity '" + name + "')").on("currency");
+                            }
+                            currency = f.currency().trim().toUpperCase(Locale.ROOT);
+                            if (!currency.matches("[A-Z]{3}")) {
+                                throw new WizardArgumentException("currency '" + f.currency().trim()
+                                        + "' is not a three-letter currency code such as ILS or USD (field '"
+                                        + fname + "' on entity '" + name + "')").on("currency");
+                            }
+                        } else if (type.isMoney()) {
+                            currency = FieldDefinition.DEFAULT_CURRENCY;
                         }
 
                         boolean isGenerated = Boolean.TRUE.equals(f.generated());
@@ -248,7 +269,8 @@ public final class FullstackRequestValidator {
                                 Boolean.TRUE.equals(f.readOnly()),
                                 defaultValue,
                                 enumLabels,
-                                column));
+                                column,
+                                currency));
                     } catch (WizardArgumentException problem) {
                         throw problem.at("fields[" + fi + "]");
                     }
@@ -683,7 +705,7 @@ public final class FullstackRequestValidator {
         String v = raw.trim();
         try {
             return switch (type) {
-                case STRING, TEXT -> {
+                case STRING, TEXT, MARKDOWN -> {
                     if (length != null && raw.length() > length) {
                         throw new WizardArgumentException("defaultValue exceeds length " + length + where).on("defaultValue");
                     }
@@ -692,6 +714,18 @@ public final class FullstackRequestValidator {
                 case LONG -> Long.toString(Long.parseLong(v));
                 case INTEGER -> Integer.toString(Integer.parseInt(v));
                 case BIG_DECIMAL -> new BigDecimal(v).toPlainString();
+                case MONEY -> {
+                    BigDecimal amount = new BigDecimal(v);
+                    if (amount.stripTrailingZeros().scale() > 2) {
+                        throw new WizardArgumentException("defaultValue '" + v
+                                + "' has more than two decimals, which a MONEY field keeps" + where).on("defaultValue");
+                    }
+                    yield amount.toPlainString();
+                }
+                // "09:30" or "09:30:15" — normalized to what LocalTime prints.
+                case LOCAL_TIME -> java.time.LocalTime.parse(v).toString();
+                // ISO-8601 in UTC: "2026-01-31T08:00:00Z".
+                case INSTANT -> java.time.Instant.parse(v).toString();
                 case BOOLEAN -> {
                     if (!v.equalsIgnoreCase("true") && !v.equalsIgnoreCase("false")) {
                         throw new NumberFormatException();

@@ -136,10 +136,12 @@
       "localdate",
       "localdatetime",
       "locale",
+      "localtime",
       "logger",
       "loggerfactory",
       "long",
       "manytoone",
+      "markdown",
       "math",
       "max",
       "me",
@@ -283,6 +285,31 @@
       "type" : "ENUM",
       "tsType" : "string",
       "aliases" : [ ]
+    },
+    {
+      "type" : "LOCAL_TIME",
+      "tsType" : "string",
+      "aliases" : [
+        "TIME"
+      ]
+    },
+    {
+      "type" : "INSTANT",
+      "tsType" : "string",
+      "aliases" : [ ]
+    },
+    {
+      "type" : "MONEY",
+      "tsType" : "number",
+      "aliases" : [ ]
+    },
+    {
+      "type" : "MARKDOWN",
+      "tsType" : "string",
+      "aliases" : [
+        "RICH_TEXT",
+        "RICHTEXT"
+      ]
     }
   ],
   "relationTypes" : [

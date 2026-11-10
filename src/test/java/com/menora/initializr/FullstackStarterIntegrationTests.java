@@ -2120,6 +2120,106 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_roundNineFieldTypes() throws Exception {
+        Map<String, String> entries = generateZip(FullstackExampleRequests.fieldTypesBody("react-tailwind-crud"));
+
+        // Backend: each type's Java type, its column, its default.
+        assertThat(contentEndingWith(entries, "/entity/Shift.java"))
+                .contains("import java.time.LocalTime;")
+                .contains("import java.time.Instant;")
+                .contains("private LocalTime startsAt = java.time.LocalTime.parse(\"09:00\");")
+                .contains("private Instant clockedIn;")
+                // Money keeps two decimals; its currency is the frontend's to print.
+                .contains("@Column(name = \"rate\", nullable = false, precision = 19, scale = 2)")
+                .contains("private BigDecimal rate;")
+                .contains("private BigDecimal bonus = new BigDecimal(\"12.5\");")
+                // Markdown is long text to the database.
+                .containsPattern("@Column\\(name = \"notes\", columnDefinition = \"TEXT\"\\)\\s+private String notes;");
+        assertThat(contentEndingWith(entries, "/dto/ShiftDto.java"))
+                .contains("LocalTime startsAt")
+                .contains("Instant clockedIn")
+                // A decimal bound, as on BIG_DECIMAL.
+                .contains("@DecimalMin(value = \"0\")");
+        // Money filters and sums like the number it is; a time and an instant are not filters.
+        assertThat(contentEndingWith(entries, "/controller/ShiftController.java"))
+                .contains("rateMin").contains("bonusMax")
+                .doesNotContain("startsAtFrom").doesNotContain("clockedInFrom");
+        // Bulk edit offers what one typed value can set: not the time, the instant or the Markdown.
+        assertThat(contentEndingWith(entries, "/service/ShiftService.java"))
+                .contains("case \"rate\" -> entity.setRate(value == null ? null : new java.math.BigDecimal(value.toString()));")
+                .contains("case \"title\" -> entity.setTitle(value == null ? null : value.toString());")
+                .doesNotContain("case \"startsAt\"").doesNotContain("case \"clockedIn\"").doesNotContain("case \"notes\"");
+        assertThat(contentEndingWith(entries, "/config/DemoDataLoader.java"))
+                .contains("java.time.Instant.now().minus(java.time.Duration.ofHours(i))");
+
+        // Frontend: the shared formatters and the Markdown renderer ship because a field needs them.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/format.ts"))
+                .anyMatch(p -> p.endsWith("frontend/src/shared/ui/Markdown.tsx"));
+        assertThat(contentEndingWith(entries, "/ui/ShiftPage.tsx"))
+                .contains("import { formatInstant, formatMoney } from '@shared/ui/format'")
+                // The currency is upper-cased, and ILS when a money field names none.
+                .contains("render: r => r.rate == null ? '—' : formatMoney(r.rate, 'USD')")
+                .contains("formatMoney(r.bonus, 'ILS')")
+                .contains("formatInstant(r.clockedIn)")
+                .contains("render: r => r.startsAt == null ? '—' : String(r.startsAt)");
+        assertThat(contentEndingWith(entries, "/ui/ShiftDetail.tsx"))
+                .contains("import { Markdown } from '@shared/ui/Markdown'")
+                .contains("<Markdown source={String(value.notes)} />")
+                .contains("formatMoney(value.rate, 'USD')")
+                .contains("formatInstant(value.clockedIn)");
+        assertThat(contentEndingWith(entries, "/ui/ShiftForm.tsx"))
+                .contains("import { fromLocalInput, toLocalInput } from '@shared/ui/format'")
+                .contains("type=\"time\"")
+                // An instant is picked in the browser's zone and stored in UTC.
+                .contains("value={toLocalInput(value.clockedIn)}")
+                .contains("onChange={e => set('clockedIn', fromLocalInput(e.target.value))}")
+                .contains("type=\"number\" min=\"0\" step=\"0.01\"");
+        assertThat(contentEndingWith(entries, "/model/types.ts"))
+                .contains("rate").contains("startsAt");
+    }
+
+    @Test
+    void fullstackEndpoint_projectsWithoutTheNewTypesShipNoneOfTheirFiles() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "plain");
+        body.put("packageName", "com.menora.plain");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "Note", "fields", List.of(pkField(),
+                Map.of("name", "body", "type", "TEXT"), Map.of("name", "price", "type", "BIG_DECIMAL")))));
+        Map<String, String> entries = generateZip(body);
+        assertThat(entries.keySet()).noneMatch(p -> p.endsWith("/format.ts") || p.endsWith("/Markdown.tsx"));
+        assertThat(contentEndingWith(entries, "/ui/NotePage.tsx")).doesNotContain("@shared/ui/format");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsMisusedRoundNineTypes() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        record Bad(Map<String, Object> field, String message) {}
+        for (Bad bad : List.of(
+                new Bad(Map.of("name", "amount", "type", "MONEY", "primaryKey", true), "cannot be the primary key"),
+                new Bad(Map.of("name", "amount", "type", "MONEY", "currency", "shekels"), "three-letter currency code"),
+                new Bad(Map.of("name", "amount", "type", "BIG_DECIMAL", "currency", "USD"), "currency only allowed on MONEY"),
+                new Bad(Map.of("name", "amount", "type", "MONEY", "defaultValue", "1.005"), "more than two decimals"),
+                new Bad(Map.of("name", "opens", "type", "LOCAL_TIME", "defaultValue", "9 o'clock"), "not a valid LOCAL_TIME"),
+                new Bad(Map.of("name", "seenAt", "type", "INSTANT", "defaultValue", "2026-01-31"), "not a valid INSTANT"),
+                new Bad(Map.of("name", "notes", "type", "MARKDOWN", "length", 50), "length only allowed on STRING"))) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("artifactId", "demo");
+            body.put("packageName", "com.menora.demo");
+            body.put("bootVersion", "3.2.1");
+            List<Map<String, Object>> fields = new java.util.ArrayList<>();
+            if (!Boolean.TRUE.equals(bad.field().get("primaryKey"))) fields.add(pkField());
+            fields.add(bad.field());
+            body.put("entities", List.of(Map.of("name", "Thing", "fields", fields)));
+            ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip",
+                    org.springframework.http.HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+            assertThat(response.getStatusCode()).as(bad.message()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains(bad.message());
+        }
+    }
+
+    @Test
     void fullstackEndpoint_twoLinksToOneParentGetTwoInverseCollections() throws Exception {
         // Both links derived `transfers` on Account before, twice — a class that does not compile.
         Map<String, Object> body = new LinkedHashMap<>();

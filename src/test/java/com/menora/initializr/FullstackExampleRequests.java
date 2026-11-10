@@ -73,6 +73,36 @@ public final class FullstackExampleRequests {
         return body;
     }
 
+    /**
+     * One entity with every Round 9 field type — a time of day, an instant, money in two
+     * currencies, Markdown — beside the old ones, and the options whose code touches a field by
+     * its type (bulk and inline edit, CSV both ways, demo data, the controller test). The same
+     * model is asserted as text, compiled ({@code -Dsmoke.be}) and built ({@code -Dsmoke.fe}).
+     */
+    public static Map<String, Object> fieldTypesBody(String frontendSet) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "rota");
+        body.put("packageName", "com.menora.rota");
+        body.put("bootVersion", "3.2.1");
+        if (frontendSet != null) body.put("frontendTemplateSet", frontendSet);
+        body.put("opts", Map.of("scaffold", List.of("audit", "csvExport", "csvImport", "bulkUpdate",
+                "inlineEdit", "seedData", "tests")));
+        List<Map<String, Object>> fields = new ArrayList<>();
+        fields.add(Map.of("name", "id", "type", "LONG", "primaryKey", true, "generated", true));
+        fields.add(Map.of("name", "title", "type", "STRING", "required", true));
+        fields.add(Map.of("name", "startsAt", "type", "LOCAL_TIME", "defaultValue", "09:00"));
+        fields.add(Map.of("name", "clockedIn", "type", "INSTANT"));
+        fields.add(Map.of("name", "rate", "type", "MONEY", "currency", "usd", "required", true, "min", 0));
+        fields.add(Map.of("name", "bonus", "type", "MONEY", "defaultValue", "12.5"));
+        fields.add(Map.of("name", "notes", "type", "MARKDOWN"));
+        fields.add(Map.of("name", "status", "type", "ENUM", "enumValues", List.of("PLANNED", "DONE")));
+        Map<String, Object> shift = new LinkedHashMap<>();
+        shift.put("name", "Shift");
+        shift.put("fields", fields);
+        body.put("entities", List.of(shift));
+        return body;
+    }
+
     /** POSTs a fullstack request; the response, whatever its status. */
     public static ResponseEntity<byte[]> post(TestRestTemplate rest, Map<String, Object> body) {
         HttpHeaders headers = new HttpHeaders();
