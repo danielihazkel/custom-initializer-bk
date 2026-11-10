@@ -77,6 +77,11 @@ public final class FullstackRequestValidator {
             if (RESERVED_JAVA_KEYWORDS.contains(name.toLowerCase(Locale.ROOT))) {
                 throw new WizardArgumentException("entities[" + ei + "].name '" + name + "' is a reserved keyword");
             }
+            String taken = ReservedNames.reasonFor(name);
+            if (taken != null) {
+                throw new WizardArgumentException("entities[" + ei + "].name '" + name + "' cannot be used: it is "
+                        + taken + " — pick another name (a label can still say '" + name + "')");
+            }
             String lower = name.toLowerCase(Locale.ROOT);
             if (!seenLowerNames.add(lower)) {
                 throw new WizardArgumentException("Duplicate entity name (case-insensitive): " + name);
@@ -279,6 +284,16 @@ public final class FullstackRequestValidator {
                     parseEntityOpts(e.opts(), name), e.formSections(), e.workflow(), pkCount));
         }
 
+        // An entity may not be named like a class another entity generates (OrderDto beside Order).
+        for (Parsed p : parsed) {
+            String owner = ReservedNames.ownerOfGeneratedClass(p.name(), seenLowerNames);
+            if (owner != null) {
+                throw new WizardArgumentException("entities[" + p.ei() + "].name '" + p.name()
+                        + "' cannot be used: entity '" + canonicalByLower.get(owner)
+                        + "' already generates a class of that name — pick another name");
+            }
+        }
+
         // Pass 2 — resolve and validate relations now that all entity names are known.
         List<EntityDefinition> result = new ArrayList<>(parsed.size());
         for (Parsed p : parsed) {
@@ -297,7 +312,74 @@ public final class FullstackRequestValidator {
                     parseFormSections(p.rawSections(), p.name(), p.fields(), relations),
                     parseWorkflow(p.rawWorkflow(), p.name(), p.fields(), relations, p.readOnly(), p.pkCount())));
         }
+        checkGeneratedMemberClashes(result, body);
         return result;
+    }
+
+    /** Whether a scaffold option is on for an entity: its own override, else the project's. */
+    private static boolean scaffoldOn(String key, EntityDefinition entity, FullstackStarterRequest body) {
+        Boolean override = entity.opts() == null ? null : entity.opts().get(key);
+        if (override != null) return override;
+        List<String> scaffold = body.opts() == null ? null : body.opts().get("scaffold");
+        return scaffold != null && scaffold.contains(key);
+    }
+
+    /**
+     * Besides the members a model names, an entity gets ones the generator adds: {@code <relation>Id}
+     * and {@code <relation>Label} for each MANY_TO_ONE, {@code createdAt}/{@code updatedAt} under
+     * {@code audit}, {@code deleted} under {@code softDelete}, and — under
+     * {@code inverseCollections} — a collection and its {@code <collection>Count} for every entity
+     * that links to it. A field or relation spelled like one of those would be declared twice, so
+     * the project would not compile; say so here instead. ({@code version} under optimistic
+     * locking has its own check, {@link #checkVersionName}.)
+     */
+    private static void checkGeneratedMemberClashes(List<EntityDefinition> entities, FullstackStarterRequest body) {
+        List<String> scaffold = body.opts() == null ? null : body.opts().get("scaffold");
+        boolean inverse = scaffold != null && scaffold.contains("inverseCollections");
+        Map<String, List<String>> collections = inverse
+                ? EntityScaffoldContext.inverseCollectionNames(entities) : Map.of();
+
+        for (EntityDefinition e : entities) {
+            // Lower-cased member → what it is, in the words of the error.
+            Map<String, String> members = new LinkedHashMap<>();
+            for (FieldDefinition f : e.fields()) members.put(f.name().toLowerCase(Locale.ROOT), "field '" + f.name() + "'");
+            for (RelationDefinition r : e.relations()) {
+                members.put(r.fieldName().toLowerCase(Locale.ROOT), "relation '" + r.fieldName() + "'");
+            }
+            List<String[]> generated = new ArrayList<>();
+            for (RelationDefinition r : e.relations()) {
+                if (r.type() != RelationType.MANY_TO_ONE) continue;
+                generated.add(new String[] {r.fieldName() + "Id", "the id of relation '" + r.fieldName() + "'"});
+                // The label exists only when the target has something to show: a non-key string.
+                boolean targetHasLabel = entities.stream()
+                        .filter(t -> t.name().equalsIgnoreCase(r.targetEntity()))
+                        .flatMap(t -> t.fields().stream())
+                        .anyMatch(f -> !f.primaryKey() && f.type() == FieldType.STRING);
+                if (targetHasLabel) {
+                    generated.add(new String[] {r.fieldName() + "Label", "the label of relation '" + r.fieldName() + "'"});
+                }
+            }
+            boolean mutable = !e.readOnly() && e.viewQuery() == null;
+            if (mutable && scaffoldOn("audit", e, body)) {
+                generated.add(new String[] {"createdAt", "the 'audit' option's created-at timestamp"});
+                generated.add(new String[] {"updatedAt", "the 'audit' option's updated-at timestamp"});
+            }
+            long keys = e.fields().stream().filter(FieldDefinition::primaryKey).count();
+            if (mutable && keys == 1 && scaffoldOn("softDelete", e, body)) {
+                generated.add(new String[] {"deleted", "the 'softDelete' option's flag"});
+            }
+            for (String collection : collections.getOrDefault(e.name().toLowerCase(Locale.ROOT), List.of())) {
+                generated.add(new String[] {collection, "the collection of rows that link to it (option 'inverseCollections')"});
+                generated.add(new String[] {collection + "Count", "the count of rows that link to it (option 'inverseCollections')"});
+            }
+            for (String[] g : generated) {
+                String clash = members.putIfAbsent(g[0].toLowerCase(Locale.ROOT), g[1]);
+                if (clash != null) {
+                    throw new WizardArgumentException("Entity '" + e.name() + "': " + clash + " clashes with '"
+                            + g[0] + "', which the generator adds as " + g[1] + " — rename it");
+                }
+            }
+        }
     }
 
     /**

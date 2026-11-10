@@ -11,8 +11,8 @@ RUN \
 WORKDIR ${RUNTIME_DIRECTORY}
 ENV PATH /app/node_modules/.bin:$PATH
 # Copy package json and restore as distinct layers
-COPY package.json ./
-COPY package-lock.json ./
+# A lock file is copied when the project has one (none is generated; commit yours to pin installs).
+COPY package.json package-lock.json* ./
 #COPY entrypoint.sh ./
 RUN \
     npm config set registry=${NPM_MIRROR_URL} && \

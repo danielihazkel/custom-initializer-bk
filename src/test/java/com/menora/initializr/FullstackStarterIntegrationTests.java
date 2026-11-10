@@ -2120,6 +2120,54 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_twoLinksToOneParentGetTwoInverseCollections() throws Exception {
+        // Both links derived `transfers` on Account before, twice — a class that does not compile.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "bank");
+        body.put("packageName", "com.menora.bank");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("inverseCollections")));
+        body.put("entities", List.of(
+                Map.of("name", "Account", "fields", List.of(pkField(), Map.of("name", "name", "type", "String"))),
+                Map.of("name", "Transfer",
+                        "fields", List.of(pkField(), Map.of("name", "amount", "type", "BigDecimal")),
+                        "relations", List.of(
+                                Map.of("type", "MANY_TO_ONE", "fieldName", "source", "targetEntity", "Account", "required", true),
+                                Map.of("type", "MANY_TO_ONE", "fieldName", "target", "targetEntity", "Account", "required", true)))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/entity/Account.java"))
+                .contains("@OneToMany(mappedBy = \"source\")")
+                .contains("private List<Transfer> transfersBySource = new ArrayList<>();")
+                .contains("@OneToMany(mappedBy = \"target\")")
+                .contains("private List<Transfer> transfersByTarget = new ArrayList<>();")
+                .contains("private Long transfersBySourceCount;")
+                .contains("private Long transfersByTargetCount;")
+                .doesNotContain("List<Transfer> transfers ");
+        assertThat(contentEndingWith(entries, "/dto/AccountDto.java"))
+                .contains("int transfersBySourceCount")
+                .contains("int transfersByTargetCount");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsNamesTheGeneratedCodeUses() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        for (String name : List.of("Page", "Table", "Dashboard")) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("artifactId", "demo");
+            body.put("packageName", "com.menora.demo");
+            body.put("bootVersion", "3.2.1");
+            body.put("entities", List.of(Map.of("name", name, "fields", List.of(pkField()))));
+            ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip",
+                    org.springframework.http.HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+            assertThat(response.getStatusCode()).as(name).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains("entities[0].name '" + name + "' cannot be used");
+        }
+    }
+
+    @Test
     void fullstackEndpoint_dbDependencyEmitsConfigClassWithoutDatasourceOpt() throws Exception {
         // Regression: the fullstack request never carries a db datasource role sub-option
         // (db2-primary/db2-secondary). The controller must default to the primary datasource so

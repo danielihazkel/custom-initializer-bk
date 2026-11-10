@@ -2105,6 +2105,34 @@ public final class EntityScaffoldContext {
      * a {@code Customer} targeted by {@code Order.customer} gets an {@code orders} collection with
      * {@code mappedBy = "customer"}).
      */
+    /**
+     * The parent-side collection a child's MANY_TO_ONE derives: the child's plural
+     * ({@code orderLines}). A child with two links to one parent ({@code Transfer.source} and
+     * {@code Transfer.target}, both an {@code Account}) would give that parent the same name twice,
+     * so each is told apart by its relation: {@code transfersBySource}, {@code transfersByTarget}.
+     */
+    static String inverseCollectionName(EntityDefinition child, RelationDefinition rel) {
+        String plural = Naming.pluralize(Naming.toCamelCase(child.name()));
+        long toSameParent = child.relations().stream()
+                .filter(r -> r.type() == RelationType.MANY_TO_ONE
+                        && r.targetEntity().equalsIgnoreCase(rel.targetEntity()))
+                .count();
+        return toSameParent > 1 ? plural + "By" + Naming.toPascalCase(rel.fieldName()) : plural;
+    }
+
+    /** Per parent entity (lower-cased name), the collection names its children's relations derive. */
+    static Map<String, List<String>> inverseCollectionNames(List<EntityDefinition> entities) {
+        Map<String, List<String>> byLower = new LinkedHashMap<>();
+        for (EntityDefinition child : entities) {
+            for (RelationDefinition rel : child.relations()) {
+                if (rel.type() != RelationType.MANY_TO_ONE) continue;
+                byLower.computeIfAbsent(rel.targetEntity().toLowerCase(Locale.ROOT), k -> new ArrayList<>())
+                        .add(inverseCollectionName(child, rel));
+            }
+        }
+        return byLower;
+    }
+
     private static Map<String, List<Map<String, Object>>> buildInverseRelations(List<EntityDefinition> entities) {
         Map<String, List<Map<String, Object>>> byLower = new LinkedHashMap<>();
         for (EntityDefinition child : entities) {
@@ -2112,7 +2140,7 @@ public final class EntityScaffoldContext {
                 if (rel.type() != RelationType.MANY_TO_ONE) continue;
                 String parentLower = rel.targetEntity().toLowerCase(Locale.ROOT);
                 String childCamel = Naming.toCamelCase(child.name());
-                String coll = Naming.pluralize(childCamel);
+                String coll = inverseCollectionName(child, rel);
                 Map<String, Object> inv = new LinkedHashMap<>();
                 inv.put("childEntity", Naming.toPascalCase(child.name()));
                 inv.put("childEntityCamel", childCamel);

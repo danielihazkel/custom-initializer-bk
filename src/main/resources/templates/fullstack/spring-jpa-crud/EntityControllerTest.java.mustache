@@ -2,7 +2,6 @@ package {{controllerPackage}};
 
 import {{entityPackage}}.{{EntityName}};
 import {{servicePackage}}.{{EntityName}}Service;
-import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -32,7 +31,7 @@ class {{EntityName}}ControllerTest {
     {{#useMockitoBean}}@MockitoBean{{/useMockitoBean}}{{^useMockitoBean}}@MockBean{{/useMockitoBean}}
     private {{EntityName}}Service service;
 
-    @Test
+    @org.junit.jupiter.api.Test
     void list_returnsOk() throws Exception {
         // A concrete PageRequest, not the single-arg constructor: that one carries
         // Pageable.unpaged(), whose page size Jackson cannot serialize (-> HTTP 500).
