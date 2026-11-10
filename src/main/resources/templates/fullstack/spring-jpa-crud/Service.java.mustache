@@ -63,8 +63,11 @@ public class {{EntityName}}Service {
     @Transactional(readOnly = true)
     public Page<{{EntityName}}> findAll(String q, Filters filters, Pageable pageable) {
         Specification<{{EntityName}}> spec = specOf(q, filters);
-        return spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
-    }
+{{^hasCollections}}        return spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
+{{/hasCollections}}{{#hasCollections}}        Page<{{EntityName}}> page = spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
+        page.forEach(this::loaded);
+        return page;
+{{/hasCollections}}    }
 
     /** The search + filter predicate the list, the CSV export and the stats endpoint all share;
      *  null when the request asked for neither. */
@@ -82,8 +85,17 @@ public class {{EntityName}}Service {
         if (filters.{{name}}Max() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}Max()));
 {{/isNumericFilter}}{{#isTemporalFilter}}        if (filters.{{name}}From() != null) specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}From()));
         if (filters.{{name}}To() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}To()));
-{{/isTemporalFilter}}{{#isRelationFilter}}        if (filters.{{name}}() != null && !filters.{{name}}().isEmpty()) specs.add((root, query, cb) -> root.get("{{relationField}}").get("{{targetPkName}}").in(filters.{{name}}()));
-{{/isRelationFilter}}{{/filterFields}}{{#hasAssignee}}        if (filters.inbox() != null && !filters.inbox().isBlank()) specs.add(inboxOf(filters.inbox(), filters.me()));
+{{/isTemporalFilter}}{{#isRelationFilter}}{{^isCollectionFilter}}        if (filters.{{name}}() != null && !filters.{{name}}().isEmpty()) specs.add((root, query, cb) -> root.get("{{relationField}}").get("{{targetPkName}}").in(filters.{{name}}()));
+{{/isCollectionFilter}}{{#isCollectionFilter}}        // A row matches when its set holds one of the ids: a subquery, so the list keeps one row
+        // per record whatever it is sorted by.
+        if (filters.{{name}}() != null && !filters.{{name}}().isEmpty()) specs.add((root, query, cb) -> {
+            var linked = query.subquery({{EntityName}}.class);
+            var owner = linked.from({{EntityName}}.class);
+            linked.select(owner).where(cb.equal(owner, root),
+                    owner.join("{{relationField}}").get("{{targetPkName}}").in(filters.{{name}}()));
+            return cb.exists(linked);
+        });
+{{/isCollectionFilter}}{{/isRelationFilter}}{{/filterFields}}{{#hasAssignee}}        if (filters.inbox() != null && !filters.inbox().isBlank()) specs.add(inboxOf(filters.inbox(), filters.me()));
 {{/hasAssignee}}        if (specs.isEmpty()) return null;
         Specification<{{EntityName}}> combined = specs.get(0);
         for (int i = 1; i < specs.size(); i++) combined = combined.and(specs.get(i));
@@ -288,12 +300,46 @@ public class {{EntityName}}Service {
 {{/statsApplicable}}
     @Transactional(readOnly = true)
     public {{EntityName}} findById({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
-        return repository.findById(id).orElseThrow(() ->
+{{^hasCollections}}        return repository.findById(id).orElseThrow(() ->
                 new ResourceNotFoundException("{{EntityName}} " + id + " not found"));
-    }
+{{/hasCollections}}{{#hasCollections}}        return loaded(repository.findById(id).orElseThrow(() ->
+                new ResourceNotFoundException("{{EntityName}} " + id + " not found")));
+{{/hasCollections}}    }
+{{#hasCollections}}
 
+    /**
+     * Reads a row's linked sets while the session is open: the DTO is built after this
+     * transaction ends (open-in-view is off), where a lazy set could no longer be read. A page of
+     * rows loads each set in batches (@BatchSize), not row by row.
+     */
+    private {{EntityName}} loaded({{EntityName}} entity) {
+{{#collections}}        org.hibernate.Hibernate.initialize(entity.get{{FieldName}}());
+{{/collections}}        return entity;
+    }
+{{#mutable}}
+
+    /**
+     * Swaps the id stubs a request carries for the rows they name — one query per set — and
+     * refuses an id that names none (400). A set the request left out stays null.
+     */
+    private void resolveLinks({{EntityName}} entity) {
+{{#collections}}        if (entity.get{{FieldName}}() != null && !entity.get{{FieldName}}().isEmpty()) {
+            java.util.Set<{{targetPkJavaType}}> ids = new java.util.LinkedHashSet<>();
+            for ({{entityPackage}}.{{targetEntity}} stub : entity.get{{FieldName}}()) ids.add(stub.get{{TargetPkName}}());
+            java.util.List<{{entityPackage}}.{{targetEntity}}> found = entityManager.createQuery(
+                            "select t from {{targetEntity}} t where t.{{targetPkName}} in :ids", {{entityPackage}}.{{targetEntity}}.class)
+                    .setParameter("ids", ids).getResultList();
+            if (found.size() != ids.size()) {
+                throw new IllegalArgumentException("{{fieldName}}: no {{targetEntity}} with one of the ids " + ids);
+            }
+            entity.set{{FieldName}}(new java.util.LinkedHashSet<>(found));
+        }
+{{/collections}}    }
+{{/mutable}}{{/hasCollections}}
 {{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
-{{#lockingApplicable}}        entity.setVersion(null); // a new row starts at version 0, whatever the client sent
+{{#hasCollections}}        resolveLinks(entity);
+{{#collections}}        if (entity.get{{FieldName}}() == null) entity.set{{FieldName}}(new java.util.LinkedHashSet<>());
+{{/collections}}{{/hasCollections}}{{#lockingApplicable}}        entity.setVersion(null); // a new row starts at version 0, whatever the client sent
 {{/lockingApplicable}}{{#hasWorkflow}}        entity.set{{WorkflowStatusName}}({{workflowInitialJava}}); // the workflow decides where a new row starts
 {{/hasWorkflow}}{{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}{{^pkField.isGenerated}}        // Client-supplied key: save() would silently merge over an existing row, so refuse with a 409.
@@ -365,7 +411,12 @@ public class {{EntityName}}Service {
         }
 {{/isReadOnly}}{{/attachmentFields}}{{#nonPkFields}}{{^isReadOnly}}        existing.set{{Name}}(updated.get{{Name}}());
 {{/isReadOnly}}{{/nonPkFields}}{{#relations}}        existing.set{{FieldName}}(updated.get{{FieldName}}());
-{{/relations}}        return repository.save(existing);
+{{/relations}}{{#hasCollections}}        resolveLinks(updated);
+{{#collections}}        if (updated.get{{FieldName}}() != null) {
+            existing.get{{FieldName}}().clear();
+            existing.get{{FieldName}}().addAll(updated.get{{FieldName}}());
+        }
+{{/collections}}{{/hasCollections}}        return repository.save(existing);
     }
 {{#hasWorkflow}}
 

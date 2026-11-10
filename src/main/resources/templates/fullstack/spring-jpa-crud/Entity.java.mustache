@@ -53,7 +53,14 @@ import org.hibernate.annotations.Formula;
     @Formula("(select t.{{targetLabelColumn}} from {{targetTableRef}} t where t.{{targetPkColumn}} = {{joinColumn}})")
     private String {{fieldName}}Label;
 
-{{/hasTargetLabel}}{{/relations}}{{#attachmentFields}}    /** Name of the file in {{name}}, read by the database on load — the attachment itself is fetched
+{{/hasTargetLabel}}{{/relations}}{{#collections}}    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "{{joinTable}}",
+            joinColumns = @JoinColumn(name = "{{joinColumn}}"),
+            inverseJoinColumns = @JoinColumn(name = "{{inverseJoinColumn}}"))
+    @org.hibernate.annotations.BatchSize(size = 100)
+    private java.util.Set<{{targetEntity}}> {{fieldName}} = new java.util.LinkedHashSet<>();
+
+{{/collections}}{{#attachmentFields}}    /** Name of the file in {{name}}, read by the database on load — the attachment itself is fetched
      *  only when someone opens it. */
     @org.hibernate.annotations.Formula("(select a.file_name from app_attachment a where a.id = {{column}})")
     private String {{nameField}};
@@ -108,7 +115,15 @@ import org.hibernate.annotations.Formula;
         return {{fieldName}}Label;
     }
 
-{{/hasTargetLabel}}{{/relations}}{{#attachmentFields}}    public String get{{NameField}}() {
+{{/hasTargetLabel}}{{/relations}}{{#collections}}    public java.util.Set<{{targetEntity}}> get{{FieldName}}() {
+        return {{fieldName}};
+    }
+
+    public void set{{FieldName}}(java.util.Set<{{targetEntity}}> {{fieldName}}) {
+        this.{{fieldName}} = {{fieldName}};
+    }
+
+{{/collections}}{{#attachmentFields}}    public String get{{NameField}}() {
         return {{nameField}};
     }
 

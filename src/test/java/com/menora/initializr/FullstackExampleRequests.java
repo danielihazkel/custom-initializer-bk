@@ -105,6 +105,35 @@ public final class FullstackExampleRequests {
         return body;
     }
 
+    /**
+     * Posts and tags: a MANY_TO_MANY ({@code Post.tags}) beside a MANY_TO_ONE ({@code Post.author}),
+     * with the options that read a row through its DTO (CSV export, the controller test, demo
+     * data). Asserted as text, compiled and built like {@link #fieldTypesBody}.
+     */
+    public static Map<String, Object> manyToManyBody(String frontendSet) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "press");
+        body.put("packageName", "com.menora.press");
+        body.put("bootVersion", "3.2.1");
+        if (frontendSet != null) body.put("frontendTemplateSet", frontendSet);
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "seedData", "tests", "audit")));
+        Map<String, Object> id = Map.of("name", "id", "type", "LONG", "primaryKey", true, "generated", true);
+        Map<String, Object> author = new LinkedHashMap<>();
+        author.put("name", "Author");
+        author.put("fields", List.of(id, Map.of("name", "name", "type", "STRING", "required", true)));
+        Map<String, Object> tag = new LinkedHashMap<>();
+        tag.put("name", "Tag");
+        tag.put("fields", List.of(id, Map.of("name", "name", "type", "STRING", "required", true)));
+        Map<String, Object> post = new LinkedHashMap<>();
+        post.put("name", "Post");
+        post.put("fields", List.of(id, Map.of("name", "title", "type", "STRING", "required", true)));
+        post.put("relations", List.of(
+                Map.of("type", "MANY_TO_ONE", "fieldName", "author", "targetEntity", "Author"),
+                Map.of("type", "MANY_TO_MANY", "fieldName", "tags", "targetEntity", "Tag")));
+        body.put("entities", List.of(author, tag, post));
+        return body;
+    }
+
     /** POSTs a fullstack request; the response, whatever its status. */
     public static ResponseEntity<byte[]> post(TestRestTemplate rest, Map<String, Object> body) {
         HttpHeaders headers = new HttpHeaders();

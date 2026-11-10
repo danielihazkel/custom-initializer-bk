@@ -125,6 +125,7 @@
       "instant",
       "integer",
       "joincolumn",
+      "jointable",
       "jpa",
       "jparepository",
       "jpaspecificationexecutor",
@@ -142,6 +143,7 @@
       "logger",
       "loggerfactory",
       "long",
+      "manytomany",
       "manytoone",
       "markdown",
       "math",
@@ -152,6 +154,7 @@
       "mockito",
       "mockmvc",
       "modifying",
+      "multirelationpicker",
       "noargsconstructor",
       "notnull",
       "number",
@@ -330,7 +333,8 @@
     }
   ],
   "relationTypes" : [
-    "MANY_TO_ONE"
+    "MANY_TO_ONE",
+    "MANY_TO_MANY"
   ],
   "scaffoldOptions" : [
     {

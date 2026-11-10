@@ -24,7 +24,9 @@ public record {{EntityName}}Dto(
         java.time.Instant updatedAt{{/auditApplicable}}{{#lockingApplicable}},
         Long version{{/lockingApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
         int {{collectionField}}Count{{/inverseRelations}}{{/optScaffoldInverse}}{{#attachmentFields}},
-        String {{nameField}}{{/attachmentFields}}) {
+        String {{nameField}}{{/attachmentFields}}{{#collections}},
+        java.util.List<{{targetPkJavaType}}> {{idsField}},
+        java.util.List<String> {{labelsField}}{{/collections}}) {
 
     public static {{EntityName}}Dto from({{EntityName}} entity) {
         return new {{EntityName}}Dto(
@@ -36,7 +38,11 @@ public record {{EntityName}}Dto(
                 entity.getUpdatedAt(){{/auditApplicable}}{{#lockingApplicable}},
                 entity.getVersion(){{/lockingApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}},
                 entity.get{{CollectionField}}Count() == null ? 0 : entity.get{{CollectionField}}Count().intValue(){{/inverseRelations}}{{/optScaffoldInverse}}{{#attachmentFields}},
-                entity.get{{NameField}}(){{/attachmentFields}}
+                entity.get{{NameField}}(){{/attachmentFields}}{{#collections}},
+                entity.get{{FieldName}}() == null ? java.util.List.of()
+                        : entity.get{{FieldName}}().stream().map(t -> t.get{{TargetPkName}}()).toList(),
+                entity.get{{FieldName}}() == null ? java.util.List.of()
+                        : entity.get{{FieldName}}().stream().map(t -> String.valueOf(t.get{{#hasTargetLabel}}{{TargetLabelField}}{{/hasTargetLabel}}{{^hasTargetLabel}}{{TargetPkName}}{{/hasTargetLabel}}())).toList(){{/collections}}
         );
     }
 
@@ -48,7 +54,19 @@ public record {{EntityName}}Dto(
             {{fieldName}}.set{{TargetPkName}}(this.{{fkFieldName}});
             entity.set{{FieldName}}({{fieldName}});
         }
-{{/relations}}{{#lockingApplicable}}        entity.setVersion(this.version);
+{{/relations}}{{#collections}}        // The linked rows by id; no list at all means "leave them as they are" to an update.
+        if (this.{{idsField}} == null) {
+            entity.set{{FieldName}}(null);
+        } else {
+            java.util.Set<{{entityPackage}}.{{targetEntity}}> {{fieldName}} = new java.util.LinkedHashSet<>();
+            for ({{targetPkJavaType}} id : this.{{idsField}}) {
+                {{entityPackage}}.{{targetEntity}} linked = new {{entityPackage}}.{{targetEntity}}();
+                linked.set{{TargetPkName}}(id);
+                {{fieldName}}.add(linked);
+            }
+            entity.set{{FieldName}}({{fieldName}});
+        }
+{{/collections}}{{#lockingApplicable}}        entity.setVersion(this.version);
 {{/lockingApplicable}}        return entity;
     }
 }

@@ -29,7 +29,8 @@ type ListColumn = Column<{{EntityName}}> & { key: string }
 {{/listConfigurable}}const columns: {{#listConfigurable}}ListColumn[]{{/listConfigurable}}{{^listConfigurable}}Column<{{EntityName}}>[]{{/listConfigurable}} = [
 {{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : {{cellTs}} },
 {{/fields}}{{#relations}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => {{#targetHasRecordPage}}r.{{fkFieldName}} == null ? '—' : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(r.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}r.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(r.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} },
-{{/relations}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
+{{/relations}}{{#collections}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => r.{{labelsField}} == null || r.{{labelsField}}.length === 0 ? '—' : r.{{labelsField}}.join(', ') },
+{{/collections}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
   { {{#listConfigurable}}key: 'updatedAt', {{/listConfigurable}}label: t('updated'), sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
 {{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
 {{/inverseRelations}}{{/optScaffoldInverse}}]
@@ -125,8 +126,8 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
   const record: Record<string, unknown> = {}
 {{#filterFields}}{{#isEnumFilter}}  if (oneValue(values['{{name}}'])) record['{{name}}'] = values['{{name}}']
 {{/isEnumFilter}}{{#isBooleanFilter}}  if (values['{{name}}']) record['{{name}}'] = values['{{name}}'] === 'true'
-{{/isBooleanFilter}}{{#isRelationFilter}}  if (oneValue(values['{{name}}'])) record['{{name}}'] = {{#isTargetPkNumeric}}Number(values['{{name}}']){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}values['{{name}}']{{/isTargetPkNumeric}}
-{{/isRelationFilter}}{{/filterFields}}  return record as Partial<{{EntityName}}>
+{{/isBooleanFilter}}{{#isRelationFilter}}{{^isCollectionFilter}}  if (oneValue(values['{{name}}'])) record['{{name}}'] = {{#isTargetPkNumeric}}Number(values['{{name}}']){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}values['{{name}}']{{/isTargetPkNumeric}}
+{{/isCollectionFilter}}{{/isRelationFilter}}{{/filterFields}}  return record as Partial<{{EntityName}}>
 }
 
 {{#fromFiltersChecksOne}}/** A filter set to exactly one value; `OPEN,CLOSED` names no single value to start with. */

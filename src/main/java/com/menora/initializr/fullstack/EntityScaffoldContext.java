@@ -87,6 +87,8 @@ public final class EntityScaffoldContext {
         }
         ctx.put("entities", entityViews);
         // The shared frontend files a field type brings: format.ts (money, instants) and Markdown.tsx.
+        // The multi-pick control ships with the first MANY_TO_MANY.
+        ctx.put("hasCollectionFields", entities.stream().anyMatch(e -> !e.collections().isEmpty()));
         boolean attachments = entities.stream().flatMap(e -> e.fields().stream()).anyMatch(f -> f.type().isAttachment());
         // File and image fields: the attachment package on the backend, the upload call and the
         // AttachmentField on the frontend (both render paths read it).
@@ -2384,8 +2386,9 @@ public final class EntityScaffoldContext {
             lockedRelations |= locked;
         }
         ctx.put("hasLockedRelations", lockedRelations && mutable);
+        // …and to resolve the ids of a MANY_TO_MANY into the rows they name.
         ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable
-                || (lockedRelations && mutable));
+                || (lockedRelations && mutable) || (Boolean.TRUE.equals(ctx.get("hasCollections")) && mutable));
         // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
         // besides the audit rows — so it imports t / LOCALE exactly when one of them is drawn
         // (the generated lint rejects an unused import).
@@ -2820,6 +2823,49 @@ public final class EntityScaffoldContext {
         boolean hasRequiredRelations = relationViews.stream()
                 .anyMatch(m -> Boolean.TRUE.equals(m.get("required")));
         view.put("relations", relationViews);
+        // The sets of other rows this entity owns (MANY_TO_MANY), apart from its foreign keys: the
+        // templates' `relations` loops all mean "a foreign key", and these are not one. The DTO
+        // carries the linked rows' ids (idsField) and labels (labelsField).
+        List<Map<String, Object>> collectionViews = new ArrayList<>(entity.collections().size());
+        for (RelationDefinition c : entity.collections()) {
+            Map<String, Object> target = summaries == null ? null
+                    : summaries.get(c.targetEntity().toLowerCase(Locale.ROOT));
+            String field = Naming.toCamelCase(c.fieldName());
+            Map<String, Object> cv = new LinkedHashMap<>();
+            cv.put("fieldName", field);
+            cv.put("FieldName", Naming.toPascalCase(c.fieldName()));
+            cv.put("idsField", field + "Ids");
+            cv.put("labelsField", field + "Labels");
+            cv.put("filterName", field + "Id");
+            cv.put("targetEntity", target != null ? target.get("pascal") : Naming.toPascalCase(c.targetEntity()));
+            cv.put("targetEntityKebabPlural", target != null ? target.get("kebabPlural")
+                    : Naming.pluralize(Naming.toKebabCase(c.targetEntity())));
+            cv.put("targetPkName", target != null ? target.get("pkName") : "id");
+            cv.put("TargetPkName", target != null ? target.get("PkName") : "Id");
+            cv.put("targetPkJavaType", target != null ? target.get("pkJavaType") : "Long");
+            String targetPkTs = target != null ? (String) target.get("pkTsType") : "number";
+            cv.put("targetPkTsType", targetPkTs);
+            cv.put("isTargetPkNumeric", "number".equals(targetPkTs));
+            Object labelField = target == null ? null : target.get("labelField");
+            cv.put("targetLabelField", labelField);
+            cv.put("TargetLabelField", labelField == null ? null : Naming.toPascalCase(String.valueOf(labelField)));
+            cv.put("hasTargetLabel", labelField != null);
+            cv.put("targetSearchable", target != null && Boolean.TRUE.equals(target.get("labelSearchable")));
+            // The join table: named, or <entity>_<field> with one <entity>_id column per side.
+            String owner = Naming.toSnakeCase(entity.name());
+            cv.put("joinTable", SqlNames.javaLiteral(SqlNames.physical(c.joinTable() != null ? c.joinTable()
+                    : owner + "_" + Naming.toSnakeCase(c.fieldName()), null)));
+            cv.put("joinColumn", SqlNames.javaLiteral(SqlNames.physical(c.joinColumn() != null ? c.joinColumn()
+                    : owner + "_id", null)));
+            cv.put("inverseJoinColumn", SqlNames.javaLiteral(SqlNames.physical(c.inverseJoinColumn() != null
+                    ? c.inverseJoinColumn() : Naming.toSnakeCase(c.targetEntity()) + "_id", null)));
+            collectionViews.add(cv);
+        }
+        for (int i = 0; i < collectionViews.size(); i++) {
+            collectionViews.get(i).put("last", i == collectionViews.size() - 1);
+        }
+        view.put("collections", collectionViews);
+        view.put("hasCollections", !collectionViews.isEmpty());
         // The form and the details in groups: without sections one untitled group of every field
         // then every relation (the bytes they always had); with sections the entity's key(s) not in
         // one first, each section in its order, then an untitled group of the rest.
@@ -2899,6 +2945,7 @@ public final class EntityScaffoldContext {
             ff.put("isTemporalFilter", false);
             ff.put("isNumericFilter", false);
             ff.put("isRelationFilter", true);
+            ff.put("isCollectionFilter", false);
             ff.put("relationField", rv.get("fieldName"));
             ff.put("targetPkName", rv.get("targetPkName"));
             ff.put("targetEntityKebabPlural", rv.get("targetEntityKebabPlural"));
@@ -2906,6 +2953,31 @@ public final class EntityScaffoldContext {
             ff.put("hasTargetLabel", rv.get("hasTargetLabel"));
             ff.put("targetSearchable", rv.get("targetSearchable"));
             ff.put("isTargetPkNumeric", rv.get("isTargetPkNumeric"));
+            ff.put("enumValues", List.of());
+            filterFieldViews.add(ff);
+        }
+        // Filter by a linked row ("posts tagged 3"): to every surface it is a relation filter — the
+        // same control, the same <field>Id parameter holding ids — and only the service's predicate
+        // differs: the row must have one of them in its set (isCollectionFilter).
+        for (Map<String, Object> cv : collectionViews) {
+            Map<String, Object> ff = new LinkedHashMap<>();
+            ff.put("name", cv.get("filterName"));
+            ff.put("Name", cv.get("FieldName") + "Id");
+            ff.put("label", cv.get("FieldName"));
+            ff.put("javaType", cv.get("targetPkJavaType"));
+            ff.put("isEnumFilter", false);
+            ff.put("isBooleanFilter", false);
+            ff.put("isTemporalFilter", false);
+            ff.put("isNumericFilter", false);
+            ff.put("isRelationFilter", true);
+            ff.put("isCollectionFilter", true);
+            ff.put("relationField", cv.get("fieldName"));
+            ff.put("targetPkName", cv.get("targetPkName"));
+            ff.put("targetEntityKebabPlural", cv.get("targetEntityKebabPlural"));
+            ff.put("targetLabelField", cv.get("targetLabelField"));
+            ff.put("hasTargetLabel", cv.get("hasTargetLabel"));
+            ff.put("targetSearchable", cv.get("targetSearchable"));
+            ff.put("isTargetPkNumeric", cv.get("isTargetPkNumeric"));
             ff.put("enumValues", List.of());
             filterFieldViews.add(ff);
         }
@@ -2918,11 +2990,12 @@ public final class EntityScaffoldContext {
         // with that value, so it shows up in the list it was made from. Ranges are left out.
         view.put("newFromFilters", !entity.readOnly() && filterFieldViews.stream().anyMatch(ff ->
                 Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isBooleanFilter"))
-                        || Boolean.TRUE.equals(ff.get("isRelationFilter"))));
+                        || (Boolean.TRUE.equals(ff.get("isRelationFilter")) && !Boolean.TRUE.equals(ff.get("isCollectionFilter")))));
         // An enum or relation filter may hold several values; a new record takes it only when it
         // names one (the helper is emitted only when such a filter exists — the lint rejects it unused).
         view.put("fromFiltersChecksOne", !entity.readOnly() && filterFieldViews.stream().anyMatch(ff ->
-                Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isRelationFilter"))));
+                Boolean.TRUE.equals(ff.get("isEnumFilter"))
+                        || (Boolean.TRUE.equals(ff.get("isRelationFilter")) && !Boolean.TRUE.equals(ff.get("isCollectionFilter")))));
         // The generated Service builds a JPA Specification when it has either text search or
         // type-aware filters — gates the Specification import / machinery in the template.
         view.put("needsSpecification", !stringFieldViews.isEmpty() || !filterFieldViews.isEmpty());

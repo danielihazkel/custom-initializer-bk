@@ -361,6 +361,23 @@ class GeneratedFrontendBuildSmokeTests {
         runPnpm(project, "run", "build");
     }
 
+    @Test
+    void fullstackFrontendManyToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The multi-pick control in the form, the labels in the list and the detail, the filter.
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.manyToManyBody("react-tailwind-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraManyToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.manyToManyBody("react-menora-digital-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
     /**
      * Lints the whole generated frontend with no warnings allowed: the screens gate their imports
      * (t, the enum label consts, onNavigate) on use, which only eslint's no-unused-vars catches, and

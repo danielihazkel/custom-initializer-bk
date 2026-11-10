@@ -2242,6 +2242,89 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_manyToManyRelation() throws Exception {
+        Map<String, String> entries = generateZip(FullstackExampleRequests.manyToManyBody("react-tailwind-crud"));
+
+        // The owner holds a set through a join table; the names are derived when none are given.
+        assertThat(contentEndingWith(entries, "/entity/Post.java"))
+                .contains("@ManyToMany(fetch = FetchType.LAZY)")
+                .contains("@JoinTable(name = \"post_tags\",")
+                .contains("joinColumns = @JoinColumn(name = \"post_id\"),")
+                .contains("inverseJoinColumns = @JoinColumn(name = \"tag_id\"))")
+                .contains("private java.util.Set<Tag> tags = new java.util.LinkedHashSet<>();")
+                // The foreign key beside it is untouched by any of this.
+                .contains("@ManyToOne(fetch = FetchType.LAZY)")
+                .contains("private Author author;");
+        // The DTO carries the linked rows' ids and labels, after everything it had.
+        assertThat(contentEndingWith(entries, "/dto/PostDto.java"))
+                .contains("Long authorId")
+                .contains("java.util.List<Long> tagsIds,")
+                .contains("java.util.List<String> tagsLabels) {")
+                .contains("entity.getTags().stream().map(t -> t.getId()).toList()")
+                .contains("map(t -> String.valueOf(t.getName())).toList()")
+                // No list in the request leaves the links alone.
+                .contains("if (this.tagsIds == null) {");
+        assertThat(contentEndingWith(entries, "/service/PostService.java"))
+                // Read while the session is open: the DTO is built after the transaction.
+                .contains("org.hibernate.Hibernate.initialize(entity.getTags());")
+                .contains("page.forEach(this::loaded);")
+                // Ids become the rows they name, in one query; an unknown one is a 400.
+                .contains("\"select t from Tag t where t.id in :ids\"")
+                .contains("throw new IllegalArgumentException(\"tags: no Tag with one of the ids \" + ids);")
+                .contains("existing.getTags().clear();")
+                // The filter is a subquery on the set, not a join that would repeat rows.
+                .contains("owner.join(\"tags\").get(\"id\").in(filters.tagsId())")
+                .contains("return cb.exists(linked);")
+                // The foreign key's filter is the plain one it always was.
+                .contains("root.get(\"author\").get(\"id\").in(filters.authorId())");
+        assertThat(contentEndingWith(entries, "/controller/PostController.java"))
+                .contains("List<Long> tagsId")
+                .contains("csv(String.join(\"; \", dto.tagsLabels())),");
+        // The other side knows nothing of the link.
+        assertThat(contentEndingWith(entries, "/entity/Tag.java")).doesNotContain("ManyToMany").doesNotContain("Post");
+
+        // Frontend: the multi-pick control, the labels in the list and the detail, the filter.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/MultiRelationPicker.tsx"));
+        assertThat(contentEndingWith(entries, "/post/model/types.ts"))
+                .contains("tagsIds?: number[] | null").contains("tagsLabels?: string[] | null");
+        assertThat(contentEndingWith(entries, "/ui/PostForm.tsx"))
+                .contains("import { MultiRelationPicker } from '@shared/ui/MultiRelationPicker'")
+                .contains("path=\"/api/tags\"")
+                .contains("labelKey=\"name\"")
+                .contains("onChange={(ids, labels) => onChange({ ...value, tagsIds: ids as number[], tagsLabels: labels })}");
+        assertThat(contentEndingWith(entries, "/ui/PostPage.tsx"))
+                .contains("label: 'Tags', render: r => r.tagsLabels == null || r.tagsLabels.length === 0 ? '—' : r.tagsLabels.join(', ')")
+                .contains("name: 'tagsId'")
+                // A new record is pre-filled from a filter on a foreign key, never from one on a set.
+                .contains("record['authorId']")
+                .doesNotContain("record['tagsId']");
+        assertThat(contentEndingWith(entries, "/ui/PostDetail.tsx"))
+                .contains("<Row label=\"Tags\">");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsInvalidManyToMany() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        record Bad(Map<String, Object> relation, String message) {}
+        for (Bad bad : List.of(
+                new Bad(Map.of("type", "MANY_TO_MANY", "fieldName", "related", "targetEntity", "Post"), "MANY_TO_MANY to itself"),
+                new Bad(Map.of("type", "MANY_TO_MANY", "fieldName", "tags", "targetEntity", "Tag", "required", true), "required does not apply"),
+                new Bad(Map.of("type", "MANY_TO_MANY", "fieldName", "tags", "targetEntity", "Tag", "joinTable", "post tags;"), "not a valid"),
+                new Bad(Map.of("type", "MANY_TO_ONE", "fieldName", "tag", "targetEntity", "Tag", "joinTable", "post_tag"), "only apply to a MANY_TO_MANY"),
+                new Bad(Map.of("type", "ONE_TO_MANY", "fieldName", "tags", "targetEntity", "Tag"), "not supported yet"))) {
+            Map<String, Object> body = FullstackExampleRequests.manyToManyBody(null);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> post = ((List<Map<String, Object>>) body.get("entities")).get(2);
+            post.put("relations", List.of(bad.relation()));
+            ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip",
+                    org.springframework.http.HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+            assertThat(response.getStatusCode()).as(bad.message()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains(bad.message()).contains("entities[2].relations[0]");
+        }
+    }
+
+    @Test
     void fullstackEndpoint_projectsWithoutTheNewTypesShipNoneOfTheirFiles() throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("artifactId", "plain");

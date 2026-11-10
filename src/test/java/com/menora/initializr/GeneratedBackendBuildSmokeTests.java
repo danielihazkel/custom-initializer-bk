@@ -105,6 +105,17 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
 
+    @ParameterizedTest(name = "Spring Boot {0}")
+    @ValueSource(strings = {"3.2.1", FullstackGoldenOutputTests.BOOT_35})
+    void manyToManyBackendCompilesAndPassesItsTests(String bootVersion, @TempDir Path workDir) throws Exception {
+        // A MANY_TO_MANY through the entity (the join table Hibernate creates at context load), the
+        // DTO, the service's link resolution and subquery filter, and the CSV export.
+        Map<String, Object> body = FullstackExampleRequests.manyToManyBody("react-tailwind-crud");
+        body.put("bootVersion", bootVersion);
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        runMvn(postAndExtractBackend(workDir, body), "-B", "package");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private Path postAndExtractBackend(Path workDir, Map<String, Object> body) throws Exception {

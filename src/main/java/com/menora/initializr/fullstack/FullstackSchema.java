@@ -30,7 +30,7 @@ public final class FullstackSchema {
     public static final List<String> LOCALES = List.of("en", "he");
 
     /** The relation kinds a request may use today ({@link RelationType} declares more than it takes). */
-    static final List<RelationType> RELATION_TYPES = List.of(RelationType.MANY_TO_ONE);
+    static final List<RelationType> RELATION_TYPES = List.of(RelationType.MANY_TO_ONE, RelationType.MANY_TO_MANY);
 
     private static final Map<String, Object> DOCUMENT = build();
 

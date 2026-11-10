@@ -343,16 +343,23 @@ public final class FullstackRequestValidator {
                     throw new WizardArgumentException("Entity '" + p.name()
                             + "' is a SELECT-backed view and cannot declare relations");
                 }
-                List<RelationDefinition> relations =
+                List<RelationDefinition> declared =
                         parseRelations(p.rawRelations(), p.name(), p.memberNames(), canonicalByLower,
                                 pkCountByLower, viewLowerNames);
+                // The foreign keys this entity owns, and — apart from them — its sets of other
+                // rows. Everything downstream that walks `relations` means the former.
+                List<RelationDefinition> relations = declared.stream()
+                        .filter(r -> r.type() == RelationType.MANY_TO_ONE).toList();
+                List<RelationDefinition> collections = declared.stream()
+                        .filter(r -> r.type() != RelationType.MANY_TO_ONE).toList();
                 checkColumnClashes(p.name(), p.fields(), relations);
                 checkVersionName(p.name(), p.fields(), relations, p.readOnly(), p.viewQuery(), p.opts(), body);
                 result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
                         p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts(),
                         parseFormSections(p.rawSections(), p.name(), p.fields(), relations),
                         at("workflow", () -> parseWorkflow(p.rawWorkflow(), p.name(), p.fields(), relations,
-                                p.readOnly(), p.pkCount()))));
+                                p.readOnly(), p.pkCount())),
+                        collections));
             } catch (WizardArgumentException problem) {
                 throw problem.at("entities[" + p.ei() + "]");
             }
@@ -430,6 +437,11 @@ public final class FullstackRequestValidator {
                 if (targetHasLabel) {
                     generated.add(new String[] {r.fieldName() + "Label", "the label of relation '" + r.fieldName() + "'"});
                 }
+            }
+            for (RelationDefinition c : e.collections()) {
+                members.put(c.fieldName().toLowerCase(Locale.ROOT), "relation '" + c.fieldName() + "'");
+                generated.add(new String[] {c.fieldName() + "Ids", "the ids of relation '" + c.fieldName() + "'"});
+                generated.add(new String[] {c.fieldName() + "Labels", "the labels of relation '" + c.fieldName() + "'"});
             }
             for (FieldDefinition f : e.fields()) {
                 if (f.type().isAttachment()) {
@@ -823,10 +835,11 @@ public final class FullstackRequestValidator {
                 } catch (IllegalArgumentException iae) {
                     throw new WizardArgumentException("entity '" + entityName + "' relation: " + iae.getMessage()).on("type");
                 }
-                if (type != RelationType.MANY_TO_ONE) {
+                if (type == RelationType.ONE_TO_MANY) {
                     throw new WizardArgumentException("entity '" + entityName + "' relation type " + type
-                            + " is not supported yet (only MANY_TO_ONE)").on("type");
+                            + " is not supported yet (MANY_TO_ONE and MANY_TO_MANY are)").on("type");
                 }
+                boolean manyToMany = type == RelationType.MANY_TO_MANY;
 
                 if (r.fieldName() == null || r.fieldName().isBlank()) {
                     throw new WizardArgumentException("entity '" + entityName + "' relations[" + ri + "].fieldName is required").on("fieldName");
@@ -864,9 +877,37 @@ public final class FullstackRequestValidator {
                             + "' targets SELECT-backed view '" + canonicalTarget + "' — not supported");
                 }
 
+                String joinTable = null;
+                String inverseJoinColumn = null;
+                if (manyToMany) {
+                    // The join table holds one key of each side, so both need a single one; and a
+                    // link from an entity to itself has two ends the model cannot tell apart.
+                    if (targetLower.equals(entityName.toLowerCase(Locale.ROOT))) {
+                        throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                                + "' is a MANY_TO_MANY to itself — not supported (model the link as an entity"
+                                + " with two MANY_TO_ONEs)").on("targetEntity");
+                    }
+                    Integer ownPkCount = pkCountByLower.get(entityName.toLowerCase(Locale.ROOT));
+                    if (ownPkCount != null && ownPkCount > 1) {
+                        throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                                + "' is a MANY_TO_MANY, which a composite-key entity cannot own").on("type");
+                    }
+                    if (Boolean.TRUE.equals(r.required())) {
+                        throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                                + "': required does not apply to a MANY_TO_MANY (it may always be empty)").on("required");
+                    }
+                    joinTable = parseColumnName(r.joinTable(), "joinTable", fieldName, entityName);
+                    inverseJoinColumn = parseColumnName(r.inverseJoinColumn(), "inverseJoinColumn", fieldName, entityName);
+                } else if ((r.joinTable() != null && !r.joinTable().isBlank())
+                        || (r.inverseJoinColumn() != null && !r.inverseJoinColumn().isBlank())) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                            + "': joinTable and inverseJoinColumn only apply to a MANY_TO_MANY").on("joinTable");
+                }
+
                 relations.add(new RelationDefinition(type, fieldName, canonicalTarget,
                         Boolean.TRUE.equals(r.required()),
-                        parseColumnName(r.joinColumn(), "joinColumn", fieldName, entityName)));
+                        parseColumnName(r.joinColumn(), "joinColumn", fieldName, entityName),
+                        joinTable, inverseJoinColumn));
             } catch (WizardArgumentException problem) {
                 throw problem.at("relations[" + ri + "]");
             }

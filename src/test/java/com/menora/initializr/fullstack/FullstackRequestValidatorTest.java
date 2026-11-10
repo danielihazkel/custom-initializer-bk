@@ -422,7 +422,7 @@ class FullstackRequestValidatorTest {
 
     @Test
     void rejects_unsupportedRelationType() {
-        var rel = new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_MANY", "tags", "Tag", false);
+        var rel = new FullstackStarterRequest.RelationDefinitionDto("ONE_TO_MANY", "lines", "Tag", false);
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("Tag", List.of(pk())),
                 entityWithRelations("Order", List.of(pk()), List.of(rel))))))

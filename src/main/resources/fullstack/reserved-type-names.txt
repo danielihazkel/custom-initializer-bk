@@ -64,6 +64,7 @@ InlineKind
 Instant
 Integer
 JoinColumn
+JoinTable
 JpaRepository
 JpaSpecificationExecutor
 KpiTile
@@ -76,6 +77,7 @@ Locale
 Logger
 LoggerFactory
 Long
+ManyToMany
 ManyToOne
 Markdown
 Math
@@ -84,6 +86,7 @@ Min
 MockMvc
 Mockito
 Modifying
+MultiRelationPicker
 NoArgsConstructor
 NotNull
 Number

@@ -688,8 +688,22 @@ public record FullstackStarterRequest(
             String targetEntity,
             Boolean required,
             // Optional foreign-key column as the schema spells it (the DDL import sets it);
-            // omitted → <snake fieldName>_id.
-            String joinColumn) {
+            // omitted → <snake fieldName>_id. On a MANY_TO_MANY: this entity's column in the
+            // join table, omitted → <snake entity>_id.
+            String joinColumn,
+            // MANY_TO_MANY only: the join table (omitted → <snake entity>_<snake fieldName>) and
+            // the target's column in it (omitted → <snake target>_id). Left out of the JSON when
+            // absent, so an echoed request reads as it did before they existed.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String joinTable,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String inverseJoinColumn) {
+
+        /** Back-compat constructor for a MANY_TO_ONE with its join column. */
+        public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required,
+                                     String joinColumn) {
+            this(type, fieldName, targetEntity, required, joinColumn, null, null);
+        }
 
         /** Back-compat constructor without {@code joinColumn}. */
         public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required) {

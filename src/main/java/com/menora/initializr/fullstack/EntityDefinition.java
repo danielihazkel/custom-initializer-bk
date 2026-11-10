@@ -40,7 +40,8 @@ public record EntityDefinition(
         String labelPlural,
         Map<String, Boolean> opts,
         List<FormSection> formSections,
-        Workflow workflow) {
+        Workflow workflow,
+        List<RelationDefinition> collections) {
 
     /**
      * The entity's workflow: the enum field whose values are its states, the state a new row starts
@@ -106,6 +107,22 @@ public record EntityDefinition(
         listViews = List.copyOf(norm);
         opts = opts == null ? Map.of() : Map.copyOf(opts);
         formSections = formSections == null ? List.of() : List.copyOf(formSections);
+        collections = collections == null ? List.of() : List.copyOf(collections);
+    }
+
+    /**
+     * Every property but the collections (none). {@code relations} holds the MANY_TO_ONEs — the
+     * foreign keys this entity owns, which is what every reader of it means — and
+     * {@code collections} the relations that are sets of other rows (MANY_TO_MANY), declared apart
+     * so nothing that walks the foreign keys has to tell them from these.
+     */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
+                            String label, String labelPlural, Map<String, Boolean> opts, List<FormSection> formSections,
+                            Workflow workflow) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
+                label, labelPlural, opts, formSections, workflow, List.of());
     }
 
     /** Every property but the workflow (none). */
@@ -141,7 +158,7 @@ public record EntityDefinition(
         Map<String, Boolean> next = new java.util.LinkedHashMap<>(opts);
         next.put(key, value);
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
-                listViews, label, labelPlural, next, formSections, workflow);
+                listViews, label, labelPlural, next, formSections, workflow, collections);
     }
 
     public String listView() {

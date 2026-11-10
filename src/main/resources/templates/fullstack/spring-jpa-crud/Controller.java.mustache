@@ -114,7 +114,8 @@ public class {{EntityName}}Controller {
 {{#fields}}                            csv(dto.{{name}}()),
 {{/fields}}{{#relations}}                            csv(dto.{{fkFieldName}}()),
 {{#hasTargetLabel}}                            csv(dto.{{fieldName}}Label()),
-{{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}                            csv(dto.createdAt()),
+{{/hasTargetLabel}}{{/relations}}{{#collections}}                            csv(String.join("; ", dto.{{labelsField}}())),
+{{/collections}}{{#auditApplicable}}                            csv(dto.createdAt()),
                             csv(dto.updatedAt()),
 {{/auditApplicable}}                    };
                     w.write(String.join(",", cells));
@@ -136,7 +137,8 @@ public class {{EntityName}}Controller {
 {{#fields}}            "{{name}}",
 {{/fields}}{{#relations}}            "{{fkFieldName}}",
 {{#hasTargetLabel}}            "{{fieldName}}Label",
-{{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}            "createdAt",
+{{/hasTargetLabel}}{{/relations}}{{#collections}}            "{{fieldName}}",
+{{/collections}}{{#auditApplicable}}            "createdAt",
             "updatedAt",
 {{/auditApplicable}}    };
 

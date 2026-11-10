@@ -60,7 +60,16 @@ import org.hibernate.annotations.Formula;
     @lombok.Setter(lombok.AccessLevel.NONE)
     private String {{fieldName}}Label;
 
-{{/hasTargetLabel}}{{/relations}}{{#attachmentFields}}    /** Name of the file in {{name}}, read by the database on load — the attachment itself is fetched
+{{/hasTargetLabel}}{{/relations}}{{#collections}}    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "{{joinTable}}",
+            joinColumns = @JoinColumn(name = "{{joinColumn}}"),
+            inverseJoinColumns = @JoinColumn(name = "{{inverseJoinColumn}}"))
+    @org.hibernate.annotations.BatchSize(size = 100)
+    @lombok.EqualsAndHashCode.Exclude
+    @lombok.ToString.Exclude
+    private java.util.Set<{{targetEntity}}> {{fieldName}} = new java.util.LinkedHashSet<>();
+
+{{/collections}}{{#attachmentFields}}    /** Name of the file in {{name}}, read by the database on load — the attachment itself is fetched
      *  only when someone opens it. */
     @org.hibernate.annotations.Formula("(select a.file_name from app_attachment a where a.id = {{column}})")
     private String {{nameField}};

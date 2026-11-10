@@ -14,7 +14,10 @@ export interface {{EntityName}} {
 {{/isAttachment}}{{/fields}}{{#relations}}  {{fkFieldName}}{{^required}}?{{/required}}: {{targetPkTsType}} | null
 {{#hasTargetLabel}}  /** Read-only display label of the referenced {{targetEntity}} ({{targetLabelField}}), set by the API. */
   {{fieldName}}Label?: string | null
-{{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}  createdAt?: string | null
+{{/hasTargetLabel}}{{/relations}}{{#collections}}  /** The linked {{targetEntity}} rows: their ids, and — read-only, set by the API — their labels in the same order. */
+  {{idsField}}?: {{targetPkTsType}}[] | null
+  {{labelsField}}?: string[] | null
+{{/collections}}{{#auditApplicable}}  createdAt?: string | null
   updatedAt?: string | null
 {{/auditApplicable}}{{#lockingApplicable}}  /** Optimistic-lock version: sent back on save so a stale edit is refused, never shown. */
   version?: number | null
