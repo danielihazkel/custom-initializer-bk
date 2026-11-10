@@ -173,6 +173,13 @@ public class DynamicProjectGenerationConfiguration {
                             bc.getId(), bc.getDependencyId(), bc.getMavenArtifactId(), bc.getSubOptionId());
                     continue;
                 }
+                // Skip a row pinned to another Spring Boot line (the spring-cloud BOM and
+                // springdoc carry one row per line).
+                if (!appliesTo(bc.getCompatibilityRange(), description.getPlatformVersion())) {
+                    log.debug("skip bc id={} dep={} artifact={}: outside Boot range '{}'",
+                            bc.getId(), bc.getDependencyId(), bc.getMavenArtifactId(), bc.getCompatibilityRange());
+                    continue;
+                }
                 switch (bc.getCustomizationType()) {
                     case ADD_DEPENDENCY -> {
                         Dependency.Builder<?> dep = Dependency.withCoordinates(
@@ -183,7 +190,17 @@ public class DynamicProjectGenerationConfiguration {
                         if (bc.getVersion() != null && !bc.getVersion().isBlank()) {
                             dep.version(VersionReference.ofValue(bc.getVersion()));
                         }
-                        build.dependencies().add(bc.getMavenArtifactId(), dep.build());
+                        // A dependency the build already holds under these coordinates (the
+                        // catalog entry itself, under its dep id) is replaced, not added again:
+                        // that is how a ranged row gives it another version on another Boot line.
+                        String id = build.dependencies().ids()
+                                .filter(existing -> {
+                                    Dependency held = build.dependencies().get(existing);
+                                    return bc.getMavenGroupId().equals(held.getGroupId())
+                                            && bc.getMavenArtifactId().equals(held.getArtifactId());
+                                })
+                                .findFirst().orElse(bc.getMavenArtifactId());
+                        build.dependencies().add(id, dep.build());
                     }
                     case EXCLUDE_DEPENDENCY -> build.dependencies().add(
                             bc.getExcludeFromArtifactId(),
@@ -222,6 +239,22 @@ public class DynamicProjectGenerationConfiguration {
             }
 
         };
+    }
+
+    /**
+     * Whether a row with this Boot version range applies to the project's Boot version. Blank
+     * range: always. A range that does not parse applies too — the row was valid before ranges
+     * existed, and dropping a dependency silently is worse than keeping it.
+     */
+    static boolean appliesTo(String range, io.spring.initializr.generator.version.Version platformVersion) {
+        if (range == null || range.isBlank() || platformVersion == null) return true;
+        try {
+            return io.spring.initializr.generator.version.VersionParser.DEFAULT.parseRange(range.trim())
+                    .match(platformVersion);
+        } catch (RuntimeException e) {
+            log.warn("Build customization has an unreadable Boot range '{}' — applying it to every version", range);
+            return true;
+        }
     }
 
     /**

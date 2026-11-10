@@ -240,6 +240,7 @@ public class DataSeeder implements SmartInitializingSingleton {
             if (d.snapshotsEnabled() != null) e.setSnapshotsEnabled(d.snapshotsEnabled());
             e.setScope(d.scope());
             e.setSubOptionId(d.subOptionId());
+            e.setCompatibilityRange(d.compatibilityRange());
             e.setSortOrder(d.sortOrder());
             e.setProjectKind(kind);
             buildCustomRepo.save(e);
@@ -591,6 +592,9 @@ public class DataSeeder implements SmartInitializingSingleton {
         version(VersionKind.JAVA, "17", "17", false, 1, null, null);
 
         version(VersionKind.BOOT, "3.2.1", "3.2.1", true, 0, null, null);
+        // The last 3.x line. Offered beside the default, not instead of it; an admin edits the
+        // row (Admin → Versions) to follow the patch release the company repository mirrors.
+        version(VersionKind.BOOT, "3.5.16", "3.5.16", false, 1, null, null);
 
         version(VersionKind.REACT, "18", "React 18", true,  0, "^18.3.1", "^18.3.3");
         version(VersionKind.REACT, "19", "React 19", false, 1, "^19.0.0", "^19.0.0");

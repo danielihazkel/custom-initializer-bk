@@ -1,6 +1,7 @@
 package com.menora.initializr;
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
@@ -58,13 +59,15 @@ class GeneratedBackendBuildSmokeTests {
     @Autowired
     private TestRestTemplate rest;
 
-    @Test
+    @ParameterizedTest(name = "Spring Boot {0}")
+    @ValueSource(strings = {"3.2.1", FullstackGoldenOutputTests.BOOT_35})
     @SuppressWarnings("unchecked")
-    void approvalsBackendCompilesAndPassesItsTests(@TempDir Path workDir) throws Exception {
+    void approvalsBackendCompilesAndPassesItsTests(String bootVersion, @TempDir Path workDir) throws Exception {
         // The Approvals example with every opt its backend reads: the workflow's transitions,
         // claim/release and inbox filters, stats, locking, audit, demo data, CSV export and the
         // generated controller tests.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
+        body.put("bootVersion", bootVersion);
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
         body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "seedData", "tests")));
         for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
@@ -75,15 +78,18 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
 
-    @Test
-    void classicBackendWithEveryOptCompilesAndPassesItsTests(@TempDir Path workDir) throws Exception {
+    @ParameterizedTest(name = "Spring Boot {0}")
+    @ValueSource(strings = {"3.2.1", FullstackGoldenOutputTests.BOOT_35})
+    void classicBackendWithEveryOptCompilesAndPassesItsTests(String bootVersion, @TempDir Path workDir) throws Exception {
         // The Orders entities (relations, enums, booleans, dates and money, no workflow) with the
         // bulk, import, soft-delete and inverse-collection code paths on.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
         body.put("pages", List.of());
+        body.put("bootVersion", bootVersion);
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        // openapi too: springdoc's version follows the Boot line, and the wrong one fails at startup.
         body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "inverseCollections", "csvExport",
-                "csvImport", "bulkDelete", "bulkUpdate", "optimisticLocking", "seedData", "tests")));
+                "csvImport", "bulkDelete", "bulkUpdate", "optimisticLocking", "seedData", "tests", "openapi")));
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
 

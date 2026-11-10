@@ -187,6 +187,39 @@ class ProjectGenerationIntegrationTests {
         assertThat(project).filePaths().doesNotContain("src/main/resources/application.properties");
     }
 
+    /**
+     * One dependency, a different version per Spring Boot line: the spring-cloud BOM and springdoc
+     * each carry a build customization per line (its {@code compatibilityRange}), and only the
+     * matching one reaches the pom — replacing the catalog entry's own version, never beside it.
+     */
+    @Test
+    void eachBootLineGetsItsOwnSpringCloudAndSpringdocVersions() throws Exception {
+        record Line(String boot, String springCloud, String springdoc) {}
+        for (Line line : List.of(new Line("3.2.1", "2023.0.3", "2.6.0"), new Line("3.5.16", "2025.0.3", "2.8.17"))) {
+            WebProjectRequest request = createBaseRequest();
+            request.setBootVersion(line.boot());
+            request.getDependencies().add("web");
+            request.getDependencies().add("openapi");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+            try {
+                String pom = Files.readString(projectDir.resolve("pom.xml")).replace("\r\n", "\n");
+                assertThat(pom).as(line.boot())
+                        .containsPattern("(?s)<parent>.*?<version>" + java.util.regex.Pattern.quote(line.boot()) + "</version>.*?</parent>")
+                        .contains("<spring-cloud.version>" + line.springCloud() + "</spring-cloud.version>")
+                        .containsPattern("(?s)<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>\\s*"
+                                + "<version>" + java.util.regex.Pattern.quote(line.springdoc()) + "</version>");
+                // Exactly one of each: the other lines' rows are skipped, and the ranged
+                // springdoc row replaces the entry's dependency rather than adding a second.
+                assertThat(pom.split("<spring-cloud.version>", -1)).as(line.boot() + " spring-cloud").hasSize(2);
+                assertThat(pom.split("<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>", -1))
+                        .as(line.boot() + " springdoc").hasSize(2);
+            } finally {
+                invoker.cleanTempFiles(projectDir);
+            }
+        }
+    }
+
     @Test
     void generatedProjectContainsLocalVaultConnection() throws Exception {
         WebProjectRequest request = createBaseRequest();

@@ -177,6 +177,8 @@ public class ConfigurationExport {
         private boolean snapshotsEnabled;
         private String scope;
         private String subOptionId;
+        /** Boot version range the row applies to; absent in exports from before it existed. */
+        private String compatibilityRange;
         private int sortOrder;
         private String projectKind;
 
@@ -206,6 +208,8 @@ public class ConfigurationExport {
         public void setScope(String scope) { this.scope = scope; }
         public String getSubOptionId() { return subOptionId; }
         public void setSubOptionId(String subOptionId) { this.subOptionId = subOptionId; }
+        public String getCompatibilityRange() { return compatibilityRange; }
+        public void setCompatibilityRange(String compatibilityRange) { this.compatibilityRange = compatibilityRange; }
         public int getSortOrder() { return sortOrder; }
         public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
         public String getProjectKind() { return projectKind; }
