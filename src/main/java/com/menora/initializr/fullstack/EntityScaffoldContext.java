@@ -3040,6 +3040,12 @@ public final class EntityScaffoldContext {
         fv.put("isDate", f.type() == FieldType.LOCAL_DATE);
         fv.put("isDateTime", f.type() == FieldType.LOCAL_DATE_TIME);
         fv.put("isEnum", f.type().isEnum());
+        // What a template would otherwise spell out as a chain of type flags — where a type the
+        // chain does not know renders nothing, and the generated file is broken. These come from
+        // switches the compiler checks, so a new FieldType cannot be forgotten here.
+        fv.put("inputType", inputType(f));
+        fv.put("importKind", importKind(f.type()));
+        fv.put("bulkCoerceJava", bulkCoerceJava(f.type(), javaType, entityPascal, enumTypeName));
         fv.put("hasLength", f.length() != null);
         fv.put("length", f.length());
         // Numeric bounds (rendered as @Min/@Max on integral types, @DecimalMin/@DecimalMax on BigDecimal).
@@ -3112,6 +3118,48 @@ public final class EntityScaffoldContext {
      * is the enum type reference to use — the bare nested name inside the entity class, or the
      * {@code Entity.EnumType} form from outside it (demo-data loader).
      */
+    /** The {@code type} of the plain {@code <input>} a field gets in the generated form. */
+    static String inputType(FieldDefinition f) {
+        return switch (f.type()) {
+            case LONG, INTEGER, BIG_DECIMAL -> "number";
+            case LOCAL_DATE -> "date";
+            case LOCAL_DATE_TIME -> "datetime-local";
+            case STRING -> f.email() ? "email" : "text";
+            // A textarea, a select — or a text box, for a UUID: no input type of their own.
+            case TEXT, UUID, BOOLEAN, ENUM -> "text";
+        };
+    }
+
+    /** How the generated CSV import reads a column of this type ({@code csv.ts} {@code coerce}). */
+    static String importKind(FieldType type) {
+        return switch (type) {
+            case LONG, INTEGER -> "integer";
+            case BIG_DECIMAL -> "number";
+            case BOOLEAN -> "boolean";
+            case LOCAL_DATE -> "date";
+            case LOCAL_DATE_TIME -> "datetime";
+            case ENUM -> "enum";
+            case STRING, TEXT, UUID -> "string";
+        };
+    }
+
+    /**
+     * The Java expression that turns the bulk-update endpoint's raw JSON scalar ({@code value}, an
+     * {@code Object} known not to be null) into the field's type.
+     */
+    static String bulkCoerceJava(FieldType type, String javaType, String entityPascal, String enumTypeName) {
+        return switch (type) {
+            case ENUM -> entityPascal + "." + enumTypeName + ".valueOf(value.toString())";
+            case BOOLEAN -> "Boolean.valueOf(value.toString())";
+            case BIG_DECIMAL -> "new java.math.BigDecimal(value.toString())";
+            case LONG, INTEGER -> javaType + ".valueOf(value.toString())";
+            case UUID -> "java.util.UUID.fromString(value.toString())";
+            case LOCAL_DATE -> "java.time.LocalDate.parse(value.toString())";
+            case LOCAL_DATE_TIME -> "java.time.LocalDateTime.parse(value.toString())";
+            case STRING, TEXT -> "value.toString()";
+        };
+    }
+
     static String defaultJavaExpression(FieldDefinition f, String enumRef) {
         String v = f.defaultValue();
         return switch (f.type()) {

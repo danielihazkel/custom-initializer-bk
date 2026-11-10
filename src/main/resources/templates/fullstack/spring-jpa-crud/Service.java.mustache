@@ -492,7 +492,7 @@ public class {{EntityName}}Service {
         java.util.List<{{EntityName}}> rows = repository.findAllById(ids);
         for ({{EntityName}} entity : rows) {
             switch (field) {
-{{#bulkUpdatableFields}}                case "{{name}}" -> entity.set{{Name}}(value == null ? null : {{#isEnum}}{{EntityName}}.{{enumTypeName}}.valueOf(value.toString()){{/isEnum}}{{#isBoolean}}Boolean.valueOf(value.toString()){{/isBoolean}}{{#isBigDecimal}}new java.math.BigDecimal(value.toString()){{/isBigDecimal}}{{#isIntegral}}{{javaType}}.valueOf(value.toString()){{/isIntegral}}{{#isUuid}}java.util.UUID.fromString(value.toString()){{/isUuid}}{{#isDate}}java.time.LocalDate.parse(value.toString()){{/isDate}}{{#isDateTime}}java.time.LocalDateTime.parse(value.toString()){{/isDateTime}}{{#isString}}value.toString(){{/isString}}{{#isText}}value.toString(){{/isText}});
+{{#bulkUpdatableFields}}                case "{{name}}" -> entity.set{{Name}}(value == null ? null : {{bulkCoerceJava}});
 {{/bulkUpdatableFields}}                default -> throw new IllegalArgumentException("Field not bulk-updatable: " + field);
             }
         }
