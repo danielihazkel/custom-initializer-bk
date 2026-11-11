@@ -1,0 +1,48 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+@Component
+public class {{className}} {
+
+    private final RestTemplate restTemplate;
+    private final String baseUrl;
+
+    public {{className}}(RestTemplate restTemplate, @Value("{{baseUrlPlaceholder}}") String baseUrl) {
+        this.restTemplate = restTemplate;
+        this.baseUrl = baseUrl;
+    }
+
+{{#operations}}
+{{#hasSummary}}
+    /** {{summaryJavadoc}} */
+{{/hasSummary}}
+    public {{returnType}} {{operationId}}({{arguments}}) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(baseUrl)
+                .path("{{path}}");
+{{#queryParams}}
+        {{^required}}if ({{name}} != null) {{/required}}builder.queryParam("{{name}}", {{name}});
+{{/queryParams}}
+{{#hasPathParams}}
+        String uri = builder.buildAndExpand({{pathArguments}}).toUriString();
+{{/hasPathParams}}
+{{^hasPathParams}}
+        String uri = builder.toUriString();
+{{/hasPathParams}}
+{{#hasHeaders}}
+        HttpHeaders headers = new HttpHeaders();
+{{#headerParams}}
+        {{^required}}if ({{name}} != null) {{/required}}headers.add("{{name}}", String.valueOf({{name}}));
+{{/headerParams}}
+{{/hasHeaders}}
+        ResponseEntity<{{responseBoxed}}> response =
+                restTemplate.exchange(uri, HttpMethod.{{httpMethod}}, {{entityExpr}}, {{responseTypeArg}});
+{{#returnsBody}}
+        return response.getBody();
+{{/returnsBody}}
+    }
+
+{{/operations}}
+}

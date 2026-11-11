@@ -9,7 +9,6 @@ import io.spring.initializr.web.project.ProjectRequest;
 import io.spring.initializr.web.project.WebProjectRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -19,8 +18,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -52,9 +49,6 @@ import java.util.stream.Stream;
 public class MultiModuleController {
 
     private static final Logger log = LoggerFactory.getLogger(MultiModuleController.class);
-
-    /** The parent POM, rendered through {@link CompiledTemplates}. */
-    static final String PARENT_POM_TEMPLATE = "templates/wizard/multimodule/parent-pom.xml.mustache";
 
     private final ProjectGenerationInvoker<ProjectRequest> invoker;
     private final ProjectRequestFactory requestFactory;
@@ -218,16 +212,7 @@ public class MultiModuleController {
         view.put("descriptionXml", escapeXml(root.getDescription()));
         view.put("javaVersion", root.getJavaVersion());
         view.put("modules", moduleNames);
-        return CompiledTemplates.render(template(PARENT_POM_TEMPLATE), view);
-    }
-
-    private static String template(String path) {
-        try (InputStream in = new ClassPathResource(path).getInputStream()) {
-            // A template renders the same on every checkout: LF, whatever git made of the file.
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-        } catch (IOException e) {
-            throw new UncheckedIOException("Missing template " + path, e);
-        }
+        return WizardTemplates.render("multimodule/parent-pom.xml", view);
     }
 
     private static Set<String> idsOf(String commaSeparated) {

@@ -1,0 +1,15 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+public class {{className}} extends WebServiceGatewaySupport {
+
+{{#operations}}
+    public {{responseClass}} {{method}}({{requestClass}} request) {
+        return ({{responseClass}}) getWebServiceTemplate().marshalSendAndReceive(request);
+    }
+
+{{/operations}}
+}

@@ -1,0 +1,18 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+@Endpoint
+public class {{className}} {
+
+{{#operations}}
+    @PayloadRoot(namespace = "{{namespace}}", localPart = "{{localPart}}")
+    @ResponsePayload
+    public {{responseClass}} {{method}}(@RequestPayload {{requestClass}} request) {
+        throw new UnsupportedOperationException("TODO: implement {{method}}");
+    }
+
+{{/operations}}
+}

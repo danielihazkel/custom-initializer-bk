@@ -1,5 +1,6 @@
 package com.menora.initializr.soap;
 
+import com.menora.initializr.config.WizardTemplates;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,7 +23,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -241,28 +241,30 @@ public class SoapCodeGenerator {
             imports.add(payloadFullPkg + "." + op.responseClassName());
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(fullPkg).append(";\n\n");
-        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
-        sb.append('\n');
-        sb.append("@Endpoint\n");
-        sb.append("public class ").append(className).append(" {\n\n");
-
-        for (SoapOperationModel op : svc.operations()) {
-            sb.append("    @PayloadRoot(namespace = \"").append(escape(op.requestElementNamespace()))
-                    .append("\", localPart = \"").append(escape(op.requestElementLocalPart())).append("\")\n");
-            sb.append("    @ResponsePayload\n");
-            sb.append("    public ").append(op.responseClassName()).append(' ').append(op.javaMethodName())
-                    .append("(@RequestPayload ").append(op.requestClassName()).append(" request) {\n");
-            sb.append("        throw new UnsupportedOperationException(\"TODO: implement ")
-                    .append(op.javaMethodName()).append("\");\n");
-            sb.append("    }\n\n");
-        }
-        sb.append("}\n");
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", fullPkg);
+        view.put("imports", imports);
+        view.put("className", className);
+        view.put("operations", operationViews(svc));
 
         return new GeneratedSoapFile(
                 "src/main/java/{{packagePath}}/" + endpointPkg + "/" + className + ".java",
-                sb.toString());
+                WizardTemplates.render("soap/Endpoint.java", view));
+    }
+
+    /** A service's operations as the endpoint and client templates read them. */
+    private static List<Map<String, Object>> operationViews(SoapServiceModel svc) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (SoapOperationModel op : svc.operations()) {
+            Map<String, Object> ov = new LinkedHashMap<>();
+            ov.put("namespace", escape(op.requestElementNamespace()));
+            ov.put("localPart", escape(op.requestElementLocalPart()));
+            ov.put("responseClass", op.responseClassName());
+            ov.put("requestClass", op.requestClassName());
+            ov.put("method", op.javaMethodName());
+            out.add(ov);
+        }
+        return out;
     }
 
     private GeneratedSoapFile renderEndpointConfig(List<SoapServiceModel> services, String packageName,
@@ -272,43 +274,21 @@ public class SoapCodeGenerator {
         String contextPath = opts.contextPathOrDefault();
         String mappingPattern = contextPath.endsWith("/") ? contextPath + "*" : contextPath + "/*";
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(fullPkg).append(";\n\n");
-        sb.append("import org.springframework.boot.web.servlet.ServletRegistrationBean;\n");
-        sb.append("import org.springframework.context.ApplicationContext;\n");
-        sb.append("import org.springframework.context.annotation.Bean;\n");
-        sb.append("import org.springframework.context.annotation.Configuration;\n");
-        sb.append("import org.springframework.core.io.ClassPathResource;\n");
-        sb.append("import org.springframework.ws.config.annotation.EnableWs;\n");
-        sb.append("import org.springframework.ws.config.annotation.WsConfigurerAdapter;\n");
-        sb.append("import org.springframework.ws.transport.http.MessageDispatcherServlet;\n");
-        sb.append("import org.springframework.ws.wsdl.wsdl11.SimpleWsdl11Definition;\n\n");
-
-        sb.append("@EnableWs\n");
-        sb.append("@Configuration\n");
-        sb.append("public class WebServiceConfig extends WsConfigurerAdapter {\n\n");
-
-        sb.append("    @Bean\n");
-        sb.append("    public ServletRegistrationBean<MessageDispatcherServlet> messageDispatcherServlet(ApplicationContext applicationContext) {\n");
-        sb.append("        MessageDispatcherServlet servlet = new MessageDispatcherServlet();\n");
-        sb.append("        servlet.setApplicationContext(applicationContext);\n");
-        sb.append("        servlet.setTransformWsdlLocations(true);\n");
-        sb.append("        return new ServletRegistrationBean<>(servlet, \"").append(mappingPattern).append("\");\n");
-        sb.append("    }\n\n");
-
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", fullPkg);
+        view.put("mappingPattern", mappingPattern);
+        List<Map<String, Object>> beans = new ArrayList<>();
         for (SoapServiceModel svc : services) {
-            String beanName = toCamelCase(svc.serviceName());
-            sb.append("    @Bean(name = \"").append(beanName).append("\")\n");
-            sb.append("    public SimpleWsdl11Definition ").append(beanName).append("Wsdl() {\n");
-            sb.append("        return new SimpleWsdl11Definition(new ClassPathResource(\"wsdl/")
-                    .append(wsdlBaseName).append(".wsdl\"));\n");
-            sb.append("    }\n\n");
+            Map<String, Object> sv = new LinkedHashMap<>();
+            sv.put("beanName", toCamelCase(svc.serviceName()));
+            sv.put("wsdlBaseName", wsdlBaseName);
+            beans.add(sv);
         }
-        sb.append("}\n");
+        view.put("services", beans);
 
         return new GeneratedSoapFile(
                 "src/main/java/{{packagePath}}/" + endpointPkg + "/WebServiceConfig.java",
-                sb.toString());
+                WizardTemplates.render("soap/WebServiceConfig.java", view));
     }
 
     // ── Client emission ───────────────────────────────────────────────────────
@@ -327,24 +307,15 @@ public class SoapCodeGenerator {
             imports.add(payloadFullPkg + "." + op.responseClassName());
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(fullPkg).append(";\n\n");
-        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
-        sb.append('\n');
-        sb.append("public class ").append(className).append(" extends WebServiceGatewaySupport {\n\n");
-
-        for (SoapOperationModel op : svc.operations()) {
-            sb.append("    public ").append(op.responseClassName()).append(' ').append(op.javaMethodName())
-                    .append('(').append(op.requestClassName()).append(" request) {\n");
-            sb.append("        return (").append(op.responseClassName())
-                    .append(") getWebServiceTemplate().marshalSendAndReceive(request);\n");
-            sb.append("    }\n\n");
-        }
-        sb.append("}\n");
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", fullPkg);
+        view.put("imports", imports);
+        view.put("className", className);
+        view.put("operations", operationViews(svc));
 
         return new GeneratedSoapFile(
                 "src/main/java/{{packagePath}}/" + clientPkg + "/" + className + ".java",
-                sb.toString());
+                WizardTemplates.render("soap/Client.java", view));
     }
 
     private GeneratedSoapFile renderClientConfig(List<SoapServiceModel> services, String packageName,
@@ -355,50 +326,25 @@ public class SoapCodeGenerator {
         String payloadFullPkg = packageName + "." + payloadPkg;
         String baseUrlProp = opts.baseUrlPropertyOrDefault();
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(fullPkg).append(";\n\n");
-        sb.append("import org.springframework.beans.factory.annotation.Value;\n");
-        sb.append("import org.springframework.context.annotation.Bean;\n");
-        sb.append("import org.springframework.context.annotation.Configuration;\n");
-        sb.append("import org.springframework.oxm.jaxb.Jaxb2Marshaller;\n");
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", fullPkg);
+        view.put("baseUrlProperty", baseUrlProp);
+        view.put("payloadPackage", payloadFullPkg);
+        List<Map<String, Object>> clients = new ArrayList<>();
         for (SoapServiceModel svc : services) {
-            // Each client class lives in the same package as this config — no import needed
+            // Each client class lives in this config's own package: no import needed.
+            Map<String, Object> cv = new LinkedHashMap<>();
+            cv.put("className", toPascalCase(svc.serviceName()) + "Client");
+            cv.put("beanName", toCamelCase(svc.serviceName()) + "Client");
+            // Written whole: "${" beside a Mustache tag would read as a triple brace.
+            cv.put("baseUrlPlaceholder", "${" + baseUrlProp + "}");
+            clients.add(cv);
         }
-        sb.append('\n');
-
-        sb.append("/**\n");
-        sb.append(" * Wires the JAXB marshaller and one bean per generated SOAP client.\n");
-        sb.append(" * The base URL is read from the {@code ").append(baseUrlProp).append("} property\n");
-        sb.append(" * in application.yaml.\n");
-        sb.append(" */\n");
-        sb.append("@Configuration\n");
-        sb.append("public class SoapClientConfig {\n\n");
-
-        sb.append("    @Bean\n");
-        sb.append("    public Jaxb2Marshaller soapMarshaller() {\n");
-        sb.append("        Jaxb2Marshaller marshaller = new Jaxb2Marshaller();\n");
-        sb.append("        marshaller.setContextPath(\"").append(payloadFullPkg).append("\");\n");
-        sb.append("        return marshaller;\n");
-        sb.append("    }\n\n");
-
-        for (SoapServiceModel svc : services) {
-            String className = toPascalCase(svc.serviceName()) + "Client";
-            String beanName = toCamelCase(svc.serviceName()) + "Client";
-            sb.append("    @Bean\n");
-            sb.append("    public ").append(className).append(' ').append(beanName)
-                    .append("(Jaxb2Marshaller soapMarshaller, @Value(\"${").append(baseUrlProp).append("}\") String baseUrl) {\n");
-            sb.append("        ").append(className).append(" client = new ").append(className).append("();\n");
-            sb.append("        client.setDefaultUri(baseUrl);\n");
-            sb.append("        client.setMarshaller(soapMarshaller);\n");
-            sb.append("        client.setUnmarshaller(soapMarshaller);\n");
-            sb.append("        return client;\n");
-            sb.append("    }\n\n");
-        }
-        sb.append("}\n");
+        view.put("clients", clients);
 
         return new GeneratedSoapFile(
                 "src/main/java/{{packagePath}}/" + clientPkg + "/SoapClientConfig.java",
-                sb.toString());
+                WizardTemplates.render("soap/ClientConfig.java", view));
     }
 
     private GeneratedSoapFile renderApplicationYmlStub(SoapWizardOptions opts) {
@@ -487,16 +433,5 @@ public class SoapCodeGenerator {
         Set<String> seen = new LinkedHashSet<>();
         seen.add(pickWsdlFileName(services));
         return new ArrayList<>(seen);
-    }
-
-    @SuppressWarnings("unused")
-    private static Map<String, Object> emptyMap() {
-        return new LinkedHashMap<>();
-    }
-
-    @SuppressWarnings("unused")
-    private static String capitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
-        return s.substring(0, 1).toUpperCase(Locale.ROOT) + s.substring(1);
     }
 }

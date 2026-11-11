@@ -1,0 +1,24 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+{{#hasImports}}
+
+{{/hasImports}}
+{{#hasDescription}}
+/** {{descriptionJavadoc}} */
+{{/hasDescription}}
+{{^hasFields}}
+public record {{name}}() {
+    // Empty record — original schema had no properties or was composed.
+}
+{{/hasFields}}
+{{#hasFields}}
+public record {{name}}(
+{{#fields}}
+        {{javaType}} {{name}}{{^last}},{{/last}}
+{{/fields}}
+) {
+}
+{{/hasFields}}
