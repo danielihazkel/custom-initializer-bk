@@ -22,9 +22,6 @@ import com.menora.initializr.fullstack.FullstackRequestValidator;
 import com.menora.initializr.fullstack.PageDefinition;
 import com.menora.initializr.fullstack.ScaffoldOption;
 import com.menora.initializr.fullstack.FullstackStarterRequest;
-import io.spring.initializr.metadata.InitializrMetadata;
-import io.spring.initializr.metadata.InitializrMetadataProvider;
-import io.spring.initializr.metadata.SingleSelectCapability;
 import io.spring.initializr.web.project.ProjectGenerationInvoker;
 import io.spring.initializr.web.project.ProjectRequest;
 import io.spring.initializr.web.project.WebProjectRequest;
@@ -76,7 +73,7 @@ public class FullstackStarterController {
     private static final String DESIGN_MENORA_DIGITAL_DEP = "design-menora-digital";
 
     private final ProjectGenerationInvoker<ProjectRequest> invoker;
-    private final InitializrMetadataProvider metadataProvider;
+    private final ProjectRequestFactory requestFactory;
     private final ProjectOptionsContext optionsContext;
     private final EntityDefinitionContext entityContext;
     private final EntityTemplateSetRepository setRepo;
@@ -90,7 +87,7 @@ public class FullstackStarterController {
     private final DepartmentResolver departmentResolver;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
-                                      InitializrMetadataProvider metadataProvider,
+                                      ProjectRequestFactory requestFactory,
                                       ProjectOptionsContext optionsContext,
                                       EntityDefinitionContext entityContext,
                                       EntityTemplateSetRepository setRepo,
@@ -103,7 +100,7 @@ public class FullstackStarterController {
                                       DependencyConfigService configService,
                                       DepartmentResolver departmentResolver) {
         this.invoker = invoker;
-        this.metadataProvider = metadataProvider;
+        this.requestFactory = requestFactory;
         this.optionsContext = optionsContext;
         this.entityContext = entityContext;
         this.setRepo = setRepo;
@@ -431,26 +428,6 @@ public class FullstackStarterController {
     }
 
     /**
-     * Rejects an unknown Boot/Java version with a 400 and returns the catalog id to use. A
-     * null/blank value is left for the framework to default. {@code /metadata/client} hands
-     * browsers the Initializr v1 spelling ({@code 3.2.1.RELEASE}) while the catalog id is
-     * {@code 3.2.1}; both are accepted and the catalog id is what goes into the request.
-     */
-    private static String requireKnownVersion(SingleSelectCapability capability, String value, String fieldName) {
-        if (value == null || value.isBlank()) {
-            return value;
-        }
-        if (capability.get(value) != null) {
-            return value;
-        }
-        String canonical = value.endsWith(".RELEASE") ? value.substring(0, value.length() - ".RELEASE".length()) : value;
-        if (!canonical.equals(value) && capability.get(canonical) != null) {
-            return canonical;
-        }
-        throw new WizardArgumentException(fieldName + " '" + value + "' is not a known version", fieldName);
-    }
-
-    /**
      * Resolves the package the generated CRUD classes are scaffolded under. Defaults to the
      * project's base {@code packageName}; a caller-supplied value must be a syntactically valid
      * Java package and live at or below the base package, so Spring's default component/entity
@@ -504,30 +481,13 @@ public class FullstackStarterController {
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
+    /** The framework's request for the backend half: an unknown Boot or Java version is a clean
+     *  400 from the shared builder, which also takes what the caller left out from the metadata. */
     private WebProjectRequest toWebRequest(FullstackStarterRequest body) {
-        InitializrMetadata metadata = metadataProvider.get();
-        // Fail fast on an unknown Boot/Java version with a clean 400, rather than letting
-        // the framework fail deep in generation with an opaque 500. The UI only ever sends
-        // values from the metadata dropdowns; this guards direct API callers (curl/IntelliJ).
-        String bootVersion = requireKnownVersion(metadata.getBootVersions(), body.bootVersion(), "bootVersion");
-        String javaVersion = requireKnownVersion(metadata.getJavaVersions(), body.javaVersion(), "javaVersion");
-        WebProjectRequest r = new WebProjectRequest();
-        r.setType(orDefault(body.type(), "maven-project"));
-        r.setLanguage(orDefault(body.language(), "java"));
-        r.setBootVersion(bootVersion);
-        r.setGroupId(orDefault(body.groupId(), "com.menora"));
-        r.setArtifactId(orDefault(body.artifactId(), "demo"));
-        r.setName(orDefault(body.name(), r.getArtifactId()));
-        r.setDescription(orDefault(body.description(), ""));
-        r.setPackageName(orDefault(body.packageName(), r.getGroupId() + "." + r.getArtifactId()));
-        r.setPackaging(orDefault(body.packaging(), "jar"));
-        r.setJavaVersion(orDefault(javaVersion, "21"));
-        r.setVersion(orDefault(body.version(), (String) metadata.defaults().get("version")));
-        r.setConfigurationFileFormat(orDefault(body.configurationFileFormat(), "properties"));
-        if (body.dependencies() != null) {
-            r.setDependencies(new ArrayList<>(body.dependencies()));
-        }
-        return r;
+        return requestFactory.create(new ProjectRequestFactory.Base(body.groupId(), body.artifactId(), body.name(),
+                body.description(), body.packageName(), body.type(), body.language(), body.bootVersion(),
+                body.packaging(), body.javaVersion(), body.version(), body.configurationFileFormat()),
+                body.dependencies());
     }
 
     /** If the caller did not specify a {@code dependencies} field at all, fall back

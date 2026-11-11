@@ -11,8 +11,6 @@ import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
 import com.menora.initializr.sql.SqlTableOptions;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import io.spring.initializr.metadata.InitializrMetadata;
-import io.spring.initializr.metadata.InitializrMetadataProvider;
 import io.spring.initializr.web.project.ProjectGenerationInvoker;
 import io.spring.initializr.web.project.ProjectRequest;
 import io.spring.initializr.web.project.WebProjectRequest;
@@ -54,7 +52,7 @@ import java.util.stream.Stream;
 public class WizardStarterController {
 
     private final ProjectGenerationInvoker<ProjectRequest> invoker;
-    private final InitializrMetadataProvider metadataProvider;
+    private final ProjectRequestFactory requestFactory;
     private final ProjectOptionsContext optionsContext;
     private final SqlScriptsContext sqlContext;
     private final OpenApiSpecContext specContext;
@@ -65,7 +63,7 @@ public class WizardStarterController {
     private final DependencyConfigService configService;
 
     public WizardStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
-                                   InitializrMetadataProvider metadataProvider,
+                                   ProjectRequestFactory requestFactory,
                                    ProjectOptionsContext optionsContext,
                                    SqlScriptsContext sqlContext,
                                    OpenApiSpecContext specContext,
@@ -75,7 +73,7 @@ public class WizardStarterController {
                                    SqlEntityGenerator sqlGenerator,
                                    DependencyConfigService configService) {
         this.invoker = invoker;
-        this.metadataProvider = metadataProvider;
+        this.requestFactory = requestFactory;
         this.optionsContext = optionsContext;
         this.sqlContext = sqlContext;
         this.specContext = specContext;
@@ -252,22 +250,6 @@ public class WizardStarterController {
     }
 
     private WebProjectRequest toWebRequest(WizardStarterRequest body) {
-        InitializrMetadata metadata = metadataProvider.get();
-        WebProjectRequest r = new WebProjectRequest();
-        r.setType(orDefault(body.type(), "maven-project"));
-        r.setLanguage(orDefault(body.language(), "java"));
-        r.setBootVersion(BootVersions.normalize(body.bootVersion()));
-        r.setGroupId(orDefault(body.groupId(), "com.menora"));
-        r.setArtifactId(orDefault(body.artifactId(), "demo"));
-        r.setName(orDefault(body.name(), r.getArtifactId()));
-        r.setDescription(orDefault(body.description(), ""));
-        r.setPackageName(orDefault(body.packageName(), r.getGroupId() + "." + r.getArtifactId()));
-        r.setPackaging(orDefault(body.packaging(), "jar"));
-        r.setJavaVersion(orDefault(body.javaVersion(), "21"));
-        r.setVersion(orDefault(body.version(), (String) metadata.defaults().get("version")));
-        // The servlet filter (InitializrWebConfiguration) normally injects this
-        // default, but it only acts on URL params — not JSON bodies.
-        r.setConfigurationFileFormat(orDefault(body.configurationFileFormat(), "properties"));
         List<String> deps = body.dependencies() != null
                 ? new ArrayList<>(body.dependencies()) : new ArrayList<>();
         // The SQL wizard generates code that needs framework deps the caller may
@@ -285,8 +267,9 @@ public class WizardStarterController {
         if (usesMapstructSql(body) && !deps.contains("mapstruct")) {
             deps.add("mapstruct");
         }
-        r.setDependencies(deps);
-        return r;
+        return requestFactory.create(new ProjectRequestFactory.Base(body.groupId(), body.artifactId(), body.name(),
+                body.description(), body.packageName(), body.type(), body.language(), body.bootVersion(),
+                body.packaging(), body.javaVersion(), body.version(), body.configurationFileFormat()), deps);
     }
 
     private static boolean hasSqlScript(WizardStarterRequest body) {
