@@ -88,6 +88,8 @@ Mockito
 Modifying
 MultiRelationPicker
 RelatedRows
+RowColumn
+RowsEditor
 NoArgsConstructor
 NotNull
 Number

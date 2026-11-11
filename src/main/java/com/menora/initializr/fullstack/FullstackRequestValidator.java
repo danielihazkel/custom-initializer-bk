@@ -380,6 +380,8 @@ public final class FullstackRequestValidator {
     private static List<EntityDefinition> resolveChildLists(List<EntityDefinition> entities,
                                                             FullstackStarterRequest body) {
         List<EntityDefinition> out = new ArrayList<>(entities.size());
+        // Child entity → the parent whose form edits its rows: a row has one owner.
+        Map<String, String> composedBy = new LinkedHashMap<>();
         for (int ei = 0; ei < entities.size(); ei++) {
             EntityDefinition parent = entities.get(ei);
             if (parent.children().isEmpty()) {
@@ -397,6 +399,7 @@ public final class FullstackRequestValidator {
                                 + "' lists the same rows as another ONE_TO_MANY of this entity ('"
                                 + list.targetEntity() + "' by '" + link.fieldName() + "')").on("mappedBy");
                     }
+                    if (list.composition()) checkComposition(parent, list, link, entities, composedBy);
                     resolved.add(list.withMappedBy(link.fieldName()));
                 } catch (WizardArgumentException problem) {
                     throw problem.at("relations[" + rawRelationIndex(body, ei, list.fieldName()) + "]")
@@ -406,6 +409,57 @@ public final class FullstackRequestValidator {
             out.add(parent.withChildren(resolved));
         }
         return out;
+    }
+
+    /**
+     * A composition makes the child's rows part of the parent: edited in the parent's form, saved
+     * and removed with it. That only works for a child that is plainly a row of its parent —
+     * every other shape is refused here, saying which rule it breaks.
+     */
+    private static void checkComposition(EntityDefinition parent, RelationDefinition list, RelationDefinition link,
+                                         List<EntityDefinition> entities, Map<String, String> composedBy) {
+        EntityDefinition child = entities.stream()
+                .filter(e -> e.name().equals(list.targetEntity())).findFirst().orElseThrow();
+        String where = "entity '" + parent.name() + "' relation '" + list.fieldName() + "': composition — ";
+        if (child.name().equals(parent.name())) {
+            throw new WizardArgumentException(where + "an entity cannot be composed of its own rows").on("composition");
+        }
+        if (parent.readOnly() || parent.viewQuery() != null) {
+            throw new WizardArgumentException(where + "'" + parent.name()
+                    + "' is read-only, so it has no form to edit the rows in").on("composition");
+        }
+        if (child.readOnly() || child.viewQuery() != null) {
+            throw new WizardArgumentException(where + "'" + child.name() + "' is read-only: its rows cannot be saved").on("composition");
+        }
+        List<FieldDefinition> keys = child.fields().stream().filter(FieldDefinition::primaryKey).toList();
+        if (keys.size() != 1 || !keys.get(0).generated()) {
+            throw new WizardArgumentException(where + "'" + child.name()
+                    + "' needs a single generated key (a new row gets its id from the database)").on("composition");
+        }
+        if (!link.required()) {
+            throw new WizardArgumentException(where + "'" + link.fieldName() + "' on '" + child.name()
+                    + "' must be required (a composed row always belongs to its " + parent.name() + ")").on("composition");
+        }
+        if (child.workflow() != null) {
+            throw new WizardArgumentException(where + "'" + child.name()
+                    + "' has a workflow: its rows change by their own moves, not with a parent's save").on("composition");
+        }
+        for (FieldDefinition f : child.fields()) {
+            if (f.type() == FieldType.FILE || f.type() == FieldType.IMAGE) {
+                throw new WizardArgumentException(where + "'" + child.name() + "' has an attachment field ('" + f.name()
+                        + "'), which a row of a parent's form cannot upload").on("composition");
+            }
+        }
+        if (!child.collections().isEmpty() || !child.children().isEmpty()) {
+            throw new WizardArgumentException(where + "'" + child.name()
+                    + "' has lists of its own (a MANY_TO_MANY or a ONE_TO_MANY), which a row of a parent's form cannot edit")
+                    .on("composition");
+        }
+        String owner = composedBy.putIfAbsent(child.name(), parent.name() + "." + list.fieldName());
+        if (owner != null) {
+            throw new WizardArgumentException(where + "'" + child.name() + "' is already composed by '" + owner
+                    + "': a row has one owner").on("composition");
+        }
     }
 
     /** The MANY_TO_ONE of {@code list}'s target that points back at {@code parent}. */
@@ -1027,10 +1081,16 @@ public final class FullstackRequestValidator {
                             + "': label is over " + MAX_RELATION_LABEL + " characters").on("label");
                 }
 
+                boolean composition = Boolean.TRUE.equals(r.composition());
+                if (composition && !oneToMany) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                            + "': composition only applies to a ONE_TO_MANY (the rows that point at this entity)").on("composition");
+                }
+
                 relations.add(new RelationDefinition(type, fieldName, canonicalTarget,
                         Boolean.TRUE.equals(r.required()),
                         parseColumnName(r.joinColumn(), "joinColumn", fieldName, entityName),
-                        joinTable, inverseJoinColumn, mappedBy, label));
+                        joinTable, inverseJoinColumn, mappedBy, label, composition));
             } catch (WizardArgumentException problem) {
                 throw problem.at("relations[" + ri + "]");
             }

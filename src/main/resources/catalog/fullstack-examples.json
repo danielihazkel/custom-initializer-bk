@@ -393,7 +393,8 @@
           {
             "type": "ONE_TO_MANY",
             "fieldName": "lines",
-            "targetEntity": "OrderLine"
+            "targetEntity": "OrderLine",
+            "composition": true
           }
         ]
       },

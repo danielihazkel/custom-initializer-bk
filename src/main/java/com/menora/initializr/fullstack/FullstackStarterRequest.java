@@ -704,7 +704,18 @@ public record FullstackStarterRequest(
             String mappedBy,
             // What the generated UI calls the relation (omitted → the field name).
             @JsonInclude(JsonInclude.Include.NON_NULL)
-            String label) {
+            String label,
+            // ONE_TO_MANY only: the rows are part of this entity — edited in its form and saved,
+            // and removed, with it.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            Boolean composition) {
+
+        /** Every property but {@code composition}. */
+        public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required,
+                                     String joinColumn, String joinTable, String inverseJoinColumn, String mappedBy,
+                                     String label) {
+            this(type, fieldName, targetEntity, required, joinColumn, joinTable, inverseJoinColumn, mappedBy, label, null);
+        }
 
         /** Every property but {@code label}. */
         public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required,

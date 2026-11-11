@@ -4,7 +4,8 @@ import { Field, inputClass{{#formUsesPicker}}, RelationPicker{{/formUsesPicker}}
 {{/formUsesOptions}}{{#formUsesInstant}}import { fromLocalInput, toLocalInput } from '@shared/ui/format'
 {{/formUsesInstant}}{{#hasAttachmentFields}}import { AttachmentField } from '@shared/ui/AttachmentField'
 {{/hasAttachmentFields}}{{#hasCollections}}import { MultiRelationPicker } from '@shared/ui/MultiRelationPicker'
-{{/hasCollections}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
+{{/hasCollections}}{{#compositions}}import { {{childEntity}}Rows } from '@features/{{childKebab}}-form'
+{{/compositions}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
 {{#fields}}{{#isEnum}}{{^isWorkflowStatus}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
 {{/isWorkflowStatus}}{{/isEnum}}{{/fields}}
 
@@ -141,6 +142,13 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           onChange={(ids, labels) => onChange({ ...value, {{idsField}}: ids as {{targetPkTsType}}[], {{labelsField}}: labels })}
         />
       </Field>{{#formHasSteps}})}{{/formHasSteps}}
-{{/collections}}    </>
+{{/collections}}{{#compositions}}      {{#formHasSteps}}{show('{{collectionField}}') && ({{/formHasSteps}}<{{childEntity}}Rows
+        label="{{collectionLabelAttr}}"
+        name="{{collectionField}}"
+        value={value.{{collectionField}} ?? []}
+        onChange={rows => onChange({ ...value, {{collectionField}}: rows })}
+        errors={errors}
+      />{{#formHasSteps}})}{{/formHasSteps}}
+{{/compositions}}    </>
   )
 }

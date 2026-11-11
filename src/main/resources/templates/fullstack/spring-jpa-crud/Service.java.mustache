@@ -300,11 +300,63 @@ public class {{EntityName}}Service {
 {{/statsApplicable}}
     @Transactional(readOnly = true)
     public {{EntityName}} findById({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
-{{^hasCollections}}        return repository.findById(id).orElseThrow(() ->
-                new ResourceNotFoundException("{{EntityName}} " + id + " not found"));
-{{/hasCollections}}{{#hasCollections}}        return loaded(repository.findById(id).orElseThrow(() ->
-                new ResourceNotFoundException("{{EntityName}} " + id + " not found")));
+{{^hasCollections}}        return {{#hasCompositions}}withRows({{/hasCompositions}}repository.findById(id).orElseThrow(() ->
+                new ResourceNotFoundException("{{EntityName}} " + id + " not found")){{#hasCompositions}}){{/hasCompositions}};
+{{/hasCollections}}{{#hasCollections}}        return {{#hasCompositions}}withRows({{/hasCompositions}}loaded(repository.findById(id).orElseThrow(() ->
+                new ResourceNotFoundException("{{EntityName}} " + id + " not found"))){{#hasCompositions}}){{/hasCompositions}};
 {{/hasCollections}}    }
+{{#hasCompositions}}
+
+    /** At most this many rows of a composed list in one save. */
+    private static final int MAX_ROWS = 200;
+
+    /**
+     * Reads the rows edited with this one while the session is open: the DTO is built after this
+     * transaction ends (open-in-view is off). Only a row read by id carries them — a page does not.
+     */
+    private {{EntityName}} withRows({{EntityName}} entity) {
+{{#compositions}}        org.hibernate.Hibernate.initialize(entity.get{{CollectionField}}());
+{{/compositions}}        return entity;
+    }
+{{#compositions}}
+
+    /** A row as this {{EntityName}}'s own: no key of the client's choosing, its other links as references. */
+    private void adopt{{CollectionField}}({{EntityName}} parent, {{entityPackage}}.{{childEntity}} row) {
+        row.set{{MappedBy}}(parent);
+{{#childRefs}}        if (row.get{{FieldName}}() != null) {
+            row.set{{FieldName}}(entityManager.getReference({{entityPackage}}.{{targetEntity}}.class, row.get{{FieldName}}().get{{TargetPkName}}()));
+        }
+{{/childRefs}}    }
+
+    /**
+     * Makes {@code parent}'s {{collectionField}} the rows given: one with the id of a row it has is that row
+     * with its new values, any other is new, and a row it has that was not sent is removed.
+     */
+    private void merge{{CollectionField}}({{EntityName}} parent, java.util.List<{{entityPackage}}.{{childEntity}}> rows) {
+        if (rows.size() > MAX_ROWS) {
+            throw new IllegalArgumentException("{{collectionField}}: at most " + MAX_ROWS + " rows in one save");
+        }
+        java.util.Map<{{childPkJavaType}}, {{entityPackage}}.{{childEntity}}> had = new java.util.LinkedHashMap<>();
+        for ({{entityPackage}}.{{childEntity}} row : parent.get{{CollectionField}}()) had.put(row.get{{ChildPkName}}(), row);
+        java.util.List<{{entityPackage}}.{{childEntity}}> now = new java.util.ArrayList<>();
+        for ({{entityPackage}}.{{childEntity}} row : rows) {
+            adopt{{CollectionField}}(parent, row);
+            // An id that is not one of this {{EntityName}}'s rows is not trusted: the row is new.
+            {{entityPackage}}.{{childEntity}} kept = row.get{{ChildPkName}}() == null ? null : had.remove(row.get{{ChildPkName}}());
+            if (kept == null) {
+                row.set{{ChildPkName}}(null);
+                now.add(row);
+            } else {
+                kept.copyFrom(row);
+                now.add(kept);
+            }
+        }
+        parent.get{{CollectionField}}().clear();
+        parent.get{{CollectionField}}().addAll(now);
+        for ({{entityPackage}}.{{childEntity}} gone : had.values()) entityManager.remove(gone);
+    }
+{{/compositions}}
+{{/hasCompositions}}
 {{#hasCollections}}
 
     /**
@@ -337,7 +389,19 @@ public class {{EntityName}}Service {
 {{/collections}}    }
 {{/mutable}}{{/hasCollections}}
 {{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
-{{#hasCollections}}        resolveLinks(entity);
+{{#compositions}}        if (entity.get{{CollectionField}}() == null) entity.set{{CollectionField}}(new java.util.ArrayList<>());
+        if (entity.get{{CollectionField}}().size() > MAX_ROWS) {
+            throw new IllegalArgumentException("{{collectionField}}: at most " + MAX_ROWS + " rows in one save");
+        }
+        for ({{entityPackage}}.{{childEntity}} row : entity.get{{CollectionField}}()) {
+            row.set{{ChildPkName}}(null);
+            adopt{{CollectionField}}(entity, row);
+        }
+{{/compositions}}{{#isComposedChild}}        // On its own a row has to say whose it is (inside its parent's form the parent is the link).
+        if (entity.get{{CompositionLinkName}}() == null) {
+            throw new IllegalArgumentException("{{compositionLinkName}}Id is required");
+        }
+{{/isComposedChild}}{{#hasCollections}}        resolveLinks(entity);
 {{#collections}}        if (entity.get{{FieldName}}() == null) entity.set{{FieldName}}(new java.util.LinkedHashSet<>());
 {{/collections}}{{/hasCollections}}{{#lockingApplicable}}        entity.setVersion(null); // a new row starts at version 0, whatever the client sent
 {{/lockingApplicable}}{{#hasWorkflow}}        entity.set{{WorkflowStatusName}}({{workflowInitialJava}}); // the workflow decides where a new row starts
@@ -381,7 +445,11 @@ public class {{EntityName}}Service {
                 errors.add(new ImportError(row, "{{fkFieldName}}", "no {{targetEntity}} " + dto.{{fkFieldName}}()));
             }
 {{/relations}}            {{EntityName}} entity = dto.toEntity();
-{{#hasCollections}}            try {
+{{#compositions}}            entity.set{{CollectionField}}(new java.util.ArrayList<>()); // an import carries no rows of rows
+{{/compositions}}{{#isComposedChild}}            if (entity.get{{CompositionLinkName}}() == null) {
+                errors.add(new ImportError(row, "{{compositionLinkName}}Id", "is required"));
+            }
+{{/isComposedChild}}{{#hasCollections}}            try {
                 resolveLinks(entity); // the ids of a many-to-many must name rows, like a create's
             } catch (IllegalArgumentException unknown) {
                 errors.add(new ImportError(row, null, unknown.getMessage()));
@@ -424,7 +492,12 @@ public class {{EntityName}}Service {
             existing.get{{FieldName}}().clear();
             existing.get{{FieldName}}().addAll(updated.get{{FieldName}}());
         }
-{{/collections}}{{/hasCollections}}        return repository.save(existing);
+{{/collections}}{{/hasCollections}}{{#compositions}}        if (updated.get{{CollectionField}}() != null) {
+            merge{{CollectionField}}(existing, updated.get{{CollectionField}}());
+{{#lockingApplicable}}            // A change to its rows is a change to the {{EntityName}}: its version moves too.
+            entityManager.lock(existing, jakarta.persistence.LockModeType.OPTIMISTIC_FORCE_INCREMENT);
+{{/lockingApplicable}}        }
+{{/compositions}}        return repository.save(existing);
     }
 {{#hasWorkflow}}
 

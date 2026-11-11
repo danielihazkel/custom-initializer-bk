@@ -56,6 +56,7 @@
     { "source": "Markdown.tsx", "path": "src/shared/ui/Markdown.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasMarkdownFields" },
     { "source": "MultiRelationPicker.tsx", "path": "src/shared/ui/MultiRelationPicker.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCollectionFields" },
     { "source": "RelatedRows.tsx", "path": "src/shared/ui/RelatedRows.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasChildListTables" },
+    { "source": "RowsEditor.tsx", "path": "src/shared/ui/RowsEditor.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCompositionRows" },
     { "source": "AttachmentField.tsx", "path": "src/shared/ui/AttachmentField.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasAttachments" },
     { "source": "CsvImport.tsx", "path": "src/shared/ui/CsvImport.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCsvImport" },
     { "source": "InlineCell.tsx", "path": "src/shared/ui/InlineCell.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasInlineEdit" },
@@ -92,6 +93,7 @@
     { "source": "me.ts", "path": "src/shared/api/me.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 113, "gatedBy": "hasWorkflows" },
     { "source": "workflow.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/model/workflow.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 227, "gatedBy": "hasWorkflow" },
     { "source": "EntityTransitions.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Transitions.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 228, "gatedBy": "hasWorkflow" },
+    { "source": "EntityRows.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Rows.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 229, "gatedBy": "isComposedChild" },
     { "source": "EntityPage.tsx.mustache", "path": "src/pages/{{entityNameKebab}}/ui/{{EntityName}}Page.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 230 },
     { "source": "page-barrel.ts.mustache", "path": "src/pages/{{entityNameKebab}}/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 235 }
   ]

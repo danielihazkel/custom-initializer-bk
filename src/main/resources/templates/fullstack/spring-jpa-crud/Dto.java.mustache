@@ -17,7 +17,7 @@ import {{name}};
 
 public record {{EntityName}}Dto(
 {{#fields}}        {{#hasValidation}}{{#isRequired}}{{^isGenerated}}@NotNull {{/isGenerated}}{{/isRequired}}{{#hasLength}}@Size(max = {{length}}) {{/hasLength}}{{#isIntegral}}{{#hasMin}}@Min({{min}}) {{/hasMin}}{{#hasMax}}@Max({{max}}) {{/hasMax}}{{/isIntegral}}{{#isBigDecimal}}{{#hasMin}}@DecimalMin(value = "{{min}}") {{/hasMin}}{{#hasMax}}@DecimalMax(value = "{{max}}") {{/hasMax}}{{/isBigDecimal}}{{#hasPattern}}@Pattern(regexp = "{{patternEscaped}}") {{/hasPattern}}{{#isEmail}}@Email {{/isEmail}}{{/hasValidation}}{{javaType}} {{name}}{{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
-{{/fields}}{{#relations}}        {{#hasValidation}}{{#required}}@NotNull {{/required}}{{/hasValidation}}{{targetPkJavaType}} {{fkFieldName}}{{#hasTargetLabel}},
+{{/fields}}{{#relations}}        {{#hasValidation}}{{#dtoRequired}}@NotNull {{/dtoRequired}}{{/hasValidation}}{{targetPkJavaType}} {{fkFieldName}}{{#hasTargetLabel}},
         String {{fieldName}}Label{{/hasTargetLabel}}{{^last}},{{/last}}
 {{/relations}}{{#auditApplicable}},
         java.time.Instant createdAt,
@@ -26,7 +26,8 @@ public record {{EntityName}}Dto(
         int {{collectionField}}Count{{/childLists}}{{#attachmentFields}},
         String {{nameField}}{{/attachmentFields}}{{#collections}},
         java.util.List<{{targetPkJavaType}}> {{idsField}},
-        java.util.List<String> {{labelsField}}{{/collections}}) {
+        java.util.List<String> {{labelsField}}{{/collections}}{{#compositions}},
+        {{#hasValidation}}@jakarta.validation.Valid {{/hasValidation}}java.util.List<{{childEntity}}Dto> {{collectionField}}{{/compositions}}) {
 
     public static {{EntityName}}Dto from({{EntityName}} entity) {
         return new {{EntityName}}Dto(
@@ -42,7 +43,11 @@ public record {{EntityName}}Dto(
                 entity.get{{FieldName}}() == null ? java.util.List.of()
                         : entity.get{{FieldName}}().stream().map(t -> t.get{{TargetPkName}}()).toList(),
                 entity.get{{FieldName}}() == null ? java.util.List.of()
-                        : entity.get{{FieldName}}().stream().map(t -> String.valueOf(t.get{{#hasTargetLabel}}{{TargetLabelField}}{{/hasTargetLabel}}{{^hasTargetLabel}}{{TargetPkName}}{{/hasTargetLabel}}())).toList(){{/collections}}
+                        : entity.get{{FieldName}}().stream().map(t -> String.valueOf(t.get{{#hasTargetLabel}}{{TargetLabelField}}{{/hasTargetLabel}}{{^hasTargetLabel}}{{TargetPkName}}{{/hasTargetLabel}}())).toList(){{/collections}}{{#compositions}},
+                // The rows, where the service loaded them (one row read by id, or just saved): a page of
+                // rows does not carry each one's.
+                entity.get{{CollectionField}}() != null && org.hibernate.Hibernate.isInitialized(entity.get{{CollectionField}}())
+                        ? entity.get{{CollectionField}}().stream().map({{childEntity}}Dto::from).toList() : null{{/compositions}}
         );
     }
 
@@ -66,7 +71,17 @@ public record {{EntityName}}Dto(
             }
             entity.set{{FieldName}}({{fieldName}});
         }
-{{/collections}}{{#lockingApplicable}}        entity.setVersion(this.version);
+{{/collections}}{{#compositions}}        // The rows edited with this one; no list at all means "leave them as they are" to an update.
+        if (this.{{collectionField}} == null) {
+            entity.set{{CollectionField}}(null);
+        } else {
+            java.util.List<{{entityPackage}}.{{childEntity}}> {{collectionField}} = new java.util.ArrayList<>();
+            for ({{childEntity}}Dto row : this.{{collectionField}}) {
+                if (row != null) {{collectionField}}.add(row.toEntity());
+            }
+            entity.set{{CollectionField}}({{collectionField}});
+        }
+{{/compositions}}{{#lockingApplicable}}        entity.setVersion(this.version);
 {{/lockingApplicable}}        return entity;
     }
 }

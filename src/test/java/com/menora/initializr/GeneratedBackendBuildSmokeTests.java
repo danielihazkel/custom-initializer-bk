@@ -151,6 +151,138 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
 
+    /** The Orders example with its lines composed into the order (whatever the catalog's copy says). */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> composedOrders(String frontendSet) throws Exception {
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", frontendSet);
+        for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
+            if (!"Order".equals(entity.get("name"))) continue;
+            List<Map<String, Object>> relations = new ArrayList<>();
+            for (Map<String, Object> relation : (List<Map<String, Object>>) entity.get("relations")) {
+                Map<String, Object> copy = new java.util.LinkedHashMap<>(relation);
+                if ("lines".equals(copy.get("fieldName"))) copy.put("composition", true);
+                relations.add(copy);
+            }
+            entity.put("relations", relations);
+        }
+        return body;
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"spring-jpa-crud", "spring-jpa-crud-lombok"})
+    void liveApiOfAComposedParentBehaves(String backendSet, @TempDir Path workDir) throws Exception {
+        // An order with its lines composed in: the lines are saved, read and removed with the
+        // order, through the order's own endpoints. Soft delete and optimistic locking are on,
+        // because both change what a save and a delete of the parent do to the rows.
+        Map<String, Object> body = composedOrders("react-tailwind-crud");
+        body.put("pages", List.of());
+        body.put("backendTemplateSet", backendSet);
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "csvImport", "optimisticLocking", "seedData", "tests")));
+        Path backend = postAndExtractBackend(workDir, body);
+        writeLiveTest(backend, "com.menora.support", LIVE_COMPOSITION_TESTS);
+        runMvn(backend, "-B", "package");
+    }
+
+    /** Test methods run against the generated Orders backend with Order.lines composed. */
+    private static final String LIVE_COMPOSITION_TESTS = """
+                private static String q(String json) {
+                    return json.replace('\\'', '"');
+                }
+
+                private String order(String reference, String rest) throws Exception {
+                    return q("{'reference':'" + reference + "','status':'OPEN','placedAt':'2026-11-01','customerId':"
+                            + firstId("/api/customers") + rest + "}");
+                }
+
+                @Test
+                void rowsAreSavedReadAndRemovedWithTheirParent() throws Exception {
+                    long product = firstId("/api/products");
+                    // Created with two rows: no ids, no link — the order is the link.
+                    JsonNode made = send(post("/api/orders"), null, order("R-1", ",'lines':[{'quantity':2,'unitPrice':5,'productId':"
+                            + product + "},{'quantity':1,'productId':" + product + "}]"), 200);
+                    long id = made.get("id").asLong();
+                    assertThat(made.get("lines")).hasSize(2);
+                    assertThat(made.get("lines").get(0).get("orderId").asLong()).isEqualTo(id);
+                    long first = made.get("lines").get(0).get("id").asLong();
+                    long second = made.get("lines").get(1).get("id").asLong();
+
+                    // Read by id the order carries its rows; a page of orders does not.
+                    JsonNode read = get("/api/orders/" + id);
+                    assertThat(read.get("lines")).hasSize(2);
+                    assertThat(read.get("linesCount").asInt()).isEqualTo(2);
+                    for (JsonNode row : get("/api/orders?size=50").get("content")) assertThat(row.get("lines").isNull()).isTrue();
+                    // …and each row is an ordinary order line.
+                    assertThat(get("/api/order-lines/" + first).get("quantity").asInt()).isEqualTo(2);
+
+                    // A save with the rows as they should be: the first changed, the second gone, one new.
+                    long version = read.get("version").asLong();
+                    JsonNode saved = send(put("/api/orders/" + id), null, order("R-1b", ",'version':" + version
+                            + ",'lines':[{'id':" + first + ",'quantity':7,'productId':" + product + "},{'quantity':3,'productId':" + product + "}]"), 200);
+                    assertThat(saved.get("reference").asText()).isEqualTo("R-1b");
+                    JsonNode after = get("/api/orders/" + id);
+                    assertThat(after.get("lines")).hasSize(2);
+                    assertThat(after.get("lines").get(0).get("id").asLong()).isEqualTo(first);
+                    assertThat(after.get("lines").get(0).get("quantity").asInt()).isEqualTo(7);
+                    assertThat(after.get("lines").get(1).get("id").asLong()).isNotIn(first, second);
+                    mvc.perform(MockMvcRequestBuilders.get("/api/order-lines/" + second)).andExpect(status().isNotFound());
+                    // The rows changed, so the order did: a client holding the old version is told (409).
+                    assertThat(after.get("version").asLong()).isGreaterThan(version);
+                    send(put("/api/orders/" + id), null, order("R-1c", ",'version':" + version + ",'lines':[]"), 409);
+
+                    // No list at all leaves the rows alone; an empty one removes them.
+                    send(put("/api/orders/" + id), null, order("R-1d", ""), 200);
+                    assertThat(get("/api/orders/" + id).get("lines")).hasSize(2);
+                    send(put("/api/orders/" + id), null, order("R-1e", ",'lines':[]"), 200);
+                    assertThat(get("/api/orders/" + id).get("lines")).isEmpty();
+                }
+
+                @Test
+                void aRowIsCheckedAndNeverTakenFromAnotherParent() throws Exception {
+                    long product = firstId("/api/products");
+                    // A row that breaks its own rules stops the whole save, named by its place.
+                    JsonNode refused = send(post("/api/orders"), null, order("R-2", ",'lines':[{'productId':" + product + "}]"), 400);
+                    assertThat(refused.get("errors").has("lines[0].quantity")).isTrue();
+                    assertThat(get("/api/orders?q=R-2").get("totalElements").asInt()).isZero();
+
+                    JsonNode one = send(post("/api/orders"), null, order("R-3", ",'lines':[{'quantity':1,'productId':" + product + "}]"), 200);
+                    long theirs = one.get("lines").get(0).get("id").asLong();
+                    // Another order naming that row's id does not get it: the row is new there.
+                    JsonNode two = send(post("/api/orders"), null, order("R-4", ""), 200);
+                    send(put("/api/orders/" + two.get("id").asLong()), null,
+                            order("R-4", ",'lines':[{'id':" + theirs + ",'quantity':9,'productId':" + product + "}]"), 200);
+                    assertThat(get("/api/order-lines/" + theirs).get("quantity").asInt()).isEqualTo(1);
+                    assertThat(get("/api/order-lines/" + theirs).get("orderId").asLong()).isEqualTo(one.get("id").asLong());
+                    JsonNode mine = get("/api/orders/" + two.get("id").asLong()).get("lines");
+                    assertThat(mine).hasSize(1);
+                    assertThat(mine.get(0).get("id").asLong()).isNotEqualTo(theirs);
+
+                    // More rows than one save takes.
+                    StringBuilder many = new StringBuilder();
+                    for (int i = 0; i < 201; i++) many.append(i == 0 ? "" : ",").append("{'quantity':1,'productId':").append(product).append("}");
+                    send(post("/api/orders"), null, order("R-5", ",'lines':[" + many + "]"), 400);
+                }
+
+                @Test
+                void aSoftDeletedParentKeepsItsRowsAndARowOnItsOwnSaysWhoseItIs() throws Exception {
+                    long product = firstId("/api/products");
+                    JsonNode made = send(post("/api/orders"), null, order("R-6", ",'lines':[{'quantity':4,'productId':" + product + "}]"), 200);
+                    long id = made.get("id").asLong();
+                    mvc.perform(delete("/api/orders/" + id)).andExpect(status().is2xxSuccessful());
+                    mvc.perform(MockMvcRequestBuilders.get("/api/orders/" + id)).andExpect(status().isNotFound());
+                    // Restored, the order has its rows: deleting it softly did not delete them.
+                    mvc.perform(post("/api/orders/" + id + "/restore")).andExpect(status().isOk());
+                    assertThat(get("/api/orders/" + id).get("lines")).hasSize(1);
+
+                    // The line's own endpoint still works, and there the order has to be named.
+                    send(post("/api/order-lines"), null, q("{'quantity':1,'productId':" + product + "}"), 400);
+                    JsonNode alone = send(post("/api/order-lines"), null, q("{'quantity':1,'productId':" + product + ",'orderId':" + id + "}"), 200);
+                    assertThat(get("/api/orders/" + id).get("lines")).hasSize(2);
+                    assertThat(alone.get("orderId").asLong()).isEqualTo(id);
+                }
+
+            """;
+
     @org.junit.jupiter.api.Test
     void liveApiOfABackendWithEveryOptBehaves(@TempDir Path workDir) throws Exception {
         // The generated tests mock the service, so no SQL the options add is ever executed by

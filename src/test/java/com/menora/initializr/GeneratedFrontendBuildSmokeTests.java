@@ -418,6 +418,30 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendCompositionInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Orders with its lines composed into the order, on the layout the example ships: the rows
+        // editor in the order's form (a picker and number cells), the wizard's step for the rows,
+        // the list page reading the record before an edit, and the rows checked by their own rules.
+        Path project = postAndExtractFrontend(workDir, GeneratedBackendBuildSmokeTests.composedOrders("react-tailwind-crud"));
+        assertThat(project.resolve("src/features/order-line-form/ui/OrderLineRows.tsx")).isRegularFile();
+        assertThat(Files.readString(project.resolve("src/app/screens/NewOrderScreen.tsx"))).contains("fields: ['lines'], keys: ['lines']");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraCompositionInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Menora set borrows the rows editor and authors its own list page: classic shell, Hebrew.
+        Map<String, Object> body = FullstackCompositionTests.composed("react-menora-digital-crud");
+        body.put("locale", "he");
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendOneToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // The child-row tables in the details, with their label-map imports (once per child
         // entity, none for an entity's own rows).

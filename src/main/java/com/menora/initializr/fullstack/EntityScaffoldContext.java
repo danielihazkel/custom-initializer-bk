@@ -91,6 +91,9 @@ public final class EntityScaffoldContext {
         ctx.put("hasCollectionFields", entities.stream().anyMatch(e -> !e.collections().isEmpty()));
         // …and the read-only table of child rows with the first ONE_TO_MANY.
         ctx.put("hasChildListTables", entities.stream().anyMatch(e -> !e.children().isEmpty()));
+        // …and the rows editor with the first composition (rows edited in their parent's form).
+        ctx.put("hasCompositionRows", entities.stream()
+                .anyMatch(e -> e.children().stream().anyMatch(RelationDefinition::composition)));
         boolean attachments = entities.stream().flatMap(e -> e.fields().stream()).anyMatch(f -> f.type().isAttachment());
         // File and image fields: the attachment package on the backend, the upload call and the
         // AttachmentField on the frontend (both render paths read it).
@@ -1637,6 +1640,19 @@ public final class EntityScaffoldContext {
             sv.put("keysTs", String.join(", ", keys));
             steps.add(sv);
         }
+        // The rows edited with the record are a step of their own, after its fields. A message about
+        // one of them is keyed by its place (lines[0].quantity): the step owns every key under the list.
+        boolean rows = false;
+        for (Map<String, Object> inv : (List<Map<String, Object>>) ev.getOrDefault("inverseRelations", List.of())) {
+            if (!Boolean.TRUE.equals(inv.get("composition"))) continue;
+            Map<String, Object> sv = new LinkedHashMap<>();
+            sv.put("stepTitleExpr", tsString((String) inv.get("collectionLabel")));
+            sv.put("fieldsTs", tsString((String) inv.get("collectionField")));
+            sv.put("keysTs", tsString((String) inv.get("collectionField")));
+            steps.add(sv);
+            rows = true;
+        }
+        pv.put("wizardHasRows", rows);
         pv.put("steps", steps);
         // The form starts from the fields' defaults, as the entity page's New does.
         pv.put("initialTs", newRecordTs((List<Map<String, Object>>) ev.get("fields")));
@@ -2211,6 +2227,28 @@ public final class EntityScaffoldContext {
                 String coll = declared != null ? Naming.toCamelCase(declared.fieldName()) : inverseCollectionName(child, rel);
                 Map<String, Object> inv = new LinkedHashMap<>();
                 inv.put("declared", declared != null);
+                // The child's rows are part of the parent: its form edits them, its save carries them.
+                boolean composed = declared != null && declared.composition();
+                inv.put("composition", composed);
+                if (composed) {
+                    Map<String, Object> childSummary = summaries.get(child.name().toLowerCase(Locale.ROOT));
+                    inv.put("MappedBy", Naming.toPascalCase(rel.fieldName()));
+                    inv.put("ChildPkName", childSummary != null ? childSummary.get("PkName") : "Id");
+                    inv.put("childPkJavaType", childSummary != null ? childSummary.get("pkJavaType") : "Long");
+                    // The child's other foreign keys: a row carries each as an id stub, which the
+                    // parent's service swaps for a managed reference before saving.
+                    List<Map<String, Object>> refs = new ArrayList<>();
+                    for (RelationDefinition other : child.relations()) {
+                        if (other == rel || other.type() != RelationType.MANY_TO_ONE) continue;
+                        Map<String, Object> target = summaries.get(other.targetEntity().toLowerCase(Locale.ROOT));
+                        Map<String, Object> ref = new LinkedHashMap<>();
+                        ref.put("FieldName", Naming.toPascalCase(other.fieldName()));
+                        ref.put("targetEntity", Naming.toPascalCase(other.targetEntity()));
+                        ref.put("TargetPkName", target != null ? target.get("PkName") : "Id");
+                        refs.add(ref);
+                    }
+                    inv.put("childRefs", refs);
+                }
                 if (declared != null) {
                     inv.put("listTitleTs", tsLiteralBody(declared.label() != null && !declared.label().isBlank()
                             ? declared.label() : humanizeIdentifier(coll)));
@@ -2454,6 +2492,34 @@ public final class EntityScaffoldContext {
         return Character.toUpperCase(words.charAt(0)) + words.substring(1);
     }
 
+    /**
+     * What the rows editor of a composed child draws ({@code <Child>Rows.tsx}): a column per value
+     * a client may set and per foreign key but the link to the parent, and which imports the
+     * file needs (the generated lint rejects an unused one).
+     */
+    @SuppressWarnings("unchecked")
+    private static void putRows(Map<String, Object> ctx) {
+        List<Map<String, Object>> rowFields = new ArrayList<>();
+        for (Map<String, Object> field : (List<Map<String, Object>>) ctx.get("fields")) {
+            if (Boolean.TRUE.equals(field.get("isPrimaryKey")) || Boolean.TRUE.equals(field.get("isAttachment"))
+                    || Boolean.TRUE.equals(field.get("isWorkflowLocked"))) continue;
+            Map<String, Object> row = new LinkedHashMap<>(field);
+            // Long text is one line in a table cell.
+            Object inputType = field.get("inputType");
+            row.put("rowInputType", Boolean.TRUE.equals(field.get("isText")) || inputType == null ? "text" : inputType);
+            rowFields.add(row);
+        }
+        List<Map<String, Object>> rowRelations = ((List<Map<String, Object>>) ctx.get("relations")).stream()
+                .filter(rel -> !Boolean.TRUE.equals(rel.get("isCompositionLink"))).toList();
+        boolean options = rowRelations.stream().anyMatch(rel -> !Boolean.TRUE.equals(rel.get("targetSearchable")));
+        ctx.put("rowFields", rowFields);
+        ctx.put("rowRelations", rowRelations);
+        ctx.put("rowsUseOptions", options);
+        ctx.put("rowsUsePicker", rowRelations.stream().anyMatch(rel -> Boolean.TRUE.equals(rel.get("targetSearchable"))));
+        ctx.put("rowsUseStrings", options || rowFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isBoolean"))));
+        ctx.put("rowsUseInstant", rowFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isInstant"))));
+    }
+
     /** Puts {@code <name>} = {@code base.layer} and {@code <name>Path} = the slash form. */
     private static void putPackage(Map<String, Object> ctx, String name, String base, String layer) {
         String pkg = (base == null || base.isBlank()) ? layer : base + "." + layer;
@@ -2485,6 +2551,27 @@ public final class EntityScaffoldContext {
         ctx.put("hasChildLists", !childLists.isEmpty());
         ctx.put("childTables", childTables);
         ctx.put("hasChildTables", !childTables.isEmpty());
+        // A composed child: the relation that is its link to the parent is never asked of a
+        // client inside the parent's rows (the parent is the link), so the DTO does not require it.
+        ctx.put("isComposedChild", false);
+        if (inverses != null) {
+            for (List<Map<String, Object>> ofParent : inverses.values()) {
+                for (Map<String, Object> inv : ofParent) {
+                    if (!Boolean.TRUE.equals(inv.get("composition"))
+                            || !String.valueOf(inv.get("childEntity")).equals(ctx.get("EntityName"))) continue;
+                    ctx.put("isComposedChild", true);
+                    ctx.put("CompositionLinkName", inv.get("MappedBy"));
+                    ctx.put("compositionLinkName", inv.get("mappedBy"));
+                    for (Map<String, Object> rel : (List<Map<String, Object>>) ctx.get("relations")) {
+                        if (String.valueOf(rel.get("fieldName")).equals(inv.get("mappedBy"))) {
+                            rel.put("isCompositionLink", true);
+                            rel.put("dtoRequired", false);
+                        }
+                    }
+                    putRows(ctx);
+                }
+            }
+        }
         // The enum label maps those tables read, once per child entity. A list of the entity's
         // own rows (Employee.reports) reads the maps its details already import.
         Map<String, Set<String>> labelMaps = new LinkedHashMap<>();
@@ -2603,8 +2690,22 @@ public final class EntityScaffoldContext {
         }
         ctx.put("hasLockedRelations", lockedRelations && mutable);
         // …and to resolve the ids of a MANY_TO_MANY into the rows they name.
+        // The rows a composition saves with this entity. A soft-deleted parent keeps its rows (it can
+        // be restored); one that is really deleted takes them with it.
+        List<Map<String, Object>> compositions = childLists.stream()
+                .filter(inv -> Boolean.TRUE.equals(inv.get("composition"))).toList();
+        boolean keepsRows = Boolean.TRUE.equals(ctx.get("softDeleteApplicable"));
+        for (Map<String, Object> inv : compositions) {
+            inv.put("cascadeJava", keepsRows
+                    ? "{jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE}"
+                    : "{jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE, jakarta.persistence.CascadeType.REMOVE}");
+        }
+        boolean hasCompositions = !compositions.isEmpty() && mutable;
+        ctx.put("compositions", hasCompositions ? compositions : List.of());
+        ctx.put("hasCompositions", hasCompositions);
         ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable
-                || (lockedRelations && mutable) || (Boolean.TRUE.equals(ctx.get("hasCollections")) && mutable));
+                || (lockedRelations && mutable) || (Boolean.TRUE.equals(ctx.get("hasCollections")) && mutable)
+                || hasCompositions);
         // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
         // besides the audit rows — so it imports t / LOCALE exactly when one of them is drawn
         // (the generated lint rejects an unused import).
@@ -3056,6 +3157,8 @@ public final class EntityScaffoldContext {
             rv.put("targetPkColumn", target != null ? target.get("pkColumn") : "id");
             rv.put("targetLabelColumn", target == null ? null : target.get("labelColumn"));
             rv.put("required", rel.required());
+            // What the DTO asks of a client: the same, but for the link of a composed child.
+            rv.put("dtoRequired", rel.required());
             rv.put("isManyToOne", rel.type() == RelationType.MANY_TO_ONE);
             rv.put("last", i == entity.relations().size() - 1);
             relationViews.add(rv);

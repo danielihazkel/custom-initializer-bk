@@ -92,7 +92,7 @@ import org.hibernate.annotations.Formula;
 {{/lockingApplicable}}{{#softDeleteApplicable}}    @Column(name = "deleted", nullable = false)
     private boolean deleted = false;
 
-{{/softDeleteApplicable}}{{#childLists}}    @OneToMany(mappedBy = "{{mappedBy}}")
+{{/softDeleteApplicable}}{{#childLists}}    @OneToMany(mappedBy = "{{mappedBy}}"{{#composition}}, cascade = {{cascadeJava}}{{/composition}})
     @lombok.ToString.Exclude
     @lombok.EqualsAndHashCode.Exclude
     private List<{{childEntity}}> {{collectionField}} = new ArrayList<>();
@@ -103,4 +103,13 @@ import org.hibernate.annotations.Formula;
     @Formula("(select count(*) from {{childTableRef}} c where c.{{childJoinColumn}} = {{pkField.column}})")
     private Long {{collectionField}}Count;
 
-{{/childLists}}}
+{{/childLists}}{{#isComposedChild}}    /**
+     * Takes the values of {@code other}: a row edited in its parent's form. The key and the link
+     * to the parent stay as they are.
+     */
+    public void copyFrom({{EntityName}} other) {
+{{#nonPkFields}}{{^isReadOnly}}        this.{{name}} = other.{{name}};
+{{/isReadOnly}}{{/nonPkFields}}{{#relations}}{{^isCompositionLink}}        this.{{fieldName}} = other.{{fieldName}};
+{{/isCompositionLink}}{{/relations}}    }
+
+{{/isComposedChild}}}

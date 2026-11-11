@@ -21,12 +21,12 @@ c1472eead393d284301250879f955f0d5d92f7841438ccdd6642a954a03cbf3f  golden-orders/
 de34eefb7118cafde99e560b94a77c9f9cbb8c481f5e2b201ab73538a574a600  golden-orders/backend/src/main/java/com/menora/golden/controller/OrderLineController.java
 5afd712c9f1b8bd87ec77ae53eb0f30c18d30774d05926b254d1df201e24583e  golden-orders/backend/src/main/java/com/menora/golden/controller/ProductController.java
 3e4242ed5b7de0279c75b8cef29691bd8c2c6e02335fcb05ffae1d5dab33159b  golden-orders/backend/src/main/java/com/menora/golden/dto/CustomerDto.java
-9663eb57edce56f7c0777d59a4de5734f2b5bced4e3bc2f77c6200d8d86bbf11  golden-orders/backend/src/main/java/com/menora/golden/dto/OrderDto.java
-618825486ac41e052f0a0646bec39d43557c803005c3742e19f5365a706a4a57  golden-orders/backend/src/main/java/com/menora/golden/dto/OrderLineDto.java
+da366db79ea30bb7b6d50d8c0514b4e08eb4ca21fe49be49faede93cacf30978  golden-orders/backend/src/main/java/com/menora/golden/dto/OrderDto.java
+b3b70c0cb6d8d5a7e7f87a4372b7cd10639622b606f00757945b93f6456a3af9  golden-orders/backend/src/main/java/com/menora/golden/dto/OrderLineDto.java
 fef4c49d9dede2ac64ce0c248a045ba2cb9d13301b47dbaeda5fb94d142d97a0  golden-orders/backend/src/main/java/com/menora/golden/dto/ProductDto.java
 48d560e0ab4a0ec656ace2ae84cdc94b7e34a64708afccf6ccd672d2abc6d1f6  golden-orders/backend/src/main/java/com/menora/golden/entity/Customer.java
-573ca6de300979bb82a60c77b908b3aae0f0a01dd07a7175e70f07b37e2694d0  golden-orders/backend/src/main/java/com/menora/golden/entity/Order.java
-3bb0bf09207a553a2222247828819a7905c6a3a79d604ebc46c7c54017451210  golden-orders/backend/src/main/java/com/menora/golden/entity/OrderLine.java
+c54500a248ddeea67d9c9c436e7aabd17359133779e2d7961caffaf88795355c  golden-orders/backend/src/main/java/com/menora/golden/entity/Order.java
+4113a64f8b14a6ad565aa0050c1ab858dcf97c506a496dfcc7c649c33e71ec8d  golden-orders/backend/src/main/java/com/menora/golden/entity/OrderLine.java
 739be4e871c1887be3aa68747122fd55335ff010f2fc0e022fcd1dfc0cce0d55  golden-orders/backend/src/main/java/com/menora/golden/entity/Product.java
 f8b43f18ceadc10ba27d65e442afa2515bf241812f5d0385c66f57490db87fad  golden-orders/backend/src/main/java/com/menora/golden/repository/CustomerRepository.java
 46d817ded61aa8b1ef2ae7405e44d81ff2af0b69b27a92ff10e731f4e3746f08  golden-orders/backend/src/main/java/com/menora/golden/repository/OrderLineRepository.java
@@ -39,8 +39,8 @@ c1cd40b0b0326c9bdafee64b8c124be9445d9fe6ca1160223d3d840336404ce6  golden-orders/
 1e624939bc89e4315eff8593f8d76e1e44bc3b584f918d96d73b7f3d9636d7ac  golden-orders/backend/src/main/java/com/menora/golden/security/RequiresPermission.java
 82a457c255b2557c30e1afda079cd35a26f7a405a398637f62398e03db7a88fc  golden-orders/backend/src/main/java/com/menora/golden/security/UnauthorizedException.java
 c7c9d5f3447697cd68c036c3daba9b727e835853947cb65b3c422712d6472f98  golden-orders/backend/src/main/java/com/menora/golden/service/CustomerService.java
-586ec45aa1cfab0a6a379c82bea93f6f32df0c35138b3c9a4addbd287e3e97d0  golden-orders/backend/src/main/java/com/menora/golden/service/OrderLineService.java
-cae683ce71732bd567683547e7797dbd8f4c459dcb36f6b765feee9bb9b28905  golden-orders/backend/src/main/java/com/menora/golden/service/OrderService.java
+024bb11c445f83e525d0e10e4cb16fa7f3876dec3f4b50657d4ec4d92253c578  golden-orders/backend/src/main/java/com/menora/golden/service/OrderLineService.java
+f160aa907633d1b66ccd909b309935da3929992f75217487fa6266a3b3721598  golden-orders/backend/src/main/java/com/menora/golden/service/OrderService.java
 41ee75fa47e0956c60abaa38126fe956c7dcec30d607520cb5db6d52d23e0f4d  golden-orders/backend/src/main/java/com/menora/golden/service/ProductService.java
 3625f684c0d4e101b5fdc524d7de2c56dec4388b70a53cfc1aa643a399c19c9f  golden-orders/backend/src/main/java/com/menora/golden/web/ApiExceptionHandler.java
 3f7529bca65880d661cc28db0f22ab881fc3a726ab4bb1d7baa26e533d512793  golden-orders/backend/src/main/java/com/menora/golden/web/MeController.java
@@ -87,7 +87,7 @@ e16d5833db325e16c98b51a2b3dce3f66fd0aad2c1c2c4f5e586d0b116d9cfd2  golden-orders/
 9b57e7c47ef97573bb4088bdc6558f5060c99772bae3e5a0bde71ef3b025b02f  golden-orders/frontend/src/entities/order-line/model/types.ts
 11695453ebc2f89130f2d4834a77c1c379c072364aa7fa63f34f3815aef7a622  golden-orders/frontend/src/entities/order/api/useOrder.ts
 1d6ffa3230f79335a2209cbf40e0bad9377a29e5125e5dec7a2f2d57813cdf0f  golden-orders/frontend/src/entities/order/index.ts
-315613a11cb7f4e76ce75829e95ed33d9e358f7b76283cfad7ad7a1556d40ce6  golden-orders/frontend/src/entities/order/model/types.ts
+bb9ce16e1da7dbaeac81068505c55822aba1f6a2abb457b9c139193665682316  golden-orders/frontend/src/entities/order/model/types.ts
 2784a0b2a072c599136f11fae3091886711d8aba07b8a60bcfb5c9fb852fca72  golden-orders/frontend/src/entities/product/api/useProduct.ts
 8b333dbc232e8e7e2f324aa7251dd694741a329c70bf73bbfa7adad0511507c3  golden-orders/frontend/src/entities/product/index.ts
 c35f28ba6d1f71038b0328a7dd94cc19140caf711ee242b8c0875013f9b1cfa2  golden-orders/frontend/src/entities/product/model/types.ts
@@ -98,13 +98,14 @@ e13ad105748a74e267f8637c09f5b8444a53fc0366ca4e19f83d4187217b5c65  golden-orders/
 03673045674dd898c9c0569da8fb498b9228033078adb9972823e902a776a070  golden-orders/frontend/src/features/customer-form/ui/CustomerForm.tsx
 8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881  golden-orders/frontend/src/features/index.ts
 ca27499124ed49425b1585acfeeb43ac55749436ef66fe4d3fb16b7af51a2be8  golden-orders/frontend/src/features/order-form/index.ts
-45f4fb922b1115f7a66362939d62080f219a2b03cc31bb3a267af74826024c22  golden-orders/frontend/src/features/order-form/model/validate.ts
+67696c08cdeae031ef9540b7624234b43bcd425a052e9879bb73b6de6bb11c21  golden-orders/frontend/src/features/order-form/model/validate.ts
 c8a5582934594fee267d589481b259b15721a13b75806991c9b7f3090daa4ad3  golden-orders/frontend/src/features/order-form/ui/OrderDetail.tsx
-5088096dcbad2ed997dd4210683b5169d1c579253b5f8bad023fa30306891a5d  golden-orders/frontend/src/features/order-form/ui/OrderForm.tsx
-8079100db3fc98a9902c8d4f8d245fec5fc51d893364e38357971fa3ce08a052  golden-orders/frontend/src/features/order-line-form/index.ts
-ec736111262598fbaabe5f90cf74501cf2fe875fd610c1ffad5b78951b9309fd  golden-orders/frontend/src/features/order-line-form/model/validate.ts
+d60dc60080ceb2e2136addce235539f0a2ebce46fb7370ada3501eb19552a56b  golden-orders/frontend/src/features/order-form/ui/OrderForm.tsx
+800bb2c4e1c0c6f62356b06286c95c5a40b043682c3b3b0f8cf3b5040deba08f  golden-orders/frontend/src/features/order-line-form/index.ts
+300207cba3c6f2e2e5989878989f0e960673c445a8f4db3db400110354d12376  golden-orders/frontend/src/features/order-line-form/model/validate.ts
 5306460eb74d29ae6839f8f4e87c51351e1e207ef1bf07032a8bc821fa9ece2a  golden-orders/frontend/src/features/order-line-form/ui/OrderLineDetail.tsx
 84b9b5d8213f7258810b97e88e1d6badd2f7b0195c1dcfc60305bfa90b9b58eb  golden-orders/frontend/src/features/order-line-form/ui/OrderLineForm.tsx
+e471ab418b6266e311abc4dc9d7a84c7c8fe5907f9b14b49bc10342bb1b16997  golden-orders/frontend/src/features/order-line-form/ui/OrderLineRows.tsx
 b65676a8a6ab93d7e2a2287776f8bbb2b752031888cd0b94569aea97348e6e0a  golden-orders/frontend/src/features/product-form/index.ts
 d67b395aa69171e5c365d70fe2407c543e4b0718bcd1a68b1cd75e1349cb19ba  golden-orders/frontend/src/features/product-form/model/validate.ts
 61e4a3715a97938e5667946a88b460fdb1aef47f5d4b2b4302a28e3effa68940  golden-orders/frontend/src/features/product-form/ui/ProductDetail.tsx
@@ -120,7 +121,7 @@ c0b21214d06dd891e2a8a3ad7bbc6614661a1410efcfbe0f7ae0c7c906e9bcb5  golden-orders/
 520952aa660acef279020332d56b325dc372fce015d46eb75dd5a7326921d687  golden-orders/frontend/src/pages/order-line/index.ts
 ccc8a2e17a4af176d7b8c65d028c097297012494b27098f94e7e93db519d4b7d  golden-orders/frontend/src/pages/order-line/ui/OrderLinePage.tsx
 cecc5cbd9b93e367fd6b517271edfcc304878ed28b062481bb3a6443da9dcb3a  golden-orders/frontend/src/pages/order/index.ts
-97be0d36282b1dc47e7fcc3f94bc94729f702011e952239e4d2bcf939728aa8b  golden-orders/frontend/src/pages/order/ui/OrderPage.tsx
+0a2e035a8a4d678d31fd17115f9045b4f4fa5ebfbe7620d2f196823dfe4f19ec  golden-orders/frontend/src/pages/order/ui/OrderPage.tsx
 d75cea11e1849aa13a5c76529327ba71cf3371f015ee2a26c4d027ee6c73b17f  golden-orders/frontend/src/pages/product/index.ts
 c57dbdb404d28da4f2eaa62f62d9097fb0249fc4730b10c527f05f4acaf5049c  golden-orders/frontend/src/pages/product/ui/ProductPage.tsx
 794d73cb44a523204e36b62507422614df59d86c67cb7f3428a66dafb8bfb9e1  golden-orders/frontend/src/shared/README.md
@@ -129,7 +130,7 @@ c0d15623de9d8bbb3c3488678a7fa9340607cfc32dc6daea9e34417b8b0a80d6  golden-orders/
 a2ac1ca020f74b517965de39efc49dca6fd4a8c9bed9ef78fe637d101611f63e  golden-orders/frontend/src/shared/api/useOptions.ts
 a3d00f00f5c5f0c62c56bd9166f7a2d26102d060b737d7f52868cd04382e2ea1  golden-orders/frontend/src/shared/api/useResource.ts
 073f4b80d3167caa42d975dfa4f2379563c63d6c4dc8616d493012a9beebced3  golden-orders/frontend/src/shared/i18n/index.ts
-72f7d0aa311f5896ab440d768a74baada46ecad205a59475b188250e1d7d9f25  golden-orders/frontend/src/shared/i18n/strings.ts
+9cf3e09ccd1f9d6ec1f974362d985d5d020556bc223cff6022e56f4fab9d8193  golden-orders/frontend/src/shared/i18n/strings.ts
 8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881  golden-orders/frontend/src/shared/index.ts
 47e8b5bca2a2df15e3a3c869b6064d17d3295c51bd68e5b3536b99338ba1d3b8  golden-orders/frontend/src/shared/ui/Alert.tsx
 89e1c20acb3c8712a674f407630a914135d6a9c63a9f0f8e365fbc6f61d181ee  golden-orders/frontend/src/shared/ui/Badge.tsx
@@ -145,6 +146,7 @@ f0e6667af803bf5c68b42459937d78b6893addde6d465cad3c05e2768b1b2769  golden-orders/
 44c96fca5f48300edb6599bc180e3cd130ef23508f8e244dca42a35c7ced5839  golden-orders/frontend/src/shared/ui/KanbanBoard.tsx
 7c2d6bb8cfb79cb29d05b6b49418c7c071a813be423a208736ab1fcaf23ca7e8  golden-orders/frontend/src/shared/ui/RelatedRows.tsx
 dd1fc0a250d6088bfd0b3910cd1602bd859f46b0175cdd5b118425823cae2617  golden-orders/frontend/src/shared/ui/RelationPicker.tsx
+20fa671929dedd0d73ce948782e152c76324f6b3521ab0b5153abc951e77256d  golden-orders/frontend/src/shared/ui/RowsEditor.tsx
 a9fb00f2f5dad34d192b8f5fa2f155737eee9674224ab244c52dce8cad403037  golden-orders/frontend/src/shared/ui/Skeleton.tsx
 9e8000a40e1327d26b044acda8ff6dc9ae89cc5c49b5fed022cef8561472df75  golden-orders/frontend/src/shared/ui/Table.tsx
 ead90fc35e323c8d29f562aacad5a3a1b63767a0d0b6ff1e375191fcfa814397  golden-orders/frontend/src/shared/ui/format.ts
@@ -158,4 +160,4 @@ ead90fc35e323c8d29f562aacad5a3a1b63767a0d0b6ff1e375191fcfa814397  golden-orders/
 1a657bc8b14e013ac12884344b75f725b742b4fcdd27bea16bb5ca1e484b61f3  golden-orders/frontend/tsconfig.json
 bb9fd8592a9e364641441219f10d84daae9ba2ca5cc85db798efad6913bb8257  golden-orders/frontend/tsconfig.node.json
 47a77f018d8f1f16e15333f078134b8e9a0341bfdec1a4b50a688920580c9504  golden-orders/frontend/vite.config.ts
-09ec3e3385205943e452685c885f1f8aa554adebed7d1e17426709235630ee96  golden-orders/menora-model.json
+86c4d727c8b475899127e07c0fea29ea9bbaa5700b96d03755a9c979a6bffe89  golden-orders/menora-model.json

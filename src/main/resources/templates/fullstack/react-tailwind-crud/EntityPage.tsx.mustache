@@ -22,7 +22,8 @@ import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail
 {{/optScaffoldCsvExport}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
 {{/importApplicable}}
 {{#listSideDetail}}import { api } from '@shared/api'
-{{/listSideDetail}}
+{{/listSideDetail}}{{#hasCompositions}}import { api as rowsApi } from '@shared/api'
+{{/hasCompositions}}
 {{#listConfigurable}}/** A column with the key a list page's `columns` prop picks it by. */
 type ListColumn = Column<{{EntityName}}> & { key: string }
 
@@ -340,7 +341,18 @@ function oneValue(value: string | undefined): boolean {
     setEditing({ ...row })
     setInitial({ ...row })
     setIsNew(false)
-{{#lockingApplicable}}    setStale(false)
+{{#hasCompositions}}    // A row of the list does not carry the rows edited with it: read the record for them. The
+    // form is open meanwhile, and a save without them leaves the rows as they are.
+    rowsApi.get<{{EntityName}}>(`/api/{{entityNamePluralKebab}}/${encodeURIComponent(String(row.{{pkField.name}}))}`)
+      .then(full => {
+        const rows = { {{#compositions}}{{collectionField}}: full.{{collectionField}}, {{/compositions}}}
+        const withRows = <T extends Partial<{{EntityName}}> | null>(current: T): T =>
+          current && current.{{pkField.name}} === row.{{pkField.name}} ? ({ ...current, ...rows } as T) : current
+        setEditing(withRows)
+        setInitial(withRows)
+      })
+      .catch(() => {})
+{{/hasCompositions}}{{#lockingApplicable}}    setStale(false)
 {{/lockingApplicable}}    setFormErrors({})
     setDrawerOpen(true)
   }

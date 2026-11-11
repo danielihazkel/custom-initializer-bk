@@ -1,4 +1,5 @@
-{{#fields}}{{#isEnum}}
+{{#compositions}}import type { {{childEntity}} } from '@entities/{{childKebab}}'
+{{/compositions}}{{#fields}}{{#isEnum}}
 export type {{enumTypeName}} = {{#enumValues}}'{{value}}'{{^last}} | {{/last}}{{/enumValues}}
 
 export const {{enumTypeName}}Values: {{enumTypeName}}[] = [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]
@@ -22,4 +23,7 @@ export interface {{EntityName}} {
 {{/auditApplicable}}{{#lockingApplicable}}  /** Optimistic-lock version: sent back on save so a stale edit is refused, never shown. */
   version?: number | null
 {{/lockingApplicable}}{{#childLists}}  {{collectionField}}Count?: number | null
-{{/childLists}}}
+{{/childLists}}{{#compositions}}  /** The {{childEntity}} rows edited and saved with this one. Set where the record was read by
+   *  its key; a row of a list has none, and a save without it leaves the rows as they are. */
+  {{collectionField}}?: Partial<{{childEntity}}>[] | null
+{{/compositions}}}

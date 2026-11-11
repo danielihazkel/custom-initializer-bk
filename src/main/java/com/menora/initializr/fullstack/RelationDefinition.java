@@ -27,6 +27,9 @@ package com.menora.initializr.fullstack;
  *
  * <p>{@code label} is what the generated UI calls the relation (a column heading, a form label,
  * a filter); null falls back to the field name.
+ *
+ * <p>{@code composition} (a ONE_TO_MANY only): the rows are part of this entity. They are edited
+ * in its form and saved with it, and a row left out of a save is removed.
  */
 public record RelationDefinition(
         RelationType type,
@@ -37,7 +40,15 @@ public record RelationDefinition(
         String joinTable,
         String inverseJoinColumn,
         String mappedBy,
-        String label) {
+        String label,
+        boolean composition) {
+
+    /** Every property but {@code composition}. */
+    public RelationDefinition(RelationType type, String fieldName, String targetEntity, boolean required,
+                              String joinColumn, String joinTable, String inverseJoinColumn, String mappedBy,
+                              String label) {
+        this(type, fieldName, targetEntity, required, joinColumn, joinTable, inverseJoinColumn, mappedBy, label, false);
+    }
 
     /** Every property but {@code label}. */
     public RelationDefinition(RelationType type, String fieldName, String targetEntity, boolean required,
@@ -54,7 +65,7 @@ public record RelationDefinition(
     /** The same ONE_TO_MANY, naming the MANY_TO_ONE it is the other side of. */
     public RelationDefinition withMappedBy(String link) {
         return new RelationDefinition(type, fieldName, targetEntity, required, joinColumn, joinTable,
-                inverseJoinColumn, link, label);
+                inverseJoinColumn, link, label, composition);
     }
 
     /** Back-compat constructor for a MANY_TO_ONE (no join table). */
