@@ -562,9 +562,16 @@ public final class FullstackPageValidator {
      * {@code audit} override, else the project's {@code audit} scaffold opt, and only for a writable
      * entity (EntityScaffoldContext.auditApplicable).
      */
-    /** The request's {@code nav}, checked against the layout: absent is null (the default shell);
-     *  given, it needs a page layout, a known style (sidebar by default) and a boolean flag. */
+    /** As {@link #validateNav(FullstackStarterRequest.NavDto, List, List)}, for a model without workflows. */
     public static PageDefinition.Nav validateNav(FullstackStarterRequest.NavDto raw, List<PageDefinition> pages) {
+        return validateNav(raw, pages, List.of());
+    }
+
+    /** The request's {@code nav}, checked against the layout: absent is null (the default shell);
+     *  given, it needs a page layout, a known style (sidebar by default) and boolean flags — and
+     *  the bell needs something to count: an entity whose workflow assigns its tasks. */
+    public static PageDefinition.Nav validateNav(FullstackStarterRequest.NavDto raw, List<PageDefinition> pages,
+                                                 List<EntityDefinition> entities) {
         if (raw == null) return null;
         if (pages == null || pages.isEmpty()) {
             throw new WizardArgumentException("'nav' needs a page layout (pages) — the classic shell has its own navigation");
@@ -578,7 +585,13 @@ public final class FullstackPageValidator {
             }
             if (navStyle == null) throw new WizardArgumentException("nav.style must be sidebar or topbar, got '" + style + "'");
         }
-        return new PageDefinition.Nav(navStyle, Boolean.TRUE.equals(raw.collapsibleGroups()));
+        boolean notifications = Boolean.TRUE.equals(raw.notifications());
+        if (notifications && entities.stream().noneMatch(e -> e.workflow() != null && e.workflow().assigneeField() != null)) {
+            throw new WizardArgumentException("nav.notifications needs an entity whose workflow has an assigneeField"
+                    + " — the bell counts the tasks assigned to the user").on("notifications");
+        }
+        return new PageDefinition.Nav(navStyle, Boolean.TRUE.equals(raw.collapsibleGroups()),
+                Boolean.TRUE.equals(raw.userMenu()), notifications, Boolean.TRUE.equals(raw.commandPalette()));
     }
 
     static boolean auditApplies(EntityDefinition entity, Set<String> scaffoldOpts) {

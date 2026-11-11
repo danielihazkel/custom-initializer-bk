@@ -88,7 +88,23 @@ public record FullstackStarterRequest(
     }
 
     /** The generated shell's navigation: {@code style} sidebar/topbar, {@code collapsibleGroups}. */
-    public record NavDto(String style, Boolean collapsibleGroups) {}
+    public record NavDto(
+            String style, Boolean collapsibleGroups,
+            // The header's tools, each off unless asked for: the signed-in user's menu, a bell over
+            // the workflows' queues (needs a workflow with an assignee) and the Ctrl+K palette.
+            // Left out of the request echoed into menora-model.json when absent.
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            Boolean userMenu,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            Boolean notifications,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            Boolean commandPalette) {
+
+        /** The navigation alone, without the header's tools. */
+        public NavDto(String style, Boolean collapsibleGroups) {
+            this(style, collapsibleGroups, null, null, null);
+        }
+    }
 
     /** Back-compat constructor without {@code pages} (the classic one-page-per-entity layout). */
     public FullstackStarterRequest(

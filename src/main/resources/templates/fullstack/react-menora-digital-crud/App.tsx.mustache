@@ -97,6 +97,9 @@ export default function App() {
 {{/hasPages}}
 {{#hasPages}}
 import { useRoute, type View } from '@app/route'
+{{#hasShellTools}}
+import { ShellTools } from '@app/shell/ShellTools'
+{{/hasShellTools}}
 {{#hasPageRoles}}
 import { canSee, useRoles } from '@app/access'
 {{/hasPageRoles}}
@@ -319,7 +322,13 @@ export default function App() {
               className="hidden w-64 sm:block"
             />
 {{/hasShellSearch}}
+{{#hasShellTools}}
+          <ShellTools onNavigate={(page, arg, query) => go(page as View, arg, query)}>
+{{/hasShellTools}}
           <ThemeToggle darkLabel={t('switchToDark')} lightLabel={t('switchToLight')} />
+{{#hasShellTools}}
+          </ShellTools>
+{{/hasShellTools}}
 {{#hasShellSearch}}
           </div>
 {{/hasShellSearch}}

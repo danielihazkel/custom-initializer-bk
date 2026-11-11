@@ -21,6 +21,8 @@ public class EntityDefinitionContext {
     private static final ThreadLocal<String> BACKEND_KEY = new ThreadLocal<>();
     private static final ThreadLocal<String> FRONTEND_KEY = new ThreadLocal<>();
     private static final ThreadLocal<String> DOMAIN_PACKAGE = new ThreadLocal<>();
+    /** The layout's shell shows who is signed in: the backend answers GET /api/me without a workflow. */
+    private static final ThreadLocal<Boolean> SHELL_USER = ThreadLocal.withInitial(() -> false);
 
     public void populate(List<EntityDefinition> entities, String backendSetKey, String frontendSetKey,
                          String domainPackage) {
@@ -28,6 +30,15 @@ public class EntityDefinitionContext {
         BACKEND_KEY.set(backendSetKey);
         FRONTEND_KEY.set(frontendSetKey);
         DOMAIN_PACKAGE.set(domainPackage);
+        SHELL_USER.set(false);
+    }
+
+    /** As above, saying whether the frontend's shell asks who is signed in (the backend render
+     *  path never sees the layout, so what it needs of it travels here). */
+    public void populate(List<EntityDefinition> entities, String backendSetKey, String frontendSetKey,
+                         String domainPackage, boolean shellUser) {
+        populate(entities, backendSetKey, frontendSetKey, domainPackage);
+        SHELL_USER.set(shellUser);
     }
 
     public void clear() {
@@ -35,6 +46,11 @@ public class EntityDefinitionContext {
         BACKEND_KEY.remove();
         FRONTEND_KEY.remove();
         DOMAIN_PACKAGE.remove();
+        SHELL_USER.remove();
+    }
+
+    public boolean shellUser() {
+        return Boolean.TRUE.equals(SHELL_USER.get());
     }
 
     public List<EntityDefinition> all() {

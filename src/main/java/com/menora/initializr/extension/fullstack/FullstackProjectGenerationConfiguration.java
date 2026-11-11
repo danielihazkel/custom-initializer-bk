@@ -114,6 +114,8 @@ public class FullstackProjectGenerationConfiguration {
             // hasOptimisticLocking gates the shared stale-update handler.
             EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
             EntityScaffoldContext.putXlsxExport(projectCtx, entities);
+            // CurrentUser and GET /api/me: for a workflow, or for a shell that shows who is signed in.
+            projectCtx.put("usesCurrentUser", Boolean.TRUE.equals(projectCtx.get("hasWorkflows")) || entityContext.shellUser());
             // @EnableJpaAuditing ships when any entity is audited, not only with the project option.
             EntityScaffoldContext.putAudit(projectCtx, entities);
             // Demo rows on first start (config/DemoDataLoader, a CommandLineRunner). Backend-only;

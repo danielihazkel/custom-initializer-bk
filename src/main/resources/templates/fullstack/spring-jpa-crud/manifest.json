@@ -159,7 +159,7 @@
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
       "sortOrder": 13,
-      "gatedBy": "hasWorkflows"
+      "gatedBy": "usesCurrentUser"
     },
     {
       "source": "CurrentUserController.java.mustache",
@@ -168,7 +168,7 @@
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
       "sortOrder": 14,
-      "gatedBy": "hasWorkflows"
+      "gatedBy": "usesCurrentUser"
     },
     {
       "source": "EntityId.java.mustache",

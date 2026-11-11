@@ -248,7 +248,7 @@ public class FullstackStarterController {
         List<EntityDefinition> entities = FullstackPageValidator.applyPageImplications(validated, pages);
         PageDefinition.Nav nav;
         try {
-            nav = FullstackPageValidator.validateNav(body.nav(), pages);
+            nav = FullstackPageValidator.validateNav(body.nav(), pages, entities);
         } catch (WizardArgumentException e) {
             throw e.at("nav");
         }
@@ -304,7 +304,9 @@ public class FullstackStarterController {
         Set<String> depIds = new LinkedHashSet<>(
                 request.getDependencies() == null ? List.of() : request.getDependencies());
         optionsContext.defaultDatasourceRoles(depIds, configService.getAllSubOptions());
-        entityContext.populate(entities, backendSetKey, frontendSetKey, domainPackage);
+        // The user menu and the bell ask the backend who is signed in.
+        entityContext.populate(entities, backendSetKey, frontendSetKey, domainPackage,
+                nav != null && (nav.userMenu() || nav.notifications()));
 
         // Backend — runs through the standard pipeline. The EntityScaffoldContributor
         // (registered in spring.factories) picks up the populated context.
@@ -569,7 +571,8 @@ public class FullstackStarterController {
         projectCtx.put("hasLdapAuth", hasLdapAuth);
         // The API client sends the dev user's `userinfo` header when something reads it: the ldap
         // permission check, or a workflow (who claims a row, whose inbox).
-        projectCtx.put("sendsDevUser", hasLdapAuth || Boolean.TRUE.equals(projectCtx.get("hasWorkflows")));
+        projectCtx.put("sendsDevUser", hasLdapAuth || Boolean.TRUE.equals(projectCtx.get("hasWorkflows"))
+                || (nav != null && nav.userMenu()));
         // Opt-in scaffolding flags must be set on the frontend context too — the per-entity FE
         // templates gate audit columns / inverse-collection counts on these. The backend config
         // sets its own copy; the two render paths do not share a context.

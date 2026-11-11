@@ -331,7 +331,17 @@ public record PageDefinition(
     }
 
     /** The generated shell's navigation, for a layout: its style and whether sections fold. */
-    public record Nav(NavStyle style, boolean collapsibleGroups) {}
+    public record Nav(NavStyle style, boolean collapsibleGroups, boolean userMenu, boolean notifications,
+                      boolean commandPalette) {
+
+        /** The navigation alone, without the header's tools. */
+        public Nav(NavStyle style, boolean collapsibleGroups) {
+            this(style, collapsibleGroups, false, false, false);
+        }
+
+        /** Whether the header carries any of the tools. */
+        public boolean hasTools() { return userMenu || notifications || commandPalette; }
+    }
 
     public enum NavStyle {
         SIDEBAR("sidebar"), TOPBAR("topbar");

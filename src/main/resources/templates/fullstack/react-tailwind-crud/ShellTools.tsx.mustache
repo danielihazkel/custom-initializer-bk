@@ -1,0 +1,102 @@
+import type { ReactNode } from 'react'
+{{#shellUsesT}}
+import { t } from '@shared/i18n'
+{{/shellUsesT}}
+{{#shellPalette}}
+{{#hasPageRoles}}
+import { canSee, useRoles } from '@app/access'
+import type { View } from '@app/route'
+{{/hasPageRoles}}
+import { CommandPalette } from './CommandPalette'
+import type { PaletteEntity, PalettePage } from './CommandPalette'
+{{/shellPalette}}
+{{#shellNotifications}}
+import { NotificationBell } from './NotificationBell'
+import type { BellSource } from './NotificationBell'
+{{/shellNotifications}}
+{{#shellUserMenu}}
+import { UserMenu } from './UserMenu'
+{{/shellUserMenu}}
+
+interface Props {
+  /** Opens a page: by its id, with a record's key or a list's query when it takes one. */
+  onNavigate: (page: string, arg?: string, query?: Record<string, string>) => void
+  /** The shell's own controls (its theme switch), kept between the tools and the user. */
+  children?: ReactNode
+}
+{{#shellPalette}}
+
+/** The pages the palette offers by name: the nav's, and the forms that start a new record. */
+const PAGES: PalettePage[] = [
+{{#palettePages}}
+  { id: '{{pageId}}', label: {{{pageTitleExpr}}} },
+{{/palettePages}}
+]
+
+/** The entities whose rows it finds by name, and where a match opens. */
+const ENTITIES: PaletteEntity[] = [
+{{#paletteEntities}}
+  {
+    label: {{{entityLabelPluralExpr}}},
+    path: '/api/{{entityNamePluralKebab}}',
+    keyOf: r => {{{rowKeyTs}}},
+    labelOf: r => {{{rowLabelTs}}},
+{{#hasRecordPage}}
+    recordPage: '{{recordPageId}}',
+{{/hasRecordPage}}
+{{#hasListPage}}
+    listPage: '{{listPageId}}',
+{{/hasListPage}}
+  },
+{{/paletteEntities}}
+]
+{{/shellPalette}}
+{{#shellNotifications}}
+
+/** The workflows whose tasks are assigned: the bell counts what waits in each. */
+const BELL: BellSource[] = [
+{{#bellSources}}
+  {
+    label: {{{entityLabelPluralExpr}}},
+    path: '/api/{{entityNamePluralKebab}}',
+{{#hasDue}}
+    due: { param: '{{dueField}}To', dateTime: {{dueIsDateTime}} },
+{{/hasDue}}
+{{#hasBellPage}}
+    page: '{{bellPageId}}',
+{{/hasBellPage}}
+{{#hasBellQueues}}
+    queues: {{{bellQueuesTs}}},
+{{/hasBellQueues}}
+  },
+{{/bellSources}}
+]
+{{/shellNotifications}}
+
+/**
+ * The header's tools — what the layout's `nav` asked for: the "go to anything" palette (Ctrl+K),
+ * the bell over the workflows' queues and the signed-in user's menu.
+ */
+export function ShellTools({ onNavigate, children }: Props) {
+{{#shellPalette}}
+{{#hasPageRoles}}
+  // A page this user's roles do not open is not offered either.
+  const roles = useRoles()
+  const pages = PAGES.filter(p => canSee(p.id as View, roles))
+{{/hasPageRoles}}
+{{/shellPalette}}
+  return (
+    <div className="flex items-center gap-2">
+{{#shellPalette}}
+      <CommandPalette pages={ {{#hasPageRoles}}pages{{/hasPageRoles}}{{^hasPageRoles}}PAGES{{/hasPageRoles}} } entities={ENTITIES} onNavigate={onNavigate} />
+{{/shellPalette}}
+{{#shellNotifications}}
+      <NotificationBell sources={BELL} onNavigate={onNavigate} />
+{{/shellNotifications}}
+      {children}
+{{#shellUserMenu}}
+      <UserMenu{{#shellPalette}} palette{{/shellPalette}} />
+{{/shellUserMenu}}
+    </div>
+  )
+}

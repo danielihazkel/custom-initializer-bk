@@ -142,6 +142,9 @@ export default function App() {
 {{/hasPages}}
 {{#hasPages}}
 import { useRoute, type View } from '@app/route'
+{{#hasShellTools}}
+import { ShellTools } from '@app/shell/ShellTools'
+{{/hasShellTools}}
 {{#hasPageRoles}}
 import { canSee, useRoles } from '@app/access'
 {{/hasPageRoles}}
@@ -462,6 +465,9 @@ export default function App() {
               />
             </form>
 {{/hasShellSearch}}
+{{#hasShellTools}}
+          <ShellTools onNavigate={(page, arg, query) => go(page as View, arg, query)}>
+{{/hasShellTools}}
           <button
             onClick={toggle}
             className="rounded-lg border border-border p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
@@ -470,6 +476,9 @@ export default function App() {
           >
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
+{{#hasShellTools}}
+          </ShellTools>
+{{/hasShellTools}}
 {{#hasShellSearch}}
           </div>
 {{/hasShellSearch}}

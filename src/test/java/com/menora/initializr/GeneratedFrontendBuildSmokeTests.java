@@ -377,6 +377,35 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendShellToolsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // Round 10, phase 8: the header's three tools on the Approvals layout — the palette over its
+        // pages and entities, the bell over the claims' queues, the user menu.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackShellToolsTests.approvals("react-tailwind-crud", "userMenu", "notifications", "commandPalette"));
+        assertThat(project.resolve("src/app/shell/ShellTools.tsx")).isRegularFile();
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fullstackFrontendMenoraShellToolsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // The same in the Menora shell, in Hebrew, with a page limited to a role: the palette
+        // then offers its pages through the role check.
+        Map<String, Object> body = FullstackShellToolsTests.approvals("react-menora-digital-crud", "userMenu", "notifications", "commandPalette");
+        body.put("locale", "he");
+        for (Map<String, Object> page : (List<Map<String, Object>>) body.get("pages")) {
+            if ("cost-centers".equals(page.get("id"))) page.put("roles", List.of("ADMIN"));
+        }
+        Path project = postAndExtractFrontend(workDir, body);
+        assertThat(Files.readString(project.resolve("src/app/shell/ShellTools.tsx"))).contains("canSee(p.id as View, roles)");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendQuotedLabelsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // Every label with an apostrophe, a double quote, a backslash, braces and angle brackets:
         // spliced into TS literals, JSX attributes and JSX children across list pages, forms,

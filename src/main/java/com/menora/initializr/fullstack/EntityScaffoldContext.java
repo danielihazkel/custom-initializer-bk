@@ -105,6 +105,8 @@ public final class EntityScaffoldContext {
                 .anyMatch(f -> f.type().isMarkdown()));
         // Any workflow: the shared WorkflowException, CurrentUser and GET /api/me (both render paths).
         ctx.put("hasWorkflows", entities.stream().anyMatch(e -> e.workflow() != null));
+        // ...which a shell that shows the signed-in user needs too: each render path adds its own.
+        ctx.put("usesCurrentUser", entities.stream().anyMatch(e -> e.workflow() != null));
         // Demo-data seeding order (optScaffoldSeedData): parents before children, writable only.
         List<Map<String, Object>> seedViews = buildSeedOrder(entities, entityViews);
         ctx.put("seedEntities", seedViews);
@@ -137,6 +139,16 @@ public final class EntityScaffoldContext {
         boolean navTopbar = navSettings != null && navSettings.style() == PageDefinition.NavStyle.TOPBAR;
         ctx.put("navTopbar", navTopbar);
         ctx.put("navCollapsibleGroups", navSettings != null && navSettings.collapsibleGroups());
+        // The header's tools (both shells): nothing of them without the setting.
+        boolean shellUserMenu = navSettings != null && navSettings.userMenu();
+        boolean shellNotifications = navSettings != null && navSettings.notifications();
+        boolean shellPalette = navSettings != null && navSettings.commandPalette();
+        ctx.put("shellUserMenu", shellUserMenu);
+        ctx.put("shellNotifications", shellNotifications);
+        ctx.put("shellPalette", shellPalette);
+        ctx.put("hasShellTools", shellUserMenu || shellNotifications || shellPalette);
+        ctx.put("shellPopovers", shellUserMenu || shellNotifications);
+        if (shellUserMenu || shellNotifications) ctx.put("usesCurrentUser", true);
         if (pages.isEmpty()) return;
 
         Map<String, Map<String, Object>> entityByPascal = new LinkedHashMap<>();
@@ -655,6 +667,9 @@ public final class EntityScaffoldContext {
         ctx.put("crumbPages", crumbs);
         ctx.put("hasBreadcrumbs", !crumbs.isEmpty());
         ctx.put("hasPageRoles", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasRoles"))));
+        if (shellUserMenu || shellNotifications || shellPalette) {
+            putShell(ctx, pages, nav, all, shellPalette, shellNotifications, links, summaries);
+        }
         // The shell declares its `goView` helper only when some screen takes onNavigate.
         ctx.put("hasNavigatingScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("needsNavigate"))));
         // ...and its `setQuery` (a route rewrite) only when a routed screen keeps state in the hash.
@@ -1064,6 +1079,79 @@ public final class EntityScaffoldContext {
         pv.put("drawerGroups", groups.stream().filter(g -> !Boolean.TRUE.equals(g.get("hasRecordPage"))).toList());
         pv.put("needsNavigate", navigates);
     }
+
+    /**
+     * The header's tools ({@code ShellTools.tsx}): what the palette offers — {@code palettePages},
+     * the nav's pages and the hidden forms that start a record, and {@code paletteEntities}, every
+     * entity that is searched by text and has somewhere to open a match — and what the bell counts,
+     * {@code bellSources}: every workflow that assigns its tasks, with the page they are worked on.
+     */
+    @SuppressWarnings("unchecked")
+    private static void putShell(Map<String, Object> ctx, List<PageDefinition> pages, List<Map<String, Object>> nav,
+                                 List<Map<String, Object>> all, boolean palette, boolean notifications,
+                                 PageLinks links, Map<String, Map<String, Object>> summaries) {
+        List<Map<String, Object>> entityViews = (List<Map<String, Object>>) ctx.get("entities");
+        List<Object> exprs = new ArrayList<>();
+        if (palette) {
+            List<Map<String, Object>> palettePages = new ArrayList<>(nav);
+            all.stream().filter(v -> Boolean.TRUE.equals(v.get("hidden"))
+                            && (Boolean.TRUE.equals(v.get("pageIsWizard")) || Boolean.TRUE.equals(v.get("pageIsForm"))))
+                    .forEach(palettePages::add);
+            ctx.put("palettePages", palettePages);
+            palettePages.forEach(v -> exprs.add(v.get("pageTitleExpr")));
+            List<Map<String, Object>> found = new ArrayList<>();
+            for (Map<String, Object> ev : entityViews) {
+                if (found.size() == MAX_PALETTE_ENTITIES) break;
+                if (!Boolean.TRUE.equals(ev.get("hasStringFields"))) continue;
+                String name = (String) ev.get("entityDeclaredName");
+                Map<String, Object> gv = new LinkedHashMap<>();
+                putEntityNames(gv, ev);
+                putRowNaming(gv, ev, summaries.get(name.toLowerCase(Locale.ROOT)));
+                putRecordLink(gv, "", name, links, summaries);
+                String list = links.listPageOf(name);
+                gv.put("hasListPage", list != null);
+                gv.put("listPageId", list);
+                // A match needs somewhere to open: the record's page, else the entity's list.
+                if (list == null && !Boolean.TRUE.equals(gv.get("hasRecordPage"))) continue;
+                found.add(gv);
+            }
+            ctx.put("paletteEntities", found);
+        }
+        if (notifications) {
+            List<Map<String, Object>> sources = new ArrayList<>();
+            for (Map<String, Object> ev : entityViews) {
+                if (!Boolean.TRUE.equals(ev.get("hasWorkflow")) || !Boolean.TRUE.equals(ev.get("hasAssignee"))) continue;
+                String name = (String) ev.get("entityDeclaredName");
+                Map<String, Object> sv = new LinkedHashMap<>();
+                putEntityNames(sv, ev);
+                Object due = ev.get("dueField");
+                sv.put("hasDue", due != null);
+                if (due != null) {
+                    sv.put("dueField", due);
+                    sv.put("dueIsDateTime", ((List<Map<String, Object>>) ev.get("fields")).stream()
+                            .anyMatch(f -> due.equals(f.get("name")) && Boolean.TRUE.equals(f.get("isDateTime"))));
+                }
+                // Where the tasks are worked on: the entity's inbox page in the nav, else its home.
+                PageDefinition inbox = pages.stream()
+                        .filter(p -> p.type() == PageDefinition.Type.INBOX && !p.hidden() && name.equals(p.entity()))
+                        .findFirst().orElse(null);
+                String page = inbox != null ? inbox.id() : links.homeOf(name);
+                sv.put("hasBellPage", page != null);
+                sv.put("bellPageId", page);
+                sv.put("hasBellQueues", inbox != null);
+                if (inbox != null) {
+                    sv.put("bellQueuesTs", "[" + String.join(", ", inbox.inbox().queues().stream()
+                            .map(q -> tsString(q.wire())).toList()) + "]");
+                }
+                sources.add(sv);
+            }
+            ctx.put("bellSources", sources);
+        }
+        ctx.put("shellUsesT", exprs.stream().anyMatch(e -> e instanceof String s && s.contains("t(")));
+    }
+
+    /** The entities the palette searches at once: each is a request per keystroke pause. */
+    private static final int MAX_PALETTE_ENTITIES = 8;
 
     /** The names a screen over one entity imports its hooks, types and pages by. */
     private static void putEntityNames(Map<String, Object> view, Map<String, Object> ev) {
@@ -2859,6 +2947,8 @@ public final class EntityScaffoldContext {
         String snakePlural = Naming.pluralize(snake);
 
         view.put("EntityName", pascal);
+        // The name as the model spells it — what pages and their links are keyed by.
+        view.put("entityDeclaredName", entity.name());
         view.put("entityName", camel);
         view.put("entity_name", snake);
         view.put("entityNameKebab", kebab);
