@@ -36,6 +36,24 @@
         ]
       },
       {
+        "name": "Tag",
+        "fields": [
+          {
+            "name": "id",
+            "type": "LONG",
+            "primaryKey": true,
+            "generated": true
+          },
+          {
+            "name": "name",
+            "type": "STRING",
+            "required": true,
+            "unique": true,
+            "length": 40
+          }
+        ]
+      },
+      {
         "name": "Post",
         "listViews": [
           "table",
@@ -80,6 +98,11 @@
             "fieldName": "author",
             "targetEntity": "Author",
             "required": true
+          },
+          {
+            "type": "MANY_TO_MANY",
+            "fieldName": "tags",
+            "targetEntity": "Tag"
           }
         ]
       },
@@ -193,6 +216,13 @@
         "group": "Content",
         "icon": "FileText",
         "entity": "Post"
+      },
+      {
+        "id": "tags",
+        "type": "entity-list",
+        "group": "Content",
+        "icon": "Tag",
+        "entity": "Tag"
       },
       {
         "id": "authors",
@@ -359,6 +389,11 @@
             "fieldName": "customer",
             "targetEntity": "Customer",
             "required": true
+          },
+          {
+            "type": "ONE_TO_MANY",
+            "fieldName": "lines",
+            "targetEntity": "OrderLine"
           }
         ]
       },
@@ -1770,7 +1805,7 @@
           },
           {
             "name": "budget",
-            "type": "BIG_DECIMAL",
+            "type": "MONEY",
             "min": 0
           }
         ]
@@ -1796,7 +1831,7 @@
           },
           {
             "name": "amount",
-            "type": "BIG_DECIMAL",
+            "type": "MONEY",
             "required": true,
             "min": 0
           },
@@ -1846,12 +1881,16 @@
           },
           {
             "name": "approvedAmount",
-            "type": "BIG_DECIMAL",
+            "type": "MONEY",
             "min": 0
           },
           {
             "name": "rejectionReason",
             "type": "TEXT"
+          },
+          {
+            "name": "receipt",
+            "type": "FILE"
           }
         ],
         "relations": [
@@ -1870,7 +1909,8 @@
               "amount",
               "category",
               "spentOn",
-              "costCenter"
+              "costCenter",
+              "receipt"
             ]
           },
           {

@@ -1160,6 +1160,7 @@ class FullstackPagesIntegrationTests {
                 .contains("ActivityFeed,")
                 .contains("        <ActivityFeed\n          title={ t('recentActivity') }\n          sources={ [\n"
                         + "            { path: '/api/authors', label: 'Author', displayField: 'name' },\n"
+                        + "            { path: '/api/tags', label: 'Tag', displayField: 'name' },\n"
                         + "            { path: '/api/posts', label: 'Post', displayField: 'title', onOpen: row => onNavigate('post', String(row['id'])) },\n"
                         + "            { path: '/api/comments', label: 'Comment', displayField: 'id' },\n"
                         + "          ] }\n          limit={ 10 }\n")

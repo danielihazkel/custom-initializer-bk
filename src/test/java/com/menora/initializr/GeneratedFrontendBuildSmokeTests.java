@@ -362,6 +362,30 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendBlogLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Blog example with its layout: a many-to-many (Post.tags) under page mode — the list
+        // page, the record page's details, the form drawer and the tags' own list page.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("blog", "react-tailwind-crud");
+        // The example's own setting: its home page has an activity feed, which reads audit columns.
+        body.put("opts", Map.of("scaffold", List.of("audit")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraBlogLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("blog", "react-menora-digital-crud");
+        // The example's own setting: its home page has an activity feed, which reads audit columns.
+        body.put("opts", Map.of("scaffold", List.of("audit")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendOneToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // The child-row tables in the details, with their label-map imports (once per child
         // entity, none for an entity's own rows).

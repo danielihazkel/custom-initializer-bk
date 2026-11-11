@@ -766,7 +766,7 @@ A `POST /starter-fullstack.preview` endpoint returns the same file tree as JSON 
 }
 ```
 
-Supported `type` values (v1, primitives only — no relationships): `String`, `Long`, `Integer`, `Boolean`, `LocalDate`, `LocalDateTime`, `BigDecimal`, `Enum`. `length` is only valid on `String`; `enumValues` is required and only valid on `Enum`.
+Supported `type` values (the original set — relations (`MANY_TO_ONE`, `MANY_TO_MANY`, `ONE_TO_MANY`) and more types (`LocalTime`, `Instant`, `Money`, `Markdown`, `File`, `Image`, `Text`, `UUID`) came later; `GET /metadata/fullstack/schema` is the current list): `String`, `Long`, `Integer`, `Boolean`, `LocalDate`, `LocalDateTime`, `BigDecimal`, `Enum`. `length` is only valid on `String`; `enumValues` is required and only valid on `Enum`.
 
 **Example — generate a shop:**
 
