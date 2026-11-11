@@ -99,6 +99,19 @@ public final class GeneratedProjectFiles {
         }
     }
 
+    /** Every file under {@code dir}: path (relative, {@code /}-separated) → bytes, sorted by path. */
+    public static java.util.Map<String, byte[]> readTree(Path dir) throws IOException {
+        java.util.Map<String, byte[]> files = new java.util.TreeMap<>();
+        List<Path> paths;
+        try (Stream<Path> walk = Files.walk(dir)) {
+            paths = walk.filter(Files::isRegularFile).toList();
+        }
+        for (Path file : paths) {
+            files.put(dir.relativize(file).toString().replace('\\', '/'), Files.readAllBytes(file));
+        }
+        return files;
+    }
+
     /**
      * Read a generated file as UTF-8 text for the preview response. Binary content (or an
      * unreadable file) yields a placeholder rather than failing the whole preview.

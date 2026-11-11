@@ -3319,8 +3319,13 @@ class FullstackStarterIntegrationTests {
         body.put("entities", List.of(task));
         body.put("editorModel", snapshot);
         Map<String, String> entries = generateZip(body);
-        assertThat(mapper.readTree(entries.get("ops/menora-model.json"))).isEqualTo(mapper.valueToTree(snapshot));
-        assertThat(entries.get("ops/README.md")).contains("## Reopen in the generator").contains("menora-model.json");
+        com.fasterxml.jackson.databind.node.ObjectNode shipped =
+                (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(entries.get("ops/menora-model.json"));
+        // …followed by what the project was rendered with, which is never part of the model.
+        assertThat(shipped.remove("generator").path("templatesHash").asText()).matches("[0-9a-f]{64}");
+        assertThat(shipped).isEqualTo(mapper.valueToTree(snapshot));
+        assertThat(entries.get("ops/README.md")).contains("## Reopen in the generator").contains("menora-model.json")
+                .contains("**Download update**").contains("git apply --3way");
 
         // Without one (curl, an IDE), the file holds the request itself — what was sent, not the
         // dependencies the template set added.

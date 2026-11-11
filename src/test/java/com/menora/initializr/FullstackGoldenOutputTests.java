@@ -126,7 +126,14 @@ class FullstackGoldenOutputTests {
         for (Map.Entry<String, byte[]> e : files.entrySet()) {
             byte[] bytes = e.getValue();
             if (isText(bytes)) {
-                bytes = new String(bytes, StandardCharsets.UTF_8).replace("\r\n", "\n").getBytes(StandardCharsets.UTF_8);
+                String text = new String(bytes, StandardCharsets.UTF_8).replace("\r\n", "\n");
+                // The model file names the templates it was rendered with. Pinning that id would
+                // change every manifest whenever any template changes, and hide which cases a
+                // template edit really reaches — so it is pinned as "an id is there".
+                if (e.getKey().endsWith("/menora-model.json")) {
+                    text = text.replaceAll("\"templatesHash\" : \"[0-9a-f]{64}\"", "\"templatesHash\" : \"<templates>\"");
+                }
+                bytes = text.getBytes(StandardCharsets.UTF_8);
             }
             result.put(e.getKey(), HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));
         }
