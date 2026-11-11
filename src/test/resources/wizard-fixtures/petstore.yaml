@@ -1,0 +1,227 @@
+openapi: 3.0.3
+info:
+  title: Petstore
+  description: Every shape the OpenAPI wizard renders differently (WizardGoldenOutputTests).
+  version: 1.0.0
+paths:
+  /pets:
+    get:
+      tags: [pets]
+      operationId: listPets
+      summary: List pets, newest first
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, format: int32 }
+        - name: status
+          in: query
+          required: true
+          schema: { type: string, enum: [available, sold] }
+        - name: X-Request-Id
+          in: header
+          schema: { type: string, format: uuid }
+        - name: session
+          in: cookie
+          schema: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Pet' }
+    post:
+      tags: [pets]
+      operationId: createPet
+      summary: Create a pet */ with a comment terminator in its summary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewPet' }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pet' }
+  /pets/{petId}:
+    get:
+      tags: [pets]
+      operationId: getPetById
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pet' }
+        default:
+          description: error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Problem' }
+    put:
+      tags: [pets]
+      operationId: updatePet
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Pet' }
+      responses:
+        default:
+          description: the updated pet
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pet' }
+    patch:
+      tags: [pets]
+      operationId: getPetById
+      summary: An operation id used twice
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+      responses:
+        '204':
+          description: no content
+    delete:
+      tags: [pets]
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204':
+          description: gone
+  /pets/{petId}/photo:
+    post:
+      tags: [pets, media]
+      operationId: upload-photo
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: ok
+          content:
+            text/plain:
+              schema: { type: string }
+  /owners:
+    get:
+      tags: [pet owners]
+      operationId: listOwners
+      parameters:
+        - name: bornAfter
+          in: query
+          schema: { type: string, format: date }
+        - name: tags
+          in: query
+          schema:
+            type: array
+            items: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Owner' }
+  /health:
+    get:
+      summary: An operation with no tag and no id
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: { type: string }
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        status: { type: string, enum: [available, sold] }
+        weight: { type: number, format: float }
+        price: { type: number }
+        age: { type: integer }
+        vaccinated: { type: boolean }
+        chip: { type: string, format: uuid }
+        born: { type: string, format: date }
+        seenAt: { type: string, format: date-time }
+        photo: { type: string, format: byte }
+        tags:
+          type: array
+          items: { type: string }
+        owner: { $ref: '#/components/schemas/Owner' }
+        visits:
+          type: array
+          items: { $ref: '#/components/schemas/Visit' }
+        extra: { type: object }
+    NewPet:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        owner-id: { type: integer, format: int64 }
+    Owner:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        full_name: { type: string }
+        pets:
+          type: array
+          items: { $ref: '#/components/schemas/Pet' }
+    Visit:
+      type: object
+      properties:
+        at: { type: string, format: date-time }
+        notes: { type: string }
+    Problem:
+      type: object
+      properties:
+        code: { type: integer }
+        message: { type: string }
+    PetOrOwner:
+      oneOf:
+        - $ref: '#/components/schemas/Pet'
+        - $ref: '#/components/schemas/Owner'
+    DetailedPet:
+      allOf:
+        - $ref: '#/components/schemas/Pet'
+        - type: object
+          properties:
+            pedigree: { type: string }
+    Empty:
+      type: object
