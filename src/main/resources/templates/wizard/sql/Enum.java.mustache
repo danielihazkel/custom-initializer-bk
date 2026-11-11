@@ -1,0 +1,11 @@
+package {{package}};
+
+/**
+ * The values {@code {{table}}.{{column}}} may hold (its CHECK constraint). Each constant is spelt
+ * as the database stores the value: the column is mapped {@code @Enumerated(EnumType.STRING)}.
+ */
+public enum {{className}} {
+{{#constants}}
+    {{name}}{{^last}},{{/last}}
+{{/constants}}
+}

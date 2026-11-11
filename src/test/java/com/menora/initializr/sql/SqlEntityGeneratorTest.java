@@ -798,7 +798,20 @@ class SqlEntityGeneratorTest {
         assertThat(files).extracting(GeneratedJavaFile::relativePath)
                 .anyMatch(p -> p.endsWith("entity/Logline.java"))
                 .noneMatch(p -> p.contains("/controller/"))
-                .noneMatch(p -> p.contains("/dto/"));
+                .noneMatch(p -> p.contains("/dto/"))
+                // …and no repository: the class is not an entity (below).
+                .noneMatch(p -> p.contains("/repository/"));
+        // A table without a key cannot be a JPA entity: Hibernate refuses one with no @Id, and
+        // the application did not start because of it. The class is written with its mapping and
+        // a note, without @Entity, so one log table does not take the project down.
+        assertThat(findFile(files, "entity/Logline.java").content())
+                .contains("// TODO: logline has no primary key, and a JPA entity needs an @Id")
+                .contains("// @Entity\n@Table(name = \"logline\")")
+                .doesNotContain("\n@Entity\n")
+                .contains("private String message;");
+        // A table with a key is an entity as before.
+        assertThat(findFile(generator.generate("CREATE TABLE keyed (id BIGINT PRIMARY KEY);", SqlDialect.POSTGRESQL, "p", null),
+                "entity/Keyed.java").content()).contains("\n@Entity\n@Table(name = \"keyed\")").doesNotContain("TODO");
     }
 
     // ── SELECT import (read-only view) ─────────────────────────────────────────
@@ -975,6 +988,157 @@ class SqlEntityGeneratorTest {
         assertThat(p.heuristic()).isTrue();
         assertThat(p.columns()).containsExactly("id", "name");
         assertThat(p.rawSql()).contains("MODEL");
+    }
+
+    // ── Constraints: ALTER TABLE, UNIQUE, CHECK … IN ─────────────────────────
+
+    @Test
+    void constraintsDeclaredByAlterTableAreRead() {
+        // pg_dump, SSMS and most schema exports create the table bare and add its constraints
+        // afterwards. ALTER used to be skipped whole: no key (so no repository, no REST stack)
+        // and no associations.
+        String sql = """
+                CREATE TABLE authors (id BIGINT NOT NULL, name VARCHAR(100));
+                CREATE TABLE books (id BIGINT NOT NULL, author_id BIGINT NOT NULL, isbn VARCHAR(20), title VARCHAR(200));
+                ALTER TABLE ONLY public.authors ADD CONSTRAINT authors_pkey PRIMARY KEY (id);
+                ALTER TABLE ONLY books ADD CONSTRAINT books_pkey PRIMARY KEY (id);
+                ALTER TABLE "books" ADD CONSTRAINT books_author_fk FOREIGN KEY (author_id) REFERENCES public.authors(id);
+                ALTER TABLE books ADD CONSTRAINT books_isbn UNIQUE (isbn);
+                ALTER TABLE books ADD CONSTRAINT books_once UNIQUE (author_id, title);
+                ALTER TABLE books ADD COLUMN pages INTEGER;
+                ALTER TABLE elsewhere ADD CONSTRAINT x PRIMARY KEY (id);
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.ENTITY_DIRECT));
+        String books = findFile(files, "entity/Books.java").content();
+        assertThat(books)
+                .contains("    @Id\n    @Column(nullable = false)\n    private Long id;")
+                .contains("    @ManyToOne(fetch = FetchType.LAZY)\n    @JoinColumn(name = \"author_id\", nullable = false)\n    private Authors author;")
+                // One column: on the column. Several: on the table.
+                .contains("    @Column(unique = true, length = 20)\n    private String isbn;")
+                .contains("@Table(name = \"books\", uniqueConstraints = {@UniqueConstraint(columnNames = {\"author_id\", \"title\"})})")
+                .contains("import jakarta.persistence.UniqueConstraint;")
+                // ADD COLUMN is not a constraint: skipped as before.
+                .doesNotContain("pages");
+        // A key means a repository and the REST stack.
+        assertThat(files).extracting(GeneratedJavaFile::relativePath)
+                .contains("src/main/java/{{packagePath}}/repository/BooksRepository.java",
+                        "src/main/java/{{packagePath}}/controller/AuthorsController.java");
+    }
+
+    @Test
+    void tableLevelUniqueAndInlineUniqueAreMapped() {
+        String sql = """
+                CREATE TABLE seats (
+                    id BIGINT PRIMARY KEY,
+                    code VARCHAR(10) UNIQUE,
+                    hall VARCHAR(10) NOT NULL,
+                    row_no INTEGER NOT NULL,
+                    seat_no INTEGER NOT NULL,
+                    tag VARCHAR(30),
+                    UNIQUE (hall, row_no, seat_no),
+                    CONSTRAINT seats_tag UNIQUE (tag)
+                );
+                """;
+        String seats = findFile(generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo", null), "entity/Seats.java").content();
+        assertThat(seats)
+                .contains("@Column(unique = true, length = 10)\n    private String code;")
+                .contains("@Column(unique = true, length = 30)\n    private String tag;")
+                .contains("uniqueConstraints = {@UniqueConstraint(columnNames = {\"hall\", \"row_no\", \"seat_no\"})}")
+                // The key is unique by being the key: no unique = true on it.
+                .contains("    @Id\n    @Column(nullable = false)\n    private Long id;");
+
+        // A ';' or an apostrophe inside a comment is prose: it used to cut the statement in two.
+        String commented = """
+                -- seats; the hall's own
+                CREATE TABLE seats (
+                    id BIGINT PRIMARY KEY, /* the key; it's generated elsewhere */
+                    code VARCHAR(10) -- unique; see the index
+                );
+                """;
+        assertThat(findFile(generator.generate(commented, SqlDialect.POSTGRESQL, "com.menora.demo", null), "entity/Seats.java").content())
+                .contains("private String code;");
+    }
+
+    @Test
+    void aCheckInBecomesAnEnumOnlyWhenItsValuesAreJavaNames() {
+        // The enum is written to the column as its constants are spelt (EnumType.STRING), and
+        // the database already holds the values: 'OPEN' can be a constant, 'in progress' cannot.
+        String sql = """
+                CREATE TABLE tickets (
+                    id BIGINT PRIMARY KEY,
+                    status VARCHAR(20) NOT NULL CHECK (status IN ('OPEN', 'closed')),
+                    stage VARCHAR(20),
+                    priority VARCHAR(20) CHECK (priority IN ('low', 'very high')),
+                    kind VARCHAR(10),
+                    CONSTRAINT tickets_stage CHECK (stage IN ('new', 'default')),
+                    CHECK (kind IN ('BUG', 'TASK'))
+                );
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.INLINE_DTO));
+        String tickets = findFile(files, "entity/Tickets.java").content();
+        assertThat(tickets)
+                .contains("    @Enumerated(EnumType.STRING)\n    @Column(nullable = false, length = 20)\n    private TicketsStatus status;")
+                .contains("    @Enumerated(EnumType.STRING)\n    @Column(length = 10)\n    private TicketsKind kind;")
+                .contains("import jakarta.persistence.EnumType;").contains("import jakarta.persistence.Enumerated;")
+                // 'very high' is not a Java name, 'default' is a keyword: both stay text.
+                .contains("    @Column(length = 20)\n    private String priority;")
+                .contains("    @Column(length = 20)\n    private String stage;")
+                // Same package: no import of the enum.
+                .doesNotContain("import com.menora.demo.entity.TicketsStatus;");
+        assertThat(findFile(files, "entity/TicketsStatus.java").content())
+                .contains("public enum TicketsStatus {\n    OPEN,\n    closed\n}");
+        assertThat(files).extracting(GeneratedJavaFile::relativePath)
+                .doesNotContain("src/main/java/{{packagePath}}/entity/TicketsPriority.java",
+                        "src/main/java/{{packagePath}}/entity/TicketsStage.java");
+        // The DTO carries the same type, imported from the entity package.
+        assertThat(findFile(files, "dto/TicketsDto.java").content())
+                .contains("import com.menora.demo.entity.TicketsStatus;")
+                .contains("        TicketsStatus status,");
+    }
+
+    @Test
+    void aCompositeKeyPartThatIsAForeignKeyStaysAKeyField() {
+        // order_items(order_id, line_no) with order_id → orders: the entity replaced the key
+        // column with the association, so OrderItemsId.orderId had no property to bind to and
+        // Hibernate refused the entity (the application did not start). The key part stays a
+        // scalar @Id; the association reads through the same column and is never written.
+        String sql = """
+                CREATE TABLE orders (id BIGINT PRIMARY KEY, reference VARCHAR(40));
+                CREATE TABLE order_items (
+                    order_id BIGINT NOT NULL,
+                    line_no INTEGER NOT NULL,
+                    quantity INTEGER,
+                    PRIMARY KEY (order_id, line_no),
+                    FOREIGN KEY (order_id) REFERENCES orders(id)
+                );
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.INLINE_DTO));
+        assertThat(findFile(files, "entity/OrderItems.java").content())
+                .contains("@IdClass(OrderItemsId.class)")
+                .contains("    @Id\n    @Column(name = \"order_id\", nullable = false)\n    private Long orderId;")
+                .contains("    @ManyToOne(fetch = FetchType.LAZY)\n"
+                        + "    @JoinColumn(name = \"order_id\", insertable = false, updatable = false)\n    private Orders order;");
+        assertThat(findFile(files, "entity/OrderItemsId.java").content()).contains("private Long orderId;").contains("private Integer lineNo;");
+        // The DTO carries the key part as itself; nothing is flagged as left out.
+        assertThat(findFile(files, "dto/OrderItemsDto.java").content())
+                .contains("        Long orderId,\n        Integer lineNo,\n        Integer quantity\n")
+                .doesNotContain("TODO");
+        // An update never rewrites the key.
+        assertThat(findFile(files, "service/OrderItemsService.java").content())
+                .contains("existing.setQuantity(updated.getQuantity());").doesNotContain("setOrderId(").doesNotContain("setOrder(");
+    }
+
+    @Test
+    void anUnknownApiModeIsRefused() {
+        // It used to fall back to NONE: a misspelt mode generated entities only, saying nothing.
+        assertThat(SqlApiMode.parse(null)).isEqualTo(SqlApiMode.NONE);
+        assertThat(SqlApiMode.parse(" inline_dto ")).isEqualTo(SqlApiMode.INLINE_DTO);
+        assertThatThrownBy(() -> SqlApiMode.parse("DTO"))
+                .isInstanceOf(com.menora.initializr.config.WizardArgumentException.class)
+                .hasMessageContaining("Unknown SQL wizard apiMode: 'DTO'");
     }
 
     // ── Helper ───────────────────────────────────────────────────────────────

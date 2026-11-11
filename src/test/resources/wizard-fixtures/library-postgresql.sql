@@ -78,6 +78,30 @@ CREATE TABLE inv.stock_levels (
     counted_at TIMESTAMP
 );
 
+-- A column a CHECK limits to a set of values is an enum; one whose values are not Java
+-- identifiers stays text. And a UNIQUE over two columns.
+CREATE TABLE memberships (
+    id BIGSERIAL PRIMARY KEY,
+    author_id BIGINT NOT NULL,
+    tier VARCHAR(20) NOT NULL CHECK (tier IN ('BASIC', 'GOLD', 'PLATINUM')),
+    channel VARCHAR(20) CHECK (channel IN ('e-mail', 'post')),
+    starts_on DATE NOT NULL,
+    UNIQUE (author_id, starts_on)
+);
+
+-- Constraints declared after the table, the way pg_dump writes them.
+CREATE TABLE reviews (
+    id BIGINT NOT NULL,
+    book_id BIGINT NOT NULL,
+    reviewer VARCHAR(120) NOT NULL,
+    stars INTEGER
+);
+ALTER TABLE ONLY reviews ADD CONSTRAINT reviews_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY reviews ADD CONSTRAINT reviews_book_fk FOREIGN KEY (book_id) REFERENCES books(id);
+ALTER TABLE reviews ADD CONSTRAINT reviews_once UNIQUE (book_id, reviewer);
+ALTER TABLE memberships ADD CONSTRAINT memberships_author_fk FOREIGN KEY (author_id) REFERENCES public.authors (id);
+ALTER TABLE authors ADD COLUMN an_alter_the_wizard_skips VARCHAR(10);
+
 -- No primary key: entity only, no REST stack.
 CREATE TABLE audit_log (
     happened_at TIMESTAMP NOT NULL,

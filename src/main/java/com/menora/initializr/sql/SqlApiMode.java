@@ -20,13 +20,18 @@ import java.util.Locale;
 public enum SqlApiMode {
     NONE, ENTITY_DIRECT, INLINE_DTO, MAPSTRUCT_DTO;
 
-    /** Lenient parse — null/blank/unknown falls back to {@link #NONE}. */
+    /**
+     * Null or blank is {@link #NONE}; anything else must be one of the modes. An unknown value
+     * used to fall back to {@code NONE} silently — a misspelt mode generated entities only, with
+     * nothing to say why — and is now a 400, like the OpenAPI and SOAP wizards' modes.
+     */
     public static SqlApiMode parse(String raw) {
         if (raw == null || raw.isBlank()) return NONE;
         try {
             return SqlApiMode.valueOf(raw.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            return NONE;
+            throw new com.menora.initializr.config.WizardArgumentException(
+                    "Unknown SQL wizard apiMode: '" + raw + "'. Valid values: NONE, ENTITY_DIRECT, INLINE_DTO, MAPSTRUCT_DTO");
         }
     }
 

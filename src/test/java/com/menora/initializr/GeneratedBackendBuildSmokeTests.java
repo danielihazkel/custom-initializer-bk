@@ -354,7 +354,44 @@ class GeneratedBackendBuildSmokeTests {
         Files.writeString(file, source, StandardCharsets.UTF_8);
     }
 
+    @ParameterizedTest(name = "apiMode {0}")
+    @ValueSource(strings = {"INLINE_DTO", "ENTITY_DIRECT"})
+    void sqlWizardBackendCompilesAndCreatesItsSchema(String apiMode, @TempDir Path workDir) throws Exception {
+        // What the SQL wizard writes had no build at all. The library script under the h2
+        // dependency: the project compiles, and its context-load test starts Hibernate, which
+        // creates the schema from the generated entities (ddl-auto is create-drop on H2) — so the
+        // mappings are real: composite keys and foreign keys, a shared-key one-to-one, unique
+        // constraints, the enum behind a CHECK, constraints added by ALTER TABLE, a view.
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "library");
+        body.put("packageName", "com.menora.library");
+        body.put("bootVersion", "3.2.1");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        body.put("sqlByDep", Map.of("h2", WizardGoldenOutputTests.fixture("library-postgresql.sql")));
+        body.put("sqlOptions", Map.of("h2", Map.of("subPackage", "entity", "apiMode", apiMode)));
+        runMvn(postAndExtractWizard(workDir, body), "-B", "package");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /** A plain or wizard backend from {@code /starter-wizard.zip}, unpacked: the project's own directory. */
+    private Path postAndExtractWizard(Path workDir, Map<String, Object> body) throws Exception {
+        ResponseEntity<byte[]> r = rest.postForEntity("/starter-wizard.zip", body, byte[].class);
+        assertThat(r.getStatusCode())
+                .as(r.getBody() == null ? "" : new String(r.getBody(), StandardCharsets.UTF_8))
+                .isEqualTo(HttpStatus.OK);
+        for (Map.Entry<String, byte[]> e : FullstackExampleRequests.unzip(r.getBody()).entrySet()) {
+            Path target = workDir.resolve(e.getKey()).normalize();
+            assertThat(target.startsWith(workDir)).as("zip entry stays inside the work dir").isTrue();
+            Files.createDirectories(target.getParent());
+            Files.write(target, e.getValue());
+        }
+        Path project = workDir.resolve((String) body.get("artifactId"));
+        assertThat(Files.isRegularFile(project.resolve("pom.xml"))).as("generated pom.xml").isTrue();
+        return project;
+    }
 
     private Path postAndExtractBackend(Path workDir, Map<String, Object> body) throws Exception {
         HttpHeaders headers = new HttpHeaders();

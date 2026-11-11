@@ -78,13 +78,15 @@ public class SqlEntityGenerator {
         }
         for (TableModel table : tables) {
             files.add(renderEntity(table, dialect, packageName, opts, knownTableNames));
+            files.addAll(renderEnums(table, dialect, packageName, opts, knownTableNames));
             if (table.hasCompositePk()) {
                 files.add(renderIdClass(table, dialect, packageName, opts));
             }
             // A generated REST stack needs a repository even if the per-table
             // toggle is off — and only makes sense for an addressable (PK) table.
             boolean apiOn = opts.apiMode().generatesApi() && !table.pkColumns().isEmpty();
-            if (opts.generateRepositoryFor(table.name()) || apiOn) {
+            // …and a repository only for an entity: a table without a key is not one (see the entity template).
+            if ((opts.generateRepositoryFor(table.name()) || apiOn) && !table.pkColumns().isEmpty()) {
                 files.add(renderRepository(table, dialect, packageName, opts));
             }
             if (opts.apiMode().generatesApi() && table.pkColumns().isEmpty()) {
@@ -469,6 +471,75 @@ public class SqlEntityGenerator {
             "^\\s*CREATE\\s+(?:GLOBAL\\s+TEMPORARY\\s+|TEMPORARY\\s+|TEMP\\s+)?TABLE\\b",
             Pattern.CASE_INSENSITIVE);
 
+    private static final Pattern ALTER_TABLE_LEAD = Pattern.compile(
+            "^\\s*ALTER\\s+TABLE\\s+(?:ONLY\\s+)?(?:IF\\s+EXISTS\\s+)?(\\S+)", Pattern.CASE_INSENSITIVE);
+
+    /** One {@code ADD [CONSTRAINT name] PRIMARY KEY|FOREIGN KEY|UNIQUE (cols) [REFERENCES t (cols)]} clause. */
+    private static final Pattern ALTER_ADD_CONSTRAINT = Pattern.compile(
+            "\\bADD\\s+(?:CONSTRAINT\\s+\\S+\\s+)?(PRIMARY\\s+KEY|FOREIGN\\s+KEY|UNIQUE)(?:\\s+(?:NON)?CLUSTERED)?\\s*\\(([^)]*)\\)"
+                    + "(?:\\s*REFERENCES\\s+([^\\s(]+)\\s*\\(([^)]*)\\))?",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    /** {@code CHECK ( col IN ( 'A', 'B' ) )}, the column name optionally quoted. */
+    private static final Pattern CHECK_IN = Pattern.compile(
+            "(?is)CHECK\\s*\\(\\s*[\"`\\[]?(\\w+)[\"`\\]]?\\s+IN\\s*\\(([^)]*)\\)\\s*\\)");
+
+    private static final Pattern JAVA_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+
+    /**
+     * Applies the constraints an {@code ALTER TABLE … ADD …} declares to the table it names, when
+     * that table is in the script (a table created elsewhere is none of the wizard's business).
+     */
+    private static void applyAlterTable(List<TableModel> tables, String stmt) {
+        Matcher lead = ALTER_TABLE_LEAD.matcher(stmt);
+        if (!lead.find()) return;
+        String tableName = bareName(lead.group(1));
+        int index = -1;
+        for (int i = 0; i < tables.size(); i++) {
+            if (!tables.get(i).isView() && tables.get(i).name().equalsIgnoreCase(tableName)) index = i;
+        }
+        if (index < 0) return;
+        TableModel table = tables.get(index);
+        Matcher add = ALTER_ADD_CONSTRAINT.matcher(stmt);
+        while (add.find()) {
+            String kind = add.group(1).toUpperCase(Locale.ROOT).replaceAll("\\s+", " ");
+            List<String> columns = canonicalColumns(table, add.group(2));
+            if (columns.isEmpty()) continue;
+            switch (kind) {
+                case "PRIMARY KEY" -> table = table.withPrimaryKey(columns);
+                case "UNIQUE" -> table = table.withUnique(columns);
+                case "FOREIGN KEY" -> {
+                    if (add.group(3) == null) continue;
+                    List<String> referenced = new ArrayList<>();
+                    for (String c : add.group(4).split(",")) referenced.add(bareName(c));
+                    table = table.withForeignKey(new ForeignKey(columns, bareName(add.group(3)), referenced));
+                }
+                default -> { }
+            }
+        }
+        tables.set(index, table);
+    }
+
+    /** The columns a constraint lists, as the table spells them; empty when one is not the table's. */
+    private static List<String> canonicalColumns(TableModel table, String list) {
+        List<String> out = new ArrayList<>();
+        for (String raw : list.split(",")) {
+            String name = bareName(raw.trim().replaceAll("(?i)\\s+(ASC|DESC)$", ""));
+            ColumnModel column = table.columns().stream().filter(c -> c.name().equalsIgnoreCase(name)).findFirst().orElse(null);
+            if (column == null) return List.of();
+            out.add(column.name());
+        }
+        return out;
+    }
+
+    /** {@code "inv"."Stock Levels"} / {@code [dbo].[Orders]} / {@code public.orders} → the bare, unquoted last part. */
+    private static String bareName(String raw) {
+        String s = raw.trim();
+        int dot = s.lastIndexOf('.');
+        if (dot >= 0 && dot < s.length() - 1) s = s.substring(dot + 1);
+        return unquote(s.trim());
+    }
+
     private List<TableModel> parseTables(String sql, SqlDialect dialect) {
         String prepared = sql;
         if (dialect == SqlDialect.ORACLE)   prepared = normalizeOracle(prepared);
@@ -508,6 +579,13 @@ public class SqlEntityGenerator {
                 TableModel tm = toTableModel(ct, stmt);
                 usedClassNames.add(toPascalCase(tm.name()).toLowerCase(Locale.ROOT));
                 result.add(tm);
+                continue;
+            }
+
+            // ALTER TABLE … ADD PRIMARY KEY / FOREIGN KEY / UNIQUE: how pg_dump, SSMS and most
+            // schema exports declare a table's constraints. Anything else an ALTER does is skipped.
+            if (ALTER_TABLE_LEAD.matcher(stmt).find()) {
+                applyAlterTable(result, stmt);
                 continue;
             }
 
@@ -602,6 +680,18 @@ public class SqlEntityGenerator {
                         inSingle = false;
                     }
                 }
+            } else if (c == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
+                // A line comment is carried whole: a ';' or an apostrophe in it is prose, not SQL
+                // ("-- an enum; the client's own" used to cut the statement in two).
+                int end = sql.indexOf('\n', i);
+                if (end < 0) end = sql.length();
+                cur.append(sql, i, end);
+                i = end - 1;
+            } else if (c == '/' && i + 1 < sql.length() && sql.charAt(i + 1) == '*') {
+                int end = sql.indexOf("*/", i + 2);
+                end = end < 0 ? sql.length() : end + 2;
+                cur.append(sql, i, end);
+                i = end - 1;
             } else if (c == '\'') {
                 cur.append(c);
                 inSingle = true;
@@ -715,6 +805,7 @@ public class SqlEntityGenerator {
         String schema = unquote(rawSchema, quoted);
         List<String> pkColumns = new ArrayList<>();
         List<ForeignKey> fks = new ArrayList<>();
+        List<List<String>> uniques = new ArrayList<>();
         Set<String> fkColumnNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
 
         if (ct.getIndexes() != null) {
@@ -724,6 +815,11 @@ public class SqlEntityGenerator {
                     for (String col : ix.getColumnsNames()) {
                         pkColumns.add(unquote(col, quoted));
                     }
+                }
+                // A table-level UNIQUE (…): one column is that column's own; several stay together.
+                if (type.contains("UNIQUE") && !type.contains("PRIMARY KEY") && !(ix instanceof ForeignKeyIndex)
+                        && ix.getColumnsNames() != null) {
+                    uniques.add(ix.getColumnsNames().stream().map(n -> unquote(n, quoted)).toList());
                 }
                 if (ix instanceof ForeignKeyIndex fk) {
                     List<String> cols = fk.getColumnsNames().stream().map(n -> unquote(n, quoted)).toList();
@@ -761,7 +857,61 @@ public class SqlEntityGenerator {
             columns = fixed;
         }
 
-        return new TableModel(tableName, schema, columns, pkColumns, fks, null, sourceSql, quoted);
+        TableModel table = new TableModel(tableName, schema, columns, pkColumns, fks, null, sourceSql, quoted);
+        for (List<String> unique : uniques) {
+            List<String> canonical = new ArrayList<>();
+            for (String name : unique) {
+                table.columns().stream().filter(c -> c.name().equalsIgnoreCase(name)).findFirst()
+                        .ifPresent(c -> canonical.add(c.name()));
+            }
+            if (canonical.size() == unique.size()) table = table.withUnique(canonical);
+        }
+        // CHECK (col IN ('A', 'B')) limits a column to a fixed set of values. Read from the
+        // statement's text: a column-level check only survives JSqlParser as loose tokens.
+        Matcher check = CHECK_IN.matcher(sourceSql == null ? "" : sourceSql);
+        while (check.find()) {
+            String column = check.group(1);
+            List<String> values = new ArrayList<>();
+            for (String raw : check.group(2).split(",")) {
+                String v = raw.trim();
+                if (v.length() >= 2 && v.startsWith("'") && v.endsWith("'")) values.add(v.substring(1, v.length() - 1));
+            }
+            boolean known = table.columns().stream().anyMatch(c -> c.name().equalsIgnoreCase(column));
+            if (known && !values.isEmpty()) table = table.withEnum(column, values);
+        }
+        return table;
+    }
+
+    /**
+     * The enum a column's field is typed with, or null when it stays its mapped type. A column a
+     * CHECK limits to a set of values becomes an enum only when that is safe on an existing
+     * database: the values go to the column as the constants are spelt
+     * ({@code @Enumerated(EnumType.STRING)}), so every value must already be a Java identifier —
+     * {@code 'open'} is the constant {@code open}, and {@code 'in progress'} leaves the column a
+     * String. Never a key or a foreign key, and never under a name another class already has.
+     */
+    private static String enumClassOf(TableModel table, ColumnModel c, JavaType mapped, Set<String> knownTableNames) {
+        List<String> values = table.enumValuesOf(c.name());
+        if (values == null || c.isPk() || c.isForeignKey() || !isStringType(mapped)) return null;
+        Set<String> distinct = new HashSet<>();
+        for (String v : values) {
+            if (!JAVA_IDENTIFIER.matcher(v).matches() || javax.lang.model.SourceVersion.isKeyword(v) || !distinct.add(v)) {
+                return null;
+            }
+        }
+        String name = toPascalCase(table.name()) + toPascalCase(c.name());
+        for (String other : knownTableNames) {
+            if (toPascalCase(other).equals(name)) return null;
+        }
+        return name;
+    }
+
+    /** A column's field type: its mapped Java type, or the enum of {@link #enumClassOf}. */
+    private static JavaType fieldType(TableModel table, ColumnModel c, SqlDialect dialect, String entityPkg,
+                                      Set<String> knownTableNames) {
+        JavaType mapped = TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale());
+        String enumClass = enumClassOf(table, c, mapped, knownTableNames);
+        return enumClass == null ? mapped : JavaType.of(enumClass, entityPkg + "." + enumClass);
     }
 
     /**
@@ -915,6 +1065,12 @@ public class SqlEntityGenerator {
             imports.addAll(jt.imports());
             processColumn(body, c, jt, table, dialect, knownTableNames, emittedFks, usedFieldNames, imports);
         }
+        // UNIQUE over several columns is the table's; over one column it is on the column.
+        String uniqueConstraints = table.uniqueConstraints().stream()
+                .map(cols -> "@UniqueConstraint(columnNames = {" + cols.stream()
+                        .map(col -> "\"" + sqlName(table, col, dialect) + "\"").collect(Collectors.joining(", ")) + "})")
+                .collect(Collectors.joining(", "));
+        if (!uniqueConstraints.isEmpty()) imports.add("jakarta.persistence.UniqueConstraint");
 
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("package", fullPkg);
@@ -923,6 +1079,11 @@ public class SqlEntityGenerator {
         boolean hasSchema = table.schema() != null && !table.schema().isBlank();
         view.put("hasSchema", hasSchema);
         view.put("schema", hasSchema ? sqlName(table, table.schema(), dialect) : null);
+        // No key: not an entity (Hibernate refuses one without an identifier, and the app with it).
+        view.put("keyless", table.pkColumns().isEmpty());
+        view.put("tableComment", table.name().replace("*/", "* /"));
+        view.put("hasUniqueConstraints", !uniqueConstraints.isEmpty());
+        view.put("uniqueConstraints", "{" + uniqueConstraints + "}");
         view.put("hasCompositePk", table.hasCompositePk());
         view.put("className", className);
         view.put("members", body.list);
@@ -1020,17 +1181,26 @@ public class SqlEntityGenerator {
             // Non-PK composite-FK columns are absorbed by the association unless the
             // ref table is missing (then fall back to scalar+TODO).
             if (c.isPk()) {
-                appendScalarField(body, c, jt, table, dialect, usedFieldNames);
+                appendScalarField(body, c, jt, table, dialect, usedFieldNames, null);
             } else if (!refKnown) {
                 body.comment("// TODO: map as @ManyToOne (composite FK to unknown table)");
-                appendScalarField(body, c, jt, table, dialect, usedFieldNames);
+                appendScalarField(body, c, jt, table, dialect, usedFieldNames, null);
             }
             return;
         }
 
         ForeignKey singleFk = findSingleForeignKey(c.name(), table.foreignKeys());
         if (singleFk != null && knownTableNames.contains(singleFk.referencedTable())) {
-            appendSingleAssociation(body, c, singleFk, table, dialect, usedFieldNames, imports);
+            if (isCompositeKeyPart(table, c)) {
+                // One part of a composite key that is also a foreign key (order_items.order_id):
+                // the key part stays a scalar @Id — the @IdClass binds to it by name — and the
+                // association reads through the same column. Replacing the scalar with the
+                // association left the @IdClass without its property, and the app did not start.
+                appendScalarField(body, c, jt, table, dialect, usedFieldNames, null);
+                appendReadOnlyAssociation(body, c, singleFk, table, dialect, usedFieldNames, imports);
+            } else {
+                appendSingleAssociation(body, c, singleFk, table, dialect, usedFieldNames, imports);
+            }
             emittedFks.add(singleFk);
             return;
         }
@@ -1038,7 +1208,12 @@ public class SqlEntityGenerator {
         if (c.isForeignKey()) {
             body.comment("// TODO: map as @ManyToOne");
         }
-        appendScalarField(body, c, jt, table, dialect, usedFieldNames);
+        String enumClass = enumClassOf(table, c, jt, knownTableNames);
+        if (enumClass != null) {
+            imports.add("jakarta.persistence.EnumType");
+            imports.add("jakarta.persistence.Enumerated");
+        }
+        appendScalarField(body, c, jt, table, dialect, usedFieldNames, enumClass);
     }
 
     private void appendSingleAssociation(Members body, ColumnModel c, ForeignKey fk,
@@ -1069,6 +1244,26 @@ public class SqlEntityGenerator {
                         + (c.nullable() ? "" : ", nullable = false") + ")"), refEntity, fieldName);
     }
 
+    /** Whether {@code c} is one column of a key of several. */
+    private static boolean isCompositeKeyPart(TableModel table, ColumnModel c) {
+        return c.isPk() && table.pkColumns().size() > 1;
+    }
+
+    /** The association of a key column that stays a scalar: read through the column, never written. */
+    private void appendReadOnlyAssociation(Members body, ColumnModel c, ForeignKey fk, TableModel table,
+                                           SqlDialect dialect, Set<String> usedFieldNames, Set<String> imports) {
+        String refEntity = toPascalCase(fk.referencedTable());
+        String fieldName = pickAssociationFieldName(c, fk, usedFieldNames, false);
+        usedFieldNames.add(fieldName);
+        imports.add("jakarta.persistence.ManyToOne");
+        imports.add("jakarta.persistence.JoinColumn");
+        imports.add("jakarta.persistence.FetchType");
+        body.add(List.of(
+                "@ManyToOne(fetch = FetchType.LAZY)",
+                "@JoinColumn(name = \"" + sqlName(table, c.name(), dialect) + "\", insertable = false, updatable = false)"),
+                refEntity, fieldName);
+    }
+
     private void appendCompositeAssociation(Members body, ForeignKey fk, TableModel table, SqlDialect dialect,
                                             Set<String> usedFieldNames, Set<String> imports) {
         String refEntity = toPascalCase(fk.referencedTable());
@@ -1095,7 +1290,7 @@ public class SqlEntityGenerator {
     }
 
     private void appendScalarField(Members body, ColumnModel c, JavaType jt, TableModel table,
-                                   SqlDialect dialect, Set<String> usedFieldNames) {
+                                   SqlDialect dialect, Set<String> usedFieldNames, String enumClass) {
         String fieldName = toCamelCase(c.name());
         if (usedFieldNames.contains(fieldName)) {
             int n = 2;
@@ -1116,9 +1311,14 @@ public class SqlEntityGenerator {
             }
         }
 
+        if (enumClass != null) {
+            lines.add("@Enumerated(EnumType.STRING)");
+        }
+
         List<String> parts = new ArrayList<>();
         if (renameViaColumn) parts.add("name = \"" + column + "\"");
         if (!c.nullable()) parts.add("nullable = false");
+        if (c.isUnique() && !c.isPk()) parts.add("unique = true");
         if (c.precision() != null && isStringType(jt)) {
             parts.add("length = " + c.precision());
         } else if (c.precision() != null && isDecimalType(jt)) {
@@ -1128,7 +1328,37 @@ public class SqlEntityGenerator {
         if (!parts.isEmpty()) {
             lines.add("@Column(" + String.join(", ", parts) + ")");
         }
-        body.add(lines, jt.simpleName(), fieldName);
+        body.add(lines, enumClass != null ? enumClass : jt.simpleName(), fieldName);
+    }
+
+    /** The enum behind each column a CHECK limits to a set of values (see {@link #enumClassOf}). */
+    private List<GeneratedJavaFile> renderEnums(TableModel table, SqlDialect dialect, String packageName,
+                                                SqlDepOptions opts, Set<String> knownTableNames) {
+        List<GeneratedJavaFile> files = new ArrayList<>();
+        if (table.isView()) return files;
+        for (ColumnModel c : table.columns()) {
+            JavaType mapped = TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale());
+            String enumClass = enumClassOf(table, c, mapped, knownTableNames);
+            if (enumClass == null) continue;
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("package", packageName + "." + opts.subPackage());
+            view.put("className", enumClass);
+            view.put("table", table.name());
+            view.put("column", c.name());
+            List<String> values = table.enumValuesOf(c.name());
+            List<Map<String, Object>> constants = new ArrayList<>();
+            for (int i = 0; i < values.size(); i++) {
+                Map<String, Object> cv = new LinkedHashMap<>();
+                cv.put("name", values.get(i));
+                cv.put("last", i == values.size() - 1);
+                constants.add(cv);
+            }
+            view.put("constants", constants);
+            files.add(new GeneratedJavaFile(
+                    "src/main/java/{{packagePath}}/" + opts.subPackage() + "/" + enumClass + ".java",
+                    WizardTemplates.render("sql/Enum.java", view)));
+        }
+        return files;
     }
 
     private static ForeignKey findSingleForeignKey(String columnName, List<ForeignKey> fks) {
@@ -1276,13 +1506,15 @@ public class SqlEntityGenerator {
      *  same {@link #pickAssociationFieldName}/{@link #toCamelCase} helpers and
      *  iterate columns in the same order against a shared used-name set. */
     private EntityView analyze(TableModel table, SqlDialect dialect,
-                               Map<String, TableModel> tablesByName, Set<String> knownTableNames) {
+                               Map<String, TableModel> tablesByName, Set<String> knownTableNames, String entityPkg) {
         List<Member> members = new ArrayList<>();
         Set<ForeignKey> emittedFks = new HashSet<>();
         Set<String> used = new HashSet<>();
         boolean skipped = false;
         for (ColumnModel c : table.columns()) {
-            JavaType jt = TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale());
+            // The field's own type: an enum for a column a CHECK limits (a DTO carries the same).
+            JavaType jt = table.isView() ? TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale())
+                    : fieldType(table, c, dialect, entityPkg, knownTableNames);
 
             ForeignKey compositeFk = findCompositeForeignKey(c.name(), table.foreignKeys());
             if (compositeFk != null) {
@@ -1306,6 +1538,13 @@ public class SqlEntityGenerator {
             }
 
             ForeignKey singleFk = findSingleForeignKey(c.name(), table.foreignKeys());
+            if (singleFk != null && knownTableNames.contains(singleFk.referencedTable()) && isCompositeKeyPart(table, c)) {
+                // The key part is the member; the association that reads through it is derived.
+                members.add(scalarMember(c, jt, used));
+                used.add(pickAssociationFieldName(c, singleFk, used, false));
+                emittedFks.add(singleFk);
+                continue;
+            }
             if (singleFk != null && knownTableNames.contains(singleFk.referencedTable())) {
                 String fieldName = pickAssociationFieldName(c, singleFk, used, false);
                 used.add(fieldName);
@@ -1391,7 +1630,7 @@ public class SqlEntityGenerator {
         String entityClass = toPascalCase(table.name());
         String entityPkg = packageName + "." + opts.subPackage();
         IdType id = resolveIdType(table, dialect, entityPkg, entityClass);
-        EntityView view = analyze(table, dialect, tablesByName, knownTableNames);
+        EntityView view = analyze(table, dialect, tablesByName, knownTableNames, entityPkg);
 
         Set<String> imports = new TreeSet<>();
         imports.add(entityPkg + "." + entityClass);
@@ -1426,7 +1665,7 @@ public class SqlEntityGenerator {
                                         Set<String> knownTableNames) {
         String entityClass = toPascalCase(table.name());
         String entityPkg = packageName + "." + opts.subPackage();
-        EntityView view = analyze(table, dialect, tablesByName, knownTableNames);
+        EntityView view = analyze(table, dialect, tablesByName, knownTableNames, entityPkg);
         boolean inline = opts.apiMode() == SqlApiMode.INLINE_DTO;
 
         List<Member> scalars = view.members().stream().filter(m -> !m.assoc()).toList();
@@ -1513,7 +1752,7 @@ public class SqlEntityGenerator {
                                            Set<String> knownTableNames) {
         String entityClass = toPascalCase(table.name());
         String entityPkg = packageName + "." + opts.subPackage();
-        EntityView view = analyze(table, dialect, tablesByName, knownTableNames);
+        EntityView view = analyze(table, dialect, tablesByName, knownTableNames, entityPkg);
         List<Member> flat = view.members().stream()
                 .filter(m -> m.assoc() && m.flatten() != null).toList();
 
