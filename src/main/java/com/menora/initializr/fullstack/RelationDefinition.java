@@ -24,6 +24,9 @@ package com.menora.initializr.fullstack;
  * point at it and their count, named {@code fieldName}. {@code mappedBy} is that MANY_TO_ONE's
  * field name (resolved by the validator when the request leaves it out and there is only one).
  * It owns no column. Kept in an entity's {@code children}.
+ *
+ * <p>{@code label} is what the generated UI calls the relation (a column heading, a form label,
+ * a filter); null falls back to the field name.
  */
 public record RelationDefinition(
         RelationType type,
@@ -33,7 +36,14 @@ public record RelationDefinition(
         String joinColumn,
         String joinTable,
         String inverseJoinColumn,
-        String mappedBy) {
+        String mappedBy,
+        String label) {
+
+    /** Every property but {@code label}. */
+    public RelationDefinition(RelationType type, String fieldName, String targetEntity, boolean required,
+                              String joinColumn, String joinTable, String inverseJoinColumn, String mappedBy) {
+        this(type, fieldName, targetEntity, required, joinColumn, joinTable, inverseJoinColumn, mappedBy, null);
+    }
 
     /** Every property but {@code mappedBy} (a MANY_TO_ONE or a MANY_TO_MANY has none). */
     public RelationDefinition(RelationType type, String fieldName, String targetEntity, boolean required,
@@ -44,7 +54,7 @@ public record RelationDefinition(
     /** The same ONE_TO_MANY, naming the MANY_TO_ONE it is the other side of. */
     public RelationDefinition withMappedBy(String link) {
         return new RelationDefinition(type, fieldName, targetEntity, required, joinColumn, joinTable,
-                inverseJoinColumn, link);
+                inverseJoinColumn, link, label);
     }
 
     /** Back-compat constructor for a MANY_TO_ONE (no join table). */

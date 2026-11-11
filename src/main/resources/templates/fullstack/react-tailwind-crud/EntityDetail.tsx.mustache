@@ -34,11 +34,11 @@ export function {{EntityName}}Detail({ value }: Props) {
       <div role="presentation" className="pb-1 pt-5 text-xs font-semibold uppercase tracking-wider text-brand first:pt-0">{ {{{groupTitleExpr}}} }</div>
 {{/groupHasTitle}}
 {{#groupFields}}      <Row label="{{labelAttr}}">{value.{{name}} == null ? empty : {{detailTs}}}</Row>
-{{/groupFields}}{{#groupRelations}}      <Row label="{{FieldName}}">{ {{#targetHasRecordPage}}value.{{fkFieldName}} == null ? empty : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(value.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}value.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(value.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}value.{{fieldName}}Label ?? ({{/hasTargetLabel}}value.{{fkFieldName}} == null ? empty : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(value.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} }</Row>
-{{/groupRelations}}{{/formGroups}}{{#collections}}      <Row label="{{FieldName}}">{value.{{labelsField}} == null || value.{{labelsField}}.length === 0 ? empty : value.{{labelsField}}.join(', ')}</Row>
+{{/groupFields}}{{#groupRelations}}      <Row label="{{labelAttr}}">{ {{#targetHasRecordPage}}value.{{fkFieldName}} == null ? empty : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(value.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}value.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(value.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}value.{{fieldName}}Label ?? ({{/hasTargetLabel}}value.{{fkFieldName}} == null ? empty : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(value.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} }</Row>
+{{/groupRelations}}{{/formGroups}}{{#collections}}      <Row label="{{labelAttr}}">{value.{{labelsField}} == null || value.{{labelsField}}.length === 0 ? empty : value.{{labelsField}}.join(', ')}</Row>
 {{/collections}}{{#auditApplicable}}      <Row label={t('created')}>{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString(LOCALE)}</Row>
       <Row label={t('updated')}>{value.updatedAt == null ? empty : new Date(value.updatedAt).toLocaleString(LOCALE)}</Row>
-{{/auditApplicable}}{{#childLists}}{{^declared}}      <Row label="{{CollectionField}}">{value.{{collectionField}}Count == null ? empty : String(value.{{collectionField}}Count)}</Row>
+{{/auditApplicable}}{{#childLists}}{{^declared}}      <Row label="{{collectionLabelAttr}}">{value.{{collectionField}}Count == null ? empty : String(value.{{collectionField}}Count)}</Row>
 {{/declared}}{{/childLists}}    </dl>
 {{#hasChildTables}}{{#childTables}}    <RelatedRows
       title={ '{{{listTitleTs}}}' }

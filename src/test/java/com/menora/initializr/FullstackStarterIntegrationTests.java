@@ -3844,6 +3844,77 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_relationsCarryTheirOwnLabel() throws Exception {
+        // A relation used to be called by its field name in PascalCase everywhere ("Customer" in a
+        // Hebrew app). It now takes a label like a field does; without one nothing changes.
+        Map<String, Object> customer = new LinkedHashMap<>();
+        customer.put("name", "Customer");
+        customer.put("fields", List.of(pkField(), Map.of("name", "name", "type", "String")));
+        customer.put("relations", List.of(
+                Map.of("type", "ONE_TO_MANY", "fieldName", "orders", "targetEntity", "Order", "mappedBy", "customer",
+                        "label", "הזמנות של \"לקוח\"")));
+        Map<String, Object> tag = new LinkedHashMap<>();
+        tag.put("name", "Tag");
+        tag.put("fields", List.of(pkField(), Map.of("name", "name", "type", "String")));
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("name", "Order");
+        order.put("fields", List.of(pkField(), Map.of("name", "reference", "type", "String")));
+        order.put("relations", List.of(
+                Map.of("type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Customer", "required", true,
+                        "label", "  לקוח מס' \"1\"  "),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "billTo", "targetEntity", "Customer"),
+                Map.of("type", "MANY_TO_MANY", "fieldName", "tags", "targetEntity", "Tag", "label", "תגיות")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(customer, tag, order));
+        body.put("opts", Map.of("scaffold", List.of("csvImport")));
+
+        Map<String, String> entries = generateZip(body);
+
+        String page = entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx");
+        assertThat(page)
+                // Column headings: the label (trimmed, escaped for a TS literal); unlabelled as before.
+                .contains("label: 'לקוח מס\\' \"1\"', render: r =>")
+                .contains("label: 'BillTo', render: r =>")
+                .contains("label: 'תגיות', render: r =>")
+                // The filter bar's controls.
+                .contains("{ name: 'customerId', label: 'לקוח מס\\' \"1\"', kind: 'relation'")
+                .contains("{ name: 'billToId', label: 'BillTo', kind: 'relation'")
+                .contains("{ name: 'tagsId', label: 'תגיות', kind: 'relation'");
+        assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
+                .contains("<Field label=\"לקוח מס' &quot;1&quot;\" required error={errors?.customerId}>")
+                .contains("<Field label=\"BillTo\" error={errors?.billToId}>")
+                .contains("<Field label=\"תגיות\" error={errors?.tagsIds}>");
+        assertThat(contentEndingWith(entries, "/OrderDetail.tsx"))
+                .contains("<Row label=\"לקוח מס' &quot;1&quot;\">")
+                .contains("<Row label=\"תגיות\">");
+        assertThat(contentEndingWith(entries, "order-form/model/importFields.ts"))
+                .contains("{ name: 'customerId', label: 'לקוח מס\\' \"1\"', kind: 'relation'");
+        // A ONE_TO_MANY's label names its count column and the table of child rows in the details.
+        assertThat(entries.get("shop/frontend/src/pages/customer/ui/CustomerPage.tsx"))
+                .contains("label: 'הזמנות של \"לקוח\"', render: r => r.ordersCount == null");
+        assertThat(contentEndingWith(entries, "/CustomerDetail.tsx"))
+                .contains("title={ 'הזמנות של \"לקוח\"' }");
+        // Labels are a UI concern: the backend keeps the field names.
+        assertThat(contentEndingWith(entries, "/dto/OrderDto.java")).doesNotContain("לקוח");
+
+        // Over 80 characters is a 400 that says where.
+        Map<String, Object> longLabel = new LinkedHashMap<>(order);
+        longLabel.put("relations", List.of(Map.of("type", "MANY_TO_ONE", "fieldName", "customer",
+                "targetEntity", "Customer", "label", "x".repeat(81))));
+        body.put("entities", List.of(customer, tag, longLabel));
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> tooLong = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+        assertThat(tooLong.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(tooLong.getBody()).contains("label is over 80 characters").contains("entities[2].relations[0].label");
+    }
+
+    @Test
     void fullstackEndpoint_rejectsBadEnumLabels() throws Exception {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);

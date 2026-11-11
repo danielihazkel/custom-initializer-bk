@@ -764,6 +764,9 @@ public final class FullstackRequestValidator {
      * canonical form (ENUM → the upper-cased constant, temporal → ISO, numbers as parsed), or null
      * when absent/blank. A default on a generated primary key is rejected (the database assigns it).
      */
+    /** Longest display label accepted for a relation. */
+    static final int MAX_RELATION_LABEL = 80;
+
     /** Longest display label accepted for an enum constant. */
     static final int MAX_ENUM_LABEL_LENGTH = 80;
 
@@ -1010,10 +1013,16 @@ public final class FullstackRequestValidator {
                             + "': mappedBy only applies to a ONE_TO_MANY").on("mappedBy");
                 }
 
+                String label = (r.label() == null || r.label().isBlank()) ? null : r.label().trim();
+                if (label != null && label.length() > MAX_RELATION_LABEL) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                            + "': label is over " + MAX_RELATION_LABEL + " characters").on("label");
+                }
+
                 relations.add(new RelationDefinition(type, fieldName, canonicalTarget,
                         Boolean.TRUE.equals(r.required()),
                         parseColumnName(r.joinColumn(), "joinColumn", fieldName, entityName),
-                        joinTable, inverseJoinColumn, mappedBy));
+                        joinTable, inverseJoinColumn, mappedBy, label));
             } catch (WizardArgumentException problem) {
                 throw problem.at("relations[" + ri + "]");
             }

@@ -148,6 +148,7 @@ public final class FullstackSchema {
         limits.put("maxEnumLabel", FullstackRequestValidator.MAX_ENUM_LABEL_LENGTH);
         limits.put("maxTransitions", FullstackRequestValidator.MAX_TRANSITIONS);
         limits.put("maxTransitionLabel", FullstackRequestValidator.MAX_TRANSITION_LABEL);
+        limits.put("maxRelationLabel", FullstackRequestValidator.MAX_RELATION_LABEL);
         doc.put("limits", limits);
         return doc;
     }

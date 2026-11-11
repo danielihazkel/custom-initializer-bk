@@ -701,7 +701,16 @@ public record FullstackStarterRequest(
             // ONE_TO_MANY only: the target's MANY_TO_ONE this is the other side of (omitted →
             // the only one it has to this entity).
             @JsonInclude(JsonInclude.Include.NON_NULL)
-            String mappedBy) {
+            String mappedBy,
+            // What the generated UI calls the relation (omitted → the field name).
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String label) {
+
+        /** Every property but {@code label}. */
+        public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required,
+                                     String joinColumn, String joinTable, String inverseJoinColumn, String mappedBy) {
+            this(type, fieldName, targetEntity, required, joinColumn, joinTable, inverseJoinColumn, mappedBy, null);
+        }
 
         /** Every property but {@code mappedBy}. */
         public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required,

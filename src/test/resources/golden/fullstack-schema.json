@@ -635,6 +635,7 @@
     "maxSectionTitle" : 60,
     "maxEnumLabel" : 80,
     "maxTransitions" : 20,
-    "maxTransitionLabel" : 40
+    "maxTransitionLabel" : 40,
+    "maxRelationLabel" : 80
   }
 }

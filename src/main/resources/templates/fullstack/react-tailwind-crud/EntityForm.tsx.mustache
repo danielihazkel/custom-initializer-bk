@@ -103,7 +103,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
 {{/isWorkflowStatus}}
 {{/groupFields}}
 {{#groupRelations}}
-      {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{FieldName}}"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>
+      {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>
 {{#targetSearchable}}        <RelationPicker
           path="/api/{{targetEntityKebabPlural}}"
           valueKey="{{targetPkName}}"
@@ -130,7 +130,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
       </fieldset>{{#formHasSteps}})}{{/formHasSteps}}
 {{/groupHasTitle}}
 {{/formGroups}}
-{{#collections}}      {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{FieldName}}" error={errors?.{{idsField}}}>
+{{#collections}}      {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}" error={errors?.{{idsField}}}>
         <MultiRelationPicker
           path="/api/{{targetEntityKebabPlural}}"
           valueKey="{{targetPkName}}"

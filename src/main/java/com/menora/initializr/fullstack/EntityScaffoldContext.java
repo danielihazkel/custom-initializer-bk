@@ -1543,7 +1543,7 @@ public final class EntityScaffoldContext {
             out.put("optionValue", rel.get("targetPkName"));
             out.put("hasOptionLabel", rel.get("targetLabelField") != null);
             out.put("optionLabel", rel.get("targetLabelField"));
-            out.put("groupLabelExpr", tsString(Naming.toPascalCase(name)));
+            out.put("groupLabelExpr", tsString((String) rel.get("label")));
             out.put("drillKey", rel.get("fkFieldName"));
             return out;
         }
@@ -1737,7 +1737,7 @@ public final class EntityScaffoldContext {
                 }
             } else {
                 Map<String, Object> r = relations.get(name);
-                label = (String) r.get("FieldName");
+                label = (String) r.get("label");
                 String fk = "r." + r.get("fkFieldName");
                 String id = fk + " == null ? '\u2014' : '#' + String(" + fk + ")";
                 render = Boolean.TRUE.equals(r.get("hasTargetLabel")) ? "r." + name + "Label ?? (" + id + ")" : id;
@@ -2166,7 +2166,8 @@ public final class EntityScaffoldContext {
                 Map<String, Object> inv = new LinkedHashMap<>();
                 inv.put("declared", declared != null);
                 if (declared != null) {
-                    inv.put("listTitleTs", escapeTsSingleQuoted(humanizeIdentifier(coll)));
+                    inv.put("listTitleTs", tsLiteralBody(declared.label() != null && !declared.label().isBlank()
+                            ? declared.label() : humanizeIdentifier(coll)));
                     inv.put("childPath", "/api/" + Naming.pluralize(Naming.toKebabCase(child.name())));
                     inv.put("childKebab", Naming.toKebabCase(child.name()));
                     inv.put("filterParam", Naming.toCamelCase(rel.fieldName()) + "Id");
@@ -2180,6 +2181,10 @@ public final class EntityScaffoldContext {
                 inv.put("mappedBy", Naming.toCamelCase(rel.fieldName()));
                 inv.put("collectionField", coll);
                 inv.put("CollectionField", Naming.toPascalCase(coll));
+                // What the UI calls the collection (its count column): the declared ONE_TO_MANY's
+                // label, else its name as before.
+                putText(inv, "collectionLabel", declared != null && declared.label() != null && !declared.label().isBlank()
+                        ? declared.label() : Naming.toPascalCase(coll));
                 // SQL names for the parent's @Formula child count: the child's table (custom name
                 // or the default snake-plural, schema-qualified when set) and its FK column —
                 // the same derivations the child's own @Table/@JoinColumn use.
@@ -2229,7 +2234,7 @@ public final class EntityScaffoldContext {
             boolean labelled = target != null && target.get("labelField") != null;
             Map<String, Object> col = new LinkedHashMap<>();
             col.put("key", labelled ? name + "Label" : name + "Id");
-            col.put("labelTs", escapeTsSingleQuoted(Naming.toPascalCase(r.fieldName())));
+            col.put("labelTs", tsLiteralBody(labelOf(r)));
             col.put("alt", labelled ? name + "Id" : null);
             col.put("hasAlt", labelled);
             col.put("isEnum", false);
@@ -2332,6 +2337,12 @@ public final class EntityScaffoldContext {
      *  Hebrew labels often carry a geresh). */
     static String escapeTsSingleQuoted(String s) {
         return s.replace("\\", "\\\\").replace("'", "\\'");
+    }
+
+    /** What the generated UI calls a relation: its label, else its field name in PascalCase (what
+     *  every relation was called before it could carry one). */
+    static String labelOf(RelationDefinition r) {
+        return r.label() != null && !r.label().isBlank() ? r.label() : Naming.toPascalCase(r.fieldName());
     }
 
     /** Matches an {@code &} that JSX would read as the start of a character reference. */
@@ -2936,6 +2947,7 @@ public final class EntityScaffoldContext {
             Map<String, Object> rv = new LinkedHashMap<>();
             rv.put("fieldName", relField);
             rv.put("FieldName", Naming.toPascalCase(rel.fieldName()));
+            putText(rv, "label", labelOf(rel));
             rv.put("fkFieldName", relField + "Id");
             rv.put("joinColumn", SqlNames.javaLiteral(joinColumnOf(rel)));
             rv.put("targetEntity", target != null ? target.get("pascal") : Naming.toPascalCase(rel.targetEntity()));
@@ -2979,6 +2991,7 @@ public final class EntityScaffoldContext {
             Map<String, Object> cv = new LinkedHashMap<>();
             cv.put("fieldName", field);
             cv.put("FieldName", Naming.toPascalCase(c.fieldName()));
+            putText(cv, "label", labelOf(c));
             cv.put("idsField", field + "Ids");
             cv.put("labelsField", field + "Labels");
             cv.put("filterName", field + "Id");
@@ -3083,7 +3096,7 @@ public final class EntityScaffoldContext {
             Map<String, Object> ff = new LinkedHashMap<>();
             ff.put("name", rv.get("fkFieldName"));
             ff.put("Name", rv.get("FieldName") + "Id");
-            putText(ff, "label", (String) rv.get("FieldName"));
+            putText(ff, "label", (String) rv.get("label"));
             ff.put("javaType", rv.get("targetPkJavaType"));
             ff.put("isEnumFilter", false);
             ff.put("isBooleanFilter", false);
@@ -3108,7 +3121,7 @@ public final class EntityScaffoldContext {
             Map<String, Object> ff = new LinkedHashMap<>();
             ff.put("name", cv.get("filterName"));
             ff.put("Name", cv.get("FieldName") + "Id");
-            putText(ff, "label", (String) cv.get("FieldName"));
+            putText(ff, "label", (String) cv.get("label"));
             ff.put("javaType", cv.get("targetPkJavaType"));
             ff.put("isEnumFilter", false);
             ff.put("isBooleanFilter", false);
