@@ -2339,6 +2339,20 @@ public final class EntityScaffoldContext {
         return s.replace("\\", "\\\\").replace("'", "\\'");
     }
 
+    /**
+     * The packages of the generated backend that hold a JPA entity and its repository outside
+     * {@code <domain>.entity} / {@code .repository}: the attachment table behind FILE and IMAGE
+     * fields. Boot's own scan finds them; a datasource config class that names its packages
+     * (every database but the default H2) has to be told.
+     */
+    public static List<String> supportPackages(String packageName, List<EntityDefinition> entities) {
+        List<String> packages = new ArrayList<>();
+        if (entities.stream().flatMap(e -> e.fields().stream()).anyMatch(f -> f.type().isAttachment())) {
+            packages.add(packageName + ".attachment");
+        }
+        return packages;
+    }
+
     /** What the generated UI calls a relation: its label, else its field name in PascalCase (what
      *  every relation was called before it could carry one). */
     static String labelOf(RelationDefinition r) {

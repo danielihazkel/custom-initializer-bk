@@ -2221,6 +2221,21 @@ class FullstackStarterIntegrationTests {
         assertThat(contentEndingWith(entries, "/web/ApiExceptionHandler.java"))
                 .contains("MaxUploadSizeExceededException").contains("HttpStatus.PAYLOAD_TOO_LARGE");
 
+        // Any database but the default H2 gets a datasource config class that names what it scans:
+        // the attachment entity and repository are outside <domain>.entity / .repository and must
+        // be named too, or the app does not start (no AttachmentRepository bean).
+        Map<String, Object> onPostgres = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        onPostgres.put("dependencies", List.of("web", "data-jpa", "postgresql", "validation"));
+        assertThat(contentEndingWith(generateZip(onPostgres), "/config/PostgresqlConfig.java"))
+                .contains("basePackages = { \"com.menora.rota.repository\", \"com.menora.rota.attachment\" },")
+                .contains("em.setPackagesToScan(\"com.menora.rota.entity\", \"com.menora.rota.attachment\");");
+        // Without a file field there is nothing more to scan and the class keeps its bytes.
+        Map<String, Object> plain = FullstackExampleRequests.manyToManyBody("react-tailwind-crud");
+        plain.put("dependencies", List.of("web", "data-jpa", "postgresql", "validation"));
+        assertThat(contentEndingWith(generateZip(plain), "/config/PostgresqlConfig.java"))
+                .contains("basePackages = \"com.menora.press.repository\",")
+                .contains("em.setPackagesToScan(\"com.menora.press.entity\");");
+
         // Frontend: the upload call, the field component and its strings.
         assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/AttachmentField.tsx"));
         assertThat(contentEndingWith(entries, "/shared/api/client.ts"))

@@ -127,6 +127,20 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
 
+    @org.junit.jupiter.api.Test
+    void attachmentsBehindAHandWrittenDatasourceConfigBootAndPassTheirTests(@TempDir Path workDir) throws Exception {
+        // Every database but the default H2 gets a datasource config class that names the
+        // packages it scans. H2's own "primary" role is that same class, so it stands in for
+        // PostgreSQL/Oracle/MSSQL/DB2 here: the attachment entity and repository live outside
+        // <domain>.entity / .repository and must be scanned too, or the context does not start.
+        Map<String, Object> body = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        Map<String, Object> opts = new java.util.LinkedHashMap<>((Map<String, Object>) body.get("opts"));
+        opts.put("h2", List.of("h2-primary"));
+        body.put("opts", opts);
+        runMvn(postAndExtractBackend(workDir, body), "-B", "package");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private Path postAndExtractBackend(Path workDir, Map<String, Object> body) throws Exception {

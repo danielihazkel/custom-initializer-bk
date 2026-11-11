@@ -550,8 +550,12 @@ public class DynamicProjectGenerationConfiguration {
         // SQL wizard under <packageName>.<subPackage> / .repository (see SqlEntityGenerator).
         String dsEntityPackage = null;
         String dsRepositoryPackage = null;
+        // Packages the fullstack scaffold adds beside those two, each holding an entity and its
+        // repository (attachments): a hand-written config scans only what it names.
+        List<String> dsExtraPackages = List.of();
         boolean hasScaffold = false;
         if (!entityContext.isEmpty()) {                       // fullstack
+            dsExtraPackages = com.menora.initializr.fullstack.EntityScaffoldContext.supportPackages(description.getPackageName(), entityContext.all());
             String domain = entityContext.getDomainPackage();
             if (domain == null || domain.isBlank()) {
                 domain = description.getPackageName();
@@ -578,6 +582,8 @@ public class DynamicProjectGenerationConfiguration {
         ctx.put("hasScaffoldedEntities", hasScaffold);
         ctx.put("dsEntityPackage", dsEntityPackage);
         ctx.put("dsRepositoryPackage", dsRepositoryPackage);
+        ctx.put("dsExtraPackages", dsExtraPackages);
+        ctx.put("dsHasExtraPackages", !dsExtraPackages.isEmpty());
         return ctx;
     }
 
