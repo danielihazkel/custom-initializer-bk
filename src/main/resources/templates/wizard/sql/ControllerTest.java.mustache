@@ -1,0 +1,46 @@
+package {{package}};
+
+import {{entityPackage}}.{{entityClass}};
+{{#mapstruct}}
+import {{mapperPackage}}.{{entityClass}}Mapper;
+{{/mapstruct}}
+import {{servicePackage}}.{{entityClass}}Service;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.test.web.servlet.MockMvc;
+import {{mockImport}};
+
+import java.util.List;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/** The {{entityClass}} endpoints over a mocked service: a place for the project's own tests to start. */
+@WebMvcTest({{entityClass}}Controller.class)
+class {{entityClass}}ControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @{{mockAnnotation}}
+    private {{entityClass}}Service service;
+{{#mapstruct}}
+
+    @{{mockAnnotation}}
+    private {{entityClass}}Mapper mapper;
+{{/mapstruct}}
+
+    @Test
+    void list_returnsOk() throws Exception {
+        // A page that knows its request: PageImpl's one-argument form is unpaged, which Jackson cannot write.
+        Page<{{entityClass}}> empty = new PageImpl<>(List.of(), PageRequest.of(0, 20), 0);
+        Mockito.when(service.findAll(Mockito.any())).thenReturn(empty);
+
+        mockMvc.perform(get("/api/{{kebab}}")).andExpect(status().isOk());
+    }
+}

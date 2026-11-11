@@ -11,7 +11,7 @@ import {{.}};
 {{/hasSkippedColumns}}
 public record {{entityClass}}Dto(
 {{#components}}
-        {{type}} {{name}}{{^last}},{{/last}}
+        {{constraints}}{{type}} {{name}}{{^last}},{{/last}}
 {{/components}}
 {{^hasComponents}}
 

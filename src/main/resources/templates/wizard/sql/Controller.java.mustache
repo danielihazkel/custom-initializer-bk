@@ -32,12 +32,12 @@ public class {{entityClass}}Controller {
 
 {{#mutable}}
     @PostMapping
-    public {{retType}} create(@RequestBody {{retType}} body) {
+    public {{retType}} create({{bodyAnnotation}} {{retType}} body) {
         return {{convOpen}}service.create({{bodyToEntity}}){{convClose}};
     }
 
     @PutMapping("{{keyPath}}")
-    public {{retType}} update({{keyParams}}, @RequestBody {{retType}} body) {
+    public {{retType}} update({{keyParams}}, {{bodyAnnotation}} {{retType}} body) {
         return {{convOpen}}service.update({{keyArg}}, {{bodyToEntity}}){{convClose}};
     }
 

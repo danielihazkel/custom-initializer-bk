@@ -21,9 +21,11 @@ import com.menora.initializr.sql.GeneratedJavaFile;
 import com.menora.initializr.sql.SqlDepOptions;
 import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
+import com.menora.initializr.sql.SqlProjectFacts;
 import io.spring.initializr.generator.buildsystem.BillOfMaterials;
 import io.spring.initializr.generator.buildsystem.Dependency;
 import io.spring.initializr.generator.spring.scm.git.GitIgnoreCustomizer;
+import io.spring.initializr.generator.version.Version;
 import io.spring.initializr.generator.version.VersionProperty;
 import io.spring.initializr.generator.version.VersionReference;
 import io.spring.initializr.generator.buildsystem.DependencyScope;
@@ -294,6 +296,12 @@ public class DynamicProjectGenerationConfiguration {
             SqlEntityGenerator generator) {
         return projectRoot -> {
             if (sqlContext.isEmpty()) return;
+            Set<String> deps = selectedDepIds(description);
+            Version boot = description.getPlatformVersion();
+            SqlProjectFacts facts = new SqlProjectFacts(deps.contains("validation"), deps.contains("flyway"),
+                    boot != null && boot.compareTo(Version.parse("3.4.0")) >= 0);
+            // One schema history: the first script is the baseline, a second database's is not.
+            boolean baselineWritten = false;
             for (var entry : sqlContext.all().entrySet()) {
                 SqlDialect dialect = SqlDialect.forDepId(entry.getKey());
                 if (dialect == null || entry.getValue() == null || entry.getValue().isBlank()) {
@@ -301,9 +309,13 @@ public class DynamicProjectGenerationConfiguration {
                 }
                 SqlDepOptions opts = sqlContext.optionsFor(entry.getKey());
                 List<GeneratedJavaFile> files = generator.generate(
-                        entry.getValue(), dialect, description.getPackageName(), opts);
+                        entry.getValue(), dialect, description.getPackageName(), opts, facts);
                 String packagePath = description.getPackageName().replace('.', '/');
                 for (GeneratedJavaFile f : files) {
+                    if (SqlEntityGenerator.FLYWAY_BASELINE_PATH.equals(f.relativePath())) {
+                        if (baselineWritten) continue;
+                        baselineWritten = true;
+                    }
                     Path target = projectRoot.resolve(
                             f.relativePath().replace("{{packagePath}}", packagePath));
                     GeneratedProjectFiles.createParentDirectories(target);

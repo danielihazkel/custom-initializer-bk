@@ -27,12 +27,12 @@ aac6bd8c01d904c3a17b1651923e9df5dfaf5b1a7ef68e42b477584388a01bf9  golden/src/mai
 47d30afdc038a3d73a650a966769392d305245926d481494f9b058ca5298f42d  golden/src/main/java/com/menora/golden/controller/ShipmentsController.java
 b8121a720c32a67d95ff27f31b3ffc8d6d3519ed67b677319ba405bf651c92bc  golden/src/main/java/com/menora/golden/controller/StockLevelsController.java
 be97b4a9778d20a258c5fa4538d5a0478297d8eff364505b1ec75c751d81858f  golden/src/main/java/com/menora/golden/entity/AuditLog.java
-0096aaf629baa2a10e9a896cab0676a16848a9bf9111d406dfca439169da692b  golden/src/main/java/com/menora/golden/entity/AuthorProfiles.java
+d64a124a902a1e8f1004e3fd285033cad35a6001fbfcbcaf85798e3bf60d4048  golden/src/main/java/com/menora/golden/entity/AuthorProfiles.java
 05cb9b6ae32d75ad6475630231d77484a0cf55da52687301059ef17be7759a52  golden/src/main/java/com/menora/golden/entity/Authors.java
 48a72c256994e03d19e5dc8a2487a17202e9e8db3d18c68ab881e58684f2c285  golden/src/main/java/com/menora/golden/entity/Authors2.java
 fbda8334aac9fa3536ef2145d3ae14433b8b3eb81ea2f2a6b919d2455923ed65  golden/src/main/java/com/menora/golden/entity/BookCopies.java
 3d5554ebaa93cdb8b15983536a6f9c4568d940bc152725435790ea58f39cff9a  golden/src/main/java/com/menora/golden/entity/BookCopiesId.java
-f294d3a4334751741847782030b6eab594ab7470c5045b0c08e16ddf67b52560  golden/src/main/java/com/menora/golden/entity/Books.java
+42b149a3657858e30b27855dca32a3debbdda4ccd8b11984881134f2d4f54c67  golden/src/main/java/com/menora/golden/entity/Books.java
 57c6eac7caa49b3509dbfbc9100b4ebb9bf3f88b7104fce63f74532725929322  golden/src/main/java/com/menora/golden/entity/Loans.java
 1a0b32a718cf74aa5d32f855fd10ac982b955ab6f46d2f1c43d95b6fce1e7cf0  golden/src/main/java/com/menora/golden/entity/Memberships.java
 8a843bfa8209c0b8fb824d2586ca02ec1f2838583715572e43054a7e87e22e6e  golden/src/main/java/com/menora/golden/entity/MembershipsTier.java
@@ -57,7 +57,7 @@ b5f5a76362f8464b06bc26a1e32d5f279080073ead904ddbc0a7ace2f6f45485  golden/src/mai
 eaa6355649151ca88df780545f752c4ea887ce388fb011f21a6d8bfe639ccb4c  golden/src/main/java/com/menora/golden/service/Authors2Service.java
 6facca274aada54ba68f636e0af0a17b9473287b904b5512a58f36a4929d9b95  golden/src/main/java/com/menora/golden/service/AuthorsService.java
 87aa5f1deae130c7f6261c05819a622f53a14c6b10d349f4e914e3c772270b85  golden/src/main/java/com/menora/golden/service/BookCopiesService.java
-d5b23daa5036d6ef589edd12500d8d6621b00e4833fbcb610bd7bed456461429  golden/src/main/java/com/menora/golden/service/BooksService.java
+8e3435bd74f8d90506289387fb7f4f2f6f06a09fad673edd08b681490c5e1552  golden/src/main/java/com/menora/golden/service/BooksService.java
 b3566be1a5ad97300777a6f25e640282e60b320beaf26bd0ec9a724cba24849a  golden/src/main/java/com/menora/golden/service/LoansService.java
 f66382e9c73657aa8af08fbe5098ea38384fc34420321c9c9641aaae7163c932  golden/src/main/java/com/menora/golden/service/MembershipsService.java
 94e402231174024294dd78d044f99a2e9b91fed1f2df2f7c542d9c47f61006d8  golden/src/main/java/com/menora/golden/service/OrderItemsService.java

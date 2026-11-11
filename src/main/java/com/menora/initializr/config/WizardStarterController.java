@@ -308,7 +308,7 @@ public class WizardStarterController {
                                         t.generateRepository() == null || t.generateRepository()))
                                 .toList();
                 sqlOpts.put(e.getKey(), new SqlDepOptions(dto.subPackage(), tables,
-                        SqlApiMode.parse(dto.apiMode())));
+                        SqlApiMode.parse(dto.apiMode()), dto.flywayBaseline(), Boolean.TRUE.equals(dto.generateTests())));
             }
         }
         sqlContext.populate(body.sqlByDep() == null ? Map.of() : body.sqlByDep(), sqlOpts);
@@ -403,7 +403,18 @@ public class WizardStarterController {
             String department) {
     }
 
-    public record SqlDepOptionsDto(String subPackage, List<SqlTableOptionsDto> tables, String apiMode) {}
+    /**
+     * {@code flywayBaseline}: with the Flyway dependency, write the DDL as the first migration
+     * (default true). {@code generateTests}: a controller slice test per REST controller.
+     */
+    public record SqlDepOptionsDto(String subPackage, List<SqlTableOptionsDto> tables, String apiMode,
+                                   Boolean flywayBaseline, Boolean generateTests) {
+
+        /** The options before the Flyway baseline and the tests existed. */
+        public SqlDepOptionsDto(String subPackage, List<SqlTableOptionsDto> tables, String apiMode) {
+            this(subPackage, tables, apiMode, null, null);
+        }
+    }
 
     public record SqlTableOptionsDto(String name, Boolean generateRepository) {}
 

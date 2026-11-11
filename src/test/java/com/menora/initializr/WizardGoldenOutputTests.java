@@ -60,6 +60,14 @@ class WizardGoldenOutputTests {
         Map<String, Object> ownPackage = sqlBody("postgresql", "library-postgresql.sql", "INLINE_DTO", "model");
         ownPackage.put("dependencies", List.of("web", "data-jpa", "postgresql", "validation"));
         golden.pin("sql__postgresql__inline-dto__own-package", wizard(ownPackage));
+        // What the build adds: the script as the Flyway baseline, validated bodies, a test per controller.
+        Map<String, Object> baseline = sqlBody("postgresql", "library-postgresql.sql", "MAPSTRUCT_DTO", "entity");
+        baseline.put("dependencies", List.of("web", "data-jpa", "postgresql", "validation", "flyway"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> baselineOptions = new LinkedHashMap<>(((Map<String, Map<String, Object>>) baseline.get("sqlOptions")).get("postgresql"));
+        baselineOptions.put("generateTests", true);
+        baseline.put("sqlOptions", Map.of("postgresql", baselineOptions));
+        golden.pin("sql__postgresql__mapstruct-dto__flyway-validation-tests", wizard(baseline));
         golden.pin("sql__mssql__mapstruct-dto", wizard(sqlBody("mssql", "legacy-mssql.sql", "MAPSTRUCT_DTO", "entity")));
 
         // The OpenAPI wizard: server stubs, a client, both.

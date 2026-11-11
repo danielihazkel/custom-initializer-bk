@@ -54,9 +54,20 @@ public class SqlEntityGenerator {
      *  generated files keyed under {@code src/main/java/{{packagePath}}/...}. */
     public List<GeneratedJavaFile> generate(String sql, SqlDialect dialect,
                                             String packageName, SqlDepOptions options) {
+        return generate(sql, dialect, packageName, options, SqlProjectFacts.NONE);
+    }
+
+    /**
+     * As above, knowing what is on the project's build: with the validation starter the DTOs (or,
+     * exposing entities directly, the entities) carry Bean Validation and the controllers
+     * {@code @Valid}; with Flyway the DDL becomes the first migration.
+     */
+    public List<GeneratedJavaFile> generate(String sql, SqlDialect dialect, String packageName,
+                                            SqlDepOptions options, SqlProjectFacts projectFacts) {
         if (sql == null || sql.isBlank()) {
             return List.of();
         }
+        SqlProjectFacts facts = projectFacts == null ? SqlProjectFacts.NONE : projectFacts;
         SqlDepOptions opts = options != null ? options : new SqlDepOptions("entity", List.of());
 
         List<TableModel> tables = parseTables(sql, dialect);
@@ -77,7 +88,7 @@ public class SqlEntityGenerator {
             files.add(new GeneratedJavaFile(SqlNames.NAMING_STRATEGY_PATH, SqlNames.namingStrategySource(packageName)));
         }
         for (TableModel table : tables) {
-            files.add(renderEntity(table, dialect, packageName, opts, knownTableNames));
+            files.add(renderEntity(table, dialect, packageName, opts, knownTableNames, facts));
             files.addAll(renderEnums(table, dialect, packageName, opts, knownTableNames));
             if (table.hasCompositePk()) {
                 files.add(renderIdClass(table, dialect, packageName, opts));
@@ -95,15 +106,50 @@ public class SqlEntityGenerator {
             if (apiOn) {
                 files.add(renderService(table, dialect, packageName, opts, tablesByName, knownTableNames));
                 if (opts.apiMode().generatesDto()) {
-                    files.add(renderDto(table, dialect, packageName, opts, tablesByName, knownTableNames));
+                    files.add(renderDto(table, dialect, packageName, opts, tablesByName, knownTableNames, facts));
                 }
                 if (opts.apiMode() == SqlApiMode.MAPSTRUCT_DTO) {
                     files.add(renderMapper(table, dialect, packageName, opts, tablesByName, knownTableNames));
                 }
-                files.add(renderController(table, dialect, packageName, opts, tablesByName, knownTableNames));
+                files.add(renderController(table, dialect, packageName, opts, tablesByName, knownTableNames, facts));
+                if (opts.generateTests()) {
+                    files.add(renderControllerTest(table, packageName, opts, facts));
+                }
             }
         }
+        // With Flyway on the build, the DDL the project was generated from is its first migration.
+        if (facts.flyway() && opts.flywayBaselineOrDefault()) {
+            String baseline = baselineMigration(sql);
+            if (baseline != null) files.add(new GeneratedJavaFile(FLYWAY_BASELINE_PATH, baseline));
+        }
         return files;
+    }
+
+    /** Where the Flyway dependency's placeholder migration is: the baseline replaces it. */
+    public static final String FLYWAY_BASELINE_PATH = "src/main/resources/db/migration/V1__init.sql";
+
+    /**
+     * The pasted script as a migration: every statement but the SELECTs (those became view
+     * entities, and a migration that only reads does nothing), as it was written. Null when
+     * nothing is left.
+     */
+    static String baselineMigration(String sql) {
+        StringBuilder out = new StringBuilder();
+        for (String raw : splitStatements(sql)) {
+            String bare = stripComments(raw).trim();
+            if (bare.isEmpty() || SELECT_LEAD.matcher(bare).find()) continue;
+            out.append(raw.strip()).append(";\n\n");
+        }
+        if (out.length() == 0) return null;
+        return """
+                -- Baseline: the schema this project was generated from (the DDL given to the SQL wizard).
+                --
+                -- On a database that already has these tables Flyway does not run it:
+                -- spring.flyway.baseline-on-migrate marks an existing schema as version 1.
+                -- On an empty one (a new environment, a test database) it creates them.
+                -- Later changes go in V2__describe_change.sql, V3__…
+
+                """ + out.toString().stripTrailing() + "\n";
     }
 
     /** Exposed for lightweight preview and up-front validation — just returns
@@ -474,6 +520,10 @@ public class SqlEntityGenerator {
     private static final Pattern ALTER_TABLE_LEAD = Pattern.compile(
             "^\\s*ALTER\\s+TABLE\\s+(?:ONLY\\s+)?(?:IF\\s+EXISTS\\s+)?(\\S+)", Pattern.CASE_INSENSITIVE);
 
+    /** A column's own {@code REFERENCES [schema.]table [(column)]}. */
+    private static final Pattern INLINE_REFERENCES = Pattern.compile(
+            "(?i)\\bREFERENCES\\s+((?:[^\\s(.]+\\s*\\.\\s*)*[^\\s(.]+)\\s*(?:\\(\\s*([^),]+?)\\s*\\))?");
+
     /** One {@code ADD [CONSTRAINT name] PRIMARY KEY|FOREIGN KEY|UNIQUE (cols) [REFERENCES t (cols)]} clause. */
     private static final Pattern ALTER_ADD_CONSTRAINT = Pattern.compile(
             "\\bADD\\s+(?:CONSTRAINT\\s+\\S+\\s+)?(PRIMARY\\s+KEY|FOREIGN\\s+KEY|UNIQUE)(?:\\s+(?:NON)?CLUSTERED)?\\s*\\(([^)]*)\\)"
@@ -835,6 +885,19 @@ public class SqlEntityGenerator {
         List<ColumnModel> columns = new ArrayList<>();
         List<ColumnDefinition> defs = ct.getColumnDefinitions() == null
                 ? Collections.emptyList() : ct.getColumnDefinitions();
+        // A foreign key written on the column itself (team_id BIGINT REFERENCES teams(id)) — the
+        // usual way to write one in PostgreSQL and MySQL scripts. Only the table-level form was read.
+        for (ColumnDefinition cd : defs) {
+            if (cd.getColumnSpecs() == null) continue;
+            Matcher ref = INLINE_REFERENCES.matcher(String.join(" ", cd.getColumnSpecs()));
+            if (!ref.find()) continue;
+            String column = unquote(cd.getColumnName(), quoted);
+            if (fkColumnNames.contains(column)) continue;
+            List<String> refCols = ref.group(2) == null || ref.group(2).isBlank()
+                    ? List.of() : List.of(unquote(ref.group(2).trim(), quoted));
+            fks.add(new ForeignKey(List.of(column), bareName(ref.group(1).replaceAll("\\s+", "")), refCols));
+            fkColumnNames.add(column);
+        }
         for (ColumnDefinition cd : defs) {
             columns.add(toColumnModel(cd, pkColumns, fkColumnNames, quoted));
         }
@@ -1030,7 +1093,7 @@ public class SqlEntityGenerator {
 
     private GeneratedJavaFile renderEntity(TableModel table, SqlDialect dialect,
                                            String packageName, SqlDepOptions opts,
-                                           Set<String> knownTableNames) {
+                                           Set<String> knownTableNames, SqlProjectFacts facts) {
         if (table.isView()) {
             return renderViewEntity(table, dialect, packageName, opts);
         }
@@ -1059,12 +1122,15 @@ public class SqlEntityGenerator {
 
         Set<ForeignKey> emittedFks = new HashSet<>();
         Set<String> usedFieldNames = new HashSet<>();
-        Members body = new Members();
+        // Exposed directly (no DTO), the entity is the request body: it carries the validation.
+        Members body = new Members(facts.validation() && opts.apiMode() == SqlApiMode.ENTITY_DIRECT);
         for (ColumnModel c : table.columns()) {
             JavaType jt = TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale());
             imports.addAll(jt.imports());
             processColumn(body, c, jt, table, dialect, knownTableNames, emittedFks, usedFieldNames, imports);
         }
+        addConstraintImports(imports, body.list.stream()
+                .flatMap(m -> ((List<String>) m.get("lines")).stream()).toList());
         // UNIQUE over several columns is the table's; over one column it is on the column.
         String uniqueConstraints = table.uniqueConstraints().stream()
                 .map(cols -> "@UniqueConstraint(columnNames = {" + cols.stream()
@@ -1100,6 +1166,12 @@ public class SqlEntityGenerator {
     private static final class Members {
         final List<Map<String, Object>> list = new ArrayList<>();
         private final List<String> pending = new ArrayList<>();
+        /** Whether the members carry Bean Validation annotations. */
+        final boolean validated;
+
+        Members(boolean validated) {
+            this.validated = validated;
+        }
 
         /** A comment line for the next member. */
         void comment(String line) {
@@ -1162,8 +1234,9 @@ public class SqlEntityGenerator {
     }
 
     /**
-     * Decide how to render a single column: as a JPA association (@ManyToOne /
-     * shared-PK @MapsId), as part of a composite-FK association, or as a plain
+     * Decide how to render a single column: as a JPA association (@ManyToOne), as a key
+     * column with a read-only association beside it (a key that is also a foreign key),
+     * as part of a composite-FK association, or as a plain
      * scalar field. Falls back to scalar+TODO when the FK target table is not
      * in the same generation batch.
      */
@@ -1191,11 +1264,13 @@ public class SqlEntityGenerator {
 
         ForeignKey singleFk = findSingleForeignKey(c.name(), table.foreignKeys());
         if (singleFk != null && knownTableNames.contains(singleFk.referencedTable())) {
-            if (isCompositeKeyPart(table, c)) {
-                // One part of a composite key that is also a foreign key (order_items.order_id):
-                // the key part stays a scalar @Id — the @IdClass binds to it by name — and the
-                // association reads through the same column. Replacing the scalar with the
-                // association left the @IdClass without its property, and the app did not start.
+            if (isKeyColumn(c)) {
+                // A key column that is also a foreign key — one part of a composite key
+                // (order_items.order_id) or the whole key (author_profiles.author_id, a shared-key
+                // one-to-one): the key stays a scalar @Id, which the @IdClass and Spring Data's
+                // repository bind to, and the association reads through the same column. With the
+                // association in the key's place the @IdClass had no property to match, and a
+                // repository over "@Id @OneToOne" could not tell its id type: neither app started.
                 appendScalarField(body, c, jt, table, dialect, usedFieldNames, null);
                 appendReadOnlyAssociation(body, c, singleFk, table, dialect, usedFieldNames, imports);
             } else {
@@ -1226,27 +1301,34 @@ public class SqlEntityGenerator {
         imports.add("jakarta.persistence.JoinColumn");
         imports.add("jakarta.persistence.FetchType");
 
-        // Shared-PK one-to-one: single PK column that is also a single-column FK.
-        if (c.isPk() && table.pkColumns().size() == 1) {
-            imports.add("jakarta.persistence.OneToOne");
-            imports.add("jakarta.persistence.MapsId");
-            body.add(List.of(
-                    "@Id",
-                    "@OneToOne(fetch = FetchType.LAZY)",
-                    "@MapsId",
-                    "@JoinColumn(name = \"" + sqlName(table, c.name(), dialect) + "\")"), refEntity, fieldName);
-            return;
-        }
-
-        body.add(List.of(
-                "@ManyToOne(fetch = FetchType.LAZY)",
-                "@JoinColumn(name = \"" + sqlName(table, c.name(), dialect) + '"'
-                        + (c.nullable() ? "" : ", nullable = false") + ")"), refEntity, fieldName);
+        List<String> lines = new ArrayList<>();
+        if (body.validated && !c.nullable()) lines.add("@NotNull");
+        lines.add("@ManyToOne(fetch = FetchType.LAZY)");
+        lines.add("@JoinColumn(name = \"" + sqlName(table, c.name(), dialect) + '"'
+                + (c.nullable() ? "" : ", nullable = false") + ")");
+        body.add(lines, refEntity, fieldName);
     }
 
-    /** Whether {@code c} is one column of a key of several. */
-    private static boolean isCompositeKeyPart(TableModel table, ColumnModel c) {
-        return c.isPk() && table.pkColumns().size() > 1;
+    /**
+     * What Bean Validation can say of a column: a value is required unless the column is nullable
+     * or the database generates it, and text is no longer than the column.
+     */
+    private static List<String> constraintsOf(ColumnModel c, JavaType mapped, boolean isEnum) {
+        List<String> out = new ArrayList<>();
+        if (!c.nullable() && !(c.isPk() && c.isAutoIncrement())) out.add("@NotNull");
+        if (!isEnum && c.precision() != null && isStringType(mapped)) out.add("@Size(max = " + c.precision() + ")");
+        return out;
+    }
+
+    /** The imports of the constraint annotations among {@code lines}. */
+    private static void addConstraintImports(Set<String> imports, List<String> lines) {
+        if (lines.stream().anyMatch(l -> l.startsWith("@NotNull"))) imports.add("jakarta.validation.constraints.NotNull");
+        if (lines.stream().anyMatch(l -> l.startsWith("@Size("))) imports.add("jakarta.validation.constraints.Size");
+    }
+
+    /** Whether {@code c} is the key or one column of it. */
+    private static boolean isKeyColumn(ColumnModel c) {
+        return c.isPk();
     }
 
     /** The association of a key column that stays a scalar: read through the column, never written. */
@@ -1255,11 +1337,13 @@ public class SqlEntityGenerator {
         String refEntity = toPascalCase(fk.referencedTable());
         String fieldName = pickAssociationFieldName(c, fk, usedFieldNames, false);
         usedFieldNames.add(fieldName);
-        imports.add("jakarta.persistence.ManyToOne");
+        // The whole key: at most one row per parent.
+        String kind = table.pkColumns().size() == 1 ? "OneToOne" : "ManyToOne";
+        imports.add("jakarta.persistence." + kind);
         imports.add("jakarta.persistence.JoinColumn");
         imports.add("jakarta.persistence.FetchType");
         body.add(List.of(
-                "@ManyToOne(fetch = FetchType.LAZY)",
+                "@" + kind + "(fetch = FetchType.LAZY)",
                 "@JoinColumn(name = \"" + sqlName(table, c.name(), dialect) + "\", insertable = false, updatable = false)"),
                 refEntity, fieldName);
     }
@@ -1311,6 +1395,7 @@ public class SqlEntityGenerator {
             }
         }
 
+        if (body.validated) lines.addAll(constraintsOf(c, jt, enumClass != null));
         if (enumClass != null) {
             lines.add("@Enumerated(EnumType.STRING)");
         }
@@ -1490,7 +1575,8 @@ public class SqlEntityGenerator {
      * single foreign-key id field on the DTO.
      */
     private record Member(boolean assoc, String fieldName, String pascalName,
-                          String javaType, Set<String> imports, boolean isPk, FlattenInfo flatten) {}
+                          String javaType, Set<String> imports, boolean isPk, FlattenInfo flatten,
+                          List<String> constraints) {}
 
     private record FlattenInfo(String dtoIdField, String idType, Set<String> idImports,
                                String targetEntity, String targetPkPascal) {}
@@ -1524,13 +1610,13 @@ public class SqlEntityGenerator {
                     used.add(fieldName);
                     emittedFks.add(compositeFk);
                     members.add(new Member(true, fieldName, capitalize(fieldName),
-                            toPascalCase(compositeFk.referencedTable()), Set.of(), false, null));
+                            toPascalCase(compositeFk.referencedTable()), Set.of(), false, null, List.of()));
                     skipped = true; // composite FK can't flatten to a single id
                 }
                 if (c.isPk()) {
-                    members.add(scalarMember(c, jt, used));
+                    members.add(scalarMember(c, jt, used, dialect));
                 } else if (!refKnown) {
-                    members.add(scalarMember(c, jt, used));
+                    members.add(scalarMember(c, jt, used, dialect));
                 } else {
                     skipped = true; // non-PK column absorbed by the association
                 }
@@ -1538,9 +1624,9 @@ public class SqlEntityGenerator {
             }
 
             ForeignKey singleFk = findSingleForeignKey(c.name(), table.foreignKeys());
-            if (singleFk != null && knownTableNames.contains(singleFk.referencedTable()) && isCompositeKeyPart(table, c)) {
+            if (singleFk != null && knownTableNames.contains(singleFk.referencedTable()) && isKeyColumn(c)) {
                 // The key part is the member; the association that reads through it is derived.
-                members.add(scalarMember(c, jt, used));
+                members.add(scalarMember(c, jt, used, dialect));
                 used.add(pickAssociationFieldName(c, singleFk, used, false));
                 emittedFks.add(singleFk);
                 continue;
@@ -1551,17 +1637,19 @@ public class SqlEntityGenerator {
                 emittedFks.add(singleFk);
                 FlattenInfo flatten = buildFlatten(c, singleFk, dialect, tablesByName);
                 if (flatten == null) skipped = true;
+                // The id a DTO carries for the link is required when the foreign key is.
                 members.add(new Member(true, fieldName, capitalize(fieldName),
-                        toPascalCase(singleFk.referencedTable()), Set.of(), false, flatten));
+                        toPascalCase(singleFk.referencedTable()), Set.of(), false, flatten,
+                        c.nullable() ? List.of() : List.of("@NotNull")));
                 continue;
             }
 
-            members.add(scalarMember(c, jt, used));
+            members.add(scalarMember(c, jt, used, dialect));
         }
         return new EntityView(members, skipped);
     }
 
-    private Member scalarMember(ColumnModel c, JavaType jt, Set<String> used) {
+    private Member scalarMember(ColumnModel c, JavaType jt, Set<String> used, SqlDialect dialect) {
         String fieldName = toCamelCase(c.name());
         if (used.contains(fieldName)) {
             int n = 2;
@@ -1569,8 +1657,10 @@ public class SqlEntityGenerator {
             fieldName = fieldName + n;
         }
         used.add(fieldName);
+        JavaType mapped = TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale());
         return new Member(false, fieldName, capitalize(fieldName),
-                jt.simpleName(), jt.imports(), c.isPk(), null);
+                jt.simpleName(), jt.imports(), c.isPk(), null,
+                constraintsOf(c, mapped, !mapped.simpleName().equals(jt.simpleName())));
     }
 
     /** Resolve the flattened DTO id field for a single-column FK, or null when
@@ -1662,7 +1752,7 @@ public class SqlEntityGenerator {
 
     private GeneratedJavaFile renderDto(TableModel table, SqlDialect dialect, String packageName,
                                         SqlDepOptions opts, Map<String, TableModel> tablesByName,
-                                        Set<String> knownTableNames) {
+                                        Set<String> knownTableNames, SqlProjectFacts facts) {
         String entityClass = toPascalCase(table.name());
         String entityPkg = packageName + "." + opts.subPackage();
         EntityView view = analyze(table, dialect, tablesByName, knownTableNames, entityPkg);
@@ -1684,18 +1774,23 @@ public class SqlEntityGenerator {
         List<Map<String, Object>> fromArgs = new ArrayList<>();
         List<Map<String, Object>> scalarViews = new ArrayList<>();
         List<Map<String, Object>> flatViews = new ArrayList<>();
+        List<String> constraintLines = new ArrayList<>();
         for (Member m : scalars) {
-            components.add(component(m.javaType(), m.fieldName()));
+            components.add(component(m.javaType(), m.fieldName(), facts.validation() ? m.constraints() : List.of()));
+            if (facts.validation()) constraintLines.addAll(m.constraints());
             fromArgs.add(Map.of("expr", "entity.get" + m.pascalName() + "()"));
             scalarViews.add(Map.of("pascal", m.pascalName(), "name", m.fieldName()));
         }
         for (Member m : flat) {
             FlattenInfo fi = m.flatten();
-            components.add(component(fi.idType(), fi.dtoIdField()));
+            components.add(component(fi.idType(), fi.dtoIdField(), facts.validation() ? m.constraints() : List.of()));
+            if (facts.validation()) constraintLines.addAll(m.constraints());
             fromArgs.add(Map.of("expr", "entity.get" + m.pascalName() + "() == null ? null : entity.get"
                     + m.pascalName() + "().get" + fi.targetPkPascal() + "()"));
             flatViews.add(flatView(m));
         }
+
+        addConstraintImports(imports, constraintLines);
 
         Map<String, Object> model = new LinkedHashMap<>();
         model.put("package", packageName + ".dto");
@@ -1715,8 +1810,10 @@ public class SqlEntityGenerator {
                 WizardTemplates.render("sql/Dto.java", model));
     }
 
-    private static Map<String, Object> component(String type, String name) {
+    private static Map<String, Object> component(String type, String name, List<String> constraints) {
         Map<String, Object> c = new LinkedHashMap<>();
+        // Each with a trailing space: the template writes them straight before the type.
+        c.put("constraints", constraints.stream().map(a -> a + " ").collect(Collectors.joining()));
         c.put("type", type);
         c.put("name", name);
         return c;
@@ -1784,7 +1881,7 @@ public class SqlEntityGenerator {
 
     private GeneratedJavaFile renderController(TableModel table, SqlDialect dialect, String packageName,
                                                SqlDepOptions opts, Map<String, TableModel> tablesByName,
-                                               Set<String> knownTableNames) {
+                                               Set<String> knownTableNames, SqlProjectFacts facts) {
         String entityClass = toPascalCase(table.name());
         String entityPkg = packageName + "." + opts.subPackage();
         SqlApiMode mode = opts.apiMode();
@@ -1817,6 +1914,7 @@ public class SqlEntityGenerator {
         imports.add("org.springframework.data.domain.Pageable");
         imports.add("org.springframework.http.ResponseEntity");
         imports.add("org.springframework.web.bind.annotation.*");
+        if (facts.validation() && !table.isView()) imports.add("jakarta.validation.Valid");
 
         String pathVars = parts.stream()
                 .map(p -> "@PathVariable " + p.javaType() + ' ' + p.name())
@@ -1837,6 +1935,8 @@ public class SqlEntityGenerator {
         model.put("convOpen", convOpen);
         model.put("convClose", convClose);
         model.put("bodyToEntity", bodyToEntity);
+        // The body is validated where the validation starter is on the build.
+        model.put("bodyAnnotation", facts.validation() ? "@Valid @RequestBody" : "@RequestBody");
         // How a row is addressed: one {id}, or the key's parts as ordered path segments.
         model.put("keyPath", composite ? pkPath : "/{id}");
         model.put("keyParams", composite ? pathVars : "@PathVariable " + id.simpleName() + " id");
@@ -1847,6 +1947,31 @@ public class SqlEntityGenerator {
         return new GeneratedJavaFile(
                 "src/main/java/{{packagePath}}/controller/" + entityClass + "Controller.java",
                 WizardTemplates.render("sql/Controller.java", model));
+    }
+
+    /**
+     * A slice test of the generated controller ({@code @WebMvcTest}, the service mocked): the list
+     * endpoint answers. It is a place to start from — a project's own tests grow out of it.
+     */
+    private GeneratedJavaFile renderControllerTest(TableModel table, String packageName, SqlDepOptions opts,
+                                                   SqlProjectFacts facts) {
+        String entityClass = toPascalCase(table.name());
+        boolean mapstruct = opts.apiMode() == SqlApiMode.MAPSTRUCT_DTO;
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("package", packageName + ".controller");
+        model.put("servicePackage", packageName + ".service");
+        model.put("entityPackage", packageName + "." + opts.subPackage());
+        model.put("mapperPackage", packageName + ".mapper");
+        model.put("entityClass", entityClass);
+        model.put("kebab", toKebab(table.name()));
+        model.put("mapstruct", mapstruct);
+        model.put("mockAnnotation", facts.mockitoBean() ? "MockitoBean" : "MockBean");
+        model.put("mockImport", facts.mockitoBean()
+                ? "org.springframework.test.context.bean.override.mockito.MockitoBean"
+                : "org.springframework.boot.test.mock.mockito.MockBean");
+        return new GeneratedJavaFile(
+                "src/test/java/{{packagePath}}/controller/" + entityClass + "ControllerTest.java",
+                WizardTemplates.render("sql/ControllerTest.java", model));
     }
 
     // ── Name helpers ──────────────────────────────────────────────────────────

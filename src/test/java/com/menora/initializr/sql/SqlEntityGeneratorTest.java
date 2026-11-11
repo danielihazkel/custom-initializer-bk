@@ -1132,6 +1132,196 @@ class SqlEntityGeneratorTest {
     }
 
     @Test
+    void aKeyThatIsAlsoAForeignKeyStaysAScalarId() {
+        // A shared-key one-to-one (profiles.user_id is the key and points at users). It was mapped
+        // "@Id @OneToOne @MapsId" on the association alone; Spring Data cannot tell the id type of
+        // such an entity ("does not define an IdClass") and the application did not start.
+        String sql = """
+                CREATE TABLE users (id BIGINT PRIMARY KEY, name VARCHAR(60));
+                CREATE TABLE profiles (
+                    user_id BIGINT PRIMARY KEY REFERENCES users(id),
+                    bio VARCHAR(400)
+                );
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.INLINE_DTO));
+        assertThat(findFile(files, "entity/Profiles.java").content())
+                .contains("    @Id\n    @Column(name = \"user_id\", nullable = false)\n    private Long userId;")
+                .contains("    @OneToOne(fetch = FetchType.LAZY)\n"
+                        + "    @JoinColumn(name = \"user_id\", insertable = false, updatable = false)\n    private Users user;")
+                .doesNotContain("@MapsId").doesNotContain("@IdClass");
+        assertThat(findFile(files, "repository/ProfilesRepository.java").content()).contains("JpaRepository<Profiles, Long>");
+        assertThat(findFile(files, "dto/ProfilesDto.java").content()).contains("        Long userId,\n        String bio\n");
+        assertThat(findFile(files, "controller/ProfilesController.java").content()).contains("getOne(@PathVariable Long id)");
+    }
+
+    @Test
+    void aForeignKeyWrittenOnTheColumnIsRead() {
+        // team_id BIGINT REFERENCES teams(id): the usual spelling in PostgreSQL and MySQL scripts.
+        // Only the table-level FOREIGN KEY (…) was read, so such a script gave no associations.
+        String sql = """
+                CREATE TABLE teams (id BIGINT PRIMARY KEY, name VARCHAR(60));
+                CREATE TABLE players (
+                    id BIGINT PRIMARY KEY,
+                    team_id BIGINT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                    coach_id BIGINT REFERENCES app.teams,
+                    agent_id BIGINT REFERENCES agents (id),
+                    notes VARCHAR(200)
+                );
+                """;
+        String players = findFile(generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo", null), "entity/Players.java").content();
+        assertThat(players)
+                .contains("    @ManyToOne(fetch = FetchType.LAZY)\n    @JoinColumn(name = \"team_id\", nullable = false)\n    private Teams team;")
+                // No column named: the target's key. A schema before the name is dropped.
+                .contains("    @ManyToOne(fetch = FetchType.LAZY)\n    @JoinColumn(name = \"coach_id\")\n    private Teams coach;")
+                // A table outside the script stays a plain column.
+                .contains("    @Column(name = \"agent_id\")\n    private Long agentId;")
+                .contains("private String notes;");
+    }
+
+    // ── What the project's build adds: validation, the Flyway baseline, tests ──
+
+    private static final String VALIDATED_SQL = """
+            CREATE TABLE teams (id BIGINT PRIMARY KEY, name VARCHAR(60) NOT NULL);
+            CREATE TABLE players (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                team_id BIGINT NOT NULL REFERENCES teams(id),
+                coach_id BIGINT REFERENCES teams(id),
+                nickname VARCHAR(30) NOT NULL,
+                bio TEXT,
+                shirt INTEGER NOT NULL,
+                position VARCHAR(10) NOT NULL CHECK (position IN ('GOAL', 'FIELD'))
+            );
+            """;
+
+    @Test
+    void withTheValidationStarterTheDtoCarriesTheColumnsConstraints() {
+        List<GeneratedJavaFile> files = generator.generate(VALIDATED_SQL, SqlDialect.POSTGRESQL, "com.menora.demo",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.INLINE_DTO), new SqlProjectFacts(true, false, false));
+        assertThat(findFile(files, "dto/PlayersDto.java").content())
+                // The database generates the key: never asked of a client.
+                .contains("        Long id,\n")
+                .contains("        @NotNull @Size(max = 30) String nickname,\n")
+                // Nullable, no length: nothing to say.
+                .contains("        String bio,\n")
+                .contains("        @NotNull Integer shirt,\n")
+                // An enum has its values; a length would be noise.
+                .contains("        @NotNull PlayersPosition position,\n")
+                // A required link is a required id; an optional one is not.
+                .contains("        @NotNull Long teamId,\n        Long coachId\n")
+                .contains("import jakarta.validation.constraints.NotNull;")
+                .contains("import jakarta.validation.constraints.Size;");
+        // A key the client supplies is required.
+        assertThat(findFile(files, "dto/TeamsDto.java").content())
+                .contains("        @NotNull Long id,\n        @NotNull @Size(max = 60) String name\n");
+        assertThat(findFile(files, "controller/PlayersController.java").content())
+                .contains("import jakarta.validation.Valid;")
+                .contains("public PlayersDto create(@Valid @RequestBody PlayersDto body)")
+                .contains("public PlayersDto update(@PathVariable Long id, @Valid @RequestBody PlayersDto body)");
+        // The DTO is the request body, so the entity stays as it was.
+        assertThat(findFile(files, "entity/Players.java").content()).doesNotContain("@NotNull").doesNotContain("@Size");
+    }
+
+    @Test
+    void exposedDirectlyTheEntityCarriesTheConstraints() {
+        List<GeneratedJavaFile> files = generator.generate(VALIDATED_SQL, SqlDialect.POSTGRESQL, "com.menora.demo",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.ENTITY_DIRECT), new SqlProjectFacts(true, false, false));
+        assertThat(findFile(files, "entity/Players.java").content())
+                .contains("    @NotNull\n    @Size(max = 30)\n    @Column(nullable = false, length = 30)\n    private String nickname;")
+                .contains("    @NotNull\n    @Enumerated(EnumType.STRING)\n    @Column(nullable = false, length = 10)\n    private PlayersPosition position;")
+                .contains("    @NotNull\n    @ManyToOne(fetch = FetchType.LAZY)\n    @JoinColumn(name = \"team_id\", nullable = false)\n    private Teams team;")
+                .contains("    @ManyToOne(fetch = FetchType.LAZY)\n    @JoinColumn(name = \"coach_id\")\n    private Teams coach;")
+                // Nullable, no length: nothing to say.
+                .contains("\n\n    private String bio;\n")
+                .contains("import jakarta.validation.constraints.NotNull;")
+                .contains("import jakarta.validation.constraints.Size;");
+        assertThat(findFile(files, "controller/PlayersController.java").content())
+                .contains("public Players create(@Valid @RequestBody Players body)");
+    }
+
+    @Test
+    void withoutTheValidationStarterNothingNamesIt() {
+        // The annotations would not compile: jakarta.validation is not on the build.
+        for (SqlApiMode mode : SqlApiMode.values()) {
+            List<GeneratedJavaFile> files = generator.generate(VALIDATED_SQL, SqlDialect.POSTGRESQL, "com.menora.demo",
+                    new SqlDepOptions("entity", List.of(), mode), new SqlProjectFacts(false, true, true));
+            assertThat(files).filteredOn(f -> f.relativePath().endsWith(".java")).allSatisfy(f ->
+                    assertThat(f.content()).as(f.relativePath()).doesNotContain("jakarta.validation").doesNotContain("@Valid"));
+        }
+    }
+
+    @Test
+    void withFlywayTheScriptIsTheFirstMigration() {
+        String sql = """
+                -- the catalogue; kept by the data team
+                CREATE TABLE genres (id BIGINT PRIMARY KEY, name VARCHAR(40) NOT NULL);
+                CREATE INDEX genres_name ON genres (name);
+                ALTER TABLE genres ADD CONSTRAINT genres_name_once UNIQUE (name);
+                SELECT id, name FROM genres;
+                """;
+        SqlDepOptions opts = new SqlDepOptions("entity", List.of(), SqlApiMode.NONE);
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo", opts,
+                new SqlProjectFacts(false, true, false));
+        String baseline = findFile(files, "db/migration/V1__init.sql").content();
+        assertThat(baseline)
+                .startsWith("-- Baseline: the schema this project was generated from")
+                .contains("baseline-on-migrate")
+                // Every statement as written, comments and all — the index and the ALTER too…
+                .contains("-- the catalogue; kept by the data team\nCREATE TABLE genres (id BIGINT PRIMARY KEY, name VARCHAR(40) NOT NULL);\n")
+                .contains("CREATE INDEX genres_name ON genres (name);\n")
+                .contains("ALTER TABLE genres ADD CONSTRAINT genres_name_once UNIQUE (name);\n")
+                // …but not a query: it became a view entity, and a migration that only reads does nothing.
+                .doesNotContain("SELECT id, name")
+                .endsWith(";\n");
+        // It takes the place of the Flyway dependency's placeholder migration.
+        assertThat(SqlEntityGenerator.FLYWAY_BASELINE_PATH).isEqualTo("src/main/resources/db/migration/V1__init.sql");
+
+        // Not without Flyway on the build, and not when the caller says no.
+        assertThat(generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo", opts, SqlProjectFacts.NONE))
+                .extracting(GeneratedJavaFile::relativePath).noneMatch(p -> p.endsWith(".sql"));
+        assertThat(generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.NONE, false, false), new SqlProjectFacts(false, true, false)))
+                .extracting(GeneratedJavaFile::relativePath).noneMatch(p -> p.endsWith(".sql"));
+        // Only queries: nothing to migrate.
+        assertThat(SqlEntityGenerator.baselineMigration("SELECT 1; -- nothing else\n")).isNull();
+    }
+
+    @Test
+    void generateTestsWritesASliceTestPerController() {
+        SqlDepOptions inline = new SqlDepOptions("entity", List.of(), SqlApiMode.INLINE_DTO, null, true);
+        List<GeneratedJavaFile> files = generator.generate(VALIDATED_SQL, SqlDialect.POSTGRESQL, "com.menora.demo", inline,
+                SqlProjectFacts.NONE);
+        assertThat(files).extracting(GeneratedJavaFile::relativePath)
+                .contains("src/test/java/{{packagePath}}/controller/PlayersControllerTest.java",
+                        "src/test/java/{{packagePath}}/controller/TeamsControllerTest.java");
+        assertThat(findFile(files, "controller/PlayersControllerTest.java").content())
+                .contains("package com.menora.demo.controller;")
+                .contains("@WebMvcTest(PlayersController.class)")
+                .contains("import org.springframework.boot.test.mock.mockito.MockBean;")
+                .contains("    @MockBean\n    private PlayersService service;")
+                .contains("mockMvc.perform(get(\"/api/players\")).andExpect(status().isOk());")
+                .doesNotContain("Mapper");
+
+        // Boot 3.4+: @MockitoBean. With MapStruct the controller takes the mapper too.
+        List<GeneratedJavaFile> mapstruct = generator.generate(VALIDATED_SQL, SqlDialect.POSTGRESQL, "com.menora.demo",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.MAPSTRUCT_DTO, null, true), new SqlProjectFacts(false, false, true));
+        assertThat(findFile(mapstruct, "controller/PlayersControllerTest.java").content())
+                .contains("import org.springframework.test.context.bean.override.mockito.MockitoBean;")
+                .contains("    @MockitoBean\n    private PlayersService service;")
+                .contains("import com.menora.demo.mapper.PlayersMapper;")
+                .contains("    @MockitoBean\n    private PlayersMapper mapper;")
+                .doesNotContain("MockBean;");
+
+        // No REST stack, no test; and not unless asked.
+        assertThat(generator.generate(VALIDATED_SQL, SqlDialect.POSTGRESQL, "com.menora.demo",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.NONE, null, true), SqlProjectFacts.NONE))
+                .extracting(GeneratedJavaFile::relativePath).noneMatch(p -> p.contains("/test/"));
+        assertThat(generator.generate(VALIDATED_SQL, SqlDialect.POSTGRESQL, "com.menora.demo",
+                new SqlDepOptions("entity", List.of(), SqlApiMode.INLINE_DTO), SqlProjectFacts.NONE))
+                .extracting(GeneratedJavaFile::relativePath).noneMatch(p -> p.contains("/test/"));
+    }
+
+    @Test
     void anUnknownApiModeIsRefused() {
         // It used to fall back to NONE: a misspelt mode generated entities only, saying nothing.
         assertThat(SqlApiMode.parse(null)).isEqualTo(SqlApiMode.NONE);
