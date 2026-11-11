@@ -396,6 +396,12 @@
       "frontend" : true
     },
     {
+      "key" : "xlsxExport",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
       "key" : "inverseCollections",
       "perEntity" : false,
       "backend" : true,

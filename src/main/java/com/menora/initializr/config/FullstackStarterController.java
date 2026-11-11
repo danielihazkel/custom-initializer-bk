@@ -583,6 +583,7 @@ public class FullstackStarterController {
         // The record's version rides along in the DTO; the page turns a stale 409 into the
         // conflict dialog. Mirrors the backend config.
         EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
+        EntityScaffoldContext.putXlsxExport(projectCtx, entities);
         // Table cells edited in place (frontend only — saved through the existing PUT).
         EntityScaffoldContext.putInlineEdit(projectCtx, entities);
         // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.

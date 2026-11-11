@@ -113,6 +113,7 @@ public class FullstackProjectGenerationConfiguration {
             // @Version + a 409 for a stale update. Narrowed per entity (lockingApplicable);
             // hasOptimisticLocking gates the shared stale-update handler.
             EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
+            EntityScaffoldContext.putXlsxExport(projectCtx, entities);
             // @EnableJpaAuditing ships when any entity is audited, not only with the project option.
             EntityScaffoldContext.putAudit(projectCtx, entities);
             // Demo rows on first start (config/DemoDataLoader, a CommandLineRunner). Backend-only;

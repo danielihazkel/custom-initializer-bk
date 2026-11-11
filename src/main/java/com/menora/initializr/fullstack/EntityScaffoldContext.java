@@ -780,6 +780,54 @@ public final class EntityScaffoldContext {
                 && (e.opts().get("inlineEdit") != null ? e.opts().get("inlineEdit") : projectOpt)));
     }
 
+    /**
+     * Whether any entity resolves the {@code xlsxExport} option on (its override, else the project
+     * option) — {@code hasXlsxExport}, which ships the backend's {@code XlsxWriter} and the
+     * frontend's string for the button.
+     */
+    public static void putXlsxExport(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport"));
+        ctx.put("hasXlsxExport", entities.stream().anyMatch(e ->
+                e.opts().get("xlsxExport") != null ? e.opts().get("xlsxExport") : projectOpt));
+    }
+
+    /** Text inside a Java string literal, on one line. */
+    private static String javaText(Object text) {
+        return SqlNames.javaLiteral(String.valueOf(text).replace('\n', ' ').replace('\r', ' ').replace('\t', ' '));
+    }
+
+    /**
+     * The Excel export's columns ({@code xlsxHeaders}, {@code xlsxCells}): every value under the
+     * name the UI gives it — not the property's — a link by the row it points at where that row
+     * has a name, a file by its name, a set of links by their names.
+     */
+    @SuppressWarnings("unchecked")
+    private static void putXlsxColumns(Map<String, Object> ctx) {
+        List<String> headers = new ArrayList<>();
+        List<String> cells = new ArrayList<>();
+        for (Map<String, Object> f : (List<Map<String, Object>>) ctx.get("fields")) {
+            headers.add(javaText(f.get("label")));
+            cells.add("dto." + (Boolean.TRUE.equals(f.get("isAttachment")) ? f.get("nameField") : f.get("name")) + "()");
+        }
+        for (Map<String, Object> rel : (List<Map<String, Object>>) ctx.get("relations")) {
+            headers.add(javaText(rel.get("label")));
+            cells.add("dto." + (Boolean.TRUE.equals(rel.get("hasTargetLabel")) ? rel.get("fieldName") + "Label" : rel.get("fkFieldName")) + "()");
+        }
+        for (Map<String, Object> set : (List<Map<String, Object>>) ctx.getOrDefault("collections", List.of())) {
+            headers.add(javaText(set.get("label")));
+            cells.add("dto." + set.get("labelsField") + "() == null ? null : String.join(\"; \", dto." + set.get("labelsField") + "())");
+        }
+        if (Boolean.TRUE.equals(ctx.get("auditApplicable"))) {
+            headers.add("Created");
+            cells.add("dto.createdAt()");
+            headers.add("Updated");
+            cells.add("dto.updatedAt()");
+        }
+        ctx.put("xlsxHeaders", headers);
+        ctx.put("xlsxCells", cells);
+        ctx.put("xlsxSheetName", javaText(ctx.get("entityLabelPlural")));
+    }
+
     public static void putCsvImport(Map<String, Object> ctx, List<EntityDefinition> entities) {
         boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldCsvImport"));
         ctx.put("hasCsvImport", entities.stream().anyMatch(e -> !e.readOnly()
@@ -2700,6 +2748,10 @@ public final class EntityScaffoldContext {
                     ? "{jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE}"
                     : "{jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE, jakarta.persistence.CascadeType.REMOVE}");
         }
+        if (Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport"))) putXlsxColumns(ctx);
+        // One busy flag for whichever exports the list page offers.
+        ctx.put("usesDownload", Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport"))
+                || Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport")));
         boolean hasCompositions = !compositions.isEmpty() && mutable;
         ctx.put("compositions", hasCompositions ? compositions : List.of());
         ctx.put("hasCompositions", hasCompositions);
@@ -2783,7 +2835,8 @@ public final class EntityScaffoldContext {
         // A list page's hideActions only reach a list that has an action to hide (the validator
         // rejects them on a read-only entity without an export).
         ctx.put("listActionsConfigurable", Boolean.TRUE.equals(ctx.get("listActionsConfigurable"))
-                && (mutable || Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport"))));
+                && (mutable || Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport"))
+                        || Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport"))));
         return ctx;
     }
 

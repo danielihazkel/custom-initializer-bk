@@ -695,7 +695,10 @@ public final class FullstackPageValidator {
                                                     Set<String> scaffoldOpts) {
         if (raw == null || raw.isEmpty()) return null;
         Boolean exportOverride = entity.opts().get("csvExport");
-        boolean exports = exportOverride != null ? exportOverride : scaffoldOpts.contains("csvExport");
+        Boolean sheetOverride = entity.opts().get("xlsxExport");
+        // Either export is an action a list has: CSV, or the Excel workbook.
+        boolean exports = (exportOverride != null ? exportOverride : scaffoldOpts.contains("csvExport"))
+                || (sheetOverride != null ? sheetOverride : scaffoldOpts.contains("xlsxExport"));
         if (entity.readOnly() && !exports) {
             throw new WizardArgumentException(prefix + ": " + entity.name()
                     + " is read-only and exports nothing, so its list has no actions to hide");

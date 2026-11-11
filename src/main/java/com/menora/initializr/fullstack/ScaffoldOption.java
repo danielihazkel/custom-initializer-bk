@@ -33,6 +33,8 @@ public enum ScaffoldOption {
     OPTIMISTIC_LOCKING("optimisticLocking", "optScaffoldOptimisticLocking", true, true, true),
     /** Table cells edited in place — saved through the existing PUT, so the backend never reads it. */
     INLINE_EDIT("inlineEdit", "optScaffoldInlineEdit", false, true, true),
+    /** The list as an Excel workbook, beside the CSV: written by the generated backend itself. */
+    XLSX_EXPORT("xlsxExport", "optScaffoldXlsxExport", true, true, true),
 
     INVERSE_COLLECTIONS("inverseCollections", "optScaffoldInverse", true, true, false),
     /** springdoc annotations; the {@code openapi} dependency is force-added with it. */

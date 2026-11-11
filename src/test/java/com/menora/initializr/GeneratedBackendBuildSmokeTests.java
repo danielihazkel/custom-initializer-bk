@@ -291,7 +291,7 @@ class GeneratedBackendBuildSmokeTests {
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
         body.put("pages", List.of());
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
-        body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "inverseCollections", "csvExport",
+        body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "inverseCollections", "csvExport", "xlsxExport",
                 "csvImport", "bulkDelete", "bulkUpdate", "optimisticLocking", "seedData", "tests")));
         Path backend = postAndExtractBackend(workDir, body);
         writeLiveTest(backend, "com.menora.support", LIVE_ORDERS_TESTS);
@@ -373,6 +373,53 @@ class GeneratedBackendBuildSmokeTests {
 
     /** Test methods run against the generated Orders backend (every option on) and its demo rows. */
     private static final String LIVE_ORDERS_TESTS = """
+                @Test
+                void theExcelExportIsAWorkbookOfTheListsRows() throws Exception {
+                    send(post("/api/customers"), null, "{\\"name\\":\\"=SUM(A1) & <Sons>\\",\\"email\\":\\"sons@b.co\\",\\"active\\":true}", 200);
+                    var started = mvc.perform(MockMvcRequestBuilders.get("/api/customers/export.xlsx").param("sort", "id,desc")).andReturn();
+                    var response = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(started))
+                            .andExpect(status().isOk()).andReturn().getResponse();
+                    assertThat(response.getContentType()).contains("spreadsheetml.sheet");
+                    assertThat(response.getHeader("Content-Disposition")).contains("customers.xlsx");
+
+                    // A workbook is a zip of XML parts: the five fixed ones, then the sheet.
+                    java.util.Map<String, String> parts = new java.util.LinkedHashMap<>();
+                    try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(response.getContentAsByteArray()))) {
+                        for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                            parts.put(entry.getName(), new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+                        }
+                    }
+                    assertThat(parts.keySet()).containsExactly("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml",
+                            "xl/_rels/workbook.xml.rels", "xl/styles.xml", "xl/worksheets/sheet1.xml");
+                    for (String xml : parts.values()) {
+                        javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                                .parse(new org.xml.sax.InputSource(new java.io.StringReader(xml)));
+                    }
+                    assertThat(parts.get("xl/workbook.xml")).contains("<sheet name=" + '"' + "Customers" + '"');
+                    String sheet = parts.get("xl/worksheets/sheet1.xml").replace('"', '\\'');
+                    // The first row is the columns' names as the UI gives them, in bold.
+                    assertThat(sheet).contains("<row r='1'><c r='A1' s='1' t='inlineStr'><is><t xml:space='preserve'>Id</t></is></c>")
+                            .contains("<t xml:space='preserve'>Name</t>").contains("<t xml:space='preserve'>Email</t>");
+                    // The newest row first (the sort is honoured): a number as a number, a boolean as a
+                    // boolean, and text as text — escaped, and never a formula.
+                    assertThat(sheet).containsPattern("<row r='2'><c r='A2'><v>\\\\d+</v></c>")
+                            .contains("<c r='B2' t='inlineStr'><is><t xml:space='preserve'>=SUM(A1) &amp; &lt;Sons&gt;</t></is></c>")
+                            .contains("t='b'><v>1</v></c>");
+                    // Every row of the list, whatever the page size: the eight demo rows and this one.
+                    assertThat(sheet.split("<row ", -1).length - 1).isGreaterThanOrEqualTo(10);
+                    // The search narrows it like the list.
+                    var narrowed = mvc.perform(MockMvcRequestBuilders.get("/api/customers/export.xlsx").param("q", "Sons")).andReturn();
+                    byte[] one = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(narrowed))
+                            .andReturn().getResponse().getContentAsByteArray();
+                    try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(one))) {
+                        String last = null;
+                        for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                            last = new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                        }
+                        assertThat(last.split("<row ", -1).length - 1).isEqualTo(2);
+                    }
+                }
+
                 @Test
                 void aVersionedRowIsSoftDeletedAndRestored() throws Exception {
                     long id = firstId("/api/customers");

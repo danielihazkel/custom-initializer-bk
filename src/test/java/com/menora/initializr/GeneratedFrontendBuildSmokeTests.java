@@ -422,8 +422,12 @@ class GeneratedFrontendBuildSmokeTests {
         // Orders with its lines composed into the order, on the layout the example ships: the rows
         // editor in the order's form (a picker and number cells), the wizard's step for the rows,
         // the list page reading the record before an edit, and the rows checked by their own rules.
-        Path project = postAndExtractFrontend(workDir, GeneratedBackendBuildSmokeTests.composedOrders("react-tailwind-crud"));
+        Map<String, Object> body = GeneratedBackendBuildSmokeTests.composedOrders("react-tailwind-crud");
+        // …with the Excel button on its list pages, alone (no CSV export beside it).
+        body.put("opts", Map.of("scaffold", List.of("xlsxExport")));
+        Path project = postAndExtractFrontend(workDir, body);
         assertThat(project.resolve("src/features/order-line-form/ui/OrderLineRows.tsx")).isRegularFile();
+        assertThat(Files.readString(project.resolve("src/pages/order/ui/OrderPage.tsx"))).contains("download.run(exportXlsx)");
         assertThat(Files.readString(project.resolve("src/app/screens/NewOrderScreen.tsx"))).contains("fields: ['lines'], keys: ['lines']");
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
@@ -435,6 +439,8 @@ class GeneratedFrontendBuildSmokeTests {
         // The Menora set borrows the rows editor and authors its own list page: classic shell, Hebrew.
         Map<String, Object> body = FullstackCompositionTests.composed("react-menora-digital-crud");
         body.put("locale", "he");
+        // …and both exports on its list pages: the CSV and the Excel workbook.
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "xlsxExport", "audit")));
         Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);

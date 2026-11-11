@@ -144,6 +144,15 @@
       "gatedBy": "hasWorkflows"
     },
     {
+      "source": "XlsxWriter.java.mustache",
+      "path": "src/main/java/{{packagePath}}/web/XlsxWriter.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 12,
+      "gatedBy": "hasXlsxExport"
+    },
+    {
       "source": "CurrentUser.java.mustache",
       "path": "src/main/java/{{packagePath}}/web/CurrentUser.java",
       "perEntity": false,

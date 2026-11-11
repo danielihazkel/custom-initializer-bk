@@ -9,7 +9,7 @@ import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
 {{#usesFormat}}import { {{formatImports}} } from '@shared/ui/format'
-{{/usesFormat}}import { SectionHeader, Chip{{#hasViewToggle}}, Tabs{{/hasViewToggle}}{{#mutable}}, Button{{/mutable}}{{^mutable}}{{#optScaffoldCsvExport}}, Button{{/optScaffoldCsvExport}}{{/mutable}} } from '@shared/ui/menora'
+{{/usesFormat}}import { SectionHeader, Chip{{#hasViewToggle}}, Tabs{{/hasViewToggle}}{{#mutable}}, Button{{/mutable}}{{^mutable}}{{#usesDownload}}, Button{{/usesDownload}}{{/mutable}} } from '@shared/ui/menora'
 import { {{EntityName}}Detail{{#hasWorkflow}}, {{EntityName}}Transitions{{/hasWorkflow}}{{#kanbanIsWorkflow}}, {{EntityName}}Workflow{{/kanbanIsWorkflow}} } from '@features/{{entityNameKebab}}-form'
 {{#kanbanIsWorkflow}}
 import { useMe } from '@shared/api/me'
@@ -19,8 +19,9 @@ import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail}}{{/lockingApplicable}} } from '@shared/api'
 {{#lockingApplicable}}import { StaleNotice } from '@shared/ui/StaleNotice'
 {{/lockingApplicable}}{{#inlineEditApplicable}}import { InlineCell, type InlineKind } from '@shared/ui/InlineCell'
-{{/inlineEditApplicable}}{{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
-{{/optScaffoldCsvExport}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
+{{/inlineEditApplicable}}{{/mutable}}{{#usesDownload}}import { useDownload } from '@shared/api'
+{{/usesDownload}}{{#optScaffoldXlsxExport}}import { api as sheetApi } from '@shared/api'
+{{/optScaffoldXlsxExport}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
 {{/importApplicable}}
 {{#listSideDetail}}import { api } from '@shared/api'
 {{/listSideDetail}}{{#hasCompositions}}import { api as rowsApi } from '@shared/api'
@@ -258,8 +259,18 @@ function oneValue(value: string | undefined): boolean {
     items, totalElements, totalPages, pageNumber, pageSize,
     loading, error, reload,{{#viewKanban}} countBy,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
   } = use{{EntityName}}({ {{#wholeViews}}page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size{{/wholeViews}}{{^wholeViews}}page, size{{/wholeViews}}, sort, q: debouncedSearch{{#hasFilters}}, filters{{#calendarRanged}}: listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/calendarRanged}}{{/hasFilters}} })
-{{#optScaffoldCsvExport}}  const download = useDownload()
-{{/optScaffoldCsvExport}}{{#importApplicable}}  const [importing, setImporting] = useState(false)
+{{#usesDownload}}  const download = useDownload()
+{{/usesDownload}}{{#optScaffoldXlsxExport}}  // The rows the list shows — its search, filters and sort — as an Excel workbook.
+  const exportXlsx = () => {
+    const params = new URLSearchParams()
+    if (debouncedSearch.trim() !== '') params.set('q', debouncedSearch.trim())
+{{#hasFilters}}    for (const [key, value] of Object.entries(filters)) {
+      if (value !== '' && value != null) params.set(key, value)
+    }
+{{/hasFilters}}    if (sort) params.set('sort', `${sort.field},${sort.direction}`)
+    return sheetApi.download(`/api/{{entityNamePluralKebab}}/export.xlsx?${params}`, '{{entityNamePluralKebab}}.xlsx')
+  }
+{{/optScaffoldXlsxExport}}{{#importApplicable}}  const [importing, setImporting] = useState(false)
 {{/importApplicable}}
   // Deleting the last row of the last page must not strand the list past its end.
   useEffect(() => {
@@ -660,7 +671,8 @@ function oneValue(value: string | undefined): boolean {
 {{/isView}}        </div>
         <div className="flex items-center gap-2">
 {{#optScaffoldCsvExport}}          {{#listActionsConfigurable}}{can('export') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={download.busy ? t('exporting') : t('export')} onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
-{{/optScaffoldCsvExport}}{{#importApplicable}}          {{#listActionsConfigurable}}{can('import') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={t('import')} onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) } />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
+{{/optScaffoldCsvExport}}{{#optScaffoldXlsxExport}}          {{#listActionsConfigurable}}{can('export') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={t('excel')} onClick={() => download.run(exportXlsx)} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
+{{/optScaffoldXlsxExport}}{{#importApplicable}}          {{#listActionsConfigurable}}{can('import') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={t('import')} onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) } />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
 {{/importApplicable}}{{#mutable}}          {{#listActionsConfigurable}}{can('new') && {{/listActionsConfigurable}}<Button variant="primary" className="mn-btn--compact" label={t('newX', { x: '{{entityLabelTs}}' })} {{^hasCreatePage}}onClick={openNew}{{/hasCreatePage}}{{#hasCreatePage}}onClick={onCreate ?? openNew}{{/hasCreatePage}} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
 {{/mutable}}        </div>
       </div>
