@@ -2017,6 +2017,20 @@ class FullstackStarterIntegrationTests {
         // Composite PK: no soft delete, hence no restore anywhere.
         assertThat(contentEndingWith(entries, "/repository/OrderLineRepository.java")).doesNotContain("restore");
         assertThat(contentEndingWith(entries, "/controller/OrderLineController.java")).doesNotContain("restore");
+
+        // With a @Version, Hibernate binds the id and the version to a delete: the custom statement
+        // must take both (with one placeholder every delete failed, answered as a 409). A restore
+        // moves the version on — and the audit timestamp — like any other change.
+        body.put("opts", Map.of("scaffold", List.of("softDelete", "optimisticLocking", "audit")));
+        for (String set : List.of("spring-jpa-crud", "spring-jpa-crud-lombok")) {
+            body.put("backendTemplateSet", set);
+            Map<String, String> locked = generateZip(body);
+            assertThat(contentEndingWith(locked, "/entity/Widget.java"))
+                    .contains("@SQLDelete(sql = \"UPDATE widgets SET deleted = true WHERE id = ? AND version = ?\")");
+            assertThat(contentEndingWith(locked, "/repository/WidgetRepository.java"))
+                    .contains("@Query(value = \"UPDATE widgets SET deleted = false, version = coalesce(version, 0) + 1,"
+                            + " updated_at = CURRENT_TIMESTAMP WHERE id = :id\", nativeQuery = true)");
+        }
     }
 
     @Test

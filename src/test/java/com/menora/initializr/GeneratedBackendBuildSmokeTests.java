@@ -141,6 +141,94 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
 
+    @org.junit.jupiter.api.Test
+    void liveApiOfABackendWithEveryOptBehaves(@TempDir Path workDir) throws Exception {
+        // The generated tests mock the service, so no SQL the options add is ever executed by
+        // them. This build adds a test that drives the real API over the demo rows — see
+        // LIVE_ORDERS_TESTS for what it holds the generated code to.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
+        body.put("pages", List.of());
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "inverseCollections", "csvExport",
+                "csvImport", "bulkDelete", "bulkUpdate", "optimisticLocking", "seedData", "tests")));
+        Path backend = postAndExtractBackend(workDir, body);
+        writeLiveTest(backend, "com.menora.support", LIVE_ORDERS_TESTS);
+        runMvn(backend, "-B", "package");
+    }
+
+    /** Test methods run against the generated Orders backend (every option on) and its demo rows. */
+    private static final String LIVE_ORDERS_TESTS = """
+                @Test
+                void aVersionedRowIsSoftDeletedAndRestored() throws Exception {
+                    long id = firstId("/api/customers");
+                    long version = get("/api/customers/" + id).get("version").asLong();
+                    mvc.perform(delete("/api/customers/" + id)).andExpect(status().is2xxSuccessful());
+                    mvc.perform(MockMvcRequestBuilders.get("/api/customers/" + id)).andExpect(status().isNotFound());
+                    mvc.perform(post("/api/customers/" + id + "/restore")).andExpect(status().isOk());
+                    JsonNode back = get("/api/customers/" + id);
+                    // Restoring is a change: a client still holding the old version must be told.
+                    assertThat(back.get("version").asLong()).isGreaterThan(version);
+                }
+            """;
+
+    /**
+     * Adds {@code LiveApiTests} to a generated backend: a {@code @SpringBootTest} with MockMvc
+     * over the real context (H2, demo rows), holding the given test methods. {@code get(path)}
+     * reads a JSON answer and {@code firstId(listPath)} the id of the first listed row.
+     */
+    private static void writeLiveTest(Path backend, String packageName, String methods) throws Exception {
+        String source = """
+                package %s;
+
+                import com.fasterxml.jackson.databind.JsonNode;
+                import com.fasterxml.jackson.databind.ObjectMapper;
+                import org.junit.jupiter.api.Test;
+                import org.springframework.beans.factory.annotation.Autowired;
+                import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+                import org.springframework.boot.test.context.SpringBootTest;
+                import org.springframework.http.MediaType;
+                import org.springframework.test.web.servlet.MockMvc;
+                import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+
+                import static org.assertj.core.api.Assertions.assertThat;
+                import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+                import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+                import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+                import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+                import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+                @SpringBootTest
+                @AutoConfigureMockMvc
+                class LiveApiTests {
+
+                    @Autowired
+                    private MockMvc mvc;
+
+                    private final ObjectMapper json = new ObjectMapper();
+
+                    private JsonNode get(String path) throws Exception {
+                        return json.readTree(mvc.perform(MockMvcRequestBuilders.get(path))
+                                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
+                    }
+
+                    private long firstId(String listPath) throws Exception {
+                        return get(listPath + "?size=1").get("content").get(0).get("id").asLong();
+                    }
+
+                    @SuppressWarnings("unused")
+                    private static final Object[] KEEPS_IMPORTS_USED = {MediaType.APPLICATION_JSON,
+                            (java.util.function.Function<String, Object>) p -> patch(p),
+                            (java.util.function.Function<String, Object>) p -> put(p),
+                            (java.util.function.Function<String, Object>) p -> post(p),
+                            (java.util.function.Function<String, Object>) p -> delete(p)};
+
+                %s}
+                """.formatted(packageName, methods);
+        Path file = backend.resolve("src/test/java/" + packageName.replace('.', '/') + "/LiveApiTests.java");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, source, StandardCharsets.UTF_8);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private Path postAndExtractBackend(Path workDir, Map<String, Object> body) throws Exception {

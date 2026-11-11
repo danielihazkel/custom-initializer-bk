@@ -31,7 +31,7 @@ import org.hibernate.annotations.Formula;
 @NoArgsConstructor
 @AllArgsConstructor
 {{#auditApplicable}}@EntityListeners(AuditingEntityListener.class)
-{{/auditApplicable}}{{#softDeleteApplicable}}@SQLDelete(sql = "UPDATE {{tableRef}} SET deleted = true WHERE {{pkField.column}} = ?")
+{{/auditApplicable}}{{#softDeleteApplicable}}@SQLDelete(sql = "UPDATE {{tableRef}} SET deleted = true WHERE {{pkField.column}} = ?{{#lockingApplicable}} AND version = ?{{/lockingApplicable}}")
 @SQLRestriction("deleted = false")
 {{/softDeleteApplicable}}{{#hasCompositePk}}@IdClass({{keyClassName}}.class)
 {{/hasCompositePk}}public class {{EntityName}} {

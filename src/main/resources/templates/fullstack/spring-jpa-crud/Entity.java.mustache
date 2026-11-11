@@ -25,7 +25,7 @@ import org.hibernate.annotations.Formula;
 """)
 {{/isView}}{{^isView}}@Table(name = "{{tableName}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}})
 {{/isView}}{{#auditApplicable}}@EntityListeners(AuditingEntityListener.class)
-{{/auditApplicable}}{{#softDeleteApplicable}}@SQLDelete(sql = "UPDATE {{tableRef}} SET deleted = true WHERE {{pkField.column}} = ?")
+{{/auditApplicable}}{{#softDeleteApplicable}}@SQLDelete(sql = "UPDATE {{tableRef}} SET deleted = true WHERE {{pkField.column}} = ?{{#lockingApplicable}} AND version = ?{{/lockingApplicable}}")
 @SQLRestriction("deleted = false")
 {{/softDeleteApplicable}}{{#hasCompositePk}}@IdClass({{keyClassName}}.class)
 {{/hasCompositePk}}public class {{EntityName}} {

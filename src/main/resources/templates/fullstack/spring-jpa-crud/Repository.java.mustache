@@ -15,9 +15,10 @@ public interface {{EntityName}}Repository
 {{#softDeleteApplicable}}
     /** Un-deletes a soft-deleted row. Native SQL on purpose: @SQLRestriction hides deleted rows
      *  from every entity query, so a JPQL update could never find one. Returns 0 when no row
-     *  has that id at all. */
+     *  has that id at all.{{#lockingApplicable}} It is a change like any other: the version moves on, so a client
+     *  still holding the old one is told.{{/lockingApplicable}} */
     @Modifying
     @Transactional
-    @Query(value = "UPDATE {{tableRef}} SET deleted = false WHERE {{pkField.column}} = :id", nativeQuery = true)
+    @Query(value = "UPDATE {{tableRef}} SET deleted = false{{#lockingApplicable}}, version = coalesce(version, 0) + 1{{/lockingApplicable}}{{#auditApplicable}}, updated_at = CURRENT_TIMESTAMP{{/auditApplicable}} WHERE {{pkField.column}} = :id", nativeQuery = true)
     int restore(@Param("id") {{pkField.javaType}} id);
 {{/softDeleteApplicable}}}
