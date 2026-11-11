@@ -3,10 +3,9 @@ package com.menora.initializr.fullstack;
 import java.util.Locale;
 
 /**
- * Kinds of entity relationship the fullstack scaffold can model. v1 implements
- * {@link #MANY_TO_ONE} (the foreign-key-owning side) only; {@link #ONE_TO_MANY} and
- * {@link #MANY_TO_MANY} are reserved for a later iteration and currently rejected by
- * {@link FullstackRequestValidator}.
+ * Kinds of entity relationship the fullstack scaffold can model: {@link #MANY_TO_ONE} (the
+ * foreign-key-owning side), {@link #MANY_TO_MANY} (the owning side of a link through a join
+ * table) and {@link #ONE_TO_MANY} (the read side of a MANY_TO_ONE the target declares).
  */
 public enum RelationType {
     MANY_TO_ONE,

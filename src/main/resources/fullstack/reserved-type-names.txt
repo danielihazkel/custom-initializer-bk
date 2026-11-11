@@ -87,6 +87,7 @@ MockMvc
 Mockito
 Modifying
 MultiRelationPicker
+RelatedRows
 NoArgsConstructor
 NotNull
 Number

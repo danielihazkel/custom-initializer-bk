@@ -18,6 +18,12 @@ package com.menora.initializr.fullstack;
  * {@code inverseJoinColumn} (the target's) name the join table, each derived when null. Kept
  * apart from the foreign keys: an entity's {@code relations} are its MANY_TO_ONEs, its
  * {@code collections} these.
+ *
+ * <p>A {@link RelationType#ONE_TO_MANY} is the other side of a MANY_TO_ONE that
+ * {@code targetEntity} declares, read from here: this entity gets the list of the rows that
+ * point at it and their count, named {@code fieldName}. {@code mappedBy} is that MANY_TO_ONE's
+ * field name (resolved by the validator when the request leaves it out and there is only one).
+ * It owns no column. Kept in an entity's {@code children}.
  */
 public record RelationDefinition(
         RelationType type,
@@ -26,7 +32,20 @@ public record RelationDefinition(
         boolean required,
         String joinColumn,
         String joinTable,
-        String inverseJoinColumn) {
+        String inverseJoinColumn,
+        String mappedBy) {
+
+    /** Every property but {@code mappedBy} (a MANY_TO_ONE or a MANY_TO_MANY has none). */
+    public RelationDefinition(RelationType type, String fieldName, String targetEntity, boolean required,
+                              String joinColumn, String joinTable, String inverseJoinColumn) {
+        this(type, fieldName, targetEntity, required, joinColumn, joinTable, inverseJoinColumn, null);
+    }
+
+    /** The same ONE_TO_MANY, naming the MANY_TO_ONE it is the other side of. */
+    public RelationDefinition withMappedBy(String link) {
+        return new RelationDefinition(type, fieldName, targetEntity, required, joinColumn, joinTable,
+                inverseJoinColumn, link);
+    }
 
     /** Back-compat constructor for a MANY_TO_ONE (no join table). */
     public RelationDefinition(RelationType type, String fieldName, String targetEntity, boolean required,

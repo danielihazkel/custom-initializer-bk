@@ -35,8 +35,8 @@ type ListColumn = Column<{{EntityName}}> & { key: string }
 {{/relations}}{{#collections}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => r.{{labelsField}} == null || r.{{labelsField}}.length === 0 ? '—' : r.{{labelsField}}.join(', ') },
 {{/collections}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', numeric: true, render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
   { {{#listConfigurable}}key: 'updatedAt', {{/listConfigurable}}label: t('updated'), sortKey: 'updatedAt', numeric: true, render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
-{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{CollectionField}}', numeric: true, render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
-{{/inverseRelations}}{{/optScaffoldInverse}}]
+{{/auditApplicable}}{{#childLists}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{CollectionField}}', numeric: true, render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
+{{/childLists}}]
 {{#hasViewToggle}}
 // The enabled list views, in order; drives the toolbar Tabs (a view switcher, so `bare`).
 const VIEW_TABS: { id: {{viewModeType}}; label: string }[] = [{{#viewTable}}{ id: 'table', label: t('tableView') }, {{/viewTable}}{{#viewCards}}{ id: 'cards', label: t('cardView') }, {{/viewCards}}{{#viewKanban}}{ id: 'kanban', label: t('boardView') }, {{/viewKanban}}{{#viewCalendar}}{ id: 'calendar', label: t('calendarView') }, {{/viewCalendar}}]

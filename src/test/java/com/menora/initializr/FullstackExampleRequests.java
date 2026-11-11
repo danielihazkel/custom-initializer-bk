@@ -134,6 +134,61 @@ public final class FullstackExampleRequests {
         return body;
     }
 
+    /**
+     * A shop with ONE_TO_MANYs of every shape: one whose link is inferred ({@code Order.lines}),
+     * one that names it ({@code Customer.orders}), two over the same child
+     * ({@code Account.outgoing}/{@code incoming}, by {@code Transfer.source}/{@code target}) and
+     * one of an entity's own rows ({@code Employee.reports}). {@code inverseCollections} is off,
+     * so every collection here is one the model declared. Every list is mutable.
+     */
+    public static Map<String, Object> oneToManyBody(String frontendSet) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        if (frontendSet != null) body.put("frontendTemplateSet", frontendSet);
+        body.put("opts", new LinkedHashMap<>(Map.of("scaffold", List.of("csvExport", "seedData", "tests", "audit"))));
+        Map<String, Object> id = Map.of("name", "id", "type", "LONG", "primaryKey", true, "generated", true);
+        Map<String, Object> name = Map.of("name", "name", "type", "STRING", "required", true);
+        List<Map<String, Object>> entities = new java.util.ArrayList<>();
+        entities.add(entity("Customer", List.of(id, name),
+                Map.of("type", "ONE_TO_MANY", "fieldName", "orders", "targetEntity", "Order", "mappedBy", "customer")));
+        entities.add(entity("Product", List.of(id, name)));
+        entities.add(entity("Order", List.of(id,
+                        Map.of("name", "reference", "type", "STRING", "required", true),
+                        Map.of("name", "status", "type", "ENUM", "enumValues", List.of("OPEN", "PAID"), "defaultValue", "OPEN")),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Customer", "required", true),
+                Map.of("type", "ONE_TO_MANY", "fieldName", "lines", "targetEntity", "OrderLine")));
+        entities.add(entity("OrderLine", List.of(id,
+                        Map.of("name", "quantity", "type", "INTEGER", "required", true),
+                        Map.of("name", "note", "type", "TEXT")),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "order", "targetEntity", "Order", "required", true),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "product", "targetEntity", "Product")));
+        entities.add(entity("Account", List.of(id, name),
+                Map.of("type", "ONE_TO_MANY", "fieldName", "outgoing", "targetEntity", "Transfer", "mappedBy", "source"),
+                Map.of("type", "ONE_TO_MANY", "fieldName", "incoming", "targetEntity", "Transfer", "mappedBy", "target")));
+        entities.add(entity("Transfer", List.of(id,
+                        Map.of("name", "amount", "type", "BIG_DECIMAL", "required", true),
+                        Map.of("name", "kind", "type", "ENUM", "enumValues", List.of("WIRE", "CASH"))),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "source", "targetEntity", "Account", "required", true),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "target", "targetEntity", "Account", "required", true)));
+        entities.add(entity("Employee", List.of(id, name,
+                        Map.of("name", "grade", "type", "ENUM", "enumValues", List.of("JUNIOR", "SENIOR"))),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "manager", "targetEntity", "Employee"),
+                Map.of("type", "ONE_TO_MANY", "fieldName", "reports", "targetEntity", "Employee")));
+        body.put("entities", entities);
+        return body;
+    }
+
+    @SafeVarargs
+    private static Map<String, Object> entity(String name, List<Map<String, Object>> fields, Map<String, Object>... relations) {
+        Map<String, Object> e = new LinkedHashMap<>();
+        e.put("name", name);
+        e.put("fields", new java.util.ArrayList<>(fields));
+        if (relations.length > 0) e.put("relations", new java.util.ArrayList<>(List.of(relations)));
+        return e;
+    }
+
     /** POSTs a fullstack request; the response, whatever its status. */
     public static ResponseEntity<byte[]> post(TestRestTemplate rest, Map<String, Object> body) {
         HttpHeaders headers = new HttpHeaders();

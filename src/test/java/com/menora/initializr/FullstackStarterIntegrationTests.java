@@ -2303,6 +2303,133 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_oneToManyRelation() throws Exception {
+        Map<String, String> entries = generateZip(FullstackExampleRequests.oneToManyBody("react-tailwind-crud"));
+
+        // The parent reads the link its child holds: a collection and a count the database computes.
+        assertThat(contentEndingWith(entries, "/entity/Order.java"))
+                .contains("@OneToMany(mappedBy = \"order\")")
+                .contains("private List<OrderLine> lines = new ArrayList<>();")
+                .contains("@Formula(\"(select count(*) from order_lines c where c.order_id = id)\")")
+                .contains("private Long linesCount;")
+                // Its own foreign key is what it was.
+                .contains("private Customer customer;");
+        assertThat(contentEndingWith(entries, "/dto/OrderDto.java")).contains("int linesCount");
+        // The link named by mappedBy, under the name the model gave the list.
+        assertThat(contentEndingWith(entries, "/entity/Customer.java"))
+                .contains("@OneToMany(mappedBy = \"customer\")")
+                .contains("private List<Order> orders = new ArrayList<>();");
+        // Two lists over one child, each by its own link.
+        assertThat(contentEndingWith(entries, "/entity/Account.java"))
+                .contains("@OneToMany(mappedBy = \"source\")").contains("private List<Transfer> outgoing")
+                .contains("@OneToMany(mappedBy = \"target\")").contains("private List<Transfer> incoming")
+                .contains("where c.source_id = id").contains("where c.target_id = id");
+        // An entity's own rows.
+        assertThat(contentEndingWith(entries, "/entity/Employee.java"))
+                .contains("@OneToMany(mappedBy = \"manager\")").contains("private List<Employee> reports");
+        // Nothing is derived for a link nobody declared: inverseCollections is off.
+        assertThat(contentEndingWith(entries, "/entity/Product.java")).doesNotContain("OneToMany");
+        // The child's side is untouched.
+        assertThat(contentEndingWith(entries, "/entity/OrderLine.java")).doesNotContain("OneToMany");
+
+        // Frontend: the count on the type and the list, and the child rows as a table in the details.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/RelatedRows.tsx"));
+        assertThat(contentEndingWith(entries, "/order/model/types.ts")).contains("linesCount?: number | null");
+        assertThat(contentEndingWith(entries, "/ui/OrderPage.tsx")).contains("label: 'Lines', render: r => r.linesCount");
+        assertThat(contentEndingWith(entries, "/ui/OrderDetail.tsx"))
+                .contains("import { RelatedRows } from '@shared/ui/RelatedRows'")
+                .contains("title={ 'Lines' }")
+                .contains("path=\"/api/order-lines\"")
+                .contains("param=\"orderId\"")
+                .contains("id={value.id}")
+                .contains("count={value.linesCount}")
+                .contains("{ key: 'quantity', label: 'Quantity' },")
+                // Another link of the child's by its label, else its id; the link back is left out.
+                .contains("{ key: 'productLabel', label: 'Product', alt: 'productId' },")
+                .doesNotContain("key: 'orderLabel'")
+                // Long text has no place in a table cell, and the count is the table's heading.
+                .doesNotContain("key: 'note'")
+                .doesNotContain("<Row label=\"Lines\">");
+        assertThat(contentEndingWith(entries, "/ui/CustomerDetail.tsx"))
+                .contains("import { OrderStatusTypeLabels } from '@entities/order'")
+                .contains("{ key: 'status', label: 'Status', labels: OrderStatusTypeLabels },")
+                .contains("param=\"customerId\"");
+        // Two tables over one child import its label map once.
+        String account = contentEndingWith(entries, "/ui/AccountDetail.tsx");
+        assertThat(account).containsOnlyOnce("import { TransferKindTypeLabels } from '@entities/transfer'")
+                .contains("param=\"sourceId\"").contains("param=\"targetId\"")
+                // The other link of a transfer is a column; the one the table is about is not.
+                .contains("title={ 'Outgoing' }").contains("title={ 'Incoming' }");
+        // A table of the entity's own rows reads the label map its details already import.
+        assertThat(contentEndingWith(entries, "/ui/EmployeeDetail.tsx"))
+                .containsOnlyOnce("import { EmployeeGradeTypeLabels")
+                .contains("param=\"managerId\"")
+                .contains("labels: EmployeeGradeTypeLabels");
+        // A project without a ONE_TO_MANY ships no table.
+        assertThat(generateZip(FullstackExampleRequests.manyToManyBody("react-tailwind-crud")).keySet())
+                .noneMatch(p -> p.endsWith("RelatedRows.tsx"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fullstackEndpoint_oneToManyNamesTheCollectionInverseCollectionsWouldDerive() throws Exception {
+        Map<String, Object> body = FullstackExampleRequests.oneToManyBody("react-tailwind-crud");
+        ((Map<String, Object>) body.get("opts")).put("scaffold", List.of("inverseCollections"));
+        Map<String, String> entries = generateZip(body);
+        // The declared list stands in for the derived one: one collection per link, not two.
+        assertThat(contentEndingWith(entries, "/entity/Order.java"))
+                .containsOnlyOnce("@OneToMany").contains("private List<OrderLine> lines").doesNotContain("orderLines");
+        // A link nobody declared is still derived, and stays a count among the details.
+        assertThat(contentEndingWith(entries, "/entity/Product.java")).contains("private List<OrderLine> orderLines");
+        assertThat(contentEndingWith(entries, "/ui/ProductDetail.tsx"))
+                .contains("<Row label=\"OrderLines\">").doesNotContain("RelatedRows");
+        assertThat(contentEndingWith(entries, "/entity/Account.java"))
+                .contains("outgoing").contains("incoming").doesNotContain("transfersBy");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fullstackEndpoint_rejectsInvalidOneToMany() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        // entity index, its relations, the message, the path.
+        record Bad(int entity, List<Map<String, Object>> relations, String message, String path) {}
+        Map<String, Object> order = Map.of("type", "MANY_TO_ONE", "fieldName", "order", "targetEntity", "Order", "required", true);
+        for (Bad bad : List.of(
+                new Bad(1, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "buyers", "targetEntity", "Customer")),
+                        "which has no MANY_TO_ONE to 'Product'", "entities[1].relations[0].targetEntity"),
+                new Bad(4, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "transfers", "targetEntity", "Transfer")),
+                        "has several MANY_TO_ONEs to 'Account' (source, target) — name one with mappedBy", "entities[4].relations[0].mappedBy"),
+                new Bad(4, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "transfers", "targetEntity", "Transfer", "mappedBy", "sender")),
+                        "mappedBy 'sender' is not a MANY_TO_ONE of 'Transfer' to 'Account' (it has: source, target)", "entities[4].relations[0].mappedBy"),
+                new Bad(4, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "outgoing", "targetEntity", "Transfer", "mappedBy", "source"),
+                        Map.of("type", "ONE_TO_MANY", "fieldName", "sent", "targetEntity", "Transfer", "mappedBy", "SOURCE")),
+                        "lists the same rows as another ONE_TO_MANY", "entities[4].relations[1].mappedBy"),
+                new Bad(0, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "orders", "targetEntity", "Order", "required", true)),
+                        "required does not apply to a ONE_TO_MANY", "entities[0].relations[0].required"),
+                new Bad(0, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "orders", "targetEntity", "Order", "joinColumn", "customer_id")),
+                        "joinColumn does not apply to a ONE_TO_MANY", "entities[0].relations[0].joinColumn"),
+                new Bad(3, List.of(order, Map.of("type", "MANY_TO_ONE", "fieldName", "product", "targetEntity", "Product", "mappedBy", "lines")),
+                        "mappedBy only applies to a ONE_TO_MANY", "entities[3].relations[1].mappedBy"))) {
+            Map<String, Object> body = FullstackExampleRequests.oneToManyBody(null);
+            ((List<Map<String, Object>>) body.get("entities")).get(bad.entity()).put("relations", bad.relations());
+            ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip",
+                    org.springframework.http.HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+            assertThat(response.getStatusCode()).as(bad.message()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains(bad.message()).contains("\"path\":\"" + bad.path() + "\"");
+        }
+
+        // The count a list adds is a member like any other.
+        Map<String, Object> body = FullstackExampleRequests.oneToManyBody(null);
+        Map<String, Object> orderEntity = ((List<Map<String, Object>>) body.get("entities")).get(2);
+        ((List<Map<String, Object>>) orderEntity.get("fields")).add(Map.of("name", "linesCount", "type", "INTEGER"));
+        ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip",
+                org.springframework.http.HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("field 'linesCount' clashes with 'linesCount'").contains("the count of relation 'lines'");
+    }
+
+    @Test
     void fullstackEndpoint_rejectsInvalidManyToMany() {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -2312,7 +2439,7 @@ class FullstackStarterIntegrationTests {
                 new Bad(Map.of("type", "MANY_TO_MANY", "fieldName", "tags", "targetEntity", "Tag", "required", true), "required does not apply"),
                 new Bad(Map.of("type", "MANY_TO_MANY", "fieldName", "tags", "targetEntity", "Tag", "joinTable", "post tags;"), "not a valid"),
                 new Bad(Map.of("type", "MANY_TO_ONE", "fieldName", "tag", "targetEntity", "Tag", "joinTable", "post_tag"), "only apply to a MANY_TO_MANY"),
-                new Bad(Map.of("type", "ONE_TO_MANY", "fieldName", "tags", "targetEntity", "Tag"), "not supported yet"))) {
+                new Bad(Map.of("type", "ONE_TO_MANY", "fieldName", "tags", "targetEntity", "Tag"), "which has no MANY_TO_ONE to 'Post'"))) {
             Map<String, Object> body = FullstackExampleRequests.manyToManyBody(null);
             @SuppressWarnings("unchecked")
             Map<String, Object> post = ((List<Map<String, Object>>) body.get("entities")).get(2);

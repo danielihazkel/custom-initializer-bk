@@ -362,6 +362,24 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendOneToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The child-row tables in the details, with their label-map imports (once per child
+        // entity, none for an entity's own rows).
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.oneToManyBody("react-tailwind-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraOneToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.oneToManyBody("react-menora-digital-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendManyToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // The multi-pick control in the form, the labels in the list and the detail, the filter.
         Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.manyToManyBody("react-tailwind-crud"));

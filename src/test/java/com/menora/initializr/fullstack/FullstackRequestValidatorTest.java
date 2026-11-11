@@ -421,13 +421,39 @@ class FullstackRequestValidatorTest {
     }
 
     @Test
-    void rejects_unsupportedRelationType() {
-        var rel = new FullstackStarterRequest.RelationDefinitionDto("ONE_TO_MANY", "lines", "Tag", false);
+    void rejects_unknownRelationType() {
+        var rel = new FullstackStarterRequest.RelationDefinitionDto("ONE_TO_ONE", "lines", "Tag", false);
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("Tag", List.of(pk())),
                 entityWithRelations("Order", List.of(pk()), List.of(rel))))))
                 .isInstanceOf(WizardArgumentException.class)
-                .hasMessageContaining("not supported yet");
+                .hasMessageContaining("Unknown relation type");
+    }
+
+    @Test
+    void oneToMany_resolvesTheLinkBehindIt() {
+        var order = new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_ONE", "order", "Order", true);
+        var lines = new FullstackStarterRequest.RelationDefinitionDto("ONE_TO_MANY", "lines", "orderline", null);
+        List<EntityDefinition> entities = FullstackRequestValidator.validateAndConvert(req(List.of(
+                entityWithRelations("Order", List.of(pk()), List.of(lines)),
+                entityWithRelations("OrderLine", List.of(pk()), List.of(order)))));
+        EntityDefinition parent = entities.get(0);
+        // Apart from the foreign keys and the sets: nothing that walks those sees it.
+        assertThat(parent.relations()).isEmpty();
+        assertThat(parent.collections()).isEmpty();
+        assertThat(parent.children()).singleElement().satisfies(list -> {
+            assertThat(list.type()).isEqualTo(RelationType.ONE_TO_MANY);
+            assertThat(list.fieldName()).isEqualTo("lines");
+            assertThat(list.targetEntity()).isEqualTo("OrderLine");
+            assertThat(list.mappedBy()).isEqualTo("order");
+        });
+        // The child's rows may be keyed any way: the list holds no key of theirs.
+        var composite = List.of(
+                new FullstackStarterRequest.FieldDefinitionDto("orderNo", "LONG", true, null, null, null, null, null, null, null, null, null),
+                new FullstackStarterRequest.FieldDefinitionDto("lineNo", "INTEGER", true, null, null, null, null, null, null, null, null, null));
+        assertThat(FullstackRequestValidator.validateAndConvert(req(List.of(
+                entityWithRelations("Order", List.of(pk()), List.of(lines)),
+                entityWithRelations("OrderLine", composite, List.of(order))))).get(0).children()).hasSize(1);
     }
 
     // ── Names the generated code already uses ───────────────────────────────────

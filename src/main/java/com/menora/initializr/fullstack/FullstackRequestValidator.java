@@ -351,7 +351,10 @@ public final class FullstackRequestValidator {
                 List<RelationDefinition> relations = declared.stream()
                         .filter(r -> r.type() == RelationType.MANY_TO_ONE).toList();
                 List<RelationDefinition> collections = declared.stream()
-                        .filter(r -> r.type() != RelationType.MANY_TO_ONE).toList();
+                        .filter(r -> r.type() == RelationType.MANY_TO_MANY).toList();
+                // …and the lists of other entities' rows that point at it.
+                List<RelationDefinition> children = declared.stream()
+                        .filter(r -> r.type() == RelationType.ONE_TO_MANY).toList();
                 checkColumnClashes(p.name(), p.fields(), relations);
                 checkVersionName(p.name(), p.fields(), relations, p.readOnly(), p.viewQuery(), p.opts(), body);
                 result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
@@ -359,13 +362,87 @@ public final class FullstackRequestValidator {
                         parseFormSections(p.rawSections(), p.name(), p.fields(), relations),
                         at("workflow", () -> parseWorkflow(p.rawWorkflow(), p.name(), p.fields(), relations,
                                 p.readOnly(), p.pkCount())),
-                        collections));
+                        collections, children));
             } catch (WizardArgumentException problem) {
                 throw problem.at("entities[" + p.ei() + "]");
             }
         }
+        result = resolveChildLists(result, body);
         checkGeneratedMemberClashes(result, body);
         return result;
+    }
+
+    /**
+     * A ONE_TO_MANY is the other side of a MANY_TO_ONE its target declares. Now that every
+     * entity's foreign keys are known, settle which one: the {@code mappedBy} it names, or the
+     * only one the target has to this entity.
+     */
+    private static List<EntityDefinition> resolveChildLists(List<EntityDefinition> entities,
+                                                            FullstackStarterRequest body) {
+        List<EntityDefinition> out = new ArrayList<>(entities.size());
+        for (int ei = 0; ei < entities.size(); ei++) {
+            EntityDefinition parent = entities.get(ei);
+            if (parent.children().isEmpty()) {
+                out.add(parent);
+                continue;
+            }
+            List<RelationDefinition> resolved = new ArrayList<>(parent.children().size());
+            for (RelationDefinition list : parent.children()) {
+                try {
+                    RelationDefinition link = linkBehind(parent, list, entities);
+                    boolean twice = resolved.stream().anyMatch(r -> r.targetEntity().equals(list.targetEntity())
+                            && r.mappedBy().equals(link.fieldName()));
+                    if (twice) {
+                        throw new WizardArgumentException("entity '" + parent.name() + "' relation '" + list.fieldName()
+                                + "' lists the same rows as another ONE_TO_MANY of this entity ('"
+                                + list.targetEntity() + "' by '" + link.fieldName() + "')").on("mappedBy");
+                    }
+                    resolved.add(list.withMappedBy(link.fieldName()));
+                } catch (WizardArgumentException problem) {
+                    throw problem.at("relations[" + rawRelationIndex(body, ei, list.fieldName()) + "]")
+                            .at("entities[" + ei + "]");
+                }
+            }
+            out.add(parent.withChildren(resolved));
+        }
+        return out;
+    }
+
+    /** The MANY_TO_ONE of {@code list}'s target that points back at {@code parent}. */
+    private static RelationDefinition linkBehind(EntityDefinition parent, RelationDefinition list,
+                                                 List<EntityDefinition> entities) {
+        EntityDefinition child = entities.stream()
+                .filter(e -> e.name().equals(list.targetEntity())).findFirst().orElseThrow();
+        List<RelationDefinition> links = child.relations().stream()
+                .filter(r -> r.targetEntity().equalsIgnoreCase(parent.name())).toList();
+        String names = String.join(", ", links.stream().map(RelationDefinition::fieldName).toList());
+        String where = "entity '" + parent.name() + "' relation '" + list.fieldName() + "'";
+        if (list.mappedBy() != null) {
+            return links.stream().filter(r -> r.fieldName().equalsIgnoreCase(list.mappedBy())).findFirst()
+                    .orElseThrow(() -> new WizardArgumentException(where + ": mappedBy '" + list.mappedBy()
+                            + "' is not a MANY_TO_ONE of '" + child.name() + "' to '" + parent.name() + "'"
+                            + (links.isEmpty() ? "" : " (it has: " + names + ")")).on("mappedBy"));
+        }
+        if (links.isEmpty()) {
+            throw new WizardArgumentException(where + " is a ONE_TO_MANY to '" + child.name()
+                    + "', which has no MANY_TO_ONE to '" + parent.name() + "' — add that relation to '"
+                    + child.name() + "' first").on("targetEntity");
+        }
+        if (links.size() > 1) {
+            throw new WizardArgumentException(where + ": '" + child.name() + "' has several MANY_TO_ONEs to '"
+                    + parent.name() + "' (" + names + ") — name one with mappedBy").on("mappedBy");
+        }
+        return links.get(0);
+    }
+
+    /** Where in the request's own list a relation sits (the parsed lists are split by kind). */
+    private static int rawRelationIndex(FullstackStarterRequest body, int ei, String fieldName) {
+        List<FullstackStarterRequest.RelationDefinitionDto> raw = body.entities().get(ei).relations();
+        for (int ri = 0; raw != null && ri < raw.size(); ri++) {
+            FullstackStarterRequest.RelationDefinitionDto r = raw.get(ri);
+            if (r != null && r.fieldName() != null && r.fieldName().trim().equals(fieldName)) return ri;
+        }
+        return 0;
     }
 
     /**
@@ -442,6 +519,10 @@ public final class FullstackRequestValidator {
                 members.put(c.fieldName().toLowerCase(Locale.ROOT), "relation '" + c.fieldName() + "'");
                 generated.add(new String[] {c.fieldName() + "Ids", "the ids of relation '" + c.fieldName() + "'"});
                 generated.add(new String[] {c.fieldName() + "Labels", "the labels of relation '" + c.fieldName() + "'"});
+            }
+            for (RelationDefinition c : e.children()) {
+                members.put(c.fieldName().toLowerCase(Locale.ROOT), "relation '" + c.fieldName() + "'");
+                generated.add(new String[] {c.fieldName() + "Count", "the count of relation '" + c.fieldName() + "'"});
             }
             for (FieldDefinition f : e.fields()) {
                 if (f.type().isAttachment()) {
@@ -835,10 +916,7 @@ public final class FullstackRequestValidator {
                 } catch (IllegalArgumentException iae) {
                     throw new WizardArgumentException("entity '" + entityName + "' relation: " + iae.getMessage()).on("type");
                 }
-                if (type == RelationType.ONE_TO_MANY) {
-                    throw new WizardArgumentException("entity '" + entityName + "' relation type " + type
-                            + " is not supported yet (MANY_TO_ONE and MANY_TO_MANY are)").on("type");
-                }
+                boolean oneToMany = type == RelationType.ONE_TO_MANY;
                 boolean manyToMany = type == RelationType.MANY_TO_MANY;
 
                 if (r.fieldName() == null || r.fieldName().isBlank()) {
@@ -866,9 +944,10 @@ public final class FullstackRequestValidator {
                             + "' targets unknown entity '" + r.targetEntity().trim() + "'");
                 }
                 // A single <field>Id foreign key cannot address a composite primary key, so a relation
-                // may not point at a composite-PK entity in v1.
+                // may not point at a composite-PK entity in v1. (A ONE_TO_MANY holds no key of its
+                // target: the rows it lists may be keyed any way.)
                 Integer targetPkCount = pkCountByLower.get(targetLower);
-                if (targetPkCount != null && targetPkCount > 1) {
+                if (!oneToMany && targetPkCount != null && targetPkCount > 1) {
                     throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
                             + "' targets composite-PK entity '" + canonicalTarget + "' — not supported");
                 }
@@ -904,10 +983,37 @@ public final class FullstackRequestValidator {
                             + "': joinTable and inverseJoinColumn only apply to a MANY_TO_MANY").on("joinTable");
                 }
 
+                // A ONE_TO_MANY reads the link its target holds; it has no column of its own and
+                // nothing to require. Which of the target's foreign keys it reads is settled once
+                // every entity's are known (resolveChildLists).
+                String mappedBy = null;
+                if (oneToMany) {
+                    if (Boolean.TRUE.equals(r.required())) {
+                        throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                                + "': required does not apply to a ONE_TO_MANY (require the MANY_TO_ONE on '"
+                                + canonicalTarget + "' instead)").on("required");
+                    }
+                    if (r.joinColumn() != null && !r.joinColumn().isBlank()) {
+                        throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                                + "': joinColumn does not apply to a ONE_TO_MANY (the column belongs to the"
+                                + " MANY_TO_ONE on '" + canonicalTarget + "')").on("joinColumn");
+                    }
+                    if (r.mappedBy() != null && !r.mappedBy().isBlank()) {
+                        mappedBy = r.mappedBy().trim();
+                        if (!isValidJavaIdentifier(mappedBy)) {
+                            throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                                    + "': mappedBy '" + mappedBy + "' is not a valid identifier").on("mappedBy");
+                        }
+                    }
+                } else if (r.mappedBy() != null && !r.mappedBy().isBlank()) {
+                    throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                            + "': mappedBy only applies to a ONE_TO_MANY").on("mappedBy");
+                }
+
                 relations.add(new RelationDefinition(type, fieldName, canonicalTarget,
                         Boolean.TRUE.equals(r.required()),
                         parseColumnName(r.joinColumn(), "joinColumn", fieldName, entityName),
-                        joinTable, inverseJoinColumn));
+                        joinTable, inverseJoinColumn, mappedBy));
             } catch (WizardArgumentException problem) {
                 throw problem.at("relations[" + ri + "]");
             }

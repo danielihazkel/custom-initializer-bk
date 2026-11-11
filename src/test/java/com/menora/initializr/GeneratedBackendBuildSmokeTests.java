@@ -116,6 +116,17 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
 
+    @ParameterizedTest(name = "Spring Boot {0}")
+    @ValueSource(strings = {"3.2.1", FullstackGoldenOutputTests.BOOT_35})
+    void oneToManyBackendCompilesAndPassesItsTests(String bootVersion, @TempDir Path workDir) throws Exception {
+        // Declared ONE_TO_MANYs: the collection and its counting @Formula on each parent (validated
+        // against the schema at context load), two over one child, and one of an entity's own rows.
+        Map<String, Object> body = FullstackExampleRequests.oneToManyBody("react-tailwind-crud");
+        body.put("bootVersion", bootVersion);
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        runMvn(postAndExtractBackend(workDir, body), "-B", "package");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private Path postAndExtractBackend(Path workDir, Map<String, Object> body) throws Exception {

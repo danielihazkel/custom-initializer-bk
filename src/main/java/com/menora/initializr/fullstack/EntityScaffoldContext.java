@@ -75,7 +75,7 @@ public final class EntityScaffoldContext {
         // buildEntityContext) can resolve relation targets too.
         Map<String, Map<String, Object>> summaries = buildSummaries(entities);
         ctx.put(ENTITY_SUMMARIES_KEY, summaries);
-        Map<String, List<Map<String, Object>>> inverses = buildInverseRelations(entities);
+        Map<String, List<Map<String, Object>>> inverses = buildInverseRelations(entities, summaries);
         ctx.put(INVERSE_RELATIONS_KEY, inverses);
 
         List<Map<String, Object>> entityViews = new ArrayList<>(entities.size());
@@ -89,6 +89,8 @@ public final class EntityScaffoldContext {
         // The shared frontend files a field type brings: format.ts (money, instants) and Markdown.tsx.
         // The multi-pick control ships with the first MANY_TO_MANY.
         ctx.put("hasCollectionFields", entities.stream().anyMatch(e -> !e.collections().isEmpty()));
+        // …and the read-only table of child rows with the first ONE_TO_MANY.
+        ctx.put("hasChildListTables", entities.stream().anyMatch(e -> !e.children().isEmpty()));
         boolean attachments = entities.stream().flatMap(e -> e.fields().stream()).anyMatch(f -> f.type().isAttachment());
         // File and image fields: the attachment package on the backend, the upload call and the
         // AttachmentField on the frontend (both render paths read it).
@@ -2118,12 +2120,30 @@ public final class EntityScaffoldContext {
         return toSameParent > 1 ? plural + "By" + Naming.toPascalCase(rel.fieldName()) : plural;
     }
 
-    /** Per parent entity (lower-cased name), the collection names its children's relations derive. */
+    /**
+     * The ONE_TO_MANY the parent declares over this link, or null: the same collection, under the
+     * name the model gave it, generated whether or not {@code inverseCollections} is on.
+     */
+    static RelationDefinition declaredListOf(List<EntityDefinition> entities, EntityDefinition child,
+                                             RelationDefinition rel) {
+        for (EntityDefinition parent : entities) {
+            if (!parent.name().equalsIgnoreCase(rel.targetEntity())) continue;
+            for (RelationDefinition list : parent.children()) {
+                if (list.targetEntity().equalsIgnoreCase(child.name())
+                        && rel.fieldName().equalsIgnoreCase(list.mappedBy())) return list;
+            }
+        }
+        return null;
+    }
+
+    /** Per parent entity (lower-cased name), the collection names its children's relations derive
+     *  — those the parent does not name itself with a ONE_TO_MANY. */
     static Map<String, List<String>> inverseCollectionNames(List<EntityDefinition> entities) {
         Map<String, List<String>> byLower = new LinkedHashMap<>();
         for (EntityDefinition child : entities) {
             for (RelationDefinition rel : child.relations()) {
                 if (rel.type() != RelationType.MANY_TO_ONE) continue;
+                if (declaredListOf(entities, child, rel) != null) continue;
                 byLower.computeIfAbsent(rel.targetEntity().toLowerCase(Locale.ROOT), k -> new ArrayList<>())
                         .add(inverseCollectionName(child, rel));
             }
@@ -2131,15 +2151,30 @@ public final class EntityScaffoldContext {
         return byLower;
     }
 
-    private static Map<String, List<Map<String, Object>>> buildInverseRelations(List<EntityDefinition> entities) {
+    private static Map<String, List<Map<String, Object>>> buildInverseRelations(
+            List<EntityDefinition> entities, Map<String, Map<String, Object>> summaries) {
         Map<String, List<Map<String, Object>>> byLower = new LinkedHashMap<>();
         for (EntityDefinition child : entities) {
             for (RelationDefinition rel : child.relations()) {
                 if (rel.type() != RelationType.MANY_TO_ONE) continue;
                 String parentLower = rel.targetEntity().toLowerCase(Locale.ROOT);
                 String childCamel = Naming.toCamelCase(child.name());
-                String coll = inverseCollectionName(child, rel);
+                // A ONE_TO_MANY the parent declares is this collection under the model's own name,
+                // generated whatever the option says, and shown as a table in the parent's details.
+                RelationDefinition declared = declaredListOf(entities, child, rel);
+                String coll = declared != null ? Naming.toCamelCase(declared.fieldName()) : inverseCollectionName(child, rel);
                 Map<String, Object> inv = new LinkedHashMap<>();
+                inv.put("declared", declared != null);
+                if (declared != null) {
+                    inv.put("listTitleTs", escapeTsSingleQuoted(humanizeIdentifier(coll)));
+                    inv.put("childPath", "/api/" + Naming.pluralize(Naming.toKebabCase(child.name())));
+                    inv.put("childKebab", Naming.toKebabCase(child.name()));
+                    inv.put("filterParam", Naming.toCamelCase(rel.fieldName()) + "Id");
+                    List<Map<String, Object>> columns = childColumns(child, rel, summaries);
+                    inv.put("childColumns", columns);
+                    inv.put("labelMaps", columns.stream().filter(c -> c.get("enumTypeName") != null)
+                            .map(c -> c.get("enumTypeName") + "Labels").toList());
+                }
                 inv.put("childEntity", Naming.toPascalCase(child.name()));
                 inv.put("childEntityCamel", childCamel);
                 inv.put("mappedBy", Naming.toCamelCase(rel.fieldName()));
@@ -2159,6 +2194,49 @@ public final class EntityScaffoldContext {
             }
         }
         return byLower;
+    }
+
+    /** How many columns of its child rows a parent's details show. */
+    static final int CHILD_LIST_COLUMNS = 6;
+
+    /**
+     * The columns of a ONE_TO_MANY's table in the parent's details: the child's short values in
+     * the model's order (no generated key, long text or attachment), then its other foreign keys
+     * by label — the link back to the parent is the same on every row, so it is left out.
+     */
+    private static List<Map<String, Object>> childColumns(EntityDefinition child, RelationDefinition link,
+                                                          Map<String, Map<String, Object>> summaries) {
+        String childPascal = Naming.toPascalCase(child.name());
+        List<Map<String, Object>> columns = new ArrayList<>();
+        for (FieldDefinition f : child.fields()) {
+            if (f.primaryKey() && f.generated()) continue;
+            if (f.type() == FieldType.TEXT || f.type().isMarkdown() || f.type().isAttachment()) continue;
+            Map<String, Object> col = new LinkedHashMap<>();
+            col.put("key", f.name());
+            col.put("labelTs", escapeTsSingleQuoted(
+                    f.label() != null && !f.label().isBlank() ? f.label() : Naming.toPascalCase(f.name())));
+            col.put("alt", null);
+            col.put("hasAlt", false);
+            col.put("isEnum", f.type() == FieldType.ENUM);
+            col.put("enumTypeName", f.type() == FieldType.ENUM
+                    ? childPascal + Naming.toPascalCase(f.name()) + "Type" : null);
+            columns.add(col);
+        }
+        for (RelationDefinition r : child.relations()) {
+            if (r == link) continue;
+            String name = Naming.toCamelCase(r.fieldName());
+            Map<String, Object> target = summaries.get(r.targetEntity().toLowerCase(Locale.ROOT));
+            boolean labelled = target != null && target.get("labelField") != null;
+            Map<String, Object> col = new LinkedHashMap<>();
+            col.put("key", labelled ? name + "Label" : name + "Id");
+            col.put("labelTs", escapeTsSingleQuoted(Naming.toPascalCase(r.fieldName())));
+            col.put("alt", labelled ? name + "Id" : null);
+            col.put("hasAlt", labelled);
+            col.put("isEnum", false);
+            col.put("enumTypeName", null);
+            columns.add(col);
+        }
+        return columns.size() > CHILD_LIST_COLUMNS ? new ArrayList<>(columns.subList(0, CHILD_LIST_COLUMNS)) : columns;
     }
 
     /** Builds a {@code lower(name) → summary} lookup with each entity's PK type/name and
@@ -2282,6 +2360,32 @@ public final class EntityScaffoldContext {
                 (Map<String, List<Map<String, Object>>>) projectContext.get(INVERSE_RELATIONS_KEY);
         ctx.putAll(entityViewModel(entity, summaries == null ? Map.of() : summaries,
                 inverses == null ? Map.of() : inverses));
+        // The lists of rows that point at this entity, as generated: every ONE_TO_MANY it declares,
+        // and — under inverseCollections — the ones derived for the links it does not name.
+        boolean derive = Boolean.TRUE.equals(projectContext.get("optScaffoldInverse"));
+        List<Map<String, Object>> childLists = new ArrayList<>();
+        for (Map<String, Object> inv : (List<Map<String, Object>>) ctx.get("inverseRelations")) {
+            if (derive || Boolean.TRUE.equals(inv.get("declared"))) childLists.add(inv);
+        }
+        List<Map<String, Object>> childTables = childLists.stream()
+                .filter(inv -> Boolean.TRUE.equals(inv.get("declared"))).toList();
+        ctx.put("childLists", childLists);
+        ctx.put("hasChildLists", !childLists.isEmpty());
+        ctx.put("childTables", childTables);
+        ctx.put("hasChildTables", !childTables.isEmpty());
+        // The enum label maps those tables read, once per child entity. A list of the entity's
+        // own rows (Employee.reports) reads the maps its details already import.
+        Map<String, Set<String>> labelMaps = new LinkedHashMap<>();
+        for (Map<String, Object> inv : childTables) {
+            if (String.valueOf(inv.get("childEntity")).equals(ctx.get("EntityName"))) continue;
+            labelMaps.computeIfAbsent((String) inv.get("childKebab"), k -> new LinkedHashSet<>())
+                    .addAll((List<String>) inv.get("labelMaps"));
+        }
+        List<Map<String, Object>> labelMapImports = new ArrayList<>();
+        labelMaps.forEach((from, names) -> {
+            if (!names.isEmpty()) labelMapImports.add(Map.of("from", from, "names", String.join(", ", names)));
+        });
+        ctx.put("childTableImports", labelMapImports);
         // Page layouts only: a relation whose target has a record page renders as a link to it
         // (table cell and detail row). Backend contexts and layout-free frontends never carry the
         // lookup, so their relation view-models — and generated bytes — are untouched.
