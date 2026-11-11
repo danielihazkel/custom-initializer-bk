@@ -308,6 +308,8 @@ public class FullstackStarterController {
 
         // Backend — runs through the standard pipeline. The EntityScaffoldContributor
         // (registered in spring.factories) picks up the populated context.
+        // The fullstack project keeps its own model at its root: its backend writes none.
+        optionsContext.setEmbedded(true);
         Path backendDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
         try {
             GeneratedProjectFiles.moveDirectory(backendDir, tempDir.resolve("backend"));

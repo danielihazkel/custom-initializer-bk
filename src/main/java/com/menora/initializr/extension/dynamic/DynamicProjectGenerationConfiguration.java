@@ -3,6 +3,7 @@ package com.menora.initializr.extension.dynamic;
 import com.menora.initializr.config.EntityDefinitionContext;
 import com.menora.initializr.config.EventsSpecContext;
 import com.menora.initializr.config.OpenApiSpecContext;
+import com.menora.initializr.config.BackendModel;
 import com.menora.initializr.config.CompiledTemplates;
 import com.menora.initializr.config.GeneratedProjectFiles;
 import com.menora.initializr.config.DepartmentResolver;
@@ -375,6 +376,102 @@ public class DynamicProjectGenerationConfiguration {
     private static boolean isYaml(Path path) {
         String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
         return name.endsWith(".yaml") || name.endsWith(".yml");
+    }
+
+    /**
+     * Last of all: {@code menora-model.json}, what this project was generated from — the request
+     * as it was <em>resolved</em> (the starters a wizard added, the datasource roles defaulted), so
+     * that generating it again gives the same project, and a later change of it can be delivered
+     * as a patch ({@code POST /starter.patch}). Then one line ending for every text file, so the
+     * project is the same bytes whatever machine generated it.
+     *
+     * <p>It is written here, from the project description and the per-request contexts, and not
+     * by the endpoints: {@code /starter.zip} is the framework's own, and what it generates has to
+     * stay byte for byte what {@code /starter-wizard.zip} generates without a wizard.
+     * A project that is part of a larger one (a fullstack backend, a module) writes none.
+     */
+    @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE)
+    ProjectContributor backendModelContributor(
+            ProjectDescription description,
+            SelectedFileContributions selectedFileContributions,
+            DependencyConfigService configService,
+            ProjectOptionsContext optionsContext,
+            SqlScriptsContext sqlContext,
+            OpenApiSpecContext specContext,
+            SoapSpecContext soapContext,
+            EventsSpecContext eventsContext) {
+        return projectRoot -> {
+            if (optionsContext.isEmbedded()) return;
+            Set<String> depIds = selectedDepIds(description);
+            com.fasterxml.jackson.databind.node.ObjectNode request = BackendModel.newRequest();
+            request.put("groupId", description.getGroupId());
+            request.put("artifactId", description.getArtifactId());
+            request.put("name", description.getName());
+            if (description.getDescription() != null) request.put("description", description.getDescription());
+            request.put("packageName", description.getPackageName());
+            if (description.getPlatformVersion() != null) request.put("bootVersion", description.getPlatformVersion().toString());
+            request.put("javaVersion", description.getLanguage().jvmVersion());
+            request.put("packaging", description.getPackaging().id());
+            if (description.getVersion() != null) request.put("version", description.getVersion());
+            request.set("dependencies", BackendModel.array(depIds));
+            com.fasterxml.jackson.databind.node.ObjectNode opts = BackendModel.newRequest();
+            new java.util.TreeMap<>(optionsContext.all()).forEach((dep, ids) -> {
+                if (depIds.contains(dep) && !ids.isEmpty()) opts.set(dep, BackendModel.array(new java.util.TreeSet<>(ids)));
+            });
+            if (!opts.isEmpty()) request.set("opts", opts);
+            if (optionsContext.department() != null) request.put("department", optionsContext.department());
+            putWizard(request, "sqlByDep", "sqlOptions", sqlContext.all(), sqlContext::optionsFor);
+            putWizard(request, "specByDep", "openApiOptions", specContext.all(), specContext::optionsFor);
+            putWizard(request, "wsdlByDep", "soapOptions", soapContext.all(), soapContext::optionsFor);
+            putWizard(request, "asyncApiByDep", "eventOptions", eventsContext.all(), eventsContext::optionsFor);
+
+            String catalogHash = BackendModel.catalogHash(selectedFileContributions.rows(),
+                    configService.getBuildCustomizations(depIds));
+            Files.writeString(projectRoot.resolve(BackendModel.FILE),
+                    BackendModel.json(BackendModel.KIND_BACKEND, request, catalogHash));
+            Path gitAttributes = projectRoot.resolve(".gitattributes");
+            Files.writeString(gitAttributes, BackendModel.gitAttributes(
+                    Files.isRegularFile(gitAttributes) ? Files.readString(gitAttributes) : null));
+            GeneratedProjectFiles.normalizeLineEndings(projectRoot);
+        };
+    }
+
+    /** A wizard's documents and — for those that have one — its options, as a request carries them. */
+    private static void putWizard(com.fasterxml.jackson.databind.node.ObjectNode request, String textsKey, String optionsKey,
+                                  Map<String, String> texts, java.util.function.Function<String, Object> optionsFor) {
+        com.fasterxml.jackson.databind.node.ObjectNode byDep = BackendModel.texts(texts);
+        if (byDep == null) return;
+        request.set(textsKey, byDep);
+        com.fasterxml.jackson.databind.node.ObjectNode options = BackendModel.newRequest();
+        byDep.fieldNames().forEachRemaining(dep -> {
+            Object value = optionsFor.apply(dep);
+            if (value != null) options.set(dep, BackendModel.wire(value));
+        });
+        if (!options.isEmpty()) request.set(optionsKey, options);
+    }
+
+    /** HELP.md says what the model file is for. */
+    @Bean
+    io.spring.initializr.generator.spring.documentation.HelpDocumentCustomizer modelHelpCustomizer(
+            ProjectOptionsContext optionsContext) {
+        return document -> {
+            if (optionsContext.isEmbedded()) return;
+            document.addSection(writer -> {
+                writer.println("# Reopening and updating this project");
+                writer.println();
+                writer.println("`" + BackendModel.FILE + "` at the project's root is what this project was generated from: its");
+                writer.println("dependencies and options, and whatever a wizard was given (SQL, OpenAPI, WSDL, AsyncAPI).");
+                writer.println("Keep it in version control.");
+                writer.println();
+                writer.println("* **Reopen** it in the generator (Backend tab, *Import model*) to carry on from where the");
+                writer.println("  project was generated.");
+                writer.println("* **Update** instead of generating again: change the model there and choose *Download update*.");
+                writer.println("  The generator compares what the old model generates with what the new one does and answers");
+                writer.println("  with a patch for `git apply --3way`, which merges with the edits made since.");
+                writer.println();
+            });
+        };
     }
 
     /**

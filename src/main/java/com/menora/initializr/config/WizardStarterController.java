@@ -93,6 +93,34 @@ public class WizardStarterController {
         this.configService = configService;
     }
 
+    /** A project generated from a request body: where it is, and the request it resolved to. */
+    record GeneratedProject(Path directory, WebProjectRequest request) {}
+
+    /**
+     * Generates the project of {@code body} — what {@code /starter-wizard.zip} zips — and leaves
+     * it on disk for the caller, who {@link #release releases} it. The per-request contexts are
+     * cleared before this returns, so two generations in one request (the two sides of an update)
+     * do not see each other's.
+     */
+    GeneratedProject generateProject(WizardStarterRequest body) throws IOException {
+        validateSpecs(body);
+        validateWsdls(body);
+        validateEvents(body);
+        validateSql(body);
+        WebProjectRequest request = toWebRequest(body);
+        try {
+            populateContexts(body);
+            defaultDatasourceRolesIfSql(body, request);
+            return new GeneratedProject(invoker.invokeProjectStructureGeneration(request).getRootDirectory(), request);
+        } finally {
+            clearAllContexts();
+        }
+    }
+
+    void release(GeneratedProject project) {
+        if (project != null) invoker.cleanTempFiles(project.directory());
+    }
+
     @PostMapping("/starter-wizard.zip")
     public ResponseEntity<byte[]> generate(@RequestBody WizardStarterRequest body) throws IOException {
         validateSpecs(body);

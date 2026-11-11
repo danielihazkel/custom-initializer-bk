@@ -1,3 +1,4 @@
+0910d5c5483eceff0b4b666d84a5f4343ac775aa568e06d54c0a1802bd3667b7  golden/.gitattributes
 32abd4837b7d6b9a34495995930e0c3983e127287143b0c9db59b69dada8964a  golden/golden-api/.editorconfig
 de7cd6dd2e2e685c793b14403c34da350e06b1459efcf62422c68f340b306e7c  golden/golden-api/.env
 5775a77ad2f6d12dde053a3fb0cca4309189163f0888f4e7e984cd0ab327028b  golden/golden-api/.gitattributes
@@ -41,4 +42,5 @@ a20641687db30c98a829ae46c852c2576068f3741d0153ae2fd84916078cf06d  golden/golden-
 415751a8ff4d67f6e130e11c49a9e08dcacae5a9e001e8de39a47de398b3b53c  golden/golden-core/src/main/resources/detailedLogFormat.json
 29c919fff88cf444d44fbcf9ffc7f28edb57583d14d9b5fa7182d6d595b659f8  golden/golden-core/src/main/resources/log4j2-spring.xml
 91d0eebea29191dffa64a4f0a70c7facc61df61133b8fab9436d13dc7372f4f0  golden/golden-core/src/main/resources/logFormat.json
+ca4d12c02be790c9734b8dda41f3538594ef4a926fc081ce0a0af3c63cb43d4e  golden/menora-model.json
 2eeff2cb8b1830b137e31fd5e173a29c3ae0ab7dcb2080af1133e3e27696fe0f  golden/pom.xml

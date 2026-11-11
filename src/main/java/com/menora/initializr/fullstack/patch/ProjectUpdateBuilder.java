@@ -34,8 +34,19 @@ public final class ProjectUpdateBuilder {
     public static final String DELETED_FILE = "DELETED.txt";
     public static final String FILES_DIR = "files/";
 
-    /** What the two generations were made with, for the notes. Either hash may be null. */
-    public record Info(String artifactId, String baseTemplatesHash, String templatesHash) {}
+    /**
+     * What the two generations were made with, for the notes. Either hash may be null.
+     *
+     * @param rootHint what the project's root is, in a few words — where the patch is applied from
+     * @param madeWith what the hashes are of, as the notes call it: "templates" (plural) or "catalog"
+     */
+    public record Info(String artifactId, String baseTemplatesHash, String templatesHash, String rootHint, String madeWith) {
+
+        /** A fullstack project, made with the generator's templates. */
+        public Info(String artifactId, String baseTemplatesHash, String templatesHash) {
+            this(artifactId, baseTemplatesHash, templatesHash, "the folder holding `backend/` and `frontend/`", "templates");
+        }
+    }
 
     /** The update: its zip, and the paths by what happened to them (sorted). */
     public record ProjectUpdate(byte[] zip, String patch, List<String> added, List<String> changed,
@@ -132,7 +143,7 @@ public final class ProjectUpdateBuilder {
                 .append(deleted.size()).append(" removed.\n\n");
 
         md.append("## Apply it\n\n")
-                .append("From the project's root (the folder holding `backend/` and `frontend/`), with your own work\n")
+                .append("From the project's root (").append(info.rootHint()).append("), with your own work\n")
                 .append("committed or stashed:\n\n")
                 .append("```\n")
                 .append("git apply --3way --whitespace=nowarn path/to/").append(PATCH_FILE).append("\n")
@@ -162,18 +173,21 @@ public final class ProjectUpdateBuilder {
             md.append('\n');
         }
 
+        boolean plural = info.madeWith().endsWith("s");
         md.append("## What this is not\n\n")
                 .append("Both sides of the comparison were generated now, from the model the project had and the\n")
                 .append("model it should have. The patch is the difference the *model* makes — it does not bring in\n")
-                .append("changes the generator's templates have had since the project was first generated.\n");
+                .append("changes the generator's ").append(info.madeWith()).append(plural ? " have" : " has")
+                .append(" had since the project was first generated.\n");
         if (info.baseTemplatesHash() != null && info.templatesHash() != null) {
             if (info.baseTemplatesHash().equals(info.templatesHash())) {
-                md.append("\nThe templates are the ones the project was generated with (`")
+                md.append("\nThe ").append(info.madeWith())
+                        .append(plural ? " are the ones the project was generated with (`" : " is the one the project was generated with (`")
                         .append(shortHash(info.templatesHash())).append("`), so every hunk should fit code you have not edited.\n");
             } else {
-                md.append("\nThe templates have changed since the project was generated (`")
+                md.append("\nThe ").append(info.madeWith()).append(plural ? " have" : " has").append(" changed since the project was generated (`")
                         .append(shortHash(info.baseTemplatesHash())).append("` then, `")
-                        .append(shortHash(info.templatesHash())).append("` now). A hunk next to code the newer templates write\n")
+                        .append(shortHash(info.templatesHash())).append("` now). A hunk next to code the newer ").append(info.madeWith()).append(plural ? " write\n" : " writes\n")
                         .append("differently may not fit; `--3way` usually still places it, and what it cannot is left as a\n")
                         .append("conflict.\n");
             }

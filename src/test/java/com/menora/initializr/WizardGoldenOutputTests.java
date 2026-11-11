@@ -234,6 +234,11 @@ class WizardGoldenOutputTests {
     }
 
     private static GoldenManifests manifests() {
-        return new GoldenManifests("wizard", Path.of("target", "golden-actual", "wizard"), (path, text) -> text);
+        // The model file names the catalog rows the project was generated from: masked, or any
+        // edit of a catalog file would move every case here.
+        return new GoldenManifests("wizard", Path.of("target", "golden-actual", "wizard"), (path, text) ->
+                path.endsWith("menora-model.json")
+                        ? text.replaceAll("\"catalogHash\" : \"[0-9a-f]{64}\"", "\"catalogHash\" : \"<catalog>\"")
+                        : text);
     }
 }
