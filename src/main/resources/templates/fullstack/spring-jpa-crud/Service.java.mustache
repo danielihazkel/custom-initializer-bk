@@ -381,7 +381,13 @@ public class {{EntityName}}Service {
                 errors.add(new ImportError(row, "{{fkFieldName}}", "no {{targetEntity}} " + dto.{{fkFieldName}}()));
             }
 {{/relations}}            {{EntityName}} entity = dto.toEntity();
-{{#hasLockedRelations}}            withReferences(entity);
+{{#hasCollections}}            try {
+                resolveLinks(entity); // the ids of a many-to-many must name rows, like a create's
+            } catch (IllegalArgumentException unknown) {
+                errors.add(new ImportError(row, null, unknown.getMessage()));
+            }
+{{#collections}}            if (entity.get{{FieldName}}() == null) entity.set{{FieldName}}(new java.util.LinkedHashSet<>());
+{{/collections}}{{/hasCollections}}{{#hasLockedRelations}}            withReferences(entity);
 {{/hasLockedRelations}}{{#lockingApplicable}}            entity.setVersion(null);
 {{/lockingApplicable}}{{#hasWorkflow}}            entity.set{{WorkflowStatusName}}({{workflowInitialJava}});
 {{#hasAssignee}}            entity.set{{AssigneeName}}(null);

@@ -244,6 +244,16 @@ class GeneratedBackendBuildSmokeTests {
                 }
 
                 @Test
+                void theCsvExportGuardsTextThatStartsLikeAFormula() throws Exception {
+                    send(post("/api/customers"), null, "{\\"name\\":\\"=HYPERLINK(1)\\",\\"email\\":\\"+a@b.co\\"}", 200);
+                    var started = mvc.perform(MockMvcRequestBuilders.get("/api/customers/export.csv")).andReturn();
+                    String csv = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(started))
+                            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+                    // Text is led by an apostrophe; the demo rows' plain names are untouched.
+                    assertThat(csv).contains("'=HYPERLINK(1)").contains("'+a@b.co").contains(",Name 1,");
+                }
+
+                @Test
                 void bulkCallsKeepWhatASingleSaveKeeps() throws Exception {
                     long id = firstId("/api/products");
                     String name = get("/api/products/" + id).get("name").asText();

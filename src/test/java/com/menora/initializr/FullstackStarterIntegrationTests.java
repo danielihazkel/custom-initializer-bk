@@ -2034,6 +2034,35 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_csvGuardsFormulaCellsAndAnImportChecksItsLinks() throws Exception {
+        Map<String, Object> body = FullstackExampleRequests.manyToManyBody("react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "csvImport")));
+        Map<String, String> entries = generateZip(body);
+
+        // Export: a text cell that starts like a formula would run in a spreadsheet.
+        assertThat(contentEndingWith(entries, "/controller/PostController.java"))
+                .contains("private static final String FORMULA_STARTS = \"=+-@\";")
+                .contains("if (value instanceof CharSequence && !s.isEmpty() && FORMULA_STARTS.indexOf(s.charAt(0)) >= 0) {\n"
+                        + "            s = \"'\" + s;");
+        // …and the app's own import drops that apostrophe, so an exported file still imports as it is.
+        assertThat(contentEndingWith(entries, "/shared/ui/csv.ts"))
+                .contains("const text = raw.trim().replace(/^'(?=[=+@-])/, '')");
+
+        // Import: the ids of a many-to-many are resolved per row, like a create's — an unknown id
+        // is that row's problem, not a database error for the whole file.
+        assertThat(contentEndingWith(entries, "/service/PostService.java"))
+                .contains("            Post entity = dto.toEntity();\n"
+                        + "            try {\n"
+                        + "                resolveLinks(entity); // the ids of a many-to-many must name rows, like a create's\n"
+                        + "            } catch (IllegalArgumentException unknown) {\n"
+                        + "                errors.add(new ImportError(row, null, unknown.getMessage()));\n"
+                        + "            }\n"
+                        + "            if (entity.getTags() == null) entity.setTags(new java.util.LinkedHashSet<>());\n");
+        // An entity without a many-to-many keeps its import as it was.
+        assertThat(contentEndingWith(entries, "/service/TagService.java")).doesNotContain("resolveLinks");
+    }
+
+    @Test
     void fullstackEndpoint_bulkCallsKeepWhatASingleSaveKeeps() throws Exception {
         // A bulk edit used to skip everything a single save checks: it nulled a required field,
         // took a value the DTO's validation refuses, and both bulk calls silently skipped ids

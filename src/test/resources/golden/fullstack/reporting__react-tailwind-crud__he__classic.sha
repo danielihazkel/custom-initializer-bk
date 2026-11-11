@@ -16,8 +16,8 @@ c1472eead393d284301250879f955f0d5d92f7841438ccdd6642a954a03cbf3f  golden-reporti
 a6477a3874da8ab3d368c7a16e74584f61e2e1d03e316db83fe75a6d4aecec63  golden-reporting/backend/src/main/java/com/menora/golden/GoldenReportingApplication.java
 071028df6a8aea299ec5f7f70fce33a1dd2aa30743ca4989eb54ab51d28cd2fe  golden-reporting/backend/src/main/java/com/menora/golden/config/CorsConfig.java
 53ad94d454c30e6f8eeac94ee9d60e275d47a043a2cdd96dd3d42923676f0d6d  golden-reporting/backend/src/main/java/com/menora/golden/config/VaultLocalEnvironmentPostProcessor.java
-4f2ee8c60e1bd472007d1036a10b8b051c1e2114574d4f0f6eb564f3292fc9d1  golden-reporting/backend/src/main/java/com/menora/golden/controller/MonthlySalesController.java
-188786475b7e97e21db3e34c74d8b5d99fc83979dd60f3b89744cdb07aea9ede  golden-reporting/backend/src/main/java/com/menora/golden/controller/SaleController.java
+caa78aae08d1f2f81a13725c8cf31cd2db9f6a0429df00fe01fe0ad10d2570da  golden-reporting/backend/src/main/java/com/menora/golden/controller/MonthlySalesController.java
+124fc7116b31e097863777fe07aa0a2ee6efa65fedd8236d7aafc19596ca91b0  golden-reporting/backend/src/main/java/com/menora/golden/controller/SaleController.java
 2a52b0a646e1eee133c7875fdd4fa6e9f3c2a2c8a82611296a0c9586e4e82b30  golden-reporting/backend/src/main/java/com/menora/golden/dto/MonthlySalesDto.java
 31afa70f701e04a4920880039328383141b51e6c0555f7be3e009beb23b115cb  golden-reporting/backend/src/main/java/com/menora/golden/dto/SaleDto.java
 7aed6e281b49365cbef5f853a2ca6a6a68312bbb47f3a5d205904399226227f2  golden-reporting/backend/src/main/java/com/menora/golden/entity/MonthlySales.java

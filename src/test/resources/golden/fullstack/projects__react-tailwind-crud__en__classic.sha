@@ -16,9 +16,9 @@ c1472eead393d284301250879f955f0d5d92f7841438ccdd6642a954a03cbf3f  golden-project
 db09b22c7476a3efdd56c7f11888ae6288b1f1a971b272e0d8ab58f64b22d54e  golden-projects/backend/src/main/java/com/menora/golden/GoldenProjectsApplication.java
 071028df6a8aea299ec5f7f70fce33a1dd2aa30743ca4989eb54ab51d28cd2fe  golden-projects/backend/src/main/java/com/menora/golden/config/CorsConfig.java
 53ad94d454c30e6f8eeac94ee9d60e275d47a043a2cdd96dd3d42923676f0d6d  golden-projects/backend/src/main/java/com/menora/golden/config/VaultLocalEnvironmentPostProcessor.java
-a52e4183925ac11b5b00ca9a5d726db37de3a02d2aaa13f65105985ce31ac914  golden-projects/backend/src/main/java/com/menora/golden/controller/PersonController.java
-130a391fccd44061b420c9973c8387222eb708911920ee27a1f4a311a996cf79  golden-projects/backend/src/main/java/com/menora/golden/controller/ProjectController.java
-319b1946bb8a1607c36eeef2fe8b0488dc09501bf64370efe4eea89fd8b66552  golden-projects/backend/src/main/java/com/menora/golden/controller/TaskController.java
+4ac6f2512bdfa2ec6d08ac5b6d0e14ea7064760734dcedf5bccdb478f7f16890  golden-projects/backend/src/main/java/com/menora/golden/controller/PersonController.java
+93d135a7881fb673f0198003bbcf42ceb11ec71013fd4cde593290f4ae8bb55c  golden-projects/backend/src/main/java/com/menora/golden/controller/ProjectController.java
+1e10781e7e4ba3e3912cae8ddcf40f67d0a3345bf3626b702f3b768c528314e7  golden-projects/backend/src/main/java/com/menora/golden/controller/TaskController.java
 571f0dd416826614de09c3c9d7e87b9f25bf319476c5846f70c5c11526b851d2  golden-projects/backend/src/main/java/com/menora/golden/dto/PersonDto.java
 c00b6fcd00df71916b488a526d8a1804e64c4f09301f050126c9b8f893cb4042  golden-projects/backend/src/main/java/com/menora/golden/dto/ProjectDto.java
 48de331867715b7bed449b4ceeaac02c389283e36a6bebdd0e748df8625ddf68  golden-projects/backend/src/main/java/com/menora/golden/dto/TaskDto.java
