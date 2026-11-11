@@ -29,6 +29,9 @@ import { rangeParams } from '@shared/ui/stats'
 {{#boardUsesT}}
 import { t } from '@shared/i18n'
 {{/boardUsesT}}
+{{#hasCardFormatImports}}
+import { {{cardFormatImports}} } from '@shared/ui/format'
+{{/hasCardFormatImports}}
 
 const PATH = '/api/{{entityNamePluralKebab}}'
 /** The cards a lane loads at a time. */

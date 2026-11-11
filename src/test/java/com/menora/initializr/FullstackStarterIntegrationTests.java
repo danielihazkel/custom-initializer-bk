@@ -3529,15 +3529,57 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.get("desk/frontend/src/shared/ui/Table.tsx"))
                 .contains("<EmptyState title={t('noMatchingRecords')} />")
                 .contains("action={emptyAction}");
+        // A value reads the same wherever it is shown — one function (displayTs) writes the table
+        // cell, the details and a card: a boolean in the app's words, a date for its locale. The
+        // table used to print `true` and an ISO date where the details worded and formatted them.
         assertThat(entries.get("desk/frontend/src/features/ticket-form/ui/TicketDetail.tsx"))
-                .contains("import { t, LOCALE } from '@shared/i18n'")
+                .contains("import { t } from '@shared/i18n'")
+                .contains("import { formatDate, formatDateTime } from '@shared/ui/format'")
                 .contains("(value.open ? t('trueLabel') : t('falseLabel'))")
-                .contains("new Date(`${value.due}T00:00:00`).toLocaleDateString(LOCALE)")
-                .contains("new Date(value.closedAt).toLocaleString(LOCALE)")
+                .contains("formatDate(value.due)")
+                .contains("formatDateTime(value.closedAt)")
                 .contains("String(value.title)");
-        // Nothing to word or format: no i18n import at all (the generated lint rejects unused ones).
+        assertThat(entries.get("desk/frontend/src/pages/ticket/ui/TicketPage.tsx"))
+                .contains("import { formatDate, formatDateTime } from '@shared/ui/format'")
+                .contains("render: r => r.open == null ? '—' : (r.open ? t('trueLabel') : t('falseLabel')) }")
+                .contains("render: r => r.due == null ? '—' : formatDate(r.due) }")
+                .contains("render: r => r.closedAt == null ? '—' : formatDateTime(r.closedAt) }")
+                .contains("render: r => r.title == null ? '—' : String(r.title) }");
+        // The helpers ship with the first date (they used to need a money, instant or file field).
+        assertThat(entries.get("desk/frontend/src/shared/ui/format.ts"))
+                .contains("export function formatDate(value: string): string {")
+                .contains("const at = new Date(`${String(value).slice(0, 10)}T00:00:00`)")
+                .contains("export function formatDateTime(value: string): string {");
+        // Nothing to word or format: no i18n or format import at all (the generated lint rejects unused ones).
         assertThat(entries.get("desk/frontend/src/features/note-form/ui/NoteDetail.tsx"))
-                .doesNotContain("@shared/i18n");
+                .doesNotContain("@shared/i18n").doesNotContain("@shared/ui/format");
+
+        // Cards (a board's, an inbox's) go through the same function: money in its currency, a
+        // date for the locale, a file by its name — a card used to print the file's id.
+        Map<String, Object> shift = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        shift.put("pages", List.of(
+                Map.of("id", "shifts", "type", "entity-list", "entity", "Shift"),
+                Map.of("id", "board", "type", "board", "entity", "Shift",
+                        "cardFields", List.of("title", "rate", "contract", "clockedIn"))));
+        String board = generateZip(shift).get("rota/frontend/src/app/screens/BoardScreen.tsx");
+        assertThat(board)
+                .contains("import { formatInstant, formatMoney } from '@shared/ui/format'")
+                .contains("r.rate == null ? '—' : formatMoney(r.rate, 'USD')")
+                .contains("r.contract == null ? '—' : (r.contractName ?? '—')")
+                .contains("r.clockedIn == null ? '—' : formatInstant(r.clockedIn)");
+        // A tile over a money field writes its number in the field's currency.
+        Map<String, Object> money = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        money.put("pages", List.of(
+                Map.of("id", "shifts", "type", "entity-list", "entity", "Shift"),
+                Map.of("id", "home", "type", "dashboard", "widgets", List.of(
+                        Map.of("kind", "kpi", "entity", "Shift", "agg", "sum", "field", "rate"),
+                        Map.of("kind", "kpi", "entity", "Shift")))));
+        Map<String, String> tiles = generateZip(money);
+        assertThat(tiles.get("rota/frontend/src/app/screens/HomeScreen.tsx").replace("\r\n", "\n"))
+                .contains("          agg=\"sum\"\n          field=\"rate\"\n          currency=\"USD\"\n")
+                .containsOnlyOnce("currency=");
+        assertThat(tiles.get("rota/frontend/src/shared/ui/stats.ts"))
+                .contains("export function formatStat(value: number | null, currency?: string): string {");
     }
 
     @Test

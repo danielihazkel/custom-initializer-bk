@@ -96,7 +96,7 @@ e3c89b2a21161f8fea0ae050647f2ff8ae3338f00cfe69b3fc251b8a7642740b  golden-tickets
 ff31c7c2c2a5139b811c9662437e7e188c8fba0887e1a68ad2ee8a3be8ceca26  golden-tickets/frontend/src/features/team-form/ui/TeamForm.tsx
 bc36a8227d16756f7274045b3395de373e90459706bccf0abd28fe34eb75ee4b  golden-tickets/frontend/src/features/ticket-form/index.ts
 3d6d409263d9335c28ec506dac3f208dddc1ed6798634ca15fa7a618ab85216a  golden-tickets/frontend/src/features/ticket-form/model/validate.ts
-0bdf35b8cf01679007589155a1b7ddcd2a60af54b2c519fb30976562cfef6679  golden-tickets/frontend/src/features/ticket-form/ui/TicketDetail.tsx
+38d2eb7c3d20240b9615ac2e389400c9b25a57ef765d59111cee6ad5c9786f34  golden-tickets/frontend/src/features/ticket-form/ui/TicketDetail.tsx
 64a6eca36fd877cac1bc42e1f071de137227fd9ea4b143a4b968f278c3369d55  golden-tickets/frontend/src/features/ticket-form/ui/TicketForm.tsx
 12e7a94723de3687c15cd14b50cf088aa242be2d97cac0228649c65136997118  golden-tickets/frontend/src/index.css
 2ab85ec9f497719a45cfa83db5f0cc79a405aaf0682f3c588fdba6f5294c0be7  golden-tickets/frontend/src/main.tsx
@@ -109,7 +109,7 @@ f12e9b6440dfdff6d5276818eb6576a6879cbcc20f367ea92b4841c7d3b79c55  golden-tickets
 075a70d2e2db33794e8b9bacd88e966f0d3c46ff09ebac0bdd2a93c2ec530a43  golden-tickets/frontend/src/pages/team/index.ts
 0e8586972127da9c98f63f462ed8ffea6a567ebf979660bd95af8b22cf7f04ea  golden-tickets/frontend/src/pages/team/ui/TeamPage.tsx
 c09c2904b17c30af6c074d7412875d55878ba042cf78a9bee0773f8dcc725a24  golden-tickets/frontend/src/pages/ticket/index.ts
-ba2cb288ed001526911669c06b0ec2e8f8404e3f2ffe1eb001d716f358d16b09  golden-tickets/frontend/src/pages/ticket/ui/TicketPage.tsx
+3e858b86b70eda9b3ace7323fed93d63ae6400eea1253054e9e54711bdeaaf8b  golden-tickets/frontend/src/pages/ticket/ui/TicketPage.tsx
 794d73cb44a523204e36b62507422614df59d86c67cb7f3428a66dafb8bfb9e1  golden-tickets/frontend/src/shared/README.md
 c0d15623de9d8bbb3c3488678a7fa9340607cfc32dc6daea9e34417b8b0a80d6  golden-tickets/frontend/src/shared/api/client.ts
 3f2dc9d381b5f455f2513c9cac00625b670dd5515d05ff794b41d38d34e89cbc  golden-tickets/frontend/src/shared/api/index.ts
@@ -133,6 +133,7 @@ adb400d2dc6ac134acdb7adea524021a8b5fe995e05f1d6fdb636a1d2f1ed62a  golden-tickets
 dd1fc0a250d6088bfd0b3910cd1602bd859f46b0175cdd5b118425823cae2617  golden-tickets/frontend/src/shared/ui/RelationPicker.tsx
 a9fb00f2f5dad34d192b8f5fa2f155737eee9674224ab244c52dce8cad403037  golden-tickets/frontend/src/shared/ui/Skeleton.tsx
 2f46fbba4893cd6ce32b30cddbf850c73ab7fc88da12434673aecc3e9f63bb8d  golden-tickets/frontend/src/shared/ui/Table.tsx
+ead90fc35e323c8d29f562aacad5a3a1b63767a0d0b6ff1e375191fcfa814397  golden-tickets/frontend/src/shared/ui/format.ts
 8ae35916b7d1744df84298c41dfb41512479fe8635ebc96809fe735723d77653  golden-tickets/frontend/src/shared/ui/index.ts
 8955de89372b3499c55feb95ccd98ccfd96a0a7c8762fd09ba86b7ba34bcc82c  golden-tickets/frontend/src/shared/ui/leaveGuard.ts
 88f54515c958080a6c42936e01ded4e55870f1aeb145e78194d40a700012517f  golden-tickets/frontend/src/shared/ui/listPrefs.ts

@@ -14,6 +14,19 @@ export function formatMoney(value: number | string, currency: string): string {
   return new Intl.NumberFormat(LOCALE, { style: 'currency', currency }).format(amount)
 }
 
+/** A date ("2026-01-31") written for the app's locale. Read as local midnight: `new Date` of a
+ *  bare date is UTC, which is the day before west of it. */
+export function formatDate(value: string): string {
+  const at = new Date(`${String(value).slice(0, 10)}T00:00:00`)
+  return Number.isNaN(at.getTime()) ? String(value) : at.toLocaleDateString(LOCALE)
+}
+
+/** A local date and time ("2026-01-31T08:00:00") written for the app's locale. */
+export function formatDateTime(value: string): string {
+  const at = new Date(value)
+  return Number.isNaN(at.getTime()) ? String(value) : at.toLocaleString(LOCALE)
+}
+
 /** A UTC instant ("2026-01-31T08:00:00Z") in the reader's own zone and the app's locale. */
 export function formatInstant(value: string): string {
   const at = new Date(value)

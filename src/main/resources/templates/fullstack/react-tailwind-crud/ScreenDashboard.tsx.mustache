@@ -135,6 +135,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           agg="{{agg}}"
           field="{{aggField}}"
 {{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
 {{#hasParams}}
           params={ {{paramsExpr}} }
 {{/hasParams}}
@@ -161,6 +164,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           agg="{{agg}}"
           field="{{aggField}}"
 {{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
           target={ {{target}} }
 {{#hasParams}}
           params={ {{paramsExpr}} }

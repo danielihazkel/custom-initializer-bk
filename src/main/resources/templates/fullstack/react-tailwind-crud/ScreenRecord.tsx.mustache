@@ -251,6 +251,9 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
           agg="{{agg}}"
           field="{{aggField}}"
 {{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
           params={`{{viaParam}}=${encodeURIComponent(recordId)}`}
 {{#hasTab}}
           onOpen={() => setActive({{tabIndex}})}

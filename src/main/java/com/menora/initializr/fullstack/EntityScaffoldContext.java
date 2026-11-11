@@ -96,7 +96,8 @@ public final class EntityScaffoldContext {
         // AttachmentField on the frontend (both render paths read it).
         ctx.put("hasAttachments", attachments);
         ctx.put("hasFormatHelpers", attachments || entities.stream().flatMap(e -> e.fields().stream())
-                .anyMatch(f -> f.type().isMoney() || f.type().isInstant()));
+                .anyMatch(f -> f.type().isMoney() || f.type().isInstant()
+                        || f.type() == FieldType.LOCAL_DATE || f.type() == FieldType.LOCAL_DATE_TIME));
         ctx.put("hasMarkdownFields", entities.stream().flatMap(e -> e.fields().stream())
                 .anyMatch(f -> f.type().isMarkdown()));
         // Any workflow: the shared WorkflowException, CurrentUser and GET /api/me (both render paths).
@@ -952,6 +953,7 @@ public final class EntityScaffoldContext {
         pv.put("cardFields", cards);
         pv.put("cardLabelImports", String.join(", ", labelImports));
         pv.put("hasCardLabelImports", !labelImports.isEmpty());
+        putCardFormatImports(pv, cards);
         pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
         pv.put("presetFilterOrEmptyTs", p.presetFilter().isEmpty() ? "{}" : presetFilterTs(p.presetFilter(), ev));
         pv.put("presetUsesPeriod", presetHasPeriod(p.presetFilter()));
@@ -1166,6 +1168,7 @@ public final class EntityScaffoldContext {
             wv.put("hasAgg", reduces);
             wv.put("agg", w.agg() == null ? null : w.agg().wire());
             wv.put("aggField", w.field());
+            putAggCurrency(wv, ev, reduces ? w.field() : null);
             wv.put("bucket", w.bucket() == null ? null : w.bucket().wire());
             wv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
             String spanClass = SPAN_CLASSES.get(w.span() - 1);
@@ -1736,6 +1739,26 @@ public final class EntityScaffoldContext {
         return Character.toUpperCase(spaced.charAt(0)) + spaced.substring(1);
     }
 
+    /** A tile that sums (averages…) a money field shows the number in the field's currency:
+     *  {@code aggCurrency}, or nothing for a count or a plain number. */
+    private static void putAggCurrency(Map<String, Object> view, Map<String, Object> entityView, String field) {
+        Map<String, Object> fv = field == null ? null : fieldOf(entityView, field);
+        boolean money = fv != null && Boolean.TRUE.equals(fv.get("isMoney"));
+        view.put("hasAggCurrency", money);
+        view.put("aggCurrency", money ? fv.get("currency") : null);
+    }
+
+    /** The {@code @shared/ui/format} helpers a screen's cards call — imported only when one does
+     *  (the generated lint rejects an unused import). */
+    private static void putCardFormatImports(Map<String, Object> pv, List<Map<String, Object>> cards) {
+        List<String> imports = new ArrayList<>();
+        for (String helper : List.of("formatDate", "formatDateTime", "formatInstant", "formatMoney")) {
+            if (cards.stream().anyMatch(c -> ((String) c.get("renderTs")).contains(helper + "("))) imports.add(helper);
+        }
+        pv.put("hasCardFormatImports", !imports.isEmpty());
+        pv.put("cardFormatImports", String.join(", ", imports));
+    }
+
     /** Board cards' and inbox rows' cells, as TS expressions over the row `r`, the first naming it;
      *  the enum label maps they read are added to `labelImports`. */
     private static List<Map<String, Object>> cardViews(List<String> names, Map<String, Map<String, Object>> fields,
@@ -1749,17 +1772,9 @@ public final class EntityScaffoldContext {
             String label;
             if (f != null) {
                 label = (String) f.get("label");
-                String none = "r." + name + " == null ? '\u2014' : ";
-                if (Boolean.TRUE.equals(f.get("isEnum"))) {
-                    labelImports.add(f.get("enumTypeName") + "Labels");
-                    render = none + f.get("enumTypeName") + "Labels[r." + name + "]";
-                } else if (Boolean.TRUE.equals(f.get("isBoolean"))) {
-                    render = none + "r." + name + " ? t('trueLabel') : t('falseLabel')";
-                } else if (Boolean.TRUE.equals(f.get("isDateTime"))) {
-                    render = none + "String(r." + name + ").replace('T', ' ').slice(0, 16)";
-                } else {
-                    render = none + "String(r." + name + ")";
-                }
+                if (Boolean.TRUE.equals(f.get("isEnum"))) labelImports.add(f.get("enumTypeName") + "Labels");
+                render = "r." + name + " == null ? '\u2014' : " + displayTs((FieldType) f.get(FIELD_TYPE_KEY), "r." + name,
+                        (String) f.get("enumTypeName"), (String) f.get("currency"), Display.CARD);
             } else {
                 Map<String, Object> r = relations.get(name);
                 label = (String) r.get("label");
@@ -1788,7 +1803,9 @@ public final class EntityScaffoldContext {
         Map<String, Map<String, Object>> relations = new LinkedHashMap<>();
         for (Map<String, Object> r : (List<Map<String, Object>>) ev.get("relations")) relations.put((String) r.get("fieldName"), r);
         Set<String> labelImports = new TreeSet<>();
-        pv.put("cardFields", cardViews(spec.cardFields(), fields, relations, labelImports));
+        List<Map<String, Object>> inboxCards = cardViews(spec.cardFields(), fields, relations, labelImports);
+        pv.put("cardFields", inboxCards);
+        putCardFormatImports(pv, inboxCards);
         Map<String, Object> status = fields.get((String) ev.get("workflowStatusField"));
         labelImports.add(status.get("enumTypeName") + "Labels");
         pv.put("cardLabelImports", String.join(", ", labelImports));
@@ -1867,6 +1884,7 @@ public final class EntityScaffoldContext {
             sv.put("hasAgg", reduces);
             sv.put("agg", s.agg().wire());
             sv.put("aggField", s.field());
+            putAggCurrency(sv, cv, reduces ? s.field() : null);
             sv.put("viaParam", Naming.toCamelCase(s.via()) + "Id");
             String label = (String) cv.get("entityLabelPlural");
             sv.put("titleExpr", s.title() != null ? tsString(s.title())
@@ -2590,15 +2608,16 @@ public final class EntityScaffoldContext {
         List<Map<String, Object>> detailFields = (List<Map<String, Object>>) ctx.get("fields");
         boolean audit = Boolean.TRUE.equals(ctx.get("auditApplicable"));
         boolean detailBool = detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isBoolean")));
-        boolean detailDate = detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isDate")) || Boolean.TRUE.equals(f.get("isDateTime")));
         ctx.put("detailUsesT", audit || detailBool);
-        ctx.put("detailUsesLocale", audit || detailDate);
-        ctx.put("detailUsesI18n", audit || detailBool || detailDate);
+        ctx.put("detailUsesLocale", audit);
+        ctx.put("detailUsesI18n", audit || detailBool);
         // The shared formatters this entity's list and detail call (money, instants), the Markdown
         // renderer its detail draws, and the instant conversion its form does — each imported only
         // where used, for the same lint.
         List<String> formatImports = new ArrayList<>();
         if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isAttachment")))) formatImports.add("attachmentUrl");
+        if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isDate")))) formatImports.add("formatDate");
+        if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isDateTime")))) formatImports.add("formatDateTime");
         if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isInstant")))) formatImports.add("formatInstant");
         if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isMoney")))) formatImports.add("formatMoney");
         ctx.put("usesFormat", !formatImports.isEmpty());
@@ -3379,6 +3398,7 @@ public final class EntityScaffoldContext {
         fv.put("NameField", pascalName + "Name");
         // The TS that draws a non-null value of this field: a list cell reads it off `r`, the
         // detail view off `value`.
+        fv.put(FIELD_TYPE_KEY, f.type());
         fv.put("cellTs", cellTs(f, enumTypeName));
         fv.put("detailTs", detailTs(f, enumTypeName));
         // What a template would otherwise spell out as a chain of type flags — where a type the
@@ -3488,40 +3508,63 @@ public final class EntityScaffoldContext {
     }
 
     /** What a list cell prints for a non-null value (the row is {@code r}). */
+    /** A field view's {@link FieldType}, for the code that builds expressions from views (board
+     *  and inbox cards). Not referenced by any template. */
+    private static final String FIELD_TYPE_KEY = "__type";
+
+    /** Where a value is shown: a table cell, the details, or a board card / inbox row. */
+    enum Display { CELL, DETAIL, CARD }
+
     static String cellTs(FieldDefinition f, String enumTypeName) {
-        String v = "r." + f.name();
-        return switch (f.type()) {
-            case ENUM -> enumTypeName + "Labels[" + v + "]";
-            case MONEY -> "formatMoney(" + v + ", '" + f.currency() + "')";
-            case INSTANT -> "formatInstant(" + v + ")";
-            // The file's name, opening the file; a small picture for an image.
-            case FILE -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\" "
-                    + "onClick={e => e.stopPropagation()} className=\"font-medium text-brand hover:underline\">{"
-                    + v + "Name ?? String(" + v + ")}</a>";
-            case IMAGE -> "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
-                    + "className=\"h-8 w-8 rounded object-cover\" />";
-            case STRING, TEXT, MARKDOWN, LONG, INTEGER, BOOLEAN, LOCAL_DATE, LOCAL_DATE_TIME, LOCAL_TIME,
-                    BIG_DECIMAL, UUID -> "String(" + v + ")";
-        };
+        return displayTs(f.type(), "r." + f.name(), enumTypeName, f.currency(), Display.CELL);
     }
 
-    /** What the detail view shows for a non-null value (the record is {@code value}). */
     static String detailTs(FieldDefinition f, String enumTypeName) {
-        String v = "value." + f.name();
-        return switch (f.type()) {
-            case TEXT -> "<span className=\"whitespace-pre-wrap break-words\">{String(" + v + ")}</span>";
-            case MARKDOWN -> "<Markdown source={String(" + v + ")} />";
+        return displayTs(f.type(), "value." + f.name(), enumTypeName, f.currency(), Display.DETAIL);
+    }
+
+    /**
+     * How a non-null value of a field reads, as a TS expression over {@code v} ({@code r.status},
+     * {@code value.status}). One function for the table cell, the details and a card, so a value
+     * reads the same wherever it is shown: an enum by its label, a boolean in the app's words, a
+     * date for the app's locale, money in its currency, a file by its name. They used to be three
+     * lists that had drifted apart — a table printed {@code true} and an ISO date where the
+     * details worded and formatted them, and a card printed a file's id.
+     *
+     * <p>The switch has no {@code default}: a new {@link FieldType} does not compile until it
+     * says how it is shown. The helpers it calls are imported per file — {@code t} from the i18n
+     * module, the rest from {@code @shared/ui/format} (see {@code formatImports}).
+     */
+    static String displayTs(FieldType type, String v, String enumTypeName, String currency, Display where) {
+        return switch (type) {
             case ENUM -> enumTypeName + "Labels[" + v + "]";
             case BOOLEAN -> "(" + v + " ? t('trueLabel') : t('falseLabel'))";
-            case LOCAL_DATE -> "new Date(`${" + v + "}T00:00:00`).toLocaleDateString(LOCALE)";
-            case LOCAL_DATE_TIME -> "new Date(" + v + ").toLocaleString(LOCALE)";
-            case MONEY -> "formatMoney(" + v + ", '" + f.currency() + "')";
+            case LOCAL_DATE -> "formatDate(" + v + ")";
+            case LOCAL_DATE_TIME -> "formatDateTime(" + v + ")";
+            case MONEY -> "formatMoney(" + v + ", '" + currency + "')";
             case INSTANT -> "formatInstant(" + v + ")";
-            case FILE -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\" "
-                    + "className=\"font-medium text-brand hover:underline\">{" + v + "Name ?? String(" + v + ")}</a>";
-            case IMAGE -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\">"
-                    + "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
-                    + "className=\"max-h-48 rounded-lg border border-border\" /></a>";
+            case TEXT -> where == Display.DETAIL
+                    ? "<span className=\"whitespace-pre-wrap break-words\">{String(" + v + ")}</span>"
+                    : "String(" + v + ")";
+            case MARKDOWN -> where == Display.DETAIL ? "<Markdown source={String(" + v + ")} />" : "String(" + v + ")";
+            // The file's name, opening the file (a card is itself a link: the name alone there).
+            case FILE -> switch (where) {
+                case CELL -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\" "
+                        + "onClick={e => e.stopPropagation()} className=\"font-medium text-brand hover:underline\">{"
+                        + v + "Name ?? String(" + v + ")}</a>";
+                case DETAIL -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\" "
+                        + "className=\"font-medium text-brand hover:underline\">{" + v + "Name ?? String(" + v + ")}</a>";
+                case CARD -> "(" + v + "Name ?? '\u2014')";
+            };
+            // A small picture in a row, the picture itself (opening the file) in the details.
+            case IMAGE -> switch (where) {
+                case CELL -> "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
+                        + "className=\"h-8 w-8 rounded object-cover\" />";
+                case DETAIL -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\">"
+                        + "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
+                        + "className=\"max-h-48 rounded-lg border border-border\" /></a>";
+                case CARD -> "(" + v + "Name ?? '\u2014')";
+            };
             case STRING, LONG, INTEGER, LOCAL_TIME, BIG_DECIMAL, UUID -> "String(" + v + ")";
         };
     }

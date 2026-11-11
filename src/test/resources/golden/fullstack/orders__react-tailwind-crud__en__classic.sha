@@ -99,7 +99,7 @@ e13ad105748a74e267f8637c09f5b8444a53fc0366ca4e19f83d4187217b5c65  golden-orders/
 8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881  golden-orders/frontend/src/features/index.ts
 ca27499124ed49425b1585acfeeb43ac55749436ef66fe4d3fb16b7af51a2be8  golden-orders/frontend/src/features/order-form/index.ts
 45f4fb922b1115f7a66362939d62080f219a2b03cc31bb3a267af74826024c22  golden-orders/frontend/src/features/order-form/model/validate.ts
-028c807d0fc3bbe816bff6a424fa25d1e924b89ecd7856e1bdd83e1cace37c2e  golden-orders/frontend/src/features/order-form/ui/OrderDetail.tsx
+c8a5582934594fee267d589481b259b15721a13b75806991c9b7f3090daa4ad3  golden-orders/frontend/src/features/order-form/ui/OrderDetail.tsx
 5088096dcbad2ed997dd4210683b5169d1c579253b5f8bad023fa30306891a5d  golden-orders/frontend/src/features/order-form/ui/OrderForm.tsx
 8079100db3fc98a9902c8d4f8d245fec5fc51d893364e38357971fa3ce08a052  golden-orders/frontend/src/features/order-line-form/index.ts
 ec736111262598fbaabe5f90cf74501cf2fe875fd610c1ffad5b78951b9309fd  golden-orders/frontend/src/features/order-line-form/model/validate.ts
@@ -113,16 +113,16 @@ f6ba9823b289a4b5b1aa8dcd43abb59b5bbf8ef86f24c65cde0f9388a9a99694  golden-orders/
 dd596a1459bf26fd044ea233a820404cb2a54f0a438f9dc97b8538b165f0ea3e  golden-orders/frontend/src/main.tsx
 f33251b158fd83b7be8ed5a2e445f5454031d1e765847b731eeba42d8c8c32bc  golden-orders/frontend/src/pages/README.md
 09ad0fb946d5d3aabbd970a92d7f3c7530c715e521f7ec16aa78b4f0b5917b81  golden-orders/frontend/src/pages/customer/index.ts
-c53368860e4eeec031d9e3d9f4101b6cf1de2e56ee72b901dd773db791490c44  golden-orders/frontend/src/pages/customer/ui/CustomerPage.tsx
+f46801e90e6f7ec7eb5d3b74c766784eb5fa9d611c0d26fdbed7edcd3884ceb5  golden-orders/frontend/src/pages/customer/ui/CustomerPage.tsx
 a7eb92df135a31fed1e0f5b3c19048aa134892c12ba41ba16ce8331ac58815eb  golden-orders/frontend/src/pages/dashboard/index.ts
 8c493581362e02b1708781db3a32d57aef0b25fe05e785baa6c202659a6b3e9a  golden-orders/frontend/src/pages/dashboard/ui/DashboardPage.tsx
 c0b21214d06dd891e2a8a3ad7bbc6614661a1410efcfbe0f7ae0c7c906e9bcb5  golden-orders/frontend/src/pages/index.ts
 520952aa660acef279020332d56b325dc372fce015d46eb75dd5a7326921d687  golden-orders/frontend/src/pages/order-line/index.ts
 ccc8a2e17a4af176d7b8c65d028c097297012494b27098f94e7e93db519d4b7d  golden-orders/frontend/src/pages/order-line/ui/OrderLinePage.tsx
 cecc5cbd9b93e367fd6b517271edfcc304878ed28b062481bb3a6443da9dcb3a  golden-orders/frontend/src/pages/order/index.ts
-e8108306e83d50f1e27efc858d701e2d1878d43384e117a84130855a65084f90  golden-orders/frontend/src/pages/order/ui/OrderPage.tsx
+97be0d36282b1dc47e7fcc3f94bc94729f702011e952239e4d2bcf939728aa8b  golden-orders/frontend/src/pages/order/ui/OrderPage.tsx
 d75cea11e1849aa13a5c76529327ba71cf3371f015ee2a26c4d027ee6c73b17f  golden-orders/frontend/src/pages/product/index.ts
-702d8006b84a40ce3f428e7d62d74d705cd5dd91be860b615364637db58fc5e0  golden-orders/frontend/src/pages/product/ui/ProductPage.tsx
+c57dbdb404d28da4f2eaa62f62d9097fb0249fc4730b10c527f05f4acaf5049c  golden-orders/frontend/src/pages/product/ui/ProductPage.tsx
 794d73cb44a523204e36b62507422614df59d86c67cb7f3428a66dafb8bfb9e1  golden-orders/frontend/src/shared/README.md
 c0d15623de9d8bbb3c3488678a7fa9340607cfc32dc6daea9e34417b8b0a80d6  golden-orders/frontend/src/shared/api/client.ts
 3f2dc9d381b5f455f2513c9cac00625b670dd5515d05ff794b41d38d34e89cbc  golden-orders/frontend/src/shared/api/index.ts
@@ -147,6 +147,7 @@ f0e6667af803bf5c68b42459937d78b6893addde6d465cad3c05e2768b1b2769  golden-orders/
 dd1fc0a250d6088bfd0b3910cd1602bd859f46b0175cdd5b118425823cae2617  golden-orders/frontend/src/shared/ui/RelationPicker.tsx
 a9fb00f2f5dad34d192b8f5fa2f155737eee9674224ab244c52dce8cad403037  golden-orders/frontend/src/shared/ui/Skeleton.tsx
 9e8000a40e1327d26b044acda8ff6dc9ae89cc5c49b5fed022cef8561472df75  golden-orders/frontend/src/shared/ui/Table.tsx
+ead90fc35e323c8d29f562aacad5a3a1b63767a0d0b6ff1e375191fcfa814397  golden-orders/frontend/src/shared/ui/format.ts
 8ae35916b7d1744df84298c41dfb41512479fe8635ebc96809fe735723d77653  golden-orders/frontend/src/shared/ui/index.ts
 8955de89372b3499c55feb95ccd98ccfd96a0a7c8762fd09ba86b7ba34bcc82c  golden-orders/frontend/src/shared/ui/leaveGuard.ts
 88f54515c958080a6c42936e01ded4e55870f1aeb145e78194d40a700012517f  golden-orders/frontend/src/shared/ui/listPrefs.ts
