@@ -16,10 +16,10 @@ c1472eead393d284301250879f955f0d5d92f7841438ccdd6642a954a03cbf3f  golden-orders/
 8d8f4b243e6a389d6de71e4cca8e4144369836d85de7814b9fa235a3b9c4a295  golden-orders/backend/src/main/java/com/menora/golden/GoldenOrdersApplication.java
 071028df6a8aea299ec5f7f70fce33a1dd2aa30743ca4989eb54ab51d28cd2fe  golden-orders/backend/src/main/java/com/menora/golden/config/CorsConfig.java
 53ad94d454c30e6f8eeac94ee9d60e275d47a043a2cdd96dd3d42923676f0d6d  golden-orders/backend/src/main/java/com/menora/golden/config/VaultLocalEnvironmentPostProcessor.java
-60668a037bd0576de515186d58e3788c24b5300cff213cee98b35bae6ea8567d  golden-orders/backend/src/main/java/com/menora/golden/controller/CustomerController.java
-5e2c9b3935447c1d847f5dbfeeab19cb54ca1b1c4270a261512347efe259c654  golden-orders/backend/src/main/java/com/menora/golden/controller/OrderController.java
-3d5ddba610529b195b2286caa728ebefd02e63119ae5ae47778957beca6ec8b4  golden-orders/backend/src/main/java/com/menora/golden/controller/OrderLineController.java
-e9cf660498c45bba1b710503376088df6b23d93e22e3fabe9f761ad9187511ec  golden-orders/backend/src/main/java/com/menora/golden/controller/ProductController.java
+7ac77fa702ab466cdf12766593cb72d1843b8ee4d26972e1e7a2a553417592ad  golden-orders/backend/src/main/java/com/menora/golden/controller/CustomerController.java
+40ccc31209418beb76c84fd71d597212d830ff72f4291b4dae191c8abacf1194  golden-orders/backend/src/main/java/com/menora/golden/controller/OrderController.java
+de34eefb7118cafde99e560b94a77c9f9cbb8c481f5e2b201ab73538a574a600  golden-orders/backend/src/main/java/com/menora/golden/controller/OrderLineController.java
+5afd712c9f1b8bd87ec77ae53eb0f30c18d30774d05926b254d1df201e24583e  golden-orders/backend/src/main/java/com/menora/golden/controller/ProductController.java
 3e4242ed5b7de0279c75b8cef29691bd8c2c6e02335fcb05ffae1d5dab33159b  golden-orders/backend/src/main/java/com/menora/golden/dto/CustomerDto.java
 9663eb57edce56f7c0777d59a4de5734f2b5bced4e3bc2f77c6200d8d86bbf11  golden-orders/backend/src/main/java/com/menora/golden/dto/OrderDto.java
 618825486ac41e052f0a0646bec39d43557c803005c3742e19f5365a706a4a57  golden-orders/backend/src/main/java/com/menora/golden/dto/OrderLineDto.java
@@ -142,7 +142,7 @@ dde6383a3fbf322512e192067f87f17ef58676242b0b023d04ac3047fd26c520  golden-orders/
 35da48a6290f4e6af7d5e7b8dbb6e9d86daf4e9044ccf1cf6384e4cc8915822e  golden-orders/frontend/src/shared/ui/Field.tsx
 f225ca0b2c45c66e81480ad9f51684d2feec7ed1963ed0f4e73905760cc296d1  golden-orders/frontend/src/shared/ui/FilterBar.tsx
 f0e6667af803bf5c68b42459937d78b6893addde6d465cad3c05e2768b1b2769  golden-orders/frontend/src/shared/ui/FormDrawer.tsx
-716fb8ba512dde5ea99bf7c38716c4115ee6dedd2ba205450003e5274b1e8067  golden-orders/frontend/src/shared/ui/KanbanBoard.tsx
+44c96fca5f48300edb6599bc180e3cd130ef23508f8e244dca42a35c7ced5839  golden-orders/frontend/src/shared/ui/KanbanBoard.tsx
 7c2d6bb8cfb79cb29d05b6b49418c7c071a813be423a208736ab1fcaf23ca7e8  golden-orders/frontend/src/shared/ui/RelatedRows.tsx
 dd1fc0a250d6088bfd0b3910cd1602bd859f46b0175cdd5b118425823cae2617  golden-orders/frontend/src/shared/ui/RelationPicker.tsx
 a9fb00f2f5dad34d192b8f5fa2f155737eee9674224ab244c52dce8cad403037  golden-orders/frontend/src/shared/ui/Skeleton.tsx

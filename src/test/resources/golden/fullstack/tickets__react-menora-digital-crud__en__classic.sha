@@ -16,9 +16,9 @@ c1472eead393d284301250879f955f0d5d92f7841438ccdd6642a954a03cbf3f  golden-tickets
 a8a2dce6a53f7cbfdc81cf70a04eef4e7d1b682eb39784666a8fab8901c4b551  golden-tickets/backend/src/main/java/com/menora/golden/GoldenTicketsApplication.java
 071028df6a8aea299ec5f7f70fce33a1dd2aa30743ca4989eb54ab51d28cd2fe  golden-tickets/backend/src/main/java/com/menora/golden/config/CorsConfig.java
 53ad94d454c30e6f8eeac94ee9d60e275d47a043a2cdd96dd3d42923676f0d6d  golden-tickets/backend/src/main/java/com/menora/golden/config/VaultLocalEnvironmentPostProcessor.java
-b2af25f415297ea3ff837c7fe6acac1305335c67989aebacab06fd1c7eedbea4  golden-tickets/backend/src/main/java/com/menora/golden/controller/AgentController.java
-3b66dd06f50d58bec7eb24f05cca2554a602a1f90d8423419bef68c58df49283  golden-tickets/backend/src/main/java/com/menora/golden/controller/TeamController.java
-110875316bfa3dc3397fcf50c1534922bfbbfae076214b6ae7f59589bd1306c2  golden-tickets/backend/src/main/java/com/menora/golden/controller/TicketController.java
+5278e4fd274a1645c93c803facf886967dd39e518147d422ecddd6784650c991  golden-tickets/backend/src/main/java/com/menora/golden/controller/AgentController.java
+aa8a452176acdb0fee7f15f2a461426cdee75936d691016edb9264495d7044ee  golden-tickets/backend/src/main/java/com/menora/golden/controller/TeamController.java
+d2188e29f8696725363e375e4aa859ee19d8a417ffe8a0e4a50e2385646bce20  golden-tickets/backend/src/main/java/com/menora/golden/controller/TicketController.java
 bf465e29e12f417fdc5f1a0cdd0aa2b95d9578d9ae4796615504713a4d8ba8d7  golden-tickets/backend/src/main/java/com/menora/golden/dto/AgentDto.java
 6c93bd107eee57d2ea5745ca638a82d4f7818bd55f7e9f8514ba7981bf040d8f  golden-tickets/backend/src/main/java/com/menora/golden/dto/TeamDto.java
 68644bce8ec01611958d9d52b6e0372cebb64cb0c6728ae8e5c6636aa7837738  golden-tickets/backend/src/main/java/com/menora/golden/dto/TicketDto.java
@@ -109,7 +109,7 @@ f12e9b6440dfdff6d5276818eb6576a6879cbcc20f367ea92b4841c7d3b79c55  golden-tickets
 075a70d2e2db33794e8b9bacd88e966f0d3c46ff09ebac0bdd2a93c2ec530a43  golden-tickets/frontend/src/pages/team/index.ts
 0e8586972127da9c98f63f462ed8ffea6a567ebf979660bd95af8b22cf7f04ea  golden-tickets/frontend/src/pages/team/ui/TeamPage.tsx
 c09c2904b17c30af6c074d7412875d55878ba042cf78a9bee0773f8dcc725a24  golden-tickets/frontend/src/pages/ticket/index.ts
-3e858b86b70eda9b3ace7323fed93d63ae6400eea1253054e9e54711bdeaaf8b  golden-tickets/frontend/src/pages/ticket/ui/TicketPage.tsx
+f8d7178181f1e32a3152c7d65af0a8300dd3298e296da06353c237d01b6688c4  golden-tickets/frontend/src/pages/ticket/ui/TicketPage.tsx
 794d73cb44a523204e36b62507422614df59d86c67cb7f3428a66dafb8bfb9e1  golden-tickets/frontend/src/shared/README.md
 c0d15623de9d8bbb3c3488678a7fa9340607cfc32dc6daea9e34417b8b0a80d6  golden-tickets/frontend/src/shared/api/client.ts
 3f2dc9d381b5f455f2513c9cac00625b670dd5515d05ff794b41d38d34e89cbc  golden-tickets/frontend/src/shared/api/index.ts
@@ -129,7 +129,7 @@ adb400d2dc6ac134acdb7adea524021a8b5fe995e05f1d6fdb636a1d2f1ed62a  golden-tickets
 35da48a6290f4e6af7d5e7b8dbb6e9d86daf4e9044ccf1cf6384e4cc8915822e  golden-tickets/frontend/src/shared/ui/Field.tsx
 3fbdcfbbe5b96bd553f9c617795fccd97f9a861dedf9e375704f1ca53febc99d  golden-tickets/frontend/src/shared/ui/FilterBar.tsx
 3bdb468cf38e72dfdee58daafc8cadb23617bdeabafd6078bc5b0443b65f746c  golden-tickets/frontend/src/shared/ui/FormDrawer.tsx
-716fb8ba512dde5ea99bf7c38716c4115ee6dedd2ba205450003e5274b1e8067  golden-tickets/frontend/src/shared/ui/KanbanBoard.tsx
+44c96fca5f48300edb6599bc180e3cd130ef23508f8e244dca42a35c7ced5839  golden-tickets/frontend/src/shared/ui/KanbanBoard.tsx
 dd1fc0a250d6088bfd0b3910cd1602bd859f46b0175cdd5b118425823cae2617  golden-tickets/frontend/src/shared/ui/RelationPicker.tsx
 a9fb00f2f5dad34d192b8f5fa2f155737eee9674224ab244c52dce8cad403037  golden-tickets/frontend/src/shared/ui/Skeleton.tsx
 2f46fbba4893cd6ce32b30cddbf850c73ab7fc88da12434673aecc3e9f63bb8d  golden-tickets/frontend/src/shared/ui/Table.tsx

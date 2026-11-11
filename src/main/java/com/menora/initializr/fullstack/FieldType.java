@@ -92,6 +92,14 @@ public enum FieldType {
     }
 
     /**
+     * Whether a list can be sorted by the field. Not by long text (a TEXT/CLOB column does not
+     * sort on every database) and not by a file (its value is an id, which orders nothing).
+     */
+    public boolean sortable() {
+        return this != TEXT && this != MARKDOWN && !isAttachment();
+    }
+
+    /**
      * Whether the bulk-edit bar and inline cells offer the field: they take one typed value, which
      * suits neither a formatted text nor a time the browser must convert.
      */

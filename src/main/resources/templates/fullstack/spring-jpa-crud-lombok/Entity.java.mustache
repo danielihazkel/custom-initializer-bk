@@ -52,6 +52,8 @@ import org.hibernate.annotations.Formula;
 
 {{/fields}}{{#relations}}    @ManyToOne(fetch = FetchType.LAZY{{#required}}, optional = false{{/required}})
     @JoinColumn(name = "{{joinColumn}}"{{#required}}, nullable = false{{/required}})
+    @lombok.EqualsAndHashCode.Exclude
+    @lombok.ToString.Exclude
     private {{targetEntity}} {{fieldName}};
 
 {{#hasTargetLabel}}    /** Display label of the referenced {{targetEntity}} (its {{targetLabelField}}), computed by the

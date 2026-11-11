@@ -597,11 +597,13 @@ public final class FullstackPageValidator {
         return out;
     }
 
-    /** The columns the generated list endpoint sorts by (its SORTABLE whitelist): every field and,
-     *  with audit, the audit pair. Relations are shown but never sorted. */
+    /** The columns the generated list endpoint sorts by (its SORTABLE whitelist): every field but
+     *  long text and files and, with audit, the audit pair. Relations are shown but never sorted. */
     private static Map<String, String> sortableColumns(EntityDefinition entity, boolean audit) {
         Map<String, String> out = new LinkedHashMap<>();
-        for (FieldDefinition f : entity.fields()) out.put(f.name().toLowerCase(Locale.ROOT), f.name());
+        for (FieldDefinition f : entity.fields()) {
+            if (f.type().sortable()) out.put(f.name().toLowerCase(Locale.ROOT), f.name());
+        }
         if (audit) {
             out.put("createdat", "createdAt");
             out.put("updatedat", "updatedAt");
@@ -1342,6 +1344,9 @@ public final class FullstackPageValidator {
             }
         }
         FieldDefinition field = fieldOf(prefix, entity, requested, "sortBy");
+        if (!field.type().sortable()) {
+            throw new WizardArgumentException(prefix + ": sortBy '" + field.name() + "' is long text or a file, which a list cannot be sorted by");
+        }
         return field.primaryKey() ? null : field.name();
     }
 

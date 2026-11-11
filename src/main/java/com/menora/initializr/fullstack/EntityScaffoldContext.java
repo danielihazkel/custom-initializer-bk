@@ -127,6 +127,9 @@ public final class EntityScaffoldContext {
     /** As above, with the shell's navigation settings (null: a sidebar whose sections do not fold). */
     public static void putPageContext(Map<String, Object> ctx, List<PageDefinition> pages, PageDefinition.Nav navSettings) {
         ctx.put("hasPages", !pages.isEmpty());
+        // The classic shell's own files (its dashboard page): a layout draws its own screens and
+        // imported none of them — they used to be generated anyway.
+        ctx.put("classicShell", pages.isEmpty());
         // The tailwind shell's nav variants; the Menora shell is a top bar already and ignores them.
         boolean navTopbar = navSettings != null && navSettings.style() == PageDefinition.NavStyle.TOPBAR;
         ctx.put("navTopbar", navTopbar);
@@ -3399,6 +3402,8 @@ public final class EntityScaffoldContext {
         // The TS that draws a non-null value of this field: a list cell reads it off `r`, the
         // detail view off `value`.
         fv.put(FIELD_TYPE_KEY, f.type());
+        // In the controller's SORTABLE whitelist and a column the table sorts by.
+        fv.put("isSortable", f.type().sortable());
         fv.put("cellTs", cellTs(f, enumTypeName));
         fv.put("detailTs", detailTs(f, enumTypeName));
         // What a template would otherwise spell out as a chain of type flags — where a type the

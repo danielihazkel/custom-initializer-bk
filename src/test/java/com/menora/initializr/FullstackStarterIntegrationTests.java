@@ -2034,6 +2034,70 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_sortsByWhatSortsAndShipsNoDeadFiles() throws Exception {
+        // The Round 9 field types: `notes` is Markdown, `contract` a file, `photo` an image.
+        Map<String, Object> body = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        Map<String, String> classic = generateZip(body);
+
+        // A list sorts by neither long text (a TEXT/CLOB column does not sort on every database)
+        // nor a file (its value is an id): out of the API's whitelist, and no sort arrow on the column.
+        String controller = contentEndingWith(classic, "/controller/ShiftController.java");
+        int from = controller.indexOf("SORTABLE = List.of(");
+        assertThat(controller.substring(from, controller.indexOf("});", from)))
+                .contains("\"title\",").contains("\"startsAt\",").contains("\"createdAt\",")
+                .doesNotContain("\"notes\"").doesNotContain("\"contract\"").doesNotContain("\"photo\"");
+        assertThat(classic.get("rota/frontend/src/pages/shift/ui/ShiftPage.tsx"))
+                .contains("label: 'Title', sortKey: 'title', render:")
+                .contains("label: 'Notes', render:")
+                .contains("label: 'Contract', render:")
+                .doesNotContain("sortKey: 'notes'").doesNotContain("sortKey: 'photo'");
+        body.put("frontendTemplateSet", "react-menora-digital-crud");
+        assertThat(generateZip(body).get("rota/frontend/src/pages/shift/ui/ShiftPage.tsx"))
+                .contains("label: 'Title', sortKey: 'title'").contains("label: 'Notes', render:").doesNotContain("sortKey: 'notes'");
+        body.put("frontendTemplateSet", "react-tailwind-crud");
+
+        // The kanban's "no value" lane key is written as an escape: the file held a raw NUL byte,
+        // which made git and the line-ending pass treat it as binary.
+        String kanban = classic.get("rota/frontend/src/shared/ui/KanbanBoard.tsx");
+        assertThat(kanban).contains("const UNASSIGNED = '\\u0000__unassigned__'").doesNotContain("\u0000").doesNotContain("\r");
+
+        // The classic dashboard page is the classic shell's: a layout draws its own screens and
+        // never imported it, yet it was generated.
+        String dashboard = "rota/frontend/src/pages/dashboard/ui/DashboardPage.tsx";
+        String barrel = "rota/frontend/src/pages/dashboard/index.ts";
+        assertThat(classic).containsKeys(dashboard, barrel);
+        body.put("pages", List.of(Map.of("id", "shifts", "type", "entity-list", "entity", "Shift")));
+        Map<String, String> layout = generateZip(body);
+        assertThat(layout).doesNotContainKeys(dashboard, barrel);
+        assertThat(layout.get("rota/frontend/src/app/App.tsx")).doesNotContain("@pages/dashboard");
+
+        // A page or a recent list that asks to sort by one of them is told so.
+        body.put("pages", List.of(Map.of("id", "shifts", "type", "entity-list", "entity", "Shift",
+                "sort", Map.of("field", "notes", "dir", "asc"))));
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> badSort = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+        assertThat(badSort.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(badSort.getBody()).contains("'notes' is not sortable on Shift");
+        body.put("pages", List.of(
+                Map.of("id", "shifts", "type", "entity-list", "entity", "Shift"),
+                Map.of("id", "home", "type", "dashboard", "widgets", List.of(
+                        Map.of("kind", "recent", "entity", "Shift", "sortBy", "contract")))));
+        ResponseEntity<String> badRecent = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+        assertThat(badRecent.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(badRecent.getBody()).contains("sortBy 'contract' is long text or a file, which a list cannot be sorted by");
+
+        // Lombok entities: a lazy @ManyToOne stays out of equals/hashCode/toString (@Data put it
+        // in all three — touching it there loads the row, or fails outside a session).
+        Map<String, Object> posts = FullstackExampleRequests.manyToManyBody("react-tailwind-crud");
+        posts.put("backendTemplateSet", "spring-jpa-crud-lombok");
+        assertThat(contentEndingWith(generateZip(posts), "/entity/Post.java"))
+                .contains("    @JoinColumn(name = \"author_id\")\n    @lombok.EqualsAndHashCode.Exclude\n    @lombok.ToString.Exclude\n    private Author author;");
+    }
+
+    @Test
     void fullstackEndpoint_csvGuardsFormulaCellsAndAnImportChecksItsLinks() throws Exception {
         Map<String, Object> body = FullstackExampleRequests.manyToManyBody("react-tailwind-crud");
         body.put("opts", Map.of("scaffold", List.of("csvExport", "csvImport")));

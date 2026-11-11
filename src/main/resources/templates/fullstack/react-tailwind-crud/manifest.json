@@ -61,8 +61,8 @@
     { "source": "InlineCell.tsx", "path": "src/shared/ui/InlineCell.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasInlineEdit" },
     { "source": "StaleNotice.tsx", "path": "src/shared/ui/StaleNotice.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasOptimisticLocking" },
 
-    { "source": "DashboardPage.tsx.mustache", "path": "src/pages/dashboard/ui/DashboardPage.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 150 },
-    { "source": "dashboard-barrel.ts.mustache", "path": "src/pages/dashboard/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 152 },
+    { "source": "DashboardPage.tsx.mustache", "path": "src/pages/dashboard/ui/DashboardPage.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 150, "gatedBy": "classicShell" },
+    { "source": "dashboard-barrel.ts.mustache", "path": "src/pages/dashboard/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 152, "gatedBy": "classicShell" },
 
     { "source": "pages-barrel.ts.mustache", "path": "src/pages/index.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 156 },
 

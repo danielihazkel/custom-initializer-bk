@@ -295,12 +295,13 @@ public class {{EntityName}}Controller {
     public record BulkUpdateRequest(java.util.List<{{pkField.javaType}}> ids, String field, Object value) {}
 {{/bulkUpdateApplicable}}{{/mutable}}
 
-    /** Sort keys accepted from {@code ?sort=}: every scalar column the DTO exposes. Anything else is
+    /** Sort keys accepted from {@code ?sort=}: every scalar column the DTO exposes but long text
+     *  and files, which do not sort (on every database, or meaningfully). Anything else is
      *  rejected as a 400 (via ApiExceptionHandler) instead of surfacing Spring Data's
      *  PropertyReferenceException as a 500 — and it keeps sorting from walking into relations. */
     private static final List<String> SORTABLE = List.of(new String[] {
-{{#fields}}            "{{name}}",
-{{/fields}}{{#auditApplicable}}            "createdAt",
+{{#fields}}{{#isSortable}}            "{{name}}",
+{{/isSortable}}{{/fields}}{{#auditApplicable}}            "createdAt",
             "updatedAt",
 {{/auditApplicable}}    });
 

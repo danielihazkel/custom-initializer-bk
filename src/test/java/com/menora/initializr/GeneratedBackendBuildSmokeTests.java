@@ -128,6 +128,16 @@ class GeneratedBackendBuildSmokeTests {
     }
 
     @org.junit.jupiter.api.Test
+    void lombokBackendCompilesAndPassesItsTests(@TempDir Path workDir) throws Exception {
+        // The Lombok backend set authors its own entity (and key class); no build compiled it.
+        // Relations of both kinds, audit and demo data, so the @Data entities are saved and read.
+        Map<String, Object> body = FullstackExampleRequests.manyToManyBody("react-tailwind-crud");
+        body.put("backendTemplateSet", "spring-jpa-crud-lombok");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        runMvn(postAndExtractBackend(workDir, body), "-B", "package");
+    }
+
+    @org.junit.jupiter.api.Test
     void attachmentsBehindAHandWrittenDatasourceConfigBootAndPassTheirTests(@TempDir Path workDir) throws Exception {
         // Every database but the default H2 gets a datasource config class that names the
         // packages it scans. H2's own "primary" role is that same class, so it stands in for
