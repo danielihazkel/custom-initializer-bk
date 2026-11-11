@@ -1,6 +1,9 @@
 package com.menora.initializr.config;
 
 import com.menora.initializr.db.DependencyConfigService;
+import com.menora.initializr.events.AsyncApiReader;
+import com.menora.initializr.events.EventsCodeGenerator;
+import com.menora.initializr.events.EventsWizardOptions;
 import com.menora.initializr.openapi.OpenApiCodeGenerator;
 import com.menora.initializr.openapi.OpenApiWizardOptions;
 import com.menora.initializr.soap.SoapCodeGenerator;
@@ -57,8 +60,10 @@ public class WizardStarterController {
     private final SqlScriptsContext sqlContext;
     private final OpenApiSpecContext specContext;
     private final SoapSpecContext soapContext;
+    private final EventsSpecContext eventsContext;
     private final OpenApiCodeGenerator openApiGenerator;
     private final SoapCodeGenerator soapGenerator;
+    private final EventsCodeGenerator eventsGenerator;
     private final SqlEntityGenerator sqlGenerator;
     private final DependencyConfigService configService;
 
@@ -68,8 +73,10 @@ public class WizardStarterController {
                                    SqlScriptsContext sqlContext,
                                    OpenApiSpecContext specContext,
                                    SoapSpecContext soapContext,
+                                   EventsSpecContext eventsContext,
                                    OpenApiCodeGenerator openApiGenerator,
                                    SoapCodeGenerator soapGenerator,
+                                   EventsCodeGenerator eventsGenerator,
                                    SqlEntityGenerator sqlGenerator,
                                    DependencyConfigService configService) {
         this.invoker = invoker;
@@ -78,8 +85,10 @@ public class WizardStarterController {
         this.sqlContext = sqlContext;
         this.specContext = specContext;
         this.soapContext = soapContext;
+        this.eventsContext = eventsContext;
         this.openApiGenerator = openApiGenerator;
         this.soapGenerator = soapGenerator;
+        this.eventsGenerator = eventsGenerator;
         this.sqlGenerator = sqlGenerator;
         this.configService = configService;
     }
@@ -88,6 +97,7 @@ public class WizardStarterController {
     public ResponseEntity<byte[]> generate(@RequestBody WizardStarterRequest body) throws IOException {
         validateSpecs(body);
         validateWsdls(body);
+        validateEvents(body);
         validateSql(body);
         WebProjectRequest request = toWebRequest(body);
         Path projectDir = null;
@@ -114,6 +124,7 @@ public class WizardStarterController {
     public ProjectPreviewController.PreviewResponse preview(@RequestBody WizardStarterRequest body) throws IOException {
         validateSpecs(body);
         validateWsdls(body);
+        validateEvents(body);
         validateSql(body);
         WebProjectRequest request = toWebRequest(body);
         Path projectDir = null;
@@ -149,6 +160,16 @@ public class WizardStarterController {
         return openApiGenerator.detectPaths(body.spec());
     }
 
+    /**
+     * Server-side channel detection for the events wizard's drawer: each channel of the AsyncAPI
+     * document, and whether the application it describes sends to it or receives from it. A
+     * document that cannot be read is a 400 {@code {error, messages}}.
+     */
+    @PostMapping("/starter-wizard.detect-channels")
+    public List<EventsCodeGenerator.DetectedChannel> detectChannels(@RequestBody DetectChannelsRequest body) {
+        return eventsGenerator.detectChannels(body.spec());
+    }
+
     /** Server-side service detection for the SOAP wizard's live preview. */
     @PostMapping("/starter-wizard.detect-services")
     public List<String> detectServices(@RequestBody DetectServicesRequest body) {
@@ -169,6 +190,15 @@ public class WizardStarterController {
         clearAllContexts();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("error", "Invalid WSDL");
+        body.put("messages", ex.messages());
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    @ExceptionHandler(AsyncApiReader.AsyncApiParseException.class)
+    public ResponseEntity<Map<String, Object>> handleAsyncApiParseException(AsyncApiReader.AsyncApiParseException ex) {
+        clearAllContexts();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "Invalid AsyncAPI document");
         body.put("messages", ex.messages());
         return ResponseEntity.badRequest().body(body);
     }
@@ -209,6 +239,21 @@ public class WizardStarterController {
             if (spec == null || spec.isBlank()) continue;
             openApiGenerator.generate(spec, "com.menora.demo",
                     body.openApiOptions() == null ? null : toOpenApiOptions(body.openApiOptions().get(e.getKey())));
+        }
+    }
+
+    /**
+     * The same for the events wizard: a document that cannot be read, a channel the options name
+     * that it does not have, a payload format the wizard does not read — a 400, not a 500.
+     */
+    private void validateEvents(WizardStarterRequest body) {
+        if (body.asyncApiByDep() == null) return;
+        for (var e : body.asyncApiByDep().entrySet()) {
+            String document = e.getValue();
+            if (document == null || document.isBlank()) continue;
+            eventsGenerator.generate(document, "com.menora.demo",
+                    toEventsOptions(body.eventOptions() == null ? null : body.eventOptions().get(e.getKey())),
+                    EventsCodeGenerator.ProjectFacts.NONE);
         }
     }
 
@@ -278,6 +323,10 @@ public class WizardStarterController {
                 && requestFactory.offers("openapi")) {
             deps.add("openapi");
         }
+        // Producers and listeners are Spring for Apache Kafka classes.
+        if (hasAsyncApi(body) && !deps.contains("kafka") && requestFactory.offers("kafka")) {
+            deps.add("kafka");
+        }
         // SOAP endpoints and clients are Spring-WS classes.
         if (hasWsdl(body) && !deps.contains("web-services") && requestFactory.offers("web-services")) {
             deps.add("web-services");
@@ -289,6 +338,11 @@ public class WizardStarterController {
 
     private static boolean hasSpec(WizardStarterRequest body) {
         return body.specByDep() != null && body.specByDep().values().stream().anyMatch(s -> s != null && !s.isBlank());
+    }
+
+    private static boolean hasAsyncApi(WizardStarterRequest body) {
+        return body.asyncApiByDep() != null
+                && body.asyncApiByDep().values().stream().anyMatch(s -> s != null && !s.isBlank());
     }
 
     private static boolean hasWsdl(WizardStarterRequest body) {
@@ -364,6 +418,15 @@ public class WizardStarterController {
             }
         }
         soapContext.populate(body.wsdlByDep() == null ? Map.of() : body.wsdlByDep(), soapOpts);
+
+        // Events side — same treatment.
+        Map<String, EventsWizardOptions> eventOpts = new LinkedHashMap<>();
+        if (body.eventOptions() != null) {
+            for (var e : body.eventOptions().entrySet()) {
+                eventOpts.put(e.getKey(), toEventsOptions(e.getValue()));
+            }
+        }
+        eventsContext.populate(body.asyncApiByDep() == null ? Map.of() : body.asyncApiByDep(), eventOpts);
     }
 
     /**
@@ -386,7 +449,20 @@ public class WizardStarterController {
         sqlContext.clear();
         specContext.clear();
         soapContext.clear();
+        eventsContext.clear();
         optionsContext.clear();
+    }
+
+    private static EventsWizardOptions toEventsOptions(EventOptionsDto dto) {
+        if (dto == null) return EventsWizardOptions.DEFAULTS;
+        List<EventsWizardOptions.ChannelChoice> channels = dto.channels() == null ? List.of()
+                : dto.channels().stream()
+                        .filter(java.util.Objects::nonNull)
+                        .map(c -> new EventsWizardOptions.ChannelChoice(c.name(),
+                                Boolean.TRUE.equals(c.produce()), Boolean.TRUE.equals(c.consume())))
+                        .toList();
+        return new EventsWizardOptions(dto.subPackage(), dto.payloadSubPackage(), dto.groupId(), channels,
+                Boolean.TRUE.equals(dto.generateTests()));
     }
 
     private static OpenApiWizardOptions toOpenApiOptions(OpenApiOptionsDto dto) {
@@ -436,8 +512,22 @@ public class WizardStarterController {
             Map<String, String> wsdlByDep,
             Map<String, SoapOptionsDto> soapOptions,
             // Department id exposed to templates as {{department}}; null → the default.
-            String department) {
+            String department,
+            // The events wizard: an AsyncAPI document per dependency (kafka), and its options.
+            Map<String, String> asyncApiByDep,
+            Map<String, EventOptionsDto> eventOptions) {
     }
+
+    /**
+     * {@code channels}: which channels to write code for — absent or empty, every channel, as the
+     * application the document describes. {@code groupId}: the listeners' consumer group (blank:
+     * the application's). {@code generateTests}: a unit test per producer and listener.
+     */
+    public record EventOptionsDto(String subPackage, String payloadSubPackage, String groupId,
+                                  List<EventChannelDto> channels, Boolean generateTests) {}
+
+    /** A channel by its name in the document: {@code produce} a producer, {@code consume} a listener. */
+    public record EventChannelDto(String name, Boolean produce, Boolean consume) {}
 
     /**
      * {@code flywayBaseline}: with the Flyway dependency, write the DDL as the first migration
@@ -483,6 +573,8 @@ public class WizardStarterController {
             String contextPath) {}
 
     public record DetectPathsRequest(String spec) {}
+
+    public record DetectChannelsRequest(String spec) {}
 
     public record DetectServicesRequest(String wsdl) {}
 }

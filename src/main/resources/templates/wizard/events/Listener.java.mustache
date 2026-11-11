@@ -1,0 +1,40 @@
+package {{package}};
+
+{{#listenerImports}}
+import {{.}};
+{{/listenerImports}}
+
+/**
+ * Receives from {@code {{addressJavadoc}}}{{#hasDescription}}: {{descriptionJavadoc}}{{/hasDescription}}.
+ * The topic's name is the property {@code {{topicProperty}}}; a message arrives as JSON.
+{{#hasCandidates}}
+ *
+ * <p>The channel carries several kinds of message ({{candidates}}), and nothing in a record says
+ * which one it is: the payload is handed over as a tree. Tell them apart by what your producers
+ * agree on (a header, a field) and read the type with {@code objectMapper.treeToValue}.
+{{/hasCandidates}}
+ */
+@Component
+public class {{stem}}Listener {
+
+    private static final Logger log = LoggerFactory.getLogger({{stem}}Listener.class);
+
+    private final ObjectMapper objectMapper;
+
+    public {{stem}}Listener(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
+
+    /** A message that is not the JSON expected fails here, and is the container's error handler's to deal with. */
+    @KafkaListener(topics = "{{topicPlaceholder}}", groupId = "{{groupId}}")
+    public void onMessage(ConsumerRecord<String, String> record) throws JsonProcessingException {
+        {{listenerType}} payload = {{listenerRead}};
+        handle(record.key(), payload);
+    }
+
+    /** What the application does with a message. */
+    void handle(String key, {{listenerType}} payload) {
+        // TODO: implement
+        log.info("Received a message from {}: key={}", "{{addressString}}", key);
+    }
+}

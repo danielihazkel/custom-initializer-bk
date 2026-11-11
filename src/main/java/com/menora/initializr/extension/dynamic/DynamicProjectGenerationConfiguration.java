@@ -1,6 +1,7 @@
 package com.menora.initializr.extension.dynamic;
 
 import com.menora.initializr.config.EntityDefinitionContext;
+import com.menora.initializr.config.EventsSpecContext;
 import com.menora.initializr.config.OpenApiSpecContext;
 import com.menora.initializr.config.CompiledTemplates;
 import com.menora.initializr.config.GeneratedProjectFiles;
@@ -11,6 +12,8 @@ import com.menora.initializr.config.SqlScriptsContext;
 import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
+import com.menora.initializr.events.EventsCodeGenerator;
+import com.menora.initializr.events.EventsWizardOptions;
 import com.menora.initializr.openapi.GeneratedOpenApiFile;
 import com.menora.initializr.openapi.OpenApiCodeGenerator;
 import com.menora.initializr.openapi.OpenApiWizardOptions;
@@ -372,6 +375,54 @@ public class DynamicProjectGenerationConfiguration {
     private static boolean isYaml(Path path) {
         String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
         return name.endsWith(".yaml") || name.endsWith(".yml");
+    }
+
+    /**
+     * Writes the Kafka producers and listeners, their payload types and the topic properties from
+     * the AsyncAPI document given to the events wizard. Skips silently when none was supplied.
+     */
+    @Bean
+    @Order(100)
+    ProjectContributor eventsCodeContributor(
+            ProjectDescription description,
+            EventsSpecContext eventsContext,
+            EventsCodeGenerator generator) {
+        return projectRoot -> {
+            if (eventsContext.isEmpty()) return;
+            EventsCodeGenerator.ProjectFacts facts =
+                    new EventsCodeGenerator.ProjectFacts(selectedDepIds(description).contains("validation"));
+            String packagePath = description.getPackageName().replace('.', '/');
+            for (var entry : eventsContext.all().entrySet()) {
+                String document = entry.getValue();
+                if (document == null || document.isBlank()) continue;
+                EventsWizardOptions opts = eventsContext.optionsFor(entry.getKey());
+                for (EventsCodeGenerator.GeneratedEventFile f
+                        : generator.generate(document, description.getPackageName(), opts, facts)) {
+                    Path target = projectRoot.resolve(f.relativePath().replace("{{packagePath}}", packagePath));
+                    if (isYaml(target)) {
+                        mergeYaml(f.content(), target);
+                    } else {
+                        GeneratedProjectFiles.createParentDirectories(target);
+                        Files.writeString(target, f.content());
+                    }
+                }
+            }
+        };
+    }
+
+    /**
+     * The generated producers and listeners turn payloads into JSON with the application's
+     * {@code ObjectMapper}. A project with Kafka and no web starter has neither Jackson nor that
+     * bean: the JSON starter brings both.
+     */
+    @Bean
+    BuildCustomizer<MavenBuild> eventsBuildCustomizer(EventsSpecContext eventsContext) {
+        return build -> {
+            if (eventsContext.isEmpty()) return;
+            build.dependencies().add("events-json", Dependency
+                    .withCoordinates("org.springframework.boot", "spring-boot-starter-json")
+                    .scope(DependencyScope.COMPILE));
+        };
     }
 
     /**

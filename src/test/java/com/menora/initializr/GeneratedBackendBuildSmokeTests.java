@@ -470,6 +470,30 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(project, "-B", "package");
     }
 
+    @org.junit.jupiter.api.Test
+    void eventsWizardBackendCompilesAndPassesItsTests(@TempDir Path workDir) throws Exception {
+        // Producers, listeners and payload types from the AsyncAPI 3 fixture, every channel in both
+        // directions, with the validation starter and the generated tests: the project compiles,
+        // its producer and listener tests run (a payload out as JSON and back), and its context
+        // starts with the Kafka dependency's own configuration (no broker is needed for that).
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "orders");
+        body.put("packageName", "com.menora.orders");
+        body.put("bootVersion", "3.2.1");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("kafka", "validation"));
+        body.put("asyncApiByDep", Map.of("kafka", WizardGoldenOutputTests.fixture("orders-asyncapi-v3.yaml")));
+        body.put("eventOptions", Map.of("kafka", Map.of("generateTests", true, "channels", List.of(
+                Map.of("name", "orderCreated", "produce", true, "consume", true),
+                Map.of("name", "orderEvents", "produce", true, "consume", true),
+                Map.of("name", "stockLevels", "produce", true, "consume", true),
+                Map.of("name", "heartbeat", "produce", true, "consume", true)))));
+        Path project = postAndExtractWizard(workDir, body);
+        assertThat(project.resolve("src/test/java/com/menora/orders/events/StockLevelsListenerTest.java")).isRegularFile();
+        runMvn(project, "-B", "package");
+    }
+
     /** Run inside the generated Petstore project (controllers + RestTemplate client + validation). */
     private static final String OPENAPI_CONTRACT_TESTS = """
             package com.menora.petstore;

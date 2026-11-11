@@ -28,17 +28,20 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
     private final SqlScriptsContext sqlContext;
     private final OpenApiSpecContext specContext;
     private final SoapSpecContext soapContext;
+    private final EventsSpecContext eventsContext;
     private final EntityDefinitionContext entityContext;
 
     public InitializrWebConfiguration(ProjectOptionsContext optionsContext,
                                       SqlScriptsContext sqlContext,
                                       OpenApiSpecContext specContext,
                                       SoapSpecContext soapContext,
+                                      EventsSpecContext eventsContext,
                                       EntityDefinitionContext entityContext) {
         this.optionsContext = optionsContext;
         this.sqlContext = sqlContext;
         this.specContext = specContext;
         this.soapContext = soapContext;
+        this.eventsContext = eventsContext;
         this.entityContext = entityContext;
     }
 
@@ -124,7 +127,7 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
 
     /**
      * Unconditional backstop for every generation ThreadLocal. Controllers clear their own
-     * contexts on the happy path, but no single controller covers all five, and an exception
+     * contexts on the happy path, but no single controller covers all six, and an exception
      * that escapes to the {@code @ControllerAdvice} clears none of them — a leftover context
      * would then be scaffolded into the next request served by this pooled thread.
      */
@@ -133,6 +136,7 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
         sqlContext.clear();
         specContext.clear();
         soapContext.clear();
+        eventsContext.clear();
         entityContext.clear();
     }
 

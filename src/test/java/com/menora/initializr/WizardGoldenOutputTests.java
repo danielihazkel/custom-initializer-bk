@@ -80,6 +80,21 @@ class WizardGoldenOutputTests {
         golden.pin("openapi__client__rest-client__copy-spec", wizard(openApiBody("CLIENT", List.of("validation"), Map.of(
                 "clientKind", "restClient", "copySpec", true))));
 
+        // The events wizard: an AsyncAPI 3 document as the application it describes; the same events
+        // as a 2.x document, for the other party, with chosen channels, tests and validation.
+        golden.pin("events__asyncapi3", wizard(eventsBody("orders-asyncapi-v3.yaml", List.of("kafka"), null)));
+        Map<String, Object> otherParty = new LinkedHashMap<>();
+        otherParty.put("subPackage", "messaging");
+        otherParty.put("payloadSubPackage", "messaging.dto");
+        otherParty.put("groupId", "billing-service");
+        otherParty.put("generateTests", true);
+        otherParty.put("channels", List.of(
+                Map.of("name", "orders.created", "produce", false, "consume", true),
+                Map.of("name", "orders.events", "produce", true, "consume", false),
+                Map.of("name", "inventory.stock-levels", "produce", true, "consume", true)));
+        golden.pin("events__asyncapi2__chosen-channels__tests", wizard(eventsBody("orders-asyncapi-v2.yaml",
+                List.of("kafka", "validation"), otherParty)));
+
         // The SOAP wizard: endpoints, a client, both.
         golden.pin("soap__endpoints", wizard(soapBody("ENDPOINTS", null)));
         golden.pin("soap__client", wizard(soapBody("CLIENT", Map.of("clientSubPackage", "remote", "baseUrlProperty", "countries.url"))));
@@ -154,6 +169,14 @@ class WizardGoldenOutputTests {
                 Map.of("name", "audit_log", "generateRepository", false),
                 Map.of("name", "publishers", "generateRepository", true)));
         body.put("sqlOptions", Map.of(dep, options));
+        return body;
+    }
+
+    private static Map<String, Object> eventsBody(String document, List<String> dependencies, Map<String, Object> options) throws IOException {
+        Map<String, Object> body = baseBody();
+        body.put("dependencies", dependencies);
+        body.put("asyncApiByDep", Map.of("kafka", fixture(document)));
+        if (options != null) body.put("eventOptions", Map.of("kafka", options));
         return body;
     }
 

@@ -161,6 +161,19 @@ public class ExtensionMetadataController {
     }
 
     /**
+     * Dep IDs for which the events wizard (AsyncAPI → Kafka producers and listeners) is surfaced,
+     * filtered to those currently in the catalog. Empty list → the UI hides the trigger button.
+     */
+    @GetMapping("/metadata/events-capable-deps")
+    public List<String> eventsCapableDeps() {
+        Set<String> candidates = Set.of("kafka");
+        return entryRepo.findByDepIdIn(candidates).stream()
+                .map(DependencyEntryEntity::getDepId)
+                .sorted()
+                .toList();
+    }
+
+    /**
      * Dep IDs for which the SOAP → Spring-WS wizard is surfaced, filtered to
      * those currently in the catalog. Wizard surfaces on the {@code web-services}
      * starter; empty list → UI hides the trigger button.

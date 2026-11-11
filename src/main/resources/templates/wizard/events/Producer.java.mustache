@@ -1,0 +1,41 @@
+package {{package}};
+
+{{#producerImports}}
+import {{.}};
+{{/producerImports}}
+
+/**
+ * Sends to {@code {{addressJavadoc}}}{{#hasDescription}}: {{descriptionJavadoc}}{{/hasDescription}}.
+ * The topic's name is the property {@code {{topicProperty}}}; a message travels as JSON.
+ */
+@Component
+public class {{stem}}Producer {
+
+    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final ObjectMapper objectMapper;
+    private final String topic;
+
+    public {{stem}}Producer(KafkaTemplate<String, String> kafkaTemplate, ObjectMapper objectMapper,
+            @Value("{{topicPlaceholder}}") String topic) {
+        this.kafkaTemplate = kafkaTemplate;
+        this.objectMapper = objectMapper;
+        this.topic = topic;
+    }
+
+{{#sends}}
+{{#hasTitle}}
+    /** {{titleJavadoc}} */
+{{/hasTitle}}
+    public CompletableFuture<SendResult<String, String>> {{method}}(String key, {{type}} payload) {
+        return kafkaTemplate.send(topic, key, toJson(payload));
+    }
+
+{{/sends}}
+    private String toJson(Object payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("The payload could not be written as JSON", e);
+        }
+    }
+}

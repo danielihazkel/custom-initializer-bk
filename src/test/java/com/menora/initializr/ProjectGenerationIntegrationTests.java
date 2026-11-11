@@ -1213,6 +1213,95 @@ class ProjectGenerationIntegrationTests {
         assertThat(refused.getBody()).contains("clientKind").contains("feign");
     }
 
+    private static final String EVENTS_DOCUMENT = """
+            asyncapi: 3.0.0
+            info: { title: Orders, version: 1.0.0 }
+            channels:
+              orderCreated:
+                address: orders.created
+                messages:
+                  created:
+                    name: OrderCreated
+                    payload:
+                      type: object
+                      required: [id]
+                      properties:
+                        id: { type: integer, format: int64 }
+                        total: { type: number }
+              audit:
+                address: audit.{tenant}
+            operations:
+              publishOrder: { action: send, channel: { $ref: '#/channels/orderCreated' } }
+              onOrder: { action: receive, channel: { $ref: '#/channels/orderCreated' } }
+            """;
+
+    @Test
+    void eventsWizardGeneratesProducersListenersAndPayloads() throws Exception {
+        // No dependency named: Kafka is added, and the JSON starter the generated classes need.
+        Map<String, Object> body = openApiBaseBody();
+        body.put("dependencies", List.of());
+        body.put("asyncApiByDep", Map.of("kafka", EVENTS_DOCUMENT));
+        body.put("eventOptions", Map.of("kafka", Map.of("generateTests", true)));
+        ResponseEntity<byte[]> response = restTemplate.postForEntity("/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> files = unzip(response.getBody());
+        assertThat(files).containsKeys(
+                "demo/src/main/java/com/menora/demo/events/OrderCreatedProducer.java",
+                "demo/src/main/java/com/menora/demo/events/OrderCreatedListener.java",
+                "demo/src/main/java/com/menora/demo/events/model/OrderCreated.java",
+                "demo/src/test/java/com/menora/demo/events/OrderCreatedProducerTest.java",
+                "demo/src/test/java/com/menora/demo/events/OrderCreatedListenerTest.java",
+                // The Kafka dependency's own configuration, untouched: the messages are JSON text.
+                "demo/src/main/java/com/menora/demo/config/KafkaConfig.java");
+        assertThat(files.get("demo/pom.xml"))
+                .contains("<artifactId>spring-kafka</artifactId>")
+                .contains("<artifactId>spring-boot-starter-json</artifactId>");
+        // The topic property joins the Kafka dependency's settings in one application.yaml.
+        assertThat(files.get("demo/src/main/resources/application.yaml"))
+                .contains("bootstrap-servers:").contains("order-created: orders.created");
+        assertThat(files.get("demo/src/main/java/com/menora/demo/events/model/OrderCreated.java"))
+                .contains("public record OrderCreated(").contains("Long id,").contains("Double total");
+
+        // The same through the preview.
+        ResponseEntity<String> preview = restTemplate.postForEntity("/starter-wizard.preview", body, String.class);
+        assertThat(preview.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(preview.getBody()).contains("OrderCreatedProducer.java");
+    }
+
+    @Test
+    void eventsWizardEndpointsSayWhatADocumentHasAndWhyOneIsRefused() {
+        assertThat(restTemplate.getForEntity("/metadata/events-capable-deps", String.class).getBody()).contains("kafka");
+
+        ResponseEntity<String> detected = restTemplate.postForEntity("/starter-wizard.detect-channels",
+                Map.of("spec", EVENTS_DOCUMENT), String.class);
+        assertThat(detected.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(detected.getBody())
+                .contains("\"name\":\"orderCreated\"").contains("\"address\":\"orders.created\"")
+                .contains("\"sends\":true").contains("\"receives\":true").contains("\"messages\":[\"OrderCreated\"]")
+                // A channel no code can be written for says why.
+                .contains("\"name\":\"audit\"").contains("a Kafka topic cannot have");
+        assertThat(restTemplate.postForEntity("/starter-wizard.detect-channels", Map.of("spec", ""), String.class).getBody())
+                .isEqualTo("[]");
+
+        // A document that is not AsyncAPI: 400 with the reasons, on the preview endpoint and on generation.
+        ResponseEntity<String> notAsyncApi = restTemplate.postForEntity("/starter-wizard.detect-channels",
+                Map.of("spec", "openapi: 3.0.0"), String.class);
+        assertThat(notAsyncApi.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(notAsyncApi.getBody()).contains("Invalid AsyncAPI document").contains("no 'asyncapi' version field");
+        Map<String, Object> body = openApiBaseBody();
+        body.put("asyncApiByDep", Map.of("kafka", "asyncapi: 3.0.0\ninfo: {title: t, version: '1'}"));
+        ResponseEntity<String> refused = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody()).contains("declares no channels");
+
+        // A channel the document does not have is the caller's mistake.
+        body.put("asyncApiByDep", Map.of("kafka", EVENTS_DOCUMENT));
+        body.put("eventOptions", Map.of("kafka", Map.of("channels", List.of(Map.of("name", "nope", "produce", true)))));
+        ResponseEntity<String> unknown = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+        assertThat(unknown.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(unknown.getBody()).contains("Unknown channel 'nope'");
+    }
+
     @Test
     void sqlWizardRefusesAnUnknownApiMode() {
         // It used to fall back to "entities only", saying nothing.
