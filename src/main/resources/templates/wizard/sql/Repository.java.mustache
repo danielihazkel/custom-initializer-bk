@@ -1,0 +1,9 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+@Repository
+public interface {{entityClass}}Repository extends JpaRepository<{{entityClass}}, {{idType}}> {
+}

@@ -55,6 +55,29 @@ CREATE TABLE loans (
     FOREIGN KEY (book_id, copy_no) REFERENCES book_copies(book_id, copy_no)
 );
 
+-- A key that is itself a foreign key: a shared-key one-to-one.
+CREATE TABLE author_profiles (
+    author_id BIGINT PRIMARY KEY REFERENCES authors(id),
+    nickname VARCHAR(80),
+    website VARCHAR(300)
+);
+
+-- A composite foreign key to a table outside the script: scalars with a TODO.
+CREATE TABLE shipments (
+    id BIGSERIAL PRIMARY KEY,
+    depot_id BIGINT NOT NULL,
+    bay_no INTEGER NOT NULL,
+    weight NUMERIC(8,3),
+    FOREIGN KEY (depot_id, bay_no) REFERENCES depots(depot_id, bay_no)
+);
+
+-- A schema-qualified table.
+CREATE TABLE inv.stock_levels (
+    sku VARCHAR(40) PRIMARY KEY,
+    on_hand INTEGER NOT NULL,
+    counted_at TIMESTAMP
+);
+
 -- No primary key: entity only, no REST stack.
 CREATE TABLE audit_log (
     happened_at TIMESTAMP NOT NULL,

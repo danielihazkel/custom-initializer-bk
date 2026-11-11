@@ -1,0 +1,31 @@
+package {{package}};
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.Immutable;
+import org.hibernate.annotations.Subselect;
+
+@Entity
+@Immutable
+@Subselect("""
+{{viewQuery}}
+""")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class {{className}} {
+
+{{#columns}}
+{{#isPk}}
+    @Id
+{{/isPk}}
+    @Column(name = "{{column}}")
+    // TODO: SELECT has no column types — set the real type
+    private String {{name}};
+
+{{/columns}}
+}

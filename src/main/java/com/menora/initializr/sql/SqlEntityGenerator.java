@@ -20,6 +20,7 @@ import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.select.SelectItem;
 import net.sf.jsqlparser.statement.select.SetOperationList;
+import com.menora.initializr.config.WizardTemplates;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -907,37 +909,52 @@ public class SqlEntityGenerator {
 
         Set<ForeignKey> emittedFks = new HashSet<>();
         Set<String> usedFieldNames = new HashSet<>();
-        StringBuilder body = new StringBuilder();
+        Members body = new Members();
         for (ColumnModel c : table.columns()) {
             JavaType jt = TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale());
             imports.addAll(jt.imports());
             processColumn(body, c, jt, table, dialect, knownTableNames, emittedFks, usedFieldNames, imports);
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(fullPkg).append(";\n\n");
-        for (String imp : imports) {
-            sb.append("import ").append(imp).append(";\n");
-        }
-        sb.append('\n');
-        sb.append("@Entity\n");
-        sb.append("@Table(name = \"").append(sqlName(table, table.name(), dialect)).append('"');
-        if (table.schema() != null && !table.schema().isBlank()) {
-            sb.append(", schema = \"").append(sqlName(table, table.schema(), dialect)).append('"');
-        }
-        sb.append(")\n");
-        sb.append("@Data\n");
-        sb.append("@NoArgsConstructor\n");
-        sb.append("@AllArgsConstructor\n");
-        if (table.hasCompositePk()) {
-            sb.append("@IdClass(").append(className).append("Id.class)\n");
-        }
-        sb.append("public class ").append(className).append(" {\n\n");
-        sb.append(body);
-        sb.append("}\n");
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", fullPkg);
+        view.put("imports", imports);
+        view.put("tableName", sqlName(table, table.name(), dialect));
+        boolean hasSchema = table.schema() != null && !table.schema().isBlank();
+        view.put("hasSchema", hasSchema);
+        view.put("schema", hasSchema ? sqlName(table, table.schema(), dialect) : null);
+        view.put("hasCompositePk", table.hasCompositePk());
+        view.put("className", className);
+        view.put("members", body.list);
 
         String path = "src/main/java/{{packagePath}}/" + subPkg + "/" + className + ".java";
-        return new GeneratedJavaFile(path, sb.toString());
+        return new GeneratedJavaFile(path, WizardTemplates.render("sql/Entity.java", view));
+    }
+
+    /**
+     * The members of an entity in declaration order, as the entity template reads them: each its
+     * annotation lines (and a TODO comment that goes with it), its type and its name. A comment
+     * is held until the member it precedes is added.
+     */
+    private static final class Members {
+        final List<Map<String, Object>> list = new ArrayList<>();
+        private final List<String> pending = new ArrayList<>();
+
+        /** A comment line for the next member. */
+        void comment(String line) {
+            pending.add(line);
+        }
+
+        void add(List<String> annotations, String type, String name) {
+            List<String> lines = new ArrayList<>(pending);
+            pending.clear();
+            lines.addAll(annotations);
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("lines", lines);
+            m.put("type", type);
+            m.put("name", name);
+            list.add(m);
+        }
     }
 
     /**
@@ -953,26 +970,7 @@ public class SqlEntityGenerator {
         String subPkg = opts.subPackage();
         String fullPkg = packageName + "." + subPkg;
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(fullPkg).append(";\n\n");
-        sb.append("import jakarta.persistence.Column;\n");
-        sb.append("import jakarta.persistence.Entity;\n");
-        sb.append("import jakarta.persistence.Id;\n");
-        sb.append("import lombok.AllArgsConstructor;\n");
-        sb.append("import lombok.Data;\n");
-        sb.append("import lombok.NoArgsConstructor;\n");
-        sb.append("import org.hibernate.annotations.Immutable;\n");
-        sb.append("import org.hibernate.annotations.Subselect;\n\n");
-        sb.append("@Entity\n");
-        sb.append("@Immutable\n");
-        sb.append("@Subselect(\"\"\"\n");
-        sb.append(table.viewQuery()).append('\n');
-        sb.append("\"\"\")\n");
-        sb.append("@Data\n");
-        sb.append("@NoArgsConstructor\n");
-        sb.append("@AllArgsConstructor\n");
-        sb.append("public class ").append(className).append(" {\n\n");
-
+        List<Map<String, Object>> columns = new ArrayList<>();
         Set<String> usedFieldNames = new HashSet<>();
         for (ColumnModel c : table.columns()) {
             String fieldName = toCamelCase(c.name());
@@ -982,18 +980,24 @@ public class SqlEntityGenerator {
                 fieldName = fieldName + n;
             }
             usedFieldNames.add(fieldName);
-            if (c.isPk()) sb.append("    @Id\n");
+            Map<String, Object> cv = new LinkedHashMap<>();
+            cv.put("isPk", c.isPk());
             // Match the SELECT's projected column label — that's the name Hibernate reads back
             // from the @Subselect result set. A camelCase alias goes through SqlNames, or the
             // naming strategy would look for full_name instead of fullName.
-            sb.append("    @Column(name = \"").append(sqlName(table, c.name(), dialect)).append("\")\n");
-            sb.append("    // TODO: SELECT has no column types — set the real type\n");
-            sb.append("    private String ").append(fieldName).append(";\n\n");
+            cv.put("column", sqlName(table, c.name(), dialect));
+            cv.put("name", fieldName);
+            columns.add(cv);
         }
-        sb.append("}\n");
+
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", fullPkg);
+        view.put("viewQuery", table.viewQuery());
+        view.put("className", className);
+        view.put("columns", columns);
 
         String path = "src/main/java/{{packagePath}}/" + subPkg + "/" + className + ".java";
-        return new GeneratedJavaFile(path, sb.toString());
+        return new GeneratedJavaFile(path, WizardTemplates.render("sql/ViewEntity.java", view));
     }
 
     /**
@@ -1002,7 +1006,7 @@ public class SqlEntityGenerator {
      * scalar field. Falls back to scalar+TODO when the FK target table is not
      * in the same generation batch.
      */
-    private void processColumn(StringBuilder body, ColumnModel c, JavaType jt, TableModel table, SqlDialect dialect,
+    private void processColumn(Members body, ColumnModel c, JavaType jt, TableModel table, SqlDialect dialect,
                                Set<String> knownTableNames, Set<ForeignKey> emittedFks,
                                Set<String> usedFieldNames, Set<String> imports) {
         ForeignKey compositeFk = findCompositeForeignKey(c.name(), table.foreignKeys());
@@ -1018,7 +1022,7 @@ public class SqlEntityGenerator {
             if (c.isPk()) {
                 appendScalarField(body, c, jt, table, dialect, usedFieldNames);
             } else if (!refKnown) {
-                body.append("    // TODO: map as @ManyToOne (composite FK to unknown table)\n");
+                body.comment("// TODO: map as @ManyToOne (composite FK to unknown table)");
                 appendScalarField(body, c, jt, table, dialect, usedFieldNames);
             }
             return;
@@ -1032,12 +1036,12 @@ public class SqlEntityGenerator {
         }
 
         if (c.isForeignKey()) {
-            body.append("    // TODO: map as @ManyToOne\n");
+            body.comment("// TODO: map as @ManyToOne");
         }
         appendScalarField(body, c, jt, table, dialect, usedFieldNames);
     }
 
-    private void appendSingleAssociation(StringBuilder body, ColumnModel c, ForeignKey fk,
+    private void appendSingleAssociation(Members body, ColumnModel c, ForeignKey fk,
                                          TableModel table, SqlDialect dialect, Set<String> usedFieldNames,
                                          Set<String> imports) {
         String refEntity = toPascalCase(fk.referencedTable());
@@ -1051,22 +1055,21 @@ public class SqlEntityGenerator {
         if (c.isPk() && table.pkColumns().size() == 1) {
             imports.add("jakarta.persistence.OneToOne");
             imports.add("jakarta.persistence.MapsId");
-            body.append("    @Id\n");
-            body.append("    @OneToOne(fetch = FetchType.LAZY)\n");
-            body.append("    @MapsId\n");
-            body.append("    @JoinColumn(name = \"").append(sqlName(table, c.name(), dialect)).append("\")\n");
-            body.append("    private ").append(refEntity).append(' ').append(fieldName).append(";\n\n");
+            body.add(List.of(
+                    "@Id",
+                    "@OneToOne(fetch = FetchType.LAZY)",
+                    "@MapsId",
+                    "@JoinColumn(name = \"" + sqlName(table, c.name(), dialect) + "\")"), refEntity, fieldName);
             return;
         }
 
-        body.append("    @ManyToOne(fetch = FetchType.LAZY)\n");
-        body.append("    @JoinColumn(name = \"").append(sqlName(table, c.name(), dialect)).append('"');
-        if (!c.nullable()) body.append(", nullable = false");
-        body.append(")\n");
-        body.append("    private ").append(refEntity).append(' ').append(fieldName).append(";\n\n");
+        body.add(List.of(
+                "@ManyToOne(fetch = FetchType.LAZY)",
+                "@JoinColumn(name = \"" + sqlName(table, c.name(), dialect) + '"'
+                        + (c.nullable() ? "" : ", nullable = false") + ")"), refEntity, fieldName);
     }
 
-    private void appendCompositeAssociation(StringBuilder body, ForeignKey fk, TableModel table, SqlDialect dialect,
+    private void appendCompositeAssociation(Members body, ForeignKey fk, TableModel table, SqlDialect dialect,
                                             Set<String> usedFieldNames, Set<String> imports) {
         String refEntity = toPascalCase(fk.referencedTable());
         String fieldName = pickAssociationFieldName(null, fk, usedFieldNames, true);
@@ -1076,22 +1079,22 @@ public class SqlEntityGenerator {
         imports.add("jakarta.persistence.JoinColumns");
         imports.add("jakarta.persistence.FetchType");
 
-        body.append("    @ManyToOne(fetch = FetchType.LAZY)\n");
-        body.append("    @JoinColumns({\n");
+        List<String> lines = new ArrayList<>();
+        lines.add("@ManyToOne(fetch = FetchType.LAZY)");
+        lines.add("@JoinColumns({");
         for (int i = 0; i < fk.columns().size(); i++) {
             String col = fk.columns().get(i);
             String refCol = i < fk.referencedColumns().size()
                     ? fk.referencedColumns().get(i) : col;
-            body.append("        @JoinColumn(name = \"").append(sqlName(table, col, dialect))
-                    .append("\", referencedColumnName = \"").append(sqlName(table, refCol, dialect)).append("\")");
-            if (i < fk.columns().size() - 1) body.append(',');
-            body.append('\n');
+            lines.add("    @JoinColumn(name = \"" + sqlName(table, col, dialect)
+                    + "\", referencedColumnName = \"" + sqlName(table, refCol, dialect) + "\")"
+                    + (i < fk.columns().size() - 1 ? "," : ""));
         }
-        body.append("    })\n");
-        body.append("    private ").append(refEntity).append(' ').append(fieldName).append(";\n\n");
+        lines.add("})");
+        body.add(lines, refEntity, fieldName);
     }
 
-    private void appendScalarField(StringBuilder body, ColumnModel c, JavaType jt, TableModel table,
+    private void appendScalarField(Members body, ColumnModel c, JavaType jt, TableModel table,
                                    SqlDialect dialect, Set<String> usedFieldNames) {
         String fieldName = toCamelCase(c.name());
         if (usedFieldNames.contains(fieldName)) {
@@ -1105,14 +1108,14 @@ public class SqlEntityGenerator {
         String column = sqlName(table, c.name(), dialect);
         boolean renameViaColumn = !fieldName.equals(column);
 
+        List<String> lines = new ArrayList<>();
         if (c.isPk()) {
-            body.append("    @Id\n");
+            lines.add("@Id");
             if (c.isAutoIncrement()) {
-                body.append("    @GeneratedValue(strategy = GenerationType.IDENTITY)\n");
+                lines.add("@GeneratedValue(strategy = GenerationType.IDENTITY)");
             }
         }
 
-        StringBuilder col = new StringBuilder("    @Column(");
         List<String> parts = new ArrayList<>();
         if (renameViaColumn) parts.add("name = \"" + column + "\"");
         if (!c.nullable()) parts.add("nullable = false");
@@ -1122,15 +1125,10 @@ public class SqlEntityGenerator {
             parts.add("precision = " + c.precision());
             if (c.scale() != null) parts.add("scale = " + c.scale());
         }
-        if (parts.isEmpty()) {
-            col.setLength(0);
-        } else {
-            col.append(String.join(", ", parts)).append(")\n");
+        if (!parts.isEmpty()) {
+            lines.add("@Column(" + String.join(", ", parts) + ")");
         }
-        if (col.length() > 0) body.append(col);
-
-        body.append("    private ").append(jt.simpleName()).append(' ')
-                .append(fieldName).append(";\n\n");
+        body.add(lines, jt.simpleName(), fieldName);
     }
 
     private static ForeignKey findSingleForeignKey(String columnName, List<ForeignKey> fks) {
@@ -1201,7 +1199,7 @@ public class SqlEntityGenerator {
         imports.add("lombok.NoArgsConstructor");
 
         // Resolve PK column Java types — we need their imports too.
-        StringBuilder fields = new StringBuilder();
+        List<Map<String, Object>> fields = new ArrayList<>();
         for (String pkCol : table.pkColumns()) {
             ColumnModel col = table.columns().stream()
                     .filter(c -> c.name().equalsIgnoreCase(pkCol))
@@ -1209,24 +1207,21 @@ public class SqlEntityGenerator {
                             "PK column '" + pkCol + "' not found in table " + table.name()));
             JavaType jt = TypeMappers.map(dialect, col.rawType(), col.precision(), col.scale());
             imports.addAll(jt.imports());
-            fields.append("    private ").append(jt.simpleName()).append(' ')
-                    .append(toCamelCase(col.name())).append(";\n");
+            Map<String, Object> fv = new LinkedHashMap<>();
+            fv.put("type", jt.simpleName());
+            fv.put("name", toCamelCase(col.name()));
+            fields.add(fv);
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(fullPkg).append(";\n\n");
-        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
-        sb.append('\n');
-        sb.append("@Data\n");
-        sb.append("@NoArgsConstructor\n");
-        sb.append("@AllArgsConstructor\n");
-        sb.append("public class ").append(className).append(" implements Serializable {\n\n");
-        sb.append(fields);
-        sb.append("}\n");
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", fullPkg);
+        view.put("imports", imports);
+        view.put("className", className);
+        view.put("fields", fields);
 
         return new GeneratedJavaFile(
                 "src/main/java/{{packagePath}}/" + opts.subPackage() + "/" + className + ".java",
-                sb.toString());
+                WizardTemplates.render("sql/IdClass.java", view));
     }
 
     private GeneratedJavaFile renderRepository(TableModel table, SqlDialect dialect,
@@ -1243,20 +1238,15 @@ public class SqlEntityGenerator {
         imports.add(entityPkg + "." + entityClass);
         imports.addAll(id.imports());
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(repoPkg).append(";\n\n");
-        for (String imp : new TreeSet<>(imports)) {
-            sb.append("import ").append(imp).append(";\n");
-        }
-        sb.append('\n');
-        sb.append("@Repository\n");
-        sb.append("public interface ").append(entityClass).append("Repository extends JpaRepository<")
-                .append(entityClass).append(", ").append(idType).append("> {\n");
-        sb.append("}\n");
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", repoPkg);
+        view.put("imports", new TreeSet<>(imports));
+        view.put("entityClass", entityClass);
+        view.put("idType", idType);
 
         return new GeneratedJavaFile(
                 "src/main/java/{{packagePath}}/repository/" + entityClass + "Repository.java",
-                sb.toString());
+                WizardTemplates.render("sql/Repository.java", view));
     }
 
     // ── REST stack rendering (Service / DTO / Mapper / Controller) ─────────────
@@ -1414,45 +1404,21 @@ public class SqlEntityGenerator {
 
         String genPkSetter = singleGeneratedPkSetter(table);
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(packageName).append(".service;\n\n");
-        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
-        sb.append('\n');
-        sb.append("@Service\n@Transactional\n");
-        sb.append("public class ").append(entityClass).append("Service {\n\n");
-        sb.append("    private final ").append(entityClass).append("Repository repository;\n\n");
-        sb.append("    public ").append(entityClass).append("Service(")
-                .append(entityClass).append("Repository repository) {\n");
-        sb.append("        this.repository = repository;\n    }\n\n");
-        sb.append("    @Transactional(readOnly = true)\n");
-        sb.append("    public Page<").append(entityClass).append("> findAll(Pageable pageable) {\n");
-        sb.append("        return repository.findAll(pageable);\n    }\n\n");
-        sb.append("    @Transactional(readOnly = true)\n");
-        sb.append("    public ").append(entityClass).append(" findById(").append(id.simpleName()).append(" id) {\n");
-        sb.append("        return repository.findById(id).orElseThrow(() ->\n");
-        sb.append("                new java.util.NoSuchElementException(\"")
-                .append(entityClass).append(" \" + id + \" not found\"));\n    }\n\n");
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("package", packageName + ".service");
+        model.put("imports", imports);
+        model.put("entityClass", entityClass);
+        model.put("idType", id.simpleName());
         // A read-only @Subselect view exposes GET-only scaffolding — no create/update/delete.
-        if (!table.isView()) {
-            sb.append("    public ").append(entityClass).append(" create(").append(entityClass).append(" entity) {\n");
-            if (genPkSetter != null) sb.append("        entity.set").append(genPkSetter).append("(null);\n");
-            sb.append("        return repository.save(entity);\n    }\n\n");
-            sb.append("    public ").append(entityClass).append(" update(")
-                    .append(id.simpleName()).append(" id, ").append(entityClass).append(" updated) {\n");
-            sb.append("        ").append(entityClass).append(" existing = findById(id);\n");
-            for (Member m : view.members()) {
-                if (m.isPk()) continue; // never overwrite the key
-                sb.append("        existing.set").append(m.pascalName())
-                        .append("(updated.get").append(m.pascalName()).append("());\n");
-            }
-            sb.append("        return repository.save(existing);\n    }\n\n");
-            sb.append("    public void delete(").append(id.simpleName()).append(" id) {\n");
-            sb.append("        repository.deleteById(id);\n    }\n");
-        }
-        sb.append("}\n");
+        model.put("mutable", !table.isView());
+        model.put("hasGeneratedKey", genPkSetter != null);
+        model.put("generatedKeySetter", genPkSetter);
+        // What an update copies over: every member but the key (never overwrite the key).
+        model.put("copied", view.members().stream().filter(m -> !m.isPk()).map(Member::pascalName).toList());
 
         return new GeneratedJavaFile(
-                "src/main/java/{{packagePath}}/service/" + entityClass + "Service.java", sb.toString());
+                "src/main/java/{{packagePath}}/service/" + entityClass + "Service.java",
+                WizardTemplates.render("sql/Service.java", model));
     }
 
     private GeneratedJavaFile renderDto(TableModel table, SqlDialect dialect, String packageName,
@@ -1475,56 +1441,71 @@ public class SqlEntityGenerator {
             for (Member m : flat) imports.add(entityPkg + "." + m.flatten().targetEntity());
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(packageName).append(".dto;\n\n");
-        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
-        if (!imports.isEmpty()) sb.append('\n');
-        if (view.hasSkippedColumns()) {
-            sb.append("// TODO: some columns (composite or unresolved foreign keys) are omitted from this DTO\n");
-        }
-
-        List<String> comps = new ArrayList<>();
-        for (Member m : scalars) comps.add("        " + m.javaType() + " " + m.fieldName());
-        for (Member m : flat) comps.add("        " + m.flatten().idType() + " " + m.flatten().dtoIdField());
-        sb.append("public record ").append(entityClass).append("Dto(\n");
-        sb.append(String.join(",\n", comps)).append("\n)");
-
-        if (!inline) {
-            sb.append(" {\n}\n");
-            return new GeneratedJavaFile(
-                    "src/main/java/{{packagePath}}/dto/" + entityClass + "Dto.java", sb.toString());
-        }
-
-        sb.append(" {\n\n");
-        sb.append("    public static ").append(entityClass).append("Dto from(")
-                .append(entityClass).append(" entity) {\n");
-        sb.append("        return new ").append(entityClass).append("Dto(\n");
-        List<String> args = new ArrayList<>();
-        for (Member m : scalars) args.add("                entity.get" + m.pascalName() + "()");
-        for (Member m : flat) {
-            args.add("                entity.get" + m.pascalName() + "() == null ? null : entity.get"
-                    + m.pascalName() + "().get" + m.flatten().targetPkPascal() + "()");
-        }
-        sb.append(String.join(",\n", args)).append("\n        );\n    }\n\n");
-        sb.append("    public ").append(entityClass).append(" toEntity() {\n");
-        sb.append("        ").append(entityClass).append(" entity = new ").append(entityClass).append("();\n");
+        List<Map<String, Object>> components = new ArrayList<>();
+        List<Map<String, Object>> fromArgs = new ArrayList<>();
+        List<Map<String, Object>> scalarViews = new ArrayList<>();
+        List<Map<String, Object>> flatViews = new ArrayList<>();
         for (Member m : scalars) {
-            sb.append("        entity.set").append(m.pascalName()).append("(this.").append(m.fieldName()).append(");\n");
+            components.add(component(m.javaType(), m.fieldName()));
+            fromArgs.add(Map.of("expr", "entity.get" + m.pascalName() + "()"));
+            scalarViews.add(Map.of("pascal", m.pascalName(), "name", m.fieldName()));
         }
         for (Member m : flat) {
             FlattenInfo fi = m.flatten();
-            sb.append("        if (this.").append(fi.dtoIdField()).append(" != null) {\n");
-            sb.append("            ").append(fi.targetEntity()).append(' ').append(m.fieldName())
-                    .append(" = new ").append(fi.targetEntity()).append("();\n");
-            sb.append("            ").append(m.fieldName()).append(".set").append(fi.targetPkPascal())
-                    .append("(this.").append(fi.dtoIdField()).append(");\n");
-            sb.append("            entity.set").append(m.pascalName()).append('(').append(m.fieldName()).append(");\n");
-            sb.append("        }\n");
+            components.add(component(fi.idType(), fi.dtoIdField()));
+            fromArgs.add(Map.of("expr", "entity.get" + m.pascalName() + "() == null ? null : entity.get"
+                    + m.pascalName() + "().get" + fi.targetPkPascal() + "()"));
+            flatViews.add(flatView(m));
         }
-        sb.append("        return entity;\n    }\n}\n");
+
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("package", packageName + ".dto");
+        model.put("imports", imports);
+        model.put("hasImports", !imports.isEmpty());
+        model.put("hasSkippedColumns", view.hasSkippedColumns());
+        model.put("entityClass", entityClass);
+        model.put("components", markLast(components));
+        model.put("hasComponents", !components.isEmpty());
+        model.put("inline", inline);
+        model.put("fromArgs", markLast(fromArgs));
+        model.put("scalars", scalarViews);
+        model.put("flat", flatViews);
 
         return new GeneratedJavaFile(
-                "src/main/java/{{packagePath}}/dto/" + entityClass + "Dto.java", sb.toString());
+                "src/main/java/{{packagePath}}/dto/" + entityClass + "Dto.java",
+                WizardTemplates.render("sql/Dto.java", model));
+    }
+
+    private static Map<String, Object> component(String type, String name) {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("type", type);
+        c.put("name", name);
+        return c;
+    }
+
+    /** A foreign key a DTO carries as the target's id, as the DTO and mapper templates read it. */
+    private static Map<String, Object> flatView(Member m) {
+        FlattenInfo fi = m.flatten();
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("name", m.fieldName());
+        f.put("pascal", m.pascalName());
+        f.put("dtoIdField", fi.dtoIdField());
+        f.put("idType", fi.idType());
+        f.put("targetEntity", fi.targetEntity());
+        f.put("targetPkPascal", fi.targetPkPascal());
+        f.put("targetPkProperty", decapitalize(fi.targetPkPascal()));
+        return f;
+    }
+
+    /** The same views, each saying whether it is the last (a template writes no comma after it). */
+    private static List<Map<String, Object>> markLast(List<Map<String, Object>> views) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int i = 0; i < views.size(); i++) {
+            Map<String, Object> v = new LinkedHashMap<>(views.get(i));
+            v.put("last", i == views.size() - 1);
+            out.add(v);
+        }
+        return out;
     }
 
     private GeneratedJavaFile renderMapper(TableModel table, SqlDialect dialect, String packageName,
@@ -1551,41 +1532,15 @@ public class SqlEntityGenerator {
         imports.add(packageName + ".dto." + entityClass + "Dto");
         imports.add("java.util.List");
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(packageName).append(".mapper;\n\n");
-        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
-        sb.append('\n');
-        sb.append("@Mapper(config = MapstructConfig.class)\n");
-        sb.append("public interface ").append(entityClass).append("Mapper {\n\n");
-        for (Member m : flat) {
-            sb.append("    @Mapping(target = \"").append(m.flatten().dtoIdField())
-                    .append("\", source = \"").append(m.fieldName()).append('.')
-                    .append(decapitalize(m.flatten().targetPkPascal())).append("\")\n");
-        }
-        sb.append("    ").append(entityClass).append("Dto toDto(").append(entityClass).append(" entity);\n\n");
-        for (Member m : flat) {
-            sb.append("    @Mapping(target = \"").append(m.fieldName())
-                    .append("\", source = \"").append(m.flatten().dtoIdField())
-                    .append("\", qualifiedByName = \"").append(m.fieldName()).append("FromId\")\n");
-        }
-        sb.append("    ").append(entityClass).append(" toEntity(").append(entityClass).append("Dto dto);\n\n");
-        sb.append("    List<").append(entityClass).append("Dto> toDtoList(List<")
-                .append(entityClass).append("> entities);\n");
-        for (Member m : flat) {
-            FlattenInfo fi = m.flatten();
-            sb.append('\n');
-            sb.append("    @Named(\"").append(m.fieldName()).append("FromId\")\n");
-            sb.append("    default ").append(fi.targetEntity()).append(' ').append(m.fieldName())
-                    .append("FromId(").append(fi.idType()).append(" id) {\n");
-            sb.append("        if (id == null) return null;\n");
-            sb.append("        ").append(fi.targetEntity()).append(" e = new ").append(fi.targetEntity()).append("();\n");
-            sb.append("        e.set").append(fi.targetPkPascal()).append("(id);\n");
-            sb.append("        return e;\n    }\n");
-        }
-        sb.append("}\n");
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("package", packageName + ".mapper");
+        model.put("imports", imports);
+        model.put("entityClass", entityClass);
+        model.put("flat", flat.stream().map(SqlEntityGenerator::flatView).toList());
 
         return new GeneratedJavaFile(
-                "src/main/java/{{packagePath}}/mapper/" + entityClass + "Mapper.java", sb.toString());
+                "src/main/java/{{packagePath}}/mapper/" + entityClass + "Mapper.java",
+                WizardTemplates.render("sql/Mapper.java", model));
     }
 
     private GeneratedJavaFile renderController(TableModel table, SqlDialect dialect, String packageName,
@@ -1632,86 +1587,27 @@ public class SqlEntityGenerator {
         String newKey = "new " + entityClass + "Id("
                 + parts.stream().map(PkPart::name).collect(Collectors.joining(", ")) + ")";
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(packageName).append(".controller;\n\n");
-        for (String imp : imports) sb.append("import ").append(imp).append(";\n");
-        sb.append('\n');
-        sb.append("@RestController\n");
-        sb.append("@RequestMapping(\"/api/").append(kebab).append("\")\n");
-        sb.append("public class ").append(entityClass).append("Controller {\n\n");
-        sb.append("    private final ").append(entityClass).append("Service service;\n");
-        if (mapstruct) sb.append("    private final ").append(entityClass).append("Mapper mapper;\n");
-        sb.append('\n');
-        sb.append("    public ").append(entityClass).append("Controller(")
-                .append(entityClass).append("Service service");
-        if (mapstruct) sb.append(", ").append(entityClass).append("Mapper mapper");
-        sb.append(") {\n");
-        sb.append("        this.service = service;\n");
-        if (mapstruct) sb.append("        this.mapper = mapper;\n");
-        sb.append("    }\n\n");
-
-        // list
-        sb.append("    @GetMapping\n");
-        sb.append("    public Page<").append(retType).append("> list(Pageable pageable) {\n");
-        sb.append("        return service.findAll(pageable)").append(listMap).append(";\n    }\n\n");
-
-        // getOne
-        if (composite) {
-            sb.append("    @GetMapping(\"").append(pkPath).append("\")\n");
-            sb.append("    public ").append(retType).append(" getOne(").append(pathVars).append(") {\n");
-            sb.append("        return ").append(convOpen).append("service.findById(").append(newKey).append(")")
-                    .append(convClose).append(";\n    }\n\n");
-        } else {
-            sb.append("    @GetMapping(\"/{id}\")\n");
-            sb.append("    public ").append(retType).append(" getOne(@PathVariable ")
-                    .append(id.simpleName()).append(" id) {\n");
-            sb.append("        return ").append(convOpen).append("service.findById(id)")
-                    .append(convClose).append(";\n    }\n\n");
-        }
-
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("package", packageName + ".controller");
+        model.put("imports", imports);
+        model.put("kebab", kebab);
+        model.put("entityClass", entityClass);
+        model.put("mapstruct", mapstruct);
+        model.put("retType", retType);
+        model.put("listMap", listMap);
+        model.put("convOpen", convOpen);
+        model.put("convClose", convClose);
+        model.put("bodyToEntity", bodyToEntity);
+        // How a row is addressed: one {id}, or the key's parts as ordered path segments.
+        model.put("keyPath", composite ? pkPath : "/{id}");
+        model.put("keyParams", composite ? pathVars : "@PathVariable " + id.simpleName() + " id");
+        model.put("keyArg", composite ? newKey : "id");
         // create / update / delete — omitted for read-only @Subselect views (GET-only).
-        if (!table.isView()) {
-            // create
-            sb.append("    @PostMapping\n");
-            sb.append("    public ").append(retType).append(" create(@RequestBody ").append(retType).append(" body) {\n");
-            sb.append("        return ").append(convOpen).append("service.create(").append(bodyToEntity).append(")")
-                    .append(convClose).append(";\n    }\n\n");
-
-            // update
-            if (composite) {
-                sb.append("    @PutMapping(\"").append(pkPath).append("\")\n");
-                sb.append("    public ").append(retType).append(" update(").append(pathVars)
-                        .append(", @RequestBody ").append(retType).append(" body) {\n");
-                sb.append("        return ").append(convOpen).append("service.update(").append(newKey).append(", ")
-                        .append(bodyToEntity).append(")").append(convClose).append(";\n    }\n\n");
-            } else {
-                sb.append("    @PutMapping(\"/{id}\")\n");
-                sb.append("    public ").append(retType).append(" update(@PathVariable ")
-                        .append(id.simpleName()).append(" id, @RequestBody ").append(retType).append(" body) {\n");
-                sb.append("        return ").append(convOpen).append("service.update(id, ")
-                        .append(bodyToEntity).append(")").append(convClose).append(";\n    }\n\n");
-            }
-
-            // delete
-            if (composite) {
-                sb.append("    @DeleteMapping(\"").append(pkPath).append("\")\n");
-                sb.append("    public ResponseEntity<Void> delete(").append(pathVars).append(") {\n");
-                sb.append("        service.delete(").append(newKey).append(");\n");
-            } else {
-                sb.append("    @DeleteMapping(\"/{id}\")\n");
-                sb.append("    public ResponseEntity<Void> delete(@PathVariable ")
-                        .append(id.simpleName()).append(" id) {\n");
-                sb.append("        service.delete(id);\n");
-            }
-            sb.append("        return ResponseEntity.noContent().build();\n    }\n\n");
-        }
-
-        sb.append("    @ExceptionHandler(java.util.NoSuchElementException.class)\n");
-        sb.append("    public ResponseEntity<Void> handleNotFound(java.util.NoSuchElementException ex) {\n");
-        sb.append("        return ResponseEntity.notFound().build();\n    }\n}\n");
+        model.put("mutable", !table.isView());
 
         return new GeneratedJavaFile(
-                "src/main/java/{{packagePath}}/controller/" + entityClass + "Controller.java", sb.toString());
+                "src/main/java/{{packagePath}}/controller/" + entityClass + "Controller.java",
+                WizardTemplates.render("sql/Controller.java", model));
     }
 
     // ── Name helpers ──────────────────────────────────────────────────────────

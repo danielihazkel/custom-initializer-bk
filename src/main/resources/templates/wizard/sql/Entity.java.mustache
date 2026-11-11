@@ -1,0 +1,24 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+@Entity
+@Table(name = "{{tableName}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}})
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+{{#hasCompositePk}}
+@IdClass({{className}}Id.class)
+{{/hasCompositePk}}
+public class {{className}} {
+
+{{#members}}
+{{#lines}}
+    {{.}}
+{{/lines}}
+    private {{type}} {{name}};
+
+{{/members}}
+}

@@ -1,0 +1,55 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+@RestController
+@RequestMapping("/api/{{kebab}}")
+public class {{entityClass}}Controller {
+
+    private final {{entityClass}}Service service;
+{{#mapstruct}}
+    private final {{entityClass}}Mapper mapper;
+{{/mapstruct}}
+
+    public {{entityClass}}Controller({{entityClass}}Service service{{#mapstruct}}, {{entityClass}}Mapper mapper{{/mapstruct}}) {
+        this.service = service;
+{{#mapstruct}}
+        this.mapper = mapper;
+{{/mapstruct}}
+    }
+
+    @GetMapping
+    public Page<{{retType}}> list(Pageable pageable) {
+        return service.findAll(pageable){{listMap}};
+    }
+
+    @GetMapping("{{keyPath}}")
+    public {{retType}} getOne({{keyParams}}) {
+        return {{convOpen}}service.findById({{keyArg}}){{convClose}};
+    }
+
+{{#mutable}}
+    @PostMapping
+    public {{retType}} create(@RequestBody {{retType}} body) {
+        return {{convOpen}}service.create({{bodyToEntity}}){{convClose}};
+    }
+
+    @PutMapping("{{keyPath}}")
+    public {{retType}} update({{keyParams}}, @RequestBody {{retType}} body) {
+        return {{convOpen}}service.update({{keyArg}}, {{bodyToEntity}}){{convClose}};
+    }
+
+    @DeleteMapping("{{keyPath}}")
+    public ResponseEntity<Void> delete({{keyParams}}) {
+        service.delete({{keyArg}});
+        return ResponseEntity.noContent().build();
+    }
+
+{{/mutable}}
+    @ExceptionHandler(java.util.NoSuchElementException.class)
+    public ResponseEntity<Void> handleNotFound(java.util.NoSuchElementException ex) {
+        return ResponseEntity.notFound().build();
+    }
+}
