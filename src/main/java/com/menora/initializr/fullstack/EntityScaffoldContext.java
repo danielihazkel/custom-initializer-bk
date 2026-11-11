@@ -734,6 +734,18 @@ public final class EntityScaffoldContext {
      * is set.
      */
     /**
+     * Whether any writable entity resolves the {@code audit} option on (its override, else the
+     * project option) — {@code hasAudit}, which gates {@code JpaAuditingConfig}. The file used to
+     * follow the project option alone, so an entity that opted in on its own got
+     * {@code @CreatedDate} fields that nothing ever filled.
+     */
+    public static void putAudit(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldAudit"));
+        ctx.put("hasAudit", entities.stream().anyMatch(e -> !e.readOnly()
+                && (e.opts().get("audit") != null ? e.opts().get("audit") : projectOpt)));
+    }
+
+    /**
      * Whether any entity resolves the {@code optimisticLocking} option on (its override, else the
      * project option) and can use it (writable, table-backed) — {@code hasOptimisticLocking}, which
      * gates the project-wide stale-update handler, so an entity that opts in on its own still gets it.

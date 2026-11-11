@@ -30,7 +30,7 @@
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
       "sortOrder": 6,
-      "gatedBy": "optScaffoldAudit"
+      "gatedBy": "hasAudit"
     },
     {
       "source": "Attachment.java.mustache",

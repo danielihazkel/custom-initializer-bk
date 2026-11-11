@@ -3086,7 +3086,29 @@ class FullstackStarterIntegrationTests {
                 .contains("createdAt");
 
         // The project-level auditing config is still emitted (the project flag is untouched).
-        assertThat(entries).containsKey("books/backend/src/main/java/com/menora/books/config/JpaAuditingConfig.java");
+        String auditingConfig = "books/backend/src/main/java/com/menora/books/config/JpaAuditingConfig.java";
+        assertThat(entries).containsKey(auditingConfig);
+
+        // The other way round: the project option off and one entity opting in on its own. Its
+        // @CreatedDate fields need @EnableJpaAuditing — the config follows any audited entity,
+        // not the project option (it used to be left out, and the timestamps stayed null).
+        Map<String, Object> audited = new LinkedHashMap<>(note);
+        audited.put("opts", Map.of("audit", true));
+        body.put("entities", List.of(invoice, audited));
+        body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        Map<String, String> oneAudited = generateZip(body);
+        assertThat(contentEndingWith(oneAudited, "/entity/Note.java")).contains("@CreatedDate");
+        assertThat(contentEndingWith(oneAudited, "/entity/Invoice.java")).doesNotContain("@CreatedDate");
+        assertThat(oneAudited).containsKey(auditingConfig);
+        // Nobody audited: no config.
+        body.put("entities", List.of(invoice, note));
+        assertThat(generateZip(body)).doesNotContainKey(auditingConfig);
+        // Every entity opted out of the project option: nothing to enable either.
+        Map<String, Object> invoiceOut = new LinkedHashMap<>(invoice);
+        invoiceOut.put("opts", Map.of("audit", false));
+        body.put("entities", List.of(invoiceOut, note));
+        body.put("opts", Map.of("scaffold", List.of("audit")));
+        assertThat(generateZip(body)).doesNotContainKey(auditingConfig);
 
         // An unknown override key is a 400 naming the key and the entity.
         Map<String, Object> bogus = new LinkedHashMap<>(note);
