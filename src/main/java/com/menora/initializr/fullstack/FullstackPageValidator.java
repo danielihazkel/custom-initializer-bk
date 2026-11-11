@@ -237,7 +237,9 @@ public final class FullstackPageValidator {
                         List<PageDefinition.ChildTab> childTabs = childTabs(prefix, entity, p.childTabs(), entities, entitiesByLower, scaffoldOpts);
                         yield new PageDefinition(id, type, title, description, true, entity.name(), null, null, null,
                                 null, null, null, childTabs, null, null, null, null, null,
-                                headerStats(prefix, entity, p.headerStats(), childTabs, entitiesByLower));
+                                headerStats(prefix, entity, p.headerStats(), childTabs, entitiesByLower))
+                                // Absent and false are one thing: no spec, the page's old bytes.
+                                .withSpec(Boolean.TRUE.equals(p.printable()) ? new PageDefinition.RecordSpec(true) : null);
                     }
                     case WIZARD -> {
                         String prefix = "Page '" + id + "' (wizard)";
@@ -528,6 +530,9 @@ public final class FullstackPageValidator {
             if (p.cardFields() != null && type != PageDefinition.Type.INBOX) throw new WizardArgumentException(prefix + "does not take 'cardFields'");
             if (p.wipLimits() != null) throw new WizardArgumentException(prefix + "does not take 'wipLimits'");
             if (p.laneSize() != null) throw new WizardArgumentException(prefix + "does not take 'laneSize'");
+        }
+        if (type != PageDefinition.Type.RECORD && p.printable() != null) {
+            throw new WizardArgumentException(prefix + "does not take 'printable'");
         }
         if (type != PageDefinition.Type.INBOX && p.queues() != null) {
             throw new WizardArgumentException(prefix + "does not take 'queues'");

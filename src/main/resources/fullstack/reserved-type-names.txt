@@ -80,6 +80,7 @@ Long
 ManyToMany
 ManyToOne
 Markdown
+MarkdownEditor
 Math
 Max
 Min

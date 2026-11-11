@@ -146,6 +146,7 @@
       "manytomany",
       "manytoone",
       "markdown",
+      "markdowneditor",
       "math",
       "max",
       "me",

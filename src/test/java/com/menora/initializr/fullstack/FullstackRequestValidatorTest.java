@@ -493,10 +493,10 @@ class FullstackRequestValidatorTest {
         // backend-only options. (rtl is no template flag at all.)
         assertThat(read.apply(ScaffoldOption.Side.BACKEND)).containsExactly(
                 "audit", "bulkDelete", "bulkUpdate", "csvExport", "csvImport", "inverseCollections",
-                "openapi", "optimisticLocking", "secured", "seedData", "softDelete", "tests");
+                "openapi", "optimisticLocking", "secured", "seedData", "softDelete", "tests", "xlsxExport");
         assertThat(read.apply(ScaffoldOption.Side.FRONTEND)).containsExactly(
                 "audit", "bulkDelete", "bulkUpdate", "csvExport", "csvImport", "inlineEdit",
-                "inverseCollections", "optimisticLocking", "softDelete", "tests");
+                "inverseCollections", "optimisticLocking", "softDelete", "tests", "xlsxExport");
     }
 
     @Test

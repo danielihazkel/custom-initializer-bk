@@ -323,6 +323,8 @@ public final class EntityScaffoldContext {
                 case RECORD -> {
                     Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
                     Map<String, Object> summary = summaries.get(p.entity().toLowerCase(Locale.ROOT));
+                    // A Print button, and the classes that keep the page's own buttons off the paper.
+                    pv.put("printable", p.printable());
                     pv.put("EntityName", ev.get("EntityName"));
                     pv.put("entityNameKebab", ev.get("entityNameKebab"));
                     pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
@@ -642,6 +644,8 @@ public final class EntityScaffoldContext {
         ctx.put("routePages", routes);
         ctx.put("recordPages", records);
         ctx.put("hasRecordPages", !records.isEmpty());
+        // A record page that prints: the print rules in the stylesheet and the button's word.
+        ctx.put("hasPrintablePages", pages.stream().anyMatch(PageDefinition::printable));
         // Routes outside the nav (record pages, hidden wizards): the header names them from here,
         // and one with a home page shows it as a breadcrumb.
         List<Map<String, Object>> offNav = routes.stream().filter(v -> !nav.contains(v)).toList();
@@ -1819,7 +1823,7 @@ public final class EntityScaffoldContext {
      *  (the generated lint rejects an unused import). */
     private static void putCardFormatImports(Map<String, Object> pv, List<Map<String, Object>> cards) {
         List<String> imports = new ArrayList<>();
-        for (String helper : List.of("formatDate", "formatDateTime", "formatInstant", "formatMoney")) {
+        for (String helper : List.of("formatDate", "formatDateTime", "formatInstant", "formatMoney", "attachmentUrl")) {
             if (cards.stream().anyMatch(c -> ((String) c.get("renderTs")).contains(helper + "("))) imports.add(helper);
         }
         pv.put("hasCardFormatImports", !imports.isEmpty());
@@ -3724,7 +3728,9 @@ public final class EntityScaffoldContext {
                 case DETAIL -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\">"
                         + "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
                         + "className=\"max-h-48 rounded-lg border border-border\" /></a>";
-                case CARD -> "(" + v + "Name ?? '\u2014')";
+                // A card is itself a link, so the picture alone — small, like a table row's.
+                case CARD -> "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
+                        + "className=\"h-10 w-10 rounded object-cover\" />";
             };
             case STRING, LONG, INTEGER, LOCAL_TIME, BIG_DECIMAL, UUID -> "String(" + v + ")";
         };

@@ -3,7 +3,8 @@ import { Field, inputClass{{#formUsesPicker}}, RelationPicker{{/formUsesPicker}}
 {{/formUsesStrings}}{{#formUsesOptions}}import { useOptions } from '@shared/api'
 {{/formUsesOptions}}{{#formUsesInstant}}import { fromLocalInput, toLocalInput } from '@shared/ui/format'
 {{/formUsesInstant}}{{#hasAttachmentFields}}import { AttachmentField } from '@shared/ui/AttachmentField'
-{{/hasAttachmentFields}}{{#hasCollections}}import { MultiRelationPicker } from '@shared/ui/MultiRelationPicker'
+{{/hasAttachmentFields}}{{#hasMarkdownField}}import { MarkdownEditor } from '@shared/ui/MarkdownEditor'
+{{/hasMarkdownField}}{{#hasCollections}}import { MultiRelationPicker } from '@shared/ui/MultiRelationPicker'
 {{/hasCollections}}{{#compositions}}import { {{childEntity}}Rows } from '@features/{{childKebab}}-form'
 {{/compositions}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
 {{#fields}}{{#isEnum}}{{^isWorkflowStatus}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
@@ -79,13 +80,19 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         </select>
       </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/isEnum}}{{^isBoolean}}{{^isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
-{{#isText}}        <textarea
+{{#isText}}{{#isMarkdown}}        <MarkdownEditor
+          label="{{labelAttr}}"
+          value={value.{{name}}}
+          onChange={next => set('{{name}}', next)}
+          {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}{{^isReadOnly}}disabled={false}{{/isReadOnly}}
+        />
+{{/isMarkdown}}{{^isMarkdown}}        <textarea
           className={{#isReadOnly}}{isNew ? `${inputClass} min-h-[96px] resize-y` : `${inputClass} min-h-[96px] resize-y cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{`${inputClass} min-h-[96px] resize-y`}{{/isReadOnly}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
           onChange={e => set('{{name}}', e.target.value === '' ? null : e.target.value)}
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         />
-{{/isText}}{{^isText}}{{#isAttachment}}        <AttachmentField
+{{/isMarkdown}}{{/isText}}{{^isText}}{{#isAttachment}}        <AttachmentField
           value={value.{{name}}}
           name={value.{{nameField}}}
           {{#isImage}}image{{/isImage}}{{^isImage}}image={false}{{/isImage}}

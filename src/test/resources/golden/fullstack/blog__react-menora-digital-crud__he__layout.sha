@@ -112,8 +112,8 @@ a6fe1334e6b24dc1098484b594c00238e128ed673b71344af3e77876d50a6b81  golden-blog/fr
 8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881  golden-blog/frontend/src/features/index.ts
 509e12dd493526b6c5a5ffba4f69cd42fb98a1e505ba7fa71ee9985d4af83df3  golden-blog/frontend/src/features/post-form/index.ts
 9b8b98b100c500d9dfd4bdcf5aab03cfd0b4ec4c8b13d4db107573aaf7df6363  golden-blog/frontend/src/features/post-form/model/validate.ts
-367157fd46c7546088b4cad1f1fde60694ab563ddaec4fbfa9f6a7a5c0016ee7  golden-blog/frontend/src/features/post-form/ui/PostDetail.tsx
-1735717760bd2f13dbf0b34b8b8fa150ac41f5813cfcfe7fb097d6a83f01b0fd  golden-blog/frontend/src/features/post-form/ui/PostForm.tsx
+6e24dca00e87de4fe7c4383089646d0147b03ae6a909c59053dc5c2407fce23a  golden-blog/frontend/src/features/post-form/ui/PostDetail.tsx
+e3d95bbb3081eb9290184669e7ea1d5daf32228bf91496c5cd971a72e3c7f443  golden-blog/frontend/src/features/post-form/ui/PostForm.tsx
 081bb81a0f698b6cd04b0a9e73c4e81eccc1379b93d61aac9a9c2fd75e0b4409  golden-blog/frontend/src/features/tag-form/index.ts
 6e9e4560d88ad2cabba18c4495a678d2cea7824881884d2e3612d4fe44417295  golden-blog/frontend/src/features/tag-form/model/validate.ts
 70077c73b992055f248848b7f0e0e5174803e6a86680b6f0ba638123a8d1fbee  golden-blog/frontend/src/features/tag-form/ui/TagDetail.tsx
@@ -136,7 +136,7 @@ c0d15623de9d8bbb3c3488678a7fa9340607cfc32dc6daea9e34417b8b0a80d6  golden-blog/fr
 a2ac1ca020f74b517965de39efc49dca6fd4a8c9bed9ef78fe637d101611f63e  golden-blog/frontend/src/shared/api/useOptions.ts
 a3d00f00f5c5f0c62c56bd9166f7a2d26102d060b737d7f52868cd04382e2ea1  golden-blog/frontend/src/shared/api/useResource.ts
 073f4b80d3167caa42d975dfa4f2379563c63d6c4dc8616d493012a9beebced3  golden-blog/frontend/src/shared/i18n/index.ts
-be3fe524814f96ea898158c1b51308fa4a88d8ab6b87d5305f0a97168644513a  golden-blog/frontend/src/shared/i18n/strings.ts
+780d8f018e7997f9a5fca9cbd3356c077e40743b733dd55b828b39a9b2b2a0d1  golden-blog/frontend/src/shared/i18n/strings.ts
 8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881  golden-blog/frontend/src/shared/index.ts
 47e8b5bca2a2df15e3a3c869b6064d17d3295c51bd68e5b3536b99338ba1d3b8  golden-blog/frontend/src/shared/ui/Alert.tsx
 74a4912ff4e1bea6ce34be3226756cc212c58d67e81458473cfcfa88840fb96e  golden-blog/frontend/src/shared/ui/Badge.tsx
@@ -150,6 +150,8 @@ adb400d2dc6ac134acdb7adea524021a8b5fe995e05f1d6fdb636a1d2f1ed62a  golden-blog/fr
 3fbdcfbbe5b96bd553f9c617795fccd97f9a861dedf9e375704f1ca53febc99d  golden-blog/frontend/src/shared/ui/FilterBar.tsx
 3bdb468cf38e72dfdee58daafc8cadb23617bdeabafd6078bc5b0443b65f746c  golden-blog/frontend/src/shared/ui/FormDrawer.tsx
 44c96fca5f48300edb6599bc180e3cd130ef23508f8e244dca42a35c7ced5839  golden-blog/frontend/src/shared/ui/KanbanBoard.tsx
+47f3dc4342edc6c55bce8830927d025b08524b13736a1e37d4006700e1631c90  golden-blog/frontend/src/shared/ui/Markdown.tsx
+5b016596b6d6c6375cb9d71f54fc6b4be6d93cee3a10d6db3a14087cd8c2b6c8  golden-blog/frontend/src/shared/ui/MarkdownEditor.tsx
 db15dd93b213c807800158600b265eda094776c197d774f2724318687c5b0a56  golden-blog/frontend/src/shared/ui/MultiRelationPicker.tsx
 dd1fc0a250d6088bfd0b3910cd1602bd859f46b0175cdd5b118425823cae2617  golden-blog/frontend/src/shared/ui/RelationPicker.tsx
 a9fb00f2f5dad34d192b8f5fa2f155737eee9674224ab244c52dce8cad403037  golden-blog/frontend/src/shared/ui/Skeleton.tsx
@@ -189,4 +191,4 @@ c9519b03a428986e4277272f8c694918a121af4bb4e5b924b8fd00ffbcd16a9b  golden-blog/fr
 1a657bc8b14e013ac12884344b75f725b742b4fcdd27bea16bb5ca1e484b61f3  golden-blog/frontend/tsconfig.json
 bb9fd8592a9e364641441219f10d84daae9ba2ca5cc85db798efad6913bb8257  golden-blog/frontend/tsconfig.node.json
 47a77f018d8f1f16e15333f078134b8e9a0341bfdec1a4b50a688920580c9504  golden-blog/frontend/vite.config.ts
-a8e655598b343c7a5abced4cfb18670ba5233e4cf93cbe6561c4c5a9680fca50  golden-blog/menora-model.json
+35b2ed55d847268a509cd28d3da207af02cd015a30fe44d3f377d644175203bb  golden-blog/menora-model.json

@@ -202,8 +202,14 @@ public record PageDefinition(
     /** The actions an {@link Type#ENTITY_LIST} page leaves out of its list; empty for every other page. */
     public List<ListAction> hiddenActions() { return spec instanceof ListSpec l ? l.hideActions() : List.of(); }
 
+    /** Whether a {@link Type#RECORD} page offers Print; false for every other page. */
+    public boolean printable() { return spec instanceof RecordSpec r && r.printable(); }
+
     /** The settings only one page type has, kept apart so the record does not grow a field per type. */
-    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec, DashboardSpec, ListSpec, InboxSpec {}
+    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec, DashboardSpec, ListSpec, InboxSpec, RecordSpec {}
+
+    /** @param printable a Print button on the page, which is then laid out for paper */
+    public record RecordSpec(boolean printable) implements Spec {}
 
     /**
      * @param queues     the queues the inbox offers as tabs, the first opening

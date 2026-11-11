@@ -353,6 +353,30 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendRichFieldsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Round 10, phase 7: the Markdown editor in the form, the photo on a board's cards, the
+        // attachment field's drop zone and a record page with Print (its print: classes and the
+        // stylesheet's print rules go through Tailwind's build).
+        Path project = postAndExtractFrontend(workDir, FullstackRichFieldsTests.layout("react-tailwind-crud"));
+        assertThat(project.resolve("src/shared/ui/MarkdownEditor.tsx")).isRegularFile();
+        assertThat(Files.readString(project.resolve("src/app/screens/ShiftScreen.tsx"))).contains("window.print()");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraRichFieldsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same on the Menora set (its own stylesheet and shell), in Hebrew.
+        Map<String, Object> body = FullstackRichFieldsTests.layout("react-menora-digital-crud");
+        body.put("locale", "he");
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendQuotedLabelsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // Every label with an apostrophe, a double quote, a backslash, braces and angle brackets:
         // spliced into TS literals, JSX attributes and JSX children across list pages, forms,
