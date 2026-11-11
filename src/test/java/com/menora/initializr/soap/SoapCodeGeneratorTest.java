@@ -100,6 +100,57 @@ class SoapCodeGeneratorTest {
     }
 
     @Test
+    void aWsdlThatImportsAFileItDoesNotContainIsRefusedByName() {
+        // The wizard is given one document. A reference to another file reached the WSDL parser,
+        // which went and opened it — relative to the server's working directory, or by URL. It is
+        // refused before the parser sees it, each reference named.
+        String wsdl = """
+                <wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="urn:orders"
+                                  targetNamespace="urn:orders">
+                  <wsdl:import namespace="urn:common" location="common/faults.wsdl"/>
+                  <wsdl:types>
+                    <xsd:schema targetNamespace="urn:orders">
+                      <xsd:import namespace="urn:types" schemaLocation="types.xsd"/>
+                      <xsd:import namespace="urn:inline"/>
+                      <xsd:include schemaLocation="more.xsd"/>
+                      <xsd:element name="PlaceOrder" type="xsd:string"/>
+                    </xsd:schema>
+                    <xsd:schema targetNamespace="urn:inline"/>
+                  </wsdl:types>
+                  <wsdl:message name="in"><wsdl:part name="p" element="tns:PlaceOrder"/></wsdl:message>
+                  <wsdl:portType name="Orders">
+                    <wsdl:operation name="PlaceOrder"><wsdl:input message="tns:in"/></wsdl:operation>
+                  </wsdl:portType>
+                  <wsdl:binding name="OrdersBinding" type="tns:Orders">
+                    <soap:binding transport="http://schemas.xmlsoap.org/soap/http"/>
+                    <wsdl:operation name="PlaceOrder"><soap:operation soapAction=""/><wsdl:input><soap:body use="literal"/></wsdl:input></wsdl:operation>
+                  </wsdl:binding>
+                  <wsdl:service name="OrderService">
+                    <wsdl:port name="OrdersPort" binding="tns:OrdersBinding"><soap:address location="http://localhost/orders"/></wsdl:port>
+                  </wsdl:service>
+                </wsdl:definitions>
+                """;
+        assertThatThrownBy(() -> generator.generate(wsdl, "com.menora.demo", null))
+                .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class, e -> assertThat(e.messages())
+                        .hasSize(3)
+                        .anySatisfy(m -> assertThat(m).contains("'common/faults.wsdl' (wsdl:import)"))
+                        .anySatisfy(m -> assertThat(m).contains("'types.xsd' (xsd:import)"))
+                        .anySatisfy(m -> assertThat(m).contains("'more.xsd' (xsd:include)").contains("self-contained")));
+        // The preview says so too, instead of listing services whose build would fail.
+        assertThatThrownBy(() -> generator.detectServices(wsdl)).isInstanceOf(SoapCodeGenerator.SoapParseException.class);
+        // An import of a namespace alone is a schema in the same document: fine.
+        String selfContained = wsdl.replace("<wsdl:import namespace=\"urn:common\" location=\"common/faults.wsdl\"/>", "")
+                .replace(" schemaLocation=\"types.xsd\"", "").replace("<xsd:include schemaLocation=\"more.xsd\"/>", "");
+        assertThat(generator.detectServices(selfContained)).containsExactly("OrderService.OrdersPort: PlaceOrder");
+        // A DOCTYPE is how a document makes a parser read files: a WSDL has none.
+        assertThatThrownBy(() -> generator.detectServices(
+                "<!DOCTYPE d [<!ENTITY x SYSTEM \"file:///etc/hostname\">]>\n" + selfContained))
+                .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class,
+                        e -> assertThat(e.messages()).singleElement().asString().contains("not well-formed XML"));
+    }
+
+    @Test
     void detectsServicesForTheWizardsPreview() throws IOException {
         assertThat(generator.detectServices(wsdl())).hasSize(2).allSatisfy(s -> assertThat(s).isNotBlank());
     }

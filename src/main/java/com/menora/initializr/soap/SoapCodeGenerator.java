@@ -4,7 +4,12 @@ import com.menora.initializr.config.WizardTemplates;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.SAXParseException;
 
 import javax.wsdl.Binding;
 import javax.wsdl.BindingOperation;
@@ -18,6 +23,10 @@ import javax.wsdl.WSDLException;
 import javax.wsdl.factory.WSDLFactory;
 import javax.wsdl.xml.WSDLReader;
 import javax.xml.namespace.QName;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -109,6 +118,12 @@ public class SoapCodeGenerator {
     // ── Parsing ───────────────────────────────────────────────────────────────
 
     private Definition parseOrThrow(String wsdl) {
+        // Before wsdl4j sees it: given a schemaLocation, its reader goes and opens the file —
+        // relative to this server's working directory — or the URL.
+        List<String> outside = unresolvedImports(wsdl);
+        if (!outside.isEmpty()) {
+            throw new SoapParseException(outside);
+        }
         try {
             WSDLFactory factory = WSDLFactory.newInstance();
             WSDLReader reader = factory.newWSDLReader();
@@ -126,6 +141,59 @@ public class SoapCodeGenerator {
             String msg = e.getMessage() == null ? "WSDL parse failed" : e.getMessage();
             throw new SoapParseException(List.of(msg));
         }
+    }
+
+    private static final String WSDL_NS = "http://schemas.xmlsoap.org/wsdl/";
+    private static final String XSD_NS = "http://www.w3.org/2001/XMLSchema";
+
+    /**
+     * What the document refers to and does not contain. The wizard is given one document: a
+     * {@code wsdl:import} or an {@code xsd:import}/{@code include}/{@code redefine} that names a
+     * file points at something it never sees. Such a WSDL used to reach the parser, which tried
+     * to open the file on this server; where that happened to succeed, the generated project
+     * failed at its first build, when the JAX-WS plugin went looking for the file. An
+     * {@code xsd:import} of a namespace alone is fine: that schema is inline, in the same
+     * {@code <types>}.
+     *
+     * <p>Read with a parser that takes no DOCTYPE (a WSDL has none; entities are how a document
+     * makes a parser read files). A document that is not XML at all is the WSDL parser's to report.
+     */
+    private static List<String> unresolvedImports(String wsdl) {
+        Document document;
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            builder.setErrorHandler(null);
+            document = builder.parse(new InputSource(new StringReader(wsdl)));
+        } catch (SAXParseException e) {
+            throw new SoapParseException(List.of("The WSDL is not well-formed XML (line " + e.getLineNumber() + "): "
+                    + e.getMessage()));
+        } catch (ParserConfigurationException | SAXException | IOException e) {
+            throw new SoapParseException(List.of("The WSDL could not be read: " + e.getMessage()));
+        }
+        List<String> out = new ArrayList<>();
+        NodeList elements = document.getElementsByTagNameNS("*", "*");
+        for (int i = 0; i < elements.getLength(); i++) {
+            Element element = (Element) elements.item(i);
+            String name = element.getLocalName();
+            if (WSDL_NS.equals(element.getNamespaceURI()) && "import".equals(name)) {
+                addReference(out, "wsdl:import", element.getAttribute("location"));
+            } else if (XSD_NS.equals(element.getNamespaceURI())
+                    && ("import".equals(name) || "include".equals(name) || "redefine".equals(name))) {
+                addReference(out, "xsd:" + name, element.getAttribute("schemaLocation"));
+            }
+        }
+        return out;
+    }
+
+    private static void addReference(List<String> out, String kind, String location) {
+        if (location == null || location.isBlank()) return;
+        out.add("The WSDL refers to '" + location + "' (" + kind + "), which is not part of the document given. "
+                + "Give one self-contained WSDL: put the imported definitions or schema inline.");
     }
 
     @SuppressWarnings("unchecked")
