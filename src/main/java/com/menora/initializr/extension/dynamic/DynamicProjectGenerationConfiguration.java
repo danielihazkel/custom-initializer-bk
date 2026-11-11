@@ -347,6 +347,13 @@ public class DynamicProjectGenerationConfiguration {
                 OpenApiWizardOptions opts = specContext.optionsFor(entry.getKey());
                 List<GeneratedOpenApiFile> files = generator.generate(
                         spec, description.getPackageName(), opts, hasValidation);
+                if (opts != null && opts.copySpec()) {
+                    // The contract the code was written from, kept beside it: JSON when it is JSON.
+                    String extension = spec.stripLeading().startsWith("{") ? "json" : "yaml";
+                    Path copy = projectRoot.resolve("src/main/resources/openapi/" + entry.getKey() + "." + extension);
+                    GeneratedProjectFiles.createParentDirectories(copy);
+                    Files.writeString(copy, spec);
+                }
                 String packagePath = description.getPackageName().replace('.', '/');
                 for (GeneratedOpenApiFile f : files) {
                     Path target = projectRoot.resolve(

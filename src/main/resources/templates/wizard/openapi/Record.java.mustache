@@ -9,16 +9,19 @@ import {{.}};
 {{#hasDescription}}
 /** {{descriptionJavadoc}} */
 {{/hasDescription}}
+{{#inUnion}}
+@JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
+{{/inUnion}}
 {{^hasFields}}
-public record {{name}}() {
-    // Empty record — original schema had no properties or was composed.
+public record {{name}}(){{implementsClause}} {
+    // Empty record — the schema declares no properties.
 }
 {{/hasFields}}
 {{#hasFields}}
 public record {{name}}(
 {{#fields}}
-        {{javaType}} {{name}}{{^last}},{{/last}}
+        {{annotations}}{{javaType}} {{name}}{{^last}},{{/last}}
 {{/fields}}
-) {
+){{implementsClause}} {
 }
 {{/hasFields}}

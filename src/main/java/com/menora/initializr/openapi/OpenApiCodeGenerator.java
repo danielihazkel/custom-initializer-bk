@@ -1,6 +1,8 @@
 package com.menora.initializr.openapi;
 
 import com.menora.initializr.config.WizardTemplates;
+import com.menora.initializr.openapi.SchemaRecordEmitter.JavaTypeRef;
+import com.menora.initializr.openapi.SchemaRecordEmitter.SchemaSet;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
@@ -13,8 +15,6 @@ import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -25,17 +25,17 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Parses an OpenAPI 3.x spec via swagger-parser and emits Spring MVC
- * controllers + DTO {@code record}s. One instance handles one spec at
- * generation time; it is stateless and {@code @Service}-scoped.
+ * controllers, clients and the DTO types they exchange ({@link SchemaRecordEmitter}).
+ * One instance handles one spec at generation time; it is stateless and
+ * {@code @Service}-scoped.
  */
 @Service
 public class OpenApiCodeGenerator {
-
-    private static final Logger log = LoggerFactory.getLogger(OpenApiCodeGenerator.class);
-
 
     /** Raised to the controller layer; converted to HTTP 400. */
     public static class OpenApiParseException extends RuntimeException {
@@ -47,6 +47,21 @@ public class OpenApiCodeGenerator {
         public List<String> messages() { return messages; }
     }
 
+    /** The methods an operation can be declared under, in the order they are written. */
+    private static final List<String> METHODS = List.of("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS");
+
+    /** What a 2xx status is called in {@code HttpStatus}. 200 is what a method answers anyway. */
+    private static final Map<Integer, String> STATUS_NAMES = Map.of(
+            201, "CREATED", 202, "ACCEPTED", 203, "NON_AUTHORITATIVE_INFORMATION", 204, "NO_CONTENT",
+            205, "RESET_CONTENT", 206, "PARTIAL_CONTENT");
+
+    /** Names the generated methods use themselves: a parameter called one of these is renamed. */
+    private static final Set<String> RESERVED_PARAMETER_NAMES = Set.of(
+            "body", "uri", "builder", "headers", "response", "restTemplate", "restClient", "baseUrl",
+            "uriBuilder", "httpHeaders");
+
+    private static final Pattern PATH_VARIABLE = Pattern.compile("\\{([^}/]+)}");
+
     public List<GeneratedOpenApiFile> generate(String spec, String packageName, OpenApiWizardOptions options) {
         // Default: do not emit Bean Validation. The 3-arg path is used by the discard-only
         // spec parse-check, which adds no validation starter.
@@ -55,8 +70,8 @@ public class OpenApiCodeGenerator {
 
     /**
      * @param hasValidation whether the {@code validation} starter is on the generated project's
-     *                      build — gates {@code @Valid} / {@code jakarta.validation.Valid} emission,
-     *                      which otherwise wouldn't resolve at compile time.
+     *                      build — gates {@code @Valid} and the constraint annotations, which
+     *                      otherwise wouldn't resolve at compile time.
      */
     public List<GeneratedOpenApiFile> generate(String spec, String packageName,
                                                OpenApiWizardOptions options, boolean hasValidation) {
@@ -65,12 +80,16 @@ public class OpenApiCodeGenerator {
         OpenApiWizardOptions opts = options != null ? options
                 : new OpenApiWizardOptions(null, null, null, null, null);
 
-        Map<String, SchemaModel> schemas = SchemaRecordEmitter.schemas(api);
-        List<OperationModel> operations = buildOperations(api, schemas.keySet());
+        String dtoPackage = packageName + "." + opts.dtoPackageOrDefault();
+        SchemaSet schemas = SchemaRecordEmitter.read(api, hasValidation, dtoPackage);
+        // Reading the operations names the objects written inside them (a request body, a response).
+        List<OperationModel> operations = buildOperations(api, schemas);
 
         List<GeneratedOpenApiFile> out = new ArrayList<>();
-        for (SchemaModel s : schemas.values()) {
-            out.add(renderRecord(s, packageName, opts));
+        for (SchemaModel s : schemas.models().values()) {
+            out.add(new GeneratedOpenApiFile(
+                    "src/main/java/{{packagePath}}/" + opts.dtoPackageOrDefault() + "/" + s.name() + ".java",
+                    SchemaRecordEmitter.render(s, dtoPackage)));
         }
         Map<String, List<OperationModel>> byTag = groupByTag(operations);
         if (opts.emitControllers()) {
@@ -79,10 +98,11 @@ public class OpenApiCodeGenerator {
             }
         }
         if (opts.emitClient() && !byTag.isEmpty()) {
+            boolean restClient = opts.clientKindOrDefault() == OpenApiWizardOptions.ClientKind.REST_CLIENT;
             for (var group : byTag.entrySet()) {
-                out.add(renderRestTemplateClient(group.getKey(), group.getValue(), packageName, opts));
+                out.add(renderClient(group.getKey(), group.getValue(), packageName, opts, restClient));
             }
-            out.add(renderClientConfig(packageName, opts));
+            out.add(renderClientConfig(packageName, opts, restClient));
             out.add(renderApplicationYmlStub(opts));
         }
         return out;
@@ -101,19 +121,24 @@ public class OpenApiCodeGenerator {
         for (var e : api.getPaths().entrySet()) {
             PathItem item = e.getValue();
             if (item == null) continue;
-            addIfPresent(out, "GET", e.getKey(), item.getGet());
-            addIfPresent(out, "POST", e.getKey(), item.getPost());
-            addIfPresent(out, "PUT", e.getKey(), item.getPut());
-            addIfPresent(out, "DELETE", e.getKey(), item.getDelete());
-            addIfPresent(out, "PATCH", e.getKey(), item.getPatch());
-            addIfPresent(out, "HEAD", e.getKey(), item.getHead());
-            addIfPresent(out, "OPTIONS", e.getKey(), item.getOptions());
+            for (String method : METHODS) {
+                if (operationOf(item, method) != null) out.add(method + " " + e.getKey());
+            }
         }
         return out;
     }
 
-    private static void addIfPresent(List<String> out, String method, String path, Operation op) {
-        if (op != null) out.add(method + " " + path);
+    private static Operation operationOf(PathItem item, String method) {
+        return switch (method) {
+            case "GET" -> item.getGet();
+            case "POST" -> item.getPost();
+            case "PUT" -> item.getPut();
+            case "DELETE" -> item.getDelete();
+            case "PATCH" -> item.getPatch();
+            case "HEAD" -> item.getHead();
+            case "OPTIONS" -> item.getOptions();
+            default -> null;
+        };
     }
 
     // ── Parsing ───────────────────────────────────────────────────────────────
@@ -130,95 +155,153 @@ public class OpenApiCodeGenerator {
         return result.getOpenAPI();
     }
 
-    // ── Schema → record (SchemaRecordEmitter) ─────────────────────────────────
+    // ── Operations ────────────────────────────────────────────────────────────
 
-    private GeneratedOpenApiFile renderRecord(SchemaModel s, String packageName, OpenApiWizardOptions opts) {
-        String subPkg = opts.dtoPackageOrDefault();
-        String path = "src/main/java/{{packagePath}}/" + subPkg + "/" + s.name() + ".java";
-        return new GeneratedOpenApiFile(path, SchemaRecordEmitter.renderRecord(s, packageName + "." + subPkg));
-    }
-
-    // ── Operations → controllers ──────────────────────────────────────────────
-
-    private List<OperationModel> buildOperations(OpenAPI api, Set<String> knownSchemaNames) {
+    private List<OperationModel> buildOperations(OpenAPI api, SchemaSet schemas) {
         List<OperationModel> out = new ArrayList<>();
         if (api.getPaths() == null) return out;
         Set<String> usedOpIds = new LinkedHashSet<>();
         for (var e : api.getPaths().entrySet()) {
             PathItem item = e.getValue();
             if (item == null) continue;
-            String path = e.getKey();
-            addOp(out, usedOpIds, knownSchemaNames, "GET", path, item.getGet());
-            addOp(out, usedOpIds, knownSchemaNames, "POST", path, item.getPost());
-            addOp(out, usedOpIds, knownSchemaNames, "PUT", path, item.getPut());
-            addOp(out, usedOpIds, knownSchemaNames, "DELETE", path, item.getDelete());
-            addOp(out, usedOpIds, knownSchemaNames, "PATCH", path, item.getPatch());
+            // HEAD and OPTIONS were listed by the preview and then left out of the code.
+            for (String method : METHODS) {
+                Operation op = operationOf(item, method);
+                if (op != null) out.add(toOperation(usedOpIds, schemas, method, e.getKey(), item, op));
+            }
         }
         return out;
     }
 
-    private void addOp(List<OperationModel> out, Set<String> usedOpIds, Set<String> knownSchemas,
-                       String method, String path, Operation op) {
-        if (op == null) return;
+    @SuppressWarnings("rawtypes")
+    private OperationModel toOperation(Set<String> usedOpIds, SchemaSet schemas, String method, String path,
+                                       PathItem item, Operation op) {
         String opIdRaw = op.getOperationId();
         String opId = (opIdRaw == null || opIdRaw.isBlank())
-                ? fallbackOpId(method, path) : toCamelCase(opIdRaw);
+                ? fallbackOpId(method, path) : SchemaRecordEmitter.javaName(opIdRaw);
         opId = uniqueName(opId, usedOpIds);
+        String typeStem = toPascalCase(opId);
         String tag = (op.getTags() == null || op.getTags().isEmpty())
                 ? "Default" : toPascalCase(op.getTags().get(0));
 
         List<ParamModel> params = new ArrayList<>();
-        if (op.getParameters() != null) {
-            for (Parameter p : op.getParameters()) {
-                ParamModel.ParamLocation loc = switch (String.valueOf(p.getIn()).toLowerCase(Locale.ROOT)) {
-                    case "path" -> ParamModel.ParamLocation.PATH;
-                    case "query" -> ParamModel.ParamLocation.QUERY;
-                    case "header" -> ParamModel.ParamLocation.HEADER;
-                    case "cookie" -> ParamModel.ParamLocation.COOKIE;
-                    default -> ParamModel.ParamLocation.QUERY;
-                };
-                SchemaRecordEmitter.JavaTypeRef tr = p.getSchema() == null ? new SchemaRecordEmitter.JavaTypeRef("String", Set.of())
-                        : mapType(p.getSchema());
-                params.add(new ParamModel(
-                        toCamelCase(p.getName()),
-                        loc,
-                        tr.typeName(),
-                        tr.imports(),
-                        Boolean.TRUE.equals(p.getRequired())));
+        Set<String> usedNames = new LinkedHashSet<>();
+        for (Parameter p : parametersOf(item, op)) {
+            ParamModel.ParamLocation loc = switch (String.valueOf(p.getIn()).toLowerCase(Locale.ROOT)) {
+                case "path" -> ParamModel.ParamLocation.PATH;
+                case "header" -> ParamModel.ParamLocation.HEADER;
+                case "cookie" -> ParamModel.ParamLocation.COOKIE;
+                default -> ParamModel.ParamLocation.QUERY;
+            };
+            Schema schema = p.getSchema();
+            if (schema == null && p.getContent() != null) {
+                MediaType media = pickJsonOrFirst(p.getContent());
+                schema = media == null ? null : media.getSchema();
             }
+            JavaTypeRef type = schema == null ? new JavaTypeRef("String", Set.of()) : schemas.parameterTypeOf(schema);
+            Set<String> annotationImports = new LinkedHashSet<>();
+            // "required" is the binding annotation's to say; the rest are the schema's constraints.
+            List<String> annotations = new ArrayList<>(schemas.constraintsOf(schema, type, false, annotationImports));
+            String format = dateFormatOf(type.typeName());
+            if (format != null) {
+                // Without it Spring reads a date in the server locale's short style, not ISO 8601.
+                annotations.add("@DateTimeFormat(iso = DateTimeFormat.ISO." + format + ")");
+                annotationImports.add("org.springframework.format.annotation.DateTimeFormat");
+            }
+            params.add(new ParamModel(
+                    parameterName(p.getName(), usedNames),
+                    p.getName(),
+                    loc,
+                    type.typeName(),
+                    type.imports(),
+                    // A path variable is always there.
+                    loc == ParamModel.ParamLocation.PATH || Boolean.TRUE.equals(p.getRequired()),
+                    List.copyOf(annotations),
+                    annotationImports));
         }
 
         String reqType = null;
         Set<String> reqImports = Set.of();
+        boolean reqRequired = true;
         RequestBody rb = op.getRequestBody();
         if (rb != null && rb.getContent() != null) {
             MediaType mt = pickJsonOrFirst(rb.getContent());
             if (mt != null && mt.getSchema() != null) {
-                SchemaRecordEmitter.JavaTypeRef tr = mapType(mt.getSchema());
+                JavaTypeRef tr = schemas.typeOf(mt.getSchema(), typeStem + "Request");
                 reqType = tr.typeName();
                 reqImports = tr.imports();
+                // Only a document that says "required: false" gets an optional body; one that says
+                // nothing keeps Spring's default, as before.
+                reqRequired = !Boolean.FALSE.equals(rb.getRequired());
             }
         }
 
         String respType = null;
         Set<String> respImports = Set.of();
+        int status = 200;
         ApiResponses responses = op.getResponses();
         if (responses != null) {
-            ApiResponse ok = responses.get("200");
-            if (ok == null) ok = responses.get("201");
-            if (ok == null) ok = responses.get("default");
+            String code = successCodeOf(responses);
+            ApiResponse ok = code == null ? null : responses.get(code);
+            if (code != null && code.matches("2\\d\\d")) status = Integer.parseInt(code);
             if (ok != null && ok.getContent() != null) {
                 MediaType mt = pickJsonOrFirst(ok.getContent());
                 if (mt != null && mt.getSchema() != null) {
-                    SchemaRecordEmitter.JavaTypeRef tr = mapType(mt.getSchema());
+                    JavaTypeRef tr = schemas.typeOf(mt.getSchema(), typeStem + "Response");
                     respType = tr.typeName();
                     respImports = tr.imports();
                 }
             }
         }
 
-        out.add(new OperationModel(method, path, opId, tag, op.getSummary(),
-                params, reqType, reqImports, respType, respImports));
+        return new OperationModel(method, path, opId, tag, op.getSummary(),
+                params, reqType, reqImports, reqRequired, respType, respImports, status);
+    }
+
+    /** The operation's parameters, after those declared once for the whole path (which it may override). */
+    private static List<Parameter> parametersOf(PathItem item, Operation op) {
+        Map<String, Parameter> byKey = new LinkedHashMap<>();
+        if (item.getParameters() != null) {
+            for (Parameter p : item.getParameters()) if (p != null && p.getName() != null) byKey.put(p.getIn() + ":" + p.getName(), p);
+        }
+        if (op.getParameters() != null) {
+            for (Parameter p : op.getParameters()) if (p != null && p.getName() != null) byKey.put(p.getIn() + ":" + p.getName(), p);
+        }
+        return new ArrayList<>(byKey.values());
+    }
+
+    /**
+     * The response that describes success: the first 2xx the operation declares, lowest first,
+     * then a {@code 2XX} range, then {@code default}. (A 204 used to lose to {@code default}, so
+     * a delete returned the error body's type.)
+     */
+    private static String successCodeOf(ApiResponses responses) {
+        String best = null;
+        for (String code : responses.keySet()) {
+            if (code.matches("2\\d\\d") && (best == null || code.compareTo(best) < 0)) best = code;
+        }
+        if (best != null) return best;
+        for (String code : responses.keySet()) {
+            if (code.equalsIgnoreCase("2XX")) return code;
+        }
+        return responses.containsKey("default") ? "default" : null;
+    }
+
+    private static String dateFormatOf(String javaType) {
+        String base = javaType.startsWith("List<") ? javaType.substring(5, javaType.length() - 1) : javaType;
+        return switch (base) {
+            case "LocalDate" -> "DATE";
+            case "OffsetDateTime" -> "DATE_TIME";
+            default -> null;
+        };
+    }
+
+    private static String parameterName(String wire, Set<String> used) {
+        String name = SchemaRecordEmitter.javaName(wire);
+        if (RESERVED_PARAMETER_NAMES.contains(name)) name = name + "Param";
+        String candidate = name;
+        for (int n = 2; !used.add(candidate); n++) candidate = name + n;
+        return candidate;
     }
 
     private Map<String, List<OperationModel>> groupByTag(List<OperationModel> ops) {
@@ -229,13 +312,12 @@ public class OpenApiCodeGenerator {
         return map;
     }
 
+    // ── Operations → controllers ──────────────────────────────────────────────
+
     private GeneratedOpenApiFile renderController(String tag, List<OperationModel> ops,
                                                   String packageName, OpenApiWizardOptions opts,
                                                   boolean hasValidation) {
         String apiPkg = opts.apiPackageOrDefault();
-        String dtoPkg = opts.dtoPackageOrDefault();
-        String fullPkg = packageName + "." + apiPkg;
-        String dtoFullPkg = packageName + "." + dtoPkg;
         String className = tag + "Controller";
 
         Set<String> imports = new TreeSet<>();
@@ -243,37 +325,38 @@ public class OpenApiCodeGenerator {
         imports.add("org.springframework.web.bind.annotation.RequestMapping");
         imports.add("org.springframework.validation.annotation.Validated");
 
-        // Collect unique mappings / annotation imports
-        boolean hasBody = false, hasPath = false, hasQuery = false, hasHeader = false;
-        Set<String> mappings = new LinkedHashSet<>();
+        boolean hasBody = false;
         for (OperationModel op : ops) {
-            mappings.add("org.springframework.web.bind.annotation." + mappingAnnotation(op.httpMethod()));
-            if (op.requestBodyType() != null) hasBody = true;
-            for (ParamModel p : op.params()) {
-                switch (p.in()) {
-                    case PATH -> hasPath = true;
-                    case QUERY, COOKIE -> hasQuery = true;
-                    case HEADER -> hasHeader = true;
-                }
-                imports.addAll(qualifyDto(p.imports(), dtoFullPkg));
+            if (isPlainMethod(op.httpMethod())) {
+                imports.add("org.springframework.web.bind.annotation." + mappingAnnotation(op.httpMethod()));
+            } else {
+                imports.add("org.springframework.web.bind.annotation.RequestMethod");
             }
-            imports.addAll(qualifyDto(op.requestBodyImports(), dtoFullPkg));
-            imports.addAll(qualifyDto(op.responseImports(), dtoFullPkg));
-            // Resolve local DTO references by name (types produced by our own schema renderer)
-            addDtoImportIfLocal(imports, op.requestBodyType(), dtoFullPkg);
-            addDtoImportIfLocal(imports, op.responseType(), dtoFullPkg);
+            if (op.requestBodyType() != null) hasBody = true;
+            if (STATUS_NAMES.containsKey(op.successStatus())) {
+                imports.add("org.springframework.web.bind.annotation.ResponseStatus");
+                imports.add("org.springframework.http.HttpStatus");
+            }
+            for (ParamModel p : op.params()) {
+                imports.add("org.springframework.web.bind.annotation." + switch (p.in()) {
+                    case PATH -> "PathVariable";
+                    case QUERY -> "RequestParam";
+                    case HEADER -> "RequestHeader";
+                    case COOKIE -> "CookieValue";
+                });
+                imports.addAll(p.typeImports());
+                imports.addAll(p.annotationImports());
+            }
+            imports.addAll(op.requestBodyImports());
+            imports.addAll(op.responseImports());
         }
-        imports.addAll(mappings);
         if (hasBody) {
             imports.add("org.springframework.web.bind.annotation.RequestBody");
             if (hasValidation) imports.add("jakarta.validation.Valid");
         }
-        if (hasPath) imports.add("org.springframework.web.bind.annotation.PathVariable");
-        if (hasQuery) imports.add("org.springframework.web.bind.annotation.RequestParam");
-        if (hasHeader) imports.add("org.springframework.web.bind.annotation.RequestHeader");
 
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("package", fullPkg);
+        view.put("package", packageName + "." + apiPkg);
         view.put("imports", imports);
         view.put("className", className);
         List<Map<String, Object>> methods = new ArrayList<>();
@@ -288,23 +371,37 @@ public class OpenApiCodeGenerator {
     /** One operation as the controller template reads it. */
     private Map<String, Object> controllerMethod(OperationModel op, boolean hasValidation) {
         Map<String, Object> m = operationView(op);
-        m.put("mapping", mappingAnnotation(op.httpMethod()));
+        String path = "\"" + SchemaRecordEmitter.javaString(op.path()) + "\"";
+        m.put("mappingLine", isPlainMethod(op.httpMethod())
+                ? "@" + mappingAnnotation(op.httpMethod()) + "(" + path + ")"
+                : "@RequestMapping(value = " + path + ", method = RequestMethod." + op.httpMethod() + ")");
+        // The status the document declares for success, where it is not the 200 a method answers anyway.
+        String statusName = STATUS_NAMES.get(op.successStatus());
+        m.put("hasStatus", statusName != null);
+        m.put("statusLine", statusName == null ? "" : "@ResponseStatus(HttpStatus." + statusName + ")");
 
         List<String> args = new ArrayList<>();
         for (ParamModel p : op.params()) {
             StringBuilder arg = new StringBuilder();
+            for (String annotation : p.annotations()) arg.append(annotation).append(' ');
+            // The request's own name, not the Java one: "X-Request-Id" is not "xRequestId".
+            String wire = SchemaRecordEmitter.javaString(p.wireName());
             switch (p.in()) {
-                case PATH -> arg.append("@PathVariable(\"").append(p.name()).append("\") ");
-                case QUERY, COOKIE -> arg.append("@RequestParam(name = \"").append(p.name())
+                case PATH -> arg.append("@PathVariable(\"").append(wire).append("\") ");
+                case QUERY -> arg.append("@RequestParam(name = \"").append(wire)
                         .append("\", required = ").append(p.required()).append(") ");
-                case HEADER -> arg.append("@RequestHeader(name = \"").append(p.name())
+                case HEADER -> arg.append("@RequestHeader(name = \"").append(wire)
+                        .append("\", required = ").append(p.required()).append(") ");
+                case COOKIE -> arg.append("@CookieValue(name = \"").append(wire)
                         .append("\", required = ").append(p.required()).append(") ");
             }
             arg.append(p.javaType()).append(' ').append(p.name());
             args.add(arg.toString());
         }
         if (op.requestBodyType() != null) {
-            args.add((hasValidation ? "@Valid " : "") + "@RequestBody " + op.requestBodyType() + " body");
+            args.add((hasValidation ? "@Valid " : "")
+                    + (op.requestBodyRequired() ? "@RequestBody " : "@RequestBody(required = false) ")
+                    + op.requestBodyType() + " body");
         }
         m.put("arguments", String.join(", ", args));
         return m;
@@ -315,11 +412,15 @@ public class OpenApiCodeGenerator {
         Map<String, Object> m = new LinkedHashMap<>();
         boolean summarized = op.summary() != null && !op.summary().isBlank();
         m.put("hasSummary", summarized);
-        m.put("summaryJavadoc", summarized ? escapeJavadoc(op.summary()) : null);
-        m.put("path", op.path());
+        m.put("summaryJavadoc", summarized ? SchemaRecordEmitter.escapeJavadoc(op.summary()) : null);
+        m.put("path", SchemaRecordEmitter.javaString(op.path()));
         m.put("returnType", op.responseType() == null ? "void" : op.responseType());
         m.put("operationId", op.operationId());
         return m;
+    }
+
+    private static boolean isPlainMethod(String httpMethod) {
+        return !httpMethod.equals("HEAD") && !httpMethod.equals("OPTIONS");
     }
 
     private static String mappingAnnotation(String httpMethod) {
@@ -333,75 +434,56 @@ public class OpenApiCodeGenerator {
         };
     }
 
-    // ── Operations → RestTemplate client ──────────────────────────────────────
+    // ── Operations → client ───────────────────────────────────────────────────
 
-    private GeneratedOpenApiFile renderRestTemplateClient(String tag, List<OperationModel> ops,
-                                                          String packageName, OpenApiWizardOptions opts) {
+    private GeneratedOpenApiFile renderClient(String tag, List<OperationModel> ops, String packageName,
+                                              OpenApiWizardOptions opts, boolean restClient) {
         String clientPkg = opts.clientPackageOrDefault();
-        String dtoPkg = opts.dtoPackageOrDefault();
-        String fullPkg = packageName + "." + clientPkg;
-        String dtoFullPkg = packageName + "." + dtoPkg;
-        String baseUrlProp = opts.baseUrlPropertyOrDefault();
         String className = tag + "Client";
 
         Set<String> imports = new TreeSet<>();
-        imports.add("org.springframework.beans.factory.annotation.Value");
-        imports.add("org.springframework.http.HttpEntity");
-        imports.add("org.springframework.http.HttpHeaders");
         imports.add("org.springframework.http.HttpMethod");
-        imports.add("org.springframework.http.ResponseEntity");
         imports.add("org.springframework.stereotype.Component");
-        imports.add("org.springframework.web.client.RestTemplate");
-        imports.add("org.springframework.web.util.UriComponentsBuilder");
-
-        boolean anyQuery = false, anyHeader = false, anyListResponse = false;
+        if (restClient) {
+            imports.add("org.springframework.web.client.RestClient");
+        } else {
+            imports.add("org.springframework.beans.factory.annotation.Value");
+            imports.add("org.springframework.http.HttpEntity");
+            imports.add("org.springframework.http.HttpHeaders");
+            imports.add("org.springframework.http.ResponseEntity");
+            imports.add("org.springframework.web.client.RestTemplate");
+            imports.add("org.springframework.web.util.UriComponentsBuilder");
+        }
         for (OperationModel op : ops) {
             for (ParamModel p : op.params()) {
-                switch (p.in()) {
-                    case QUERY, COOKIE -> anyQuery = true;
-                    case HEADER -> anyHeader = true;
-                    default -> {}
-                }
-                imports.addAll(p.imports());
-                addDtoImportIfLocal(imports, p.javaType(), dtoFullPkg);
+                imports.addAll(p.typeImports());
+                if (restClient && p.in() == ParamModel.ParamLocation.QUERY) imports.add("java.util.Optional");
+                if (restClient && p.in() == ParamModel.ParamLocation.COOKIE) imports.add("org.springframework.http.HttpHeaders");
             }
-            if (op.requestBodyType() != null) {
-                imports.addAll(op.requestBodyImports());
-                addDtoImportIfLocal(imports, op.requestBodyType(), dtoFullPkg);
-            }
-            if (op.responseType() != null) {
-                imports.addAll(op.responseImports());
-                addDtoImportIfLocal(imports, op.responseType(), dtoFullPkg);
-                if (op.responseType().startsWith("List<")) anyListResponse = true;
-            }
-        }
-        if (anyListResponse) imports.add("org.springframework.core.ParameterizedTypeReference");
-        if (anyHeader) {
-            // HttpHeaders already imported
-        }
-        if (anyQuery) {
-            // handled via UriComponentsBuilder, no extra imports
+            imports.addAll(op.requestBodyImports());
+            imports.addAll(op.responseImports());
+            if (isGeneric(op.responseType())) imports.add("org.springframework.core.ParameterizedTypeReference");
         }
 
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("package", fullPkg);
+        view.put("package", packageName + "." + clientPkg);
         view.put("imports", imports);
         view.put("className", className);
         // Written whole: "${" beside a Mustache tag would read as a triple brace.
-        view.put("baseUrlPlaceholder", "${" + baseUrlProp + "}");
+        view.put("baseUrlPlaceholder", "${" + opts.baseUrlPropertyOrDefault() + "}");
         List<Map<String, Object>> methods = new ArrayList<>();
         for (OperationModel op : ops) methods.add(clientMethod(op));
         view.put("operations", methods);
 
         return new GeneratedOpenApiFile(
                 "src/main/java/{{packagePath}}/" + clientPkg + "/" + className + ".java",
-                WizardTemplates.render("openapi/Client.java", view));
+                WizardTemplates.render(restClient ? "openapi/RestClientClient.java" : "openapi/Client.java", view));
     }
 
     /**
-     * One operation as the client template reads it: the URI is the base URL plus the path, with
+     * One operation as the client templates read it: the URI is the base URL plus the path, with
      * the path variables expanded and the query parameters appended (an optional one only when
-     * given); headers likewise; the body and headers travel in one HttpEntity.
+     * given); headers and cookies likewise; the body travels with them.
      */
     private Map<String, Object> clientMethod(OperationModel op) {
         Map<String, Object> m = operationView(op);
@@ -417,23 +499,37 @@ public class OpenApiCodeGenerator {
 
         List<Map<String, Object>> queryParams = new ArrayList<>();
         List<Map<String, Object>> headerParams = new ArrayList<>();
-        List<String> pathNames = new ArrayList<>();
+        List<Map<String, Object>> cookieParams = new ArrayList<>();
+        Map<String, String> pathNames = new LinkedHashMap<>();
         for (ParamModel p : op.params()) {
             Map<String, Object> pv = new LinkedHashMap<>();
             pv.put("name", p.name());
+            pv.put("wireName", SchemaRecordEmitter.javaString(p.wireName()));
             pv.put("required", p.required());
             switch (p.in()) {
-                case QUERY, COOKIE -> queryParams.add(pv);
+                case QUERY -> queryParams.add(pv);
                 case HEADER -> headerParams.add(pv);
-                case PATH -> pathNames.add(p.name());
+                case COOKIE -> cookieParams.add(pv);
+                case PATH -> pathNames.put(p.wireName(), p.name());
             }
         }
+        // The variables are expanded by position: in the order the path names them, which need
+        // not be the order the document lists the parameters in.
+        List<String> pathArguments = new ArrayList<>();
+        Matcher variable = PATH_VARIABLE.matcher(op.path());
+        while (variable.find()) {
+            String name = pathNames.get(variable.group(1));
+            // A variable the document never declared: the call would not compile without a value.
+            pathArguments.add(name != null ? name : "\"" + SchemaRecordEmitter.javaString(variable.group(1)) + "\"");
+        }
         m.put("queryParams", queryParams);
-        m.put("hasPathParams", !pathNames.isEmpty());
-        m.put("pathArguments", String.join(", ", pathNames));
-        boolean hasHeader = !headerParams.isEmpty();
+        m.put("hasPathParams", !pathArguments.isEmpty());
+        m.put("pathArguments", String.join(", ", pathArguments));
+        boolean hasHeader = !headerParams.isEmpty() || !cookieParams.isEmpty();
         m.put("hasHeaders", hasHeader);
         m.put("headerParams", headerParams);
+        m.put("cookieParams", cookieParams);
+        m.put("hasBody", op.requestBodyType() != null);
 
         String entityExpr;
         if (op.requestBodyType() != null && hasHeader) {
@@ -447,11 +543,10 @@ public class OpenApiCodeGenerator {
         }
         m.put("entityExpr", entityExpr);
 
-        boolean isList = op.responseType() != null && op.responseType().startsWith("List<");
         String respTypeArg;
         if (op.responseType() == null) {
             respTypeArg = "Void.class";
-        } else if (isList) {
+        } else if (isGeneric(op.responseType())) {
             respTypeArg = "new ParameterizedTypeReference<" + op.responseType() + ">() {}";
         } else {
             respTypeArg = op.responseType() + ".class";
@@ -460,10 +555,17 @@ public class OpenApiCodeGenerator {
         m.put("responseBoxed", op.responseType() == null ? "Void" : op.responseType());
         m.put("responseTypeArg", respTypeArg);
         m.put("returnsBody", op.responseType() != null);
+        // RestClient: the call is one expression.
+        m.put("returnKeyword", op.responseType() == null ? "" : "return ");
+        m.put("terminal", op.responseType() == null ? "toBodilessEntity()" : "body(" + respTypeArg + ")");
         return m;
     }
 
-    private GeneratedOpenApiFile renderClientConfig(String packageName, OpenApiWizardOptions opts) {
+    private static boolean isGeneric(String type) {
+        return type != null && type.indexOf('<') >= 0;
+    }
+
+    private GeneratedOpenApiFile renderClientConfig(String packageName, OpenApiWizardOptions opts, boolean restClient) {
         String clientPkg = opts.clientPackageOrDefault();
         String fullPkg = packageName + "." + clientPkg;
         String baseUrlProp = opts.baseUrlPropertyOrDefault();
@@ -471,10 +573,11 @@ public class OpenApiCodeGenerator {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("package", fullPkg);
         view.put("baseUrlProperty", baseUrlProp);
+        view.put("baseUrlPlaceholder", "${" + baseUrlProp + "}");
 
         return new GeneratedOpenApiFile(
                 "src/main/java/{{packagePath}}/" + clientPkg + "/OpenApiClientConfig.java",
-                WizardTemplates.render("openapi/ClientConfig.java", view));
+                WizardTemplates.render(restClient ? "openapi/RestClientConfig.java" : "openapi/ClientConfig.java", view));
     }
 
     private GeneratedOpenApiFile renderApplicationYmlStub(OpenApiWizardOptions opts) {
@@ -497,52 +600,7 @@ public class OpenApiCodeGenerator {
                 sb.toString());
     }
 
-    // ── Type mapping (SchemaRecordEmitter) ────────────────────────────────────
-
-    @SuppressWarnings("rawtypes")
-    private static SchemaRecordEmitter.JavaTypeRef mapType(Schema schema) {
-        return SchemaRecordEmitter.mapType(schema);
-    }
-
     // ── Helpers ──────────────────────────────────────────────────────────────
-
-    /**
-     * Spring MVC annotations accept only FQ classnames or names matching an
-     * existing {@code import}. Our DTO record-name references (e.g. {@code Pet},
-     * {@code List<Pet>}) need an explicit import resolving to the dto package.
-     */
-    private Set<String> qualifyDto(Set<String> imports, String dtoFullPkg) {
-        return imports == null ? Set.of() : new LinkedHashSet<>(imports);
-    }
-
-    /**
-     * If the type name looks like a capitalised DTO record we just produced
-     * (e.g. {@code Pet}, {@code List<Pet>}), add the dto-package import so the
-     * controller compiles.
-     */
-    private void addDtoImportIfLocal(Set<String> imports, String typeName, String dtoFullPkg) {
-        if (typeName == null) return;
-        // Extract the inner name from List<Pet> etc.
-        String t = typeName;
-        int lt = t.indexOf('<');
-        if (lt >= 0) {
-            int gt = t.lastIndexOf('>');
-            if (gt > lt) t = t.substring(lt + 1, gt);
-        }
-        if (t.isEmpty()) return;
-        char first = t.charAt(0);
-        if (!Character.isUpperCase(first)) return;
-        if (isBuiltIn(t)) return;
-        imports.add(dtoFullPkg + "." + t);
-    }
-
-    private static boolean isBuiltIn(String name) {
-        return switch (name) {
-            case "Object", "String", "Integer", "Long", "Float", "Double", "Boolean",
-                 "UUID", "LocalDate", "LocalDateTime" -> true;
-            default -> false;
-        };
-    }
 
     private MediaType pickJsonOrFirst(io.swagger.v3.oas.models.media.Content content) {
         if (content == null || content.isEmpty()) return null;
@@ -556,7 +614,7 @@ public class OpenApiCodeGenerator {
         while (cleaned.startsWith("_")) cleaned = cleaned.substring(1);
         while (cleaned.endsWith("_")) cleaned = cleaned.substring(0, cleaned.length() - 1);
         String name = method.toLowerCase(Locale.ROOT) + "_" + (cleaned.isEmpty() ? "root" : cleaned);
-        return toCamelCase(name);
+        return SchemaRecordEmitter.toCamelCase(name);
     }
 
     private static String uniqueName(String base, Set<String> used) {
@@ -568,13 +626,5 @@ public class OpenApiCodeGenerator {
 
     private static String toPascalCase(String raw) {
         return SchemaRecordEmitter.toPascalCase(raw);
-    }
-
-    private static String toCamelCase(String raw) {
-        return SchemaRecordEmitter.toCamelCase(raw);
-    }
-
-    private static String escapeJavadoc(String s) {
-        return SchemaRecordEmitter.escapeJavadoc(s);
     }
 }

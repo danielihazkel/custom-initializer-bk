@@ -76,6 +76,9 @@ class WizardGoldenOutputTests {
         golden.pin("openapi__client", wizard(openApiBody("CLIENT", List.of("web"), Map.of(
                 "clientSubPackage", "remote", "dtoSubPackage", "remote.model", "baseUrlProperty", "petstore.base-url"))));
         golden.pin("openapi__both", wizard(openApiBody("BOTH", List.of("web", "validation"), Map.of("apiSubPackage", "rest"))));
+        // A RestClient client with the document kept in the project; no web starter named (it is added).
+        golden.pin("openapi__client__rest-client__copy-spec", wizard(openApiBody("CLIENT", List.of("validation"), Map.of(
+                "clientKind", "restClient", "copySpec", true))));
 
         // The SOAP wizard: endpoints, a client, both.
         golden.pin("soap__endpoints", wizard(soapBody("ENDPOINTS", null)));

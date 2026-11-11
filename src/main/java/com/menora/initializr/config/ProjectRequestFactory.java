@@ -51,6 +51,11 @@ public class ProjectRequestFactory {
      * @throws WizardArgumentException for a Spring Boot or Java version the metadata does not
      *         offer — a clean 400 here instead of an opaque failure deep in generation
      */
+    /** Whether the catalog has a dependency with this id — before adding one a caller did not name. */
+    public boolean offers(String dependencyId) {
+        return metadataProvider.get().getDependencies().get(dependencyId) != null;
+    }
+
     public WebProjectRequest create(Base base, Collection<String> dependencies) {
         InitializrMetadata metadata = metadataProvider.get();
         WebProjectRequest r = new WebProjectRequest();

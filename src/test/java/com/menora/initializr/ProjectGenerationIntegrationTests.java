@@ -1172,6 +1172,60 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void wizardsAddTheStartersTheirCodeNeeds() throws Exception {
+        // A caller that names no web starter (curl, the IDE): the OpenAPI wizard's controllers and
+        // client would not compile, nor would SOAP endpoints without Spring-WS. They are added —
+        // and springdoc beside the controllers, which serves the same contract as documentation.
+        Map<String, Object> body = openApiPetstoreBody();
+        body.put("dependencies", List.of());
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("mode", "BOTH");
+        options.put("clientKind", "restClient");
+        options.put("copySpec", true);
+        body.put("openApiOptions", Map.of("web", options));
+        body.put("wsdlByDep", Map.of("web-services", SAMPLE_WSDL));
+        ResponseEntity<byte[]> response = restTemplate.postForEntity("/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> files = unzip(response.getBody());
+        assertThat(files.get("demo/pom.xml"))
+                .contains("<artifactId>spring-boot-starter-web</artifactId>")
+                .contains("<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>")
+                .contains("<artifactId>spring-boot-starter-web-services</artifactId>");
+        // The document the code was written from, kept beside it.
+        assertThat(files.get("demo/src/main/resources/openapi/web.yaml"))
+                .isEqualTo(((Map<?, ?>) body.get("specByDep")).get("web"));
+        assertThat(files.get("demo/src/main/java/com/menora/demo/client/OpenApiClientConfig.java")).contains("RestClient.Builder");
+
+        // A client alone gets the web starter but no Swagger UI; with webflux nothing is added.
+        Map<String, Object> clientOnly = openApiPetstoreBody();
+        clientOnly.put("dependencies", List.of());
+        clientOnly.put("openApiOptions", Map.of("web", Map.of("mode", "CLIENT")));
+        String pom = unzip(restTemplate.postForEntity("/starter-wizard.zip", clientOnly, byte[].class).getBody()).get("demo/pom.xml");
+        assertThat(pom).contains("<artifactId>spring-boot-starter-web</artifactId>").doesNotContain("springdoc");
+        assertThat(unzip(restTemplate.postForEntity("/starter-wizard.zip", clientOnly, byte[].class).getBody()))
+                .doesNotContainKey("demo/src/main/resources/openapi/web.yaml");
+
+        // An unknown client kind is the caller's mistake.
+        Map<String, Object> bad = openApiPetstoreBody();
+        bad.put("openApiOptions", Map.of("web", Map.of("mode", "CLIENT", "clientKind", "feign")));
+        ResponseEntity<String> refused = restTemplate.postForEntity("/starter-wizard.zip", bad, String.class);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody()).contains("clientKind").contains("feign");
+    }
+
+    @Test
+    void sqlWizardRefusesAnUnknownApiMode() {
+        // It used to fall back to "entities only", saying nothing.
+        Map<String, Object> body = openApiBaseBody();
+        body.put("dependencies", List.of("data-jpa", "postgresql"));
+        body.put("sqlByDep", Map.of("postgresql", "CREATE TABLE t (id BIGINT PRIMARY KEY);"));
+        body.put("sqlOptions", Map.of("postgresql", Map.of("apiMode", "DTO")));
+        ResponseEntity<String> response = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("Unknown SQL wizard apiMode: 'DTO'");
+    }
+
+    @Test
     void soapMetadataEndpoint() {
         ResponseEntity<String> response = restTemplate.getForEntity(
                 "/metadata/soap-capable-deps", String.class);

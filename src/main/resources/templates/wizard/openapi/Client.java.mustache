@@ -20,10 +20,10 @@ public class {{className}} {
     /** {{summaryJavadoc}} */
 {{/hasSummary}}
     public {{returnType}} {{operationId}}({{arguments}}) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(baseUrl)
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(baseUrl)
                 .path("{{path}}");
 {{#queryParams}}
-        {{^required}}if ({{name}} != null) {{/required}}builder.queryParam("{{name}}", {{name}});
+        {{^required}}if ({{name}} != null) {{/required}}builder.queryParam("{{wireName}}", {{name}});
 {{/queryParams}}
 {{#hasPathParams}}
         String uri = builder.buildAndExpand({{pathArguments}}).toUriString();
@@ -34,8 +34,11 @@ public class {{className}} {
 {{#hasHeaders}}
         HttpHeaders headers = new HttpHeaders();
 {{#headerParams}}
-        {{^required}}if ({{name}} != null) {{/required}}headers.add("{{name}}", String.valueOf({{name}}));
+        {{^required}}if ({{name}} != null) {{/required}}headers.add("{{wireName}}", String.valueOf({{name}}));
 {{/headerParams}}
+{{#cookieParams}}
+        {{^required}}if ({{name}} != null) {{/required}}headers.add(HttpHeaders.COOKIE, "{{wireName}}=" + {{name}});
+{{/cookieParams}}
 {{/hasHeaders}}
         ResponseEntity<{{responseBoxed}}> response =
                 restTemplate.exchange(uri, HttpMethod.{{httpMethod}}, {{entityExpr}}, {{responseTypeArg}});

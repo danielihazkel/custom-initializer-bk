@@ -433,6 +433,281 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(project, "-B", "package");
     }
 
+    private static Map<String, Object> openApiBody(String artifactId, List<String> dependencies, Map<String, Object> options)
+            throws Exception {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", artifactId);
+        body.put("packageName", "com.menora.petstore");
+        body.put("bootVersion", "3.2.1");
+        body.put("javaVersion", "21");
+        body.put("dependencies", dependencies);
+        body.put("specByDep", Map.of("web", WizardGoldenOutputTests.fixture("petstore.yaml")));
+        body.put("openApiOptions", Map.of("web", options));
+        return body;
+    }
+
+    @org.junit.jupiter.api.Test
+    void openApiWizardBackendCompilesAndItsContractBehaves(@TempDir Path workDir) throws Exception {
+        // Controllers, a RestTemplate client and the DTO types from the Petstore document, with
+        // the validation starter. The generated project compiles; the injected test then reads
+        // and writes the types as JSON (the union, the enums, the renamed properties), checks the
+        // constraints, and calls the controllers and the client the way a caller would.
+        Path project = postAndExtractWizard(workDir, openApiBody("petstore", List.of("web", "validation"), Map.of("mode", "BOTH")));
+        writeProjectTest(project, "com.menora.petstore", "ContractTests", OPENAPI_CONTRACT_TESTS);
+        runMvn(project, "-B", "package");
+    }
+
+    @org.junit.jupiter.api.Test
+    void openApiWizardRestClientCompilesAndCallsTheContract(@TempDir Path workDir) throws Exception {
+        // The RestClient kind, client only, no web starter named (the wizard adds it), the
+        // document kept in the project.
+        Path project = postAndExtractWizard(workDir, openApiBody("petclient", List.of("validation"),
+                Map.of("mode", "CLIENT", "clientKind", "restClient", "copySpec", true)));
+        assertThat(project.resolve("src/main/resources/openapi/web.yaml")).isRegularFile();
+        assertThat(Files.readString(project.resolve("pom.xml"))).contains("spring-boot-starter-web");
+        writeProjectTest(project, "com.menora.petstore", "RestClientTests", OPENAPI_REST_CLIENT_TESTS);
+        runMvn(project, "-B", "package");
+    }
+
+    /** Run inside the generated Petstore project (controllers + RestTemplate client + validation). */
+    private static final String OPENAPI_CONTRACT_TESTS = """
+            package com.menora.petstore;
+
+            import com.fasterxml.jackson.databind.ObjectMapper;
+            import com.menora.petstore.client.PetsClient;
+            import com.menora.petstore.dto.Animal;
+            import com.menora.petstore.dto.Cat;
+            import com.menora.petstore.dto.Dog;
+            import com.menora.petstore.dto.Owner;
+            import com.menora.petstore.dto.Pet;
+            import com.menora.petstore.dto.PetOrOwner;
+            import com.menora.petstore.dto.PetStatus;
+            import com.menora.petstore.dto.RecordVisitRequest;
+            import com.menora.petstore.dto.Shelter;
+            import com.menora.petstore.dto.VisitKind;
+            import jakarta.servlet.http.Cookie;
+            import jakarta.validation.ConstraintViolation;
+            import jakarta.validation.Validator;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.autoconfigure.web.client.AutoConfigureMockRestServiceServer;
+            import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.http.HttpMethod;
+            import org.springframework.http.MediaType;
+            import org.springframework.test.web.client.MockRestServiceServer;
+            import org.springframework.test.web.servlet.MockMvc;
+
+            import java.time.OffsetDateTime;
+            import java.util.List;
+            import java.util.Set;
+            import java.util.UUID;
+            import java.util.stream.Collectors;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+            import static org.assertj.core.api.Assertions.assertThatThrownBy;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+            import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+            @SpringBootTest
+            @AutoConfigureMockMvc
+            @AutoConfigureMockRestServiceServer
+            class ContractTests {
+
+                @Autowired private ObjectMapper mapper;
+                @Autowired private Validator validator;
+                @Autowired private MockMvc mockMvc;
+                @Autowired private MockRestServiceServer server;
+                @Autowired private PetsClient pets;
+
+                @Test
+                void aUnionIsReadByItsDiscriminatorAndWrittenWithIt() throws Exception {
+                    Animal animal = mapper.readValue(
+                            "{\\"kind\\":\\"hound\\",\\"breed\\":\\"beagle\\",\\"class\\":\\"A\\",\\"weight_kg\\":9.5}", Animal.class);
+                    assertThat(animal).isInstanceOf(Dog.class);
+                    Dog dog = (Dog) animal;
+                    // Properties whose names are not Java names keep theirs on the wire.
+                    assertThat(dog.class_()).isEqualTo("A");
+                    assertThat(dog.weightKg()).isEqualTo(9.5);
+                    assertThat(mapper.writeValueAsString(animal))
+                            .contains("\\"kind\\":\\"hound\\"").contains("\\"class\\":\\"A\\"").contains("\\"weight_kg\\":9.5");
+                    assertThat(mapper.readValue("{\\"kind\\":\\"cat\\",\\"name\\":\\"Tom\\"}", Animal.class)).isInstanceOf(Cat.class);
+                    // Inside another type too.
+                    Shelter shelter = mapper.readValue("{\\"code\\":\\"NORTH\\",\\"email\\":\\"a@b.co\\",\\"size\\":\\"large\\","
+                            + "\\"residents\\":[{\\"kind\\":\\"cat\\",\\"name\\":\\"Tom\\"},{\\"kind\\":\\"hound\\"}],"
+                            + "\\"ratings\\":{\\"food\\":5},\\"last_problem\\":{\\"code\\":7}}", Shelter.class);
+                    assertThat(shelter.residents()).hasSize(2);
+                    assertThat(shelter.residents().get(1)).isInstanceOf(Dog.class);
+                    assertThat(shelter.ratings()).containsEntry("food", 5);
+                    assertThat(shelter.lastProblem().code()).isEqualTo(7);
+                    assertThat(shelter.size().getValue()).isEqualTo("large");
+                }
+
+                @Test
+                void aMemberOfAUnionIsStillReadOnItsOwn() throws Exception {
+                    // Pet is one of PetOrOwner. Asked for a Pet, any Pet will do — it is not "deduced".
+                    Pet pet = mapper.readValue("{\\"id\\":1}", Pet.class);
+                    assertThat(pet.id()).isEqualTo(1L);
+                    // Asked for the union, the properties say which.
+                    assertThat(mapper.readValue("{\\"id\\":1,\\"full_name\\":\\"Ada\\"}", PetOrOwner.class)).isInstanceOf(Owner.class);
+                    assertThat(mapper.readValue("{\\"id\\":1,\\"name\\":\\"Rex\\",\\"status\\":\\"sold\\"}", PetOrOwner.class))
+                            .isInstanceOf(Pet.class);
+                    assertThat(mapper.writeValueAsString(new Owner(4L, "Ada", null))).contains("\\"full_name\\":\\"Ada\\"");
+                }
+
+                @Test
+                void anEnumTravelsAsItsValue() throws Exception {
+                    assertThat(mapper.readValue("\\"2nd-opinion\\"", VisitKind.class)).isEqualTo(VisitKind._2ND_OPINION);
+                    assertThat(mapper.writeValueAsString(VisitKind.CHECK_UP)).isEqualTo("\\"check-up\\"");
+                    Pet pet = mapper.readValue("{\\"id\\":1,\\"name\\":\\"Rex\\",\\"status\\":\\"sold\\","
+                            + "\\"seenAt\\":\\"2026-01-02T03:04:05+02:00\\",\\"born\\":\\"2020-05-06\\"}", Pet.class);
+                    assertThat(pet.status()).isEqualTo(PetStatus.SOLD);
+                    // A date-time keeps the offset it came with.
+                    assertThat(pet.seenAt().toInstant()).isEqualTo(OffsetDateTime.parse("2026-01-02T01:04:05Z").toInstant());
+                    assertThatThrownBy(() -> mapper.readValue("\\"lost\\"", PetStatus.class)).hasMessageContaining("lost");
+                }
+
+                @Test
+                void theSchemasConstraintsAreChecked() {
+                    Shelter bad = new Shelter("abc", "not-an-email", -1L, null, List.of(), null, null, null, null);
+                    Set<String> wrong = validator.validate(bad).stream()
+                            .map(v -> v.getPropertyPath().toString()).collect(Collectors.toSet());
+                    assertThat(wrong).containsExactlyInAnyOrder("code", "email", "capacity", "residents");
+                    // …and inside a nested object.
+                    Shelter nested = new Shelter("NORTH", "a@b.co", 5L, null, List.of(new Cat("cat", "tom", null)), null, null, null, null);
+                    assertThat(validator.validate(nested)).extracting(ConstraintViolation::getMessageTemplate)
+                            .containsExactly("{jakarta.validation.constraints.Pattern.message}");
+                    assertThat(validator.validate(new Shelter("NORTH", "a@b.co", 5000000000L, null,
+                            List.of(new Cat("cat", "Tom", null)), null, null, null, null))).isEmpty();
+                }
+
+                @Test
+                void aControllerBindsTheRequestsOwnNames() throws Exception {
+                    // Everything bound: the call reaches the stub, which says what to implement.
+                    assertThatThrownBy(() -> mockMvc.perform(get("/pets").param("status", "sold").param("limit", "5")
+                            .header("X-Request-Id", UUID.randomUUID().toString()).cookie(new Cookie("session", "s1"))))
+                            .hasRootCauseInstanceOf(UnsupportedOperationException.class)
+                            .hasRootCauseMessage("TODO: implement listPets");
+                    // A required query parameter that is missing never gets there.
+                    mockMvc.perform(get("/pets")).andExpect(status().isBadRequest());
+                    // Path variables by the path's names, an ISO date-time, no body (the document says it is optional).
+                    assertThatThrownBy(() -> mockMvc.perform(put("/pets/5/visits/" + UUID.randomUUID())
+                            .param("seen-after", "2026-01-02T03:04:05Z").param("page_size", "10")))
+                            .hasRootCauseMessage("TODO: implement recordVisit");
+                    // A body that breaks the schema is refused before the method runs.
+                    mockMvc.perform(post("/pets").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                            .andExpect(status().isBadRequest());
+                    mockMvc.perform(put("/pets/5/visits/" + UUID.randomUUID()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\\"reason\\":\\"x\\"}")).andExpect(status().isBadRequest());
+                    assertThatThrownBy(() -> mockMvc.perform(post("/animals").contentType(MediaType.APPLICATION_JSON)
+                            .content("{\\"kind\\":\\"cat\\",\\"name\\":\\"Tom\\"}")))
+                            .hasRootCauseMessage("TODO: implement adopt");
+                }
+
+                @Test
+                void theClientSendsTheRequestsOwnNames() {
+                    UUID request = UUID.randomUUID();
+                    server.expect(requestTo("http://localhost:8080/pets?limit=5&status=sold")).andExpect(method(HttpMethod.GET))
+                            .andExpect(header("X-Request-Id", request.toString())).andExpect(header("Cookie", "session=s1"))
+                            .andRespond(withSuccess("[{\\"id\\":1,\\"name\\":\\"Rex\\",\\"status\\":\\"sold\\"}]", MediaType.APPLICATION_JSON));
+                    // The path names petId first; the document lists visit-id first.
+                    UUID visit = UUID.randomUUID();
+                    server.expect(requestTo("http://localhost:8080/pets/5/visits/" + visit + "?page_size=10"))
+                            .andExpect(method(HttpMethod.PUT)).andExpect(content().json("{\\"reason\\":\\"check\\",\\"follow-up\\":true}"))
+                            .andRespond(withSuccess("{\\"ticket\\":\\"T-1\\"}", MediaType.APPLICATION_JSON));
+                    // (The mock server takes every expectation before the first call.)
+                    List<Pet> found = pets.listPets(5, "sold", request, "s1");
+                    assertThat(found).extracting(Pet::name).containsExactly("Rex");
+                    assertThat(pets.recordVisit(visit, 5L, null, 10, null, null, new RecordVisitRequest("check", true)).ticket())
+                            .isEqualTo("T-1");
+                    server.verify();
+                }
+            }
+            """;
+
+    /** Run inside the generated client-only project (RestClient). */
+    private static final String OPENAPI_REST_CLIENT_TESTS = """
+            package com.menora.petstore;
+
+            import com.menora.petstore.client.AnimalsClient;
+            import com.menora.petstore.client.PetsClient;
+            import com.menora.petstore.dto.Cat;
+            import com.menora.petstore.dto.Pet;
+            import com.menora.petstore.dto.RecordVisitRequest;
+            import com.menora.petstore.dto.Shelter;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.autoconfigure.web.client.AutoConfigureMockRestServiceServer;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.http.HttpMethod;
+            import org.springframework.http.MediaType;
+            import org.springframework.test.web.client.MockRestServiceServer;
+
+            import java.util.List;
+            import java.util.UUID;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+            import static org.springframework.test.web.client.response.MockRestResponseCreators.withNoContent;
+            import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+
+            @SpringBootTest
+            @AutoConfigureMockRestServiceServer
+            class RestClientTests {
+
+                @Autowired private MockRestServiceServer server;
+                @Autowired private PetsClient pets;
+                @Autowired private AnimalsClient animals;
+
+                @Test
+                void theClientCallsTheContract() {
+                    UUID request = UUID.randomUUID();
+                    server.expect(requestTo("http://localhost:8080/pets?limit=5&status=sold")).andExpect(method(HttpMethod.GET))
+                            .andExpect(header("X-Request-Id", request.toString())).andExpect(header("Cookie", "session=s1"))
+                            .andRespond(withSuccess("[{\\"id\\":1,\\"name\\":\\"Rex\\",\\"status\\":\\"sold\\"}]", MediaType.APPLICATION_JSON));
+                    // An optional parameter left out is not sent; the path's order, not the document's.
+                    UUID visit = UUID.randomUUID();
+                    server.expect(requestTo("http://localhost:8080/pets/5/visits/" + visit + "?page_size=10"))
+                            .andExpect(method(HttpMethod.PUT)).andExpect(content().json("{\\"reason\\":\\"check\\",\\"follow-up\\":true}"))
+                            .andRespond(withSuccess("{\\"ticket\\":\\"T-1\\"}", MediaType.APPLICATION_JSON));
+                    // No response body.
+                    server.expect(requestTo("http://localhost:8080/pets/9")).andExpect(method(HttpMethod.DELETE))
+                            .andRespond(withNoContent());
+                    // A union goes out with its discriminator.
+                    server.expect(requestTo("http://localhost:8080/animals")).andExpect(method(HttpMethod.POST))
+                            .andExpect(content().json("{\\"kind\\":\\"cat\\",\\"name\\":\\"Tom\\"}"))
+                            .andRespond(withSuccess("{\\"code\\":\\"NORTH\\",\\"email\\":\\"a@b.co\\"}", MediaType.APPLICATION_JSON));
+                    // (The mock server takes every expectation before the first call.)
+                    List<Pet> found = pets.listPets(5, "sold", request, "s1");
+                    assertThat(found).extracting(Pet::name).containsExactly("Rex");
+                    assertThat(pets.recordVisit(visit, 5L, null, 10, null, null, new RecordVisitRequest("check", true)).ticket())
+                            .isEqualTo("T-1");
+                    pets.deletePetsPetId(9L);
+                    Shelter shelter = animals.adopt(new Cat("cat", "Tom", null));
+                    assertThat(shelter.code()).isEqualTo("NORTH");
+                    server.verify();
+                }
+            }
+            """;
+
+    /** Adds a test class to a generated project before it is built. */
+    private static void writeProjectTest(Path project, String packageName, String className, String source) throws Exception {
+        Path file = project.resolve("src/test/java/" + packageName.replace('.', '/') + "/" + className + ".java");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, source);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /** A plain or wizard backend from {@code /starter-wizard.zip}, unpacked: the project's own directory. */

@@ -164,6 +164,83 @@ paths:
               schema:
                 type: object
                 additionalProperties: { type: string }
+  /pets/{petId}/visits/{visit-id}:
+    parameters:
+      - name: visit-id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: petId
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    head:
+      tags: [pets]
+      operationId: visitExists
+      responses:
+        '200':
+          description: ok
+    options:
+      tags: [pets]
+      responses:
+        '204':
+          description: allowed
+    put:
+      tags: [pets]
+      operationId: recordVisit
+      summary: Path-level parameters, listed in another order than the path names them
+      parameters:
+        - name: seen-after
+          in: query
+          schema: { type: string, format: date-time }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - name: kind
+          in: query
+          schema: { $ref: '#/components/schemas/VisitKind' }
+        - name: body
+          in: query
+          schema: { type: string, maxLength: 40 }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 200 }
+                follow-up: { type: boolean }
+      responses:
+        '202':
+          description: accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket: { type: string }
+        default:
+          description: error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /animals:
+    post:
+      tags: [animals]
+      operationId: adopt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Animal' }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Shelter' }
 components:
   schemas:
     Pet:
@@ -225,3 +302,71 @@ components:
             pedigree: { type: string }
     Empty:
       type: object
+    VisitKind:
+      type: string
+      description: Why the pet came in
+      enum: [check-up, vaccination, emergencyCare, 2nd-opinion]
+    Animal:
+      description: A cat or a dog, told apart by its kind
+      oneOf:
+        - $ref: '#/components/schemas/Cat'
+        - $ref: '#/components/schemas/Dog'
+      discriminator:
+        propertyName: kind
+        mapping:
+          cat: '#/components/schemas/Cat'
+          hound: '#/components/schemas/Dog'
+    Cat:
+      type: object
+      required: [kind, name]
+      properties:
+        kind: { type: string }
+        name: { type: string, minLength: 1, maxLength: 60, pattern: '^[A-Z][a-z]+(\s"[A-Z]\w*")?$' }
+        indoor: { type: boolean }
+    Dog:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string }
+        breed: { type: string }
+        class: { type: string }
+        weight_kg: { type: number, minimum: 0.5, maximum: 120, exclusiveMaximum: true }
+    Contact:
+      anyOf:
+        - $ref: '#/components/schemas/Owner'
+        - $ref: '#/components/schemas/Shelter'
+    Shelter:
+      type: object
+      required: [code, email, residents]
+      properties:
+        code: { $ref: '#/components/schemas/ShelterCode' }
+        email: { type: string, format: email }
+        capacity: { type: integer, format: int64, minimum: 0, maximum: 5000000000 }
+        opening:
+          type: object
+          properties:
+            from: { type: string }
+            to: { type: string }
+        residents:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/Animal' }
+        contact: { $ref: '#/components/schemas/Contact' }
+        ratings:
+          type: object
+          additionalProperties: { type: integer }
+        last_problem:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Problem'
+        size: { type: string, enum: [small, large] }
+    ShelterCode:
+      type: string
+      description: A named string is its string, not a type
+      minLength: 4
+      maxLength: 8
+    Mixed:
+      oneOf:
+        - type: string
+        - type: integer

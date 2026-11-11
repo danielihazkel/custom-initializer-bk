@@ -267,9 +267,43 @@ public class WizardStarterController {
         if (usesMapstructSql(body) && !deps.contains("mapstruct")) {
             deps.add("mapstruct");
         }
+        // The OpenAPI wizard writes Spring MVC controllers and a client over spring-web: without
+        // a web starter neither compiles.
+        if (hasSpec(body) && !deps.contains("web") && !deps.contains("webflux") && requestFactory.offers("web")) {
+            deps.add("web");
+        }
+        // Controllers written from a contract are served with their documentation: springdoc reads
+        // the same annotations. (The starter is the MVC one, so only beside `web`.)
+        if (emitsOpenApiControllers(body) && deps.contains("web") && !deps.contains("openapi")
+                && requestFactory.offers("openapi")) {
+            deps.add("openapi");
+        }
+        // SOAP endpoints and clients are Spring-WS classes.
+        if (hasWsdl(body) && !deps.contains("web-services") && requestFactory.offers("web-services")) {
+            deps.add("web-services");
+        }
         return requestFactory.create(new ProjectRequestFactory.Base(body.groupId(), body.artifactId(), body.name(),
                 body.description(), body.packageName(), body.type(), body.language(), body.bootVersion(),
                 body.packaging(), body.javaVersion(), body.version(), body.configurationFileFormat()), deps);
+    }
+
+    private static boolean hasSpec(WizardStarterRequest body) {
+        return body.specByDep() != null && body.specByDep().values().stream().anyMatch(s -> s != null && !s.isBlank());
+    }
+
+    private static boolean hasWsdl(WizardStarterRequest body) {
+        return body.wsdlByDep() != null && body.wsdlByDep().values().stream().anyMatch(s -> s != null && !s.isBlank());
+    }
+
+    /** Whether any pasted spec is turned into controllers (the default mode, and BOTH). */
+    private static boolean emitsOpenApiControllers(WizardStarterRequest body) {
+        if (body.specByDep() == null) return false;
+        for (var e : body.specByDep().entrySet()) {
+            if (e.getValue() == null || e.getValue().isBlank()) continue;
+            OpenApiOptionsDto dto = body.openApiOptions() == null ? null : body.openApiOptions().get(e.getKey());
+            if (toOpenApiOptions(dto).emitControllers()) return true;
+        }
+        return false;
     }
 
     private static boolean hasSqlScript(WizardStarterRequest body) {
@@ -362,7 +396,9 @@ public class WizardStarterController {
                 dto.dtoSubPackage(),
                 dto.clientSubPackage(),
                 OpenApiWizardOptions.GenerationMode.parse(dto.mode()),
-                dto.baseUrlProperty());
+                dto.baseUrlProperty(),
+                OpenApiWizardOptions.ClientKind.parse(dto.clientKind()),
+                Boolean.TRUE.equals(dto.copySpec()));
     }
 
     private static SoapWizardOptions toSoapOptions(SoapOptionsDto dto) {
@@ -418,12 +454,25 @@ public class WizardStarterController {
 
     public record SqlTableOptionsDto(String name, Boolean generateRepository) {}
 
+    /**
+     * {@code clientKind}: {@code restTemplate} (default) or {@code restClient}. {@code copySpec}:
+     * keep the document in the project under {@code src/main/resources/openapi/}.
+     */
     public record OpenApiOptionsDto(
             String apiSubPackage,
             String dtoSubPackage,
             String clientSubPackage,
             String mode,
-            String baseUrlProperty) {}
+            String baseUrlProperty,
+            String clientKind,
+            Boolean copySpec) {
+
+        /** The options before the client kind and the spec copy existed. */
+        public OpenApiOptionsDto(String apiSubPackage, String dtoSubPackage, String clientSubPackage,
+                                 String mode, String baseUrlProperty) {
+            this(apiSubPackage, dtoSubPackage, clientSubPackage, mode, baseUrlProperty, null, null);
+        }
+    }
 
     public record SoapOptionsDto(
             String endpointSubPackage,

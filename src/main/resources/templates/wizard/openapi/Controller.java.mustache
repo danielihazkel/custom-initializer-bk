@@ -13,7 +13,10 @@ public class {{className}} {
 {{#hasSummary}}
     /** {{summaryJavadoc}} */
 {{/hasSummary}}
-    @{{mapping}}("{{path}}")
+    {{mappingLine}}
+{{#hasStatus}}
+    {{statusLine}}
+{{/hasStatus}}
     public {{returnType}} {{operationId}}({{arguments}}) {
         throw new UnsupportedOperationException("TODO: implement {{operationId}}");
     }

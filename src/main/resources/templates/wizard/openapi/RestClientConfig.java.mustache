@@ -1,0 +1,19 @@
+package {{package}};
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestClient;
+
+/**
+ * Provides the RestClient used by the generated OpenAPI clients. Its base URL is read from the
+ * {@code {{baseUrlProperty}}} property in application.yaml.
+ */
+@Configuration
+public class OpenApiClientConfig {
+
+    @Bean
+    public RestClient openApiRestClient(RestClient.Builder builder, @Value("{{baseUrlPlaceholder}}") String baseUrl) {
+        return builder.baseUrl(baseUrl).build();
+    }
+}
