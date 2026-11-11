@@ -8,7 +8,9 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#listUrlState}}type ListState, {{/listUrlState}}{{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
-{{#usesFormat}}import { {{formatImports}} } from '@shared/ui/format'
+{{#optScaffoldSavedViews}}import { ViewsMenu } from '@shared/ui/ViewsMenu'
+import type { ViewState } from '@shared/ui/savedViews'
+{{/optScaffoldSavedViews}}{{#usesFormat}}import { {{formatImports}} } from '@shared/ui/format'
 {{/usesFormat}}import { SectionHeader, Chip{{#hasViewToggle}}, Tabs{{/hasViewToggle}}{{#mutable}}, Button{{/mutable}}{{^mutable}}{{#usesDownload}}, Button{{/usesDownload}}{{/mutable}} } from '@shared/ui/menora'
 import { {{EntityName}}Detail{{#hasWorkflow}}, {{EntityName}}Transitions{{/hasWorkflow}}{{#kanbanIsWorkflow}}, {{EntityName}}Workflow{{/kanbanIsWorkflow}} } from '@features/{{entityNameKebab}}-form'
 {{#kanbanIsWorkflow}}
@@ -213,6 +215,20 @@ function oneValue(value: string | undefined): boolean {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(t)
   }, [search])
+{{#optScaffoldSavedViews}}
+
+  // Saved views: what the toolbar holds, kept under a name on the server and put back from it.
+  const viewState: ViewState = { q: debouncedSearch || undefined, sort, size, view: viewMode, hidden: hiddenColumns{{#hasFilters}}, filters{{/hasFilters}} }
+  const applyView = (state: ViewState) => {
+    setSearch(state.q ?? '')
+    setDebouncedSearch(state.q ?? '')
+    setSort(state.sort !== undefined ? state.sort : JSON.parse(openingSort))
+    setSize(state.size ?? openingSize)
+{{#hasViewToggle}}    setViewMode((state.view as {{viewModeType}} | undefined) ?? openingView)
+{{/hasViewToggle}}{{#viewTable}}    setHiddenColumns(state.hidden ?? [])
+{{/viewTable}}{{#hasFilters}}    setFilters(state.filters ?? {})
+{{/hasFilters}}  }
+{{/optScaffoldSavedViews}}
 
 {{#listUrlState}}
   // A new search, sort, page size or filter starts again at the first page — but the page the
@@ -670,7 +686,8 @@ function oneValue(value: string | undefined): boolean {
 {{#isView}}          <Chip tone="outlined" label={t('readOnlyView')} />
 {{/isView}}        </div>
         <div className="flex items-center gap-2">
-{{#optScaffoldCsvExport}}          {{#listActionsConfigurable}}{can('export') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={download.busy ? t('exporting') : t('export')} onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
+{{#optScaffoldSavedViews}}          {{#hasPages}}{!embedded && {{/hasPages}}<ViewsMenu list="{{entityNameKebab}}" current={viewState} sortable={columns.flatMap(c => c.sortKey ? [c.sortKey] : [])} views={ {{{viewModesTs}}} } onApply={applyView} opensPlain={ {{#listUrlState}}listState == null || (listState.q == null && listState.sort === undefined && listState.size == null && listState.view == null && Object.keys(listState.filters ?? {}).length === 0){{/listUrlState}}{{^listUrlState}}true{{/listUrlState}} } />{{#hasPages}}}{{/hasPages}}
+{{/optScaffoldSavedViews}}{{#optScaffoldCsvExport}}          {{#listActionsConfigurable}}{can('export') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={download.busy ? t('exporting') : t('export')} onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
 {{/optScaffoldCsvExport}}{{#optScaffoldXlsxExport}}          {{#listActionsConfigurable}}{can('export') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={t('excel')} onClick={() => download.run(exportXlsx)} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
 {{/optScaffoldXlsxExport}}{{#importApplicable}}          {{#listActionsConfigurable}}{can('import') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={t('import')} onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) } />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
 {{/importApplicable}}{{#mutable}}          {{#listActionsConfigurable}}{can('new') && {{/listActionsConfigurable}}<Button variant="primary" className="mn-btn--compact" label={t('newX', { x: '{{entityLabelTs}}' })} {{^hasCreatePage}}onClick={openNew}{{/hasCreatePage}}{{#hasCreatePage}}onClick={onCreate ?? openNew}{{/hasCreatePage}} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}

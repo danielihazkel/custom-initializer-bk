@@ -35,6 +35,8 @@ public enum ScaffoldOption {
     INLINE_EDIT("inlineEdit", "optScaffoldInlineEdit", false, true, true),
     /** The list as an Excel workbook, beside the CSV: written by the generated backend itself. */
     XLSX_EXPORT("xlsxExport", "optScaffoldXlsxExport", true, true, true),
+    /** Named views of a list — its search, filters, sort and columns — kept on the server per user. */
+    SAVED_VIEWS("savedViews", "optScaffoldSavedViews", true, true, true),
 
     INVERSE_COLLECTIONS("inverseCollections", "optScaffoldInverse", true, true, false),
     /** springdoc annotations; the {@code openapi} dependency is force-added with it. */

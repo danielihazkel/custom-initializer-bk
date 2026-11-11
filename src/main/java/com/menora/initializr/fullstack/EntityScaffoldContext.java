@@ -810,6 +810,24 @@ public final class EntityScaffoldContext {
                 e.opts().get("xlsxExport") != null ? e.opts().get("xlsxExport") : projectOpt));
     }
 
+    /**
+     * The entities whose lists keep saved views — each resolves the {@code savedViews} option on
+     * (its override, else the project option): {@code hasSavedViews}, which ships the backend's
+     * {@code views} package and the frontend's menu, and {@code savedViewLists}, the list names the
+     * backend takes a view for (an entity's name in kebab case, as its pages spell it).
+     */
+    public static void putSavedViews(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        List<String> lists = savedViewLists(entities, Boolean.TRUE.equals(ctx.get("optScaffoldSavedViews")));
+        ctx.put("hasSavedViews", !lists.isEmpty());
+        ctx.put("savedViewLists", lists);
+    }
+
+    private static List<String> savedViewLists(List<EntityDefinition> entities, boolean projectOpt) {
+        return entities.stream()
+                .filter(e -> e.opts().get("savedViews") != null ? e.opts().get("savedViews") : projectOpt)
+                .map(e -> Naming.toKebabCase(e.name())).toList();
+    }
+
     /** Text inside a Java string literal, on one line. */
     private static String javaText(Object text) {
         return SqlNames.javaLiteral(String.valueOf(text).replace('\n', ' ').replace('\r', ' ').replace('\t', ' '));
@@ -2570,9 +2588,18 @@ public final class EntityScaffoldContext {
      * (every database but the default H2) has to be told.
      */
     public static List<String> supportPackages(String packageName, List<EntityDefinition> entities) {
+        return supportPackages(packageName, entities, false);
+    }
+
+    /** As above, knowing whether the request's {@code savedViews} option is on (an entity may
+     *  still turn it on or off for itself). */
+    public static List<String> supportPackages(String packageName, List<EntityDefinition> entities, boolean savedViewsOpt) {
         List<String> packages = new ArrayList<>();
         if (entities.stream().flatMap(e -> e.fields().stream()).anyMatch(f -> f.type().isAttachment())) {
             packages.add(packageName + ".attachment");
+        }
+        if (!savedViewLists(entities, savedViewsOpt).isEmpty()) {
+            packages.add(packageName + ".views");
         }
         return packages;
     }

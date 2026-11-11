@@ -722,7 +722,8 @@ public class DynamicProjectGenerationConfiguration {
         List<String> dsExtraPackages = List.of();
         boolean hasScaffold = false;
         if (!entityContext.isEmpty()) {                       // fullstack
-            dsExtraPackages = com.menora.initializr.fullstack.EntityScaffoldContext.supportPackages(description.getPackageName(), entityContext.all());
+            dsExtraPackages = com.menora.initializr.fullstack.EntityScaffoldContext.supportPackages(description.getPackageName(), entityContext.all(),
+                    optionsContext.hasOption("scaffold", com.menora.initializr.fullstack.ScaffoldOption.SAVED_VIEWS.key()));
             String domain = entityContext.getDomainPackage();
             if (domain == null || domain.isBlank()) {
                 domain = description.getPackageName();

@@ -406,6 +406,30 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendSavedViewsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // Round 10, phase 9: the Views menu on the Orders layout's lists — pages that keep their
+        // state in the route, with filters, a view switch and both exports beside it.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("savedViews", "csvExport", "xlsxExport", "audit")));
+        Path project = postAndExtractFrontend(workDir, body);
+        assertThat(Files.readString(project.resolve("src/pages/order/ui/OrderPage.tsx"))).contains("<ViewsMenu list=\"order\"");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraSavedViewsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // The Menora set authors its own list page: classic shell, Hebrew, with row selection.
+        Map<String, Object> body = FullstackSavedViewsTests.body("react-menora-digital-crud", "savedViews", "bulkDelete");
+        body.put("locale", "he");
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendQuotedLabelsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // Every label with an apostrophe, a double quote, a backslash, braces and angle brackets:
         // spliced into TS literals, JSX attributes and JSX children across list pages, forms,

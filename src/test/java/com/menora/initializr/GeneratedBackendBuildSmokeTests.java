@@ -291,7 +291,7 @@ class GeneratedBackendBuildSmokeTests {
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
         body.put("pages", List.of());
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
-        body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "inverseCollections", "csvExport", "xlsxExport",
+        body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "inverseCollections", "csvExport", "xlsxExport", "savedViews",
                 "csvImport", "bulkDelete", "bulkUpdate", "optimisticLocking", "seedData", "tests")));
         Path backend = postAndExtractBackend(workDir, body);
         writeLiveTest(backend, "com.menora.support", LIVE_ORDERS_TESTS);
@@ -373,6 +373,61 @@ class GeneratedBackendBuildSmokeTests {
 
     /** Test methods run against the generated Orders backend (every option on) and its demo rows. */
     private static final String LIVE_ORDERS_TESTS = """
+                @Test
+                void aSavedViewBelongsToWhoeverSavedIt() throws Exception {
+                    String state = "{\\"q\\":\\"acme\\",\\"sort\\":{\\"field\\":\\"name\\",\\"direction\\":\\"asc\\"},\\"filters\\":{\\"active\\":\\"true\\"}}";
+                    String active = "{\\"list\\":\\"customer\\",\\"name\\":\\"Active\\",\\"state\\":" + state + "}";
+                    JsonNode saved = send(post("/api/views"), "dana", active, 200);
+                    long id = saved.get("id").asLong();
+                    assertThat(saved.get("mine").asBoolean()).isTrue();
+                    // The state comes back as it was sent: an object, not a string of one.
+                    assertThat(saved.get("state").get("sort").get("field").asText()).isEqualTo("name");
+                    assertThat(saved.get("state").get("filters").get("active").asText()).isEqualTo("true");
+
+                    // The name is hers alone on this list: taken for her, free for someone else and on another list.
+                    assertThat(send(post("/api/views"), "dana", active, 409).get("detail").asText()).contains("already have a view named 'Active'");
+                    send(post("/api/views"), "omer", active, 200);
+                    send(post("/api/views"), "dana", active.replace("\\"customer\\"", "\\"order\\""), 200);
+
+                    // Hers until she shares it.
+                    JsonNode forOmer = send(MockMvcRequestBuilders.get("/api/views").param("list", "customer"), "omer", null, 200);
+                    assertThat(forOmer).hasSize(1);
+                    send(put("/api/views/" + id), "dana", "{\\"shared\\":true,\\"defaultView\\":true}", 200);
+                    forOmer = send(MockMvcRequestBuilders.get("/api/views").param("list", "customer"), "omer", null, 200);
+                    assertThat(forOmer).hasSize(2);
+                    JsonNode hers = null;
+                    for (JsonNode view : forOmer) if (view.get("id").asLong() == id) hers = view;
+                    // Shared, he can apply it — it is not his, and its being her default is nothing to him.
+                    assertThat(hers.get("shared").asBoolean()).isTrue();
+                    assertThat(hers.get("mine").asBoolean()).isFalse();
+                    assertThat(hers.get("defaultView").asBoolean()).isFalse();
+                    // To change or delete it he would have to own it: to him it is not there.
+                    send(put("/api/views/" + id), "omer", "{\\"name\\":\\"Mine now\\"}", 404);
+                    send(delete("/api/views/" + id), "omer", null, 404);
+
+                    // One default per user and list: a second one takes over.
+                    long all = send(post("/api/views"), "dana", "{\\"list\\":\\"customer\\",\\"name\\":\\"All\\",\\"state\\":{},\\"defaultView\\":true}", 200).get("id").asLong();
+                    for (JsonNode view : send(MockMvcRequestBuilders.get("/api/views").param("list", "customer"), "dana", null, 200)) {
+                        assertThat(view.get("defaultView").asBoolean()).as(view.get("name").asText()).isEqualTo(view.get("id").asLong() == all);
+                    }
+                    // A rename keeps the rest; onto a name she already has it is refused.
+                    assertThat(send(put("/api/views/" + id), "dana", "{\\"name\\":\\"Active customers\\"}", 200).get("state").get("q").asText()).isEqualTo("acme");
+                    send(put("/api/views/" + id), "dana", "{\\"name\\":\\"All\\"}", 409);
+
+                    // Refused: a list that is not one of the app's, no name, a state that is not an object.
+                    send(post("/api/views"), "dana", active.replace("\\"customer\\"", "\\"nope\\""), 400);
+                    send(post("/api/views"), "dana", "{\\"list\\":\\"customer\\",\\"name\\":\\" \\",\\"state\\":{}}", 400);
+                    send(post("/api/views"), "dana", "{\\"list\\":\\"customer\\",\\"name\\":\\"Text\\",\\"state\\":\\"q=acme\\"}", 400);
+                    send(MockMvcRequestBuilders.get("/api/views").param("list", "nope"), "dana", null, 400);
+
+                    // Without a signed-in user the views are everyone's: one shared owner.
+                    send(post("/api/views"), null, "{\\"list\\":\\"customer\\",\\"name\\":\\"Open\\",\\"state\\":{}}", 200);
+                    assertThat(send(MockMvcRequestBuilders.get("/api/views").param("list", "customer"), null, null, 200).findValuesAsText("name")).contains("Open");
+
+                    send(delete("/api/views/" + id), "dana", null, 204);
+                    assertThat(send(MockMvcRequestBuilders.get("/api/views").param("list", "customer"), "omer", null, 200)).hasSize(1);
+                }
+
                 @Test
                 void theExcelExportIsAWorkbookOfTheListsRows() throws Exception {
                     send(post("/api/customers"), null, "{\\"name\\":\\"=SUM(A1) & <Sons>\\",\\"email\\":\\"sons@b.co\\",\\"active\\":true}", 200);

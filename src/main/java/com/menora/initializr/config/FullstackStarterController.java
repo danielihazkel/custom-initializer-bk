@@ -587,6 +587,9 @@ public class FullstackStarterController {
         // conflict dialog. Mirrors the backend config.
         EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
         EntityScaffoldContext.putXlsxExport(projectCtx, entities);
+        EntityScaffoldContext.putSavedViews(projectCtx, entities);
+        // A view belongs to the user who saved it: the dev user travels with the calls.
+        if (Boolean.TRUE.equals(projectCtx.get("hasSavedViews"))) projectCtx.put("sendsDevUser", true);
         // Table cells edited in place (frontend only — saved through the existing PUT).
         EntityScaffoldContext.putInlineEdit(projectCtx, entities);
         // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.

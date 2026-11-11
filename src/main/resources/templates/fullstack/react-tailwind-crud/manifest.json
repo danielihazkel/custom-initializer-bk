@@ -46,6 +46,8 @@
     { "source": "leaveGuard.ts", "path": "src/shared/ui/leaveGuard.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
     { "source": "listPrefs.ts", "path": "src/shared/ui/listPrefs.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
     { "source": "ColumnMenu.tsx", "path": "src/shared/ui/ColumnMenu.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
+    { "source": "savedViews.ts", "path": "src/shared/ui/savedViews.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146, "gatedBy": "hasSavedViews" },
+    { "source": "ViewsMenu.tsx", "path": "src/shared/ui/ViewsMenu.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146, "gatedBy": "hasSavedViews" },
     { "source": "ConfirmDialog.tsx", "path": "src/shared/ui/ConfirmDialog.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
     { "source": "DetailDrawer.tsx", "path": "src/shared/ui/DetailDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 145 },
     { "source": "useTheme.ts", "path": "src/shared/ui/useTheme.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147 },

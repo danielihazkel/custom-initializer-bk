@@ -189,6 +189,7 @@
       "row",
       "rowcolumn",
       "rowseditor",
+      "savedview",
       "schedulemode",
       "scheduleview",
       "search",
@@ -213,6 +214,8 @@
       "tuple",
       "uuid",
       "version",
+      "viewsmenu",
+      "viewstate",
       "webmvctest",
       "workflowexception"
     ],
@@ -398,6 +401,12 @@
     },
     {
       "key" : "xlsxExport",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "savedViews",
       "perEntity" : true,
       "backend" : true,
       "frontend" : true

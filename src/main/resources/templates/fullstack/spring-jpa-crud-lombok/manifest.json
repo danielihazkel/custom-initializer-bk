@@ -93,6 +93,46 @@
       "gatedBy": "hasAttachments"
     },
     {
+      "source": "SavedView.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/views/SavedView.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasSavedViews"
+    },
+    {
+      "source": "SavedViewRepository.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/views/SavedViewRepository.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasSavedViews"
+    },
+    {
+      "source": "SavedViewService.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/views/SavedViewService.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasSavedViews"
+    },
+    {
+      "source": "SavedViewController.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/views/SavedViewController.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasSavedViews"
+    },
+    {
       "source": "DemoDataLoader.java.mustache",
       "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{packagePath}}/config/DemoDataLoader.java",

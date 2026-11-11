@@ -1,0 +1,92 @@
+package {{packageName}}.views;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+/**
+ * The saved views of the lists: {@code GET /api/views?list=} (the caller's own and the shared
+ * ones), {@code POST}, {@code PUT /{id}} and {@code DELETE /{id}} (the caller's own only).
+ *
+ * <p>The caller is the {@code userinfo} header — set by the SSO gateway, in development by the
+ * frontend's API client. Without one every caller is the same {@value #NOBODY}, so views still
+ * work on a setup with no sign-in: they are then everyone's.
+ */
+@RestController
+@RequestMapping("/api/views")
+public class SavedViewController {
+
+    static final String NOBODY = "anonymous";
+
+    private final SavedViewService service;
+    private final ObjectMapper objectMapper;
+
+    public SavedViewController(SavedViewService service, ObjectMapper objectMapper) {
+        this.service = service;
+        this.objectMapper = objectMapper;
+    }
+
+    @GetMapping
+    public List<View> list(@RequestParam String list,
+                           @RequestHeader(value = "userinfo", required = false) String header) {
+        String user = userOf(header);
+        return service.visibleTo(list, user).stream().map(v -> view(v, user)).toList();
+    }
+
+    @PostMapping
+    public View create(@RequestBody ViewRequest body,
+                       @RequestHeader(value = "userinfo", required = false) String header) {
+        String user = userOf(header);
+        return view(service.create(user, body.list(), body.name(), body.state(),
+                Boolean.TRUE.equals(body.shared()), Boolean.TRUE.equals(body.defaultView())), user);
+    }
+
+    @PutMapping("/{id}")
+    public View update(@PathVariable Long id, @RequestBody ViewRequest body,
+                       @RequestHeader(value = "userinfo", required = false) String header) {
+        String user = userOf(header);
+        return view(service.update(id, user, body.name(), body.state(), body.shared(), body.defaultView()), user);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id,
+                                       @RequestHeader(value = "userinfo", required = false) String header) {
+        service.delete(id, userOf(header));
+        return ResponseEntity.noContent().build();
+    }
+
+    private static String userOf(String header) {
+        return header == null || header.isBlank() ? NOBODY : header.trim();
+    }
+
+    private View view(SavedView v, String user) {
+        boolean mine = v.getOwner().equals(user);
+        JsonNode state;
+        try {
+            state = objectMapper.readTree(v.getState());
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            // A row edited by hand into something unreadable is an empty view, not a failed list.
+            state = objectMapper.createObjectNode();
+        }
+        // "Default" is each user's own choice among their own views.
+        return new View(v.getId(), v.getListName(), v.getName(), state, v.isShared(), mine && v.isDefaultView(), mine);
+    }
+
+    /** What a save sends; an update leaves out what it does not change ({@code list} is never changed). */
+    public record ViewRequest(String list, String name, JsonNode state, Boolean shared, Boolean defaultView) {}
+
+    /** A view as the caller sees it: {@code mine} says whether they may change it. */
+    public record View(Long id, String list, String name, JsonNode state, boolean shared, boolean defaultView, boolean mine) {}
+}

@@ -8,7 +8,9 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#listUrlState}}type ListState, {{/listUrlState}}{{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
-{{#usesFormat}}import { {{formatImports}} } from '@shared/ui/format'
+{{#optScaffoldSavedViews}}import { ViewsMenu } from '@shared/ui/ViewsMenu'
+import type { ViewState } from '@shared/ui/savedViews'
+{{/optScaffoldSavedViews}}{{#usesFormat}}import { {{formatImports}} } from '@shared/ui/format'
 {{/usesFormat}}import { {{EntityName}}Detail{{#hasWorkflow}}, {{EntityName}}Transitions{{/hasWorkflow}}{{#kanbanIsWorkflow}}, {{EntityName}}Workflow{{/kanbanIsWorkflow}} } from '@features/{{entityNameKebab}}-form'
 {{#kanbanIsWorkflow}}
 import { useMe } from '@shared/api/me'
@@ -207,6 +209,20 @@ function oneValue(value: string | undefined): boolean {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(t)
   }, [search])
+{{#optScaffoldSavedViews}}
+
+  // Saved views: what the toolbar holds, kept under a name on the server and put back from it.
+  const viewState: ViewState = { q: debouncedSearch || undefined, sort, size, view: viewMode, hidden: hiddenColumns{{#hasFilters}}, filters{{/hasFilters}} }
+  const applyView = (state: ViewState) => {
+    setSearch(state.q ?? '')
+    setDebouncedSearch(state.q ?? '')
+    setSort(state.sort !== undefined ? state.sort : JSON.parse(openingSort))
+    setSize(state.size ?? openingSize)
+{{#hasViewToggle}}    setViewMode((state.view as {{viewModeType}} | undefined) ?? openingView)
+{{/hasViewToggle}}{{#viewTable}}    setHiddenColumns(state.hidden ?? [])
+{{/viewTable}}{{#hasFilters}}    setFilters(state.filters ?? {})
+{{/hasFilters}}  }
+{{/optScaffoldSavedViews}}
 
 {{#listUrlState}}
   // A new search, sort, page size or filter starts again at the first page — but the page the
@@ -655,7 +671,8 @@ function oneValue(value: string | undefined): boolean {
           </p>
         </div>
         <div className="flex items-center gap-2">
-{{#hasViewToggle}}          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+{{#optScaffoldSavedViews}}          {{#hasPages}}{!embedded && {{/hasPages}}<ViewsMenu list="{{entityNameKebab}}" current={viewState} sortable={columns.flatMap(c => c.sortKey ? [c.sortKey] : [])} views={ {{{viewModesTs}}} } onApply={applyView} opensPlain={ {{#listUrlState}}listState == null || (listState.q == null && listState.sort === undefined && listState.size == null && listState.view == null && Object.keys(listState.filters ?? {}).length === 0){{/listUrlState}}{{^listUrlState}}true{{/listUrlState}} } />{{#hasPages}}}{{/hasPages}}
+{{/optScaffoldSavedViews}}{{#hasViewToggle}}          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
 {{#viewTable}}            <button
               onClick={() => setViewMode('table')}
               aria-pressed={viewMode === 'table'}
