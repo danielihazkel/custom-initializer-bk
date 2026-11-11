@@ -36,7 +36,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
 {{#groupFields}}
 {{^isWorkflowStatus}}
 {{#isPrimaryKey}}{{#isGenerated}}      {!isNew && (
-        <Field label="{{label}}" hint={t('systemGenerated')}>
+        <Field label="{{labelAttr}}" hint={t('systemGenerated')}>
           <input
             className={`${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
             value={String(value.{{name}} ?? '')}
@@ -44,7 +44,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           />
         </Field>
       )}
-{{/isGenerated}}{{^isGenerated}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{/isGenerated}}{{^isGenerated}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <input
           className={isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -54,7 +54,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         />
       </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/isGenerated}}{{/isPrimaryKey}}
-{{^isPrimaryKey}}{{#isBoolean}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{^isPrimaryKey}}{{#isBoolean}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <select
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -66,7 +66,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           <option value="false">{t('falseLabel')}</option>
         </select>
       </Field>{{#formHasSteps}})}{{/formHasSteps}}
-{{/isBoolean}}{{#isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{/isBoolean}}{{#isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <select
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           value={(value.{{name}} as string | null | undefined) ?? ''}
@@ -77,7 +77,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           { {{enumTypeName}}Options.map(o => <option key={o.value} value={o.value}>{o.label}</option>) }
         </select>
       </Field>{{#formHasSteps}})}{{/formHasSteps}}
-{{/isEnum}}{{^isBoolean}}{{^isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{/isEnum}}{{^isBoolean}}{{^isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
 {{#isText}}        <textarea
           className={{#isReadOnly}}{isNew ? `${inputClass} min-h-[96px] resize-y` : `${inputClass} min-h-[96px] resize-y cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{`${inputClass} min-h-[96px] resize-y`}{{/isReadOnly}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}

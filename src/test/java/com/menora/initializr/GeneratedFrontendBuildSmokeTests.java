@@ -353,6 +353,38 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendQuotedLabelsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Every label with an apostrophe, a double quote, a backslash, braces and angle brackets:
+        // spliced into TS literals, JSX attributes and JSX children across list pages, forms,
+        // details, the dashboard's filter bar and the report screen.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackExampleRequests.quotedLabelsBody("reporting", "react-tailwind-crud", "en", true));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraQuotedLabelsClassicInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Menora set's own page, dashboard and shell, without a layout (the classic dashboard
+        // takes the heading and blurb), in Hebrew.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackExampleRequests.quotedLabelsBody("orders", "react-menora-digital-crud", "he", false));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendQuotedLabelsClassicInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        Path project = postAndExtractFrontend(workDir,
+                FullstackExampleRequests.quotedLabelsBody("orders", "react-tailwind-crud", "en", false));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendMenoraRoundNineFieldTypesInstallAndBuild(@TempDir Path workDir) throws Exception {
         // The Menora set authors its own entity page; the shared files are borrowed.
         Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.fieldTypesBody("react-menora-digital-crud"));

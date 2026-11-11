@@ -3778,6 +3778,72 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_escapesLabelsWhereverTheyAreSpliced() throws Exception {
+        // Hebrew abbreviations carry a geresh (') or gershayim ("): מס' , מע"מ , ת"ז. A label is
+        // spliced into single-quoted TS literals, double-quoted JSX attributes and JSX children —
+        // each needs its own escaping, or the generated project does not compile.
+        Map<String, Object> number = new LinkedHashMap<>();
+        number.put("name", "number"); number.put("type", "String"); number.put("label", "מס' חשבונית");
+        Map<String, Object> vat = new LinkedHashMap<>();
+        vat.put("name", "vat"); vat.put("type", "BigDecimal"); vat.put("label", "מע\"מ");
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "note"); note.put("type", "String"); note.put("label", "a <b> & {c} &amp; \\d");
+        Map<String, Object> invoice = new LinkedHashMap<>();
+        invoice.put("name", "Invoice");
+        invoice.put("label", "חשבונית מס'");
+        invoice.put("labelPlural", "חשבוניות \"מס\" <1>");
+        invoice.put("fields", List.of(pkField(), number, vat, note));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "books");
+        body.put("packageName", "com.menora.books");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(invoice));
+        body.put("opts", Map.of("scaffold", List.of("bulkUpdate", "csvImport")));
+        body.put("dashboardTitle", "ספרים של \"מנורה\" {2026}");
+        body.put("dashboardOverview", "it's <new>");
+
+        Map<String, String> entries = generateZip(body);
+
+        // Single-quoted TS literals: apostrophe and backslash escaped, a double quote left alone.
+        String page = entries.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx");
+        assertThat(page)
+                .contains("label: 'מס\\' חשבונית', sortKey: 'number'")
+                .contains("label: 'מע\"מ', sortKey: 'vat'")
+                .contains("label: 'a <b> & {c} &amp; \\\\d', sortKey: 'note'")
+                .contains("t('newX', { x: 'חשבונית מס\\'' })")
+                .contains("t('importX', { x: 'חשבוניות \"מס\" <1>' })")
+                // JSX children: the page heading and the bulk-edit field picker's option text.
+                .contains(">חשבוניות \"מס\" &lt;1&gt;</h1>")
+                .contains("<option value=\"number\">מס' חשבונית</option>")
+                .contains("<option value=\"note\">a &lt;b&gt; & &#123;c&#125; &amp;amp; \\d</option>");
+        // Double-quoted JSX attributes: no backslash escapes there, only character references.
+        assertThat(entries.get("books/frontend/src/features/invoice-form/ui/InvoiceForm.tsx"))
+                .contains("<Field label=\"מס' חשבונית\"")
+                .contains("<Field label=\"מע&quot;מ\"")
+                .contains("<Field label=\"a <b> & {c} &amp;amp; \\d\"");
+        assertThat(contentEndingWith(entries, "/InvoiceDetail.tsx")).contains("<Row label=\"מע&quot;מ\">");
+        assertThat(contentEndingWith(entries, "/importFields.ts"))
+                .contains("label: 'מס\\' חשבונית', kind:");
+        assertThat(entries.get("books/frontend/src/app/App.tsx")).contains("label: 'חשבוניות \"מס\" <1>'");
+        assertThat(contentEndingWith(entries, "/DashboardPage.tsx"))
+                .contains("label: 'חשבוניות \"מס\" <1>', view: 'invoice'")
+                .contains(">ספרים של \"מנורה\" &#123;2026&#125;</h1>")
+                .contains("it's &lt;new&gt;");
+
+        // The Menora set authors its own page and dashboard: same rules.
+        body.put("frontendTemplateSet", "react-menora-digital-crud");
+        Map<String, String> menora = generateZip(body);
+        assertThat(menora.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx"))
+                .contains("label: 'מס\\' חשבונית', sortKey: 'number'")
+                .contains("<SectionHeader title=\"חשבוניות &quot;מס&quot; <1>\" align=\"start\" />")
+                .contains("caption=\"חשבוניות &quot;מס&quot; <1>\"");
+        assertThat(contentEndingWith(menora, "/DashboardPage.tsx"))
+                .contains("'ספרים של \"מנורה\" {2026}.'")
+                .contains("'it\\'s <new>'");
+    }
+
+    @Test
     void fullstackEndpoint_rejectsBadEnumLabels() throws Exception {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);

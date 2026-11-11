@@ -766,7 +766,8 @@ public class FullstackStarterController {
      *  {@code {{#key}}…{{^key}}fallback{{/key}}} resolves to the template's built-in default. */
     private static void putIfPresent(Map<String, Object> ctx, String key, String value) {
         if (value != null && !value.isBlank()) {
-            ctx.put(key, value.trim());
+            // Raw under the key (the section test), escaped for where the templates splice it.
+            EntityScaffoldContext.putText(ctx, key, value.trim());
         }
     }
 

@@ -27,7 +27,7 @@ import { {{labelsRefs}} } from '@entities/{{entityNameKebab}}'
 
 /** The dashboard's filters: each limits every widget whose entity filters by it. */
 const DASH_FILTERS: FilterDescriptor[] = [
-{{#dashFilterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
+{{#dashFilterFields}}  { name: '{{name}}', label: '{{labelTs}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
 {{/dashFilterFields}}]
 {{/hasDashFilters}}
 {{#hasScreenProps}}

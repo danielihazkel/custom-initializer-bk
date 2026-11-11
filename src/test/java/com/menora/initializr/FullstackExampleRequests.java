@@ -74,6 +74,44 @@ public final class FullstackExampleRequests {
     }
 
     /**
+     * A seeded example with every display text made hostile to the code it is spliced into: each
+     * entity and field label carries an apostrophe, a double quote, a backslash, braces and angle
+     * brackets (Hebrew abbreviations — מס', מע"מ — carry the first two), and so do the dashboard
+     * heading and blurb. Built for real by the frontend smoke tests: the proof that a label can
+     * be any text.
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> quotedLabelsBody(String exampleId, String set, String locale, boolean layout)
+            throws IOException {
+        Map<String, Object> example = examples().stream()
+                .filter(e -> exampleId.equals(e.get("exampleId"))).findFirst().orElseThrow();
+        Map<String, Object> body = body(example, set, locale, layout);
+        List<Map<String, Object>> entities = new ArrayList<>();
+        for (Map<String, Object> source : (List<Map<String, Object>>) example.get("entities")) {
+            Map<String, Object> entity = new LinkedHashMap<>(source);
+            entity.put("label", "מס' \"" + source.get("name") + "\" \\ {1} <b>");
+            entity.put("labelPlural", "מע\"מ '" + source.get("name") + "' \\ {n} <i> &amp;");
+            List<Map<String, Object>> fields = new ArrayList<>();
+            for (Map<String, Object> f : (List<Map<String, Object>>) source.get("fields")) {
+                Map<String, Object> field = new LinkedHashMap<>(f);
+                field.put("label", "ת\"ז '" + f.get("name") + "' \\ {x} <u> &lt;");
+                fields.add(field);
+            }
+            entity.put("fields", fields);
+            entities.add(entity);
+        }
+        body.put("entities", entities);
+        body.put("dashboardTitle", "לוח \"בקרה\" של מס' {2026} <b>");
+        body.put("dashboardOverview", "it's a \"test\" \\ {x} <i> &amp;");
+        List<String> scaffold = new ArrayList<>(((Map<String, List<String>>) body.get("opts")).get("scaffold"));
+        for (String opt : List.of("bulkUpdate", "csvImport", "csvExport")) {
+            if (!scaffold.contains(opt)) scaffold.add(opt);
+        }
+        body.put("opts", Map.of("scaffold", scaffold));
+        return body;
+    }
+
+    /**
      * One entity with every Round 9 field type — a time of day, an instant, money in two
      * currencies, Markdown — beside the old ones, and the options whose code touches a field by
      * its type (bulk and inline edit, CSV both ways, demo data, the controller test). The same

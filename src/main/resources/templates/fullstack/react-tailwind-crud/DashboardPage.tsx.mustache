@@ -13,7 +13,7 @@ interface CardDef {
 
 const CARDS: CardDef[] = [
 {{#entities}}
-  { label: '{{entityLabelPlural}}', view: '{{entityNameKebab}}', path: '/api/{{entityNamePluralKebab}}' },
+  { label: '{{entityLabelPluralTs}}', view: '{{entityNameKebab}}', path: '/api/{{entityNamePluralKebab}}' },
 {{/entities}}
 ]
 
@@ -28,7 +28,7 @@ interface ChartDef {
 // One breakdown per entity that has a low-cardinality (enum/boolean) field. Grouped client-side
 // from a sample page (see useBreakdown), so the chart labels itself as a sample on large tables.
 const CHARTS: ChartDef[] = [
-{{#entities}}{{#hasBreakdown}}  { label: t('xByY', { x: '{{entityLabelPlural}}', y: '{{breakdownLabel}}' }), path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}'{{#breakdownEnumTypeName}}, labels: {{breakdownEnumTypeName}}Labels{{/breakdownEnumTypeName}} },
+{{#entities}}{{#hasBreakdown}}  { label: t('xByY', { x: '{{entityLabelPluralTs}}', y: '{{breakdownLabel}}' }), path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}'{{#breakdownEnumTypeName}}, labels: {{breakdownEnumTypeName}}Labels{{/breakdownEnumTypeName}} },
 {{/hasBreakdown}}{{/entities}}]
 
 /** Reads just the page metadata (size=1) to surface a live record count per entity. */
@@ -143,9 +143,9 @@ export function DashboardPage({ onNavigate }: Props) {
           <LayoutGrid className="h-5 w-5" />
           <span className="text-xs font-semibold uppercase tracking-wider">{t('overview')}</span>
         </div>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">{{#dashboardTitle}}{{dashboardTitle}}{{/dashboardTitle}}{{^dashboardTitle}}{t('welcomeTo', { name: '{{artifactId}}' })}{{/dashboardTitle}}</h1>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">{{#dashboardTitle}}{{dashboardTitleJsx}}{{/dashboardTitle}}{{^dashboardTitle}}{t('welcomeTo', { name: '{{artifactId}}' })}{{/dashboardTitle}}</h1>
         <p className="mt-1 max-w-xl text-sm text-slate-300">
-          {{#dashboardOverview}}{{dashboardOverview}}{{/dashboardOverview}}{{^dashboardOverview}}{t('manageBlurb')}{{/dashboardOverview}}
+          {{#dashboardOverview}}{{dashboardOverviewJsx}}{{/dashboardOverview}}{{^dashboardOverview}}{t('manageBlurb')}{{/dashboardOverview}}
         </p>
       </div>
 

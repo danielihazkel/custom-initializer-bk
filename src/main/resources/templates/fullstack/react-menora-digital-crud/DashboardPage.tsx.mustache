@@ -13,7 +13,7 @@ interface CardDef {
 
 const CARDS: CardDef[] = [
 {{#entities}}
-  { label: '{{entityLabelPlural}}', view: '{{entityNameKebab}}', path: '/api/{{entityNamePluralKebab}}' },
+  { label: '{{entityLabelPluralTs}}', view: '{{entityNameKebab}}', path: '/api/{{entityNamePluralKebab}}' },
 {{/entities}}
 ]
 
@@ -28,7 +28,7 @@ interface ChartDef {
 // One breakdown per entity that has a low-cardinality (enum/boolean) field. Grouped client-side
 // from a sample page (see useBreakdown), so the chart labels itself as a sample on large tables.
 const CHARTS: ChartDef[] = [
-{{#entities}}{{#hasBreakdown}}  { label: t('xByY', { x: '{{entityLabelPlural}}', y: '{{breakdownLabel}}' }), path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}'{{#breakdownEnumTypeName}}, labels: {{breakdownEnumTypeName}}Labels{{/breakdownEnumTypeName}} },
+{{#entities}}{{#hasBreakdown}}  { label: t('xByY', { x: '{{entityLabelPluralTs}}', y: '{{breakdownLabel}}' }), path: '/api/{{entityNamePluralKebab}}', field: '{{breakdownField}}'{{#breakdownEnumTypeName}}, labels: {{breakdownEnumTypeName}}Labels{{/breakdownEnumTypeName}} },
 {{/hasBreakdown}}{{/entities}}]
 
 // The 22px line icon every action disc holds (stroke currentColor, so it inherits on-yellow).
@@ -145,8 +145,8 @@ export function DashboardPage({ onNavigate }: Props) {
           No CTA here — the ActionPanel directly under it is the shortcut bar, one yellow disc per collection. */}
       <div className="mb-6">
         <Hero
-          title={ {{#dashboardTitle}}'{{dashboardTitle}}.'{{/dashboardTitle}}{{^dashboardTitle}}t('welcomeTo', { name: '{{artifactId}}' }) + '.'{{/dashboardTitle}} }
-          lead={ {{#dashboardOverview}}'{{dashboardOverview}}'{{/dashboardOverview}}{{^dashboardOverview}}t('manageBlurb'){{/dashboardOverview}} }
+          title={ {{#dashboardTitle}}'{{dashboardTitleTs}}.'{{/dashboardTitle}}{{^dashboardTitle}}t('welcomeTo', { name: '{{artifactId}}' }) + '.'{{/dashboardTitle}} }
+          lead={ {{#dashboardOverview}}'{{dashboardOverviewTs}}'{{/dashboardOverview}}{{^dashboardOverview}}t('manageBlurb'){{/dashboardOverview}} }
         />
       </div>
       {CARDS.length > 0 && (

@@ -27,7 +27,7 @@ import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail
 type ListColumn = Column<{{EntityName}}> & { key: string }
 
 {{/listConfigurable}}const columns: {{#listConfigurable}}ListColumn[]{{/listConfigurable}}{{^listConfigurable}}Column<{{EntityName}}>[]{{/listConfigurable}} = [
-{{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : {{cellTs}} },
+{{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{labelTs}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : {{cellTs}} },
 {{/fields}}{{#relations}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => {{#targetHasRecordPage}}r.{{fkFieldName}} == null ? '—' : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(r.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}r.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(r.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} },
 {{/relations}}{{#collections}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => r.{{labelsField}} == null || r.{{labelsField}}.length === 0 ? '—' : r.{{labelsField}}.join(', ') },
 {{/collections}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
@@ -36,14 +36,14 @@ type ListColumn = Column<{{EntityName}}> & { key: string }
 {{/childLists}}]
 {{#hasFilters}}
 const filterDescriptors: FilterDescriptor[] = [
-{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
+{{#filterFields}}  { name: '{{name}}', label: '{{labelTs}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
 {{/filterFields}}]
 {{/hasFilters}}{{#bulkUpdateApplicable}}{{#viewTable}}
 // Fields eligible for bulk edit. `kind` selects the value control shown in the bulk-edit bar; the
 // raw value is sent to the backend which coerces it to the field's type.
 type BulkFieldKind = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum'
 const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?: { value: string; label: string }[] }> = {
-{{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
+{{#bulkUpdatableFields}}  '{{name}}': { label: '{{labelTs}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
 {{/bulkUpdatableFields}}}
 {{/viewTable}}{{/bulkUpdateApplicable}}
 {{#inlineEditApplicable}}/** The table cells that are edited in place, by field. */
@@ -372,7 +372,7 @@ function oneValue(value: string | undefined): boolean {
     try {
       if (isNew) await create(editing as Omit<{{EntityName}}, 'id'>)
       else await update({{#hasCompositePk}}[{{#pkFields}}editing.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}editing.{{pkField.name}} as number | string{{/hasCompositePk}}, editing as {{EntityName}})
-      toast.success(isNew ? t('xCreated', { x: '{{entityLabel}}' }) : t('xUpdated', { x: '{{entityLabel}}' }))
+      toast.success(isNew ? t('xCreated', { x: '{{entityLabelTs}}' }) : t('xUpdated', { x: '{{entityLabelTs}}' }))
       close()
     } catch (e) {
       // A 400 carries per-field messages — show them inline; anything else is a toast.
@@ -417,7 +417,7 @@ function oneValue(value: string | undefined): boolean {
       // Take the current version so the server accepts the draft over the other change.
       const current = await fetchCurrent(editing)
       await update({{#hasCompositePk}}[{{#pkFields}}editing.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}editing.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...editing, version: current.version } as {{EntityName}})
-      toast.success(t('xUpdated', { x: '{{entityLabel}}' }))
+      toast.success(t('xUpdated', { x: '{{entityLabelTs}}' }))
       close()
     } catch (e) {
       if (isStale(e)) setStale(true)
@@ -434,19 +434,19 @@ function oneValue(value: string | undefined): boolean {
       await remove({{#hasCompositePk}}[{{#pkFields}}removed.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}removed.{{pkField.name}} as number | string{{/hasCompositePk}})
       setPendingDelete(null)
 {{#softDeleteApplicable}}      // Soft delete: the row is only flagged, so Undo really restores it (same id, same data).
-      toast.success(t('xDeleted', { x: '{{entityLabel}}' }), {
+      toast.success(t('xDeleted', { x: '{{entityLabelTs}}' }), {
         action: {
           label: t('undo'),
           onClick: () => {
             restore(removed.{{pkField.name}} as number | string)
-              .then(() => toast.success(t('xRestored', { x: '{{entityLabel}}' })))
+              .then(() => toast.success(t('xRestored', { x: '{{entityLabelTs}}' })))
               .catch(err => toast.error(err instanceof Error ? err.message : String(err)))
           },
         },
       })
 {{/softDeleteApplicable}}{{^softDeleteApplicable}}      // Hard delete: the row is gone for good, so no Undo is offered (re-creating it would
       // hand out a new id and could collide on unique columns).
-      toast.success(t('xDeleted', { x: '{{entityLabel}}' }))
+      toast.success(t('xDeleted', { x: '{{entityLabelTs}}' }))
 {{/softDeleteApplicable}}    } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
@@ -466,7 +466,7 @@ function oneValue(value: string | undefined): boolean {
     }
     try {
       await update(row.{{pkField.name}} as number | string, next)
-      toast.success(t('xUpdated', { x: '{{entityLabel}}' }))
+      toast.success(t('xUpdated', { x: '{{entityLabelTs}}' }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
 {{#lockingApplicable}}      // Someone saved the row first: show what is there now instead of keeping a stale editor.
@@ -522,7 +522,7 @@ function oneValue(value: string | undefined): boolean {
 {{^kanbanIsWorkflow}}
       await update({{#hasCompositePk}}[{{#pkFields}}row.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...row, {{kanbanField}}: {{#kanbanIsEnum}}value{{/kanbanIsEnum}}{{^kanbanIsEnum}}value === 'true'{{/kanbanIsEnum}} } as {{EntityName}})
 {{/kanbanIsWorkflow}}
-      toast.success(t('xMoved', { x: '{{entityLabel}}' }))
+      toast.success(t('xMoved', { x: '{{entityLabelTs}}' }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
       await reload()
@@ -559,7 +559,7 @@ function oneValue(value: string | undefined): boolean {
     setBulkBusy(true)
     try {
       await removeMany(selected)
-      toast.success(t('nXRecordsDeleted', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
+      toast.success(t('nXRecordsDeleted', { n: selected.length, x: '{{entityLabelTs}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
       setSelected([])
       setBulkConfirm(false)
     } catch (e) {
@@ -578,7 +578,7 @@ function oneValue(value: string | undefined): boolean {
     try {
       // An empty value clears the field (sent as null); otherwise the raw string is coerced server-side.
       await updateMany(selected, bulkField, bulkValue === '' ? null : bulkValue)
-      toast.success(t('nXRecordsUpdated', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
+      toast.success(t('nXRecordsUpdated', { n: selected.length, x: '{{entityLabelTs}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
       setSelected([])
       setBulkField('')
       setBulkValue('')
@@ -593,7 +593,7 @@ function oneValue(value: string | undefined): boolean {
   const filtered = debouncedSearch !== ''{{#hasFilters}} || Object.values(filters).some(v => v !== ''){{/hasFilters}}
 {{#listActionsConfigurable}}  // What this list page leaves out (its hideActions): the buttons go; the API still answers them.
   const can = (action: ListAction) => !hideActions?.includes(action)
-{{/listActionsConfigurable}}{{#mutable}}  const emptyAction = {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{ label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasCreatePage}}openNew{{/hasCreatePage}}{{#hasCreatePage}}onCreate ?? openNew{{/hasCreatePage}} }
+{{/listActionsConfigurable}}{{#mutable}}  const emptyAction = {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{ label: t('newX', { x: '{{entityLabelTs}}' }), onClick: {{^hasCreatePage}}openNew{{/hasCreatePage}}{{#hasCreatePage}}onCreate ?? openNew{{/hasCreatePage}} }
 {{#listActionsConfigurable}}  const editRow = can('edit') ? openEdit : undefined
   const deleteRow = can('delete') ? setPendingDelete : undefined
 {{/listActionsConfigurable}}{{/mutable}}{{#viewTable}}  // The Columns menu: hide columns, or forget everything this browser saved for the list.
@@ -621,11 +621,11 @@ function oneValue(value: string | undefined): boolean {
       <div className="mb-6 flex items-end justify-between">
         <div>
 {{#hasPages}}
-          {!embedded && <h1 className="text-2xl font-semibold tracking-tight text-fg">{title ?? '{{entityLabelPlural}}'}</h1>}
+          {!embedded && <h1 className="text-2xl font-semibold tracking-tight text-fg">{title ?? '{{entityLabelPluralTs}}'}</h1>}
           {description && <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p>}
 {{/hasPages}}
 {{^hasPages}}
-          <h1 className="text-2xl font-semibold tracking-tight text-fg">{{entityLabelPlural}}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">{{entityLabelPluralJsx}}</h1>
 {{/hasPages}}
           <p className="mt-1 text-sm text-muted">
             {totalElements} {t(totalElements === 1 ? 'record' : 'records')}{{#isView}} · {t('readOnlyView')}{{/isView}}
@@ -698,7 +698,7 @@ function oneValue(value: string | undefined): boolean {
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
           >
             <Plus className="h-4 w-4" />
-            {t('newX', { x: '{{entityLabel}}' })}
+            {t('newX', { x: '{{entityLabelTs}}' })}
           </button>
 {{#listActionsConfigurable}}          )}
 {{/listActionsConfigurable}}{{/mutable}}        </div>
@@ -725,7 +725,7 @@ function oneValue(value: string | undefined): boolean {
               aria-label={t('fieldToEdit')}
             >
               <option value="">{t('setField')}</option>
-{{#bulkUpdatableFields}}              <option value="{{name}}">{{label}}</option>
+{{#bulkUpdatableFields}}              <option value="{{name}}">{{labelJsx}}</option>
 {{/bulkUpdatableFields}}            </select>
             {bulkField && (() => {
               const meta = BULK_FIELDS[bulkField]
@@ -863,7 +863,7 @@ function oneValue(value: string | undefined): boolean {
           {selectedRow ? (
             <>
               <div className="mb-4 flex items-start justify-between gap-3">
-                <h2 className="text-sm font-semibold text-fg">{t('xDetails', { x: '{{entityLabel}}' })}</h2>
+                <h2 className="text-sm font-semibold text-fg">{t('xDetails', { x: '{{entityLabelTs}}' })}</h2>
                 <div className="flex items-center gap-3">
 {{#mutable}}
 {{^listActionsConfigurable}}
@@ -900,8 +900,8 @@ function oneValue(value: string | undefined): boolean {
 {{#mutable}}
       <FormDrawer
         open={drawerOpen}
-        title={isNew ? t('newX', { x: '{{entityLabel}}' }) : t('editX', { x: '{{entityLabel}}' })}
-        subtitle={isNew ? t('createXBlurb', { x: '{{entityLabel}}' }) : t('updateXBlurb', { x: '{{entityLabel}}' })}
+        title={isNew ? t('newX', { x: '{{entityLabelTs}}' }) : t('editX', { x: '{{entityLabelTs}}' })}
+        subtitle={isNew ? t('createXBlurb', { x: '{{entityLabelTs}}' }) : t('updateXBlurb', { x: '{{entityLabelTs}}' })}
         onClose={close}
         onSave={save}
         saving={saving}
@@ -933,16 +933,16 @@ function oneValue(value: string | undefined): boolean {
       </FormDrawer>
 {{#importApplicable}}
 
-      <DetailDrawer open={importing} title={t('importX', { x: '{{entityLabelPlural}}' })} onClose={() => setImporting(false)}>
+      <DetailDrawer open={importing} title={t('importX', { x: '{{entityLabelPluralTs}}' })} onClose={() => setImporting(false)}>
         {importing && (
           <CsvImport
             fields={ {{EntityName}}ImportFields }
             validate={value => validate{{EntityName}}(value as Partial<{{EntityName}}>)}
             path="/api/{{entityNamePluralKebab}}"
-            label={'{{entityLabelPlural}}'}
+            label={'{{entityLabelPluralTs}}'}
             onDone={n => {
               setImporting(false)
-              toast.success(t('importDone', { n, x: '{{entityLabelPlural}}' }))
+              toast.success(t('importDone', { n, x: '{{entityLabelPluralTs}}' }))
               void reload()
             }}
           />
@@ -952,7 +952,7 @@ function oneValue(value: string | undefined): boolean {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title={t('deleteX', { x: '{{entityLabel}}' })}
+        title={t('deleteX', { x: '{{entityLabelTs}}' })}
         message={t('{{#softDeleteApplicable}}undoHint{{/softDeleteApplicable}}{{^softDeleteApplicable}}cannotUndo{{/softDeleteApplicable}}')}
         busy={deleting}
         onConfirm={confirmDelete}
@@ -961,7 +961,7 @@ function oneValue(value: string | undefined): boolean {
 {{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}}
       <ConfirmDialog
         open={bulkConfirm}
-        title={t('deleteNX', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') })}
+        title={t('deleteNX', { n: selected.length, x: '{{entityLabelTs}}', unit: t(selected.length === 1 ? 'record' : 'records') })}
         message={t('cannotUndo')}
         busy={bulkBusy}
         onConfirm={runBulkDelete}
@@ -970,7 +970,7 @@ function oneValue(value: string | undefined): boolean {
 {{/viewTable}}{{/bulkDeleteApplicable}}
       <DetailDrawer
         open={detailRow !== null}
-        title={t('xDetails', { x: '{{entityLabel}}' })}
+        title={t('xDetails', { x: '{{entityLabelTs}}' })}
         onClose={() => setDetailRow(null)}
 {{#mutable}}{{^listActionsConfigurable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
 {{/listActionsConfigurable}}{{#listActionsConfigurable}}        onEdit={can('edit') ? () => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } } : undefined}

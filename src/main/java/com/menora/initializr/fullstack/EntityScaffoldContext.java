@@ -1996,7 +1996,7 @@ public final class EntityScaffoldContext {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("name", fv.get("name"));
         out.put("Name", fv.get("Name"));
-        out.put("label", fv.get("label"));
+        putText(out, "label", (String) fv.get("label"));
         out.put("javaType", fv.get("javaType"));
         return out;
     }
@@ -2334,6 +2334,47 @@ public final class EntityScaffoldContext {
         return s.replace("\\", "\\\\").replace("'", "\\'");
     }
 
+    /** Matches an {@code &} that JSX would read as the start of a character reference. */
+    private static final java.util.regex.Pattern JSX_ENTITY_START =
+            java.util.regex.Pattern.compile("&(?=#?[A-Za-z0-9]+;)");
+
+    /** User text as the body of a single-quoted TS literal: {@link #escapeTsSingleQuoted} plus
+     *  line breaks, which a literal cannot hold. */
+    static String tsLiteralBody(String s) {
+        return escapeTsSingleQuoted(s).replace("\r", "").replace("\n", "\\n");
+    }
+
+    /** User text inside a double-quoted JSX attribute ({@code label="…"}). JSX reads no backslash
+     *  escapes there, only character references — so a double quote becomes {@code &quot;} and an
+     *  {@code &} that would start a reference {@code &amp;}. Text without those keeps its bytes. */
+    static String escapeJsxAttr(String s) {
+        return JSX_ENTITY_START.matcher(s).replaceAll("&amp;")
+                .replace("\"", "&quot;").replace("\r", "").replace("\n", " ");
+    }
+
+    /** User text as JSX children ({@code <h1>…</h1>}): braces and angle brackets would be read as
+     *  an expression or a tag, so they become character references. */
+    static String escapeJsxText(String s) {
+        return JSX_ENTITY_START.matcher(s).replaceAll("&amp;")
+                .replace("{", "&#123;").replace("}", "&#125;")
+                .replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\r", "").replace("\n", " ");
+    }
+
+    /** Puts a display text under {@code key} (raw, for places that take any text) together with
+     *  the forms a template may splice: {@code <key>Ts} inside a single-quoted TS literal,
+     *  {@code <key>Attr} inside a double-quoted JSX attribute, {@code <key>Jsx} as JSX children
+     *  and {@code <key>Comment} inside a block comment. A template never splices the raw text
+     *  into code — {@code TemplateSpliceGuardTest} checks that. */
+    public static void putText(Map<String, Object> view, String key, String text) {
+        view.put(key, text);
+        view.put(key + "Ts", text == null ? null : tsLiteralBody(text));
+        view.put(key + "Attr", text == null ? null : escapeJsxAttr(text));
+        view.put(key + "Jsx", text == null ? null : escapeJsxText(text));
+        view.put(key + "Comment", text == null ? null
+                : text.replace("*/", "* /").replace("\r", "").replace("\n", " "));
+    }
+
     /** Fallback display label for an enum constant without a user label:
      *  {@code IN_PROGRESS} -> {@code In progress}. */
     static String humanizeConstant(String constant) {
@@ -2581,8 +2622,8 @@ public final class EntityScaffoldContext {
         String labelPlural = (entity.labelPlural() != null && !entity.labelPlural().isBlank())
                 ? entity.labelPlural()
                 : (entity.label() != null && !entity.label().isBlank()) ? entity.label() : pascalPlural;
-        view.put("entityLabel", label);
-        view.put("entityLabelPlural", labelPlural);
+        putText(view, "entityLabel", label);
+        putText(view, "entityLabelPlural", labelPlural);
         // SQL names go through SqlNames (a mixed-case or quoted schema name survives Boot's naming
         // strategy) and are Java-escaped — every template splices them into a string literal.
         view.put("tableName", SqlNames.javaLiteral(tableOf(entity)));
@@ -2832,7 +2873,7 @@ public final class EntityScaffoldContext {
             Map<String, Object> ff = new LinkedHashMap<>();
             ff.put("name", fv.get("name"));
             ff.put("Name", fv.get("Name"));
-            ff.put("label", fv.get("label"));
+            putText(ff, "label", (String) fv.get("label"));
             // The Java type the backend Filters carrier / @RequestParam uses for this field. For an
             // enum this is the per-entity enum type (Spring binds the request String to it by name).
             ff.put("javaType", fv.get("javaType"));
@@ -3042,7 +3083,7 @@ public final class EntityScaffoldContext {
             Map<String, Object> ff = new LinkedHashMap<>();
             ff.put("name", rv.get("fkFieldName"));
             ff.put("Name", rv.get("FieldName") + "Id");
-            ff.put("label", rv.get("FieldName"));
+            putText(ff, "label", (String) rv.get("FieldName"));
             ff.put("javaType", rv.get("targetPkJavaType"));
             ff.put("isEnumFilter", false);
             ff.put("isBooleanFilter", false);
@@ -3067,7 +3108,7 @@ public final class EntityScaffoldContext {
             Map<String, Object> ff = new LinkedHashMap<>();
             ff.put("name", cv.get("filterName"));
             ff.put("Name", cv.get("FieldName") + "Id");
-            ff.put("label", cv.get("FieldName"));
+            putText(ff, "label", (String) cv.get("FieldName"));
             ff.put("javaType", cv.get("targetPkJavaType"));
             ff.put("isEnumFilter", false);
             ff.put("isBooleanFilter", false);
@@ -3207,7 +3248,7 @@ public final class EntityScaffoldContext {
         // Human-facing display override for the generated UI (table header, form label, filter
         // chip, detail row). Defaults to the PascalCase name when no custom label was supplied —
         // done here because Mustache has no default operator.
-        fv.put("label", (f.label() != null && !f.label().isBlank()) ? f.label() : pascalName);
+        putText(fv, "label", (f.label() != null && !f.label().isBlank()) ? f.label() : pascalName);
         // Locked-after-create read-only: the form disables it on edit and Service.update skips it.
         fv.put("isReadOnly", f.readOnly());
         // A workflow's status: set by its transitions only (see putWorkflow).
