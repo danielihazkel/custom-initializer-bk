@@ -34,7 +34,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         <legend className="mb-3 text-sm font-semibold text-fg">{ {{{groupTitleExpr}}} }</legend>
 {{/groupHasTitle}}
 {{#groupFields}}
-{{^isWorkflowStatus}}
+{{^isWorkflowLocked}}
 {{#isPrimaryKey}}{{#isGenerated}}      {!isNew && (
         <Field label="{{labelAttr}}" hint={t('systemGenerated')}>
           <input
@@ -100,7 +100,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         />
 {{/isAttachment}}{{/isText}}      </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}
-{{/isWorkflowStatus}}
+{{/isWorkflowLocked}}
 {{/groupFields}}
 {{#groupRelations}}
       {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>

@@ -225,6 +225,110 @@ class FullstackWorkflowTests {
     }
 
     @Test
+    void assignee_changesOnlyByClaimReleaseAndReassign() throws Exception {
+        // The assignee used to be an ordinary field: the edit form, a bulk edit or an import set
+        // it, bypassing claim and release. It is locked like the status now, and handing a row to
+        // someone else is its own call — the ADMIN's where the project can tell roles.
+        Map<String, Object> body = workflowLayout(true);
+        body.put("opts", Map.of("scaffold", List.of("bulkUpdate", "csvImport", "secured")));
+        Map<String, String> files = generate(body);
+        String service = files.get(BE + "service/ExpenseClaimService.java");
+        assertThat(service)
+                .contains("        entity.setAssignee(null); // and nobody has taken it yet\n")   // create
+                .contains("            entity.setAssignee(null);\n")                               // import
+                .doesNotContain("existing.setAssignee(updated.getAssignee());")                   // update
+                .doesNotContain("case \"assignee\" ->")                                           // bulk edit
+                .contains("    public ExpenseClaim assign(Long id, String assignee, String user) {\n"
+                        + "        if (user == null) throw WorkflowException.unauthenticated();\n"
+                        + "        if (!currentUser.roles(user).contains(\"ADMIN\")) {\n"
+                        + "            throw WorkflowException.forbidden(\"Reassigning needs the ADMIN role\");\n")
+                .contains("existing.setAssignee(assignee == null || assignee.isBlank() ? null : assignee.trim());")
+                // A move's values are held to the DTO's validation, like the fields it left empty.
+                .contains("                existing.setRejectionReason(given.getRejectionReason());\n"
+                        + "                requireValid(existing, \"rejectionReason\");\n")
+                .contains("private void requireValid(ExpenseClaim row, String... fields) {")
+                .contains("if (!invalid.isEmpty()) throw WorkflowException.missing(invalid);");
+        assertThat(files.get(BE + "controller/ExpenseClaimController.java"))
+                .contains("    // @RequiresPermission(Constants.ADMIN)\n    @PostMapping(\"/{id}/assign\")")
+                .contains("service.assign(id, request == null ? null : request.assignee(), CurrentUser.idOf(user))")
+                .contains("public record AssignRequest(String assignee) {}")
+                // The other workflow calls carry the hint the CRUD ones do.
+                .contains("    // @RequiresPermission(Constants.USER)\n    @PostMapping(\"/{id}/transitions/{name}\")")
+                .contains("    // @RequiresPermission(Constants.USER)\n    @PostMapping(\"/{id}/claim\")");
+
+        // Frontend: out of the form and the import, and a Reassign action beside the moves.
+        String feature = FE + "src/features/expense-claim-form/";
+        assertThat(files.get(feature + "ui/ExpenseClaimForm.tsx")).doesNotContain("set('assignee'").contains("set('title'");
+        assertThat(files.get(feature + "model/importFields.ts")).doesNotContain("'assignee'").contains("'title'");
+        assertThat(files.get(FE + "src/pages/expense-claim/ui/ExpenseClaimPage.tsx")).doesNotContain("'assignee': { label:");
+        assertThat(files.get(feature + "model/workflow.ts"))
+                .contains("assign: (row: ExpenseClaim, assignee: string) => api.post<ExpenseClaim>(`${rowPath(row)}/assign`, { assignee }),");
+        assertThat(files.get(feature + "ui/ExpenseClaimTransitions.tsx"))
+                .contains("const canAssign = !compact && me.id != null && ExpenseClaimWorkflow.isOpen(row) && me.roles.includes('ADMIN')")
+                .contains("if (moves.length === 0 && !canClaim && !canRelease && !canAssign) return null")
+                .contains("{t('reassign')}")
+                .contains("void act(() => ExpenseClaimWorkflow.assign(row, assignTo.trim()), assignTo.trim() ? t('assignedTo', { x: assignTo.trim() }) : t('released'))");
+        assertThat(files.get(FE + "src/shared/i18n/strings.ts")).contains("reassign: 'Reassign',").contains("reassign: 'העברה למשתמש אחר',");
+
+        // Without an ldap-auth dependency there are no roles to ask for: any signed-in user may.
+        Map<String, Object> noRoles = claims(true);
+        for (Map<String, Object> t : transitions(noRoles)) t.remove("roles");
+        noRoles.put("dependencies", List.of("web", "data-jpa", "h2"));
+        Map<String, String> open = generate(noRoles);
+        assertThat(open.get(BE + "service/ExpenseClaimService.java"))
+                .contains("public ExpenseClaim assign(Long id, String assignee, String user) {")
+                .doesNotContain("CurrentUser").doesNotContain("ADMIN")
+                // …and without the validation starter no Validator to hold a move's values to.
+                .doesNotContain("requireValid");
+        assertThat(open.get(FE + "src/features/expense-claim-form/ui/ExpenseClaimTransitions.tsx"))
+                .contains("const canAssign = !compact && me.id != null && ExpenseClaimWorkflow.isOpen(row)\n");
+
+        // An assignee that must be filled could never be released; a step or a move cannot ask for it.
+        Map<String, Object> required = claims(true);
+        replaceField(required, "assignee", Map.of("name", "assignee", "type", "STRING", "required", true));
+        assertBadRequest(required, "assigneeField 'assignee' cannot be required — a task nobody has taken has no assignee");
+        Map<String, Object> wizard = claims(true);
+        wizard.put("pages", List.of(
+                Map.of("id", "claims", "type", "entity-list", "entity", "ExpenseClaim"),
+                Map.of("id", "new-claim", "type", "wizard", "entity", "ExpenseClaim",
+                        "steps", List.of(Map.of("fields", List.of("title", "assignee"))))));
+        assertBadRequest(wizard, "'assignee' is set by claiming and reassigning, so a step cannot ask for it");
+        Map<String, Object> asks = claims(true);
+        transitions(asks).get(0).put("requires", List.of("assignee"));
+        assertBadRequest(asks, "requires 'assignee', which a transition cannot set (the assignee changes by claiming and reassigning)");
+    }
+
+    @Test
+    void requiredStatus_isTheColumnsNotTheClients() throws Exception {
+        // A required status is NOT NULL in the table, but the workflow sets it on every create:
+        // the DTO must not turn away a client that sent none, and the form (which never shows
+        // the status) must not ask for it. It used to work only when the field had a default,
+        // which the form pre-filled.
+        Map<String, Object> body = claims(true);
+        replaceField(body, "status", Map.of("name", "status", "type", "ENUM", "required", true,
+                "enumValues", List.of("DRAFT", "SUBMITTED", "APPROVED", "REJECTED")));
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "ldap-auth-rest"));
+        Map<String, String> files = generate(body);
+        assertThat(files.get(BE + "entity/ExpenseClaim.java"))
+                .contains("@Column(name = \"status\", nullable = false)");
+        assertThat(files.get(BE + "dto/ExpenseClaimDto.java"))
+                .contains("@NotNull String title,")
+                .contains("        ExpenseClaimStatusType status,")
+                .doesNotContain("@NotNull ExpenseClaimStatusType status");
+        assertThat(files.get(FE + "src/features/expense-claim-form/model/validate.ts"))
+                .contains("if (blank(value.title)) errors.title = t('required')")
+                .doesNotContain("value.status");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void replaceField(Map<String, Object> body, String name, Map<String, Object> field) {
+        Map<String, Object> claim = ((List<Map<String, Object>>) body.get("entities")).get(1);
+        List<Map<String, Object>> fields = new ArrayList<>((List<Map<String, Object>>) claim.get("fields"));
+        fields.replaceAll(f -> name.equals(f.get("name")) ? field : f);
+        claim.put("fields", fields);
+    }
+
+    @Test
     void demoData_givesEveryInboxQueueRows() throws Exception {
         Map<String, Object> body = claims(true);
         body.put("opts", Map.of("scaffold", List.of("seedData")));

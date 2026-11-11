@@ -1655,6 +1655,19 @@ public final class EntityScaffoldContext {
         Map<String, Object> status = fieldViews.stream().filter(fv -> wf.statusField().equals(fv.get("name"))).findFirst().orElseThrow();
         status.put("isReadOnly", true);
         status.put("isWorkflowStatus", true);
+        status.put("isWorkflowLocked", true);
+        // The workflow sets it on every create, whatever was sent: a client is never asked for it
+        // (its column keeps its NOT NULL — isNotNullColumn).
+        status.put("isRequired", false);
+        // The assignee changes only by Claim, Release and Reassign: out of the form, PUT, bulk and
+        // inline edit and the import, like the status.
+        if (wf.assigneeField() != null) {
+            fieldViews.stream().filter(fv -> wf.assigneeField().equals(fv.get("name"))).findFirst().ifPresent(fv -> {
+                fv.put("isReadOnly", true);
+                fv.put("isWorkflowAssignee", true);
+                fv.put("isWorkflowLocked", true);
+            });
+        }
         String pascal = Naming.toPascalCase(entity.name());
         String enumType = (String) status.get("enumTypeName");
         java.util.function.Function<String, String> javaState = s -> pascal + "." + enumType + "." + s;
@@ -2627,7 +2640,17 @@ public final class EntityScaffoldContext {
         boolean bulkValidates = Boolean.TRUE.equals(ctx.get("bulkUpdateApplicable"))
                 && Boolean.TRUE.equals(ctx.get("hasValidation"));
         ctx.put("bulkValidates", bulkValidates);
-        ctx.put("usesValidator", bulkValidates || Boolean.TRUE.equals(ctx.get("importValidates")));
+        // …and so does a workflow move, for the fields it asks for.
+        boolean transitionValidates = Boolean.TRUE.equals(ctx.get("workflowRequiresFields"))
+                && Boolean.TRUE.equals(ctx.get("hasValidation"));
+        ctx.put("transitionValidates", transitionValidates);
+        ctx.put("usesValidator", bulkValidates || transitionValidates || Boolean.TRUE.equals(ctx.get("importValidates")));
+        // Reassigning is the ADMIN's when the project can tell roles (an ldap-auth dependency);
+        // without one there are no roles and any signed-in user may. The service asks CurrentUser
+        // for that, or for a transition limited to roles.
+        boolean assignNeedsAdmin = Boolean.TRUE.equals(ctx.get("hasAssignee")) && Boolean.TRUE.equals(ctx.get("hasLdapAuth"));
+        ctx.put("assignNeedsAdmin", assignNeedsAdmin);
+        ctx.put("serviceUsesCurrentUser", assignNeedsAdmin || Boolean.TRUE.equals(ctx.get("workflowUsesRoles")));
         // The bulk-editable fields a row cannot be without: a bulk edit may not clear them.
         List<String> requiredBulk = bulkFields == null ? List.of() : bulkFields.stream()
                 .filter(f -> Boolean.TRUE.equals(f.get("isRequired")))
@@ -3304,6 +3327,9 @@ public final class EntityScaffoldContext {
         fv.put("isReadOnly", f.readOnly());
         // A workflow's status: set by its transitions only (see putWorkflow).
         fv.put("isWorkflowStatus", false);
+        // …and its assignee by claiming and reassigning; either is out of the form.
+        fv.put("isWorkflowAssignee", false);
+        fv.put("isWorkflowLocked", false);
         fv.put("isEditable", !f.readOnly());
 
         String javaType;
@@ -3324,6 +3350,9 @@ public final class EntityScaffoldContext {
         fv.put("isPrimaryKey", f.primaryKey());
         fv.put("isGenerated", f.generated());
         fv.put("isRequired", f.required());
+        // The column's own NOT NULL: `isRequired` is what a client must send, which is not the
+        // same for a value the server always sets (a workflow's status).
+        fv.put("isNotNullColumn", f.required());
         fv.put("isUnique", f.unique());
         fv.put("isString", f.type().isString());
         fv.put("isText", f.type().isText());

@@ -4,8 +4,8 @@ import {{entityPackage}}.{{EntityName}};
 {{#hasCompositePk}}import {{entityPackage}}.{{keyClassName}};
 {{/hasCompositePk}}import {{repositoryPackage}}.{{EntityName}}Repository;
 import {{packageName}}.web.ResourceNotFoundException;
-{{#workflowUsesRoles}}import {{packageName}}.web.CurrentUser;
-{{/workflowUsesRoles}}{{#hasWorkflow}}import {{packageName}}.web.WorkflowException;
+{{#serviceUsesCurrentUser}}import {{packageName}}.web.CurrentUser;
+{{/serviceUsesCurrentUser}}{{#hasWorkflow}}import {{packageName}}.web.WorkflowException;
 {{/hasWorkflow}}{{#mutable}}{{^pkField.isGenerated}}import {{packageName}}.web.ResourceConflictException;
 {{/pkField.isGenerated}}{{/mutable}}{{#lockingApplicable}}import org.springframework.orm.ObjectOptimisticLockingFailureException;
 {{/lockingApplicable}}{{#hasStringFields}}import java.util.Locale;
@@ -38,19 +38,19 @@ public class {{EntityName}}Service {
     private final {{EntityName}}Repository repository;
 {{#usesEntityManager}}    private final EntityManager entityManager;
 {{/usesEntityManager}}{{#usesValidator}}    private final jakarta.validation.Validator validator;
-{{/usesValidator}}{{#workflowUsesRoles}}    private final CurrentUser currentUser;
-{{/workflowUsesRoles}}{{#hasAttachmentFields}}    private final {{packageName}}.attachment.AttachmentStorage attachments;
+{{/usesValidator}}{{#serviceUsesCurrentUser}}    private final CurrentUser currentUser;
+{{/serviceUsesCurrentUser}}{{#hasAttachmentFields}}    private final {{packageName}}.attachment.AttachmentStorage attachments;
 {{/hasAttachmentFields}}
     public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#usesValidator}},
-                                 jakarta.validation.Validator validator{{/usesValidator}}{{#workflowUsesRoles}}, CurrentUser currentUser{{/workflowUsesRoles}}{{#hasAttachmentFields}},
+                                 jakarta.validation.Validator validator{{/usesValidator}}{{#serviceUsesCurrentUser}}, CurrentUser currentUser{{/serviceUsesCurrentUser}}{{#hasAttachmentFields}},
                                  {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachmentFields}}) {
         this.repository = repository;
 {{#hasAttachmentFields}}        this.attachments = attachments;
 {{/hasAttachmentFields}}
 {{#usesEntityManager}}        this.entityManager = entityManager;
 {{/usesEntityManager}}{{#usesValidator}}        this.validator = validator;
-{{/usesValidator}}{{#workflowUsesRoles}}        this.currentUser = currentUser;
-{{/workflowUsesRoles}}    }
+{{/usesValidator}}{{#serviceUsesCurrentUser}}        this.currentUser = currentUser;
+{{/serviceUsesCurrentUser}}    }
 {{#hasFilters}}
     /** Type-aware filter parameters bound from the request query string. Null fields are ignored;
      *  an enum or relation filter holds every value asked for ({@code status=OPEN,CLOSED}), any of which matches. */
@@ -341,7 +341,8 @@ public class {{EntityName}}Service {
 {{#collections}}        if (entity.get{{FieldName}}() == null) entity.set{{FieldName}}(new java.util.LinkedHashSet<>());
 {{/collections}}{{/hasCollections}}{{#lockingApplicable}}        entity.setVersion(null); // a new row starts at version 0, whatever the client sent
 {{/lockingApplicable}}{{#hasWorkflow}}        entity.set{{WorkflowStatusName}}({{workflowInitialJava}}); // the workflow decides where a new row starts
-{{/hasWorkflow}}{{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
+{{#hasAssignee}}        entity.set{{AssigneeName}}(null); // and nobody has taken it yet
+{{/hasAssignee}}{{/hasWorkflow}}{{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}{{^pkField.isGenerated}}        // Client-supplied key: save() would silently merge over an existing row, so refuse with a 409.
         {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
         if (id != null && repository.existsById(id)) {
@@ -383,7 +384,8 @@ public class {{EntityName}}Service {
 {{#hasLockedRelations}}            withReferences(entity);
 {{/hasLockedRelations}}{{#lockingApplicable}}            entity.setVersion(null);
 {{/lockingApplicable}}{{#hasWorkflow}}            entity.set{{WorkflowStatusName}}({{workflowInitialJava}});
-{{/hasWorkflow}}{{#pkField.isGenerated}}            entity.set{{pkField.Name}}(null);
+{{#hasAssignee}}            entity.set{{AssigneeName}}(null);
+{{/hasAssignee}}{{/hasWorkflow}}{{#pkField.isGenerated}}            entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}{{^pkField.isGenerated}}            {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
             if (id != null && !keys.add(id)) {
                 errors.add(new ImportError(row, null, "has the same key as an earlier row: " + id));
@@ -442,7 +444,8 @@ public class {{EntityName}}Service {
 {{#requires}}                if (blank(given.get{{Name}}())) missing.put("{{key}}", "is required");
 {{/requires}}                if (!missing.isEmpty()) throw WorkflowException.missing(missing);
 {{#requires}}                existing.set{{Name}}(given.get{{Name}}());
-{{/requires}}{{/hasRequires}}                existing.set{{WorkflowStatusName}}({{toJava}});
+{{/requires}}{{#transitionValidates}}                requireValid(existing{{#requires}}, "{{key}}"{{/requires}});
+{{/transitionValidates}}{{/hasRequires}}                existing.set{{WorkflowStatusName}}({{toJava}});
             }
 {{/workflowTransitions}}            default -> throw new IllegalArgumentException("Unknown transition: " + name);
         }
@@ -471,7 +474,21 @@ public class {{EntityName}}Service {
     private static boolean blank(Object value) {
         return value == null || (value instanceof String s && s.isBlank());
     }
-{{/workflowRequiresFields}}
+{{/workflowRequiresFields}}{{#transitionValidates}}
+
+    /** The values a move set must pass what a save holds them to (length, range, pattern…): a 400
+     *  naming each field otherwise, like the fields it left empty. */
+    private void requireValid({{EntityName}} row, String... fields) {
+        {{dtoPackage}}.{{EntityName}}Dto dto = {{dtoPackage}}.{{EntityName}}Dto.from(row);
+        java.util.Map<String, String> invalid = new java.util.LinkedHashMap<>();
+        for (String field : fields) {
+            for (jakarta.validation.ConstraintViolation<{{dtoPackage}}.{{EntityName}}Dto> violation : validator.validateProperty(dto, field)) {
+                invalid.putIfAbsent(field, violation.getMessage());
+            }
+        }
+        if (!invalid.isEmpty()) throw WorkflowException.missing(invalid);
+    }
+{{/transitionValidates}}
 {{#hasAssignee}}
 
     /** Takes an unassigned, unfinished row for the caller (409 when someone else has it). */
@@ -497,6 +514,24 @@ public class {{EntityName}}Service {
             throw WorkflowException.forbidden("Only the user it is assigned to can release it");
         }
         existing.set{{AssigneeName}}(null);
+        return repository.save(existing);
+    }
+
+    /**
+     * Hands an unfinished row to {@code assignee} — or, when that is blank, back to the unassigned
+     * queue — whoever holds it now. {{#assignNeedsAdmin}}The ADMIN role's to do: everyone else claims and releases
+     * their own.{{/assignNeedsAdmin}}{{^assignNeedsAdmin}}Any signed-in user may: without an ldap-auth dependency the project knows no roles.{{/assignNeedsAdmin}}
+     */
+    public {{EntityName}} assign({{pkField.javaType}} id, String assignee, String user) {
+        if (user == null) throw WorkflowException.unauthenticated();
+{{#assignNeedsAdmin}}        if (!currentUser.roles(user).contains("ADMIN")) {
+            throw WorkflowException.forbidden("Reassigning needs the ADMIN role");
+        }
+{{/assignNeedsAdmin}}        {{EntityName}} existing = findById(id);
+        if (!OPEN_STATES.contains(existing.get{{WorkflowStatusName}}())) {
+            throw WorkflowException.wrongState("This {{EntityName}} is " + existing.get{{WorkflowStatusName}}() + ", so there is nothing left to do");
+        }
+        existing.set{{AssigneeName}}(assignee == null || assignee.isBlank() ? null : assignee.trim());
         return repository.save(existing);
     }
 

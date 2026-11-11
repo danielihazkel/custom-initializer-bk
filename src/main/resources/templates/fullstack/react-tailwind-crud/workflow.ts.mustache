@@ -54,5 +54,7 @@ export const {{EntityName}}Workflow = {
   assigneeOf: (row: Partial<{{EntityName}}>) => row.{{assigneeField}} || null,
   claim: (row: {{EntityName}}) => api.post<{{EntityName}}>(`${rowPath(row)}/claim`, {}),
   release: (row: {{EntityName}}) => api.post<{{EntityName}}>(`${rowPath(row)}/release`, {}),
+  /** Hands the row to `assignee` (a user id), or back to the unassigned queue when it is blank. */
+  assign: (row: {{EntityName}}, assignee: string) => api.post<{{EntityName}}>(`${rowPath(row)}/assign`, { assignee }),
 {{/hasAssignee}}
 }

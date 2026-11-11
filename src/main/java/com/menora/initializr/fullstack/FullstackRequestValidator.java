@@ -686,6 +686,10 @@ public final class FullstackRequestValidator {
                 throw new WizardArgumentException(where + "assigneeField '" + raw.assigneeField().trim()
                         + "' must be a non-key, non-unique text field of " + entity + " (it holds a user id)");
             }
+            if (f.required()) {
+                throw new WizardArgumentException(where + "assigneeField '" + f.name()
+                        + "' cannot be required — a task nobody has taken has no assignee");
+            }
             assignee = f.name();
             // The inbox queue rides in the `inbox` request parameter, which a filter of that name would shadow.
             if (byLower.containsKey("inbox")) {
@@ -747,6 +751,10 @@ public final class FullstackRequestValidator {
                     if (f != null && (f.primaryKey() || f.readOnly() || f.name().equals(status.name()))) {
                         throw new WizardArgumentException(at + "requires '" + f.name() + "', which a transition cannot set"
                                 + (f.name().equals(status.name()) ? " (it is the status the transition changes)" : " (a key or read-only field)"));
+                    }
+                    if (f != null && f.name().equals(assignee)) {
+                        throw new WizardArgumentException(at + "requires '" + f.name()
+                                + "', which a transition cannot set (the assignee changes by claiming and reassigning)");
                     }
                     if (requires.contains(canonical)) throw new WizardArgumentException(at + "requires '" + canonical + "' twice");
                     requires.add(canonical);

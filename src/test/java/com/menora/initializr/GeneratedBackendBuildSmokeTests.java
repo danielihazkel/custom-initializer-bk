@@ -156,6 +156,79 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(backend, "-B", "package");
     }
 
+    @org.junit.jupiter.api.Test
+    @SuppressWarnings("unchecked")
+    void liveApiOfAWorkflowBackendBehaves(@TempDir Path workDir) throws Exception {
+        // The Approvals workflow over its real API: who a claim is assigned to, and what a move
+        // takes. Without ldap-auth (its artifact is in the company repository), so no roles.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "csvImport", "bulkUpdate", "seedData", "tests")));
+        for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
+            Map<String, Object> workflow = (Map<String, Object>) entity.get("workflow");
+            if (workflow == null) continue;
+            for (Map<String, Object> t : (List<Map<String, Object>>) workflow.get("transitions")) t.remove("roles");
+        }
+        Path backend = postAndExtractBackend(workDir, body);
+        writeLiveTest(backend, "com.menora.support", LIVE_APPROVALS_TESTS);
+        runMvn(backend, "-B", "package");
+    }
+
+    /** Test methods run against the generated Approvals backend (no roles) and its demo rows. */
+    private static final String LIVE_APPROVALS_TESTS = """
+                private JsonNode newClaim(String extra) throws Exception {
+                    long center = firstId("/api/cost-centers");
+                    return send(post("/api/expense-claims"), "alice", "{\\"title\\":\\"Taxi\\",\\"amount\\":40,\\"category\\":\\"TRAVEL\\","
+                            + "\\"spentOn\\":\\"2026-11-01\\",\\"costCenterId\\":" + center + extra + "}", 200);
+                }
+
+                @Test
+                void theAssigneeChangesOnlyByClaimReleaseAndReassign() throws Exception {
+                    // The status is the workflow's: a client that sends none is not turned away (the
+                    // field is required in the model — that is the column's NOT NULL, not the client's job).
+                    assertThat(newClaim("").get("status").asText()).isEqualTo("DRAFT");
+                    // A new claim is nobody's and starts as a draft, whatever the client sent.
+                    JsonNode made = newClaim(",\\"assignee\\":\\"mallory\\",\\"status\\":\\"PAID\\"");
+                    String path = "/api/expense-claims/" + made.get("id").asLong();
+                    assertThat(made.get("assignee").isNull()).isTrue();
+                    assertThat(made.get("status").asText()).isEqualTo("DRAFT");
+                    // An ordinary save changes the title, not who has it.
+                    ObjectNode edit = (ObjectNode) made.deepCopy();
+                    edit.put("assignee", "mallory").put("title", "Taxi home");
+                    JsonNode saved = send(put(path), "mallory", edit.toString(), 200);
+                    assertThat(saved.get("title").asText()).isEqualTo("Taxi home");
+                    assertThat(saved.get("assignee").isNull()).isTrue();
+                    // …nor does a bulk edit: the field is not one it can set.
+                    send(patch("/api/expense-claims/bulk"), "mallory",
+                            "{\\"ids\\":[" + made.get("id").asLong() + "],\\"field\\":\\"assignee\\",\\"value\\":\\"mallory\\"}", 400);
+                    // Claim and release are the holder's own.
+                    assertThat(send(post(path + "/claim"), "alice", null, 200).get("assignee").asText()).isEqualTo("alice");
+                    send(post(path + "/release"), "bob", null, 403);
+                    send(post(path + "/claim"), "bob", null, 409);
+                    // Reassigning hands it over whoever holds it; a blank assignee puts it back in the queue.
+                    send(post(path + "/assign"), null, "{\\"assignee\\":\\"bob\\"}", 401);
+                    assertThat(send(post(path + "/assign"), "alice", "{\\"assignee\\":\\" bob \\"}", 200).get("assignee").asText()).isEqualTo("bob");
+                    assertThat(send(post(path + "/assign"), "alice", "{\\"assignee\\":\\"\\"}", 200).get("assignee").isNull()).isTrue();
+                    assertThat(get(path).get("assignee").isNull()).isTrue();
+                }
+
+                @Test
+                void aMoveHoldsItsValuesToWhatASaveHoldsThemTo() throws Exception {
+                    String path = "/api/expense-claims/" + newClaim("").get("id").asLong();
+                    assertThat(send(post(path + "/transitions/submit"), "alice", null, 200).get("status").asText()).isEqualTo("SUBMITTED");
+                    // Approving asks for the approved amount: left out, or one the DTO refuses (>= 0), is a 400 naming it.
+                    assertThat(send(post(path + "/transitions/approve"), "alice", "{}", 400).get("errors").has("approvedAmount")).isTrue();
+                    assertThat(send(post(path + "/transitions/approve"), "alice", "{\\"approvedAmount\\":-5}", 400).get("errors").has("approvedAmount")).isTrue();
+                    assertThat(get(path).get("status").asText()).isEqualTo("SUBMITTED");
+                    JsonNode approved = send(post(path + "/transitions/approve"), "alice", "{\\"approvedAmount\\":35.5}", 200);
+                    assertThat(approved.get("status").asText()).isEqualTo("APPROVED");
+                    assertThat(approved.get("approvedAmount").decimalValue()).isEqualByComparingTo("35.5");
+                    // A finished claim has nothing left to hand over.
+                    send(post(path + "/transitions/pay"), "alice", null, 200);
+                    send(post(path + "/assign"), "alice", "{\\"assignee\\":\\"bob\\"}", 409);
+                }
+            """;
+
     /** Test methods run against the generated Orders backend (every option on) and its demo rows. */
     private static final String LIVE_ORDERS_TESTS = """
                 @Test
@@ -211,6 +284,7 @@ class GeneratedBackendBuildSmokeTests {
 
                 import com.fasterxml.jackson.databind.JsonNode;
                 import com.fasterxml.jackson.databind.ObjectMapper;
+                import com.fasterxml.jackson.databind.node.ObjectNode;
                 import org.junit.jupiter.api.Test;
                 import org.springframework.beans.factory.annotation.Autowired;
                 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -244,12 +318,14 @@ class GeneratedBackendBuildSmokeTests {
                         return get(listPath + "?size=1").get("content").get(0).get("id").asLong();
                     }
 
-                    @SuppressWarnings("unused")
-                    private static final Object[] KEEPS_IMPORTS_USED = {MediaType.APPLICATION_JSON,
-                            (java.util.function.Function<String, Object>) p -> patch(p),
-                            (java.util.function.Function<String, Object>) p -> put(p),
-                            (java.util.function.Function<String, Object>) p -> post(p),
-                            (java.util.function.Function<String, Object>) p -> delete(p)};
+                    /** Sends JSON as {@code user} (null: nobody signed in) and reads the JSON answer of the expected status. */
+                    private JsonNode send(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder call,
+                                          String user, String body, int expected) throws Exception {
+                        if (user != null) call.header("userinfo", user);
+                        if (body != null) call.contentType(MediaType.APPLICATION_JSON).content(body);
+                        byte[] answer = mvc.perform(call).andExpect(status().is(expected)).andReturn().getResponse().getContentAsByteArray();
+                        return answer.length == 0 ? json.nullNode() : json.readTree(answer);
+                    }
 
                 %s}
                 """.formatted(packageName, methods);

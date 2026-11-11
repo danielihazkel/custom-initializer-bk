@@ -228,7 +228,8 @@ public class {{EntityName}}Controller {
 {{/softDeleteApplicable}}{{#hasWorkflow}}
     /** Moves the row by one of its workflow's transitions; the body carries the fields it asks for. */
 {{#optScaffoldOpenApi}}    @Operation(summary = "Move a {{EntityName}} by a workflow transition")
-{{/optScaffoldOpenApi}}    @PostMapping("/{id}/transitions/{name}")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
+{{/optScaffoldSecured}}    @PostMapping("/{id}/transitions/{name}")
     public {{EntityName}}Dto transition(@PathVariable {{pkField.javaType}} id, @PathVariable String name,
                                         @RequestBody(required = false) {{EntityName}}Dto values,
                                         @RequestHeader(value = "userinfo", required = false) String user) {
@@ -238,17 +239,31 @@ public class {{EntityName}}Controller {
 
     /** Assigns the row to the caller. */
 {{#optScaffoldOpenApi}}    @Operation(summary = "Claim a {{EntityName}}")
-{{/optScaffoldOpenApi}}    @PostMapping("/{id}/claim")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
+{{/optScaffoldSecured}}    @PostMapping("/{id}/claim")
     public {{EntityName}}Dto claim(@PathVariable {{pkField.javaType}} id, @RequestHeader(value = "userinfo", required = false) String user) {
         return {{EntityName}}Dto.from(service.claim(id, CurrentUser.idOf(user)));
     }
 
     /** Gives the row back to the unassigned queue. */
 {{#optScaffoldOpenApi}}    @Operation(summary = "Release a {{EntityName}}")
-{{/optScaffoldOpenApi}}    @PostMapping("/{id}/release")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
+{{/optScaffoldSecured}}    @PostMapping("/{id}/release")
     public {{EntityName}}Dto release(@PathVariable {{pkField.javaType}} id, @RequestHeader(value = "userinfo", required = false) String user) {
         return {{EntityName}}Dto.from(service.release(id, CurrentUser.idOf(user)));
     }
+
+    /** Hands the row to another user, or (a blank assignee) back to the unassigned queue. */
+{{#optScaffoldOpenApi}}    @Operation(summary = "Reassign a {{EntityName}}")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)
+{{/optScaffoldSecured}}    @PostMapping("/{id}/assign")
+    public {{EntityName}}Dto assign(@PathVariable {{pkField.javaType}} id, @RequestBody(required = false) AssignRequest request,
+                                    @RequestHeader(value = "userinfo", required = false) String user) {
+        return {{EntityName}}Dto.from(service.assign(id, request == null ? null : request.assignee(), CurrentUser.idOf(user)));
+    }
+
+    /** Who a row goes to: a user id, or blank for nobody. */
+    public record AssignRequest(String assignee) {}
 {{/hasAssignee}}{{/hasWorkflow}}{{/hasCompositePk}}{{#bulkDeleteApplicable}}
 {{#optScaffoldOpenApi}}    @Operation(summary = "Bulk delete {{EntityName}} records by id")
 {{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.ADMIN)

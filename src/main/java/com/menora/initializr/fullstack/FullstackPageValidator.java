@@ -1714,9 +1714,11 @@ public final class FullstackPageValidator {
         List<String> required = new ArrayList<>();
         // A workflow's status starts in its initial state and moves only by transitions.
         String status = entity.workflow() == null ? null : entity.workflow().statusField();
+        // …and its assignee only by Claim, Release and Reassign.
+        String assignee = entity.workflow() == null ? null : entity.workflow().assigneeField();
         for (FieldDefinition f : entity.fields()) {
             if (f.primaryKey() && f.generated()) continue;
-            if (f.name().equals(status)) continue;
+            if (f.name().equals(status) || f.name().equals(assignee)) continue;
             askable.put(f.name().toLowerCase(Locale.ROOT), f.name());
             if (f.required() || f.primaryKey()) required.add(f.name());
         }
@@ -1733,7 +1735,7 @@ public final class FullstackPageValidator {
             List<PageDefinition.Step> out = new ArrayList<>();
             Set<String> placed = new HashSet<>();
             for (EntityDefinition.FormSection section : entity.formSections()) {
-                List<String> asked = section.fields().stream().filter(f -> !f.equals(status)).toList();
+                List<String> asked = section.fields().stream().filter(f -> !f.equals(status) && !f.equals(assignee)).toList();
                 if (!asked.isEmpty()) out.add(new PageDefinition.Step(section.title(), asked));
                 section.fields().forEach(f -> placed.add(f.toLowerCase(Locale.ROOT)));
             }
@@ -1766,6 +1768,9 @@ public final class FullstackPageValidator {
                     String canonical = name == null ? null : askable.get(name.trim().toLowerCase(Locale.ROOT));
                     if (canonical == null && status != null && name != null && status.equalsIgnoreCase(name.trim())) {
                         throw new WizardArgumentException(stepPrefix + ": '" + status + "' is set by the workflow, so a step cannot ask for it");
+                    }
+                    if (canonical == null && assignee != null && name != null && assignee.equalsIgnoreCase(name.trim())) {
+                        throw new WizardArgumentException(stepPrefix + ": '" + assignee + "' is set by claiming and reassigning, so a step cannot ask for it");
                     }
                     if (canonical == null) {
                         throw new WizardArgumentException(stepPrefix + ": '" + name + "' is not a field of the "

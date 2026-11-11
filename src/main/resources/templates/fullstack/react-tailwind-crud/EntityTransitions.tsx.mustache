@@ -35,6 +35,10 @@ export function {{EntityName}}Transitions({ row, onDone, compact = false }: Prop
   const assignee = {{EntityName}}Workflow.assigneeOf(row)
   const canClaim = me.id != null && assignee == null && {{EntityName}}Workflow.isOpen(row)
   const canRelease = me.id != null && assignee === me.id
+  // Handing a row to someone else{{#hasLdapAuth}} is the ADMIN role's, and{{/hasLdapAuth}} is offered where there is room for
+  // it: not in a table row. The server checks again.
+  const canAssign = !compact && me.id != null && {{EntityName}}Workflow.isOpen(row){{#hasLdapAuth}} && me.roles.includes('ADMIN'){{/hasLdapAuth}}
+  const [assignTo, setAssignTo] = useState<string | null>(null)
 {{/hasAssignee}}
 
   async function act(work: () => Promise<{{EntityName}}>, done: string) {
@@ -45,6 +49,9 @@ export function {{EntityName}}Transitions({ row, onDone, compact = false }: Prop
 {{#workflowRequiresFields}}
       setAsking(null)
 {{/workflowRequiresFields}}
+{{#hasAssignee}}
+      setAssignTo(null)
+{{/hasAssignee}}
       onDone(next)
     } catch (e) {
 {{#workflowRequiresFields}}
@@ -60,7 +67,7 @@ export function {{EntityName}}Transitions({ row, onDone, compact = false }: Prop
     }
   }
 
-  if (moves.length === 0{{#hasAssignee}} && !canClaim && !canRelease{{/hasAssignee}}) return null
+  if (moves.length === 0{{#hasAssignee}} && !canClaim && !canRelease && !canAssign{{/hasAssignee}}) return null
   const button = compact
     ? 'rounded-md border border-border px-2 py-1 text-xs font-medium text-fg transition-colors hover:bg-surface-2 disabled:opacity-50'
     : 'rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-2 disabled:opacity-50'
@@ -76,6 +83,31 @@ export function {{EntityName}}Transitions({ row, onDone, compact = false }: Prop
         <button type="button" disabled={busy} className={button} onClick={() => void act(() => {{EntityName}}Workflow.release(row), t('released'))}>
           {t('release')}
         </button>
+      )}
+      {canAssign && assignTo === null && (
+        <button type="button" disabled={busy} className={button} onClick={() => setAssignTo(assignee ?? '')}>
+          {t('reassign')}
+        </button>
+      )}
+      {canAssign && assignTo !== null && (
+        <form
+          className="flex items-center gap-2"
+          onSubmit={e => {
+            e.preventDefault()
+            void act(() => {{EntityName}}Workflow.assign(row, assignTo.trim()), assignTo.trim() ? t('assignedTo', { x: assignTo.trim() }) : t('released'))
+          }}
+        >
+          <input
+            value={assignTo}
+            onChange={e => setAssignTo(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); setAssignTo(null) } }}
+            placeholder={t('reassignTo')}
+            aria-label={t('reassignTo')}
+            className="w-40 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+          />
+          <button type="submit" disabled={busy} className={button}>{t('assign')}</button>
+          <button type="button" disabled={busy} className={button} onClick={() => setAssignTo(null)}>{t('cancel')}</button>
+        </form>
       )}
 {{/hasAssignee}}
       {moves.map(move => (

@@ -47,7 +47,7 @@ import org.hibernate.annotations.Formula;
 {{#isGenerated}}{{#isUuid}}    @org.hibernate.annotations.UuidGenerator
 {{/isUuid}}{{^isUuid}}    @GeneratedValue(strategy = GenerationType.IDENTITY)
 {{/isUuid}}{{/isGenerated}}{{/isPrimaryKey}}{{#isEnum}}    @Enumerated(EnumType.STRING)
-{{/isEnum}}    @Column(name = "{{#isView}}{{viewColumn}}{{/isView}}{{^isView}}{{column}}{{/isView}}"{{#isRequired}}, nullable = false{{/isRequired}}{{#isUnique}}, unique = true{{/isUnique}}{{#hasLength}}, length = {{length}}{{/hasLength}}{{#isMoney}}, precision = 19, scale = 2{{/isMoney}}{{#isText}}, columnDefinition = "TEXT"{{/isText}})
+{{/isEnum}}    @Column(name = "{{#isView}}{{viewColumn}}{{/isView}}{{^isView}}{{column}}{{/isView}}"{{#isNotNullColumn}}, nullable = false{{/isNotNullColumn}}{{#isUnique}}, unique = true{{/isUnique}}{{#hasLength}}, length = {{length}}{{/hasLength}}{{#isMoney}}, precision = 19, scale = 2{{/isMoney}}{{#isText}}, columnDefinition = "TEXT"{{/isText}})
     private {{javaType}} {{name}}{{#hasDefault}} = {{{defaultJava}}}{{/hasDefault}};
 
 {{/fields}}{{#relations}}    @ManyToOne(fetch = FetchType.LAZY{{#required}}, optional = false{{/required}})
