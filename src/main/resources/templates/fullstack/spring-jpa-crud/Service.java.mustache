@@ -37,19 +37,19 @@ public class {{EntityName}}Service {
 
     private final {{EntityName}}Repository repository;
 {{#usesEntityManager}}    private final EntityManager entityManager;
-{{/usesEntityManager}}{{#importValidates}}    private final jakarta.validation.Validator validator;
-{{/importValidates}}{{#workflowUsesRoles}}    private final CurrentUser currentUser;
+{{/usesEntityManager}}{{#usesValidator}}    private final jakarta.validation.Validator validator;
+{{/usesValidator}}{{#workflowUsesRoles}}    private final CurrentUser currentUser;
 {{/workflowUsesRoles}}{{#hasAttachmentFields}}    private final {{packageName}}.attachment.AttachmentStorage attachments;
 {{/hasAttachmentFields}}
-    public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#importValidates}},
-                                 jakarta.validation.Validator validator{{/importValidates}}{{#workflowUsesRoles}}, CurrentUser currentUser{{/workflowUsesRoles}}{{#hasAttachmentFields}},
+    public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#usesValidator}},
+                                 jakarta.validation.Validator validator{{/usesValidator}}{{#workflowUsesRoles}}, CurrentUser currentUser{{/workflowUsesRoles}}{{#hasAttachmentFields}},
                                  {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachmentFields}}) {
         this.repository = repository;
 {{#hasAttachmentFields}}        this.attachments = attachments;
 {{/hasAttachmentFields}}
 {{#usesEntityManager}}        this.entityManager = entityManager;
-{{/usesEntityManager}}{{#importValidates}}        this.validator = validator;
-{{/importValidates}}{{#workflowUsesRoles}}        this.currentUser = currentUser;
+{{/usesEntityManager}}{{#usesValidator}}        this.validator = validator;
+{{/usesValidator}}{{#workflowUsesRoles}}        this.currentUser = currentUser;
 {{/workflowUsesRoles}}    }
 {{#hasFilters}}
     /** Type-aware filter parameters bound from the request query string. Null fields are ignored;
@@ -545,28 +545,51 @@ public class {{EntityName}}Service {
 {{/softDeleteApplicable}}
 {{#bulkDeleteApplicable}}
     public void deleteAll(java.util.List<{{pkField.javaType}}> ids) {
-{{^hasAttachmentFields}}        repository.deleteAllById(ids);
-{{/hasAttachmentFields}}{{#hasAttachmentFields}}        java.util.List<{{EntityName}}> rows = repository.findAllById(ids);
+        java.util.List<{{EntityName}}> rows = repository.findAllById(ids);
+        requireAll(ids, rows);
         repository.deleteAllById(ids);
-{{^softDeleteApplicable}}        for ({{EntityName}} row : rows) {
+{{#hasAttachmentFields}}{{^softDeleteApplicable}}        for ({{EntityName}} row : rows) {
 {{#attachmentFields}}            attachments.delete(row.get{{Name}}());
 {{/attachmentFields}}        }
 {{/softDeleteApplicable}}{{/hasAttachmentFields}}    }
 {{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}
     /** Sets a single whitelisted {@code field} to {@code value} on every listed record. The raw
      *  JSON scalar is coerced to the field's type; an unknown field name throws (→ 400 at the
-     *  controller). Read-only and primary-key fields are intentionally not in the switch. */
+     *  controller). Read-only and primary-key fields are intentionally not in the switch. It keeps
+     *  what a single save keeps: every id must name a record (404 otherwise, and nothing changes){{#hasRequiredBulkFields}},
+     *  a required field cannot be cleared{{/hasRequiredBulkFields}}{{#bulkValidates}} and the value passes the DTO's validation{{/bulkValidates}}. */
     public void updateMany(java.util.List<{{pkField.javaType}}> ids, String field, Object value) {
         java.util.List<{{EntityName}}> rows = repository.findAllById(ids);
-        for ({{EntityName}} entity : rows) {
+        requireAll(ids, rows);
+{{#hasRequiredBulkFields}}        if (value == null && java.util.Set.of({{{requiredBulkFieldsJava}}}).contains(field)) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+{{/hasRequiredBulkFields}}        for ({{EntityName}} entity : rows) {
             switch (field) {
 {{#bulkUpdatableFields}}                case "{{name}}" -> entity.set{{Name}}(value == null ? null : {{bulkCoerceJava}});
 {{/bulkUpdatableFields}}                default -> throw new IllegalArgumentException("Field not bulk-updatable: " + field);
             }
         }
-        repository.saveAll(rows);
+{{#bulkValidates}}        // The same value went onto every row: one row's answer is every row's.
+        if (!rows.isEmpty()) {
+            for (jakarta.validation.ConstraintViolation<{{dtoPackage}}.{{EntityName}}Dto> violation
+                    : validator.validateProperty({{dtoPackage}}.{{EntityName}}Dto.from(rows.get(0)), field)) {
+                throw new IllegalArgumentException(field + " " + violation.getMessage());
+            }
+        }
+{{/bulkValidates}}        repository.saveAll(rows);
     }
-{{/bulkUpdateApplicable}}{{/mutable}}{{#hasStringFields}}
+{{/bulkUpdateApplicable}}{{#bulkSelectApplicable}}
+    /** A bulk call names the records it changes: all of them must exist, or none is touched. */
+    private void requireAll(java.util.List<{{pkField.javaType}}> ids, java.util.List<{{EntityName}}> rows) {
+        java.util.Set<{{pkField.javaType}}> found = new java.util.HashSet<>();
+        for ({{EntityName}} row : rows) found.add(row.get{{pkField.Name}}());
+        java.util.List<{{pkField.javaType}}> missing = ids.stream().filter(id -> !found.contains(id)).distinct().toList();
+        if (!missing.isEmpty()) {
+            throw new ResourceNotFoundException("{{EntityName}} not found: " + missing);
+        }
+    }
+{{/bulkSelectApplicable}}{{/mutable}}{{#hasStringFields}}
     /** Escapes LIKE wildcards in user input so `%` and `_` match literally (the query names `\` as
      *  its escape character), and a search for "100%" does not match everything. */
     private static String escapeLike(String s) {

@@ -169,6 +169,35 @@ class GeneratedBackendBuildSmokeTests {
                     // Restoring is a change: a client still holding the old version must be told.
                     assertThat(back.get("version").asLong()).isGreaterThan(version);
                 }
+
+                @Test
+                void bulkCallsKeepWhatASingleSaveKeeps() throws Exception {
+                    long id = firstId("/api/products");
+                    String name = get("/api/products/" + id).get("name").asText();
+                    // An id that names no row: 404, and the row that does exist is left alone.
+                    mvc.perform(patch("/api/products/bulk").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"ids\\":[" + id + ",987654],\\"field\\":\\"name\\",\\"value\\":\\"renamed\\"}"))
+                            .andExpect(status().isNotFound());
+                    assertThat(get("/api/products/" + id).get("name").asText()).isEqualTo(name);
+                    mvc.perform(delete("/api/products/bulk").contentType(MediaType.APPLICATION_JSON)
+                                    .content("[" + id + ",987654]"))
+                            .andExpect(status().isNotFound());
+                    get("/api/products/" + id);
+                    // A required field cannot be cleared; a value the DTO refuses (price >= 0) is refused.
+                    mvc.perform(patch("/api/products/bulk").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"ids\\":[" + id + "],\\"field\\":\\"name\\",\\"value\\":null}"))
+                            .andExpect(status().isBadRequest());
+                    mvc.perform(patch("/api/products/bulk").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"ids\\":[" + id + "],\\"field\\":\\"price\\",\\"value\\":-5}"))
+                            .andExpect(status().isBadRequest());
+                    assertThat(get("/api/products/" + id).get("name").asText()).isEqualTo(name);
+                    assertThat(get("/api/products/" + id).get("price").decimalValue().signum()).isGreaterThanOrEqualTo(0);
+                    // And a good edit still goes through.
+                    mvc.perform(patch("/api/products/bulk").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"ids\\":[" + id + "],\\"field\\":\\"name\\",\\"value\\":\\"renamed\\"}"))
+                            .andExpect(status().is2xxSuccessful());
+                    assertThat(get("/api/products/" + id).get("name").asText()).isEqualTo("renamed");
+                }
             """;
 
     /**

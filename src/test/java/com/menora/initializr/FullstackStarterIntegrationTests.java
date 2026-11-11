@@ -2034,6 +2034,55 @@ class FullstackStarterIntegrationTests {
     }
 
     @Test
+    void fullstackEndpoint_bulkCallsKeepWhatASingleSaveKeeps() throws Exception {
+        // A bulk edit used to skip everything a single save checks: it nulled a required field,
+        // took a value the DTO's validation refuses, and both bulk calls silently skipped ids
+        // that name no row.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        body.put("opts", Map.of("scaffold", List.of("bulkUpdate", "bulkDelete")));
+        body.put("entities", List.of(Map.of("name", "Widget", "fields", List.of(pkField(),
+                Map.of("name", "label", "type", "String", "required", true, "length", 40),
+                Map.of("name", "code", "type", "String", "required", true),
+                Map.of("name", "stock", "type", "Integer", "min", 0)))));
+
+        String service = contentEndingWith(generateZip(body), "/service/WidgetService.java");
+        assertThat(service)
+                // Every id must name a row — checked before anything is changed.
+                .contains("    public void deleteAll(java.util.List<Long> ids) {\n"
+                        + "        java.util.List<Widget> rows = repository.findAllById(ids);\n"
+                        + "        requireAll(ids, rows);\n"
+                        + "        repository.deleteAllById(ids);\n")
+                .contains("        java.util.List<Widget> rows = repository.findAllById(ids);\n"
+                        + "        requireAll(ids, rows);\n"
+                        + "        if (value == null && java.util.Set.of(\"label\", \"code\").contains(field)) {\n"
+                        + "            throw new IllegalArgumentException(field + \" is required\");\n")
+                .contains("private void requireAll(java.util.List<Long> ids, java.util.List<Widget> rows) {")
+                .contains("throw new ResourceNotFoundException(\"Widget not found: \" + missing);")
+                // The value is held to the DTO's own constraints (length, min…), then saved.
+                .contains("private final jakarta.validation.Validator validator;")
+                .contains(": validator.validateProperty(com.menora.shop.dto.WidgetDto.from(rows.get(0)), field)) {\n"
+                        + "                throw new IllegalArgumentException(field + \" \" + violation.getMessage());");
+
+        // Without the validation starter there is no Validator to ask; the other two checks stay.
+        body.put("dependencies", List.of("web", "data-jpa", "h2"));
+        assertThat(contentEndingWith(generateZip(body), "/service/WidgetService.java"))
+                .contains("requireAll(ids, rows);")
+                .contains("java.util.Set.of(\"label\", \"code\").contains(field)")
+                .doesNotContain("Validator");
+
+        // Bulk delete alone: the helper ships with it; an entity with neither has none of this.
+        body.put("opts", Map.of("scaffold", List.of("bulkDelete")));
+        assertThat(contentEndingWith(generateZip(body), "/service/WidgetService.java"))
+                .contains("private void requireAll(").doesNotContain("updateMany");
+        body.put("opts", Map.of("scaffold", List.of()));
+        assertThat(contentEndingWith(generateZip(body), "/service/WidgetService.java")).doesNotContain("requireAll");
+    }
+
+    @Test
     void fullstackEndpoint_formValidatesClientSideAndDataHookGuardsStaleResponses() throws Exception {
         Map<String, Object> name = Map.of("name", "name", "type", "String", "required", true, "length", 40);
         Map<String, Object> email = Map.of("name", "email", "type", "String", "email", true);

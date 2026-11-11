@@ -2622,6 +2622,18 @@ public final class EntityScaffoldContext {
         ctx.put("bulkSelectApplicable",
                 Boolean.TRUE.equals(ctx.get("bulkDeleteApplicable"))
                         || Boolean.TRUE.equals(ctx.get("bulkUpdateApplicable")));
+        // A bulk edit holds its value to the DTO's Bean Validation, like a single save: the service
+        // takes the Validator for that, or for the CSV import's row checks.
+        boolean bulkValidates = Boolean.TRUE.equals(ctx.get("bulkUpdateApplicable"))
+                && Boolean.TRUE.equals(ctx.get("hasValidation"));
+        ctx.put("bulkValidates", bulkValidates);
+        ctx.put("usesValidator", bulkValidates || Boolean.TRUE.equals(ctx.get("importValidates")));
+        // The bulk-editable fields a row cannot be without: a bulk edit may not clear them.
+        List<String> requiredBulk = bulkFields == null ? List.of() : bulkFields.stream()
+                .filter(f -> Boolean.TRUE.equals(f.get("isRequired")))
+                .map(f -> "\"" + f.get("name") + "\"").toList();
+        ctx.put("hasRequiredBulkFields", !requiredBulk.isEmpty());
+        ctx.put("requiredBulkFieldsJava", String.join(", ", requiredBulk));
         // A list page's hideActions only reach a list that has an action to hide (the validator
         // rejects them on a read-only entity without an export).
         ctx.put("listActionsConfigurable", Boolean.TRUE.equals(ctx.get("listActionsConfigurable"))
