@@ -279,7 +279,19 @@ public record FullstackStarterRequest(
      * {@code dueField} (a date) is what an inbox sorts and flags overdue by.
      */
     public record WorkflowDto(String statusField, String initial, String assigneeField, String dueField,
-                              List<TransitionDto> transitions) {}
+                              List<TransitionDto> transitions,
+                              // Keep a log of every move (who, when, how long in the state left): a
+                              // record page's history and the time-in-state widget read it. Left out
+                              // of the echoed request when absent.
+                              @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                              Boolean trackMoves) {
+
+        /** A workflow that keeps no log of its moves. */
+        public WorkflowDto(String statusField, String initial, String assigneeField, String dueField,
+                           List<TransitionDto> transitions) {
+            this(statusField, initial, assigneeField, dueField, transitions, null);
+        }
+    }
 
     /** One move of a workflow: from any of {@code from} to {@code to}, by a user holding one of
      *  {@code roles} (none: anyone), asking for the {@code requires} fields and relations. */

@@ -105,6 +105,8 @@ public final class EntityScaffoldContext {
                 .anyMatch(f -> f.type().isMarkdown()));
         // Any workflow: the shared WorkflowException, CurrentUser and GET /api/me (both render paths).
         ctx.put("hasWorkflows", entities.stream().anyMatch(e -> e.workflow() != null));
+        // A workflow that logs its moves: the backend's workflow package, the frontend's history list.
+        ctx.put("hasWorkflowMoves", entities.stream().anyMatch(e -> e.workflow() != null && e.workflow().trackMoves()));
         // ...which a shell that shows the signed-in user needs too: each render path adds its own.
         ctx.put("usesCurrentUser", entities.stream().anyMatch(e -> e.workflow() != null));
         // Demo-data seeding order (optScaffoldSeedData): parents before children, writable only.
@@ -354,6 +356,16 @@ public final class EntityScaffoldContext {
                     pv.put("recordMutable", recordMutable);
                     // The record's workflow moves sit by its Edit and Delete.
                     pv.put("recordHasWorkflow", Boolean.TRUE.equals(ev.get("hasWorkflow")));
+                    // A workflow that logs its moves: the record's history under its details.
+                    boolean tracksMoves = Boolean.TRUE.equals(ev.get("tracksMoves"));
+                    pv.put("recordTracksMoves", tracksMoves);
+                    if (tracksMoves) {
+                        Map<String, Object> statusField = fieldOf(ev, (String) ev.get("workflowStatusField"));
+                        pv.put("moveLabelsRef", statusField.get("enumTypeName") + "Labels");
+                        pv.put("moveTransitionsTs", "{ " + String.join(", ",
+                                ((List<Map<String, Object>>) ev.get("workflowTransitions")).stream()
+                                        .map(tv -> tv.get("name") + ": " + tv.get("labelTs")).toList()) + " }");
+                    }
                     pv.put("recordEditsInPage", editPage != null);
                     pv.put("recordEditsInDrawer", recordMutable && editPage == null);
                     pv.put("createPageId", editPage);
@@ -691,6 +703,8 @@ public final class EntityScaffoldContext {
                 // ...and for a period preset (rangeParams lives in stats.ts) on a list or a tab count.
                 || all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("presetUsesPeriod"))
                         || Boolean.TRUE.equals(v.get("tabsUseRangeParams"))));
+        // widgets-flow.tsx only for a dashboard that draws a funnel, a gauge or time in state.
+        ctx.put("hasFlowWidgets", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("usesFlow"))));
         // links.tsx (the launcher tiles) only for a dashboard that has a links widget.
         ctx.put("hasLinksWidgets", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("usesLinks"))));
         // Per-entity contexts read these: an entity with a create page gets the list page's
@@ -1287,6 +1301,10 @@ public final class EntityScaffoldContext {
         List<String> dashFilters = p.dashboard() == null ? List.of() : p.dashboard().filters();
         for (int i = 0; i < p.widgets().size(); i++) {
             PageDefinition.Widget w = p.widgets().get(i);
+            if (w.kind() == PageDefinition.WidgetKind.TIME_IN_STATE) {
+                widgetViews.add(timeInStateView(w, i, entityByPascal.get(Naming.toPascalCase(w.entity())), labelRefsByModule));
+                continue;
+            }
             if (w.kind() == PageDefinition.WidgetKind.TEXT) {
                 widgetViews.add(textWidgetView(w, i));
                 continue;
@@ -1327,6 +1345,9 @@ public final class EntityScaffoldContext {
             wv.put("widgetIsRecent", w.kind() == PageDefinition.WidgetKind.RECENT);
             wv.put("widgetIsTop", w.kind() == PageDefinition.WidgetKind.TOP);
             wv.put("widgetIsProgress", w.kind() == PageDefinition.WidgetKind.PROGRESS);
+            wv.put("widgetIsFunnel", w.kind() == PageDefinition.WidgetKind.FUNNEL);
+            wv.put("widgetIsGauge", w.kind() == PageDefinition.WidgetKind.GAUGE);
+            wv.put("widgetIsTimeInState", false);
             // `count` is the default everywhere, so only a real reduction reaches the props.
             boolean reduces = w.agg() != null && w.agg() != PageDefinition.Agg.COUNT;
             wv.put("hasAgg", reduces);
@@ -1372,7 +1393,7 @@ public final class EntityScaffoldContext {
             switch (w.kind()) {
                 // A reducing tile is titled by what it reduces ("Total Amount"), a counting one by
                 // what it counts.
-                case KPI, PROGRESS -> defaultTitle = reduces ? aggTitle(w, ev) : entityLabels;
+                case KPI, PROGRESS, GAUGE -> defaultTitle = reduces ? aggTitle(w, ev) : entityLabels;
                 case LINE -> {
                     wv.put("groupBy", w.groupBy());
                     Map<String, Object> fv = fieldOf(ev, w.groupBy());
@@ -1433,7 +1454,7 @@ public final class EntityScaffoldContext {
                     defaultTitle = "t('xByYAndZ', { x: " + (reduces ? aggTitle(w, ev) : entityLabels)
                             + ", y: " + rank.get("groupLabelExpr") + ", z: " + cols.get("groupLabelExpr") + " })";
                 }
-                case BAR, TOP, DONUT -> {
+                case BAR, TOP, DONUT, FUNNEL -> {
                     Map<String, Object> rank = rankView(ev, w.groupBy());
                     wv.putAll(rank);
                     String labelsRef = (String) rank.get("labelsRef");
@@ -1446,6 +1467,14 @@ public final class EntityScaffoldContext {
                     usesQueryOf |= drill && paramsExpr != null;
                     needsNavigate |= drill;
                     if (w.kind() == PageDefinition.WidgetKind.TOP) wv.put("limit", w.limit());
+                    // A funnel limited to some of its enum's values draws those as its stages, in
+                    // the enum's order: a state off the main line (REJECTED) is left out that way.
+                    String stages = w.kind() == PageDefinition.WidgetKind.FUNNEL ? w.presetFilter().get(w.groupBy()) : null;
+                    wv.put("hasStages", stages != null);
+                    if (stages != null) {
+                        wv.put("stagesTs", "[" + String.join(", ", java.util.Arrays.stream(stages.split(","))
+                                .map(s -> tsString(s.trim())).toList()) + "]");
+                    }
                     String measured = reduces ? aggTitle(w, ev) : entityLabels;
                     defaultTitle = "t('" + (w.kind() == PageDefinition.WidgetKind.TOP ? "topXByY" : "xByY")
                             + "', { x: " + measured + ", y: " + rank.get("groupLabelExpr") + " })";
@@ -1468,9 +1497,16 @@ public final class EntityScaffoldContext {
             widgetViews.add(wv);
         }
         pv.put("widgets", widgetViews);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "Links", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge", "TimeInState", "Activity", "Text", "Links", "List")) {
             pv.put("uses" + kind, widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIs" + kind))));
         }
+        // The process widgets live in a file of their own: only what the page draws is imported.
+        List<String> flow = new ArrayList<>();
+        if (Boolean.TRUE.equals(pv.get("usesFunnel"))) flow.add("FunnelCard");
+        if (Boolean.TRUE.equals(pv.get("usesGauge"))) flow.add("GaugeTile");
+        if (Boolean.TRUE.equals(pv.get("usesTimeInState"))) flow.add("TimeInStateCard");
+        pv.put("usesFlow", !flow.isEmpty());
+        pv.put("flowImports", String.join(", ", flow));
         // The entity pages the list widgets embed: one import per entity module.
         Map<String, Map<String, Object>> listModules = new LinkedHashMap<>();
         for (Map<String, Object> v : widgetViews) {
@@ -1517,7 +1553,8 @@ public final class EntityScaffoldContext {
         pv.put("usesBucketRange", usesBucketRange);
         pv.put("usesStatsHelpers", p.dateRange() != null || usesStatsQuery || usesQueryOf || usesBucketRange || usesRange
                 || p.widgets().stream().anyMatch(w -> w.kind() != PageDefinition.WidgetKind.TEXT
-                        && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.LIST));
+                        && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.LIST
+                        && w.kind() != PageDefinition.WidgetKind.TIME_IN_STATE));
     }
 
     /** The widget's filter params as a TS expression: its preset (already an expression), the
@@ -1591,7 +1628,7 @@ public final class EntityScaffoldContext {
         Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "Links")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge", "TimeInState", "Activity", "Text", "Links")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsList", true);
@@ -1631,7 +1668,7 @@ public final class EntityScaffoldContext {
     private static Map<String, Object> linksWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge", "TimeInState", "Activity", "Text", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsLinks", true);
@@ -1654,7 +1691,7 @@ public final class EntityScaffoldContext {
                                                           Map<String, Map<String, Object>> summaries, PageLinks links) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Text", "Links", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge", "TimeInState", "Text", "Links", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsActivity", true);
@@ -1684,10 +1721,34 @@ public final class EntityScaffoldContext {
         return wv;
     }
 
+    /** A time-in-state widget: the entity's move log, read through its status labels. */
+    private static Map<String, Object> timeInStateView(PageDefinition.Widget w, int index, Map<String, Object> ev,
+                                                       Map<String, Set<String>> labelRefsByModule) {
+        Map<String, Object> wv = new LinkedHashMap<>();
+        wv.put("widgetKey", "w" + index);
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge",
+                "Activity", "Text", "Links", "List")) {
+            wv.put("widgetIs" + kind, false);
+        }
+        wv.put("widgetIsTimeInState", true);
+        wv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
+        String labelsRef = fieldOf(ev, (String) ev.get("workflowStatusField")).get("enumTypeName") + "Labels";
+        wv.put("labelsRef", labelsRef);
+        labelRefsByModule.computeIfAbsent((String) ev.get("entityNameKebab"), k -> new LinkedHashSet<>()).add(labelsRef);
+        wv.put("titleExpr", w.title() != null ? tsString(w.title())
+                : "t('timeInStateOf', { x: " + tsString((String) ev.get("entityLabelPlural")) + " })");
+        String spanClass = SPAN_CLASSES.get(w.span() - 1);
+        wv.put("hasSpanClass", !spanClass.isEmpty());
+        wv.put("spanClass", spanClass);
+        wv.put("hasParams", false);
+        wv.put("hasCompare", false);
+        return wv;
+    }
+
     private static Map<String, Object> textWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Links", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge", "TimeInState", "Activity", "Links", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsText", true);
@@ -1839,6 +1900,12 @@ public final class EntityScaffoldContext {
         // The workflow sets it on every create, whatever was sent: a client is never asked for it
         // (its column keeps its NOT NULL — isNotNullColumn).
         status.put("isRequired", false);
+        // A workflow that logs its moves: the demo rows are spread over its states — whatever the
+        // status' default — so the histories seeded for them give the log something to show.
+        if (wf.trackMoves()) {
+            String enumRef = view.get("EntityName") + "." + status.get("enumTypeName");
+            status.put("seedExpr", enumRef + ".values()[(i - 1) % " + enumRef + ".values().length]");
+        }
         // The assignee changes only by Claim, Release and Reassign: out of the form, PUT, bulk and
         // inline edit and the import, like the status.
         if (wf.assigneeField() != null) {
@@ -2601,6 +2668,9 @@ public final class EntityScaffoldContext {
         if (!savedViewLists(entities, savedViewsOpt).isEmpty()) {
             packages.add(packageName + ".views");
         }
+        if (entities.stream().anyMatch(e -> e.workflow() != null && e.workflow().trackMoves())) {
+            packages.add(packageName + ".workflow");
+        }
         return packages;
     }
 
@@ -3044,6 +3114,7 @@ public final class EntityScaffoldContext {
         // cycles the states — and hidden from the form.
         EntityDefinition.Workflow workflow = entity.workflow();
         view.put("hasWorkflow", workflow != null);
+        view.put("tracksMoves", workflow != null && workflow.trackMoves());
         if (workflow != null) putWorkflow(view, entity, workflow, fieldViews);
         // Re-tag last on nonPkViews
         for (int i = 0; i < nonPkViews.size(); i++) {

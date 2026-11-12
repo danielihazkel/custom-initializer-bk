@@ -430,6 +430,24 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendFlowWidgetsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // Round 10, phase 10: the three process widgets on one dashboard — a funnel with named
+        // stages, a gauge over a sum of money, time in state — and the record page's history
+        // (the Approvals example's own shell tools, funnel and history are built with it by the
+        // ShellTools cases).
+        Path project = postAndExtractFrontend(workDir, FullstackFlowWidgetsTests.dashboardOf("react-tailwind-crud", true,
+                FullstackFlowWidgetsTests.widget("kpi"),
+                FullstackFlowWidgetsTests.widget("funnel", "presetFilter", Map.of("status", "DRAFT,SUBMITTED,APPROVED,PAID")),
+                FullstackFlowWidgetsTests.widget("gauge", "agg", "sum", "field", "amount", "target", "5000"),
+                FullstackFlowWidgetsTests.widget("timeInState")));
+        assertThat(project.resolve("src/shared/ui/widgets-flow.tsx")).isRegularFile();
+        assertThat(project.resolve("src/shared/ui/MovesList.tsx")).isRegularFile();
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendQuotedLabelsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // Every label with an apostrophe, a double quote, a backslash, braces and angle brackets:
         // spliced into TS literals, JSX attributes and JSX children across list pages, forms,

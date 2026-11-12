@@ -1,0 +1,23 @@
+package {{packageName}}.workflow;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.util.List;
+import java.util.Optional;
+
+interface WorkflowMoveRepository extends JpaRepository<WorkflowMove, Long> {
+
+    /** A row's steps, oldest first. */
+    List<WorkflowMove> findByEntityNameAndRowIdOrderByMovedAtAscIdAsc(String entityName, String rowId);
+
+    /** A row's latest step: when it arrived in the state it is in. */
+    Optional<WorkflowMove> findFirstByEntityNameAndRowIdOrderByMovedAtDescIdDesc(String entityName, String rowId);
+
+    /** Per state left: the average stay in it and how many stays that is the average of. */
+    @Query("select m.fromState, avg(m.secondsInFrom), count(m) from WorkflowMove m "
+            + "where m.entityName = :entityName and m.fromState is not null and m.secondsInFrom is not null "
+            + "group by m.fromState")
+    List<Object[]> timeInState(@Param("entityName") String entityName);
+}

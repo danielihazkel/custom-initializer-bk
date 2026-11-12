@@ -818,7 +818,8 @@ public final class FullstackRequestValidator {
                 throw problem.at("transitions[" + i + "]");
             }
         }
-        return new EntityDefinition.Workflow(status.name(), initial, assignee, due, transitions);
+        return new EntityDefinition.Workflow(status.name(), initial, assignee, due, transitions,
+                Boolean.TRUE.equals(raw.trackMoves()));
     }
 
     /**

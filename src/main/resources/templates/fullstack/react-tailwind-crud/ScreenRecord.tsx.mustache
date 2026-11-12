@@ -19,6 +19,10 @@ import { {{EntityName}}Detail{{#recordEditsInDrawer}}, {{EntityName}}Form, valid
 {{#childTabs}}
 import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
 {{/childTabs}}
+{{#recordTracksMoves}}
+import { {{moveLabelsRef}} as MOVE_STATES } from '@entities/{{entityNameKebab}}'
+import { MovesList } from '@shared/ui/MovesList'
+{{/recordTracksMoves}}
 
 interface Props {
   /** The record's key, as the shell received it from the row that opened this page. */
@@ -342,6 +346,17 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
         </div>
 {{/hasChildTabs}}
       )}
+{{#recordTracksMoves}}
+      {/* The row's steps through its workflow; read again whenever the row changes. */}
+      {record && (
+        <MovesList
+          path={`/api/{{entityNamePluralKebab}}/${encodeURIComponent(recordId)}`}
+          labels={MOVE_STATES}
+          transitions={ {{{moveTransitionsTs}}} }
+          version={record}
+        />
+      )}
+{{/recordTracksMoves}}
 {{#recordEditsInDrawer}}
 
       <FormDrawer

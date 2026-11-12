@@ -8,6 +8,9 @@ import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
 {{#usesLinks}}
 import { LinksCard } from '@shared/ui/links'
 {{/usesLinks}}
+{{#usesFlow}}
+import { {{flowImports}} } from '@shared/ui/widgets-flow'
+{{/usesFlow}}
 {{#hasLinkIcons}}
 import { {{linkIcons}} } from 'lucide-react'
 {{/hasLinkIcons}}
@@ -327,6 +330,69 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
 {{/hasSpanClass}}
         />
 {{/widgetIsActivity}}
+{{#widgetIsFunnel}}
+        <FunnelCard
+          title={ {{titleExpr}} }
+          path="{{path}}"
+          field="{{groupBy}}"
+{{#hasAgg}}
+          agg="{{agg}}"
+          valueField="{{aggField}}"
+{{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
+          labels={ {{labelsRef}} }
+{{#hasStages}}
+          stages={ {{{stagesTs}}} }
+{{/hasStages}}
+{{#hasParams}}
+          params={ {{paramsExpr}} }
+{{/hasParams}}
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+{{#hasDrill}}
+          onSelect={key => onNavigate('{{drillPageId}}', undefined, { {{drillBase}}{{drillKey}}: key })}
+{{/hasDrill}}
+{{#hasTarget}}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
+{{/hasTarget}}
+        />
+{{/widgetIsFunnel}}
+{{#widgetIsGauge}}
+        <GaugeTile
+          title={ {{titleExpr}} }
+          path="{{path}}"
+{{#hasAgg}}
+          agg="{{agg}}"
+          field="{{aggField}}"
+{{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
+          target={ {{target}} }
+{{#hasParams}}
+          params={ {{paramsExpr}} }
+{{/hasParams}}
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+{{#hasTarget}}
+          onOpen={() => onNavigate('{{targetPageId}}'{{#openWithQuery}}, undefined, queryOf({{paramsExpr}}){{/openWithQuery}})}
+{{/hasTarget}}
+        />
+{{/widgetIsGauge}}
+{{#widgetIsTimeInState}}
+        <TimeInStateCard
+          title={ {{titleExpr}} }
+          path="{{path}}"
+          labels={ {{labelsRef}} }
+{{#hasSpanClass}}
+          className="{{spanClass}}"
+{{/hasSpanClass}}
+        />
+{{/widgetIsTimeInState}}
 {{#widgetIsText}}
         <TextCard
 {{#hasTitle}}

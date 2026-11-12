@@ -1,0 +1,86 @@
+package {{packageName}}.workflow;
+
+import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * The log of workflow moves: every entity whose workflow keeps one writes here when a row is
+ * created and each time a transition moves it — inside the same transaction, so a move that is
+ * rolled back leaves no trace. It answers a row's history and, per state, how long rows stay.
+ */
+@Component
+public class WorkflowMoveLog {
+
+    private final WorkflowMoveRepository repository;
+
+    public WorkflowMoveLog(WorkflowMoveRepository repository) {
+        this.repository = repository;
+    }
+
+    /** A row was created in {@code state}. */
+    public void created(String entityName, Object rowId, Enum<?> state) {
+        repository.save(new WorkflowMove(entityName, String.valueOf(rowId), null, state.name(), null, actor(), Instant.now(), null));
+    }
+
+    /** A transition moved a row from one state to another. */
+    public void moved(String entityName, Object rowId, Enum<?> from, Enum<?> to, String transition) {
+        String id = String.valueOf(rowId);
+        Instant now = Instant.now();
+        // How long it had been where it was: since its last logged step, when that step put it there.
+        Long seconds = repository.findFirstByEntityNameAndRowIdOrderByMovedAtDescIdDesc(entityName, id)
+                .filter(last -> last.getToState().equals(from.name()))
+                .map(last -> Math.max(0, Duration.between(last.getMovedAt(), now).getSeconds()))
+                .orElse(null);
+        repository.save(new WorkflowMove(entityName, id, from.name(), to.name(), transition, actor(), now, seconds));
+    }
+
+    /**
+     * A plausible history for a demo row: created some days ago and, when it is no longer in its
+     * first state, moved on a little later — so the history and the time-in-state numbers have
+     * something to show on a fresh start.
+     */
+    public void seed(String entityName, Object rowId, Enum<?> initial, Enum<?> current, int row) {
+        String id = String.valueOf(rowId);
+        Instant created = Instant.now().minus(Duration.ofDays(row + 4L)).minus(Duration.ofHours(row * 3L));
+        repository.save(new WorkflowMove(entityName, id, null, initial.name(), null, null, created, null));
+        if (current != initial) {
+            Duration stay = Duration.ofHours(6L + (row % 5) * 14L);
+            repository.save(new WorkflowMove(entityName, id, initial.name(), current.name(), null, null,
+                    created.plus(stay), stay.getSeconds()));
+        }
+    }
+
+    /** A row's steps, oldest first. */
+    public List<Move> of(String entityName, Object rowId) {
+        return repository.findByEntityNameAndRowIdOrderByMovedAtAscIdAsc(entityName, String.valueOf(rowId)).stream()
+                .map(m -> new Move(m.getFromState(), m.getToState(), m.getTransition(), m.getActor(), m.getMovedAt()))
+                .toList();
+    }
+
+    /** Per state rows have left: the average stay, in seconds, and the number of stays behind it. */
+    public List<StateTime> timeInState(String entityName) {
+        return repository.timeInState(entityName).stream()
+                .map(r -> new StateTime((String) r[0], ((Number) r[1]).doubleValue(), ((Number) r[2]).longValue()))
+                .toList();
+    }
+
+    /** Who is making the request, when it says ({@code userinfo}) — null outside a request. */
+    private static String actor() {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes request) {
+            String header = request.getRequest().getHeader("userinfo");
+            return header == null || header.isBlank() ? null : header.trim();
+        }
+        return null;
+    }
+
+    /** One step as the API answers it. */
+    public record Move(String from, String to, String transition, String actor, Instant at) {}
+
+    /** How long rows stay in one state. */
+    public record StateTime(String state, double seconds, long moves) {}
+}

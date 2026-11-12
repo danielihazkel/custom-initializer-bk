@@ -7,6 +7,7 @@
 ## The Java types of the field types (String, LocalDate, BigDecimal, …) are added from FieldType.
 
 # a type the generated code already uses
+MovesList
 ViewState
 ViewsMenu
 Alert
@@ -165,3 +166,4 @@ Ldap
 Me
 Permission
 SavedView
+WorkflowMove

@@ -133,6 +133,36 @@
       "gatedBy": "hasSavedViews"
     },
     {
+      "source": "WorkflowMove.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/workflow/WorkflowMove.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasWorkflowMoves"
+    },
+    {
+      "source": "WorkflowMoveRepository.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/workflow/WorkflowMoveRepository.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasWorkflowMoves"
+    },
+    {
+      "source": "WorkflowMoveLog.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/workflow/WorkflowMoveLog.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasWorkflowMoves"
+    },
+    {
       "source": "DemoDataLoader.java.mustache",
       "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{packagePath}}/config/DemoDataLoader.java",

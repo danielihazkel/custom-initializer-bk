@@ -155,6 +155,7 @@
       "mockito",
       "mockmvc",
       "modifying",
+      "moveslist",
       "multirelationpicker",
       "noargsconstructor",
       "notnull",
@@ -217,7 +218,8 @@
       "viewsmenu",
       "viewstate",
       "webmvctest",
-      "workflowexception"
+      "workflowexception",
+      "workflowmove"
     ],
     "generatedClassSuffixes" : [
       "Dto",
@@ -485,7 +487,10 @@
     "links",
     "list",
     "pivot",
-    "activity"
+    "activity",
+    "funnel",
+    "gauge",
+    "timeInState"
   ],
   "aggregates" : [
     "count",

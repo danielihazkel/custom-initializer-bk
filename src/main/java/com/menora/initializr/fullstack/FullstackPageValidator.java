@@ -982,6 +982,10 @@ public final class FullstackPageValidator {
                 if (trimToNull(w.text()) != null) {
                     throw new WizardArgumentException(prefix + ": only a text widget takes 'text'");
                 }
+                if (kind == PageDefinition.WidgetKind.TIME_IN_STATE) {
+                    out.add(timeInStateWidget(prefix, w, entitiesByLower));
+                    continue;
+                }
                 if (w.pages() != null && !w.pages().isEmpty()) {
                     throw new WizardArgumentException(prefix + ": only a links widget takes 'pages'");
                 }
@@ -993,16 +997,23 @@ public final class FullstackPageValidator {
                 boolean reduces = kind != PageDefinition.WidgetKind.RECENT;
                 // A tile against a target: the same reduction as a kpi, and the target it fills up to.
                 java.math.BigDecimal target = null;
-                if (kind == PageDefinition.WidgetKind.PROGRESS) {
+                if (kind == PageDefinition.WidgetKind.PROGRESS || kind == PageDefinition.WidgetKind.GAUGE) {
                     target = progressTarget(prefix, trimToNull(w.target()));
                 } else if (trimToNull(w.target()) != null) {
-                    throw new WizardArgumentException(prefix + ": only a progress widget takes 'target'");
+                    throw new WizardArgumentException(prefix + ": only a progress or gauge widget takes 'target'");
                 }
                 PageDefinition.Agg agg = null;
                 String field = null;
                 if (reduces) {
                     agg = parseAgg(prefix, w.agg());
                     field = aggField(prefix, entity, agg, trimToNull(w.field()));
+                    // A stage of a funnel is that stage and every later one, added up: only a count
+                    // or a sum adds up.
+                    if (kind == PageDefinition.WidgetKind.FUNNEL && agg != null
+                            && agg != PageDefinition.Agg.COUNT && agg != PageDefinition.Agg.SUM) {
+                        throw new WizardArgumentException(prefix + ": a funnel counts rows or sums a field — '"
+                                + agg.wire() + "' does not add up across stages").on("agg");
+                    }
                 } else {
                     if (trimToNull(w.agg()) != null) {
                         throw new WizardArgumentException(prefix + ": a recent widget lists rows, so it takes no 'agg'");
@@ -1021,6 +1032,7 @@ public final class FullstackPageValidator {
                         series = series(prefix, entity, groupBy, trimToNull(w.series()));
                     }
                     case TOP -> groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "rank by");
+                    case FUNNEL -> groupBy = funnelStages(prefix, entity, trimToNull(w.groupBy()));
                     case PIVOT -> {
                         groupBy = rankBy(prefix, entity, trimToNull(w.groupBy()), "lay out in rows");
                         series = pivotColumns(prefix, entity, groupBy, trimToNull(w.series()));
@@ -1031,7 +1043,7 @@ public final class FullstackPageValidator {
                     }
                     default -> {
                         if (trimToNull(w.groupBy()) != null) {
-                            throw new WizardArgumentException(prefix + ": only a bar, donut, stacked, pivot, line or top widget takes 'groupBy'");
+                            throw new WizardArgumentException(prefix + ": only a bar, donut, stacked, pivot, funnel, line or top widget takes 'groupBy'");
                         }
                     }
                 }
@@ -1199,6 +1211,51 @@ public final class FullstackPageValidator {
     }
 
     /** A text widget: its content and optional title and width — nothing that queries an entity. */
+    /**
+     * A funnel's stages: an enum field, whose values in their own order are the pipeline — named,
+     * else the workflow's status, else the entity's first enum.
+     */
+    private static String funnelStages(String prefix, EntityDefinition entity, String raw) {
+        String wanted = raw != null ? raw : entity.workflow() != null ? entity.workflow().statusField() : null;
+        String resolved = groupBy(prefix, entity, wanted);
+        boolean isEnum = entity.fields().stream().anyMatch(f -> f.name().equals(resolved) && f.type() == FieldType.ENUM);
+        if (!isEnum) {
+            throw new WizardArgumentException(prefix + ": a funnel's stages are an enum field's values, in their order — '"
+                    + resolved + "' is not an enum").on("groupBy");
+        }
+        return resolved;
+    }
+
+    /**
+     * A time-in-state widget: an entity whose workflow keeps a log of its moves, a title and a
+     * span. It reads the log — every row ever moved — so nothing that filters a list applies.
+     */
+    private static PageDefinition.Widget timeInStateWidget(String prefix, WidgetDto w,
+                                                           Map<String, EntityDefinition> entitiesByLower) {
+        EntityDefinition entity = requireEntity(entitiesByLower, w.entity(), prefix);
+        if (entity.workflow() == null || !entity.workflow().trackMoves()) {
+            throw new WizardArgumentException(prefix + ": a timeInState widget reads the workflow's move log — "
+                    + entity.name() + (entity.workflow() == null ? " has no workflow" : "'s workflow does not keep one (trackMoves)"))
+                    .on("entity");
+        }
+        if (trimToNull(w.agg()) != null || trimToNull(w.field()) != null || trimToNull(w.groupBy()) != null
+                || trimToNull(w.bucket()) != null || w.limit() != null
+                || (w.presetFilter() != null && !w.presetFilter().isEmpty()) || trimToNull(w.sortBy()) != null
+                || trimToNull(w.dateField()) != null || Boolean.TRUE.equals(w.compare()) || trimToNull(w.target()) != null
+                || trimToNull(w.series()) != null || (w.pages() != null && !w.pages().isEmpty())
+                || (w.columns() != null && !w.columns().isEmpty()) || w.sort() != null || trimToNull(w.drillTo()) != null
+                || trimToNull(w.trend()) != null) {
+            throw new WizardArgumentException(prefix + ": a timeInState widget takes only 'entity', 'title' and 'span'");
+        }
+        int span = w.span() == null ? PageDefinition.Widget.defaultSpan(PageDefinition.WidgetKind.TIME_IN_STATE) : w.span();
+        if (span < 1 || span > MAX_SPAN) {
+            throw new WizardArgumentException(prefix + ": span must be between 1 and " + MAX_SPAN);
+        }
+        return new PageDefinition.Widget(PageDefinition.WidgetKind.TIME_IN_STATE, entity.name(),
+                checkLength(trimToNull(w.title()), MAX_TITLE, prefix + " title"), null, 0, null, null, null, span,
+                null, null, null, false, null);
+    }
+
     private static PageDefinition.Widget textWidget(String prefix, WidgetDto w) {
         String text = trimToNull(w.text());
         if (text == null) throw new WizardArgumentException(prefix + ": a text widget needs 'text'");

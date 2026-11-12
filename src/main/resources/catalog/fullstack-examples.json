@@ -1925,6 +1925,7 @@
           }
         ],
         "workflow": {
+          "trackMoves": true,
           "statusField": "status",
           "assigneeField": "assignee",
           "dueField": "dueDate",
@@ -2047,6 +2048,19 @@
             "field": "amount",
             "limit": 5,
             "dateField": "spentOn"
+          },
+          {
+            "kind": "funnel",
+            "entity": "ExpenseClaim",
+            "title": "Claims pipeline",
+            "presetFilter": {
+              "status": "DRAFT,SUBMITTED,APPROVED,PAID"
+            }
+          },
+          {
+            "kind": "timeInState",
+            "entity": "ExpenseClaim",
+            "title": "Time in each step"
           },
           {
             "kind": "activity",

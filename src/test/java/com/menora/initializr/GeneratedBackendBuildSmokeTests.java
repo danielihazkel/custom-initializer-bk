@@ -325,6 +325,47 @@ class GeneratedBackendBuildSmokeTests {
                 }
 
                 @Test
+                void everyStepOfAClaimIsLogged() throws Exception {
+                    long id = newClaim("").get("id").asLong();
+                    // Created: its first step, by whoever made the request.
+                    JsonNode steps = get("/api/expense-claims/" + id + "/moves");
+                    assertThat(steps).hasSize(1);
+                    assertThat(steps.get(0).get("from").isNull()).isTrue();
+                    assertThat(steps.get(0).get("to").asText()).isEqualTo("DRAFT");
+                    assertThat(steps.get(0).get("actor").asText()).isEqualTo("alice");
+
+                    // Each move is a step: from where, to where, by which transition and whom.
+                    send(post("/api/expense-claims/" + id + "/transitions/submit"), "bob", null, 200);
+                    send(post("/api/expense-claims/" + id + "/transitions/approve"), "carol", "{\\"approvedAmount\\":35}", 200);
+                    steps = get("/api/expense-claims/" + id + "/moves");
+                    assertThat(steps).hasSize(3);
+                    assertThat(steps.get(1).get("from").asText()).isEqualTo("DRAFT");
+                    assertThat(steps.get(1).get("to").asText()).isEqualTo("SUBMITTED");
+                    assertThat(steps.get(1).get("transition").asText()).isEqualTo("submit");
+                    assertThat(steps.get(1).get("actor").asText()).isEqualTo("bob");
+                    assertThat(steps.get(2).get("to").asText()).isEqualTo("APPROVED");
+                    assertThat(steps.get(2).get("actor").asText()).isEqualTo("carol");
+
+                    // A move that is refused leaves no step behind.
+                    send(post("/api/expense-claims/" + id + "/transitions/submit"), "bob", null, 409);
+                    assertThat(get("/api/expense-claims/" + id + "/moves")).hasSize(3);
+
+                    // How long rows stay in a state: an average per state rows have left — the demo
+                    // rows' histories and the two moves above.
+                    JsonNode times = get("/api/expense-claims/moves/time-in-state");
+                    java.util.Map<String, JsonNode> byState = new java.util.HashMap<>();
+                    for (JsonNode time : times) byState.put(time.get("state").asText(), time);
+                    assertThat(byState).containsKeys("DRAFT", "SUBMITTED");
+                    assertThat(byState.get("DRAFT").get("moves").asLong()).isGreaterThanOrEqualTo(2);
+                    assertThat(byState.get("DRAFT").get("seconds").asDouble()).isGreaterThan(0);
+                    assertThat(byState).doesNotContainKey("PAID");
+
+                    // A demo row has a history too; a row that is not there has none to show.
+                    assertThat(get("/api/expense-claims/" + firstId("/api/expense-claims") + "/moves")).isNotEmpty();
+                    mvc.perform(MockMvcRequestBuilders.get("/api/expense-claims/999999/moves")).andExpect(status().isNotFound());
+                }
+
+                @Test
                 void theAssigneeChangesOnlyByClaimReleaseAndReassign() throws Exception {
                     // The status is the workflow's: a client that sends none is not turned away (the
                     // field is required in the model — that is the column's NOT NULL, not the client's job).

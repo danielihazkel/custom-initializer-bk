@@ -121,6 +121,33 @@
       "gatedBy": "hasSavedViews"
     },
     {
+      "source": "WorkflowMove.java.mustache",
+      "path": "src/main/java/{{packagePath}}/workflow/WorkflowMove.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasWorkflowMoves"
+    },
+    {
+      "source": "WorkflowMoveRepository.java.mustache",
+      "path": "src/main/java/{{packagePath}}/workflow/WorkflowMoveRepository.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasWorkflowMoves"
+    },
+    {
+      "source": "WorkflowMoveLog.java.mustache",
+      "path": "src/main/java/{{packagePath}}/workflow/WorkflowMoveLog.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasWorkflowMoves"
+    },
+    {
       "source": "DemoDataLoader.java.mustache",
       "path": "src/main/java/{{packagePath}}/config/DemoDataLoader.java",
       "perEntity": false,

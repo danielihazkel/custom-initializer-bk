@@ -40,12 +40,15 @@ public class {{EntityName}}Service {
 {{/usesEntityManager}}{{#usesValidator}}    private final jakarta.validation.Validator validator;
 {{/usesValidator}}{{#serviceUsesCurrentUser}}    private final CurrentUser currentUser;
 {{/serviceUsesCurrentUser}}{{#hasAttachmentFields}}    private final {{packageName}}.attachment.AttachmentStorage attachments;
-{{/hasAttachmentFields}}
+{{/hasAttachmentFields}}{{#tracksMoves}}    private final {{packageName}}.workflow.WorkflowMoveLog moves;
+{{/tracksMoves}}
     public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#usesValidator}},
                                  jakarta.validation.Validator validator{{/usesValidator}}{{#serviceUsesCurrentUser}}, CurrentUser currentUser{{/serviceUsesCurrentUser}}{{#hasAttachmentFields}},
-                                 {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachmentFields}}) {
+                                 {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachmentFields}}{{#tracksMoves}},
+                                 {{packageName}}.workflow.WorkflowMoveLog moves{{/tracksMoves}}) {
         this.repository = repository;
-{{#hasAttachmentFields}}        this.attachments = attachments;
+{{#tracksMoves}}        this.moves = moves;
+{{/tracksMoves}}{{#hasAttachmentFields}}        this.attachments = attachments;
 {{/hasAttachmentFields}}
 {{#usesEntityManager}}        this.entityManager = entityManager;
 {{/usesEntityManager}}{{#usesValidator}}        this.validator = validator;
@@ -413,8 +416,11 @@ public class {{EntityName}}Service {
             throw new ResourceConflictException("{{EntityName}} " + id + " already exists");
         }
 {{/pkField.isGenerated}}{{#hasLockedRelations}}        withReferences(entity);
-{{/hasLockedRelations}}        return repository.save(entity);
-    }
+{{/hasLockedRelations}}{{^tracksMoves}}        return repository.save(entity);
+{{/tracksMoves}}{{#tracksMoves}}        {{EntityName}} saved = repository.save(entity);
+        moves.created("{{entityNameKebab}}", saved.get{{pkField.Name}}(), saved.get{{WorkflowStatusName}}());
+        return saved;
+{{/tracksMoves}}    }
 {{#importApplicable}}
 
     /** One problem with one row of an import: the row (counted from 1), the field it is about
@@ -513,7 +519,8 @@ public class {{EntityName}}Service {
      */
     public {{EntityName}} transition({{pkField.javaType}} id, String name, {{EntityName}} values, String user) {
         {{EntityName}} existing = findById(id);
-        {{EntityName}} given = values == null ? new {{EntityName}}() : values;
+{{#tracksMoves}}        {{EntityName}}.{{workflowEnumType}} before = existing.get{{WorkflowStatusName}}();
+{{/tracksMoves}}        {{EntityName}} given = values == null ? new {{EntityName}}() : values;
 {{#hasLockedRelations}}        withReferences(given);
 {{/hasLockedRelations}}        switch (name) {
 {{#workflowTransitions}}            case "{{name}}" -> {
@@ -528,8 +535,24 @@ public class {{EntityName}}Service {
             }
 {{/workflowTransitions}}            default -> throw new IllegalArgumentException("Unknown transition: " + name);
         }
-        return repository.save(existing);
+{{#tracksMoves}}        moves.moved("{{entityNameKebab}}", existing.get{{pkField.Name}}(), before, existing.get{{WorkflowStatusName}}(), name);
+{{/tracksMoves}}        return repository.save(existing);
     }
+{{#tracksMoves}}
+
+    /** The row's steps through its workflow, oldest first (404 for a row that is not there). */
+    @Transactional(readOnly = true)
+    public java.util.List<{{packageName}}.workflow.WorkflowMoveLog.Move> moves({{pkField.javaType}} id) {
+        findById(id);
+        return moves.of("{{entityNameKebab}}", id);
+    }
+
+    /** How long rows stay in each state they have left: the average, in seconds. */
+    @Transactional(readOnly = true)
+    public java.util.List<{{packageName}}.workflow.WorkflowMoveLog.StateTime> timeInState() {
+        return moves.timeInState("{{entityNameKebab}}");
+    }
+{{/tracksMoves}}
 
     private static void requireState({{EntityName}} row, String transition, {{EntityName}}.{{workflowEnumType}}... from) {
         for ({{EntityName}}.{{workflowEnumType}} state : from) {

@@ -441,7 +441,13 @@ public record PageDefinition(
         /** A table of one aggregate over two columns at once: a row per group, a column per series. */
         PIVOT("pivot"),
         /** The latest changes across audited entities, newest first (needs the audit opt). */
-        ACTIVITY("activity");
+        ACTIVITY("activity"),
+        /** An enum's values as the stages of a pipeline: each stage is everything that got that far. */
+        FUNNEL("funnel"),
+        /** One number against a full-scale value, as a dial. */
+        GAUGE("gauge"),
+        /** How long rows stay in each workflow state (needs the workflow's move log). */
+        TIME_IN_STATE("timeInState");
 
         private final String wire;
 
@@ -560,7 +566,7 @@ public record PageDefinition(
         /** A number tile (plain or against a target) takes one grid column; charts and lists two;
          *  a launcher the whole row. */
         public static int defaultSpan(WidgetKind kind) {
-            return kind == WidgetKind.KPI || kind == WidgetKind.PROGRESS ? 1
+            return kind == WidgetKind.KPI || kind == WidgetKind.PROGRESS || kind == WidgetKind.GAUGE ? 1
                     : kind == WidgetKind.LINKS || kind == WidgetKind.LIST || kind == WidgetKind.PIVOT ? 4 : 2;
         }
     }

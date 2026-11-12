@@ -50,9 +50,15 @@ public record EntityDefinition(
      * and the date it is due by. Names are canonical (validated by FullstackRequestValidator).
      */
     public record Workflow(String statusField, String initial, String assigneeField, String dueField,
-                           List<Transition> transitions) {
+                           List<Transition> transitions, boolean trackMoves) {
         public Workflow {
             transitions = List.copyOf(transitions);
+        }
+
+        /** A workflow that keeps no log of its moves. */
+        public Workflow(String statusField, String initial, String assigneeField, String dueField,
+                        List<Transition> transitions) {
+            this(statusField, initial, assigneeField, dueField, transitions, false);
         }
 
         /** The states a row can still move on from — every state some transition leaves. */

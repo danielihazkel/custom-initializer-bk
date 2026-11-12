@@ -26,14 +26,17 @@ public class DemoDataLoader implements CommandLineRunner {
     /** Rows created per entity. */
     static final int ROWS = 8;
 
-{{#seedEntities}}    private final {{EntityName}}Repository {{entityName}}Repository;
+{{#hasWorkflowMoves}}    private final {{packageName}}.workflow.WorkflowMoveLog moves;
+{{/hasWorkflowMoves}}{{#seedEntities}}    private final {{EntityName}}Repository {{entityName}}Repository;
 {{/seedEntities}}{{#hasAttachments}}    private final {{packageName}}.attachment.AttachmentStorage attachments;
 {{/hasAttachments}}
     public DemoDataLoader({{#seedEntities}}{{EntityName}}Repository {{entityName}}Repository{{^seedLast}}, {{/seedLast}}{{/seedEntities}}{{#hasAttachments}},
-                          {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachments}}) {
+                          {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachments}}{{#hasWorkflowMoves}},
+                          {{packageName}}.workflow.WorkflowMoveLog moves{{/hasWorkflowMoves}}) {
 {{#seedEntities}}        this.{{entityName}}Repository = {{entityName}}Repository;
 {{/seedEntities}}{{#hasAttachments}}        this.attachments = attachments;
-{{/hasAttachments}}    }
+{{/hasAttachments}}{{#hasWorkflowMoves}}        this.moves = moves;
+{{/hasWorkflowMoves}}    }
 
     @Override
     public void run(String... args) {
@@ -50,6 +53,12 @@ public class DemoDataLoader implements CommandLineRunner {
 {{/targetSeeded}}{{/relations}}            {{entityName}}Rows.add(row);
         }
         {{entityName}}Rows = {{entityName}}Repository.saveAll({{entityName}}Rows);
+{{#tracksMoves}}        // A history for each: created some days ago, and moved on if it is no longer where it started.
+        for (int i = 0; i < {{entityName}}Rows.size(); i++) {
+            {{EntityName}} row = {{entityName}}Rows.get(i);
+            moves.seed("{{entityNameKebab}}", row.get{{pkField.Name}}(), {{workflowInitialJava}}, row.get{{WorkflowStatusName}}(), i);
+        }
+{{/tracksMoves}}
 {{/seedEntities}}
         log.info("Demo data: seeded {} rows per entity", ROWS);
     }

@@ -283,6 +283,24 @@ public class {{EntityName}}Controller {
                                         @RequestHeader(value = "userinfo", required = false) String user) {
         return {{EntityName}}Dto.from(service.transition(id, name, values == null ? null : values.toEntity(), CurrentUser.idOf(user)));
     }
+{{#tracksMoves}}
+
+    /** The row's steps through its workflow, oldest first: who moved it, when, by which transition. */
+{{#optScaffoldOpenApi}}    @Operation(summary = "The workflow history of a {{EntityName}}")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
+{{/optScaffoldSecured}}    @GetMapping("/{id}/moves")
+    public java.util.List<{{packageName}}.workflow.WorkflowMoveLog.Move> moves(@PathVariable {{pkField.javaType}} id) {
+        return service.moves(id);
+    }
+
+    /** How long rows stay in each state they have left: the average, in seconds, and the stays behind it. */
+{{#optScaffoldOpenApi}}    @Operation(summary = "Average time {{EntityName}} records stay in each workflow state")
+{{/optScaffoldOpenApi}}{{#optScaffoldSecured}}    // @RequiresPermission(Constants.USER)
+{{/optScaffoldSecured}}    @GetMapping("/moves/time-in-state")
+    public java.util.List<{{packageName}}.workflow.WorkflowMoveLog.StateTime> timeInState() {
+        return service.timeInState();
+    }
+{{/tracksMoves}}
 {{#hasAssignee}}
 
     /** Assigns the row to the caller. */
