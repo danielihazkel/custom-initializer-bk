@@ -1618,6 +1618,13 @@
             "fieldName": "assignee",
             "targetEntity": "Person",
             "required": false
+          },
+          {
+            "type": "MANY_TO_ONE",
+            "fieldName": "partOf",
+            "label": "Part of",
+            "targetEntity": "Task",
+            "required": false
           }
         ]
       }
@@ -1729,6 +1736,21 @@
       {
         "id": "tasks",
         "type": "entity-list",
+        "group": "Work",
+        "entity": "Task",
+        "columns": [
+          "title",
+          "status",
+          "priority",
+          "dueOn",
+          "project",
+          "assignee"
+        ]
+      },
+      {
+        "id": "breakdown",
+        "type": "tree",
+        "title": "Work breakdown",
         "group": "Work",
         "entity": "Task"
       },

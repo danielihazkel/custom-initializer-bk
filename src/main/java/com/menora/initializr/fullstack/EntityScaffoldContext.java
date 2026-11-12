@@ -182,6 +182,7 @@ public final class EntityScaffoldContext {
             pv.put("pageIsSearch", p.type() == PageDefinition.Type.SEARCH);
             pv.put("pageIsForm", p.type() == PageDefinition.Type.FORM);
             pv.put("pageIsInbox", p.type() == PageDefinition.Type.INBOX);
+            pv.put("pageIsTree", p.type() == PageDefinition.Type.TREE);
             pv.put("hasPageDescription", p.description() != null);
             pv.put("pageDescriptionExpr", p.description() == null ? null : tsString(p.description()));
             pv.put("needsNavigate", false);
@@ -461,6 +462,29 @@ public final class EntityScaffoldContext {
                     pv.put("navIcon", "FileText");
                     defaultTitleExpr = tsString(p.id());
                 }
+                case TREE -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    Map<String, Object> summary = summaries.get(p.entity().toLowerCase(Locale.ROOT));
+                    putEntityNames(pv, ev);
+                    putRowNaming(pv, ev, summary);
+                    // A row opens its record page when there is one, else the quick look.
+                    putRecordLink(pv, "", p.entity(), links, summaries);
+                    boolean record = Boolean.TRUE.equals(pv.get("hasRecordPage"));
+                    pv.put("treeUsesDrawer", !record);
+                    // The self-reference as the row carries it: the parent's id.
+                    Map<String, Object> link = ((List<Map<String, Object>>) ev.get("relations")).stream()
+                            .filter(r -> p.via().equals(r.get("fieldName"))).findFirst().orElseThrow();
+                    pv.put("parentIdField", link.get("fkFieldName"));
+                    // Read in name order, so each branch lists its rows that way.
+                    Object labelField = summary.get("labelField");
+                    pv.put("treeSortField", labelField != null ? labelField : summary.get("pkName"));
+                    String create = links.createPageOf(p.entity());
+                    pv.put("hasCreatePage", create != null);
+                    pv.put("createPageId", create);
+                    pv.put("needsNavigate", record || create != null);
+                    pv.put("navIcon", "Layers");
+                    defaultTitleExpr = tsString((String) ev.get("entityLabelPlural"));
+                }
                 case IMPORT -> {
                     Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
                     pv.put("EntityName", ev.get("EntityName"));
@@ -649,6 +673,7 @@ public final class EntityScaffoldContext {
                     || Boolean.TRUE.equals(pv.get("pageIsReport")) || Boolean.TRUE.equals(pv.get("pageIsWizard"))
                     || Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsBoard"))
                     || Boolean.TRUE.equals(pv.get("pageIsImport")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))
+                    || Boolean.TRUE.equals(pv.get("pageIsTree"))
                     || Boolean.TRUE.equals(pv.get("pageIsForm")) || Boolean.TRUE.equals(pv.get("pageIsInbox"))
                     || exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
         }
@@ -698,6 +723,7 @@ public final class EntityScaffoldContext {
         ctx.put("hasDashboardPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsDashboard"))));
         ctx.put("hasReportPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsReport"))));
         ctx.put("hasInboxPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsInbox"))));
+        ctx.put("hasTreePages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTree"))));
         // widgets.tsx backs both the dashboard screens and the report screen's chart.
         ctx.put("hasWidgets", Boolean.TRUE.equals(ctx.get("hasDashboardPages"))
                 || Boolean.TRUE.equals(ctx.get("hasReportPages"))

@@ -448,6 +448,27 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendTreePageInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Round 10, phase 10: a tree of categories whose rows open their record page.
+        Path project = postAndExtractFrontend(workDir, FullstackTreePageTests.body("react-tailwind-crud", true));
+        assertThat(project.resolve("src/app/screens/OutlineScreen.tsx")).isRegularFile();
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraTreePageInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same in the Menora shell, in Hebrew, without a record page: a row opens the quick look.
+        Map<String, Object> body = FullstackTreePageTests.body("react-menora-digital-crud", false);
+        body.put("locale", "he");
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendQuotedLabelsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // Every label with an apostrophe, a double quote, a backslash, braces and angle brackets:
         // spliced into TS literals, JSX attributes and JSX children across list pages, forms,

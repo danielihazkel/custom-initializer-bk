@@ -205,6 +205,14 @@ public final class FullstackPageValidator {
                         yield new PageDefinition(id, type, title, description, hidden, null, null, null,
                                 tabs(id, p.tabs(), typeById));
                     }
+                    case TREE -> {
+                        String prefix = "Page '" + id + "' (tree)";
+                        EntityDefinition entity = requireEntity(entitiesByLower, p.entity(), prefix);
+                        requireSinglePk(prefix, entity);
+                        // The link that makes the tree is kept where a master-detail keeps its own.
+                        yield new PageDefinition(id, type, title, description, hidden, entity.name(), null, null, null,
+                                null, null, treeLink(prefix, entity, trimToNull(p.via())), null, null, null, null, null, null, null);
+                    }
                     case MASTER_DETAIL -> {
                         String prefix = "Page '" + id + "' (master-detail)";
                         EntityDefinition parent = requireEntity(entitiesByLower, p.parent(), prefix + " parent");
@@ -467,7 +475,7 @@ public final class FullstackPageValidator {
                 && type != PageDefinition.Type.REPORT && type != PageDefinition.Type.WIZARD
                 && type != PageDefinition.Type.CALENDAR && type != PageDefinition.Type.BOARD
                 && type != PageDefinition.Type.IMPORT && type != PageDefinition.Type.FORM
-                && type != PageDefinition.Type.INBOX
+                && type != PageDefinition.Type.INBOX && type != PageDefinition.Type.TREE
                 && trimToNull(p.entity()) != null) {
             throw new WizardArgumentException(prefix + "does not take 'entity'");
         }
@@ -486,7 +494,9 @@ public final class FullstackPageValidator {
         if (type != PageDefinition.Type.MASTER_DETAIL) {
             if (trimToNull(p.parent()) != null) throw new WizardArgumentException(prefix + "does not take 'parent'");
             if (trimToNull(p.child()) != null) throw new WizardArgumentException(prefix + "does not take 'child'");
-            if (trimToNull(p.via()) != null) throw new WizardArgumentException(prefix + "does not take 'via'");
+            if (type != PageDefinition.Type.TREE && trimToNull(p.via()) != null) {
+                throw new WizardArgumentException(prefix + "does not take 'via'");
+            }
             if (p.showParent() != null) throw new WizardArgumentException(prefix + "does not take 'showParent'");
         }
         if (type != PageDefinition.Type.RECORD && p.childTabs() != null && !p.childTabs().isEmpty()) {
@@ -1921,6 +1931,32 @@ public final class FullstackPageValidator {
     }
 
     /** Master-detail parents and record pages address one row by a single id. */
+    /**
+     * The link a tree page is drawn by: a MANY_TO_ONE of the entity to itself — named, or the only
+     * one it has. Without one there is no tree; with several the page has to say which.
+     */
+    private static String treeLink(String prefix, EntityDefinition entity, String raw) {
+        List<RelationDefinition> own = entity.relations().stream()
+                .filter(r -> r.targetEntity().equalsIgnoreCase(entity.name())).toList();
+        if (own.isEmpty()) {
+            throw new WizardArgumentException(prefix + ": " + entity.name()
+                    + " has no relation to itself — a tree needs one (a parent)").on("entity");
+        }
+        if (raw != null) {
+            return own.stream().filter(r -> r.fieldName().equalsIgnoreCase(raw)).findFirst()
+                    .orElseThrow(() -> new WizardArgumentException(prefix + ": via '" + raw + "' is not a relation of "
+                            + entity.name() + " to itself (" + String.join(", ", own.stream().map(RelationDefinition::fieldName).toList())
+                            + ")").on("via"))
+                    .fieldName();
+        }
+        if (own.size() > 1) {
+            throw new WizardArgumentException(prefix + ": " + entity.name() + " points at itself through "
+                    + String.join(" and ", own.stream().map(RelationDefinition::fieldName).toList())
+                    + " — say which with 'via'").on("via");
+        }
+        return own.get(0).fieldName();
+    }
+
     private static void requireSinglePk(String prefix, EntityDefinition entity) {
         long pks = entity.fields().stream().filter(FieldDefinition::primaryKey).count();
         if (pks != 1) {

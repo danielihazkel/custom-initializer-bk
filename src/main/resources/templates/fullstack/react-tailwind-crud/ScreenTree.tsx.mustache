@@ -1,0 +1,211 @@
+import { useEffect, useMemo, useState } from 'react'
+import { ChevronRight, {{#hasCreatePage}}Plus, {{/hasCreatePage}}Search } from 'lucide-react'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{#treeUsesDrawer}}
+import { {{EntityName}}Detail } from '@features/{{entityNameKebab}}-form'
+{{/treeUsesDrawer}}
+import { api } from '@shared/api'
+import { Alert, {{#treeUsesDrawer}}DetailDrawer, {{/treeUsesDrawer}}Skeleton } from '@shared/ui'
+import { t } from '@shared/i18n'
+
+/** A tree is drawn whole, so it is read in one call: a larger table shows its first rows and says so. */
+const LIMIT = 500
+
+interface TreeNode {
+  row: {{EntityName}}
+  children: TreeNode[]
+}
+
+const keyOf = (r: {{EntityName}}): string => {{{rowKeyTs}}}
+const labelOf = (r: {{EntityName}}): string => {{{rowLabelTs}}}
+
+/** The rows as a forest: each under the row its `{{parentIdField}}` names. */
+function forest(rows: {{EntityName}}[]): TreeNode[] {
+  const nodes = new Map<string, TreeNode>()
+  for (const row of rows) nodes.set(keyOf(row), { row, children: [] })
+  const roots: TreeNode[] = []
+  for (const node of nodes.values()) {
+    const up = node.row.{{parentIdField}}
+    const parent = up == null ? undefined : nodes.get(String(up))
+    // A row whose parent was not loaded — or is itself — stands at the top rather than vanish.
+    if (parent && parent !== node) parent.children.push(node)
+    else roots.push(node)
+  }
+  return roots
+}
+
+/** The forest with only what matches: a row stays when it, or something under it, has the words. */
+function matching(nodes: TreeNode[], words: string): TreeNode[] {
+  if (words === '') return nodes
+  return nodes.flatMap(node => {
+    const children = matching(node.children, words)
+    return labelOf(node.row).toLowerCase().includes(words) || children.length > 0 ? [{ row: node.row, children }] : []
+  })
+}
+
+/** Every row that has rows under it. */
+function parents(nodes: TreeNode[]): string[] {
+  return nodes.flatMap(node => (node.children.length > 0 ? [keyOf(node.row), ...parents(node.children)] : []))
+}
+
+function TreeBranch({ nodes, level, open, everything, onToggle, onOpen }: {
+  nodes: TreeNode[]
+  level: number
+  open: ReadonlySet<string>
+  /** While searching every branch that matched is open. */
+  everything: boolean
+  onToggle: (key: string) => void
+  onOpen: (row: {{EntityName}}) => void
+}) {
+  return (
+    <ul role={level === 0 ? 'tree' : 'group'} className={level === 0 ? '' : 'ms-5 border-s border-border ps-2'}>
+      {nodes.map(node => {
+        const key = keyOf(node.row)
+        const hasChildren = node.children.length > 0
+        const expanded = hasChildren && (everything || open.has(key))
+        return (
+          <li key={key} role="treeitem" aria-expanded={hasChildren ? expanded : undefined}>
+            <div className="flex items-center gap-1 rounded-lg px-1 py-1 transition-colors hover:bg-surface-2">
+              {hasChildren ? (
+                <button
+                  type="button"
+                  onClick={() => onToggle(key)}
+                  className="rounded p-1 text-muted transition-colors hover:text-fg"
+                  aria-label={expanded ? t('collapse') : t('expand')}
+                >
+                  <ChevronRight className={`h-4 w-4 transition-transform ${expanded ? 'rotate-90' : 'rtl:rotate-180'}`} />
+                </button>
+              ) : (
+                <span className="inline-block w-6" aria-hidden="true" />
+              )}
+              <button type="button" onClick={() => onOpen(node.row)} className="min-w-0 flex-1 truncate text-start text-sm text-fg hover:underline">
+                {labelOf(node.row)}
+              </button>
+              {hasChildren && (
+                <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-xs tabular-nums text-muted">{node.children.length}</span>
+              )}
+            </div>
+            {expanded && <TreeBranch nodes={node.children} level={level + 1} open={open} everything={everything} onToggle={onToggle} onOpen={onOpen} />}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+{{#needsNavigate}}
+
+interface Props {
+  onNavigate: (view: string, arg?: string, query?: Record<string, string>) => void
+}
+{{/needsNavigate}}
+
+/** {{EntityName}} rows as an outline: each under the row it belongs to, opened and closed branch by branch. */
+export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/needsNavigate}}) {
+  const [rows, setRows] = useState<{{EntityName}}[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const [words, setWords] = useState('')
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
+{{#treeUsesDrawer}}
+  const [detail, setDetail] = useState<{{EntityName}} | null>(null)
+{{/treeUsesDrawer}}
+
+  useEffect(() => {
+    let active = true
+    setFailed(false)
+    api.get<{ content: {{EntityName}}[]; totalElements: number }>(`/api/{{entityNamePluralKebab}}?size=${LIMIT}&sort={{treeSortField}},asc`)
+      .then(page => {
+        if (!active) return
+        setRows(page.content)
+        setTotal(page.totalElements)
+      })
+      .catch(() => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [attempt])
+
+  const roots = useMemo(() => forest(rows ?? []), [rows])
+  const wanted = words.trim().toLowerCase()
+  const shown = useMemo(() => matching(roots, wanted), [roots, wanted])
+  const toggle = (key: string) => setOpen(prev => {
+    const next = new Set(prev)
+    if (!next.delete(key)) next.add(key)
+    return next
+  })
+  const openRow = (row: {{EntityName}}) => {{#hasRecordPage}}onNavigate('{{recordPageId}}', keyOf(row)){{/hasRecordPage}}{{#treeUsesDrawer}}setDetail(row){{/treeUsesDrawer}}
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-8">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">{ {{pageTitleExpr}} }</h1>
+{{#hasPageDescription}}
+          <p className="mt-1 max-w-2xl text-sm text-muted">{ {{pageDescriptionExpr}} }</p>
+{{/hasPageDescription}}
+          <p className="mt-1 text-sm text-muted">
+            {total} {t(total === 1 ? 'record' : 'records')}
+            {rows != null && total > rows.length && <> · {t('treeTruncated', { n: rows.length })}</>}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setOpen(open.size > 0 ? new Set() : new Set(parents(roots)))}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
+          >
+            {open.size > 0 ? t('collapseAll') : t('expandAll')}
+          </button>
+{{#hasCreatePage}}
+          <button
+            type="button"
+            onClick={() => onNavigate('{{createPageId}}')}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
+          >
+            <Plus className="h-4 w-4" />
+            {t('newX', { x: {{{entityLabelExpr}}} })}
+          </button>
+{{/hasCreatePage}}
+        </div>
+      </div>
+
+      <div className="relative max-w-sm">
+        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+        <input
+          type="text"
+          value={words}
+          onChange={e => setWords(e.target.value)}
+          placeholder={t('search')}
+          aria-label={t('search')}
+          className="w-full rounded-lg border border-border bg-surface py-2 ps-9 pe-3 text-sm text-fg placeholder:text-muted shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40"
+        />
+      </div>
+
+      {failed && (
+        <Alert>
+          {t('couldNotLoad')}{' '}
+          <button type="button" onClick={() => setAttempt(a => a + 1)} className="font-medium underline">{t('retry')}</button>
+        </Alert>
+      )}
+      {!failed && rows == null && (
+        <div className="space-y-3 rounded-2xl border border-border bg-surface p-5 shadow-sm" aria-busy="true">
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-4 w-2/5" />
+        </div>
+      )}
+      {!failed && rows != null && (
+        <div className="rounded-2xl border border-border bg-surface p-3 shadow-sm">
+          {shown.length === 0
+            ? <p className="px-2 py-6 text-center text-sm text-muted">{wanted === '' ? t('noRecordsYetDot') : t('noMatchingRecords')}</p>
+            : <TreeBranch nodes={shown} level={0} open={open} everything={wanted !== ''} onToggle={toggle} onOpen={openRow} />}
+        </div>
+      )}
+{{#treeUsesDrawer}}
+
+      <DetailDrawer open={detail !== null} title={t('details')} onClose={() => setDetail(null)}>
+        {detail && <{{EntityName}}Detail value={detail} />}
+      </DetailDrawer>
+{{/treeUsesDrawer}}
+    </div>
+  )
+}

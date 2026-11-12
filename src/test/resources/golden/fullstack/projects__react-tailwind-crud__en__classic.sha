@@ -18,13 +18,13 @@ db09b22c7476a3efdd56c7f11888ae6288b1f1a971b272e0d8ab58f64b22d54e  golden-project
 53ad94d454c30e6f8eeac94ee9d60e275d47a043a2cdd96dd3d42923676f0d6d  golden-projects/backend/src/main/java/com/menora/golden/config/VaultLocalEnvironmentPostProcessor.java
 d387cebcdddd7d42184ec10639942c1555b2319f1fae0f23bfbd7e21a4949ffb  golden-projects/backend/src/main/java/com/menora/golden/controller/PersonController.java
 f5f84f0519bfc82854358691690972ca89d79cd353d9b544652249b60b974bc3  golden-projects/backend/src/main/java/com/menora/golden/controller/ProjectController.java
-b7e5852f103b6ac4b8e95c5a7445a250da2a57b91916f9b15286f0079f3c87ef  golden-projects/backend/src/main/java/com/menora/golden/controller/TaskController.java
+fa07e9ca8d1c18b5efb54d46922e4651e3424090985c2abf7bf23d34c6ed7906  golden-projects/backend/src/main/java/com/menora/golden/controller/TaskController.java
 571f0dd416826614de09c3c9d7e87b9f25bf319476c5846f70c5c11526b851d2  golden-projects/backend/src/main/java/com/menora/golden/dto/PersonDto.java
 c00b6fcd00df71916b488a526d8a1804e64c4f09301f050126c9b8f893cb4042  golden-projects/backend/src/main/java/com/menora/golden/dto/ProjectDto.java
-48de331867715b7bed449b4ceeaac02c389283e36a6bebdd0e748df8625ddf68  golden-projects/backend/src/main/java/com/menora/golden/dto/TaskDto.java
+0be0c887e8afa1fc9509c8f45c1ba4dd86d536b18f2c198751797d8a684bcd47  golden-projects/backend/src/main/java/com/menora/golden/dto/TaskDto.java
 82509ea08d33e82bb6be80c27da7443015a9c330ff88d08d448f927c1aa92c5a  golden-projects/backend/src/main/java/com/menora/golden/entity/Person.java
 1f1a833990e6b384dac9fcdb48d8ec3fcb9a46a25dbaa1b12a57e63cfd9cf5d6  golden-projects/backend/src/main/java/com/menora/golden/entity/Project.java
-246a6ea59624440c4305ad4b8d5c855128a0797f1216aca309e9bca9f719ec9f  golden-projects/backend/src/main/java/com/menora/golden/entity/Task.java
+485fc0383826896fa3860b6cc2b486d93efb335ed1fb799bcf2a08fec6d46f7d  golden-projects/backend/src/main/java/com/menora/golden/entity/Task.java
 5560a779909050d3ee64ad2d64ec73f78b9d3f036336c4c6769650049095edc5  golden-projects/backend/src/main/java/com/menora/golden/repository/PersonRepository.java
 1c095b9b82b8d3fd68c8feb846ff5d13ec3ca0e71e0465b03086927136173578  golden-projects/backend/src/main/java/com/menora/golden/repository/ProjectRepository.java
 f4878d5b44b604346413d4654b897ac633520ac20f1fb52668d2fa34ce4b2b0e  golden-projects/backend/src/main/java/com/menora/golden/repository/TaskRepository.java
@@ -36,7 +36,7 @@ c1cd40b0b0326c9bdafee64b8c124be9445d9fe6ca1160223d3d840336404ce6  golden-project
 82a457c255b2557c30e1afda079cd35a26f7a405a398637f62398e03db7a88fc  golden-projects/backend/src/main/java/com/menora/golden/security/UnauthorizedException.java
 8603b4b56667396b15c26cbdfbcfb6013abe4f77883ef17bb1c3dac2842e76bf  golden-projects/backend/src/main/java/com/menora/golden/service/PersonService.java
 89eb0866ab5720fbb38ad15466555dedaa72d9652715f38292bf4283e5149e31  golden-projects/backend/src/main/java/com/menora/golden/service/ProjectService.java
-b4222a13b0698c7a84e44bb39bf1b8500d354c5ece538727a6b6d9473f9470dd  golden-projects/backend/src/main/java/com/menora/golden/service/TaskService.java
+c6a70c6656abbd6a0fa59a1a10e9633f187f00e6e2c646acdc6c551951f24770  golden-projects/backend/src/main/java/com/menora/golden/service/TaskService.java
 3625f684c0d4e101b5fdc524d7de2c56dec4388b70a53cfc1aa643a399c19c9f  golden-projects/backend/src/main/java/com/menora/golden/web/ApiExceptionHandler.java
 3f7529bca65880d661cc28db0f22ab881fc3a726ab4bb1d7baa26e533d512793  golden-projects/backend/src/main/java/com/menora/golden/web/MeController.java
 71f50de913f41716a17ea245857bcf83b611517668d93d9ae47f479c3136221a  golden-projects/backend/src/main/java/com/menora/golden/web/ResourceConflictException.java
@@ -82,7 +82,7 @@ fa10fb786bfc7f3824216729bc01d2e16d7505ab01e53793eaf7754c65fcd3cd  golden-project
 8c734150cce1c560fdbbb0e715b248ffbb259b617dfb32f4c078d6a1135c4b47  golden-projects/frontend/src/entities/project/model/types.ts
 99512ab1e12a58ef0b4d11ffae2a5c3568484a63dbd08e73e0820f800c8dd7c7  golden-projects/frontend/src/entities/task/api/useTask.ts
 c984f0327720c7bfb420904c2af5c35ecd9e9d49541bc885a0eaf7d6a8960201  golden-projects/frontend/src/entities/task/index.ts
-7a48b1f79466bab95afef74b2f7dc8d29f7ffc3c415968071c16becbe10d59e8  golden-projects/frontend/src/entities/task/model/types.ts
+c619e95239cdb9ac06a7861c79413fbfb30df7056bbbb9eba7c925d401e74303  golden-projects/frontend/src/entities/task/model/types.ts
 e13ad105748a74e267f8637c09f5b8444a53fc0366ca4e19f83d4187217b5c65  golden-projects/frontend/src/features/README.md
 8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881  golden-projects/frontend/src/features/index.ts
 6df83e7e121e2fcd77b940d2a2b64971554e2fc2876976b3953160b0118a4935  golden-projects/frontend/src/features/person-form/index.ts
@@ -95,8 +95,8 @@ cdcbe849e58a62666245e20a26f3b580e1915caac2301b74a152fa5d22b37b93  golden-project
 25c7beff0cf4709250497d7c6b7e25c4e91287e3307ff333133091d2829f920e  golden-projects/frontend/src/features/project-form/ui/ProjectForm.tsx
 872c98bc84c991fa0874dd80a4bc87b5fd557351a5a06be132a8be85ae3b8ea1  golden-projects/frontend/src/features/task-form/index.ts
 d54d1c451af3a34d928eede7995913d95c198f354d7a041a902f059654a903b1  golden-projects/frontend/src/features/task-form/model/validate.ts
-eca5b64eb5a2caa1a4d4cad87a0195cf0b3a72a39de90061ae54e5ca11a1dea8  golden-projects/frontend/src/features/task-form/ui/TaskDetail.tsx
-bd515889c1609e5131be18742b43a737521b9e62886c03b0e055356bf52a87b2  golden-projects/frontend/src/features/task-form/ui/TaskForm.tsx
+091172bfd43705824d61c675c0a8e15f426018ecbe31abb006261c31b39b6669  golden-projects/frontend/src/features/task-form/ui/TaskDetail.tsx
+7400f659c4b17f911ccb793e30aa7efe169ecfceede7a4a29ab3a9276d738e6d  golden-projects/frontend/src/features/task-form/ui/TaskForm.tsx
 2282317ff999f6c5758d41f966ff7adc010d282c72376ee0ac8a7d9470d00efb  golden-projects/frontend/src/index.css
 dd596a1459bf26fd044ea233a820404cb2a54f0a438f9dc97b8538b165f0ea3e  golden-projects/frontend/src/main.tsx
 f33251b158fd83b7be8ed5a2e445f5454031d1e765847b731eeba42d8c8c32bc  golden-projects/frontend/src/pages/README.md
@@ -108,7 +108,7 @@ ebce5107ef6b00ab9fd94ee35635a6668203ef3239c0e4092c4100f9cee5bac3  golden-project
 58c7c41a2b388bccb67e168781e84be71ae0f709be74520a094f2719bee285e2  golden-projects/frontend/src/pages/project/index.ts
 7d22792771c19eab8cc997ca75d61b334082998c5246fc8c7aa30fc29321abc7  golden-projects/frontend/src/pages/project/ui/ProjectPage.tsx
 f3328344e7b0da87e911862dd0046586cf485522c34b764197036e395bc6f74f  golden-projects/frontend/src/pages/task/index.ts
-bbfa807c9db7fdef51064ec81631d400802b74056b8d28505109dff50a72d6f8  golden-projects/frontend/src/pages/task/ui/TaskPage.tsx
+330760bca959e0dbbe7c6687efa081789ed9eb5788d8513373cbc4167ee048c7  golden-projects/frontend/src/pages/task/ui/TaskPage.tsx
 794d73cb44a523204e36b62507422614df59d86c67cb7f3428a66dafb8bfb9e1  golden-projects/frontend/src/shared/README.md
 c0d15623de9d8bbb3c3488678a7fa9340607cfc32dc6daea9e34417b8b0a80d6  golden-projects/frontend/src/shared/api/client.ts
 3f2dc9d381b5f455f2513c9cac00625b670dd5515d05ff794b41d38d34e89cbc  golden-projects/frontend/src/shared/api/index.ts
@@ -143,4 +143,4 @@ ead90fc35e323c8d29f562aacad5a3a1b63767a0d0b6ff1e375191fcfa814397  golden-project
 1a657bc8b14e013ac12884344b75f725b742b4fcdd27bea16bb5ca1e484b61f3  golden-projects/frontend/tsconfig.json
 bb9fd8592a9e364641441219f10d84daae9ba2ca5cc85db798efad6913bb8257  golden-projects/frontend/tsconfig.node.json
 47a77f018d8f1f16e15333f078134b8e9a0341bfdec1a4b50a688920580c9504  golden-projects/frontend/vite.config.ts
-cdcbc228b2154cee6b805bc7e505ca40b932c64b76b3d982d313c3a4c46a21a2  golden-projects/menora-model.json
+c08026bcd40381d06ac511b1efe2383a94506d0a8cf9e410d41bb8726c29aa23  golden-projects/menora-model.json

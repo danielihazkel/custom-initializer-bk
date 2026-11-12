@@ -213,6 +213,8 @@
       "temporalaccessor",
       "transactional",
       "trash2",
+      "treebranch",
+      "treenode",
       "tuple",
       "uuid",
       "version",
@@ -474,7 +476,8 @@
     "import",
     "search",
     "form",
-    "inbox"
+    "inbox",
+    "tree"
   ],
   "widgetKinds" : [
     "kpi",

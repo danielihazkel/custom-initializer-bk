@@ -406,7 +406,9 @@ public record PageDefinition(
         /** One entity's whole form on a page: New (and Edit, by id) open it instead of the drawer. */
         FORM("form"),
         /** A workflow's task list: the rows assigned to the user, nobody's, or every open one. */
-        INBOX("inbox");
+        INBOX("inbox"),
+        /** One entity's rows as an outline: each under the row its self-reference names. */
+        TREE("tree");
 
         private final String wire;
 

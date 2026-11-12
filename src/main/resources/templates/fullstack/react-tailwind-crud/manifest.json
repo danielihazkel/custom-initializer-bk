@@ -87,6 +87,7 @@
     { "source": "ScreenWizard.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 166, "gatedBy": "pageIsWizard" },
     { "source": "ScreenForm.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 240, "gatedBy": "pageIsForm" },
     { "source": "ScreenInbox.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 241, "gatedBy": "pageIsInbox" },
+    { "source": "ScreenTree.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 242, "gatedBy": "pageIsTree" },
     { "source": "ScreenCalendar.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 167, "gatedBy": "pageIsCalendar" },
     { "source": "ScreenBoard.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 168, "gatedBy": "pageIsBoard" },
     { "source": "ScreenContent.tsx.mustache", "path": "src/app/screens/{{PageName}}Screen.tsx", "perPage": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 169, "gatedBy": "pageIsContent" },
