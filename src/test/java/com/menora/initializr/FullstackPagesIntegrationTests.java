@@ -1607,7 +1607,7 @@ class FullstackPagesIntegrationTests {
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "progress", "entity", "Ticket", "target", "-3"))),
                 "target must be greater than 0");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "kpi", "entity", "Ticket", "target", "3"))),
-                "only a progress widget takes 'target'");
+                "only a progress or gauge widget takes 'target'");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "top", "entity", "Team"))),
                 "Team has no enum, boolean or relation to rank by");
         assertRejected(p -> p.get(0).put("widgets", List.of(Map.of("kind", "top", "entity", "Ticket", "groupBy", "subject"))),

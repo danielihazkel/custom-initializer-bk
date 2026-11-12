@@ -1,5 +1,5 @@
 import { {{#calendarRanged}}useCallback, {{/calendarRanged}}useEffect, useState } from 'react'
-import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#optScaffoldXlsxExport}}FileSpreadsheet, {{/optScaffoldXlsxExport}}{{#importApplicable}}Upload, {{/importApplicable}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}PencilLine, {{/viewTable}}{{/bulkUpdateApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
+import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{#viewGallery}}Images, {{/viewGallery}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#optScaffoldXlsxExport}}FileSpreadsheet, {{/optScaffoldXlsxExport}}{{#importApplicable}}Upload, {{/importApplicable}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}PencilLine, {{/viewTable}}{{/bulkUpdateApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
 {{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
@@ -8,7 +8,8 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#listUrlState}}type ListState, {{/listUrlState}}{{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
-{{#optScaffoldSavedViews}}import { ViewsMenu } from '@shared/ui/ViewsMenu'
+{{#viewGallery}}import { GalleryView } from '@shared/ui/GalleryView'
+{{/viewGallery}}{{#optScaffoldSavedViews}}import { ViewsMenu } from '@shared/ui/ViewsMenu'
 import type { ViewState } from '@shared/ui/savedViews'
 {{/optScaffoldSavedViews}}{{#usesFormat}}import { {{formatImports}} } from '@shared/ui/format'
 {{/usesFormat}}import { {{EntityName}}Detail{{#hasWorkflow}}, {{EntityName}}Transitions{{/hasWorkflow}}{{#kanbanIsWorkflow}}, {{EntityName}}Workflow{{/kanbanIsWorkflow}} } from '@features/{{entityNameKebab}}-form'
@@ -709,7 +710,16 @@ function oneValue(value: string | undefined): boolean {
             >
               <Calendar className="h-4 w-4" />
             </button>
-{{/viewCalendar}}          </div>
+{{/viewCalendar}}{{#viewGallery}}            <button
+              onClick={() => setViewMode('gallery')}
+              aria-pressed={viewMode === 'gallery'}
+              className={`rounded-md p-1.5 transition-colors ${viewMode === 'gallery' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
+              title={t('galleryView')}
+              aria-label={t('galleryView')}
+            >
+              <Images className="h-4 w-4" />
+            </button>
+{{/viewGallery}}          </div>
 {{/hasViewToggle}}{{#optScaffoldCsvExport}}{{#listActionsConfigurable}}          {can('export') && (
 {{/listActionsConfigurable}}          <button
             onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))}
@@ -880,7 +890,24 @@ function oneValue(value: string | undefined): boolean {
           total={calendarRange ? totalElements : undefined}
 {{/calendarRanged}}
         />
-      ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
+      ) : {{/viewCalendar}}{{#viewGallery}}viewMode === 'gallery' ? (
+        <GalleryView
+          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
+          rows={items}
+          rowKey={rowKey}
+          imageField="{{galleryField}}"
+          imageLabel={'{{galleryLabelTs}}'}
+          loading={loading}
+          onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
+          search={search}
+          onSearchChange={setSearch}
+{{#hasStringFields}}          searchable={true}
+{{/hasStringFields}}{{^hasStringFields}}          searchable={false}
+{{/hasStringFields}}          pagination={pagination}
+          filtered={filtered}
+{{#mutable}}          emptyAction={emptyAction}
+{{/mutable}}        />
+      ) : {{/viewGallery}}{{#viewTable}}viewMode === 'table' ? (
         <Table
           columns={{#inlineEditApplicable}}{{#listActionsConfigurable}}{can('edit') ? inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}}) : {{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}}}{{/listActionsConfigurable}}{{^listActionsConfigurable}}{inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}})}{{/listActionsConfigurable}}{{/inlineEditApplicable}}{{^inlineEditApplicable}}{{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}{{/inlineEditApplicable}}
           columnMenu={columnMenu}

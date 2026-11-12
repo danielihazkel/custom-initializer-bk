@@ -59,7 +59,7 @@ public final class FullstackPageValidator {
     /** How often a dashboard may reload its widgets, in seconds — the editor's choices. */
     static final List<Integer> REFRESH_SECONDS = List.of(30, 60, 300, 900);
     /** The list views an entity can enable (EntityDefinition.listViews). */
-    static final List<String> LIST_VIEWS = List.of("table", "cards", "kanban", "calendar");
+    static final List<String> LIST_VIEWS = List.of("table", "cards", "kanban", "calendar", "gallery");
 
     /** The lucide icons a page may put in the nav. The shell imports exactly the ones in use, so the
      *  list is a whitelist rather than "any lucide name": a typo would otherwise fail the build of the

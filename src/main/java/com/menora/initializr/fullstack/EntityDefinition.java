@@ -88,7 +88,7 @@ public record EntityDefinition(
     }
 
     /** The list-view modes the generated entity page may render. */
-    private static final Set<String> KNOWN_VIEWS = Set.of("table", "cards", "kanban", "calendar");
+    private static final Set<String> KNOWN_VIEWS = Set.of("table", "cards", "kanban", "calendar", "gallery");
 
     public EntityDefinition {
         relations = relations == null ? List.of() : List.copyOf(relations);

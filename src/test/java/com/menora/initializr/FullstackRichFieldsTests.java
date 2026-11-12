@@ -36,7 +36,8 @@ class FullstackRichFieldsTests {
      * a list, a board whose cards carry the photo, an inbox-free record page with Print.
      */
     static Map<String, Object> layout(String frontendSet) {
-        Map<String, Object> body = FullstackExampleRequests.fieldTypesBody(frontendSet);
+        // ...and its list offered as a table and as a gallery of the shifts' photos.
+        Map<String, Object> body = FullstackGalleryViewTests.withViews(frontendSet, "table", "gallery");
         List<Map<String, Object>> pages = new ArrayList<>();
         pages.add(page("shifts", "entity-list", Map.of("entity", "Shift")));
         pages.add(page("board", "board", Map.of("entity", "Shift", "laneField", "status", "cardFields", List.of("title", "photo"))));

@@ -112,6 +112,7 @@
       "filtervalues",
       "formdrawer",
       "formula",
+      "galleryview",
       "generatedvalue",
       "generationtype",
       "hibernatecriteriabuilder",
@@ -456,7 +457,8 @@
     "table",
     "cards",
     "kanban",
-    "calendar"
+    "calendar",
+    "gallery"
   ],
   "pageTypes" : [
     "entity-list",

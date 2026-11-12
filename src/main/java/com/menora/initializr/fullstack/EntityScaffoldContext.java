@@ -105,6 +105,8 @@ public final class EntityScaffoldContext {
                 .anyMatch(f -> f.type().isMarkdown()));
         // Any workflow: the shared WorkflowException, CurrentUser and GET /api/me (both render paths).
         ctx.put("hasWorkflows", entities.stream().anyMatch(e -> e.workflow() != null));
+        // An entity listed as a gallery: the shared GalleryView and its word in the view switch.
+        ctx.put("hasGalleryViews", entities.stream().anyMatch(e -> emittedListViews(e).contains("gallery")));
         // A workflow that logs its moves: the backend's workflow package, the frontend's history list.
         ctx.put("hasWorkflowMoves", entities.stream().anyMatch(e -> e.workflow() != null && e.workflow().trackMoves()));
         // ...which a shell that shows the signed-in user needs too: each render path adds its own.
@@ -2320,6 +2322,8 @@ public final class EntityScaffoldContext {
         if (requested.contains("cards")) emitted.add("cards");
         if (requested.contains("kanban") && breakdown && !entity.readOnly()) emitted.add("kanban");
         if (requested.contains("calendar") && temporal) emitted.add("calendar");
+        // A gallery is the rows by their pictures: it needs an image field to show.
+        if (requested.contains("gallery") && entity.fields().stream().anyMatch(f -> f.type().isImage())) emitted.add("gallery");
         if (emitted.isEmpty()) emitted.add("table");
         return emitted;
     }
@@ -3340,6 +3344,15 @@ public final class EntityScaffoldContext {
         view.put("viewCards", emitted.contains("cards"));
         view.put("viewKanban", emitted.contains("kanban"));
         view.put("viewCalendar", emitted.contains("calendar"));
+        // The gallery's picture: the entity's first image field.
+        boolean gallery = emitted.contains("gallery");
+        view.put("viewGallery", gallery);
+        if (gallery) {
+            FieldDefinition picture = entity.fields().stream().filter(f -> f.type().isImage()).findFirst().orElseThrow();
+            Map<String, Object> pictureView = fieldViews.stream().filter(fv -> picture.name().equals(fv.get("name"))).findFirst().orElseThrow();
+            view.put("galleryField", picture.name());
+            view.put("galleryLabelTs", pictureView.get("labelTs"));
+        }
         view.put("hasViewToggle", emitted.size() > 1);
         view.put("initialView", emitted.get(0));
         StringBuilder union = new StringBuilder();
