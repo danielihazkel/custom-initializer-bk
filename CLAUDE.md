@@ -711,3 +711,12 @@ The URL `https://repo.menora.co.il/artifactory/libs-release` appears in three pl
 1. `pom.xml` `<repositories>` — where this app resolves its own dependencies
 2. `application.yml` `initializr.env.repositories` — exposed in metadata to clients (IntelliJ)
 3. `DataSeeder.seedBuildCustomizations()` — what is written into generated `pom.xml` files (as a `BuildCustomizationEntity`)
+
+**Round 11 (2026-11): two things the generator's own UI asks of the audit.** The UI round (see *Round 11* in `ui/CLAUDE.md`) needed two small backend changes, both in `observability/`:
+
+- *Popular dependencies.* `GET /metadata/popular-deps?kind=BACKEND|FRONTEND` (`config/PopularDependenciesController`) → `[{depId, count}]`, at most ten, most used first (ties by id), over the last 90 days. `GenerationAuditService.popularDependencies` counts **successful `.zip` generations only** — a preview is someone looking, a failure nobody's choice — and only requests that name `dependencies` as a parameter (wizard and fullstack generations send a JSON body, so they do not contribute). The frontend generator's endpoints are under `frontend/`, which is how the two kinds are told apart. Open like the other `/metadata/*` lists: ids and counts, nothing about users or artifacts. The picker's "Quick picks" row reads it.
+- *Live previews are not activity.* The Backend tab's file dock refetches `/starter.preview` by itself as dependencies are ticked, with the header `X-Preview-Intent: live`. `GenerationAuditFilter.isLivePreview` skips the audit for such a request — otherwise every tick would add a row and skew the counts. **Only a `.preview` endpoint can opt out**: a `.zip` generation is recorded whatever header it carries.
+
+`/starter.preview`, unlike `/starter.zip`, does not fill in what a caller leaves out (it must not call `request.initialize`, see `ProjectPreviewController`): a request without `bootVersion`, `language`, `packaging`… is a 400. Name every parameter, as the UI does.
+
+Pinned by `PopularDependenciesAndLivePreviewTests`.

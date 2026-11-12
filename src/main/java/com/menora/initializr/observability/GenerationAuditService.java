@@ -102,6 +102,43 @@ public class GenerationAuditService {
         return result;
     }
 
+    /**
+     * The dependencies most often generated with, for the picker's "Popular" row: counted over
+     * successful ZIP generations only (a preview is someone looking, a failure is nobody's
+     * choice), of one kind — the frontend generator's endpoints are under {@code frontend/}.
+     * Only requests that name their dependencies as a parameter are counted, so wizard and
+     * fullstack generations (a JSON body) do not contribute.
+     */
+    public List<Map<String, Object>> popularDependencies(boolean frontend, int days, int limit) {
+        int d = Math.max(1, Math.min(days, 365));
+        int n = Math.max(1, Math.min(limit, 50));
+        Instant since = Instant.now().minus(d, ChronoUnit.DAYS);
+
+        Map<String, Long> counts = new HashMap<>();
+        for (Object[] row : repo.findEndpointAndDependencyIdsSince(since, Status.SUCCESS)) {
+            String endpoint = (String) row[0];
+            String csv = (String) row[1];
+            if (endpoint == null || csv == null || !endpoint.endsWith(".zip")) continue;
+            if (endpoint.startsWith("frontend/") != frontend) continue;
+            for (String id : csv.split(",")) {
+                String trimmed = id.trim();
+                if (!trimmed.isEmpty()) counts.merge(trimmed, 1L, Long::sum);
+            }
+        }
+        return counts.entrySet().stream()
+                // Most used first; ties by id, so the list does not reshuffle between calls.
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed()
+                        .thenComparing(Map.Entry.comparingByKey()))
+                .limit(n)
+                .map(e -> {
+                    Map<String, Object> entry = new java.util.LinkedHashMap<>();
+                    entry.put("depId", e.getKey());
+                    entry.put("count", e.getValue());
+                    return entry;
+                })
+                .toList();
+    }
+
     private static long percentile(List<Long> sortedAsc, int p) {
         if (sortedAsc == null || sortedAsc.isEmpty()) return 0L;
         List<Long> copy = new ArrayList<>(sortedAsc);

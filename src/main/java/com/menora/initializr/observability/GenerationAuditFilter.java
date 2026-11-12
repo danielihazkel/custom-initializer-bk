@@ -35,7 +35,7 @@ public class GenerationAuditFilter {
                                             HttpServletResponse response,
                                             FilterChain chain) throws ServletException, IOException {
                 String uri = request.getRequestURI();
-                if (!isStarterEndpoint(uri)) {
+                if (!isStarterEndpoint(uri) || isLivePreview(request, uri)) {
                     chain.doFilter(request, response);
                     return;
                 }
@@ -97,6 +97,18 @@ public class GenerationAuditFilter {
         // the frontend controller is namespaced under @RequestMapping("/frontend"), so its
         // generation path is /frontend/starter.zip — match that too or FE stays unaudited.
         return uri.startsWith("/starter") || uri.startsWith("/frontend/starter");
+    }
+
+    /**
+     * A preview the UI fetched by itself to keep its file tree current (the Backend tab's file
+     * dock sends {@code X-Preview-Intent: live} on every refresh). Nobody asked for those, so
+     * they are not activity: recording them would add a row per ticked dependency and skew the
+     * counts. Only a {@code .preview} endpoint can opt out — a generation is always recorded,
+     * whatever header it carries.
+     */
+    private static boolean isLivePreview(HttpServletRequest request, String uri) {
+        return uri != null && uri.endsWith(".preview")
+                && "live".equalsIgnoreCase(request.getHeader("X-Preview-Intent"));
     }
 
     /** First non-blank of the {@code primary} then {@code fallback} request param. */

@@ -23,6 +23,11 @@ public interface GenerationEventRepository extends JpaRepository<GenerationEvent
     @Query("SELECT e.dependencyIds FROM GenerationEventEntity e WHERE e.eventTimestamp > :since AND e.dependencyIds IS NOT NULL")
     List<String> findDependencyIdsSince(@Param("since") Instant since);
 
+    /** Endpoint and dependency list of every event of one status, for the popular-dependencies list. */
+    @Query("SELECT e.endpoint, e.dependencyIds FROM GenerationEventEntity e WHERE e.eventTimestamp > :since AND e.status = :status AND e.dependencyIds IS NOT NULL")
+    List<Object[]> findEndpointAndDependencyIdsSince(@Param("since") Instant since,
+                                                     @Param("status") GenerationEventEntity.Status status);
+
     @Query("SELECT e.bootVersion, COUNT(e) FROM GenerationEventEntity e WHERE e.eventTimestamp > :since AND e.bootVersion IS NOT NULL GROUP BY e.bootVersion ORDER BY COUNT(e) DESC")
     List<Object[]> countByBootVersionSince(@Param("since") Instant since);
 }
