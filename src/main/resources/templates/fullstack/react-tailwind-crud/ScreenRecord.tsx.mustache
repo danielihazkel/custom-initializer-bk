@@ -218,6 +218,7 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
             </button>
           </div>
         )}
+{{^recordMutable}}
 {{#printable}}
         {record && (
           <button
@@ -230,9 +231,21 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
           </button>
         )}
 {{/printable}}
+{{/recordMutable}}
 {{#recordMutable}}
         {record && (
           <div className="flex items-center gap-2{{#printable}} print:hidden{{/printable}}">
+{{#printable}}
+            {/* With the page's other actions, not adrift between them and the title. */}
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-2"
+            >
+              <Printer className="h-4 w-4" />
+              {t('print')}
+            </button>
+{{/printable}}
 {{#recordHasWorkflow}}
             <{{EntityName}}Transitions row={record} onDone={setRecord} />
 {{/recordHasWorkflow}}
