@@ -1,0 +1,49 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+{{#hasImports}}
+
+{{/hasImports}}
+{{#hasSkippedColumns}}
+// TODO: some columns (composite or unresolved foreign keys) are omitted from this DTO
+{{/hasSkippedColumns}}
+public record {{entityClass}}Dto(
+{{#components}}
+        {{constraints}}{{type}} {{name}}{{^last}},{{/last}}
+{{/components}}
+{{^hasComponents}}
+
+{{/hasComponents}}
+){{^inline}} {
+}
+{{/inline}}{{#inline}} {
+
+    public static {{entityClass}}Dto from({{entityClass}} entity) {
+        return new {{entityClass}}Dto(
+{{#fromArgs}}
+                {{expr}}{{^last}},{{/last}}
+{{/fromArgs}}
+{{^hasComponents}}
+
+{{/hasComponents}}
+        );
+    }
+
+    public {{entityClass}} toEntity() {
+        {{entityClass}} entity = new {{entityClass}}();
+{{#scalars}}
+        entity.set{{pascal}}(this.{{name}});
+{{/scalars}}
+{{#flat}}
+        if (this.{{dtoIdField}} != null) {
+            {{targetEntity}} {{name}} = new {{targetEntity}}();
+            {{name}}.set{{targetPkPascal}}(this.{{dtoIdField}});
+            entity.set{{pascal}}({{name}});
+        }
+{{/flat}}
+        return entity;
+    }
+}
+{{/inline}}

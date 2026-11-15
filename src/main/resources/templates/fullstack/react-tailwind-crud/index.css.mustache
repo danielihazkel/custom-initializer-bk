@@ -91,3 +91,28 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
 }
+{{#hasPrintablePages}}
+
+/*
+ * Printing a page (a record page's Print button): the page alone, on white, flowing over as many
+ * sheets as it needs. The shell keeps its content in a scrolling box the height of the window —
+ * on paper that box would cut the page off after one sheet.
+ */
+@media print {
+  html, body, #root {
+    height: auto;
+  }
+  #root > div, #root > div > div, main {
+    display: block;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+  body, main {
+    background: #fff;
+  }
+  aside, header, footer, nav, [role='dialog'], [role='status'] {
+    display: none !important;
+  }
+}
+{{/hasPrintablePages}}

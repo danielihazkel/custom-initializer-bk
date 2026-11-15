@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -58,6 +59,73 @@ class MultiModuleGenerationTests {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).contains("myapp-api");
+    }
+
+    @Test
+    void whatACallerLeavesOutComesFromTheMetadata() throws Exception {
+        // Only the modules named: group, artifact, package, versions, type and language are the
+        // metadata's defaults — the same ones /starter.zip uses, not a second set hard-coded here
+        // (the controller used to default to "3.2.1" and "21" on its own, so an admin changing
+        // the default version moved /starter.zip and not this endpoint).
+        ResponseEntity<byte[]> response = restTemplate.getForEntity("/starter-multimodule.zip?modules=core", byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, byte[]> files = FullstackExampleRequests.unzip(response.getBody());
+        String parent = new String(files.get("demo/pom.xml"), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(parent)
+                .contains("<groupId>com.menora</groupId>").contains("<artifactId>demo</artifactId>")
+                .contains("<version>3.2.1</version>").contains("<java.version>21</java.version>")
+                .contains("<module>demo-core</module>");
+        assertThat(files).containsKey("demo/demo-core/pom.xml");
+    }
+
+    @Test
+    void aRequestItCannotServeIsA400ThatSaysWhy() {
+        // The zip used to answer a bare 400 for unknown modules, and the preview a 200 with only
+        // a parent POM that lists no module.
+        for (String endpoint : List.of("/starter-multimodule.zip", "/starter-multimodule.preview")) {
+            ResponseEntity<String> unknown = restTemplate.getForEntity(endpoint + "?modules=nope,missing", String.class);
+            assertThat(unknown.getStatusCode()).as(endpoint).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(unknown.getBody()).contains("none of [nope, missing] is a module template");
+
+            ResponseEntity<String> version = restTemplate.getForEntity(endpoint + "?modules=api&bootVersion=9.9.9", String.class);
+            assertThat(version.getStatusCode()).as(endpoint).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(version.getBody()).contains("bootVersion '9.9.9' is not a known version");
+
+            ResponseEntity<String> java = restTemplate.getForEntity(endpoint + "?modules=api&javaVersion=7", String.class);
+            assertThat(java.getStatusCode()).as(endpoint).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(java.getBody()).contains("javaVersion '7' is not a known version");
+        }
+        // No module named at all: the zip says so; the preview (asked while the user is still
+        // ticking modules) is simply empty.
+        ResponseEntity<String> none = restTemplate.getForEntity("/starter-multimodule.zip?modules=", String.class);
+        assertThat(none.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(none.getBody()).contains("modules is required");
+        ResponseEntity<String> empty = restTemplate.getForEntity("/starter-multimodule.preview?modules=", String.class);
+        assertThat(empty.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(empty.getBody()).contains("\"files\":[]");
+    }
+
+    @Test
+    void theWizardEndpointTakesItsDefaultsAndItsVersionCheckFromTheSameBuilder() {
+        // No version named: the metadata's default. An unknown one: a 400, not a failure deep in generation.
+        ResponseEntity<byte[]> defaults = restTemplate.postForEntity("/starter-wizard.zip",
+                Map.of("artifactId", "plain", "dependencies", List.of("web")), byte[].class);
+        assertThat(defaults.getStatusCode()).isEqualTo(HttpStatus.OK);
+        ResponseEntity<String> unknown = restTemplate.postForEntity("/starter-wizard.zip",
+                Map.of("artifactId", "plain", "bootVersion", "9.9.9"), String.class);
+        assertThat(unknown.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(unknown.getBody()).contains("bootVersion '9.9.9' is not a known version");
+    }
+
+    @Test
+    void metadataOffersOnlyWhatTheGeneratorsCanBuild() {
+        // Kotlin and Gradle were listed and could not work (every build customizer is Maven's,
+        // every template Java). The metadata no longer offers them, and a request naming one is turned away.
+        String metadata = restTemplate.getForObject("/metadata/client", String.class);
+        assertThat(metadata).contains("maven-project").contains("\"java\"")
+                .doesNotContain("gradle-project").doesNotContain("kotlin");
+        assertThat(restTemplate.getForEntity("/starter.zip?type=gradle-project", String.class).getStatusCode().is2xxSuccessful()).isFalse();
+        assertThat(restTemplate.getForEntity("/starter.zip?language=kotlin", String.class).getStatusCode().is2xxSuccessful()).isFalse();
     }
 
     private List<String> entryNames(byte[] zip) throws Exception {

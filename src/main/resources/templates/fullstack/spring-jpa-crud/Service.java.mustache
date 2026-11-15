@@ -4,8 +4,8 @@ import {{entityPackage}}.{{EntityName}};
 {{#hasCompositePk}}import {{entityPackage}}.{{keyClassName}};
 {{/hasCompositePk}}import {{repositoryPackage}}.{{EntityName}}Repository;
 import {{packageName}}.web.ResourceNotFoundException;
-{{#workflowUsesRoles}}import {{packageName}}.web.CurrentUser;
-{{/workflowUsesRoles}}{{#hasWorkflow}}import {{packageName}}.web.WorkflowException;
+{{#serviceUsesCurrentUser}}import {{packageName}}.web.CurrentUser;
+{{/serviceUsesCurrentUser}}{{#hasWorkflow}}import {{packageName}}.web.WorkflowException;
 {{/hasWorkflow}}{{#mutable}}{{^pkField.isGenerated}}import {{packageName}}.web.ResourceConflictException;
 {{/pkField.isGenerated}}{{/mutable}}{{#lockingApplicable}}import org.springframework.orm.ObjectOptimisticLockingFailureException;
 {{/lockingApplicable}}{{#hasStringFields}}import java.util.Locale;
@@ -37,16 +37,23 @@ public class {{EntityName}}Service {
 
     private final {{EntityName}}Repository repository;
 {{#usesEntityManager}}    private final EntityManager entityManager;
-{{/usesEntityManager}}{{#importValidates}}    private final jakarta.validation.Validator validator;
-{{/importValidates}}{{#workflowUsesRoles}}    private final CurrentUser currentUser;
-{{/workflowUsesRoles}}
-    public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#importValidates}},
-                                 jakarta.validation.Validator validator{{/importValidates}}{{#workflowUsesRoles}}, CurrentUser currentUser{{/workflowUsesRoles}}) {
+{{/usesEntityManager}}{{#usesValidator}}    private final jakarta.validation.Validator validator;
+{{/usesValidator}}{{#serviceUsesCurrentUser}}    private final CurrentUser currentUser;
+{{/serviceUsesCurrentUser}}{{#hasAttachmentFields}}    private final {{packageName}}.attachment.AttachmentStorage attachments;
+{{/hasAttachmentFields}}{{#tracksMoves}}    private final {{packageName}}.workflow.WorkflowMoveLog moves;
+{{/tracksMoves}}
+    public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#usesValidator}},
+                                 jakarta.validation.Validator validator{{/usesValidator}}{{#serviceUsesCurrentUser}}, CurrentUser currentUser{{/serviceUsesCurrentUser}}{{#hasAttachmentFields}},
+                                 {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachmentFields}}{{#tracksMoves}},
+                                 {{packageName}}.workflow.WorkflowMoveLog moves{{/tracksMoves}}) {
         this.repository = repository;
+{{#tracksMoves}}        this.moves = moves;
+{{/tracksMoves}}{{#hasAttachmentFields}}        this.attachments = attachments;
+{{/hasAttachmentFields}}
 {{#usesEntityManager}}        this.entityManager = entityManager;
-{{/usesEntityManager}}{{#importValidates}}        this.validator = validator;
-{{/importValidates}}{{#workflowUsesRoles}}        this.currentUser = currentUser;
-{{/workflowUsesRoles}}    }
+{{/usesEntityManager}}{{#usesValidator}}        this.validator = validator;
+{{/usesValidator}}{{#serviceUsesCurrentUser}}        this.currentUser = currentUser;
+{{/serviceUsesCurrentUser}}    }
 {{#hasFilters}}
     /** Type-aware filter parameters bound from the request query string. Null fields are ignored;
      *  an enum or relation filter holds every value asked for ({@code status=OPEN,CLOSED}), any of which matches. */
@@ -59,8 +66,11 @@ public class {{EntityName}}Service {
     @Transactional(readOnly = true)
     public Page<{{EntityName}}> findAll(String q, Filters filters, Pageable pageable) {
         Specification<{{EntityName}}> spec = specOf(q, filters);
-        return spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
-    }
+{{^hasCollections}}        return spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
+{{/hasCollections}}{{#hasCollections}}        Page<{{EntityName}}> page = spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
+        page.forEach(this::loaded);
+        return page;
+{{/hasCollections}}    }
 
     /** The search + filter predicate the list, the CSV export and the stats endpoint all share;
      *  null when the request asked for neither. */
@@ -78,8 +88,17 @@ public class {{EntityName}}Service {
         if (filters.{{name}}Max() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}Max()));
 {{/isNumericFilter}}{{#isTemporalFilter}}        if (filters.{{name}}From() != null) specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}From()));
         if (filters.{{name}}To() != null) specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.<{{javaType}}>get("{{name}}"), filters.{{name}}To()));
-{{/isTemporalFilter}}{{#isRelationFilter}}        if (filters.{{name}}() != null && !filters.{{name}}().isEmpty()) specs.add((root, query, cb) -> root.get("{{relationField}}").get("{{targetPkName}}").in(filters.{{name}}()));
-{{/isRelationFilter}}{{/filterFields}}{{#hasAssignee}}        if (filters.inbox() != null && !filters.inbox().isBlank()) specs.add(inboxOf(filters.inbox(), filters.me()));
+{{/isTemporalFilter}}{{#isRelationFilter}}{{^isCollectionFilter}}        if (filters.{{name}}() != null && !filters.{{name}}().isEmpty()) specs.add((root, query, cb) -> root.get("{{relationField}}").get("{{targetPkName}}").in(filters.{{name}}()));
+{{/isCollectionFilter}}{{#isCollectionFilter}}        // A row matches when its set holds one of the ids: a subquery, so the list keeps one row
+        // per record whatever it is sorted by.
+        if (filters.{{name}}() != null && !filters.{{name}}().isEmpty()) specs.add((root, query, cb) -> {
+            var linked = query.subquery({{EntityName}}.class);
+            var owner = linked.from({{EntityName}}.class);
+            linked.select(owner).where(cb.equal(owner, root),
+                    owner.join("{{relationField}}").get("{{targetPkName}}").in(filters.{{name}}()));
+            return cb.exists(linked);
+        });
+{{/isCollectionFilter}}{{/isRelationFilter}}{{/filterFields}}{{#hasAssignee}}        if (filters.inbox() != null && !filters.inbox().isBlank()) specs.add(inboxOf(filters.inbox(), filters.me()));
 {{/hasAssignee}}        if (specs.isEmpty()) return null;
         Specification<{{EntityName}}> combined = specs.get(0);
         for (int i = 1; i < specs.size(); i++) combined = combined.and(specs.get(i));
@@ -284,22 +303,124 @@ public class {{EntityName}}Service {
 {{/statsApplicable}}
     @Transactional(readOnly = true)
     public {{EntityName}} findById({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
-        return repository.findById(id).orElseThrow(() ->
-                new ResourceNotFoundException("{{EntityName}} " + id + " not found"));
-    }
+{{^hasCollections}}        return {{#hasCompositions}}withRows({{/hasCompositions}}repository.findById(id).orElseThrow(() ->
+                new ResourceNotFoundException("{{EntityName}} " + id + " not found")){{#hasCompositions}}){{/hasCompositions}};
+{{/hasCollections}}{{#hasCollections}}        return {{#hasCompositions}}withRows({{/hasCompositions}}loaded(repository.findById(id).orElseThrow(() ->
+                new ResourceNotFoundException("{{EntityName}} " + id + " not found"))){{#hasCompositions}}){{/hasCompositions}};
+{{/hasCollections}}    }
+{{#hasCompositions}}
 
+    /** At most this many rows of a composed list in one save. */
+    private static final int MAX_ROWS = 200;
+
+    /**
+     * Reads the rows edited with this one while the session is open: the DTO is built after this
+     * transaction ends (open-in-view is off). Only a row read by id carries them — a page does not.
+     */
+    private {{EntityName}} withRows({{EntityName}} entity) {
+{{#compositions}}        org.hibernate.Hibernate.initialize(entity.get{{CollectionField}}());
+{{/compositions}}        return entity;
+    }
+{{#compositions}}
+
+    /** A row as this {{EntityName}}'s own: no key of the client's choosing, its other links as references. */
+    private void adopt{{CollectionField}}({{EntityName}} parent, {{entityPackage}}.{{childEntity}} row) {
+        row.set{{MappedBy}}(parent);
+{{#childRefs}}        if (row.get{{FieldName}}() != null) {
+            row.set{{FieldName}}(entityManager.getReference({{entityPackage}}.{{targetEntity}}.class, row.get{{FieldName}}().get{{TargetPkName}}()));
+        }
+{{/childRefs}}    }
+
+    /**
+     * Makes {@code parent}'s {{collectionField}} the rows given: one with the id of a row it has is that row
+     * with its new values, any other is new, and a row it has that was not sent is removed.
+     */
+    private void merge{{CollectionField}}({{EntityName}} parent, java.util.List<{{entityPackage}}.{{childEntity}}> rows) {
+        if (rows.size() > MAX_ROWS) {
+            throw new IllegalArgumentException("{{collectionField}}: at most " + MAX_ROWS + " rows in one save");
+        }
+        java.util.Map<{{childPkJavaType}}, {{entityPackage}}.{{childEntity}}> had = new java.util.LinkedHashMap<>();
+        for ({{entityPackage}}.{{childEntity}} row : parent.get{{CollectionField}}()) had.put(row.get{{ChildPkName}}(), row);
+        java.util.List<{{entityPackage}}.{{childEntity}}> now = new java.util.ArrayList<>();
+        for ({{entityPackage}}.{{childEntity}} row : rows) {
+            adopt{{CollectionField}}(parent, row);
+            // An id that is not one of this {{EntityName}}'s rows is not trusted: the row is new.
+            {{entityPackage}}.{{childEntity}} kept = row.get{{ChildPkName}}() == null ? null : had.remove(row.get{{ChildPkName}}());
+            if (kept == null) {
+                row.set{{ChildPkName}}(null);
+                now.add(row);
+            } else {
+                kept.copyFrom(row);
+                now.add(kept);
+            }
+        }
+        parent.get{{CollectionField}}().clear();
+        parent.get{{CollectionField}}().addAll(now);
+        for ({{entityPackage}}.{{childEntity}} gone : had.values()) entityManager.remove(gone);
+    }
+{{/compositions}}
+{{/hasCompositions}}
+{{#hasCollections}}
+
+    /**
+     * Reads a row's linked sets while the session is open: the DTO is built after this
+     * transaction ends (open-in-view is off), where a lazy set could no longer be read. A page of
+     * rows loads each set in batches (@BatchSize), not row by row.
+     */
+    private {{EntityName}} loaded({{EntityName}} entity) {
+{{#collections}}        org.hibernate.Hibernate.initialize(entity.get{{FieldName}}());
+{{/collections}}        return entity;
+    }
+{{#mutable}}
+
+    /**
+     * Swaps the id stubs a request carries for the rows they name — one query per set — and
+     * refuses an id that names none (400). A set the request left out stays null.
+     */
+    private void resolveLinks({{EntityName}} entity) {
+{{#collections}}        if (entity.get{{FieldName}}() != null && !entity.get{{FieldName}}().isEmpty()) {
+            java.util.Set<{{targetPkJavaType}}> ids = new java.util.LinkedHashSet<>();
+            for ({{entityPackage}}.{{targetEntity}} stub : entity.get{{FieldName}}()) ids.add(stub.get{{TargetPkName}}());
+            java.util.List<{{entityPackage}}.{{targetEntity}}> found = entityManager.createQuery(
+                            "select t from {{targetEntity}} t where t.{{targetPkName}} in :ids", {{entityPackage}}.{{targetEntity}}.class)
+                    .setParameter("ids", ids).getResultList();
+            if (found.size() != ids.size()) {
+                throw new IllegalArgumentException("{{fieldName}}: no {{targetEntity}} with one of the ids " + ids);
+            }
+            entity.set{{FieldName}}(new java.util.LinkedHashSet<>(found));
+        }
+{{/collections}}    }
+{{/mutable}}{{/hasCollections}}
 {{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
-{{#lockingApplicable}}        entity.setVersion(null); // a new row starts at version 0, whatever the client sent
+{{#compositions}}        if (entity.get{{CollectionField}}() == null) entity.set{{CollectionField}}(new java.util.ArrayList<>());
+        if (entity.get{{CollectionField}}().size() > MAX_ROWS) {
+            throw new IllegalArgumentException("{{collectionField}}: at most " + MAX_ROWS + " rows in one save");
+        }
+        for ({{entityPackage}}.{{childEntity}} row : entity.get{{CollectionField}}()) {
+            row.set{{ChildPkName}}(null);
+            adopt{{CollectionField}}(entity, row);
+        }
+{{/compositions}}{{#isComposedChild}}        // On its own a row has to say whose it is (inside its parent's form the parent is the link).
+        if (entity.get{{CompositionLinkName}}() == null) {
+            throw new IllegalArgumentException("{{compositionLinkName}}Id is required");
+        }
+{{/isComposedChild}}{{#hasCollections}}        resolveLinks(entity);
+{{#collections}}        if (entity.get{{FieldName}}() == null) entity.set{{FieldName}}(new java.util.LinkedHashSet<>());
+{{/collections}}{{/hasCollections}}{{#lockingApplicable}}        entity.setVersion(null); // a new row starts at version 0, whatever the client sent
 {{/lockingApplicable}}{{#hasWorkflow}}        entity.set{{WorkflowStatusName}}({{workflowInitialJava}}); // the workflow decides where a new row starts
-{{/hasWorkflow}}{{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
+{{#hasAssignee}}        entity.set{{AssigneeName}}(null); // and nobody has taken it yet
+{{/hasAssignee}}{{/hasWorkflow}}{{#pkField.isGenerated}}        entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}{{^pkField.isGenerated}}        // Client-supplied key: save() would silently merge over an existing row, so refuse with a 409.
         {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
         if (id != null && repository.existsById(id)) {
             throw new ResourceConflictException("{{EntityName}} " + id + " already exists");
         }
 {{/pkField.isGenerated}}{{#hasLockedRelations}}        withReferences(entity);
-{{/hasLockedRelations}}        return repository.save(entity);
-    }
+{{/hasLockedRelations}}{{^tracksMoves}}        return repository.save(entity);
+{{/tracksMoves}}{{#tracksMoves}}        {{EntityName}} saved = repository.save(entity);
+        moves.created("{{entityNameKebab}}", saved.get{{pkField.Name}}(), saved.get{{WorkflowStatusName}}());
+        return saved;
+{{/tracksMoves}}    }
 {{#importApplicable}}
 
     /** One problem with one row of an import: the row (counted from 1), the field it is about
@@ -330,10 +451,21 @@ public class {{EntityName}}Service {
                 errors.add(new ImportError(row, "{{fkFieldName}}", "no {{targetEntity}} " + dto.{{fkFieldName}}()));
             }
 {{/relations}}            {{EntityName}} entity = dto.toEntity();
-{{#hasLockedRelations}}            withReferences(entity);
+{{#compositions}}            entity.set{{CollectionField}}(new java.util.ArrayList<>()); // an import carries no rows of rows
+{{/compositions}}{{#isComposedChild}}            if (entity.get{{CompositionLinkName}}() == null) {
+                errors.add(new ImportError(row, "{{compositionLinkName}}Id", "is required"));
+            }
+{{/isComposedChild}}{{#hasCollections}}            try {
+                resolveLinks(entity); // the ids of a many-to-many must name rows, like a create's
+            } catch (IllegalArgumentException unknown) {
+                errors.add(new ImportError(row, null, unknown.getMessage()));
+            }
+{{#collections}}            if (entity.get{{FieldName}}() == null) entity.set{{FieldName}}(new java.util.LinkedHashSet<>());
+{{/collections}}{{/hasCollections}}{{#hasLockedRelations}}            withReferences(entity);
 {{/hasLockedRelations}}{{#lockingApplicable}}            entity.setVersion(null);
 {{/lockingApplicable}}{{#hasWorkflow}}            entity.set{{WorkflowStatusName}}({{workflowInitialJava}});
-{{/hasWorkflow}}{{#pkField.isGenerated}}            entity.set{{pkField.Name}}(null);
+{{#hasAssignee}}            entity.set{{AssigneeName}}(null);
+{{/hasAssignee}}{{/hasWorkflow}}{{#pkField.isGenerated}}            entity.set{{pkField.Name}}(null);
 {{/pkField.isGenerated}}{{^pkField.isGenerated}}            {{pkType}} id = {{#hasCompositePk}}new {{keyClassName}}({{#pkFields}}entity.get{{Name}}(){{^last}}, {{/last}}{{/pkFields}}){{/hasCompositePk}}{{^hasCompositePk}}entity.get{{pkField.Name}}(){{/hasCompositePk}};
             if (id != null && !keys.add(id)) {
                 errors.add(new ImportError(row, null, "has the same key as an earlier row: " + id));
@@ -355,9 +487,23 @@ public class {{EntityName}}Service {
         if (updated.getVersion() != null && !updated.getVersion().equals(existing.getVersion())) {
             throw new ObjectOptimisticLockingFailureException({{EntityName}}.class, id);
         }
-{{/lockingApplicable}}{{#nonPkFields}}{{^isReadOnly}}        existing.set{{Name}}(updated.get{{Name}}());
+{{/lockingApplicable}}{{#attachmentFields}}{{^isReadOnly}}        // A file that is replaced or removed is not kept.
+        if (existing.get{{Name}}() != null && !existing.get{{Name}}().equals(updated.get{{Name}}())) {
+            attachments.delete(existing.get{{Name}}());
+        }
+{{/isReadOnly}}{{/attachmentFields}}{{#nonPkFields}}{{^isReadOnly}}        existing.set{{Name}}(updated.get{{Name}}());
 {{/isReadOnly}}{{/nonPkFields}}{{#relations}}        existing.set{{FieldName}}(updated.get{{FieldName}}());
-{{/relations}}        return repository.save(existing);
+{{/relations}}{{#hasCollections}}        resolveLinks(updated);
+{{#collections}}        if (updated.get{{FieldName}}() != null) {
+            existing.get{{FieldName}}().clear();
+            existing.get{{FieldName}}().addAll(updated.get{{FieldName}}());
+        }
+{{/collections}}{{/hasCollections}}{{#compositions}}        if (updated.get{{CollectionField}}() != null) {
+            merge{{CollectionField}}(existing, updated.get{{CollectionField}}());
+{{#lockingApplicable}}            // A change to its rows is a change to the {{EntityName}}: its version moves too.
+            entityManager.lock(existing, jakarta.persistence.LockModeType.OPTIMISTIC_FORCE_INCREMENT);
+{{/lockingApplicable}}        }
+{{/compositions}}        return repository.save(existing);
     }
 {{#hasWorkflow}}
 
@@ -373,7 +519,8 @@ public class {{EntityName}}Service {
      */
     public {{EntityName}} transition({{pkField.javaType}} id, String name, {{EntityName}} values, String user) {
         {{EntityName}} existing = findById(id);
-        {{EntityName}} given = values == null ? new {{EntityName}}() : values;
+{{#tracksMoves}}        {{EntityName}}.{{workflowEnumType}} before = existing.get{{WorkflowStatusName}}();
+{{/tracksMoves}}        {{EntityName}} given = values == null ? new {{EntityName}}() : values;
 {{#hasLockedRelations}}        withReferences(given);
 {{/hasLockedRelations}}        switch (name) {
 {{#workflowTransitions}}            case "{{name}}" -> {
@@ -383,12 +530,29 @@ public class {{EntityName}}Service {
 {{#requires}}                if (blank(given.get{{Name}}())) missing.put("{{key}}", "is required");
 {{/requires}}                if (!missing.isEmpty()) throw WorkflowException.missing(missing);
 {{#requires}}                existing.set{{Name}}(given.get{{Name}}());
-{{/requires}}{{/hasRequires}}                existing.set{{WorkflowStatusName}}({{toJava}});
+{{/requires}}{{#transitionValidates}}                requireValid(existing{{#requires}}, "{{key}}"{{/requires}});
+{{/transitionValidates}}{{/hasRequires}}                existing.set{{WorkflowStatusName}}({{toJava}});
             }
 {{/workflowTransitions}}            default -> throw new IllegalArgumentException("Unknown transition: " + name);
         }
-        return repository.save(existing);
+{{#tracksMoves}}        moves.moved("{{entityNameKebab}}", existing.get{{pkField.Name}}(), before, existing.get{{WorkflowStatusName}}(), name);
+{{/tracksMoves}}        return repository.save(existing);
     }
+{{#tracksMoves}}
+
+    /** The row's steps through its workflow, oldest first (404 for a row that is not there). */
+    @Transactional(readOnly = true)
+    public java.util.List<{{packageName}}.workflow.WorkflowMoveLog.Move> moves({{pkField.javaType}} id) {
+        findById(id);
+        return moves.of("{{entityNameKebab}}", id);
+    }
+
+    /** How long rows stay in each state they have left: the average, in seconds. */
+    @Transactional(readOnly = true)
+    public java.util.List<{{packageName}}.workflow.WorkflowMoveLog.StateTime> timeInState() {
+        return moves.timeInState("{{entityNameKebab}}");
+    }
+{{/tracksMoves}}
 
     private static void requireState({{EntityName}} row, String transition, {{EntityName}}.{{workflowEnumType}}... from) {
         for ({{EntityName}}.{{workflowEnumType}} state : from) {
@@ -412,7 +576,21 @@ public class {{EntityName}}Service {
     private static boolean blank(Object value) {
         return value == null || (value instanceof String s && s.isBlank());
     }
-{{/workflowRequiresFields}}
+{{/workflowRequiresFields}}{{#transitionValidates}}
+
+    /** The values a move set must pass what a save holds them to (length, range, pattern…): a 400
+     *  naming each field otherwise, like the fields it left empty. */
+    private void requireValid({{EntityName}} row, String... fields) {
+        {{dtoPackage}}.{{EntityName}}Dto dto = {{dtoPackage}}.{{EntityName}}Dto.from(row);
+        java.util.Map<String, String> invalid = new java.util.LinkedHashMap<>();
+        for (String field : fields) {
+            for (jakarta.validation.ConstraintViolation<{{dtoPackage}}.{{EntityName}}Dto> violation : validator.validateProperty(dto, field)) {
+                invalid.putIfAbsent(field, violation.getMessage());
+            }
+        }
+        if (!invalid.isEmpty()) throw WorkflowException.missing(invalid);
+    }
+{{/transitionValidates}}
 {{#hasAssignee}}
 
     /** Takes an unassigned, unfinished row for the caller (409 when someone else has it). */
@@ -438,6 +616,24 @@ public class {{EntityName}}Service {
             throw WorkflowException.forbidden("Only the user it is assigned to can release it");
         }
         existing.set{{AssigneeName}}(null);
+        return repository.save(existing);
+    }
+
+    /**
+     * Hands an unfinished row to {@code assignee} — or, when that is blank, back to the unassigned
+     * queue — whoever holds it now. {{#assignNeedsAdmin}}The ADMIN role's to do: everyone else claims and releases
+     * their own.{{/assignNeedsAdmin}}{{^assignNeedsAdmin}}Any signed-in user may: without an ldap-auth dependency the project knows no roles.{{/assignNeedsAdmin}}
+     */
+    public {{EntityName}} assign({{pkField.javaType}} id, String assignee, String user) {
+        if (user == null) throw WorkflowException.unauthenticated();
+{{#assignNeedsAdmin}}        if (!currentUser.roles(user).contains("ADMIN")) {
+            throw WorkflowException.forbidden("Reassigning needs the ADMIN role");
+        }
+{{/assignNeedsAdmin}}        {{EntityName}} existing = findById(id);
+        if (!OPEN_STATES.contains(existing.get{{WorkflowStatusName}}())) {
+            throw WorkflowException.wrongState("This {{EntityName}} is " + existing.get{{WorkflowStatusName}}() + ", so there is nothing left to do");
+        }
+        existing.set{{AssigneeName}}(assignee == null || assignee.isBlank() ? null : assignee.trim());
         return repository.save(existing);
     }
 
@@ -468,8 +664,12 @@ public class {{EntityName}}Service {
 {{/hasLockedRelations}}    /** Loads first so a missing id surfaces as a 404 (ResourceNotFoundException) rather than a
      *  500 from deleteById's EmptyResultDataAccessException. */
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
-        repository.delete(findById(id));
-    }
+{{^hasAttachmentFields}}        repository.delete(findById(id));
+{{/hasAttachmentFields}}{{#hasAttachmentFields}}        {{EntityName}} existing = findById(id);
+        repository.delete(existing);
+{{^softDeleteApplicable}}        // The record's files go with it. (A soft-deleted record keeps them, for a restore.)
+{{#attachmentFields}}        attachments.delete(existing.get{{Name}}());
+{{/attachmentFields}}{{/softDeleteApplicable}}{{/hasAttachmentFields}}    }
 {{#softDeleteApplicable}}
     /** Un-deletes a soft-deleted record (the frontend's Undo after delete). 404 when no row has
      *  that id; restoring a live row is a harmless no-op. */
@@ -482,23 +682,51 @@ public class {{EntityName}}Service {
 {{/softDeleteApplicable}}
 {{#bulkDeleteApplicable}}
     public void deleteAll(java.util.List<{{pkField.javaType}}> ids) {
+        java.util.List<{{EntityName}}> rows = repository.findAllById(ids);
+        requireAll(ids, rows);
         repository.deleteAllById(ids);
-    }
+{{#hasAttachmentFields}}{{^softDeleteApplicable}}        for ({{EntityName}} row : rows) {
+{{#attachmentFields}}            attachments.delete(row.get{{Name}}());
+{{/attachmentFields}}        }
+{{/softDeleteApplicable}}{{/hasAttachmentFields}}    }
 {{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}
     /** Sets a single whitelisted {@code field} to {@code value} on every listed record. The raw
      *  JSON scalar is coerced to the field's type; an unknown field name throws (→ 400 at the
-     *  controller). Read-only and primary-key fields are intentionally not in the switch. */
+     *  controller). Read-only and primary-key fields are intentionally not in the switch. It keeps
+     *  what a single save keeps: every id must name a record (404 otherwise, and nothing changes){{#hasRequiredBulkFields}},
+     *  a required field cannot be cleared{{/hasRequiredBulkFields}}{{#bulkValidates}} and the value passes the DTO's validation{{/bulkValidates}}. */
     public void updateMany(java.util.List<{{pkField.javaType}}> ids, String field, Object value) {
         java.util.List<{{EntityName}}> rows = repository.findAllById(ids);
-        for ({{EntityName}} entity : rows) {
+        requireAll(ids, rows);
+{{#hasRequiredBulkFields}}        if (value == null && java.util.Set.of({{{requiredBulkFieldsJava}}}).contains(field)) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+{{/hasRequiredBulkFields}}        for ({{EntityName}} entity : rows) {
             switch (field) {
-{{#bulkUpdatableFields}}                case "{{name}}" -> entity.set{{Name}}(value == null ? null : {{#isEnum}}{{EntityName}}.{{enumTypeName}}.valueOf(value.toString()){{/isEnum}}{{#isBoolean}}Boolean.valueOf(value.toString()){{/isBoolean}}{{#isBigDecimal}}new java.math.BigDecimal(value.toString()){{/isBigDecimal}}{{#isIntegral}}{{javaType}}.valueOf(value.toString()){{/isIntegral}}{{#isUuid}}java.util.UUID.fromString(value.toString()){{/isUuid}}{{#isDate}}java.time.LocalDate.parse(value.toString()){{/isDate}}{{#isDateTime}}java.time.LocalDateTime.parse(value.toString()){{/isDateTime}}{{#isString}}value.toString(){{/isString}}{{#isText}}value.toString(){{/isText}});
+{{#bulkUpdatableFields}}                case "{{name}}" -> entity.set{{Name}}(value == null ? null : {{bulkCoerceJava}});
 {{/bulkUpdatableFields}}                default -> throw new IllegalArgumentException("Field not bulk-updatable: " + field);
             }
         }
-        repository.saveAll(rows);
+{{#bulkValidates}}        // The same value went onto every row: one row's answer is every row's.
+        if (!rows.isEmpty()) {
+            for (jakarta.validation.ConstraintViolation<{{dtoPackage}}.{{EntityName}}Dto> violation
+                    : validator.validateProperty({{dtoPackage}}.{{EntityName}}Dto.from(rows.get(0)), field)) {
+                throw new IllegalArgumentException(field + " " + violation.getMessage());
+            }
+        }
+{{/bulkValidates}}        repository.saveAll(rows);
     }
-{{/bulkUpdateApplicable}}{{/mutable}}{{#hasStringFields}}
+{{/bulkUpdateApplicable}}{{#bulkSelectApplicable}}
+    /** A bulk call names the records it changes: all of them must exist, or none is touched. */
+    private void requireAll(java.util.List<{{pkField.javaType}}> ids, java.util.List<{{EntityName}}> rows) {
+        java.util.Set<{{pkField.javaType}}> found = new java.util.HashSet<>();
+        for ({{EntityName}} row : rows) found.add(row.get{{pkField.Name}}());
+        java.util.List<{{pkField.javaType}}> missing = ids.stream().filter(id -> !found.contains(id)).distinct().toList();
+        if (!missing.isEmpty()) {
+            throw new ResourceNotFoundException("{{EntityName}} not found: " + missing);
+        }
+    }
+{{/bulkSelectApplicable}}{{/mutable}}{{#hasStringFields}}
     /** Escapes LIKE wildcards in user input so `%` and `_` match literally (the query names `\` as
      *  its escape character), and a search for "100%" does not match everything. */
     private static String escapeLike(String s) {

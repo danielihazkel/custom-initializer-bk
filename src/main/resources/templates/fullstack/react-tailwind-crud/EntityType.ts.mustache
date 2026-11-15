@@ -1,4 +1,5 @@
-{{#fields}}{{#isEnum}}
+{{#compositions}}import type { {{childEntity}} } from '@entities/{{childKebab}}'
+{{/compositions}}{{#fields}}{{#isEnum}}
 export type {{enumTypeName}} = {{#enumValues}}'{{value}}'{{^last}} | {{/last}}{{/enumValues}}
 
 export const {{enumTypeName}}Values: {{enumTypeName}}[] = [{{#enumValues}}'{{value}}'{{^last}}, {{/last}}{{/enumValues}}]
@@ -9,12 +10,20 @@ export const {{enumTypeName}}Options: { value: {{enumTypeName}}; label: string }
 
 export interface {{EntityName}} {
 {{#fields}}  {{name}}{{^isRequired}}?{{/isRequired}}: {{#isEnum}}{{enumTypeName}}{{/isEnum}}{{^isEnum}}{{tsType}}{{/isEnum}} | null
-{{/fields}}{{#relations}}  {{fkFieldName}}{{^required}}?{{/required}}: {{targetPkTsType}} | null
+{{#isAttachment}}  /** Read-only name of the file in {{name}} (which holds its id), set by the API. */
+  {{nameField}}?: string | null
+{{/isAttachment}}{{/fields}}{{#relations}}  {{fkFieldName}}{{^required}}?{{/required}}: {{targetPkTsType}} | null
 {{#hasTargetLabel}}  /** Read-only display label of the referenced {{targetEntity}} ({{targetLabelField}}), set by the API. */
   {{fieldName}}Label?: string | null
-{{/hasTargetLabel}}{{/relations}}{{#auditApplicable}}  createdAt?: string | null
+{{/hasTargetLabel}}{{/relations}}{{#collections}}  /** The linked {{targetEntity}} rows: their ids, and — read-only, set by the API — their labels in the same order. */
+  {{idsField}}?: {{targetPkTsType}}[] | null
+  {{labelsField}}?: string[] | null
+{{/collections}}{{#auditApplicable}}  createdAt?: string | null
   updatedAt?: string | null
 {{/auditApplicable}}{{#lockingApplicable}}  /** Optimistic-lock version: sent back on save so a stale edit is refused, never shown. */
   version?: number | null
-{{/lockingApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  {{collectionField}}Count?: number | null
-{{/inverseRelations}}{{/optScaffoldInverse}}}
+{{/lockingApplicable}}{{#childLists}}  {{collectionField}}Count?: number | null
+{{/childLists}}{{#compositions}}  /** The {{childEntity}} rows edited and saved with this one. Set where the record was read by
+   *  its key; a row of a list has none, and a save without it leaves the rows as they are. */
+  {{collectionField}}?: Partial<{{childEntity}}>[] | null
+{{/compositions}}}

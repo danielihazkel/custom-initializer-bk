@@ -66,7 +66,7 @@ class EntityScaffoldContextTest {
         assertThat(project).containsEntry("optScaffoldAudit", true);
         assertThat(EntityScaffoldContext.SCAFFOLD_OPT_FLAGS.keySet())
                 .containsExactly("audit", "softDelete", "csvExport", "bulkDelete", "bulkUpdate", "tests", "csvImport",
-                        "optimisticLocking", "inlineEdit");
+                        "optimisticLocking", "inlineEdit", "xlsxExport", "savedViews");
     }
 
     @Test

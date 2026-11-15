@@ -13,8 +13,8 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The five generation ThreadLocals are populated per request and read by the generation
- * child context. No single controller clears all five, and an exception escaping to the
+ * The six generation ThreadLocals are populated per request and read by the generation
+ * child context. No single controller clears all six, and an exception escaping to the
  * {@code @ControllerAdvice} clears none — so a leftover context would be scaffolded into
  * the next request served by the same pooled Tomcat thread.
  *
@@ -29,6 +29,7 @@ class GenerationContextCleanupTests {
     @Autowired private SqlScriptsContext sqlContext;
     @Autowired private OpenApiSpecContext specContext;
     @Autowired private SoapSpecContext soapContext;
+    @Autowired private EventsSpecContext eventsContext;
     @Autowired private EntityDefinitionContext entityContext;
 
     @Test
@@ -63,6 +64,7 @@ class GenerationContextCleanupTests {
         sqlContext.populate(Map.of("postgresql", "CREATE TABLE t (id BIGINT PRIMARY KEY);"), Map.of());
         specContext.populate(Map.of("openapi", "openapi: 3.0.0"), Map.of());
         soapContext.populate(Map.of("web-services", "<wsdl:definitions/>"), Map.of());
+        eventsContext.populate(Map.of("kafka", "asyncapi: 3.0.0"), Map.of());
         entityContext.populate(List.<EntityDefinition>of(), "spring-jpa-crud", "react-tailwind-crud", "com.menora.demo");
     }
 
@@ -71,6 +73,7 @@ class GenerationContextCleanupTests {
         assertThat(sqlContext.isEmpty()).as("sqlContext").isTrue();
         assertThat(specContext.isEmpty()).as("specContext").isTrue();
         assertThat(soapContext.isEmpty()).as("soapContext").isTrue();
+        assertThat(eventsContext.isEmpty()).as("eventsContext").isTrue();
         assertThat(entityContext.getDomainPackage()).as("entityContext domain package").isNull();
     }
 }

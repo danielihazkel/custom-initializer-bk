@@ -1,0 +1,168 @@
+package {{packageName}}.web;
+
+import java.io.Closeable;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+/**
+ * Writes an Excel workbook (.xlsx) with one sheet, row by row, straight to a stream — no library:
+ * a workbook is a zip of a few small XML files, and the sheet is the last entry, so its rows can
+ * be written as they are read from the database and memory stays bounded whatever the table size.
+ *
+ * <pre>
+ * try (XlsxWriter sheet = new XlsxWriter(out, "Orders")) {
+ *     sheet.header("Reference", "Total");
+ *     sheet.row("R-1", new BigDecimal("12.50"));
+ * }
+ * </pre>
+ *
+ * A number is written as a number and a boolean as a boolean; anything else as text, exactly as
+ * {@code toString()} gives it (a date is ISO 8601). Text is never read as a formula: it is an
+ * inline string, not a cell value Excel evaluates.
+ */
+public final class XlsxWriter implements Closeable {
+
+    private static final String MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    private static final String RELS = "http://schemas.openxmlformats.org/package/2006/relationships";
+    private static final String DOC_RELS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    private static final String XML = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n";
+
+    private final ZipOutputStream zip;
+    private final Writer sheet;
+    private int rows;
+
+    public XlsxWriter(OutputStream out, String sheetName) throws IOException {
+        zip = new ZipOutputStream(out, StandardCharsets.UTF_8);
+        entry("[Content_Types].xml", XML
+                + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+                + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+                + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+                + "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
+                + "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
+                + "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
+                + "</Types>");
+        entry("_rels/.rels", XML
+                + "<Relationships xmlns=\"" + RELS + "\">"
+                + "<Relationship Id=\"rId1\" Type=\"" + DOC_RELS + "/officeDocument\" Target=\"xl/workbook.xml\"/>"
+                + "</Relationships>");
+        entry("xl/workbook.xml", XML
+                + "<workbook xmlns=\"" + MAIN + "\" xmlns:r=\"" + DOC_RELS + "\">"
+                + "<sheets><sheet name=\"" + escape(sheetNameOf(sheetName)) + "\" sheetId=\"1\" r:id=\"rId1\"/></sheets>"
+                + "</workbook>");
+        entry("xl/_rels/workbook.xml.rels", XML
+                + "<Relationships xmlns=\"" + RELS + "\">"
+                + "<Relationship Id=\"rId1\" Type=\"" + DOC_RELS + "/worksheet\" Target=\"worksheets/sheet1.xml\"/>"
+                + "<Relationship Id=\"rId2\" Type=\"" + DOC_RELS + "/styles\" Target=\"styles.xml\"/>"
+                + "</Relationships>");
+        // Two cell formats: 0 the default, 1 bold (the header row).
+        entry("xl/styles.xml", XML
+                + "<styleSheet xmlns=\"" + MAIN + "\">"
+                + "<fonts count=\"2\"><font><sz val=\"11\"/><name val=\"Calibri\"/></font>"
+                + "<font><b/><sz val=\"11\"/><name val=\"Calibri\"/></font></fonts>"
+                + "<fills count=\"2\"><fill><patternFill patternType=\"none\"/></fill>"
+                + "<fill><patternFill patternType=\"gray125\"/></fill></fills>"
+                + "<borders count=\"1\"><border><left/><right/><top/><bottom/><diagonal/></border></borders>"
+                + "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>"
+                + "<cellXfs count=\"2\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>"
+                + "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/></cellXfs>"
+                + "</styleSheet>");
+        // The sheet is the entry left open: rows are written into it until close().
+        zip.putNextEntry(new ZipEntry("xl/worksheets/sheet1.xml"));
+        sheet = new OutputStreamWriter(zip, StandardCharsets.UTF_8);
+        sheet.write(XML + "<worksheet xmlns=\"" + MAIN + "\"><sheetData>");
+    }
+
+    /** The first row, in bold: the columns' names. */
+    public void header(String... labels) throws IOException {
+        write(1, (Object[]) labels);
+    }
+
+    /** One row: a cell per value, left to right. A null leaves its cell empty. */
+    public void row(Object... cells) throws IOException {
+        write(0, cells);
+    }
+
+    private void write(int style, Object... cells) throws IOException {
+        rows++;
+        StringBuilder xml = new StringBuilder(64 + cells.length * 48);
+        xml.append("<row r=\"").append(rows).append("\">");
+        for (int i = 0; i < cells.length; i++) {
+            Object value = cells[i];
+            if (value == null) continue;
+            xml.append("<c r=\"").append(column(i)).append(rows).append('"');
+            if (style != 0) xml.append(" s=\"").append(style).append('"');
+            if (value instanceof Boolean flag) {
+                xml.append(" t=\"b\"><v>").append(flag ? '1' : '0').append("</v></c>");
+            } else if (value instanceof Number number && isFinite(number)) {
+                xml.append("><v>").append(number instanceof BigDecimal decimal ? decimal.toPlainString() : number.toString())
+                        .append("</v></c>");
+            } else {
+                xml.append(" t=\"inlineStr\"><is><t xml:space=\"preserve\">").append(escape(value.toString())).append("</t></is></c>");
+            }
+        }
+        xml.append("</row>");
+        sheet.write(xml.toString());
+    }
+
+    @Override
+    public void close() throws IOException {
+        sheet.write("</sheetData></worksheet>");
+        sheet.flush();
+        zip.closeEntry();
+        zip.finish();
+        zip.flush();
+    }
+
+    private void entry(String name, String content) throws IOException {
+        zip.putNextEntry(new ZipEntry(name));
+        zip.write(content.getBytes(StandardCharsets.UTF_8));
+        zip.closeEntry();
+    }
+
+    private static boolean isFinite(Number number) {
+        return !(number instanceof Double d && (d.isNaN() || d.isInfinite()))
+                && !(number instanceof Float f && (f.isNaN() || f.isInfinite()));
+    }
+
+    /** A, B, … Z, AA, AB, … */
+    private static String column(int index) {
+        StringBuilder name = new StringBuilder();
+        for (int n = index + 1; n > 0; n = (n - 1) / 26) {
+            name.insert(0, (char) ('A' + (n - 1) % 26));
+        }
+        return name.toString();
+    }
+
+    /** A sheet's name: at most 31 characters, none of the few Excel does not take. */
+    private static String sheetNameOf(String name) {
+        String cleaned = name == null ? "" : name.replaceAll("[\\[\\]:*?/\\\\]", " ").trim();
+        if (cleaned.isEmpty()) cleaned = "Sheet1";
+        return cleaned.length() > 31 ? cleaned.substring(0, 31) : cleaned;
+    }
+
+    /** Text as XML character data; a character XML 1.0 cannot carry is left out. */
+    private static String escape(String text) {
+        StringBuilder out = new StringBuilder(text.length() + 16);
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '&' -> out.append("&amp;");
+                case '<' -> out.append("&lt;");
+                case '>' -> out.append("&gt;");
+                case '"' -> out.append("&quot;");
+                default -> {
+                    if (c >= 0x20 || c == '\t' || c == '\n' || c == '\r') {
+                        if (c < 0xFFFE) out.append(c);
+                    }
+                }
+            }
+        }
+        return out.toString();
+    }
+}

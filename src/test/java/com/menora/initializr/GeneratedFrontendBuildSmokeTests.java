@@ -342,6 +342,262 @@ class GeneratedFrontendBuildSmokeTests {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    @Test
+    void fullstackFrontendRoundNineFieldTypesInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // The shared formatters and the Markdown renderer, the form's time and instant inputs,
+        // and the imports each page gates on use — type-checked and linted with no warnings.
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.fieldTypesBody("react-tailwind-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendRichFieldsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Round 10, phase 7: the Markdown editor in the form, the photo on a board's cards, the
+        // attachment field's drop zone and a record page with Print (its print: classes and the
+        // stylesheet's print rules go through Tailwind's build).
+        Path project = postAndExtractFrontend(workDir, FullstackRichFieldsTests.layout("react-tailwind-crud"));
+        assertThat(project.resolve("src/shared/ui/MarkdownEditor.tsx")).isRegularFile();
+        assertThat(Files.readString(project.resolve("src/app/screens/ShiftScreen.tsx"))).contains("window.print()");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraRichFieldsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same on the Menora set (its own stylesheet and shell), in Hebrew.
+        Map<String, Object> body = FullstackRichFieldsTests.layout("react-menora-digital-crud");
+        body.put("locale", "he");
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendShellToolsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // Round 10, phase 8: the header's three tools on the Approvals layout — the palette over its
+        // pages and entities, the bell over the claims' queues, the user menu.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackShellToolsTests.approvals("react-tailwind-crud", "userMenu", "notifications", "commandPalette"));
+        assertThat(project.resolve("src/app/shell/ShellTools.tsx")).isRegularFile();
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fullstackFrontendMenoraShellToolsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // The same in the Menora shell, in Hebrew, with a page limited to a role: the palette
+        // then offers its pages through the role check.
+        Map<String, Object> body = FullstackShellToolsTests.approvals("react-menora-digital-crud", "userMenu", "notifications", "commandPalette");
+        body.put("locale", "he");
+        for (Map<String, Object> page : (List<Map<String, Object>>) body.get("pages")) {
+            if ("cost-centers".equals(page.get("id"))) page.put("roles", List.of("ADMIN"));
+        }
+        Path project = postAndExtractFrontend(workDir, body);
+        assertThat(Files.readString(project.resolve("src/app/shell/ShellTools.tsx"))).contains("canSee(p.id as View, roles)");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendSavedViewsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // Round 10, phase 9: the Views menu on the Orders layout's lists — pages that keep their
+        // state in the route, with filters, a view switch and both exports beside it.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("savedViews", "csvExport", "xlsxExport", "audit")));
+        Path project = postAndExtractFrontend(workDir, body);
+        assertThat(Files.readString(project.resolve("src/pages/order/ui/OrderPage.tsx"))).contains("<ViewsMenu list=\"order\"");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraSavedViewsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // The Menora set authors its own list page: classic shell, Hebrew, with row selection.
+        Map<String, Object> body = FullstackSavedViewsTests.body("react-menora-digital-crud", "savedViews", "bulkDelete");
+        body.put("locale", "he");
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendFlowWidgetsInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // Round 10, phase 10: the three process widgets on one dashboard — a funnel with named
+        // stages, a gauge over a sum of money, time in state — and the record page's history
+        // (the Approvals example's own shell tools, funnel and history are built with it by the
+        // ShellTools cases).
+        Path project = postAndExtractFrontend(workDir, FullstackFlowWidgetsTests.dashboardOf("react-tailwind-crud", true,
+                FullstackFlowWidgetsTests.widget("kpi"),
+                FullstackFlowWidgetsTests.widget("funnel", "presetFilter", Map.of("status", "DRAFT,SUBMITTED,APPROVED,PAID")),
+                FullstackFlowWidgetsTests.widget("gauge", "agg", "sum", "field", "amount", "target", "5000"),
+                FullstackFlowWidgetsTests.widget("timeInState")));
+        assertThat(project.resolve("src/shared/ui/widgets-flow.tsx")).isRegularFile();
+        assertThat(project.resolve("src/shared/ui/MovesList.tsx")).isRegularFile();
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendTreePageInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Round 10, phase 10: a tree of categories whose rows open their record page.
+        Path project = postAndExtractFrontend(workDir, FullstackTreePageTests.body("react-tailwind-crud", true));
+        assertThat(project.resolve("src/app/screens/OutlineScreen.tsx")).isRegularFile();
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraTreePageInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The same in the Menora shell, in Hebrew, without a record page: a row opens the quick look.
+        Map<String, Object> body = FullstackTreePageTests.body("react-menora-digital-crud", false);
+        body.put("locale", "he");
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendQuotedLabelsLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Every label with an apostrophe, a double quote, a backslash, braces and angle brackets:
+        // spliced into TS literals, JSX attributes and JSX children across list pages, forms,
+        // details, the dashboard's filter bar and the report screen.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackExampleRequests.quotedLabelsBody("reporting", "react-tailwind-crud", "en", true));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraQuotedLabelsClassicInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Menora set's own page, dashboard and shell, without a layout (the classic dashboard
+        // takes the heading and blurb), in Hebrew.
+        Path project = postAndExtractFrontend(workDir,
+                FullstackExampleRequests.quotedLabelsBody("orders", "react-menora-digital-crud", "he", false));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendQuotedLabelsClassicInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        Path project = postAndExtractFrontend(workDir,
+                FullstackExampleRequests.quotedLabelsBody("orders", "react-tailwind-crud", "en", false));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraRoundNineFieldTypesInstallAndBuild(@TempDir Path workDir) throws Exception {
+        // The Menora set authors its own entity page; the shared files are borrowed.
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.fieldTypesBody("react-menora-digital-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendBlogLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Blog example with its layout: a many-to-many (Post.tags) under page mode — the list
+        // page, the record page's details, the form drawer and the tags' own list page.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("blog", "react-tailwind-crud");
+        // The example's own setting: its home page has an activity feed, which reads audit columns.
+        body.put("opts", Map.of("scaffold", List.of("audit")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraBlogLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("blog", "react-menora-digital-crud");
+        // The example's own setting: its home page has an activity feed, which reads audit columns.
+        body.put("opts", Map.of("scaffold", List.of("audit")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendCompositionInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Orders with its lines composed into the order, on the layout the example ships: the rows
+        // editor in the order's form (a picker and number cells), the wizard's step for the rows,
+        // the list page reading the record before an edit, and the rows checked by their own rules.
+        Map<String, Object> body = GeneratedBackendBuildSmokeTests.composedOrders("react-tailwind-crud");
+        // …with the Excel button on its list pages, alone (no CSV export beside it).
+        body.put("opts", Map.of("scaffold", List.of("xlsxExport")));
+        Path project = postAndExtractFrontend(workDir, body);
+        assertThat(project.resolve("src/features/order-line-form/ui/OrderLineRows.tsx")).isRegularFile();
+        assertThat(Files.readString(project.resolve("src/pages/order/ui/OrderPage.tsx"))).contains("download.run(exportXlsx)");
+        assertThat(Files.readString(project.resolve("src/app/screens/NewOrderScreen.tsx"))).contains("fields: ['lines'], keys: ['lines']");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraCompositionInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The Menora set borrows the rows editor and authors its own list page: classic shell, Hebrew.
+        Map<String, Object> body = FullstackCompositionTests.composed("react-menora-digital-crud");
+        body.put("locale", "he");
+        // …and both exports on its list pages: the CSV and the Excel workbook.
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "xlsxExport", "audit")));
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendOneToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The child-row tables in the details, with their label-map imports (once per child
+        // entity, none for an entity's own rows).
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.oneToManyBody("react-tailwind-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraOneToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.oneToManyBody("react-menora-digital-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendManyToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // The multi-pick control in the form, the labels in the list and the detail, the filter.
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.manyToManyBody("react-tailwind-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
+    void fullstackFrontendMenoraManyToManyInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.manyToManyBody("react-menora-digital-crud"));
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
     /**
      * Lints the whole generated frontend with no warnings allowed: the screens gate their imports
      * (t, the enum label consts, onNavigate) on use, which only eslint's no-unused-vars catches, and

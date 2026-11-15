@@ -187,6 +187,39 @@ class ProjectGenerationIntegrationTests {
         assertThat(project).filePaths().doesNotContain("src/main/resources/application.properties");
     }
 
+    /**
+     * One dependency, a different version per Spring Boot line: the spring-cloud BOM and springdoc
+     * each carry a build customization per line (its {@code compatibilityRange}), and only the
+     * matching one reaches the pom — replacing the catalog entry's own version, never beside it.
+     */
+    @Test
+    void eachBootLineGetsItsOwnSpringCloudAndSpringdocVersions() throws Exception {
+        record Line(String boot, String springCloud, String springdoc) {}
+        for (Line line : List.of(new Line("3.2.1", "2023.0.3", "2.6.0"), new Line("3.5.16", "2025.0.3", "2.8.17"))) {
+            WebProjectRequest request = createBaseRequest();
+            request.setBootVersion(line.boot());
+            request.getDependencies().add("web");
+            request.getDependencies().add("openapi");
+
+            Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+            try {
+                String pom = Files.readString(projectDir.resolve("pom.xml")).replace("\r\n", "\n");
+                assertThat(pom).as(line.boot())
+                        .containsPattern("(?s)<parent>.*?<version>" + java.util.regex.Pattern.quote(line.boot()) + "</version>.*?</parent>")
+                        .contains("<spring-cloud.version>" + line.springCloud() + "</spring-cloud.version>")
+                        .containsPattern("(?s)<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>\\s*"
+                                + "<version>" + java.util.regex.Pattern.quote(line.springdoc()) + "</version>");
+                // Exactly one of each: the other lines' rows are skipped, and the ranged
+                // springdoc row replaces the entry's dependency rather than adding a second.
+                assertThat(pom.split("<spring-cloud.version>", -1)).as(line.boot() + " spring-cloud").hasSize(2);
+                assertThat(pom.split("<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>", -1))
+                        .as(line.boot() + " springdoc").hasSize(2);
+            } finally {
+                invoker.cleanTempFiles(projectDir);
+            }
+        }
+    }
+
     @Test
     void generatedProjectContainsLocalVaultConnection() throws Exception {
         WebProjectRequest request = createBaseRequest();
@@ -1136,6 +1169,149 @@ class ProjectGenerationIntegrationTests {
         ResponseEntity<String> response = restTemplate.postForEntity(
                 "/starter-wizard.zip", body, String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void wizardsAddTheStartersTheirCodeNeeds() throws Exception {
+        // A caller that names no web starter (curl, the IDE): the OpenAPI wizard's controllers and
+        // client would not compile, nor would SOAP endpoints without Spring-WS. They are added —
+        // and springdoc beside the controllers, which serves the same contract as documentation.
+        Map<String, Object> body = openApiPetstoreBody();
+        body.put("dependencies", List.of());
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("mode", "BOTH");
+        options.put("clientKind", "restClient");
+        options.put("copySpec", true);
+        body.put("openApiOptions", Map.of("web", options));
+        body.put("wsdlByDep", Map.of("web-services", SAMPLE_WSDL));
+        ResponseEntity<byte[]> response = restTemplate.postForEntity("/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> files = unzip(response.getBody());
+        assertThat(files.get("demo/pom.xml"))
+                .contains("<artifactId>spring-boot-starter-web</artifactId>")
+                .contains("<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>")
+                .contains("<artifactId>spring-boot-starter-web-services</artifactId>");
+        // The document the code was written from, kept beside it.
+        assertThat(files.get("demo/src/main/resources/openapi/web.yaml"))
+                .isEqualTo(((Map<?, ?>) body.get("specByDep")).get("web"));
+        assertThat(files.get("demo/src/main/java/com/menora/demo/client/OpenApiClientConfig.java")).contains("RestClient.Builder");
+
+        // A client alone gets the web starter but no Swagger UI; with webflux nothing is added.
+        Map<String, Object> clientOnly = openApiPetstoreBody();
+        clientOnly.put("dependencies", List.of());
+        clientOnly.put("openApiOptions", Map.of("web", Map.of("mode", "CLIENT")));
+        String pom = unzip(restTemplate.postForEntity("/starter-wizard.zip", clientOnly, byte[].class).getBody()).get("demo/pom.xml");
+        assertThat(pom).contains("<artifactId>spring-boot-starter-web</artifactId>").doesNotContain("springdoc");
+        assertThat(unzip(restTemplate.postForEntity("/starter-wizard.zip", clientOnly, byte[].class).getBody()))
+                .doesNotContainKey("demo/src/main/resources/openapi/web.yaml");
+
+        // An unknown client kind is the caller's mistake.
+        Map<String, Object> bad = openApiPetstoreBody();
+        bad.put("openApiOptions", Map.of("web", Map.of("mode", "CLIENT", "clientKind", "feign")));
+        ResponseEntity<String> refused = restTemplate.postForEntity("/starter-wizard.zip", bad, String.class);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody()).contains("clientKind").contains("feign");
+    }
+
+    private static final String EVENTS_DOCUMENT = """
+            asyncapi: 3.0.0
+            info: { title: Orders, version: 1.0.0 }
+            channels:
+              orderCreated:
+                address: orders.created
+                messages:
+                  created:
+                    name: OrderCreated
+                    payload:
+                      type: object
+                      required: [id]
+                      properties:
+                        id: { type: integer, format: int64 }
+                        total: { type: number }
+              audit:
+                address: audit.{tenant}
+            operations:
+              publishOrder: { action: send, channel: { $ref: '#/channels/orderCreated' } }
+              onOrder: { action: receive, channel: { $ref: '#/channels/orderCreated' } }
+            """;
+
+    @Test
+    void eventsWizardGeneratesProducersListenersAndPayloads() throws Exception {
+        // No dependency named: Kafka is added, and the JSON starter the generated classes need.
+        Map<String, Object> body = openApiBaseBody();
+        body.put("dependencies", List.of());
+        body.put("asyncApiByDep", Map.of("kafka", EVENTS_DOCUMENT));
+        body.put("eventOptions", Map.of("kafka", Map.of("generateTests", true)));
+        ResponseEntity<byte[]> response = restTemplate.postForEntity("/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> files = unzip(response.getBody());
+        assertThat(files).containsKeys(
+                "demo/src/main/java/com/menora/demo/events/OrderCreatedProducer.java",
+                "demo/src/main/java/com/menora/demo/events/OrderCreatedListener.java",
+                "demo/src/main/java/com/menora/demo/events/model/OrderCreated.java",
+                "demo/src/test/java/com/menora/demo/events/OrderCreatedProducerTest.java",
+                "demo/src/test/java/com/menora/demo/events/OrderCreatedListenerTest.java",
+                // The Kafka dependency's own configuration, untouched: the messages are JSON text.
+                "demo/src/main/java/com/menora/demo/config/KafkaConfig.java");
+        assertThat(files.get("demo/pom.xml"))
+                .contains("<artifactId>spring-kafka</artifactId>")
+                .contains("<artifactId>spring-boot-starter-json</artifactId>");
+        // The topic property joins the Kafka dependency's settings in one application.yaml.
+        assertThat(files.get("demo/src/main/resources/application.yaml"))
+                .contains("bootstrap-servers:").contains("order-created: orders.created");
+        assertThat(files.get("demo/src/main/java/com/menora/demo/events/model/OrderCreated.java"))
+                .contains("public record OrderCreated(").contains("Long id,").contains("Double total");
+
+        // The same through the preview.
+        ResponseEntity<String> preview = restTemplate.postForEntity("/starter-wizard.preview", body, String.class);
+        assertThat(preview.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(preview.getBody()).contains("OrderCreatedProducer.java");
+    }
+
+    @Test
+    void eventsWizardEndpointsSayWhatADocumentHasAndWhyOneIsRefused() {
+        assertThat(restTemplate.getForEntity("/metadata/events-capable-deps", String.class).getBody()).contains("kafka");
+
+        ResponseEntity<String> detected = restTemplate.postForEntity("/starter-wizard.detect-channels",
+                Map.of("spec", EVENTS_DOCUMENT), String.class);
+        assertThat(detected.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(detected.getBody())
+                .contains("\"name\":\"orderCreated\"").contains("\"address\":\"orders.created\"")
+                .contains("\"sends\":true").contains("\"receives\":true").contains("\"messages\":[\"OrderCreated\"]")
+                // A channel no code can be written for says why.
+                .contains("\"name\":\"audit\"").contains("a Kafka topic cannot have");
+        assertThat(restTemplate.postForEntity("/starter-wizard.detect-channels", Map.of("spec", ""), String.class).getBody())
+                .isEqualTo("[]");
+
+        // A document that is not AsyncAPI: 400 with the reasons, on the preview endpoint and on generation.
+        ResponseEntity<String> notAsyncApi = restTemplate.postForEntity("/starter-wizard.detect-channels",
+                Map.of("spec", "openapi: 3.0.0"), String.class);
+        assertThat(notAsyncApi.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(notAsyncApi.getBody()).contains("Invalid AsyncAPI document").contains("no 'asyncapi' version field");
+        Map<String, Object> body = openApiBaseBody();
+        body.put("asyncApiByDep", Map.of("kafka", "asyncapi: 3.0.0\ninfo: {title: t, version: '1'}"));
+        ResponseEntity<String> refused = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody()).contains("declares no channels");
+
+        // A channel the document does not have is the caller's mistake.
+        body.put("asyncApiByDep", Map.of("kafka", EVENTS_DOCUMENT));
+        body.put("eventOptions", Map.of("kafka", Map.of("channels", List.of(Map.of("name", "nope", "produce", true)))));
+        ResponseEntity<String> unknown = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+        assertThat(unknown.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(unknown.getBody()).contains("Unknown channel 'nope'");
+    }
+
+    @Test
+    void sqlWizardRefusesAnUnknownApiMode() {
+        // It used to fall back to "entities only", saying nothing.
+        Map<String, Object> body = openApiBaseBody();
+        body.put("dependencies", List.of("data-jpa", "postgresql"));
+        body.put("sqlByDep", Map.of("postgresql", "CREATE TABLE t (id BIGINT PRIMARY KEY);"));
+        body.put("sqlOptions", Map.of("postgresql", Map.of("apiMode", "DTO")));
+        ResponseEntity<String> response = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("Unknown SQL wizard apiMode: 'DTO'");
     }
 
     @Test

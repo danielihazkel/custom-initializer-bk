@@ -1,0 +1,45 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+@Component
+public class {{className}} {
+
+    private final RestClient restClient;
+
+    public {{className}}(RestClient openApiRestClient) {
+        this.restClient = openApiRestClient;
+    }
+
+{{#operations}}
+{{#hasSummary}}
+    /** {{summaryJavadoc}} */
+{{/hasSummary}}
+    public {{returnType}} {{operationId}}({{arguments}}) {
+        {{returnKeyword}}restClient.method(HttpMethod.{{httpMethod}})
+                .uri(uriBuilder -> uriBuilder.path("{{path}}")
+{{#queryParams}}
+                        .queryParamIfPresent("{{wireName}}", Optional.ofNullable({{name}}))
+{{/queryParams}}
+                        .build({{pathArguments}}))
+{{#hasHeaders}}
+                .headers(httpHeaders -> {
+{{#headerParams}}
+                    {{^required}}if ({{name}} != null) {{/required}}httpHeaders.add("{{wireName}}", String.valueOf({{name}}));
+{{/headerParams}}
+{{#cookieParams}}
+                    {{^required}}if ({{name}} != null) {{/required}}httpHeaders.add(HttpHeaders.COOKIE, "{{wireName}}=" + {{name}});
+{{/cookieParams}}
+                })
+{{/hasHeaders}}
+{{#hasBody}}
+                .body(body)
+{{/hasBody}}
+                .retrieve()
+                .{{terminal}};
+    }
+
+{{/operations}}
+}

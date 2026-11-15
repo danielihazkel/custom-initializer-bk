@@ -86,7 +86,9 @@ const FALSE_WORDS = ['false', 'no', 'n', '0', 'לא']
 
 /** A cell read as a field's value — or why it cannot be. An empty cell is no value (null). */
 export function coerce(field: ImportField, raw: string): { value: unknown } | { error: string } {
-  const text = raw.trim()
+  // The app's export leads a text cell that starts like a formula with an apostrophe (so a
+  // spreadsheet does not run it); read back, the apostrophe goes.
+  const text = raw.trim().replace(/^'(?=[=+@-])/, '')
   if (text === '') return { value: null }
   switch (field.kind) {
     case 'integer': {

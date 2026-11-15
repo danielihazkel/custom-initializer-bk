@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
@@ -59,6 +60,56 @@ public final class GeneratedProjectFiles {
             }
         }
         return baos.toByteArray();
+    }
+
+    /**
+     * Rewrites every text file under {@code dir} with LF line endings. Templates are checked out
+     * with whatever line endings the build machine's git gives them, so without this a project
+     * generated on Windows differs byte for byte from the same one generated on Linux — which
+     * breaks comparing two generations (the update patch) and a {@code .gitattributes} with
+     * {@code eol=lf}. A file holding a NUL byte is binary and left alone, and so are Windows
+     * batch files, which want CRLF.
+     */
+    public static void normalizeLineEndings(Path dir) throws IOException {
+        List<Path> files;
+        try (Stream<Path> walk = Files.walk(dir)) {
+            files = walk.filter(Files::isRegularFile).toList();
+        }
+        for (Path file : files) {
+            String name = file.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+            if (name.endsWith(".cmd") || name.endsWith(".bat")) continue;
+            byte[] bytes = Files.readAllBytes(file);
+            int crlf = 0;
+            boolean binary = false;
+            for (int i = 0; i < bytes.length; i++) {
+                if (bytes[i] == 0) {
+                    binary = true;
+                    break;
+                }
+                if (bytes[i] == '\r' && i + 1 < bytes.length && bytes[i + 1] == '\n') crlf++;
+            }
+            if (binary || crlf == 0) continue;
+            byte[] out = new byte[bytes.length - crlf];
+            int n = 0;
+            for (int i = 0; i < bytes.length; i++) {
+                if (bytes[i] == '\r' && i + 1 < bytes.length && bytes[i + 1] == '\n') continue;
+                out[n++] = bytes[i];
+            }
+            Files.write(file, out);
+        }
+    }
+
+    /** Every file under {@code dir}: path (relative, {@code /}-separated) → bytes, sorted by path. */
+    public static java.util.Map<String, byte[]> readTree(Path dir) throws IOException {
+        java.util.Map<String, byte[]> files = new java.util.TreeMap<>();
+        List<Path> paths;
+        try (Stream<Path> walk = Files.walk(dir)) {
+            paths = walk.filter(Files::isRegularFile).toList();
+        }
+        for (Path file : paths) {
+            files.put(dir.relativize(file).toString().replace('\\', '/'), Files.readAllBytes(file));
+        }
+        return files;
     }
 
     /**

@@ -161,6 +161,19 @@ public class ExtensionMetadataController {
     }
 
     /**
+     * Dep IDs for which the events wizard (AsyncAPI → Kafka producers and listeners) is surfaced,
+     * filtered to those currently in the catalog. Empty list → the UI hides the trigger button.
+     */
+    @GetMapping("/metadata/events-capable-deps")
+    public List<String> eventsCapableDeps() {
+        Set<String> candidates = Set.of("kafka");
+        return entryRepo.findByDepIdIn(candidates).stream()
+                .map(DependencyEntryEntity::getDepId)
+                .sorted()
+                .toList();
+    }
+
+    /**
      * Dep IDs for which the SOAP → Spring-WS wizard is surfaced, filtered to
      * those currently in the catalog. Wizard surfaces on the {@code web-services}
      * starter; empty list → UI hides the trigger button.
@@ -253,6 +266,17 @@ public class ExtensionMetadataController {
         SqlToEntityDefinitionConverter.SelectImportResult result =
                 sqlToEntityConverter.convertSelect(sql, dialect);
         return new ImportDdlResponse(toWire(result.entities()), result.note());
+    }
+
+    /**
+     * What a fullstack request may say — field types, page types, widget kinds, limits, name rules,
+     * reserved names, scaffold options — read from the constants the validators enforce. The
+     * editor derives its own lists from this document; see
+     * {@link com.menora.initializr.fullstack.FullstackSchema}.
+     */
+    @GetMapping("/metadata/fullstack/schema")
+    public Map<String, Object> fullstackSchema() {
+        return com.menora.initializr.fullstack.FullstackSchema.document();
     }
 
     private static List<EntityWire> toWire(List<EntityDefinition> defs) {

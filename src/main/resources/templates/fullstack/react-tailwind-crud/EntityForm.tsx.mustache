@@ -1,7 +1,12 @@
 import { Field, inputClass{{#formUsesPicker}}, RelationPicker{{/formUsesPicker}} } from '@shared/ui'
 {{#formUsesStrings}}import { t } from '@shared/i18n'
 {{/formUsesStrings}}{{#formUsesOptions}}import { useOptions } from '@shared/api'
-{{/formUsesOptions}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
+{{/formUsesOptions}}{{#formUsesInstant}}import { fromLocalInput, toLocalInput } from '@shared/ui/format'
+{{/formUsesInstant}}{{#hasAttachmentFields}}import { AttachmentField } from '@shared/ui/AttachmentField'
+{{/hasAttachmentFields}}{{#hasMarkdownField}}import { MarkdownEditor } from '@shared/ui/MarkdownEditor'
+{{/hasMarkdownField}}{{#hasCollections}}import { MultiRelationPicker } from '@shared/ui/MultiRelationPicker'
+{{/hasCollections}}{{#compositions}}import { {{childEntity}}Rows } from '@features/{{childKebab}}-form'
+{{/compositions}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
 {{#fields}}{{#isEnum}}{{^isWorkflowStatus}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
 {{/isWorkflowStatus}}{{/isEnum}}{{/fields}}
 
@@ -31,9 +36,9 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         <legend className="mb-3 text-sm font-semibold text-fg">{ {{{groupTitleExpr}}} }</legend>
 {{/groupHasTitle}}
 {{#groupFields}}
-{{^isWorkflowStatus}}
+{{^isWorkflowLocked}}
 {{#isPrimaryKey}}{{#isGenerated}}      {!isNew && (
-        <Field label="{{label}}" hint={t('systemGenerated')}>
+        <Field label="{{labelAttr}}" hint={t('systemGenerated')}>
           <input
             className={`${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
             value={String(value.{{name}} ?? '')}
@@ -41,7 +46,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           />
         </Field>
       )}
-{{/isGenerated}}{{^isGenerated}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{/isGenerated}}{{^isGenerated}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <input
           className={isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -51,7 +56,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         />
       </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/isGenerated}}{{/isPrimaryKey}}
-{{^isPrimaryKey}}{{#isBoolean}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{^isPrimaryKey}}{{#isBoolean}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <select
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -63,7 +68,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           <option value="false">{t('falseLabel')}</option>
         </select>
       </Field>{{#formHasSteps}})}{{/formHasSteps}}
-{{/isBoolean}}{{#isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{/isBoolean}}{{#isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
         <select
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           value={(value.{{name}} as string | null | undefined) ?? ''}
@@ -74,26 +79,39 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           { {{enumTypeName}}Options.map(o => <option key={o.value} value={o.value}>{o.label}</option>) }
         </select>
       </Field>{{#formHasSteps}})}{{/formHasSteps}}
-{{/isEnum}}{{^isBoolean}}{{^isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{label}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
-{{#isText}}        <textarea
+{{/isEnum}}{{^isBoolean}}{{^isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}} error={errors?.{{name}}}>
+{{#isText}}{{#isMarkdown}}        <MarkdownEditor
+          label="{{labelAttr}}"
+          value={value.{{name}}}
+          onChange={next => set('{{name}}', next)}
+          {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}{{^isReadOnly}}disabled={false}{{/isReadOnly}}
+        />
+{{/isMarkdown}}{{^isMarkdown}}        <textarea
           className={{#isReadOnly}}{isNew ? `${inputClass} min-h-[96px] resize-y` : `${inputClass} min-h-[96px] resize-y cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{`${inputClass} min-h-[96px] resize-y`}{{/isReadOnly}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
           onChange={e => set('{{name}}', e.target.value === '' ? null : e.target.value)}
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         />
-{{/isText}}{{^isText}}        <input
+{{/isMarkdown}}{{/isText}}{{^isText}}{{#isAttachment}}        <AttachmentField
+          value={value.{{name}}}
+          name={value.{{nameField}}}
+          {{#isImage}}image{{/isImage}}{{^isImage}}image={false}{{/isImage}}
+          {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}{{^isReadOnly}}disabled={false}{{/isReadOnly}}
+          onChange={(id, name) => onChange({ ...value, {{name}}: id, {{nameField}}: name })}
+        />
+{{/isAttachment}}{{^isAttachment}}        <input
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
-          {{#isNumeric}}type="number"{{/isNumeric}}{{#isDate}}type="date"{{/isDate}}{{#isDateTime}}type="datetime-local"{{/isDateTime}}{{^isNumeric}}{{^isTemporal}}{{#isEmail}}type="email"{{/isEmail}}{{^isEmail}}type="text"{{/isEmail}}{{/isTemporal}}{{/isNumeric}}{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{#isBigDecimal}} step="any"{{/isBigDecimal}}{{/isNumeric}}{{#hasPattern}} pattern={"{{patternEscaped}}"}{{/hasPattern}}
-          value={value.{{name}} == null ? '' : String(value.{{name}})}
-          onChange={e => set('{{name}}', {{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}})}
+          type="{{inputType}}"{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{#isBigDecimal}}{{#isMoney}} step="0.01"{{/isMoney}}{{^isMoney}} step="any"{{/isMoney}}{{/isBigDecimal}}{{/isNumeric}}{{#hasPattern}} pattern={"{{patternEscaped}}"}{{/hasPattern}}
+          value={{#isInstant}}{toLocalInput(value.{{name}})}{{/isInstant}}{{^isInstant}}{value.{{name}} == null ? '' : String(value.{{name}})}{{/isInstant}}
+          onChange={e => set('{{name}}', {{#isInstant}}fromLocalInput(e.target.value){{/isInstant}}{{^isInstant}}{{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}}{{/isInstant}})}
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         />
-{{/isText}}      </Field>{{#formHasSteps}})}{{/formHasSteps}}
+{{/isAttachment}}{{/isText}}      </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}
-{{/isWorkflowStatus}}
+{{/isWorkflowLocked}}
 {{/groupFields}}
 {{#groupRelations}}
-      {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{FieldName}}"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>
+      {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#required}} required{{/required}} error={errors?.{{fkFieldName}}}>
 {{#targetSearchable}}        <RelationPicker
           path="/api/{{targetEntityKebabPlural}}"
           valueKey="{{targetPkName}}"
@@ -120,6 +138,24 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
       </fieldset>{{#formHasSteps}})}{{/formHasSteps}}
 {{/groupHasTitle}}
 {{/formGroups}}
-    </>
+{{#collections}}      {{#formHasSteps}}{show('{{fieldName}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}" error={errors?.{{idsField}}}>
+        <MultiRelationPicker
+          path="/api/{{targetEntityKebabPlural}}"
+          valueKey="{{targetPkName}}"
+          {{#hasTargetLabel}}labelKey="{{targetLabelField}}"{{/hasTargetLabel}}{{^hasTargetLabel}}labelKey={undefined}{{/hasTargetLabel}}
+          numeric={ {{#isTargetPkNumeric}}true{{/isTargetPkNumeric}}{{^isTargetPkNumeric}}false{{/isTargetPkNumeric}} }
+          value={value.{{idsField}} ?? []}
+          labels={value.{{labelsField}} ?? []}
+          onChange={(ids, labels) => onChange({ ...value, {{idsField}}: ids as {{targetPkTsType}}[], {{labelsField}}: labels })}
+        />
+      </Field>{{#formHasSteps}})}{{/formHasSteps}}
+{{/collections}}{{#compositions}}      {{#formHasSteps}}{show('{{collectionField}}') && ({{/formHasSteps}}<{{childEntity}}Rows
+        label="{{collectionLabelAttr}}"
+        name="{{collectionField}}"
+        value={value.{{collectionField}} ?? []}
+        onChange={rows => onChange({ ...value, {{collectionField}}: rows })}
+        errors={errors}
+      />{{#formHasSteps}})}{{/formHasSteps}}
+{{/compositions}}    </>
   )
 }

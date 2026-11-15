@@ -40,7 +40,9 @@ public record EntityDefinition(
         String labelPlural,
         Map<String, Boolean> opts,
         List<FormSection> formSections,
-        Workflow workflow) {
+        Workflow workflow,
+        List<RelationDefinition> collections,
+        List<RelationDefinition> children) {
 
     /**
      * The entity's workflow: the enum field whose values are its states, the state a new row starts
@@ -48,9 +50,15 @@ public record EntityDefinition(
      * and the date it is due by. Names are canonical (validated by FullstackRequestValidator).
      */
     public record Workflow(String statusField, String initial, String assigneeField, String dueField,
-                           List<Transition> transitions) {
+                           List<Transition> transitions, boolean trackMoves) {
         public Workflow {
             transitions = List.copyOf(transitions);
+        }
+
+        /** A workflow that keeps no log of its moves. */
+        public Workflow(String statusField, String initial, String assigneeField, String dueField,
+                        List<Transition> transitions) {
+            this(statusField, initial, assigneeField, dueField, transitions, false);
         }
 
         /** The states a row can still move on from — every state some transition leaves. */
@@ -80,7 +88,7 @@ public record EntityDefinition(
     }
 
     /** The list-view modes the generated entity page may render. */
-    private static final Set<String> KNOWN_VIEWS = Set.of("table", "cards", "kanban", "calendar");
+    private static final Set<String> KNOWN_VIEWS = Set.of("table", "cards", "kanban", "calendar", "gallery");
 
     public EntityDefinition {
         relations = relations == null ? List.of() : List.copyOf(relations);
@@ -106,6 +114,43 @@ public record EntityDefinition(
         listViews = List.copyOf(norm);
         opts = opts == null ? Map.of() : Map.copyOf(opts);
         formSections = formSections == null ? List.of() : List.copyOf(formSections);
+        collections = collections == null ? List.of() : List.copyOf(collections);
+        children = children == null ? List.of() : List.copyOf(children);
+    }
+
+    /**
+     * Every property but the children (none): the ONE_TO_MANYs — lists of the rows of another
+     * entity that point at this one through a MANY_TO_ONE of theirs. Read-only from here; like
+     * the collections, kept apart from the foreign keys.
+     */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
+                            String label, String labelPlural, Map<String, Boolean> opts, List<FormSection> formSections,
+                            Workflow workflow, List<RelationDefinition> collections) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
+                label, labelPlural, opts, formSections, workflow, collections, List.of());
+    }
+
+    /** The same entity with its ONE_TO_MANYs resolved (each naming the MANY_TO_ONE behind it). */
+    public EntityDefinition withChildren(List<RelationDefinition> resolved) {
+        return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
+                listViews, label, labelPlural, opts, formSections, workflow, collections, resolved);
+    }
+
+    /**
+     * Every property but the collections (none). {@code relations} holds the MANY_TO_ONEs — the
+     * foreign keys this entity owns, which is what every reader of it means — and
+     * {@code collections} the relations that are sets of other rows (MANY_TO_MANY), declared apart
+     * so nothing that walks the foreign keys has to tell them from these.
+     */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
+                            String label, String labelPlural, Map<String, Boolean> opts, List<FormSection> formSections,
+                            Workflow workflow) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
+                label, labelPlural, opts, formSections, workflow, List.of());
     }
 
     /** Every property but the workflow (none). */
@@ -141,7 +186,7 @@ public record EntityDefinition(
         Map<String, Boolean> next = new java.util.LinkedHashMap<>(opts);
         next.put(key, value);
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
-                listViews, label, labelPlural, next, formSections, workflow);
+                listViews, label, labelPlural, next, formSections, workflow, collections, children);
     }
 
     public String listView() {

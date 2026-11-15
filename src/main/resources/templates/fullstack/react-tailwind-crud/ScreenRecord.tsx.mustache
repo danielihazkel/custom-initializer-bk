@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 {{#recordHasIcons}}
-import { {{#hasBack}}ArrowLeft, {{/hasBack}}ChevronLeft, ChevronRight, {{#recordMutable}}Pencil, Trash2, {{/recordMutable}}} from 'lucide-react'
+import { {{#hasBack}}ArrowLeft, {{/hasBack}}ChevronLeft, ChevronRight, {{#printable}}Printer, {{/printable}}{{#recordMutable}}Pencil, Trash2, {{/recordMutable}}} from 'lucide-react'
 {{/recordHasIcons}}
 {{#recordMutable}}
 import { toast } from 'sonner'
@@ -19,6 +19,10 @@ import { {{EntityName}}Detail{{#recordEditsInDrawer}}, {{EntityName}}Form, valid
 {{#childTabs}}
 import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
 {{/childTabs}}
+{{#recordTracksMoves}}
+import { {{moveLabelsRef}} as MOVE_STATES } from '@entities/{{entityNameKebab}}'
+import { MovesList } from '@shared/ui/MovesList'
+{{/recordTracksMoves}}
 
 interface Props {
   /** The record's key, as the shell received it from the row that opened this page. */
@@ -164,7 +168,7 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
       <button
         type="button"
         onClick={() => onNavigate('{{backPageId}}')}
-        className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-fg"
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-fg{{#printable}} print:hidden{{/printable}}"
       >
         <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
         {t('back')}
@@ -190,7 +194,7 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
 {{/hasPageDescription}}
         </div>
         {at >= 0 && siblings.length > 1 && (
-          <div className="flex items-center gap-1 text-sm text-muted" data-record-siblings>
+          <div className="flex items-center gap-1 text-sm text-muted{{#printable}} print:hidden{{/printable}}" data-record-siblings>
             <button
               type="button"
               disabled={at === 0}
@@ -214,9 +218,34 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
             </button>
           </div>
         )}
+{{^recordMutable}}
+{{#printable}}
+        {record && (
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-2 print:hidden"
+          >
+            <Printer className="h-4 w-4" />
+            {t('print')}
+          </button>
+        )}
+{{/printable}}
+{{/recordMutable}}
 {{#recordMutable}}
         {record && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2{{#printable}} print:hidden{{/printable}}">
+{{#printable}}
+            {/* With the page's other actions, not adrift between them and the title. */}
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-2"
+            >
+              <Printer className="h-4 w-4" />
+              {t('print')}
+            </button>
+{{/printable}}
 {{#recordHasWorkflow}}
             <{{EntityName}}Transitions row={record} onDone={setRecord} />
 {{/recordHasWorkflow}}
@@ -251,6 +280,9 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
           agg="{{agg}}"
           field="{{aggField}}"
 {{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
           params={`{{viaParam}}=${encodeURIComponent(recordId)}`}
 {{#hasTab}}
           onOpen={() => setActive({{tabIndex}})}
@@ -277,7 +309,7 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
       {record && (
 {{#hasChildTabs}}
         <>
-          <div role="tablist" aria-label={heading} className="mb-4 flex gap-1 overflow-x-auto border-b border-border">
+          <div role="tablist" aria-label={heading} className="mb-4 flex gap-1 overflow-x-auto border-b border-border{{#printable}} print:hidden{{/printable}}">
             {TABS.map((tab, i) => (
               <button
                 key={tab.id}
@@ -327,6 +359,17 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
         </div>
 {{/hasChildTabs}}
       )}
+{{#recordTracksMoves}}
+      {/* The row's steps through its workflow; read again whenever the row changes. */}
+      {record && (
+        <MovesList
+          path={`/api/{{entityNamePluralKebab}}/${encodeURIComponent(recordId)}`}
+          labels={MOVE_STATES}
+          transitions={ {{{moveTransitionsTs}}} }
+          version={record}
+        />
+      )}
+{{/recordTracksMoves}}
 {{#recordEditsInDrawer}}
 
       <FormDrawer

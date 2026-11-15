@@ -60,10 +60,25 @@ public record FieldDefinition(
         boolean readOnly,
         String defaultValue,
         Map<String, String> enumLabels,
-        String column) {
+        String column,
+        String currency) {
+
+    /** The currency of a MONEY field that names none. */
+    public static final String DEFAULT_CURRENCY = "ILS";
 
     public FieldDefinition {
         enumLabels = enumLabels == null ? Map.of() : Map.copyOf(enumLabels);
+    }
+
+    /** Back-compat constructor without {@code currency} (only a MONEY field has one). */
+    public FieldDefinition(String name, FieldType type, boolean primaryKey, boolean generated,
+                           boolean required, boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                           String pattern, boolean email, List<String> enumValues,
+                           boolean searchable, boolean filterable, String label, boolean readOnly,
+                           String defaultValue, Map<String, String> enumLabels, String column) {
+        this(name, type, primaryKey, generated, required, unique, length, min, max,
+                pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
+                column, null);
     }
 
     /** Back-compat constructor without {@code column} (derived from the name). */

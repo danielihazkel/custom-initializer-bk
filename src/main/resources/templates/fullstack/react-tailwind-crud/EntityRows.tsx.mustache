@@ -1,0 +1,100 @@
+import { inputClass{{#rowsUsePicker}}, RelationPicker{{/rowsUsePicker}} } from '@shared/ui'
+import { RowsEditor, type RowColumn } from '@shared/ui/RowsEditor'
+{{#rowsUseStrings}}import { t } from '@shared/i18n'
+{{/rowsUseStrings}}{{#rowsUseOptions}}import { useOptions } from '@shared/api'
+{{/rowsUseOptions}}{{#rowsUseInstant}}import { fromLocalInput, toLocalInput } from '@shared/ui/format'
+{{/rowsUseInstant}}import type { {{EntityName}}{{#rowFields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/rowFields}} } from '@entities/{{entityNameKebab}}'
+{{#rowFields}}{{#isEnum}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
+{{/isEnum}}{{/rowFields}}
+
+const COLUMNS: RowColumn[] = [
+{{#rowFields}}  { key: '{{name}}', label: '{{labelTs}}'{{#isRequired}}, required: true{{/isRequired}} },
+{{/rowFields}}{{#rowRelations}}  { key: '{{fkFieldName}}', label: '{{labelTs}}'{{#required}}, required: true{{/required}} },
+{{/rowRelations}}]
+
+interface Props {
+  label: string
+  /** The property of the record the rows are in — where a message about one of them points (`lines[0].quantity`). */
+  name: string
+  value: Partial<{{EntityName}}>[]
+  onChange: (rows: Partial<{{EntityName}}>[]) => void
+  errors?: Record<string, string>
+}
+
+/** The {{entityLabelPluralComment}} of a record, edited in its form and saved with it. */
+export function {{EntityName}}Rows({ label, name, value, onChange, errors }: Props) {
+{{#rowRelations}}{{^targetSearchable}}  const {{fieldName}}Options = useOptions<Record<string, unknown>>('/api/{{targetEntityKebabPlural}}')
+{{/targetSearchable}}{{/rowRelations}}
+  return (
+    <RowsEditor<Partial<{{EntityName}}>>
+      label={label}
+      columns={COLUMNS}
+      rows={value}
+      onChange={onChange}
+      errorOf={(index, column) => errors?.[`${name}[${index}].${column}`]}
+      cell={(row, column, set) => {
+        switch (column) {
+{{#rowFields}}
+          case '{{name}}':
+            return (
+{{#isBoolean}}              <select
+                aria-label="{{labelAttr}}"
+                className={inputClass}
+                value={row.{{name}} == null ? '' : String(row.{{name}})}
+                onChange={e => set({ {{name}}: e.target.value === '' ? null : e.target.value === 'true' })}
+              >
+                <option value="">—</option>
+                <option value="true">{t('trueLabel')}</option>
+                <option value="false">{t('falseLabel')}</option>
+              </select>
+{{/isBoolean}}{{#isEnum}}              <select
+                aria-label="{{labelAttr}}"
+                className={inputClass}
+                value={(row.{{name}} as string | null | undefined) ?? ''}
+                onChange={e => set({ {{name}}: e.target.value === '' ? null : (e.target.value as {{enumTypeName}}) })}
+              >
+                <option value="">—</option>
+                { {{enumTypeName}}Options.map(o => <option key={o.value} value={o.value}>{o.label}</option>) }
+              </select>
+{{/isEnum}}{{^isBoolean}}{{^isEnum}}              <input
+                aria-label="{{labelAttr}}"
+                className={inputClass}
+                type="{{rowInputType}}"{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{#isBigDecimal}}{{#isMoney}} step="0.01"{{/isMoney}}{{^isMoney}} step="any"{{/isMoney}}{{/isBigDecimal}}{{/isNumeric}}
+                value={{#isInstant}}{toLocalInput(row.{{name}})}{{/isInstant}}{{^isInstant}}{row.{{name}} == null ? '' : String(row.{{name}})}{{/isInstant}}
+                onChange={e => set({ {{name}}: {{#isInstant}}fromLocalInput(e.target.value){{/isInstant}}{{^isInstant}}{{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}}{{/isInstant}} })}
+              />
+{{/isEnum}}{{/isBoolean}}            )
+{{/rowFields}}
+{{#rowRelations}}
+          case '{{fkFieldName}}':
+            return (
+{{#targetSearchable}}              <RelationPicker
+                path="/api/{{targetEntityKebabPlural}}"
+                valueKey="{{targetPkName}}"
+                labelKey="{{targetLabelField}}"
+                className={inputClass}
+                value={row.{{fkFieldName}}}
+                onChange={v => set({ {{fkFieldName}}: v == null ? null : {{#isTargetPkNumeric}}Number(v){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}v{{/isTargetPkNumeric}} })}
+              />
+{{/targetSearchable}}{{^targetSearchable}}              <select
+                aria-label="{{labelAttr}}"
+                className={inputClass}
+                value={row.{{fkFieldName}} == null ? '' : String(row.{{fkFieldName}})}
+                onChange={e => set({ {{fkFieldName}}: e.target.value === '' ? null : {{#isTargetPkNumeric}}Number(e.target.value){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}e.target.value{{/isTargetPkNumeric}} })}
+              >
+                <option value="">{ {{fieldName}}Options.loading ? t('loading') : '—' }</option>
+                { {{fieldName}}Options.options.map(o => (
+                  <option key={String(o.{{targetPkName}})} value={String(o.{{targetPkName}})}>
+                    {{#hasTargetLabel}}{`${String(o.{{targetLabelField}} ?? '')} (#${String(o.{{targetPkName}})})`}{{/hasTargetLabel}}{{^hasTargetLabel}}{String(o.{{targetPkName}})}{{/hasTargetLabel}}
+                  </option>
+                )) }
+              </select>
+{{/targetSearchable}}            )
+{{/rowRelations}}
+          default:
+            return null
+        }
+      }}
+    />
+  )
+}

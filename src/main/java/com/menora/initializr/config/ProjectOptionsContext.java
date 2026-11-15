@@ -33,6 +33,29 @@ public class ProjectOptionsContext {
     /** The requested department id ({@code department} request param / body field); null = default. */
     private static final ThreadLocal<String> DEPARTMENT = new ThreadLocal<>();
 
+    /**
+     * Set while a project is generated as part of a larger one — a fullstack project's backend, a
+     * module of a multi-module project. The larger project keeps the model file and the notes
+     * about it; the part writes neither.
+     */
+    private static final ThreadLocal<Boolean> EMBEDDED = new ThreadLocal<>();
+
+    public void setEmbedded(boolean embedded) {
+        if (embedded) EMBEDDED.set(Boolean.TRUE);
+        else EMBEDDED.remove();
+    }
+
+    public boolean isEmbedded() {
+        return Boolean.TRUE.equals(EMBEDDED.get());
+    }
+
+    /** Every dependency's selected sub-options, as they stand now (defaults applied). */
+    public Map<String, Set<String>> all() {
+        Map<String, Set<String>> copy = new HashMap<>();
+        OPTIONS.get().forEach((dep, ids) -> copy.put(dep, Set.copyOf(ids)));
+        return copy;
+    }
+
     public void populate(HttpServletRequest request) {
         Map<String, Set<String>> options = new HashMap<>();
         Enumeration<String> names = request.getParameterNames();
@@ -104,6 +127,7 @@ public class ProjectOptionsContext {
     public void clear() {
         OPTIONS.remove();
         DEPARTMENT.remove();
+        EMBEDDED.remove();
     }
 
     /** Sets the requested department id for this request. JSON-body endpoints call this after

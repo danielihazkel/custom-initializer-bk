@@ -231,10 +231,11 @@ public class FullstackExampleAdminController {
                         if (!nav.getValue().isTextual() || !Set.of("sidebar", "topbar").contains(nav.getValue().asText())) {
                             throw new InvalidExampleException("settings.nav.style must be sidebar or topbar");
                         }
-                    } else if (nav.getKey().equals("collapsibleGroups")) {
-                        if (!nav.getValue().isBoolean()) throw new InvalidExampleException("settings.nav.collapsibleGroups must be true or false");
+                    } else if (Set.of("collapsibleGroups", "userMenu", "notifications", "commandPalette").contains(nav.getKey())) {
+                        if (!nav.getValue().isBoolean()) throw new InvalidExampleException("settings.nav." + nav.getKey() + " must be true or false");
                     } else {
-                        throw new InvalidExampleException("settings.nav." + nav.getKey() + " is not a known nav setting (expected style or collapsibleGroups)");
+                        throw new InvalidExampleException("settings.nav." + nav.getKey() + " is not a known nav setting"
+                                + " (expected style, collapsibleGroups, userMenu, notifications or commandPalette)");
                     }
                 }
             } else if (key.equals("scaffold")) {

@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '@shared/api'
 import { t } from '@shared/i18n'
 import { Skeleton{{^hasRecordPage}}, DetailDrawer{{/hasRecordPage}} } from '@shared/ui'
+{{#hasCardFormatImports}}
+import { {{cardFormatImports}} } from '@shared/ui/format'
+{{/hasCardFormatImports}}
 {{#presetUsesPeriod}}
 import { rangeParams } from '@shared/ui/stats'
 {{/presetUsesPeriod}}

@@ -103,6 +103,15 @@ public class BuildCustomizationEntity {
     @Column(name = "sub_option_id", length = 50)
     private String subOptionId;
 
+    /**
+     * Optional Spring Boot version range this row applies to, in the catalog's interval notation
+     * ({@code [3.4.0,3.5.0)}). Blank: every version. Lets one dependency carry a different
+     * version per Boot line — the spring-cloud BOM, springdoc — as several rows of which only the
+     * matching one is applied. Backend rows only.
+     */
+    @Column(name = "compatibility_range", length = 50)
+    private String compatibilityRange;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder = 0;
 
@@ -140,6 +149,10 @@ public class BuildCustomizationEntity {
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     public String getScope() { return scope; }
     public void setScope(String scope) { this.scope = (scope == null || scope.isBlank()) ? null : scope; }
+    public String getCompatibilityRange() { return compatibilityRange; }
+    public void setCompatibilityRange(String compatibilityRange) {
+        this.compatibilityRange = (compatibilityRange == null || compatibilityRange.isBlank()) ? null : compatibilityRange.trim();
+    }
     public String getSubOptionId() { return subOptionId; }
     public void setSubOptionId(String subOptionId) {
         this.subOptionId = (subOptionId == null || subOptionId.isBlank()) ? null : subOptionId;

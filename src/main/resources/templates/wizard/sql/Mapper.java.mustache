@@ -1,0 +1,31 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+@Mapper(config = MapstructConfig.class)
+public interface {{entityClass}}Mapper {
+
+{{#flat}}
+    @Mapping(target = "{{dtoIdField}}", source = "{{name}}.{{targetPkProperty}}")
+{{/flat}}
+    {{entityClass}}Dto toDto({{entityClass}} entity);
+
+{{#flat}}
+    @Mapping(target = "{{name}}", source = "{{dtoIdField}}", qualifiedByName = "{{name}}FromId")
+{{/flat}}
+    {{entityClass}} toEntity({{entityClass}}Dto dto);
+
+    List<{{entityClass}}Dto> toDtoList(List<{{entityClass}}> entities);
+{{#flat}}
+
+    @Named("{{name}}FromId")
+    default {{targetEntity}} {{name}}FromId({{idType}} id) {
+        if (id == null) return null;
+        {{targetEntity}} e = new {{targetEntity}}();
+        e.set{{targetPkPascal}}(id);
+        return e;
+    }
+{{/flat}}
+}

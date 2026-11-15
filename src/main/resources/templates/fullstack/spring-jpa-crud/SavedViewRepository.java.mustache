@@ -1,0 +1,24 @@
+package {{packageName}}.views;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.util.List;
+import java.util.Optional;
+
+interface SavedViewRepository extends JpaRepository<SavedView, Long> {
+
+    /** A list's views as one user sees them: their own, and everyone's shared ones. */
+    @Query("select v from SavedView v where v.listName = :listName and (v.owner = :owner or v.shared = true) order by v.name")
+    List<SavedView> visibleTo(@Param("listName") String listName, @Param("owner") String owner);
+
+    /** A view to change: only its owner finds it. */
+    Optional<SavedView> findByIdAndOwner(Long id, String owner);
+
+    boolean existsByListNameAndOwnerAndName(String listName, String owner, String name);
+
+    long countByListNameAndOwner(String listName, String owner);
+
+    List<SavedView> findByListNameAndOwnerAndDefaultViewTrue(String listName, String owner);
+}

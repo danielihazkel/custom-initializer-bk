@@ -1,0 +1,15 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class {{className}} implements Serializable {
+
+{{#fields}}
+    private {{type}} {{name}};
+{{/fields}}
+}

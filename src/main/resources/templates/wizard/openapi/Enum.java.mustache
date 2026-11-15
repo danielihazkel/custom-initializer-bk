@@ -1,0 +1,41 @@
+package {{package}};
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+{{#hasDescription}}
+/** {{descriptionJavadoc}} */
+{{/hasDescription}}
+public enum {{name}} {
+{{#constants}}
+    {{name}}({{valueLiteral}}){{^last}},{{/last}}{{#last}};{{/last}}
+{{/constants}}
+
+    private final String value;
+
+    {{name}}(String value) {
+        this.value = value;
+    }
+
+    /** The value as it travels: what JSON carries. */
+    @JsonValue
+    public String getValue() {
+        return value;
+    }
+
+    /** The constant a value names. */
+    @JsonCreator
+    public static {{name}} fromValue(String value) {
+        for ({{name}} constant : values()) {
+            if (constant.value.equals(value)) {
+                return constant;
+            }
+        }
+        throw new IllegalArgumentException("Unknown {{name}}: " + value);
+    }
+
+    @Override
+    public String toString() {
+        return value;
+    }
+}

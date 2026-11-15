@@ -1,0 +1,46 @@
+package {{package}};
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+{{#testImports}}
+import {{.}};
+{{/testImports}}
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
+import org.springframework.kafka.core.KafkaTemplate;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** {{stem}}Producer without a broker: what it hands the template. */
+class {{stem}}ProducerTest {
+
+    private static final String TOPIC = "topic-under-test";
+
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    @SuppressWarnings("unchecked")
+    private final KafkaTemplate<String, String> kafkaTemplate = Mockito.mock(KafkaTemplate.class);
+    private final {{stem}}Producer producer = new {{stem}}Producer(kafkaTemplate, mapper, TOPIC);
+
+{{#sends}}
+{{#hasSample}}
+    @Test
+    void {{testName}}() throws Exception {
+        {{type}} payload = {{sample}};
+
+        producer.{{method}}("key-1", payload);
+
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(kafkaTemplate).send(Mockito.eq(TOPIC), Mockito.eq("key-1"), sent.capture());
+        assertThat({{readBack}}).isEqualTo(payload);
+    }
+
+{{/hasSample}}
+{{/sends}}
+{{^hasAnySample}}
+    @Test
+    void isBuilt() {
+        assertThat(producer).isNotNull();
+    }
+
+{{/hasAnySample}}
+}

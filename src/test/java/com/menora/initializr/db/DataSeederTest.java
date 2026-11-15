@@ -225,11 +225,16 @@ class DataSeederTest {
     void commonBuildCustomizationsSeeded() {
         // menora-release repo, menora-snapshot repo, exclude logging, add log4j2, add lombok,
         // add log4j-layout-template-json (JSON logging is now a default),
-        // + the local Vault connection: spring-cloud BOM, vault-config starter (minus httpclient5)
+        // + the local Vault connection: the spring-cloud BOM — one row per Spring Boot line, each
+        // with its compatibilityRange — and the vault-config starter (minus httpclient5)
         List<BuildCustomizationEntity> common = buildCustomRepo
                 .findByDependencyIdInAndProjectKindOrderBySortOrderAsc(
                         java.util.Set.of(DependencyConfigService.COMMON_ID), ProjectKind.BACKEND);
-        assertThat(common).hasSize(8);
+        assertThat(common).hasSize(10);
+        assertThat(common.stream()
+                .filter(c -> c.getCustomizationType() == BuildCustomizationEntity.CustomizationType.ADD_BOM)
+                .map(c -> c.getVersion() + " " + c.getCompatibilityRange()))
+                .containsExactlyInAnyOrder("2023.0.3 [3.2.0,3.4.0)", "2024.0.3 [3.4.0,3.5.0)", "2025.0.3 [3.5.0,4.0.0)");
 
         assertThat(common).anySatisfy(c -> {
             assertThat(c.getCustomizationType())
@@ -319,8 +324,8 @@ class DataSeederTest {
 
     @Test
     void seedsVersionDefinitions() {
-        // java 2, boot 1, react 2, node 3, package-manager 2
-        assertThat(versionRepo.findAll()).hasSize(10);
+        // java 2, boot 2 (3.2.1 the default, 3.5.x beside it), react 2, node 3, package-manager 2
+        assertThat(versionRepo.findAll()).hasSize(11);
     }
 
     // ── Frontend catalog ──────────────────────────────────────────────────────

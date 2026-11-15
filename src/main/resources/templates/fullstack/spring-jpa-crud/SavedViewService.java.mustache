@@ -1,0 +1,118 @@
+package {{packageName}}.views;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import {{packageName}}.web.ResourceConflictException;
+import {{packageName}}.web.ResourceNotFoundException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Set;
+
+/**
+ * The rules of saved views: a view belongs to the user who saved it, only they change or delete
+ * it, its name is theirs alone per list, and at most one of their views of a list is the default.
+ */
+@Service
+public class SavedViewService {
+
+    /** The lists a view can be of: the entities generated with saved views. */
+    private static final Set<String> LISTS = Set.of({{#savedViewLists}}"{{.}}"{{^-last}}, {{/-last}}{{/savedViewLists}});
+
+    static final int MAX_NAME = 80;
+    /** The state's size as text: a list's settings are a few hundred characters. */
+    static final int MAX_STATE = 4000;
+    /** Views one user keeps of one list. */
+    static final int MAX_VIEWS = 50;
+
+    private final SavedViewRepository repository;
+
+    public SavedViewService(SavedViewRepository repository) {
+        this.repository = repository;
+    }
+
+    @Transactional(readOnly = true)
+    public List<SavedView> visibleTo(String listName, String owner) {
+        return repository.visibleTo(requireList(listName), owner);
+    }
+
+    @Transactional
+    public SavedView create(String owner, String listName, String name, JsonNode state, boolean shared, boolean defaultView) {
+        String list = requireList(listName);
+        String viewName = requireName(name);
+        if (repository.countByListNameAndOwner(list, owner) >= MAX_VIEWS) {
+            throw new IllegalArgumentException("At most " + MAX_VIEWS + " views of one list — delete one first");
+        }
+        requireFree(list, owner, viewName);
+        SavedView view = new SavedView(list, owner, viewName, requireState(state));
+        view.setShared(shared);
+        if (defaultView) makeDefault(view);
+        return repository.save(view);
+    }
+
+    /** Changes what was sent — a null is left as it is. Only the owner's view is found. */
+    @Transactional
+    public SavedView update(Long id, String owner, String name, JsonNode state, Boolean shared, Boolean defaultView) {
+        SavedView view = mine(id, owner);
+        if (name != null) {
+            String viewName = requireName(name);
+            if (!viewName.equals(view.getName())) {
+                requireFree(view.getListName(), owner, viewName);
+                view.setName(viewName);
+            }
+        }
+        if (state != null) view.setState(requireState(state));
+        if (shared != null) view.setShared(shared);
+        if (defaultView != null) {
+            if (defaultView) makeDefault(view);
+            else view.setDefaultView(false);
+        }
+        return view;
+    }
+
+    @Transactional
+    public void delete(Long id, String owner) {
+        repository.delete(mine(id, owner));
+    }
+
+    private SavedView mine(Long id, String owner) {
+        // Someone else's view answers like one that is not there: nothing tells them apart.
+        return repository.findByIdAndOwner(id, owner)
+                .orElseThrow(() -> new ResourceNotFoundException("View " + id + " not found"));
+    }
+
+    /** One default per user and list: the others step down. */
+    private void makeDefault(SavedView view) {
+        for (SavedView other : repository.findByListNameAndOwnerAndDefaultViewTrue(view.getListName(), view.getOwner())) {
+            if (other != view) other.setDefaultView(false);
+        }
+        view.setDefaultView(true);
+    }
+
+    private void requireFree(String listName, String owner, String name) {
+        if (repository.existsByListNameAndOwnerAndName(listName, owner, name)) {
+            throw new ResourceConflictException("You already have a view named '" + name + "'");
+        }
+    }
+
+    private static String requireList(String listName) {
+        if (listName == null || !LISTS.contains(listName)) {
+            throw new IllegalArgumentException("Unknown list '" + listName + "'");
+        }
+        return listName;
+    }
+
+    private static String requireName(String name) {
+        String trimmed = name == null ? "" : name.trim();
+        if (trimmed.isEmpty()) throw new IllegalArgumentException("A view needs a name");
+        if (trimmed.length() > MAX_NAME) throw new IllegalArgumentException("A view's name is at most " + MAX_NAME + " characters");
+        return trimmed;
+    }
+
+    private static String requireState(JsonNode state) {
+        if (state == null || !state.isObject()) throw new IllegalArgumentException("A view's state is a JSON object");
+        String text = state.toString();
+        if (text.length() > MAX_STATE) throw new IllegalArgumentException("A view's state is at most " + MAX_STATE + " characters");
+        return text;
+    }
+}

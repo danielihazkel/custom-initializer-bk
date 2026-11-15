@@ -1,0 +1,34 @@
+package {{package}};
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.oxm.jaxb.Jaxb2Marshaller;
+
+/**
+ * Wires the JAXB marshaller and one bean per generated SOAP client.
+ * The base URL is read from the {@code {{baseUrlProperty}}} property
+ * in application.yaml.
+ */
+@Configuration
+public class SoapClientConfig {
+
+    @Bean
+    public Jaxb2Marshaller soapMarshaller() {
+        Jaxb2Marshaller marshaller = new Jaxb2Marshaller();
+        marshaller.setContextPath("{{payloadPackage}}");
+        return marshaller;
+    }
+
+{{#clients}}
+    @Bean
+    public {{className}} {{beanName}}(Jaxb2Marshaller soapMarshaller, @Value("{{baseUrlPlaceholder}}") String baseUrl) {
+        {{className}} client = new {{className}}();
+        client.setDefaultUri(baseUrl);
+        client.setMarshaller(soapMarshaller);
+        client.setUnmarshaller(soapMarshaller);
+        return client;
+    }
+
+{{/clients}}
+}

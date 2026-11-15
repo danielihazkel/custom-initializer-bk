@@ -1,5 +1,5 @@
 import { {{#calendarRanged}}useCallback, {{/calendarRanged}}useEffect, useState } from 'react'
-import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#importApplicable}}Upload, {{/importApplicable}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}PencilLine, {{/viewTable}}{{/bulkUpdateApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
+import { {{#hasViewToggle}}{{#viewTable}}Table2, {{/viewTable}}{{#viewCards}}LayoutGrid, {{/viewCards}}{{#viewKanban}}Columns3, {{/viewKanban}}{{#viewCalendar}}Calendar, {{/viewCalendar}}{{#viewGallery}}Images, {{/viewGallery}}{{/hasViewToggle}}{{#optScaffoldCsvExport}}Download, {{/optScaffoldCsvExport}}{{#optScaffoldXlsxExport}}FileSpreadsheet, {{/optScaffoldXlsxExport}}{{#importApplicable}}Upload, {{/importApplicable}}{{#bulkDeleteApplicable}}{{#viewTable}}Trash2, {{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}}PencilLine, {{/viewTable}}{{/bulkUpdateApplicable}}{{#mutable}}Plus, {{/mutable}}} from 'lucide-react'
 {{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
@@ -8,7 +8,11 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#listUrlState}}type ListState, {{/listUrlState}}{{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
-import { {{EntityName}}Detail{{#hasWorkflow}}, {{EntityName}}Transitions{{/hasWorkflow}}{{#kanbanIsWorkflow}}, {{EntityName}}Workflow{{/kanbanIsWorkflow}} } from '@features/{{entityNameKebab}}-form'
+{{#viewGallery}}import { GalleryView } from '@shared/ui/GalleryView'
+{{/viewGallery}}{{#optScaffoldSavedViews}}import { ViewsMenu } from '@shared/ui/ViewsMenu'
+import type { ViewState } from '@shared/ui/savedViews'
+{{/optScaffoldSavedViews}}{{#usesFormat}}import { {{formatImports}} } from '@shared/ui/format'
+{{/usesFormat}}import { {{EntityName}}Detail{{#hasWorkflow}}, {{EntityName}}Transitions{{/hasWorkflow}}{{#kanbanIsWorkflow}}, {{EntityName}}Workflow{{/kanbanIsWorkflow}} } from '@features/{{entityNameKebab}}-form'
 {{#kanbanIsWorkflow}}
 import { useMe } from '@shared/api/me'
 {{/kanbanIsWorkflow}}
@@ -17,31 +21,34 @@ import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail}}{{/lockingApplicable}} } from '@shared/api'
 {{#lockingApplicable}}import { StaleNotice } from '@shared/ui/StaleNotice'
 {{/lockingApplicable}}{{#inlineEditApplicable}}import { InlineCell, type InlineKind } from '@shared/ui/InlineCell'
-{{/inlineEditApplicable}}{{/mutable}}{{#optScaffoldCsvExport}}import { useDownload } from '@shared/api'
-{{/optScaffoldCsvExport}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
+{{/inlineEditApplicable}}{{/mutable}}{{#usesDownload}}import { useDownload } from '@shared/api'
+{{/usesDownload}}{{#optScaffoldXlsxExport}}import { api as sheetApi } from '@shared/api'
+{{/optScaffoldXlsxExport}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
 {{/importApplicable}}
 {{#listSideDetail}}import { api } from '@shared/api'
-{{/listSideDetail}}
+{{/listSideDetail}}{{#hasCompositions}}import { api as rowsApi } from '@shared/api'
+{{/hasCompositions}}
 {{#listConfigurable}}/** A column with the key a list page's `columns` prop picks it by. */
 type ListColumn = Column<{{EntityName}}> & { key: string }
 
 {{/listConfigurable}}const columns: {{#listConfigurable}}ListColumn[]{{/listConfigurable}}{{^listConfigurable}}Column<{{EntityName}}>[]{{/listConfigurable}} = [
-{{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{label}}', sortKey: '{{name}}', render: r => r.{{name}} == null ? '—' : {{#isEnum}}{{enumTypeName}}Labels[r.{{name}}]{{/isEnum}}{{^isEnum}}String(r.{{name}}){{/isEnum}} },
-{{/fields}}{{#relations}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{FieldName}}', render: r => {{#targetHasRecordPage}}r.{{fkFieldName}} == null ? '—' : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(r.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}r.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(r.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} },
-{{/relations}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
+{{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{labelTs}}', {{#isSortable}}sortKey: '{{name}}', {{/isSortable}}render: r => r.{{name}} == null ? '—' : {{cellTs}} },
+{{/fields}}{{#relations}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{labelTs}}', render: r => {{#targetHasRecordPage}}r.{{fkFieldName}} == null ? '—' : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(r.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}r.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(r.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} },
+{{/relations}}{{#collections}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{labelTs}}', render: r => r.{{labelsField}} == null || r.{{labelsField}}.length === 0 ? '—' : r.{{labelsField}}.join(', ') },
+{{/collections}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
   { {{#listConfigurable}}key: 'updatedAt', {{/listConfigurable}}label: t('updated'), sortKey: 'updatedAt', render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
-{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{CollectionField}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
-{{/inverseRelations}}{{/optScaffoldInverse}}]
+{{/auditApplicable}}{{#childLists}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{collectionLabelTs}}', render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
+{{/childLists}}]
 {{#hasFilters}}
 const filterDescriptors: FilterDescriptor[] = [
-{{#filterFields}}  { name: '{{name}}', label: '{{label}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
+{{#filterFields}}  { name: '{{name}}', label: '{{labelTs}}', kind: '{{#isEnumFilter}}enum{{/isEnumFilter}}{{#isBooleanFilter}}boolean{{/isBooleanFilter}}{{#isTemporalFilter}}temporal{{/isTemporalFilter}}{{#isNumericFilter}}numeric{{/isNumericFilter}}{{#isRelationFilter}}relation{{/isRelationFilter}}'{{#isEnumFilter}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnumFilter}}{{#isDateTime}}, inputType: 'datetime-local'{{/isDateTime}}{{#isRelationFilter}}, optionsPath: '/api/{{targetEntityKebabPlural}}', optionValue: '{{targetPkName}}'{{#hasTargetLabel}}, optionLabel: '{{targetLabelField}}'{{/hasTargetLabel}}{{#targetSearchable}}, searchable: true{{/targetSearchable}}{{/isRelationFilter}} },
 {{/filterFields}}]
 {{/hasFilters}}{{#bulkUpdateApplicable}}{{#viewTable}}
 // Fields eligible for bulk edit. `kind` selects the value control shown in the bulk-edit bar; the
 // raw value is sent to the backend which coerces it to the field's type.
 type BulkFieldKind = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum'
 const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?: { value: string; label: string }[] }> = {
-{{#bulkUpdatableFields}}  '{{name}}': { label: '{{label}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
+{{#bulkUpdatableFields}}  '{{name}}': { label: '{{labelTs}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
 {{/bulkUpdatableFields}}}
 {{/viewTable}}{{/bulkUpdateApplicable}}
 {{#inlineEditApplicable}}/** The table cells that are edited in place, by field. */
@@ -124,8 +131,8 @@ function fromFilters(values: FilterValues): Partial<{{EntityName}}> {
   const record: Record<string, unknown> = {}
 {{#filterFields}}{{#isEnumFilter}}  if (oneValue(values['{{name}}'])) record['{{name}}'] = values['{{name}}']
 {{/isEnumFilter}}{{#isBooleanFilter}}  if (values['{{name}}']) record['{{name}}'] = values['{{name}}'] === 'true'
-{{/isBooleanFilter}}{{#isRelationFilter}}  if (oneValue(values['{{name}}'])) record['{{name}}'] = {{#isTargetPkNumeric}}Number(values['{{name}}']){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}values['{{name}}']{{/isTargetPkNumeric}}
-{{/isRelationFilter}}{{/filterFields}}  return record as Partial<{{EntityName}}>
+{{/isBooleanFilter}}{{#isRelationFilter}}{{^isCollectionFilter}}  if (oneValue(values['{{name}}'])) record['{{name}}'] = {{#isTargetPkNumeric}}Number(values['{{name}}']){{/isTargetPkNumeric}}{{^isTargetPkNumeric}}values['{{name}}']{{/isTargetPkNumeric}}
+{{/isCollectionFilter}}{{/isRelationFilter}}{{/filterFields}}  return record as Partial<{{EntityName}}>
 }
 
 {{#fromFiltersChecksOne}}/** A filter set to exactly one value; `OPEN,CLOSED` names no single value to start with. */
@@ -203,6 +210,20 @@ function oneValue(value: string | undefined): boolean {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(t)
   }, [search])
+{{#optScaffoldSavedViews}}
+
+  // Saved views: what the toolbar holds, kept under a name on the server and put back from it.
+  const viewState: ViewState = { q: debouncedSearch || undefined, sort, size, view: viewMode, hidden: hiddenColumns{{#hasFilters}}, filters{{/hasFilters}} }
+  const applyView = (state: ViewState) => {
+    setSearch(state.q ?? '')
+    setDebouncedSearch(state.q ?? '')
+    setSort(state.sort !== undefined ? state.sort : JSON.parse(openingSort))
+    setSize(state.size ?? openingSize)
+{{#hasViewToggle}}    setViewMode((state.view as {{viewModeType}} | undefined) ?? openingView)
+{{/hasViewToggle}}{{#viewTable}}    setHiddenColumns(state.hidden ?? [])
+{{/viewTable}}{{#hasFilters}}    setFilters(state.filters ?? {})
+{{/hasFilters}}  }
+{{/optScaffoldSavedViews}}
 
 {{#listUrlState}}
   // A new search, sort, page size or filter starts again at the first page — but the page the
@@ -249,8 +270,18 @@ function oneValue(value: string | undefined): boolean {
     items, totalElements, totalPages, pageNumber, pageSize,
     loading, error, reload,{{#viewKanban}} countBy,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
   } = use{{EntityName}}({ {{#wholeViews}}page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size{{/wholeViews}}{{^wholeViews}}page, size{{/wholeViews}}, sort, q: debouncedSearch{{#hasFilters}}, filters{{#calendarRanged}}: listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/calendarRanged}}{{/hasFilters}} })
-{{#optScaffoldCsvExport}}  const download = useDownload()
-{{/optScaffoldCsvExport}}{{#importApplicable}}  const [importing, setImporting] = useState(false)
+{{#usesDownload}}  const download = useDownload()
+{{/usesDownload}}{{#optScaffoldXlsxExport}}  // The rows the list shows — its search, filters and sort — as an Excel workbook.
+  const exportXlsx = () => {
+    const params = new URLSearchParams()
+    if (debouncedSearch.trim() !== '') params.set('q', debouncedSearch.trim())
+{{#hasFilters}}    for (const [key, value] of Object.entries(filters)) {
+      if (value !== '' && value != null) params.set(key, value)
+    }
+{{/hasFilters}}    if (sort) params.set('sort', `${sort.field},${sort.direction}`)
+    return sheetApi.download(`/api/{{entityNamePluralKebab}}/export.xlsx?${params}`, '{{entityNamePluralKebab}}.xlsx')
+  }
+{{/optScaffoldXlsxExport}}{{#importApplicable}}  const [importing, setImporting] = useState(false)
 {{/importApplicable}}
   // Deleting the last row of the last page must not strand the list past its end.
   useEffect(() => {
@@ -338,7 +369,18 @@ function oneValue(value: string | undefined): boolean {
     setEditing({ ...row })
     setInitial({ ...row })
     setIsNew(false)
-{{#lockingApplicable}}    setStale(false)
+{{#hasCompositions}}    // A row of the list does not carry the rows edited with it: read the record for them. The
+    // form is open meanwhile, and a save without them leaves the rows as they are.
+    rowsApi.get<{{EntityName}}>(`/api/{{entityNamePluralKebab}}/${encodeURIComponent(String(row.{{pkField.name}}))}`)
+      .then(full => {
+        const rows = { {{#compositions}}{{collectionField}}: full.{{collectionField}}, {{/compositions}}}
+        const withRows = <T extends Partial<{{EntityName}}> | null>(current: T): T =>
+          current && current.{{pkField.name}} === row.{{pkField.name}} ? ({ ...current, ...rows } as T) : current
+        setEditing(withRows)
+        setInitial(withRows)
+      })
+      .catch(() => {})
+{{/hasCompositions}}{{#lockingApplicable}}    setStale(false)
 {{/lockingApplicable}}    setFormErrors({})
     setDrawerOpen(true)
   }
@@ -370,7 +412,7 @@ function oneValue(value: string | undefined): boolean {
     try {
       if (isNew) await create(editing as Omit<{{EntityName}}, 'id'>)
       else await update({{#hasCompositePk}}[{{#pkFields}}editing.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}editing.{{pkField.name}} as number | string{{/hasCompositePk}}, editing as {{EntityName}})
-      toast.success(isNew ? t('xCreated', { x: '{{entityLabel}}' }) : t('xUpdated', { x: '{{entityLabel}}' }))
+      toast.success(isNew ? t('xCreated', { x: '{{entityLabelTs}}' }) : t('xUpdated', { x: '{{entityLabelTs}}' }))
       close()
     } catch (e) {
       // A 400 carries per-field messages — show them inline; anything else is a toast.
@@ -415,7 +457,7 @@ function oneValue(value: string | undefined): boolean {
       // Take the current version so the server accepts the draft over the other change.
       const current = await fetchCurrent(editing)
       await update({{#hasCompositePk}}[{{#pkFields}}editing.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}editing.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...editing, version: current.version } as {{EntityName}})
-      toast.success(t('xUpdated', { x: '{{entityLabel}}' }))
+      toast.success(t('xUpdated', { x: '{{entityLabelTs}}' }))
       close()
     } catch (e) {
       if (isStale(e)) setStale(true)
@@ -432,19 +474,19 @@ function oneValue(value: string | undefined): boolean {
       await remove({{#hasCompositePk}}[{{#pkFields}}removed.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}removed.{{pkField.name}} as number | string{{/hasCompositePk}})
       setPendingDelete(null)
 {{#softDeleteApplicable}}      // Soft delete: the row is only flagged, so Undo really restores it (same id, same data).
-      toast.success(t('xDeleted', { x: '{{entityLabel}}' }), {
+      toast.success(t('xDeleted', { x: '{{entityLabelTs}}' }), {
         action: {
           label: t('undo'),
           onClick: () => {
             restore(removed.{{pkField.name}} as number | string)
-              .then(() => toast.success(t('xRestored', { x: '{{entityLabel}}' })))
+              .then(() => toast.success(t('xRestored', { x: '{{entityLabelTs}}' })))
               .catch(err => toast.error(err instanceof Error ? err.message : String(err)))
           },
         },
       })
 {{/softDeleteApplicable}}{{^softDeleteApplicable}}      // Hard delete: the row is gone for good, so no Undo is offered (re-creating it would
       // hand out a new id and could collide on unique columns).
-      toast.success(t('xDeleted', { x: '{{entityLabel}}' }))
+      toast.success(t('xDeleted', { x: '{{entityLabelTs}}' }))
 {{/softDeleteApplicable}}    } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
@@ -464,7 +506,7 @@ function oneValue(value: string | undefined): boolean {
     }
     try {
       await update(row.{{pkField.name}} as number | string, next)
-      toast.success(t('xUpdated', { x: '{{entityLabel}}' }))
+      toast.success(t('xUpdated', { x: '{{entityLabelTs}}' }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
 {{#lockingApplicable}}      // Someone saved the row first: show what is there now instead of keeping a stale editor.
@@ -520,7 +562,7 @@ function oneValue(value: string | undefined): boolean {
 {{^kanbanIsWorkflow}}
       await update({{#hasCompositePk}}[{{#pkFields}}row.{{name}} as number | string{{^last}}, {{/last}}{{/pkFields}}]{{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as number | string{{/hasCompositePk}}, { ...row, {{kanbanField}}: {{#kanbanIsEnum}}value{{/kanbanIsEnum}}{{^kanbanIsEnum}}value === 'true'{{/kanbanIsEnum}} } as {{EntityName}})
 {{/kanbanIsWorkflow}}
-      toast.success(t('xMoved', { x: '{{entityLabel}}' }))
+      toast.success(t('xMoved', { x: '{{entityLabelTs}}' }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
       await reload()
@@ -557,7 +599,7 @@ function oneValue(value: string | undefined): boolean {
     setBulkBusy(true)
     try {
       await removeMany(selected)
-      toast.success(t('nXRecordsDeleted', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
+      toast.success(t('nXRecordsDeleted', { n: selected.length, x: '{{entityLabelTs}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
       setSelected([])
       setBulkConfirm(false)
     } catch (e) {
@@ -576,7 +618,7 @@ function oneValue(value: string | undefined): boolean {
     try {
       // An empty value clears the field (sent as null); otherwise the raw string is coerced server-side.
       await updateMany(selected, bulkField, bulkValue === '' ? null : bulkValue)
-      toast.success(t('nXRecordsUpdated', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
+      toast.success(t('nXRecordsUpdated', { n: selected.length, x: '{{entityLabelTs}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
       setSelected([])
       setBulkField('')
       setBulkValue('')
@@ -591,7 +633,7 @@ function oneValue(value: string | undefined): boolean {
   const filtered = debouncedSearch !== ''{{#hasFilters}} || Object.values(filters).some(v => v !== ''){{/hasFilters}}
 {{#listActionsConfigurable}}  // What this list page leaves out (its hideActions): the buttons go; the API still answers them.
   const can = (action: ListAction) => !hideActions?.includes(action)
-{{/listActionsConfigurable}}{{#mutable}}  const emptyAction = {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{ label: t('newX', { x: '{{entityLabel}}' }), onClick: {{^hasCreatePage}}openNew{{/hasCreatePage}}{{#hasCreatePage}}onCreate ?? openNew{{/hasCreatePage}} }
+{{/listActionsConfigurable}}{{#mutable}}  const emptyAction = {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{ label: t('newX', { x: '{{entityLabelTs}}' }), onClick: {{^hasCreatePage}}openNew{{/hasCreatePage}}{{#hasCreatePage}}onCreate ?? openNew{{/hasCreatePage}} }
 {{#listActionsConfigurable}}  const editRow = can('edit') ? openEdit : undefined
   const deleteRow = can('delete') ? setPendingDelete : undefined
 {{/listActionsConfigurable}}{{/mutable}}{{#viewTable}}  // The Columns menu: hide columns, or forget everything this browser saved for the list.
@@ -619,18 +661,19 @@ function oneValue(value: string | undefined): boolean {
       <div className="mb-6 flex items-end justify-between">
         <div>
 {{#hasPages}}
-          {!embedded && <h1 className="text-2xl font-semibold tracking-tight text-fg">{title ?? '{{entityLabelPlural}}'}</h1>}
+          {!embedded && <h1 className="text-2xl font-semibold tracking-tight text-fg">{title ?? '{{entityLabelPluralTs}}'}</h1>}
           {description && <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p>}
 {{/hasPages}}
 {{^hasPages}}
-          <h1 className="text-2xl font-semibold tracking-tight text-fg">{{entityLabelPlural}}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">{{entityLabelPluralJsx}}</h1>
 {{/hasPages}}
           <p className="mt-1 text-sm text-muted">
             {totalElements} {t(totalElements === 1 ? 'record' : 'records')}{{#isView}} · {t('readOnlyView')}{{/isView}}
           </p>
         </div>
         <div className="flex items-center gap-2">
-{{#hasViewToggle}}          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+{{#optScaffoldSavedViews}}          {{#hasPages}}{!embedded && {{/hasPages}}<ViewsMenu list="{{entityNameKebab}}" current={viewState} sortable={columns.flatMap(c => c.sortKey ? [c.sortKey] : [])} views={ {{{viewModesTs}}} } onApply={applyView} opensPlain={ {{#listUrlState}}listState == null || (listState.q == null && listState.sort === undefined && listState.size == null && listState.view == null && Object.keys(listState.filters ?? {}).length === 0){{/listUrlState}}{{^listUrlState}}true{{/listUrlState}} } />{{#hasPages}}}{{/hasPages}}
+{{/optScaffoldSavedViews}}{{#hasViewToggle}}          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
 {{#viewTable}}            <button
               onClick={() => setViewMode('table')}
               aria-pressed={viewMode === 'table'}
@@ -667,7 +710,16 @@ function oneValue(value: string | undefined): boolean {
             >
               <Calendar className="h-4 w-4" />
             </button>
-{{/viewCalendar}}          </div>
+{{/viewCalendar}}{{#viewGallery}}            <button
+              onClick={() => setViewMode('gallery')}
+              aria-pressed={viewMode === 'gallery'}
+              className={`rounded-md p-1.5 transition-colors ${viewMode === 'gallery' ? 'bg-brand text-white' : 'text-muted hover:text-fg'}`}
+              title={t('galleryView')}
+              aria-label={t('galleryView')}
+            >
+              <Images className="h-4 w-4" />
+            </button>
+{{/viewGallery}}          </div>
 {{/hasViewToggle}}{{#optScaffoldCsvExport}}{{#listActionsConfigurable}}          {can('export') && (
 {{/listActionsConfigurable}}          <button
             onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))}
@@ -680,7 +732,19 @@ function oneValue(value: string | undefined): boolean {
             {download.busy ? t('exporting') : t('export')}
           </button>
 {{#listActionsConfigurable}}          )}
-{{/listActionsConfigurable}}{{/optScaffoldCsvExport}}{{#importApplicable}}{{#listActionsConfigurable}}          {can('import') && (
+{{/listActionsConfigurable}}{{/optScaffoldCsvExport}}{{#optScaffoldXlsxExport}}{{#listActionsConfigurable}}          {can('export') && (
+{{/listActionsConfigurable}}          <button
+            onClick={() => download.run(exportXlsx)}
+            disabled={download.busy}
+            aria-busy={download.busy}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
+            title={t('exportXlsx')}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {t('excel')}
+          </button>
+{{#listActionsConfigurable}}          )}
+{{/listActionsConfigurable}}{{/optScaffoldXlsxExport}}{{#importApplicable}}{{#listActionsConfigurable}}          {can('import') && (
 {{/listActionsConfigurable}}          <button
             onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) }
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm transition-colors hover:bg-surface-2"
@@ -696,7 +760,7 @@ function oneValue(value: string | undefined): boolean {
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-deep"
           >
             <Plus className="h-4 w-4" />
-            {t('newX', { x: '{{entityLabel}}' })}
+            {t('newX', { x: '{{entityLabelTs}}' })}
           </button>
 {{#listActionsConfigurable}}          )}
 {{/listActionsConfigurable}}{{/mutable}}        </div>
@@ -723,7 +787,7 @@ function oneValue(value: string | undefined): boolean {
               aria-label={t('fieldToEdit')}
             >
               <option value="">{t('setField')}</option>
-{{#bulkUpdatableFields}}              <option value="{{name}}">{{label}}</option>
+{{#bulkUpdatableFields}}              <option value="{{name}}">{{labelJsx}}</option>
 {{/bulkUpdatableFields}}            </select>
             {bulkField && (() => {
               const meta = BULK_FIELDS[bulkField]
@@ -826,7 +890,24 @@ function oneValue(value: string | undefined): boolean {
           total={calendarRange ? totalElements : undefined}
 {{/calendarRanged}}
         />
-      ) : {{/viewCalendar}}{{#viewTable}}viewMode === 'table' ? (
+      ) : {{/viewCalendar}}{{#viewGallery}}viewMode === 'gallery' ? (
+        <GalleryView
+          columns={{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}
+          rows={items}
+          rowKey={rowKey}
+          imageField="{{galleryField}}"
+          imageLabel={'{{galleryLabelTs}}'}
+          loading={loading}
+          onView={{#hasPages}}{openRow}{{/hasPages}}{{^hasPages}}{setDetailRow}{{/hasPages}}
+          search={search}
+          onSearchChange={setSearch}
+{{#hasStringFields}}          searchable={true}
+{{/hasStringFields}}{{^hasStringFields}}          searchable={false}
+{{/hasStringFields}}          pagination={pagination}
+          filtered={filtered}
+{{#mutable}}          emptyAction={emptyAction}
+{{/mutable}}        />
+      ) : {{/viewGallery}}{{#viewTable}}viewMode === 'table' ? (
         <Table
           columns={{#inlineEditApplicable}}{{#listActionsConfigurable}}{can('edit') ? inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}}) : {{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}}}{{/listActionsConfigurable}}{{^listActionsConfigurable}}{inline({{#listConfigurable}}shown{{/listConfigurable}}{{^listConfigurable}}columns{{/listConfigurable}})}{{/listActionsConfigurable}}{{/inlineEditApplicable}}{{^inlineEditApplicable}}{{#listConfigurable}}{shown}{{/listConfigurable}}{{^listConfigurable}}{columns}{{/listConfigurable}}{{/inlineEditApplicable}}
           columnMenu={columnMenu}
@@ -861,7 +942,7 @@ function oneValue(value: string | undefined): boolean {
           {selectedRow ? (
             <>
               <div className="mb-4 flex items-start justify-between gap-3">
-                <h2 className="text-sm font-semibold text-fg">{t('xDetails', { x: '{{entityLabel}}' })}</h2>
+                <h2 className="text-sm font-semibold text-fg">{t('xDetails', { x: '{{entityLabelTs}}' })}</h2>
                 <div className="flex items-center gap-3">
 {{#mutable}}
 {{^listActionsConfigurable}}
@@ -898,8 +979,8 @@ function oneValue(value: string | undefined): boolean {
 {{#mutable}}
       <FormDrawer
         open={drawerOpen}
-        title={isNew ? t('newX', { x: '{{entityLabel}}' }) : t('editX', { x: '{{entityLabel}}' })}
-        subtitle={isNew ? t('createXBlurb', { x: '{{entityLabel}}' }) : t('updateXBlurb', { x: '{{entityLabel}}' })}
+        title={isNew ? t('newX', { x: '{{entityLabelTs}}' }) : t('editX', { x: '{{entityLabelTs}}' })}
+        subtitle={isNew ? t('createXBlurb', { x: '{{entityLabelTs}}' }) : t('updateXBlurb', { x: '{{entityLabelTs}}' })}
         onClose={close}
         onSave={save}
         saving={saving}
@@ -931,16 +1012,16 @@ function oneValue(value: string | undefined): boolean {
       </FormDrawer>
 {{#importApplicable}}
 
-      <DetailDrawer open={importing} title={t('importX', { x: '{{entityLabelPlural}}' })} onClose={() => setImporting(false)}>
+      <DetailDrawer open={importing} title={t('importX', { x: '{{entityLabelPluralTs}}' })} onClose={() => setImporting(false)}>
         {importing && (
           <CsvImport
             fields={ {{EntityName}}ImportFields }
             validate={value => validate{{EntityName}}(value as Partial<{{EntityName}}>)}
             path="/api/{{entityNamePluralKebab}}"
-            label={'{{entityLabelPlural}}'}
+            label={'{{entityLabelPluralTs}}'}
             onDone={n => {
               setImporting(false)
-              toast.success(t('importDone', { n, x: '{{entityLabelPlural}}' }))
+              toast.success(t('importDone', { n, x: '{{entityLabelPluralTs}}' }))
               void reload()
             }}
           />
@@ -950,7 +1031,7 @@ function oneValue(value: string | undefined): boolean {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title={t('deleteX', { x: '{{entityLabel}}' })}
+        title={t('deleteX', { x: '{{entityLabelTs}}' })}
         message={t('{{#softDeleteApplicable}}undoHint{{/softDeleteApplicable}}{{^softDeleteApplicable}}cannotUndo{{/softDeleteApplicable}}')}
         busy={deleting}
         onConfirm={confirmDelete}
@@ -959,7 +1040,7 @@ function oneValue(value: string | undefined): boolean {
 {{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}}
       <ConfirmDialog
         open={bulkConfirm}
-        title={t('deleteNX', { n: selected.length, x: '{{entityLabel}}', unit: t(selected.length === 1 ? 'record' : 'records') })}
+        title={t('deleteNX', { n: selected.length, x: '{{entityLabelTs}}', unit: t(selected.length === 1 ? 'record' : 'records') })}
         message={t('cannotUndo')}
         busy={bulkBusy}
         onConfirm={runBulkDelete}
@@ -968,7 +1049,7 @@ function oneValue(value: string | undefined): boolean {
 {{/viewTable}}{{/bulkDeleteApplicable}}
       <DetailDrawer
         open={detailRow !== null}
-        title={t('xDetails', { x: '{{entityLabel}}' })}
+        title={t('xDetails', { x: '{{entityLabelTs}}' })}
         onClose={() => setDetailRow(null)}
 {{#mutable}}{{^listActionsConfigurable}}        onEdit={() => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } }}
 {{/listActionsConfigurable}}{{#listActionsConfigurable}}        onEdit={can('edit') ? () => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } } : undefined}

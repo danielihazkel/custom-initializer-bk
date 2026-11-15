@@ -4,6 +4,7 @@ import com.menora.initializr.admin.dto.ConfigurationExport;
 import com.menora.initializr.admin.dto.OrphanCheckResponse;
 import com.menora.initializr.admin.validation.FileContributionContentValidator;
 import com.menora.initializr.config.DatabaseInitializrMetadataProvider;
+import com.menora.initializr.db.EntityTemplateSetSync;
 import com.menora.initializr.db.entity.*;
 import com.menora.initializr.db.entity.VersionKind;
 import com.menora.initializr.db.repository.*;
@@ -50,6 +51,7 @@ public class AdminController {
     private final OrphanDetectionService orphanService;
     private final ConfigurationExportImportService exportImportService;
     private final FileContributionContentValidator contentValidator;
+    private final EntityTemplateSetSync templateSetSync;
 
     public AdminController(InitializrMetadataProvider metadataProvider,
                            DependencyGroupRepository groupRepo,
@@ -69,7 +71,8 @@ public class AdminController {
                            VersionDefinitionRepository versionRepo,
                            OrphanDetectionService orphanService,
                            ConfigurationExportImportService exportImportService,
-                           FileContributionContentValidator contentValidator) {
+                           FileContributionContentValidator contentValidator,
+                           EntityTemplateSetSync templateSetSync) {
         this.metadataProvider = metadataProvider;
         this.groupRepo = groupRepo;
         this.entryRepo = entryRepo;
@@ -89,6 +92,7 @@ public class AdminController {
         this.orphanService = orphanService;
         this.exportImportService = exportImportService;
         this.contentValidator = contentValidator;
+        this.templateSetSync = templateSetSync;
     }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
@@ -530,7 +534,23 @@ public class AdminController {
     public EntityTemplateFileEntity updateEntityTemplateFile(@PathVariable Long id,
                                                              @Valid @RequestBody EntityTemplateFileEntity file) {
         file.setId(id);
+        // The seed hash is not part of the API's JSON, so carry the stored one over: it is what
+        // marks this row as edited (its content no longer matches) rather than a pre-V26 row.
+        file.setSeedHash(entityTemplateFileRepo.findById(id)
+                .map(EntityTemplateFileEntity::getSeedHash)
+                .orElse(EntityTemplateFileEntity.CUSTOM_SEED_HASH));
         return entityTemplateFileRepo.save(file);
+    }
+
+    /**
+     * Puts every template file this release ships back into its set, admin edits included (files
+     * the release never shipped are left alone). The startup sync keeps untouched files current
+     * by itself; this is for discarding edits.
+     */
+    @PostMapping("/entity-template-sets/reset")
+    public Map<String, Object> resetEntityTemplateSets() throws java.io.IOException {
+        EntityTemplateSetSync.Result result = templateSetSync.reset();
+        return Map.of("added", result.added(), "updated", result.updated(), "removed", result.removed());
     }
 
     @DeleteMapping("/entity-template-files/{id}")

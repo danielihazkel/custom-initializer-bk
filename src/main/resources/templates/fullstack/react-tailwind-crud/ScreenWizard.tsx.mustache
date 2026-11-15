@@ -38,8 +38,11 @@ function forgetDraft() {
 
 /** The messages of `all` that belong to step `index`. */
 function errorsOf(index: number, all: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(all).filter(([key]) => STEPS[index].keys.includes(key)))
-}
+{{^wizardHasRows}}  return Object.fromEntries(Object.entries(all).filter(([key]) => STEPS[index].keys.includes(key)))
+{{/wizardHasRows}}{{#wizardHasRows}}  // A row's message is keyed by its place (lines[0].quantity) and belongs to the step of its list.
+  const owns = (key: string) => STEPS[index].keys.some(k => key === k || key.startsWith(k + '['))
+  return Object.fromEntries(Object.entries(all).filter(([key]) => owns(key)))
+{{/wizardHasRows}}}
 
 /** The first step with a message in `all`, or -1. */
 function firstStepWith(all: Record<string, string>): number {

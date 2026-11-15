@@ -88,7 +88,23 @@ public record FullstackStarterRequest(
     }
 
     /** The generated shell's navigation: {@code style} sidebar/topbar, {@code collapsibleGroups}. */
-    public record NavDto(String style, Boolean collapsibleGroups) {}
+    public record NavDto(
+            String style, Boolean collapsibleGroups,
+            // The header's tools, each off unless asked for: the signed-in user's menu, a bell over
+            // the workflows' queues (needs a workflow with an assignee) and the Ctrl+K palette.
+            // Left out of the request echoed into menora-model.json when absent.
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            Boolean userMenu,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            Boolean notifications,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            Boolean commandPalette) {
+
+        /** The navigation alone, without the header's tools. */
+        public NavDto(String style, Boolean collapsibleGroups) {
+            this(style, collapsibleGroups, null, null, null);
+        }
+    }
 
     /** Back-compat constructor without {@code pages} (the classic one-page-per-entity layout). */
     public FullstackStarterRequest(
@@ -263,7 +279,19 @@ public record FullstackStarterRequest(
      * {@code dueField} (a date) is what an inbox sorts and flags overdue by.
      */
     public record WorkflowDto(String statusField, String initial, String assigneeField, String dueField,
-                              List<TransitionDto> transitions) {}
+                              List<TransitionDto> transitions,
+                              // Keep a log of every move (who, when, how long in the state left): a
+                              // record page's history and the time-in-state widget read it. Left out
+                              // of the echoed request when absent.
+                              @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                              Boolean trackMoves) {
+
+        /** A workflow that keeps no log of its moves. */
+        public WorkflowDto(String statusField, String initial, String assigneeField, String dueField,
+                           List<TransitionDto> transitions) {
+            this(statusField, initial, assigneeField, dueField, transitions, null);
+        }
+    }
 
     /** One move of a workflow: from any of {@code from} to {@code to}, by a user holding one of
      *  {@code roles} (none: anyone), asking for the {@code requires} fields and relations. */
@@ -375,7 +403,30 @@ public record FullstackStarterRequest(
             // (default: mine, unassigned). `cardFields`, `presetFilter` and `sort` apply too. Left out of
             // the request echoed into menora-model.json when absent, so it keeps its bytes.
             @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-            List<String> queues) {
+            List<String> queues,
+            // record: a Print button, and the page laid out for paper — without the app around
+            // it. Left out of the echoed request when absent, like `queues`.
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            Boolean printable) {
+
+        /** Every property but a record page's {@code printable}. */
+        public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
+                                 String entity, Map<String, String> presetFilter, List<WidgetDto> widgets,
+                                 List<TabDto> tabs, String parent, String child, String via,
+                                 List<ChildTabDto> childTabs, ChartDto chart, String group, String icon,
+                                 String dateRange, List<ChartDto> charts, List<StepDto> steps,
+                                 List<HeaderStatDto> headerStats, List<String> roles, List<String> columns,
+                                 SortDto sort, String view, Integer pageSize, String detail, Boolean showParent,
+                                 Integer refreshSeconds, String dateField, String endField, List<String> modes,
+                                 String laneField, List<String> lanes, List<String> cardFields,
+                                 Map<String, Integer> wipLimits, Integer laneSize, String body,
+                                 List<String> entities, Integer perEntity, Boolean shellSearch, List<String> filters,
+                                 List<String> hideActions, List<String> queues) {
+            this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
+                    childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
+                    pageSize, detail, showParent, refreshSeconds, dateField, endField, modes, laneField, lanes,
+                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, hideActions, queues, null);
+        }
 
         /** Every property but an inbox's queues. */
         public PageDefinitionDto(String id, String type, String title, String description, Boolean hidden,
@@ -393,7 +444,7 @@ public record FullstackStarterRequest(
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
                     childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
                     pageSize, detail, showParent, refreshSeconds, dateField, endField, modes, laneField, lanes,
-                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, hideActions, null);
+                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, hideActions, null, null);
         }
 
         /** Every property but a list page's hidden actions. */
@@ -411,7 +462,7 @@ public record FullstackStarterRequest(
             this(id, type, title, description, hidden, entity, presetFilter, widgets, tabs, parent, child, via,
                     childTabs, chart, group, icon, dateRange, charts, steps, headerStats, roles, columns, sort, view,
                     pageSize, detail, showParent, refreshSeconds, dateField, endField, modes, laneField, lanes,
-                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, null, null);
+                    cardFields, wipLimits, laneSize, body, entities, perEntity, shellSearch, filters, null, null, null);
         }
 
         /** Every property but the dashboard filters. */
@@ -688,8 +739,52 @@ public record FullstackStarterRequest(
             String targetEntity,
             Boolean required,
             // Optional foreign-key column as the schema spells it (the DDL import sets it);
-            // omitted → <snake fieldName>_id.
-            String joinColumn) {
+            // omitted → <snake fieldName>_id. On a MANY_TO_MANY: this entity's column in the
+            // join table, omitted → <snake entity>_id.
+            String joinColumn,
+            // MANY_TO_MANY only: the join table (omitted → <snake entity>_<snake fieldName>) and
+            // the target's column in it (omitted → <snake target>_id). Left out of the JSON when
+            // absent, so an echoed request reads as it did before they existed.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String joinTable,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String inverseJoinColumn,
+            // ONE_TO_MANY only: the target's MANY_TO_ONE this is the other side of (omitted →
+            // the only one it has to this entity).
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String mappedBy,
+            // What the generated UI calls the relation (omitted → the field name).
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String label,
+            // ONE_TO_MANY only: the rows are part of this entity — edited in its form and saved,
+            // and removed, with it.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            Boolean composition) {
+
+        /** Every property but {@code composition}. */
+        public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required,
+                                     String joinColumn, String joinTable, String inverseJoinColumn, String mappedBy,
+                                     String label) {
+            this(type, fieldName, targetEntity, required, joinColumn, joinTable, inverseJoinColumn, mappedBy, label, null);
+        }
+
+        /** Every property but {@code label}. */
+        public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required,
+                                     String joinColumn, String joinTable, String inverseJoinColumn, String mappedBy) {
+            this(type, fieldName, targetEntity, required, joinColumn, joinTable, inverseJoinColumn, mappedBy, null);
+        }
+
+        /** Every property but {@code mappedBy}. */
+        public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required,
+                                     String joinColumn, String joinTable, String inverseJoinColumn) {
+            this(type, fieldName, targetEntity, required, joinColumn, joinTable, inverseJoinColumn, null);
+        }
+
+        /** Back-compat constructor for a MANY_TO_ONE with its join column. */
+        public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required,
+                                     String joinColumn) {
+            this(type, fieldName, targetEntity, required, joinColumn, null, null);
+        }
 
         /** Back-compat constructor without {@code joinColumn}. */
         public RelationDefinitionDto(String type, String fieldName, String targetEntity, Boolean required) {
@@ -724,7 +819,23 @@ public record FullstackStarterRequest(
             Map<String, String> enumLabels,
             // Optional database column as the schema spells it (the DDL import sets it);
             // omitted → the snake_case of name.
-            String column) {
+            String column,
+            // The ISO 4217 code of a MONEY field ("ILS", "USD"); omitted → ILS. MONEY only.
+            // Left out of the JSON when absent, so the request echoed into menora-model.json
+            // reads as it did before the attribute existed.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String currency) {
+
+        /** Back-compat constructor without {@code currency}. */
+        public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                                  String pattern, Boolean email, List<String> enumValues,
+                                  Boolean searchable, Boolean filterable, String label, Boolean readOnly,
+                                  String defaultValue, Map<String, String> enumLabels, String column) {
+            this(name, type, primaryKey, generated, required, unique, length, min, max,
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
+                    column, null);
+        }
 
         /** Back-compat constructor without {@code column} (derived from the name). */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,

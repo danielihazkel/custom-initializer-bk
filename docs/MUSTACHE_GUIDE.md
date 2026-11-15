@@ -335,6 +335,26 @@ From `:301–331`:
 Inverse-collection variables (inside `{{#inverseRelations}}`, `:95–118`): `childEntity`,
 `childEntityCamel`, `mappedBy`, `collectionField`, `CollectionField`, `last`.
 
+**Round 9 additions** (all built in `EntityScaffoldContext`; see *Round 9* in `CLAUDE.md`):
+
+- `{{#childLists}}` — the collections of child rows an entity really gets: every `ONE_TO_MANY` it
+  declares, plus — when the `inverseCollections` option is on — the derived ones. Same variables as
+  `inverseRelations`, plus `declared`. **Use this, not `{{#optScaffoldInverse}}{{#inverseRelations}}`**:
+  the option is already applied (in `buildEntityContext`). `hasChildLists` gates imports.
+- `{{#childTables}}` — the declared ones only, with what the details' table needs: `listTitleTs`,
+  `childPath`, `filterParam`, `childKebab`, and `{{#childColumns}}` (`key`, `labelTs`, `hasAlt`/`alt`,
+  `isEnum`/`enumTypeName`). `hasChildTables`, `{{#childTableImports}}` (`from`, `names`). Project
+  flag: `hasChildListTables`.
+- `{{#collections}}` — an entity's `MANY_TO_MANY` relations: `fieldName`/`FieldName`, `idsField`,
+  `labelsField`, `filterName`, the target's naming and key variables as on a relation, `joinTable`,
+  `joinColumn`, `inverseJoinColumn`. `hasCollections`; project flag `hasCollectionFields`.
+- Per field: `isMoney` + `currency`, `isInstant`, `isTime`, `isMarkdown`, `isAttachment`, `isImage`,
+  `nameField`/`NameField` (an attachment's file name; `{{#attachmentFields}}` lists those fields),
+  `bulkEditable`, and the ready-made expressions `inputType`, `cellTs`, `detailTs`. Project flags: `hasAttachments`, `hasFormatHelpers`, `hasMarkdownFields`.
+- A lone section tag on a line swallows that line's newline (JMustache's standalone-line rule);
+  several tags on one line do not. Replacing `{{/a}}{{/b}}` by a single `{{/c}}` on its own line
+  therefore removes a blank line from the output — keep a second tag (a comment will do).
+
 ### 4e. Opt-in scaffold flags
 
 Driven by the request `opts` map (`{ "scaffold": ["tests","audit",…] }`) and exposed as

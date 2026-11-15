@@ -1,0 +1,48 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+@Service
+@Transactional
+public class {{entityClass}}Service {
+
+    private final {{entityClass}}Repository repository;
+
+    public {{entityClass}}Service({{entityClass}}Repository repository) {
+        this.repository = repository;
+    }
+
+    @Transactional(readOnly = true)
+    public Page<{{entityClass}}> findAll(Pageable pageable) {
+        return repository.findAll(pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public {{entityClass}} findById({{idType}} id) {
+        return repository.findById(id).orElseThrow(() ->
+                new java.util.NoSuchElementException("{{entityClass}} " + id + " not found"));
+    }
+
+{{#mutable}}
+    public {{entityClass}} create({{entityClass}} entity) {
+{{#hasGeneratedKey}}
+        entity.set{{generatedKeySetter}}(null);
+{{/hasGeneratedKey}}
+        return repository.save(entity);
+    }
+
+    public {{entityClass}} update({{idType}} id, {{entityClass}} updated) {
+        {{entityClass}} existing = findById(id);
+{{#copied}}
+        existing.set{{.}}(updated.get{{.}}());
+{{/copied}}
+        return repository.save(existing);
+    }
+
+    public void delete({{idType}} id) {
+        repository.deleteById(id);
+    }
+{{/mutable}}
+}

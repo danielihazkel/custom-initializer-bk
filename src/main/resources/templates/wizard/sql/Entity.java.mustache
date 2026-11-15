@@ -1,0 +1,32 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+{{#keyless}}
+// TODO: {{tableComment}} has no primary key, and a JPA entity needs an @Id - so this class is not an
+// entity yet (the application would not start with one that has no identifier). Put @Id on the
+// column(s) that identify a row (several: add an @IdClass), then restore the @Entity below.
+// @Entity
+{{/keyless}}
+{{^keyless}}
+@Entity
+{{/keyless}}
+@Table(name = "{{tableName}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}}{{#hasUniqueConstraints}}, uniqueConstraints = {{uniqueConstraints}}{{/hasUniqueConstraints}})
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+{{#hasCompositePk}}
+@IdClass({{className}}Id.class)
+{{/hasCompositePk}}
+public class {{className}} {
+
+{{#members}}
+{{#lines}}
+    {{.}}
+{{/lines}}
+    private {{type}} {{name}};
+
+{{/members}}
+}

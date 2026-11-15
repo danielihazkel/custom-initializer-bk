@@ -1,0 +1,16 @@
+package {{package}};
+
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
+{{#hasDescription}}
+/** {{descriptionJavadoc}} */
+{{/hasDescription}}
+{{typeInfo}}
+@JsonSubTypes({
+{{#subtypes}}
+        {{line}}{{^last}},{{/last}}
+{{/subtypes}}
+})
+public sealed interface {{name}} permits {{permits}} {
+}

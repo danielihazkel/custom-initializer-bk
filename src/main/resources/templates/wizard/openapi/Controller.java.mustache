@@ -1,0 +1,25 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+@RestController
+@Validated
+@RequestMapping
+public class {{className}} {
+
+{{#operations}}
+{{#hasSummary}}
+    /** {{summaryJavadoc}} */
+{{/hasSummary}}
+    {{mappingLine}}
+{{#hasStatus}}
+    {{statusLine}}
+{{/hasStatus}}
+    public {{returnType}} {{operationId}}({{arguments}}) {
+        throw new UnsupportedOperationException("TODO: implement {{operationId}}");
+    }
+
+{{/operations}}
+}

@@ -30,7 +30,137 @@
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
       "sortOrder": 6,
-      "gatedBy": "optScaffoldAudit"
+      "gatedBy": "hasAudit"
+    },
+    {
+      "source": "Attachment.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/attachment/Attachment.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "AttachmentRepository.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachmentRepository.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "AttachmentStorage.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachmentStorage.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "DbAttachmentStorage.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/attachment/DbAttachmentStorage.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "AttachmentController.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachmentController.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "AttachmentConfig.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachmentConfig.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "SavedView.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/views/SavedView.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasSavedViews"
+    },
+    {
+      "source": "SavedViewRepository.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/views/SavedViewRepository.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasSavedViews"
+    },
+    {
+      "source": "SavedViewService.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/views/SavedViewService.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasSavedViews"
+    },
+    {
+      "source": "SavedViewController.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/views/SavedViewController.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasSavedViews"
+    },
+    {
+      "source": "WorkflowMove.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/workflow/WorkflowMove.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasWorkflowMoves"
+    },
+    {
+      "source": "WorkflowMoveRepository.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/workflow/WorkflowMoveRepository.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasWorkflowMoves"
+    },
+    {
+      "source": "WorkflowMoveLog.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/workflow/WorkflowMoveLog.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasWorkflowMoves"
     },
     {
       "source": "DemoDataLoader.java.mustache",
@@ -98,6 +228,16 @@
       "gatedBy": "hasWorkflows"
     },
     {
+      "source": "XlsxWriter.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/web/XlsxWriter.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 12,
+      "gatedBy": "hasXlsxExport"
+    },
+    {
       "source": "CurrentUser.java.mustache",
       "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{packagePath}}/web/CurrentUser.java",
@@ -105,7 +245,7 @@
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
       "sortOrder": 13,
-      "gatedBy": "hasWorkflows"
+      "gatedBy": "usesCurrentUser"
     },
     {
       "source": "CurrentUserController.java.mustache",
@@ -115,7 +255,7 @@
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
       "sortOrder": 14,
-      "gatedBy": "hasWorkflows"
+      "gatedBy": "usesCurrentUser"
     },
     {
       "source": "EntityId.java.mustache",

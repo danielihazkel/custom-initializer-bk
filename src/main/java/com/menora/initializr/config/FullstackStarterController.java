@@ -20,10 +20,8 @@ import com.menora.initializr.fullstack.FullstackRenderer;
 import com.menora.initializr.fullstack.FullstackPageValidator;
 import com.menora.initializr.fullstack.FullstackRequestValidator;
 import com.menora.initializr.fullstack.PageDefinition;
+import com.menora.initializr.fullstack.ScaffoldOption;
 import com.menora.initializr.fullstack.FullstackStarterRequest;
-import io.spring.initializr.metadata.InitializrMetadata;
-import io.spring.initializr.metadata.InitializrMetadataProvider;
-import io.spring.initializr.metadata.SingleSelectCapability;
 import io.spring.initializr.web.project.ProjectGenerationInvoker;
 import io.spring.initializr.web.project.ProjectRequest;
 import io.spring.initializr.web.project.WebProjectRequest;
@@ -35,6 +33,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.FileSystemUtils;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
+import com.menora.initializr.fullstack.patch.ProjectUpdateBuilder;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -74,7 +73,7 @@ public class FullstackStarterController {
     private static final String DESIGN_MENORA_DIGITAL_DEP = "design-menora-digital";
 
     private final ProjectGenerationInvoker<ProjectRequest> invoker;
-    private final InitializrMetadataProvider metadataProvider;
+    private final ProjectRequestFactory requestFactory;
     private final ProjectOptionsContext optionsContext;
     private final EntityDefinitionContext entityContext;
     private final EntityTemplateSetRepository setRepo;
@@ -88,7 +87,7 @@ public class FullstackStarterController {
     private final DepartmentResolver departmentResolver;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
-                                      InitializrMetadataProvider metadataProvider,
+                                      ProjectRequestFactory requestFactory,
                                       ProjectOptionsContext optionsContext,
                                       EntityDefinitionContext entityContext,
                                       EntityTemplateSetRepository setRepo,
@@ -101,7 +100,7 @@ public class FullstackStarterController {
                                       DependencyConfigService configService,
                                       DepartmentResolver departmentResolver) {
         this.invoker = invoker;
-        this.metadataProvider = metadataProvider;
+        this.requestFactory = requestFactory;
         this.optionsContext = optionsContext;
         this.entityContext = entityContext;
         this.setRepo = setRepo;
@@ -121,7 +120,11 @@ public class FullstackStarterController {
         try {
             WebProjectRequest request = buildArtifacts(body, tempDir);
             byte[] zipBytes = GeneratedProjectFiles.zipDirectory(tempDir, request.getArtifactId());
+            // The id the model file carries too: a client keeps it with the model it sent, and
+            // hands it back when it later asks for an update to this project.
+            String templates = templatesHashOf(Files.readAllBytes(tempDir.resolve(MODEL_FILE)));
             return ResponseEntity.ok()
+                    .header("X-Templates-Hash", templates == null ? "" : templates)
                     .header(HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=\"" + request.getArtifactId() + ".zip\"")
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
@@ -159,6 +162,71 @@ public class FullstackStarterController {
         }
     }
 
+    /**
+     * The two models of an update: what the project was generated from and what it should be
+     * now. {@code baseTemplatesHash} is the {@code generator.templatesHash} of the project's
+     * {@code menora-model.json}, when the client has it — the notes then say whether the
+     * templates are still the ones the project was generated with.
+     */
+    public record FullstackPatchRequest(FullstackStarterRequest base, FullstackStarterRequest target,
+                                        String baseTemplatesHash) {}
+
+    /**
+     * What a model change does to a project that already exists: both models are generated,
+     * now, and the difference comes back as a zip — a patch for {@code git apply --3way}, the new
+     * and changed files whole, and notes (see {@link ProjectUpdateBuilder}). A problem with one
+     * of the models is a 400 like the zip endpoint's, its {@code path} under {@code base.} or
+     * {@code target.} and the side in {@code side}.
+     */
+    @PostMapping("/starter-fullstack.patch")
+    public ResponseEntity<byte[]> patch(@RequestBody FullstackPatchRequest body) throws IOException {
+        if (body == null || body.base() == null || body.target() == null) {
+            throw new WizardArgumentException("An update needs both models: 'base' (what the project was"
+                    + " generated from) and 'target' (what it should be now)");
+        }
+        Path baseDir = Files.createTempDirectory("fullstack-update-base-");
+        Path targetDir = Files.createTempDirectory("fullstack-update-target-");
+        try {
+            generateSide("base", body.base(), baseDir);
+            WebProjectRequest request = generateSide("target", body.target(), targetDir);
+            Map<String, byte[]> target = GeneratedProjectFiles.readTree(targetDir);
+            ProjectUpdateBuilder.ProjectUpdate update = ProjectUpdateBuilder.build(
+                    GeneratedProjectFiles.readTree(baseDir), target,
+                    new ProjectUpdateBuilder.Info(request.getArtifactId(), body.baseTemplatesHash(),
+                            templatesHashOf(target.get(MODEL_FILE))),
+                    // Never edited by hand and rewritten whole by every generation: replaced, not patched.
+                    Set.of(MODEL_FILE));
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\"" + request.getArtifactId() + "-update.zip\"")
+                    .header("X-Update-Added", String.valueOf(update.added().size()))
+                    .header("X-Update-Changed", String.valueOf(update.changed().size()))
+                    .header("X-Update-Deleted", String.valueOf(update.deleted().size()))
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(update.zip());
+        } finally {
+            GeneratedProjectFiles.deleteLater(baseDir);
+            GeneratedProjectFiles.deleteLater(targetDir);
+            entityContext.clear();
+            optionsContext.clear();
+        }
+    }
+
+    /**
+     * Generates one side of an update. The per-request contexts are cleared after each side —
+     * the second generation must not see the first one's entities or options.
+     */
+    private WebProjectRequest generateSide(String side, FullstackStarterRequest model, Path dir) throws IOException {
+        try {
+            return buildArtifacts(model, dir);
+        } catch (WizardArgumentException problem) {
+            throw problem.at(side);
+        } finally {
+            entityContext.clear();
+            optionsContext.clear();
+        }
+    }
+
     /** The request's {@code opts.scaffold} names, for the page validator: a list page may only show
      *  the audit columns when the audit opt is on. */
     private static Set<String> scaffoldOptsOf(FullstackStarterRequest body) {
@@ -178,7 +246,12 @@ public class FullstackStarterController {
         List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), validated, scaffoldOptsOf(body));
         // An import page switches on its entity's csvImport option, for both render paths.
         List<EntityDefinition> entities = FullstackPageValidator.applyPageImplications(validated, pages);
-        PageDefinition.Nav nav = FullstackPageValidator.validateNav(body.nav(), pages);
+        PageDefinition.Nav nav;
+        try {
+            nav = FullstackPageValidator.validateNav(body.nav(), pages, entities);
+        } catch (WizardArgumentException e) {
+            throw e.at("nav");
+        }
         String backendSetKey = orDefault(body.backendTemplateSet(), DEFAULT_BACKEND_SET);
         String frontendSetKey = orDefault(body.frontendTemplateSet(), DEFAULT_FRONTEND_SET);
 
@@ -200,7 +273,8 @@ public class FullstackStarterController {
         pages.stream().filter(p -> !p.roles().isEmpty()).findFirst().ifPresent(p -> {
             if (!ldap) {
                 throw new WizardArgumentException("Page '" + p.id()
-                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency");
+                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency",
+                        "pages[" + pages.indexOf(p) + "].roles");
             }
         });
         // So are a workflow's role-limited transitions: the generated service asks the user's groups.
@@ -208,7 +282,8 @@ public class FullstackStarterController {
             if (e.workflow() == null || ldap) continue;
             e.workflow().transitions().stream().filter(t -> !t.roles().isEmpty()).findFirst().ifPresent(t -> {
                 throw new WizardArgumentException("Entity '" + e.name() + "' workflow: transition '" + t.name()
-                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency");
+                        + "' has roles, which need the ldap-auth or ldap-auth-rest dependency",
+                        "entities[" + entities.indexOf(e) + "].workflow");
             });
         }
         optionsContext.populate(body.opts());
@@ -229,10 +304,14 @@ public class FullstackStarterController {
         Set<String> depIds = new LinkedHashSet<>(
                 request.getDependencies() == null ? List.of() : request.getDependencies());
         optionsContext.defaultDatasourceRoles(depIds, configService.getAllSubOptions());
-        entityContext.populate(entities, backendSetKey, frontendSetKey, domainPackage);
+        // The user menu and the bell ask the backend who is signed in.
+        entityContext.populate(entities, backendSetKey, frontendSetKey, domainPackage,
+                nav != null && (nav.userMenu() || nav.notifications()));
 
         // Backend — runs through the standard pipeline. The EntityScaffoldContributor
         // (registered in spring.factories) picks up the populated context.
+        // The fullstack project keeps its own model at its root: its backend writes none.
+        optionsContext.setEmbedded(true);
         Path backendDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
         try {
             GeneratedProjectFiles.moveDirectory(backendDir, tempDir.resolve("backend"));
@@ -248,7 +327,10 @@ public class FullstackStarterController {
         // Root files
         Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId()));
         Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
-        Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body));
+        Files.writeString(tempDir.resolve(".gitattributes"), ROOT_GITATTRIBUTES);
+        Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body, templatesHash(backendSet, frontendSet)));
+        // One set of bytes whatever machine generated it — see normalizeLineEndings.
+        GeneratedProjectFiles.normalizeLineEndings(tempDir);
         return request;
     }
 
@@ -264,9 +346,27 @@ public class FullstackStarterController {
      * but {@code editorModel} — under {@link #REQUEST_MODEL_FORMAT}, which the editor imports too.
      */
     static String modelJson(FullstackStarterRequest body) throws IOException {
+        return modelJson(body, null);
+    }
+
+    /**
+     * {@link #modelJson(FullstackStarterRequest)} with a {@code generator} block naming the
+     * templates the project was rendered with ({@link #templatesHash}). An update made later
+     * compares it with the templates of the day.
+     */
+    static String modelJson(FullstackStarterRequest body, String templatesHash) throws IOException {
+        com.fasterxml.jackson.databind.node.ObjectNode generator = null;
+        if (templatesHash != null) {
+            generator = MODEL_MAPPER.createObjectNode();
+            generator.put("templatesHash", templatesHash);
+        }
         com.fasterxml.jackson.databind.JsonNode model = body.editorModel();
         if (model != null && model.isObject() && model.path("entities").isArray()) {
-            String json = MODEL_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(model);
+            com.fasterxml.jackson.databind.node.ObjectNode snapshot = model.deepCopy();
+            // Last, so the editor's own keys read as they did.
+            snapshot.remove(GENERATOR_KEY);
+            if (generator != null) snapshot.set(GENERATOR_KEY, generator);
+            String json = MODEL_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot);
             if (json.getBytes(StandardCharsets.UTF_8).length <= FullstackModelController.MAX_SNAPSHOT_BYTES) return json + "\n";
         }
         com.fasterxml.jackson.databind.node.ObjectNode request = MODEL_MAPPER.valueToTree(body);
@@ -274,38 +374,61 @@ public class FullstackStarterController {
         com.fasterxml.jackson.databind.node.ObjectNode wrapper = MODEL_MAPPER.createObjectNode();
         wrapper.put("format", REQUEST_MODEL_FORMAT);
         wrapper.set("request", request);
+        if (generator != null) wrapper.set(GENERATOR_KEY, generator);
         return MODEL_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(wrapper) + "\n";
+    }
+
+    /** The model file's block about the generation itself — never part of the model. */
+    static final String GENERATOR_KEY = "generator";
+
+    /** The {@code generator.templatesHash} of a model file, or null when it has none. */
+    static String templatesHashOf(byte[] modelFile) {
+        if (modelFile == null) return null;
+        try {
+            com.fasterxml.jackson.databind.JsonNode hash = MODEL_MAPPER.readTree(modelFile).path(GENERATOR_KEY).path("templatesHash");
+            return hash.isTextual() ? hash.asText() : null;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * One id for the two template sets a project is rendered with: the SHA-256 of every file's
+     * path, gate and content (line endings aside, so the same templates hash alike on every
+     * machine). It changes when a template is edited — in the seed or in admin — and tells an
+     * update whether the project was generated with the templates of the day. The dependency
+     * catalog's files are not part of it.
+     */
+    String templatesHash(EntityTemplateSetEntity backendSet, EntityTemplateSetEntity frontendSet) {
+        try {
+            java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+            for (EntityTemplateSetEntity set : List.of(backendSet, frontendSet)) {
+                sha.update(set.getSetKey().getBytes(StandardCharsets.UTF_8));
+                sha.update((byte) 0);
+                List<EntityTemplateFileEntity> files = new ArrayList<>(fileRepo.findBySetIdOrderBySortOrderAsc(set.getId()));
+                files.sort(java.util.Comparator.comparing(EntityTemplateFileEntity::getPathTemplate));
+                for (EntityTemplateFileEntity file : files) {
+                    for (String part : new String[] {file.getPathTemplate(), file.getGatedBy(), file.getContent()}) {
+                        if (part != null) sha.update(part.replace("\r\n", "\n").getBytes(StandardCharsets.UTF_8));
+                        sha.update((byte) 0);
+                    }
+                }
+            }
+            return java.util.HexFormat.of().formatHex(sha.digest());
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** Resolves a template set by key and asserts its kind, throwing HTTP 400 otherwise. */
     private EntityTemplateSetEntity requireSet(String setKey, EntityTemplateSetEntity.Kind kind, String fieldName) {
         EntityTemplateSetEntity set = setRepo.findBySetKey(setKey).orElseThrow(() ->
-                new WizardArgumentException(fieldName + " '" + setKey + "' not found"));
+                new WizardArgumentException(fieldName + " '" + setKey + "' not found", fieldName));
         if (set.getKind() != kind) {
             throw new WizardArgumentException(fieldName + " '" + setKey
-                    + "' is not a " + kind + " set (kind=" + set.getKind() + ")");
+                    + "' is not a " + kind + " set (kind=" + set.getKind() + ")", fieldName);
         }
         return set;
-    }
-
-    /**
-     * Rejects an unknown Boot/Java version with a 400 and returns the catalog id to use. A
-     * null/blank value is left for the framework to default. {@code /metadata/client} hands
-     * browsers the Initializr v1 spelling ({@code 3.2.1.RELEASE}) while the catalog id is
-     * {@code 3.2.1}; both are accepted and the catalog id is what goes into the request.
-     */
-    private static String requireKnownVersion(SingleSelectCapability capability, String value, String fieldName) {
-        if (value == null || value.isBlank()) {
-            return value;
-        }
-        if (capability.get(value) != null) {
-            return value;
-        }
-        String canonical = value.endsWith(".RELEASE") ? value.substring(0, value.length() - ".RELEASE".length()) : value;
-        if (!canonical.equals(value) && capability.get(canonical) != null) {
-            return canonical;
-        }
-        throw new WizardArgumentException(fieldName + " '" + value + "' is not a known version");
     }
 
     /**
@@ -320,11 +443,11 @@ public class FullstackStarterController {
         }
         String domain = requested.trim();
         if (!isValidPackageName(domain)) {
-            throw new WizardArgumentException("domainPackage '" + domain + "' is not a valid Java package");
+            throw new WizardArgumentException("domainPackage '" + domain + "' is not a valid Java package", "domainPackage");
         }
         if (!domain.equals(basePackage) && !domain.startsWith(basePackage + ".")) {
             throw new WizardArgumentException("domainPackage '" + domain
-                    + "' must be the base package '" + basePackage + "' or a sub-package of it");
+                    + "' must be the base package '" + basePackage + "' or a sub-package of it", "domainPackage");
         }
         return domain;
     }
@@ -348,35 +471,27 @@ public class FullstackStarterController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("error", "Invalid request");
         body.put("detail", ex.getMessage());
+        // Where in the request the problem is (entities[1].fields[3], pages[2].widgets[0], …), so a
+        // client can put the message on what caused it. Absent for a problem with the whole request.
+        if (ex.path() != null) {
+            body.put("path", ex.path());
+            // An update names which of its two models the problem is in.
+            for (String side : List.of("base", "target")) {
+                if (ex.path().equals(side) || ex.path().startsWith(side + ".")) body.put("side", side);
+            }
+        }
         return ResponseEntity.badRequest().body(body);
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
+    /** The framework's request for the backend half: an unknown Boot or Java version is a clean
+     *  400 from the shared builder, which also takes what the caller left out from the metadata. */
     private WebProjectRequest toWebRequest(FullstackStarterRequest body) {
-        InitializrMetadata metadata = metadataProvider.get();
-        // Fail fast on an unknown Boot/Java version with a clean 400, rather than letting
-        // the framework fail deep in generation with an opaque 500. The UI only ever sends
-        // values from the metadata dropdowns; this guards direct API callers (curl/IntelliJ).
-        String bootVersion = requireKnownVersion(metadata.getBootVersions(), body.bootVersion(), "bootVersion");
-        String javaVersion = requireKnownVersion(metadata.getJavaVersions(), body.javaVersion(), "javaVersion");
-        WebProjectRequest r = new WebProjectRequest();
-        r.setType(orDefault(body.type(), "maven-project"));
-        r.setLanguage(orDefault(body.language(), "java"));
-        r.setBootVersion(bootVersion);
-        r.setGroupId(orDefault(body.groupId(), "com.menora"));
-        r.setArtifactId(orDefault(body.artifactId(), "demo"));
-        r.setName(orDefault(body.name(), r.getArtifactId()));
-        r.setDescription(orDefault(body.description(), ""));
-        r.setPackageName(orDefault(body.packageName(), r.getGroupId() + "." + r.getArtifactId()));
-        r.setPackaging(orDefault(body.packaging(), "jar"));
-        r.setJavaVersion(orDefault(javaVersion, "21"));
-        r.setVersion(orDefault(body.version(), (String) metadata.defaults().get("version")));
-        r.setConfigurationFileFormat(orDefault(body.configurationFileFormat(), "properties"));
-        if (body.dependencies() != null) {
-            r.setDependencies(new ArrayList<>(body.dependencies()));
-        }
-        return r;
+        return requestFactory.create(new ProjectRequestFactory.Base(body.groupId(), body.artifactId(), body.name(),
+                body.description(), body.packageName(), body.type(), body.language(), body.bootVersion(),
+                body.packaging(), body.javaVersion(), body.version(), body.configurationFileFormat()),
+                body.dependencies());
     }
 
     /** If the caller did not specify a {@code dependencies} field at all, fall back
@@ -456,30 +571,26 @@ public class FullstackStarterController {
         projectCtx.put("hasLdapAuth", hasLdapAuth);
         // The API client sends the dev user's `userinfo` header when something reads it: the ldap
         // permission check, or a workflow (who claims a row, whose inbox).
-        projectCtx.put("sendsDevUser", hasLdapAuth || Boolean.TRUE.equals(projectCtx.get("hasWorkflows")));
+        projectCtx.put("sendsDevUser", hasLdapAuth || Boolean.TRUE.equals(projectCtx.get("hasWorkflows"))
+                || (nav != null && nav.userMenu()));
         // Opt-in scaffolding flags must be set on the frontend context too — the per-entity FE
         // templates gate audit columns / inverse-collection counts on these. The backend config
         // sets its own copy; the two render paths do not share a context.
-        projectCtx.put("optScaffoldTests", optionsContext.hasOption("scaffold", "tests"));
-        projectCtx.put("optScaffoldAudit", optionsContext.hasOption("scaffold", "audit"));
-        projectCtx.put("optScaffoldSoftDelete", optionsContext.hasOption("scaffold", "softDelete"));
-        projectCtx.put("optScaffoldInverse", optionsContext.hasOption("scaffold", "inverseCollections"));
+        ScaffoldOption.putFlags(projectCtx, optionsContext, ScaffoldOption.Side.FRONTEND);
         // CSV export button + bulk-delete selection UI. Mirrors the backend config — the FE per-entity
         // page gates the Export button on optScaffoldCsvExport and the row checkboxes on the per-entity
         // bulkDeleteApplicable (derived in EntityScaffoldContext from optScaffoldBulkDelete).
-        projectCtx.put("optScaffoldCsvExport", optionsContext.hasOption("scaffold", "csvExport"));
-        projectCtx.put("optScaffoldCsvImport", optionsContext.hasOption("scaffold", "csvImport"));
         EntityScaffoldContext.putCsvImport(projectCtx, entities);
-        projectCtx.put("optScaffoldBulkDelete", optionsContext.hasOption("scaffold", "bulkDelete"));
         // Bulk field-edit selection UI. Like bulkDelete, narrowed per entity in EntityScaffoldContext
         // (bulkUpdateApplicable) to writable, single-PK entities that have ≥1 editable non-PK field.
-        projectCtx.put("optScaffoldBulkUpdate", optionsContext.hasOption("scaffold", "bulkUpdate"));
         // The record's version rides along in the DTO; the page turns a stale 409 into the
         // conflict dialog. Mirrors the backend config.
-        projectCtx.put("optScaffoldOptimisticLocking", optionsContext.hasOption("scaffold", "optimisticLocking"));
         EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
+        EntityScaffoldContext.putXlsxExport(projectCtx, entities);
+        EntityScaffoldContext.putSavedViews(projectCtx, entities);
+        // A view belongs to the user who saved it: the dev user travels with the calls.
+        if (Boolean.TRUE.equals(projectCtx.get("hasSavedViews"))) projectCtx.put("sendsDevUser", true);
         // Table cells edited in place (frontend only — saved through the existing PUT).
-        projectCtx.put("optScaffoldInlineEdit", optionsContext.hasOption("scaffold", "inlineEdit"));
         EntityScaffoldContext.putInlineEdit(projectCtx, entities);
         // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.
         putIfPresent(projectCtx, "dashboardTitle", dashboardTitle);
@@ -581,25 +692,41 @@ public class FullstackStarterController {
                 + "## Reopen in the generator\n\n"
                 + "`menora-model.json` is the model this project was generated from. To change the\n"
                 + "entities or pages and generate again, open the Fullstack tab of the Menora\n"
-                + "Initializr and choose **Start from → Import JSON** with that file.\n";
+                + "Initializr and choose **Start from → Import JSON** with that file.\n\n"
+                + "Once this code has been edited, generating again would overwrite the edits. Instead,\n"
+                + "after importing the file and changing the model, choose **Download update**: it\n"
+                + "compares what the imported model generates with what the changed one does and hands\n"
+                + "back a patch for `git apply --3way` (with notes, `UPDATE.md`), which merges the\n"
+                + "change into the code as it is now. Commit the project as generated before editing\n"
+                + "it — that commit is what the merge works from.\n";
     }
 
     private static final String ROOT_GITIGNORE =
             "# Maven\nbackend/target/\n\n# Local secrets (VAULT_TOKEN for the vault-local profile)\nbackend/.env\n\n# Node\nfrontend/node_modules/\nfrontend/dist/\n\n# IDE\n.idea/\n.vscode/\n*.iml\n";
+
+    /**
+     * One set of line endings in the repository and in every checkout, so a project reads the
+     * same on Windows and Linux and an update's patch applies on both. Batch files keep CRLF.
+     */
+    private static final String ROOT_GITATTRIBUTES =
+            "# LF in the repository and in the working tree, on every machine.\n"
+                    + "* text=auto eol=lf\n"
+                    + "*.cmd text eol=crlf\n"
+                    + "*.bat text eol=crlf\n";
 
     private static String orDefault(String v, String fallback) {
         return (v == null || v.isBlank()) ? fallback : v;
     }
 
     /** Supported chrome-string languages of the generated frontend (see {@code i18n-strings.ts.mustache}). */
-    private static final Set<String> SUPPORTED_LOCALES = Set.of("en", "he");
+    private static final Set<String> SUPPORTED_LOCALES = Set.copyOf(com.menora.initializr.fullstack.FullstackSchema.LOCALES);
 
     /** Blank → {@code en}; anything outside {@link #SUPPORTED_LOCALES} is a 400, never a silent fallback. */
     private static String resolveLocale(String raw) {
         String locale = orDefault(raw, "en").trim().toLowerCase(java.util.Locale.ROOT);
         if (!SUPPORTED_LOCALES.contains(locale)) {
             throw new WizardArgumentException("locale '" + raw + "' is not supported (expected one of "
-                    + String.join(", ", SUPPORTED_LOCALES.stream().sorted().toList()) + ")");
+                    + String.join(", ", SUPPORTED_LOCALES.stream().sorted().toList()) + ")", "locale");
         }
         return locale;
     }
@@ -608,7 +735,8 @@ public class FullstackStarterController {
      *  {@code {{#key}}…{{^key}}fallback{{/key}}} resolves to the template's built-in default. */
     private static void putIfPresent(Map<String, Object> ctx, String key, String value) {
         if (value != null && !value.isBlank()) {
-            ctx.put(key, value.trim());
+            // Raw under the key (the section test), escaped for where the templates splice it.
+            EntityScaffoldContext.putText(ctx, key, value.trim());
         }
     }
 

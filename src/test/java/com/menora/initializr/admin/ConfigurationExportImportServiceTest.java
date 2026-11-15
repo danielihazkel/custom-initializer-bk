@@ -152,6 +152,13 @@ class ConfigurationExportImportServiceTest {
         assertThat(rqueue.getMavenArtifactId()).isEqualTo("sonus-rqueue");
         assertThat(rqueue.getCompatibilityRange()).isEqualTo("[3.2.0,4.0.0)");
         assertThat(rqueue.getGroup().getName()).isEqualTo("Menora Standards");
+
+        // A build customization's Boot range survives too: without it the three spring-cloud BOM
+        // rows would all apply at once after an import.
+        assertThat(buildCustomRepo.findAll().stream()
+                .filter(b -> "spring-cloud-dependencies".equals(b.getMavenArtifactId()))
+                .map(b -> b.getVersion() + " " + b.getCompatibilityRange()))
+                .containsExactlyInAnyOrder("2023.0.3 [3.2.0,3.4.0)", "2024.0.3 [3.4.0,3.5.0)", "2025.0.3 [3.5.0,4.0.0)");
     }
 
     @Test

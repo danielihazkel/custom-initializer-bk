@@ -195,7 +195,7 @@ public class SqlToEntityDefinitionConverter {
 
     private FieldDefinition toField(TableModel table, ColumnModel col, SqlDialect dialect, List<String> enumValues) {
         JavaType jt = TypeMappers.map(dialect, col.rawType(), col.precision(), col.scale());
-        FieldType type = enumValues != null ? FieldType.ENUM : mapType(jt);
+        FieldType type = enumValues != null ? FieldType.ENUM : mapType(jt, col.isPk());
         Integer length = type == FieldType.STRING ? col.precision() : null;
         return new FieldDefinition(
                 Naming.toCamelCase(col.name()),
@@ -306,7 +306,8 @@ public class SqlToEntityDefinitionConverter {
 
     /** Maps a resolved Java type back onto the fullstack {@link FieldType} enum.
      *  Lossy: {@code Short} → INTEGER, {@code Float}/{@code Double} → BIG_DECIMAL,
-     *  {@code byte[]}/{@code UUID}/unknown → STRING. */
+     *  {@code byte[]}/unknown → STRING. A time of day, a timestamp with a zone and a UUID keep
+     *  their own types (they used to become a date-time and a string, from before those existed). */
     static FieldType mapType(JavaType jt) {
         return switch (jt.simpleName()) {
             case "String" -> FieldType.STRING;
@@ -314,10 +315,20 @@ public class SqlToEntityDefinitionConverter {
             case "Integer", "Short" -> FieldType.INTEGER;
             case "Boolean" -> FieldType.BOOLEAN;
             case "LocalDate" -> FieldType.LOCAL_DATE;
-            case "LocalDateTime", "OffsetDateTime", "LocalTime" -> FieldType.LOCAL_DATE_TIME;
+            case "LocalDateTime" -> FieldType.LOCAL_DATE_TIME;
+            case "LocalTime" -> FieldType.LOCAL_TIME;
+            case "OffsetDateTime", "ZonedDateTime", "Instant" -> FieldType.INSTANT;
+            case "UUID" -> FieldType.UUID;
             case "BigDecimal", "Float", "Double" -> FieldType.BIG_DECIMAL;
             default -> FieldType.STRING;
         };
+    }
+
+    /** {@link #mapType} for a column: a key keeps a type a key can have — a time or an instant
+     *  cannot be one, so such a key column stays the date-time it was imported as before. */
+    static FieldType mapType(JavaType jt, boolean primaryKey) {
+        FieldType type = mapType(jt);
+        return primaryKey && !type.keyable() ? FieldType.LOCAL_DATE_TIME : type;
     }
 
     /** {@code order_items} → {@code OrderItems}. Leaves CamelCase input alone. */

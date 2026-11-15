@@ -421,13 +421,186 @@ class FullstackRequestValidatorTest {
     }
 
     @Test
-    void rejects_unsupportedRelationType() {
-        var rel = new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_MANY", "tags", "Tag", false);
+    void rejects_unknownRelationType() {
+        var rel = new FullstackStarterRequest.RelationDefinitionDto("ONE_TO_ONE", "lines", "Tag", false);
         assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
                 entity("Tag", List.of(pk())),
                 entityWithRelations("Order", List.of(pk()), List.of(rel))))))
                 .isInstanceOf(WizardArgumentException.class)
-                .hasMessageContaining("not supported yet");
+                .hasMessageContaining("Unknown relation type");
+    }
+
+    @Test
+    void oneToMany_resolvesTheLinkBehindIt() {
+        var order = new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_ONE", "order", "Order", true);
+        var lines = new FullstackStarterRequest.RelationDefinitionDto("ONE_TO_MANY", "lines", "orderline", null);
+        List<EntityDefinition> entities = FullstackRequestValidator.validateAndConvert(req(List.of(
+                entityWithRelations("Order", List.of(pk()), List.of(lines)),
+                entityWithRelations("OrderLine", List.of(pk()), List.of(order)))));
+        EntityDefinition parent = entities.get(0);
+        // Apart from the foreign keys and the sets: nothing that walks those sees it.
+        assertThat(parent.relations()).isEmpty();
+        assertThat(parent.collections()).isEmpty();
+        assertThat(parent.children()).singleElement().satisfies(list -> {
+            assertThat(list.type()).isEqualTo(RelationType.ONE_TO_MANY);
+            assertThat(list.fieldName()).isEqualTo("lines");
+            assertThat(list.targetEntity()).isEqualTo("OrderLine");
+            assertThat(list.mappedBy()).isEqualTo("order");
+        });
+        // The child's rows may be keyed any way: the list holds no key of theirs.
+        var composite = List.of(
+                new FullstackStarterRequest.FieldDefinitionDto("orderNo", "LONG", true, null, null, null, null, null, null, null, null, null),
+                new FullstackStarterRequest.FieldDefinitionDto("lineNo", "INTEGER", true, null, null, null, null, null, null, null, null, null));
+        assertThat(FullstackRequestValidator.validateAndConvert(req(List.of(
+                entityWithRelations("Order", List.of(pk()), List.of(lines)),
+                entityWithRelations("OrderLine", composite, List.of(order))))).get(0).children()).hasSize(1);
+    }
+
+    // ── Names the generated code already uses ───────────────────────────────────
+
+    private static FullstackStarterRequest reqWithScaffold(List<String> scaffold,
+                                                           List<FullstackStarterRequest.EntityDefinitionDto> entities) {
+        return new FullstackStarterRequest(
+                null, "demo", null, null, "com.menora.demo", null,
+                null, null, null, null, null, null, null,
+                null, Map.of("scaffold", scaffold), "spring-jpa-crud", "react-tailwind-crud", null, entities);
+    }
+
+    private static FullstackStarterRequest.RelationDefinitionDto link(String field, String target) {
+        return new FullstackStarterRequest.RelationDefinitionDto("MANY_TO_ONE", field, target, false);
+    }
+
+    @Test
+    void rejects_unknownProjectScaffoldOption() {
+        var note = entity("Note", List.of(pk()));
+        // A misspelt option used to be ignored: the project came out without soft delete, silently.
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(
+                reqWithScaffold(List.of("audit", "softdelete"), List.of(note))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("Unknown scaffold option 'softdelete' in opts.scaffold[1]")
+                .hasMessageContaining("softDelete");
+        // Every option the registry lists is accepted, the frontend-only ones included.
+        assertThat(FullstackRequestValidator.validateAndConvert(
+                reqWithScaffold(ScaffoldOption.keys(), List.of(note)))).hasSize(1);
+    }
+
+    @Test
+    void scaffoldOptionsReachTheRenderPathThatReadsThem() {
+        java.util.function.Function<ScaffoldOption.Side, List<String>> read = side ->
+                java.util.Arrays.stream(ScaffoldOption.values())
+                        .filter(o -> o.flag() != null && o.readBy(side)).map(ScaffoldOption::key).sorted().toList();
+        // The backend templates never read inlineEdit; the frontend ones never read the
+        // backend-only options. (rtl is no template flag at all.)
+        assertThat(read.apply(ScaffoldOption.Side.BACKEND)).containsExactly(
+                "audit", "bulkDelete", "bulkUpdate", "csvExport", "csvImport", "inverseCollections",
+                "openapi", "optimisticLocking", "savedViews", "secured", "seedData", "softDelete", "tests", "xlsxExport");
+        assertThat(read.apply(ScaffoldOption.Side.FRONTEND)).containsExactly(
+                "audit", "bulkDelete", "bulkUpdate", "csvExport", "csvImport", "inlineEdit",
+                "inverseCollections", "optimisticLocking", "savedViews", "softDelete", "tests", "xlsxExport");
+    }
+
+    @Test
+    void namesAreAsciiIdentifiers() {
+        // Java would take these; file names, URLs and column names derived from them would not travel.
+        for (String name : List.of("לקוח", "Kundeß", "Café")) {
+            assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                    entity(name, List.of(pk()))))))
+                    .as(name)
+                    .isInstanceOf(WizardArgumentException.class)
+                    .hasMessageContaining("is not a valid identifier");
+        }
+        assertThat(FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Order_2$", List.of(pk(), field("unit_price", "BigDecimal"))))))).hasSize(1);
+    }
+
+    @Test
+    void rejects_entityNamedLikeATypeTheGeneratedCodeUses() {
+        for (String name : List.of("Page", "List", "Entity", "Table", "String", "page", "Dashboard", "State", "Me")) {
+            assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                    entity(name, List.of(pk(), field("title", "String")))))))
+                    .as(name)
+                    .isInstanceOf(WizardArgumentException.class)
+                    .hasMessageContaining("entities[0].name '" + name + "' cannot be used");
+        }
+    }
+
+    @Test
+    void rejects_entityNamedLikeAnotherEntitysGeneratedClass() {
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Order", List.of(pk())),
+                entity("OrderDto", List.of(pk()))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("entities[1].name 'OrderDto' cannot be used")
+                .hasMessageContaining("'Order' already generates a class of that name");
+        // The suffix alone is no clash: OrderLine is not Order + a generated suffix.
+        assertThat(FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Order", List.of(pk())), entity("OrderLine", List.of(pk())))))).hasSize(2);
+    }
+
+    @Test
+    void rejects_fieldSpelledLikeARelationsGeneratedId() {
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Customer", List.of(pk(), field("name", "String"))),
+                entityWithRelations("Order", List.of(pk(), field("customerId", "Long")),
+                        List.of(link("customer", "Customer")))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("Entity 'Order': field 'customerId' clashes with 'customerId'")
+                .hasMessageContaining("the id of relation 'customer'");
+    }
+
+    @Test
+    void relationLabelIsOnlyTakenWhenTheTargetHasOne() {
+        // Customer has a name, so Order.customerLabel exists already …
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Customer", List.of(pk(), field("name", "String"))),
+                entityWithRelations("Order", List.of(pk(), field("customerLabel", "String")),
+                        List.of(link("customer", "Customer")))))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("the label of relation 'customer'");
+        // … a target with nothing to show generates no label, so the name is free.
+        assertThat(FullstackRequestValidator.validateAndConvert(req(List.of(
+                entity("Customer", List.of(pk())),
+                entityWithRelations("Order", List.of(pk(), field("customerLabel", "String")),
+                        List.of(link("customer", "Customer"))))))).hasSize(2);
+    }
+
+    @Test
+    void rejects_fieldSpelledLikeAnAuditOrSoftDeleteColumn_onlyWhenTheOptionApplies() {
+        var note = entity("Note", List.of(pk(), field("createdAt", "LocalDateTime")));
+        assertThat(FullstackRequestValidator.validateAndConvert(req(List.of(note)))).hasSize(1);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(reqWithScaffold(List.of("audit"), List.of(note))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("Entity 'Note': field 'createdAt' clashes with 'createdAt'")
+                .hasMessageContaining("'audit'");
+
+        var flagged = entity("Note", List.of(pk(), field("deleted", "Boolean")));
+        assertThat(FullstackRequestValidator.validateAndConvert(req(List.of(flagged)))).hasSize(1);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(reqWithScaffold(List.of("softDelete"), List.of(flagged))))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("'softDelete'");
+    }
+
+    @Test
+    void rejects_fieldSpelledLikeAnInverseCollection_onlyUnderThatOption() {
+        var entities = List.of(
+                entity("Customer", List.of(pk(), field("ordersCount", "Integer"))),
+                entityWithRelations("Order", List.of(pk()), List.of(link("customer", "Customer"))));
+        assertThat(FullstackRequestValidator.validateAndConvert(req(entities))).hasSize(2);
+        assertThatThrownBy(() -> FullstackRequestValidator.validateAndConvert(
+                reqWithScaffold(List.of("inverseCollections"), entities)))
+                .isInstanceOf(WizardArgumentException.class)
+                .hasMessageContaining("Entity 'Customer': field 'ordersCount' clashes with 'ordersCount'");
+    }
+
+    @Test
+    void twoLinksToOneParentGiveItTwoDifferentCollections() {
+        var entities = FullstackRequestValidator.validateAndConvert(reqWithScaffold(List.of("inverseCollections"), List.of(
+                entity("Account", List.of(pk(), field("name", "String"))),
+                entityWithRelations("Transfer", List.of(pk()),
+                        List.of(link("source", "Account"), link("target", "Account"))),
+                entityWithRelations("Note", List.of(pk()), List.of(link("account", "Account"))))));
+        assertThat(EntityScaffoldContext.inverseCollectionNames(entities).get("account"))
+                .containsExactly("transfersBySource", "transfersByTarget", "notes");
     }
 
     @Test

@@ -37,20 +37,7 @@ public final class EntityScaffoldContext {
      * to. Ordered so error messages list them deterministically. Options that are inherently
      * project-wide (openapi, secured, inverseCollections, seedData, rtl) are deliberately absent.
      */
-    public static final Map<String, String> SCAFFOLD_OPT_FLAGS;
-    static {
-        Map<String, String> m = new LinkedHashMap<>();
-        m.put("audit", "optScaffoldAudit");
-        m.put("softDelete", "optScaffoldSoftDelete");
-        m.put("csvExport", "optScaffoldCsvExport");
-        m.put("bulkDelete", "optScaffoldBulkDelete");
-        m.put("bulkUpdate", "optScaffoldBulkUpdate");
-        m.put("tests", "optScaffoldTests");
-        m.put("csvImport", "optScaffoldCsvImport");
-        m.put("optimisticLocking", "optScaffoldOptimisticLocking");
-        m.put("inlineEdit", "optScaffoldInlineEdit");
-        SCAFFOLD_OPT_FLAGS = java.util.Collections.unmodifiableMap(m);
-    }
+    public static final Map<String, String> SCAFFOLD_OPT_FLAGS = ScaffoldOption.perEntityFlags();
 
     private EntityScaffoldContext() {}
 
@@ -88,7 +75,7 @@ public final class EntityScaffoldContext {
         // buildEntityContext) can resolve relation targets too.
         Map<String, Map<String, Object>> summaries = buildSummaries(entities);
         ctx.put(ENTITY_SUMMARIES_KEY, summaries);
-        Map<String, List<Map<String, Object>>> inverses = buildInverseRelations(entities);
+        Map<String, List<Map<String, Object>>> inverses = buildInverseRelations(entities, summaries);
         ctx.put(INVERSE_RELATIONS_KEY, inverses);
 
         List<Map<String, Object>> entityViews = new ArrayList<>(entities.size());
@@ -99,8 +86,31 @@ public final class EntityScaffoldContext {
             entityViews.add(view);
         }
         ctx.put("entities", entityViews);
+        // The shared frontend files a field type brings: format.ts (money, instants) and Markdown.tsx.
+        // The multi-pick control ships with the first MANY_TO_MANY.
+        ctx.put("hasCollectionFields", entities.stream().anyMatch(e -> !e.collections().isEmpty()));
+        // …and the read-only table of child rows with the first ONE_TO_MANY.
+        ctx.put("hasChildListTables", entities.stream().anyMatch(e -> !e.children().isEmpty()));
+        // …and the rows editor with the first composition (rows edited in their parent's form).
+        ctx.put("hasCompositionRows", entities.stream()
+                .anyMatch(e -> e.children().stream().anyMatch(RelationDefinition::composition)));
+        boolean attachments = entities.stream().flatMap(e -> e.fields().stream()).anyMatch(f -> f.type().isAttachment());
+        // File and image fields: the attachment package on the backend, the upload call and the
+        // AttachmentField on the frontend (both render paths read it).
+        ctx.put("hasAttachments", attachments);
+        ctx.put("hasFormatHelpers", attachments || entities.stream().flatMap(e -> e.fields().stream())
+                .anyMatch(f -> f.type().isMoney() || f.type().isInstant()
+                        || f.type() == FieldType.LOCAL_DATE || f.type() == FieldType.LOCAL_DATE_TIME));
+        ctx.put("hasMarkdownFields", entities.stream().flatMap(e -> e.fields().stream())
+                .anyMatch(f -> f.type().isMarkdown()));
         // Any workflow: the shared WorkflowException, CurrentUser and GET /api/me (both render paths).
         ctx.put("hasWorkflows", entities.stream().anyMatch(e -> e.workflow() != null));
+        // An entity listed as a gallery: the shared GalleryView and its word in the view switch.
+        ctx.put("hasGalleryViews", entities.stream().anyMatch(e -> emittedListViews(e).contains("gallery")));
+        // A workflow that logs its moves: the backend's workflow package, the frontend's history list.
+        ctx.put("hasWorkflowMoves", entities.stream().anyMatch(e -> e.workflow() != null && e.workflow().trackMoves()));
+        // ...which a shell that shows the signed-in user needs too: each render path adds its own.
+        ctx.put("usesCurrentUser", entities.stream().anyMatch(e -> e.workflow() != null));
         // Demo-data seeding order (optScaffoldSeedData): parents before children, writable only.
         List<Map<String, Object>> seedViews = buildSeedOrder(entities, entityViews);
         ctx.put("seedEntities", seedViews);
@@ -126,10 +136,23 @@ public final class EntityScaffoldContext {
     /** As above, with the shell's navigation settings (null: a sidebar whose sections do not fold). */
     public static void putPageContext(Map<String, Object> ctx, List<PageDefinition> pages, PageDefinition.Nav navSettings) {
         ctx.put("hasPages", !pages.isEmpty());
+        // The classic shell's own files (its dashboard page): a layout draws its own screens and
+        // imported none of them — they used to be generated anyway.
+        ctx.put("classicShell", pages.isEmpty());
         // The tailwind shell's nav variants; the Menora shell is a top bar already and ignores them.
         boolean navTopbar = navSettings != null && navSettings.style() == PageDefinition.NavStyle.TOPBAR;
         ctx.put("navTopbar", navTopbar);
         ctx.put("navCollapsibleGroups", navSettings != null && navSettings.collapsibleGroups());
+        // The header's tools (both shells): nothing of them without the setting.
+        boolean shellUserMenu = navSettings != null && navSettings.userMenu();
+        boolean shellNotifications = navSettings != null && navSettings.notifications();
+        boolean shellPalette = navSettings != null && navSettings.commandPalette();
+        ctx.put("shellUserMenu", shellUserMenu);
+        ctx.put("shellNotifications", shellNotifications);
+        ctx.put("shellPalette", shellPalette);
+        ctx.put("hasShellTools", shellUserMenu || shellNotifications || shellPalette);
+        ctx.put("shellPopovers", shellUserMenu || shellNotifications);
+        if (shellUserMenu || shellNotifications) ctx.put("usesCurrentUser", true);
         if (pages.isEmpty()) return;
 
         Map<String, Map<String, Object>> entityByPascal = new LinkedHashMap<>();
@@ -159,6 +182,7 @@ public final class EntityScaffoldContext {
             pv.put("pageIsSearch", p.type() == PageDefinition.Type.SEARCH);
             pv.put("pageIsForm", p.type() == PageDefinition.Type.FORM);
             pv.put("pageIsInbox", p.type() == PageDefinition.Type.INBOX);
+            pv.put("pageIsTree", p.type() == PageDefinition.Type.TREE);
             pv.put("hasPageDescription", p.description() != null);
             pv.put("pageDescriptionExpr", p.description() == null ? null : tsString(p.description()));
             pv.put("needsNavigate", false);
@@ -316,6 +340,8 @@ public final class EntityScaffoldContext {
                 case RECORD -> {
                     Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
                     Map<String, Object> summary = summaries.get(p.entity().toLowerCase(Locale.ROOT));
+                    // A Print button, and the classes that keep the page's own buttons off the paper.
+                    pv.put("printable", p.printable());
                     pv.put("EntityName", ev.get("EntityName"));
                     pv.put("entityNameKebab", ev.get("entityNameKebab"));
                     pv.put("entityNamePluralKebab", ev.get("entityNamePluralKebab"));
@@ -333,6 +359,16 @@ public final class EntityScaffoldContext {
                     pv.put("recordMutable", recordMutable);
                     // The record's workflow moves sit by its Edit and Delete.
                     pv.put("recordHasWorkflow", Boolean.TRUE.equals(ev.get("hasWorkflow")));
+                    // A workflow that logs its moves: the record's history under its details.
+                    boolean tracksMoves = Boolean.TRUE.equals(ev.get("tracksMoves"));
+                    pv.put("recordTracksMoves", tracksMoves);
+                    if (tracksMoves) {
+                        Map<String, Object> statusField = fieldOf(ev, (String) ev.get("workflowStatusField"));
+                        pv.put("moveLabelsRef", statusField.get("enumTypeName") + "Labels");
+                        pv.put("moveTransitionsTs", "{ " + String.join(", ",
+                                ((List<Map<String, Object>>) ev.get("workflowTransitions")).stream()
+                                        .map(tv -> tv.get("name") + ": " + tv.get("labelTs")).toList()) + " }");
+                    }
                     pv.put("recordEditsInPage", editPage != null);
                     pv.put("recordEditsInDrawer", recordMutable && editPage == null);
                     pv.put("createPageId", editPage);
@@ -425,6 +461,29 @@ public final class EntityScaffoldContext {
                             .anyMatch(r -> r.kind() == ContentMarkdown.RunKind.PAGE_LINK));
                     pv.put("navIcon", "FileText");
                     defaultTitleExpr = tsString(p.id());
+                }
+                case TREE -> {
+                    Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
+                    Map<String, Object> summary = summaries.get(p.entity().toLowerCase(Locale.ROOT));
+                    putEntityNames(pv, ev);
+                    putRowNaming(pv, ev, summary);
+                    // A row opens its record page when there is one, else the quick look.
+                    putRecordLink(pv, "", p.entity(), links, summaries);
+                    boolean record = Boolean.TRUE.equals(pv.get("hasRecordPage"));
+                    pv.put("treeUsesDrawer", !record);
+                    // The self-reference as the row carries it: the parent's id.
+                    Map<String, Object> link = ((List<Map<String, Object>>) ev.get("relations")).stream()
+                            .filter(r -> p.via().equals(r.get("fieldName"))).findFirst().orElseThrow();
+                    pv.put("parentIdField", link.get("fkFieldName"));
+                    // Read in name order, so each branch lists its rows that way.
+                    Object labelField = summary.get("labelField");
+                    pv.put("treeSortField", labelField != null ? labelField : summary.get("pkName"));
+                    String create = links.createPageOf(p.entity());
+                    pv.put("hasCreatePage", create != null);
+                    pv.put("createPageId", create);
+                    pv.put("needsNavigate", record || create != null);
+                    pv.put("navIcon", "Layers");
+                    defaultTitleExpr = tsString((String) ev.get("entityLabelPlural"));
                 }
                 case IMPORT -> {
                     Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
@@ -614,6 +673,7 @@ public final class EntityScaffoldContext {
                     || Boolean.TRUE.equals(pv.get("pageIsReport")) || Boolean.TRUE.equals(pv.get("pageIsWizard"))
                     || Boolean.TRUE.equals(pv.get("pageIsCalendar")) || Boolean.TRUE.equals(pv.get("pageIsBoard"))
                     || Boolean.TRUE.equals(pv.get("pageIsImport")) || Boolean.TRUE.equals(pv.get("pageIsSearch"))
+                    || Boolean.TRUE.equals(pv.get("pageIsTree"))
                     || Boolean.TRUE.equals(pv.get("pageIsForm")) || Boolean.TRUE.equals(pv.get("pageIsInbox"))
                     || exprs.stream().anyMatch(e -> e instanceof String s && s.startsWith("t(")));
         }
@@ -635,6 +695,8 @@ public final class EntityScaffoldContext {
         ctx.put("routePages", routes);
         ctx.put("recordPages", records);
         ctx.put("hasRecordPages", !records.isEmpty());
+        // A record page that prints: the print rules in the stylesheet and the button's word.
+        ctx.put("hasPrintablePages", pages.stream().anyMatch(PageDefinition::printable));
         // Routes outside the nav (record pages, hidden wizards): the header names them from here,
         // and one with a home page shows it as a breadcrumb.
         List<Map<String, Object>> offNav = routes.stream().filter(v -> !nav.contains(v)).toList();
@@ -644,6 +706,9 @@ public final class EntityScaffoldContext {
         ctx.put("crumbPages", crumbs);
         ctx.put("hasBreadcrumbs", !crumbs.isEmpty());
         ctx.put("hasPageRoles", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("hasRoles"))));
+        if (shellUserMenu || shellNotifications || shellPalette) {
+            putShell(ctx, pages, nav, all, shellPalette, shellNotifications, links, summaries);
+        }
         // The shell declares its `goView` helper only when some screen takes onNavigate.
         ctx.put("hasNavigatingScreens", routes.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("needsNavigate"))));
         // ...and its `setQuery` (a route rewrite) only when a routed screen keeps state in the hash.
@@ -658,6 +723,7 @@ public final class EntityScaffoldContext {
         ctx.put("hasDashboardPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsDashboard"))));
         ctx.put("hasReportPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsReport"))));
         ctx.put("hasInboxPages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsInbox"))));
+        ctx.put("hasTreePages", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("pageIsTree"))));
         // widgets.tsx backs both the dashboard screens and the report screen's chart.
         ctx.put("hasWidgets", Boolean.TRUE.equals(ctx.get("hasDashboardPages"))
                 || Boolean.TRUE.equals(ctx.get("hasReportPages"))
@@ -665,6 +731,8 @@ public final class EntityScaffoldContext {
                 // ...and for a period preset (rangeParams lives in stats.ts) on a list or a tab count.
                 || all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("presetUsesPeriod"))
                         || Boolean.TRUE.equals(v.get("tabsUseRangeParams"))));
+        // widgets-flow.tsx only for a dashboard that draws a funnel, a gauge or time in state.
+        ctx.put("hasFlowWidgets", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("usesFlow"))));
         // links.tsx (the launcher tiles) only for a dashboard that has a links widget.
         ctx.put("hasLinksWidgets", all.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("usesLinks"))));
         // Per-entity contexts read these: an entity with a create page gets the list page's
@@ -734,6 +802,18 @@ public final class EntityScaffoldContext {
      * is set.
      */
     /**
+     * Whether any writable entity resolves the {@code audit} option on (its override, else the
+     * project option) — {@code hasAudit}, which gates {@code JpaAuditingConfig}. The file used to
+     * follow the project option alone, so an entity that opted in on its own got
+     * {@code @CreatedDate} fields that nothing ever filled.
+     */
+    public static void putAudit(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldAudit"));
+        ctx.put("hasAudit", entities.stream().anyMatch(e -> !e.readOnly()
+                && (e.opts().get("audit") != null ? e.opts().get("audit") : projectOpt)));
+    }
+
+    /**
      * Whether any entity resolves the {@code optimisticLocking} option on (its override, else the
      * project option) and can use it (writable, table-backed) — {@code hasOptimisticLocking}, which
      * gates the project-wide stale-update handler, so an entity that opts in on its own still gets it.
@@ -759,6 +839,72 @@ public final class EntityScaffoldContext {
         ctx.put("hasInlineEdit", entities.stream().anyMatch(e -> !e.readOnly()
                 && e.fields().stream().filter(FieldDefinition::primaryKey).count() == 1
                 && (e.opts().get("inlineEdit") != null ? e.opts().get("inlineEdit") : projectOpt)));
+    }
+
+    /**
+     * Whether any entity resolves the {@code xlsxExport} option on (its override, else the project
+     * option) — {@code hasXlsxExport}, which ships the backend's {@code XlsxWriter} and the
+     * frontend's string for the button.
+     */
+    public static void putXlsxExport(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport"));
+        ctx.put("hasXlsxExport", entities.stream().anyMatch(e ->
+                e.opts().get("xlsxExport") != null ? e.opts().get("xlsxExport") : projectOpt));
+    }
+
+    /**
+     * The entities whose lists keep saved views — each resolves the {@code savedViews} option on
+     * (its override, else the project option): {@code hasSavedViews}, which ships the backend's
+     * {@code views} package and the frontend's menu, and {@code savedViewLists}, the list names the
+     * backend takes a view for (an entity's name in kebab case, as its pages spell it).
+     */
+    public static void putSavedViews(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        List<String> lists = savedViewLists(entities, Boolean.TRUE.equals(ctx.get("optScaffoldSavedViews")));
+        ctx.put("hasSavedViews", !lists.isEmpty());
+        ctx.put("savedViewLists", lists);
+    }
+
+    private static List<String> savedViewLists(List<EntityDefinition> entities, boolean projectOpt) {
+        return entities.stream()
+                .filter(e -> e.opts().get("savedViews") != null ? e.opts().get("savedViews") : projectOpt)
+                .map(e -> Naming.toKebabCase(e.name())).toList();
+    }
+
+    /** Text inside a Java string literal, on one line. */
+    private static String javaText(Object text) {
+        return SqlNames.javaLiteral(String.valueOf(text).replace('\n', ' ').replace('\r', ' ').replace('\t', ' '));
+    }
+
+    /**
+     * The Excel export's columns ({@code xlsxHeaders}, {@code xlsxCells}): every value under the
+     * name the UI gives it — not the property's — a link by the row it points at where that row
+     * has a name, a file by its name, a set of links by their names.
+     */
+    @SuppressWarnings("unchecked")
+    private static void putXlsxColumns(Map<String, Object> ctx) {
+        List<String> headers = new ArrayList<>();
+        List<String> cells = new ArrayList<>();
+        for (Map<String, Object> f : (List<Map<String, Object>>) ctx.get("fields")) {
+            headers.add(javaText(f.get("label")));
+            cells.add("dto." + (Boolean.TRUE.equals(f.get("isAttachment")) ? f.get("nameField") : f.get("name")) + "()");
+        }
+        for (Map<String, Object> rel : (List<Map<String, Object>>) ctx.get("relations")) {
+            headers.add(javaText(rel.get("label")));
+            cells.add("dto." + (Boolean.TRUE.equals(rel.get("hasTargetLabel")) ? rel.get("fieldName") + "Label" : rel.get("fkFieldName")) + "()");
+        }
+        for (Map<String, Object> set : (List<Map<String, Object>>) ctx.getOrDefault("collections", List.of())) {
+            headers.add(javaText(set.get("label")));
+            cells.add("dto." + set.get("labelsField") + "() == null ? null : String.join(\"; \", dto." + set.get("labelsField") + "())");
+        }
+        if (Boolean.TRUE.equals(ctx.get("auditApplicable"))) {
+            headers.add("Created");
+            cells.add("dto.createdAt()");
+            headers.add("Updated");
+            cells.add("dto.updatedAt()");
+        }
+        ctx.put("xlsxHeaders", headers);
+        ctx.put("xlsxCells", cells);
+        ctx.put("xlsxSheetName", javaText(ctx.get("entityLabelPlural")));
     }
 
     public static void putCsvImport(Map<String, Object> ctx, List<EntityDefinition> entities) {
@@ -940,6 +1086,7 @@ public final class EntityScaffoldContext {
         pv.put("cardFields", cards);
         pv.put("cardLabelImports", String.join(", ", labelImports));
         pv.put("hasCardLabelImports", !labelImports.isEmpty());
+        putCardFormatImports(pv, cards);
         pv.put("hasPresetFilter", !p.presetFilter().isEmpty());
         pv.put("presetFilterOrEmptyTs", p.presetFilter().isEmpty() ? "{}" : presetFilterTs(p.presetFilter(), ev));
         pv.put("presetUsesPeriod", presetHasPeriod(p.presetFilter()));
@@ -992,6 +1139,79 @@ public final class EntityScaffoldContext {
         pv.put("drawerGroups", groups.stream().filter(g -> !Boolean.TRUE.equals(g.get("hasRecordPage"))).toList());
         pv.put("needsNavigate", navigates);
     }
+
+    /**
+     * The header's tools ({@code ShellTools.tsx}): what the palette offers — {@code palettePages},
+     * the nav's pages and the hidden forms that start a record, and {@code paletteEntities}, every
+     * entity that is searched by text and has somewhere to open a match — and what the bell counts,
+     * {@code bellSources}: every workflow that assigns its tasks, with the page they are worked on.
+     */
+    @SuppressWarnings("unchecked")
+    private static void putShell(Map<String, Object> ctx, List<PageDefinition> pages, List<Map<String, Object>> nav,
+                                 List<Map<String, Object>> all, boolean palette, boolean notifications,
+                                 PageLinks links, Map<String, Map<String, Object>> summaries) {
+        List<Map<String, Object>> entityViews = (List<Map<String, Object>>) ctx.get("entities");
+        List<Object> exprs = new ArrayList<>();
+        if (palette) {
+            List<Map<String, Object>> palettePages = new ArrayList<>(nav);
+            all.stream().filter(v -> Boolean.TRUE.equals(v.get("hidden"))
+                            && (Boolean.TRUE.equals(v.get("pageIsWizard")) || Boolean.TRUE.equals(v.get("pageIsForm"))))
+                    .forEach(palettePages::add);
+            ctx.put("palettePages", palettePages);
+            palettePages.forEach(v -> exprs.add(v.get("pageTitleExpr")));
+            List<Map<String, Object>> found = new ArrayList<>();
+            for (Map<String, Object> ev : entityViews) {
+                if (found.size() == MAX_PALETTE_ENTITIES) break;
+                if (!Boolean.TRUE.equals(ev.get("hasStringFields"))) continue;
+                String name = (String) ev.get("entityDeclaredName");
+                Map<String, Object> gv = new LinkedHashMap<>();
+                putEntityNames(gv, ev);
+                putRowNaming(gv, ev, summaries.get(name.toLowerCase(Locale.ROOT)));
+                putRecordLink(gv, "", name, links, summaries);
+                String list = links.listPageOf(name);
+                gv.put("hasListPage", list != null);
+                gv.put("listPageId", list);
+                // A match needs somewhere to open: the record's page, else the entity's list.
+                if (list == null && !Boolean.TRUE.equals(gv.get("hasRecordPage"))) continue;
+                found.add(gv);
+            }
+            ctx.put("paletteEntities", found);
+        }
+        if (notifications) {
+            List<Map<String, Object>> sources = new ArrayList<>();
+            for (Map<String, Object> ev : entityViews) {
+                if (!Boolean.TRUE.equals(ev.get("hasWorkflow")) || !Boolean.TRUE.equals(ev.get("hasAssignee"))) continue;
+                String name = (String) ev.get("entityDeclaredName");
+                Map<String, Object> sv = new LinkedHashMap<>();
+                putEntityNames(sv, ev);
+                Object due = ev.get("dueField");
+                sv.put("hasDue", due != null);
+                if (due != null) {
+                    sv.put("dueField", due);
+                    sv.put("dueIsDateTime", ((List<Map<String, Object>>) ev.get("fields")).stream()
+                            .anyMatch(f -> due.equals(f.get("name")) && Boolean.TRUE.equals(f.get("isDateTime"))));
+                }
+                // Where the tasks are worked on: the entity's inbox page in the nav, else its home.
+                PageDefinition inbox = pages.stream()
+                        .filter(p -> p.type() == PageDefinition.Type.INBOX && !p.hidden() && name.equals(p.entity()))
+                        .findFirst().orElse(null);
+                String page = inbox != null ? inbox.id() : links.homeOf(name);
+                sv.put("hasBellPage", page != null);
+                sv.put("bellPageId", page);
+                sv.put("hasBellQueues", inbox != null);
+                if (inbox != null) {
+                    sv.put("bellQueuesTs", "[" + String.join(", ", inbox.inbox().queues().stream()
+                            .map(q -> tsString(q.wire())).toList()) + "]");
+                }
+                sources.add(sv);
+            }
+            ctx.put("bellSources", sources);
+        }
+        ctx.put("shellUsesT", exprs.stream().anyMatch(e -> e instanceof String s && s.contains("t(")));
+    }
+
+    /** The entities the palette searches at once: each is a request per keystroke pause. */
+    private static final int MAX_PALETTE_ENTITIES = 8;
 
     /** The names a screen over one entity imports its hooks, types and pages by. */
     private static void putEntityNames(Map<String, Object> view, Map<String, Object> ev) {
@@ -1109,6 +1329,10 @@ public final class EntityScaffoldContext {
         List<String> dashFilters = p.dashboard() == null ? List.of() : p.dashboard().filters();
         for (int i = 0; i < p.widgets().size(); i++) {
             PageDefinition.Widget w = p.widgets().get(i);
+            if (w.kind() == PageDefinition.WidgetKind.TIME_IN_STATE) {
+                widgetViews.add(timeInStateView(w, i, entityByPascal.get(Naming.toPascalCase(w.entity())), labelRefsByModule));
+                continue;
+            }
             if (w.kind() == PageDefinition.WidgetKind.TEXT) {
                 widgetViews.add(textWidgetView(w, i));
                 continue;
@@ -1149,11 +1373,15 @@ public final class EntityScaffoldContext {
             wv.put("widgetIsRecent", w.kind() == PageDefinition.WidgetKind.RECENT);
             wv.put("widgetIsTop", w.kind() == PageDefinition.WidgetKind.TOP);
             wv.put("widgetIsProgress", w.kind() == PageDefinition.WidgetKind.PROGRESS);
+            wv.put("widgetIsFunnel", w.kind() == PageDefinition.WidgetKind.FUNNEL);
+            wv.put("widgetIsGauge", w.kind() == PageDefinition.WidgetKind.GAUGE);
+            wv.put("widgetIsTimeInState", false);
             // `count` is the default everywhere, so only a real reduction reaches the props.
             boolean reduces = w.agg() != null && w.agg() != PageDefinition.Agg.COUNT;
             wv.put("hasAgg", reduces);
             wv.put("agg", w.agg() == null ? null : w.agg().wire());
             wv.put("aggField", w.field());
+            putAggCurrency(wv, ev, reduces ? w.field() : null);
             wv.put("bucket", w.bucket() == null ? null : w.bucket().wire());
             wv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
             String spanClass = SPAN_CLASSES.get(w.span() - 1);
@@ -1193,7 +1421,7 @@ public final class EntityScaffoldContext {
             switch (w.kind()) {
                 // A reducing tile is titled by what it reduces ("Total Amount"), a counting one by
                 // what it counts.
-                case KPI, PROGRESS -> defaultTitle = reduces ? aggTitle(w, ev) : entityLabels;
+                case KPI, PROGRESS, GAUGE -> defaultTitle = reduces ? aggTitle(w, ev) : entityLabels;
                 case LINE -> {
                     wv.put("groupBy", w.groupBy());
                     Map<String, Object> fv = fieldOf(ev, w.groupBy());
@@ -1254,7 +1482,7 @@ public final class EntityScaffoldContext {
                     defaultTitle = "t('xByYAndZ', { x: " + (reduces ? aggTitle(w, ev) : entityLabels)
                             + ", y: " + rank.get("groupLabelExpr") + ", z: " + cols.get("groupLabelExpr") + " })";
                 }
-                case BAR, TOP, DONUT -> {
+                case BAR, TOP, DONUT, FUNNEL -> {
                     Map<String, Object> rank = rankView(ev, w.groupBy());
                     wv.putAll(rank);
                     String labelsRef = (String) rank.get("labelsRef");
@@ -1267,6 +1495,14 @@ public final class EntityScaffoldContext {
                     usesQueryOf |= drill && paramsExpr != null;
                     needsNavigate |= drill;
                     if (w.kind() == PageDefinition.WidgetKind.TOP) wv.put("limit", w.limit());
+                    // A funnel limited to some of its enum's values draws those as its stages, in
+                    // the enum's order: a state off the main line (REJECTED) is left out that way.
+                    String stages = w.kind() == PageDefinition.WidgetKind.FUNNEL ? w.presetFilter().get(w.groupBy()) : null;
+                    wv.put("hasStages", stages != null);
+                    if (stages != null) {
+                        wv.put("stagesTs", "[" + String.join(", ", java.util.Arrays.stream(stages.split(","))
+                                .map(s -> tsString(s.trim())).toList()) + "]");
+                    }
                     String measured = reduces ? aggTitle(w, ev) : entityLabels;
                     defaultTitle = "t('" + (w.kind() == PageDefinition.WidgetKind.TOP ? "topXByY" : "xByY")
                             + "', { x: " + measured + ", y: " + rank.get("groupLabelExpr") + " })";
@@ -1289,9 +1525,16 @@ public final class EntityScaffoldContext {
             widgetViews.add(wv);
         }
         pv.put("widgets", widgetViews);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "Links", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge", "TimeInState", "Activity", "Text", "Links", "List")) {
             pv.put("uses" + kind, widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetIs" + kind))));
         }
+        // The process widgets live in a file of their own: only what the page draws is imported.
+        List<String> flow = new ArrayList<>();
+        if (Boolean.TRUE.equals(pv.get("usesFunnel"))) flow.add("FunnelCard");
+        if (Boolean.TRUE.equals(pv.get("usesGauge"))) flow.add("GaugeTile");
+        if (Boolean.TRUE.equals(pv.get("usesTimeInState"))) flow.add("TimeInStateCard");
+        pv.put("usesFlow", !flow.isEmpty());
+        pv.put("flowImports", String.join(", ", flow));
         // The entity pages the list widgets embed: one import per entity module.
         Map<String, Map<String, Object>> listModules = new LinkedHashMap<>();
         for (Map<String, Object> v : widgetViews) {
@@ -1338,7 +1581,8 @@ public final class EntityScaffoldContext {
         pv.put("usesBucketRange", usesBucketRange);
         pv.put("usesStatsHelpers", p.dateRange() != null || usesStatsQuery || usesQueryOf || usesBucketRange || usesRange
                 || p.widgets().stream().anyMatch(w -> w.kind() != PageDefinition.WidgetKind.TEXT
-                        && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.LIST));
+                        && w.kind() != PageDefinition.WidgetKind.LINKS && w.kind() != PageDefinition.WidgetKind.LIST
+                        && w.kind() != PageDefinition.WidgetKind.TIME_IN_STATE));
     }
 
     /** The widget's filter params as a TS expression: its preset (already an expression), the
@@ -1412,7 +1656,7 @@ public final class EntityScaffoldContext {
         Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(w.entity()));
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "Links")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge", "TimeInState", "Activity", "Text", "Links")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsList", true);
@@ -1452,7 +1696,7 @@ public final class EntityScaffoldContext {
     private static Map<String, Object> linksWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Text", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge", "TimeInState", "Activity", "Text", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsLinks", true);
@@ -1475,7 +1719,7 @@ public final class EntityScaffoldContext {
                                                           Map<String, Map<String, Object>> summaries, PageLinks links) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Text", "Links", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge", "TimeInState", "Text", "Links", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsActivity", true);
@@ -1505,10 +1749,34 @@ public final class EntityScaffoldContext {
         return wv;
     }
 
+    /** A time-in-state widget: the entity's move log, read through its status labels. */
+    private static Map<String, Object> timeInStateView(PageDefinition.Widget w, int index, Map<String, Object> ev,
+                                                       Map<String, Set<String>> labelRefsByModule) {
+        Map<String, Object> wv = new LinkedHashMap<>();
+        wv.put("widgetKey", "w" + index);
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge",
+                "Activity", "Text", "Links", "List")) {
+            wv.put("widgetIs" + kind, false);
+        }
+        wv.put("widgetIsTimeInState", true);
+        wv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
+        String labelsRef = fieldOf(ev, (String) ev.get("workflowStatusField")).get("enumTypeName") + "Labels";
+        wv.put("labelsRef", labelsRef);
+        labelRefsByModule.computeIfAbsent((String) ev.get("entityNameKebab"), k -> new LinkedHashSet<>()).add(labelsRef);
+        wv.put("titleExpr", w.title() != null ? tsString(w.title())
+                : "t('timeInStateOf', { x: " + tsString((String) ev.get("entityLabelPlural")) + " })");
+        String spanClass = SPAN_CLASSES.get(w.span() - 1);
+        wv.put("hasSpanClass", !spanClass.isEmpty());
+        wv.put("spanClass", spanClass);
+        wv.put("hasParams", false);
+        wv.put("hasCompare", false);
+        return wv;
+    }
+
     private static Map<String, Object> textWidgetView(PageDefinition.Widget w, int index) {
         Map<String, Object> wv = new LinkedHashMap<>();
         wv.put("widgetKey", "w" + index);
-        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Activity", "Links", "List")) {
+        for (String kind : List.of("Kpi", "Bar", "Line", "Recent", "Top", "Progress", "Stacked", "Pivot", "Funnel", "Gauge", "TimeInState", "Activity", "Links", "List")) {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsText", true);
@@ -1543,7 +1811,7 @@ public final class EntityScaffoldContext {
             out.put("optionValue", rel.get("targetPkName"));
             out.put("hasOptionLabel", rel.get("targetLabelField") != null);
             out.put("optionLabel", rel.get("targetLabelField"));
-            out.put("groupLabelExpr", tsString(Naming.toPascalCase(name)));
+            out.put("groupLabelExpr", tsString((String) rel.get("label")));
             out.put("drillKey", rel.get("fkFieldName"));
             return out;
         }
@@ -1619,6 +1887,19 @@ public final class EntityScaffoldContext {
             sv.put("keysTs", String.join(", ", keys));
             steps.add(sv);
         }
+        // The rows edited with the record are a step of their own, after its fields. A message about
+        // one of them is keyed by its place (lines[0].quantity): the step owns every key under the list.
+        boolean rows = false;
+        for (Map<String, Object> inv : (List<Map<String, Object>>) ev.getOrDefault("inverseRelations", List.of())) {
+            if (!Boolean.TRUE.equals(inv.get("composition"))) continue;
+            Map<String, Object> sv = new LinkedHashMap<>();
+            sv.put("stepTitleExpr", tsString((String) inv.get("collectionLabel")));
+            sv.put("fieldsTs", tsString((String) inv.get("collectionField")));
+            sv.put("keysTs", tsString((String) inv.get("collectionField")));
+            steps.add(sv);
+            rows = true;
+        }
+        pv.put("wizardHasRows", rows);
         pv.put("steps", steps);
         // The form starts from the fields' defaults, as the entity page's New does.
         pv.put("initialTs", newRecordTs((List<Map<String, Object>>) ev.get("fields")));
@@ -1643,6 +1924,25 @@ public final class EntityScaffoldContext {
         Map<String, Object> status = fieldViews.stream().filter(fv -> wf.statusField().equals(fv.get("name"))).findFirst().orElseThrow();
         status.put("isReadOnly", true);
         status.put("isWorkflowStatus", true);
+        status.put("isWorkflowLocked", true);
+        // The workflow sets it on every create, whatever was sent: a client is never asked for it
+        // (its column keeps its NOT NULL — isNotNullColumn).
+        status.put("isRequired", false);
+        // A workflow that logs its moves: the demo rows are spread over its states — whatever the
+        // status' default — so the histories seeded for them give the log something to show.
+        if (wf.trackMoves()) {
+            String enumRef = view.get("EntityName") + "." + status.get("enumTypeName");
+            status.put("seedExpr", enumRef + ".values()[(i - 1) % " + enumRef + ".values().length]");
+        }
+        // The assignee changes only by Claim, Release and Reassign: out of the form, PUT, bulk and
+        // inline edit and the import, like the status.
+        if (wf.assigneeField() != null) {
+            fieldViews.stream().filter(fv -> wf.assigneeField().equals(fv.get("name"))).findFirst().ifPresent(fv -> {
+                fv.put("isReadOnly", true);
+                fv.put("isWorkflowAssignee", true);
+                fv.put("isWorkflowLocked", true);
+            });
+        }
         String pascal = Naming.toPascalCase(entity.name());
         String enumType = (String) status.get("enumTypeName");
         java.util.function.Function<String, String> javaState = s -> pascal + "." + enumType + "." + s;
@@ -1711,6 +2011,26 @@ public final class EntityScaffoldContext {
         return Character.toUpperCase(spaced.charAt(0)) + spaced.substring(1);
     }
 
+    /** A tile that sums (averages…) a money field shows the number in the field's currency:
+     *  {@code aggCurrency}, or nothing for a count or a plain number. */
+    private static void putAggCurrency(Map<String, Object> view, Map<String, Object> entityView, String field) {
+        Map<String, Object> fv = field == null ? null : fieldOf(entityView, field);
+        boolean money = fv != null && Boolean.TRUE.equals(fv.get("isMoney"));
+        view.put("hasAggCurrency", money);
+        view.put("aggCurrency", money ? fv.get("currency") : null);
+    }
+
+    /** The {@code @shared/ui/format} helpers a screen's cards call — imported only when one does
+     *  (the generated lint rejects an unused import). */
+    private static void putCardFormatImports(Map<String, Object> pv, List<Map<String, Object>> cards) {
+        List<String> imports = new ArrayList<>();
+        for (String helper : List.of("formatDate", "formatDateTime", "formatInstant", "formatMoney", "attachmentUrl")) {
+            if (cards.stream().anyMatch(c -> ((String) c.get("renderTs")).contains(helper + "("))) imports.add(helper);
+        }
+        pv.put("hasCardFormatImports", !imports.isEmpty());
+        pv.put("cardFormatImports", String.join(", ", imports));
+    }
+
     /** Board cards' and inbox rows' cells, as TS expressions over the row `r`, the first naming it;
      *  the enum label maps they read are added to `labelImports`. */
     private static List<Map<String, Object>> cardViews(List<String> names, Map<String, Map<String, Object>> fields,
@@ -1724,20 +2044,12 @@ public final class EntityScaffoldContext {
             String label;
             if (f != null) {
                 label = (String) f.get("label");
-                String none = "r." + name + " == null ? '\u2014' : ";
-                if (Boolean.TRUE.equals(f.get("isEnum"))) {
-                    labelImports.add(f.get("enumTypeName") + "Labels");
-                    render = none + f.get("enumTypeName") + "Labels[r." + name + "]";
-                } else if (Boolean.TRUE.equals(f.get("isBoolean"))) {
-                    render = none + "r." + name + " ? t('trueLabel') : t('falseLabel')";
-                } else if (Boolean.TRUE.equals(f.get("isDateTime"))) {
-                    render = none + "String(r." + name + ").replace('T', ' ').slice(0, 16)";
-                } else {
-                    render = none + "String(r." + name + ")";
-                }
+                if (Boolean.TRUE.equals(f.get("isEnum"))) labelImports.add(f.get("enumTypeName") + "Labels");
+                render = "r." + name + " == null ? '\u2014' : " + displayTs((FieldType) f.get(FIELD_TYPE_KEY), "r." + name,
+                        (String) f.get("enumTypeName"), (String) f.get("currency"), Display.CARD);
             } else {
                 Map<String, Object> r = relations.get(name);
-                label = (String) r.get("FieldName");
+                label = (String) r.get("label");
                 String fk = "r." + r.get("fkFieldName");
                 String id = fk + " == null ? '\u2014' : '#' + String(" + fk + ")";
                 render = Boolean.TRUE.equals(r.get("hasTargetLabel")) ? "r." + name + "Label ?? (" + id + ")" : id;
@@ -1763,7 +2075,9 @@ public final class EntityScaffoldContext {
         Map<String, Map<String, Object>> relations = new LinkedHashMap<>();
         for (Map<String, Object> r : (List<Map<String, Object>>) ev.get("relations")) relations.put((String) r.get("fieldName"), r);
         Set<String> labelImports = new TreeSet<>();
-        pv.put("cardFields", cardViews(spec.cardFields(), fields, relations, labelImports));
+        List<Map<String, Object>> inboxCards = cardViews(spec.cardFields(), fields, relations, labelImports);
+        pv.put("cardFields", inboxCards);
+        putCardFormatImports(pv, inboxCards);
         Map<String, Object> status = fields.get((String) ev.get("workflowStatusField"));
         labelImports.add(status.get("enumTypeName") + "Labels");
         pv.put("cardLabelImports", String.join(", ", labelImports));
@@ -1842,6 +2156,7 @@ public final class EntityScaffoldContext {
             sv.put("hasAgg", reduces);
             sv.put("agg", s.agg().wire());
             sv.put("aggField", s.field());
+            putAggCurrency(sv, cv, reduces ? s.field() : null);
             sv.put("viaParam", Naming.toCamelCase(s.via()) + "Id");
             String label = (String) cv.get("entityLabelPlural");
             sv.put("titleExpr", s.title() != null ? tsString(s.title())
@@ -1996,7 +2311,7 @@ public final class EntityScaffoldContext {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("name", fv.get("name"));
         out.put("Name", fv.get("Name"));
-        out.put("label", fv.get("label"));
+        putText(out, "label", (String) fv.get("label"));
         out.put("javaType", fv.get("javaType"));
         return out;
     }
@@ -2033,6 +2348,8 @@ public final class EntityScaffoldContext {
         if (requested.contains("cards")) emitted.add("cards");
         if (requested.contains("kanban") && breakdown && !entity.readOnly()) emitted.add("kanban");
         if (requested.contains("calendar") && temporal) emitted.add("calendar");
+        // A gallery is the rows by their pictures: it needs an image field to show.
+        if (requested.contains("gallery") && entity.fields().stream().anyMatch(f -> f.type().isImage())) emitted.add("gallery");
         if (emitted.isEmpty()) emitted.add("table");
         return emitted;
     }
@@ -2105,20 +2422,108 @@ public final class EntityScaffoldContext {
      * a {@code Customer} targeted by {@code Order.customer} gets an {@code orders} collection with
      * {@code mappedBy = "customer"}).
      */
-    private static Map<String, List<Map<String, Object>>> buildInverseRelations(List<EntityDefinition> entities) {
+    /**
+     * The parent-side collection a child's MANY_TO_ONE derives: the child's plural
+     * ({@code orderLines}). A child with two links to one parent ({@code Transfer.source} and
+     * {@code Transfer.target}, both an {@code Account}) would give that parent the same name twice,
+     * so each is told apart by its relation: {@code transfersBySource}, {@code transfersByTarget}.
+     */
+    static String inverseCollectionName(EntityDefinition child, RelationDefinition rel) {
+        String plural = Naming.pluralize(Naming.toCamelCase(child.name()));
+        long toSameParent = child.relations().stream()
+                .filter(r -> r.type() == RelationType.MANY_TO_ONE
+                        && r.targetEntity().equalsIgnoreCase(rel.targetEntity()))
+                .count();
+        return toSameParent > 1 ? plural + "By" + Naming.toPascalCase(rel.fieldName()) : plural;
+    }
+
+    /**
+     * The ONE_TO_MANY the parent declares over this link, or null: the same collection, under the
+     * name the model gave it, generated whether or not {@code inverseCollections} is on.
+     */
+    static RelationDefinition declaredListOf(List<EntityDefinition> entities, EntityDefinition child,
+                                             RelationDefinition rel) {
+        for (EntityDefinition parent : entities) {
+            if (!parent.name().equalsIgnoreCase(rel.targetEntity())) continue;
+            for (RelationDefinition list : parent.children()) {
+                if (list.targetEntity().equalsIgnoreCase(child.name())
+                        && rel.fieldName().equalsIgnoreCase(list.mappedBy())) return list;
+            }
+        }
+        return null;
+    }
+
+    /** Per parent entity (lower-cased name), the collection names its children's relations derive
+     *  — those the parent does not name itself with a ONE_TO_MANY. */
+    static Map<String, List<String>> inverseCollectionNames(List<EntityDefinition> entities) {
+        Map<String, List<String>> byLower = new LinkedHashMap<>();
+        for (EntityDefinition child : entities) {
+            for (RelationDefinition rel : child.relations()) {
+                if (rel.type() != RelationType.MANY_TO_ONE) continue;
+                if (declaredListOf(entities, child, rel) != null) continue;
+                byLower.computeIfAbsent(rel.targetEntity().toLowerCase(Locale.ROOT), k -> new ArrayList<>())
+                        .add(inverseCollectionName(child, rel));
+            }
+        }
+        return byLower;
+    }
+
+    private static Map<String, List<Map<String, Object>>> buildInverseRelations(
+            List<EntityDefinition> entities, Map<String, Map<String, Object>> summaries) {
         Map<String, List<Map<String, Object>>> byLower = new LinkedHashMap<>();
         for (EntityDefinition child : entities) {
             for (RelationDefinition rel : child.relations()) {
                 if (rel.type() != RelationType.MANY_TO_ONE) continue;
                 String parentLower = rel.targetEntity().toLowerCase(Locale.ROOT);
                 String childCamel = Naming.toCamelCase(child.name());
-                String coll = Naming.pluralize(childCamel);
+                // A ONE_TO_MANY the parent declares is this collection under the model's own name,
+                // generated whatever the option says, and shown as a table in the parent's details.
+                RelationDefinition declared = declaredListOf(entities, child, rel);
+                String coll = declared != null ? Naming.toCamelCase(declared.fieldName()) : inverseCollectionName(child, rel);
                 Map<String, Object> inv = new LinkedHashMap<>();
+                inv.put("declared", declared != null);
+                // The child's rows are part of the parent: its form edits them, its save carries them.
+                boolean composed = declared != null && declared.composition();
+                inv.put("composition", composed);
+                if (composed) {
+                    Map<String, Object> childSummary = summaries.get(child.name().toLowerCase(Locale.ROOT));
+                    inv.put("MappedBy", Naming.toPascalCase(rel.fieldName()));
+                    inv.put("ChildPkName", childSummary != null ? childSummary.get("PkName") : "Id");
+                    inv.put("childPkJavaType", childSummary != null ? childSummary.get("pkJavaType") : "Long");
+                    // The child's other foreign keys: a row carries each as an id stub, which the
+                    // parent's service swaps for a managed reference before saving.
+                    List<Map<String, Object>> refs = new ArrayList<>();
+                    for (RelationDefinition other : child.relations()) {
+                        if (other == rel || other.type() != RelationType.MANY_TO_ONE) continue;
+                        Map<String, Object> target = summaries.get(other.targetEntity().toLowerCase(Locale.ROOT));
+                        Map<String, Object> ref = new LinkedHashMap<>();
+                        ref.put("FieldName", Naming.toPascalCase(other.fieldName()));
+                        ref.put("targetEntity", Naming.toPascalCase(other.targetEntity()));
+                        ref.put("TargetPkName", target != null ? target.get("PkName") : "Id");
+                        refs.add(ref);
+                    }
+                    inv.put("childRefs", refs);
+                }
+                if (declared != null) {
+                    inv.put("listTitleTs", tsLiteralBody(declared.label() != null && !declared.label().isBlank()
+                            ? declared.label() : humanizeIdentifier(coll)));
+                    inv.put("childPath", "/api/" + Naming.pluralize(Naming.toKebabCase(child.name())));
+                    inv.put("childKebab", Naming.toKebabCase(child.name()));
+                    inv.put("filterParam", Naming.toCamelCase(rel.fieldName()) + "Id");
+                    List<Map<String, Object>> columns = childColumns(child, rel, summaries);
+                    inv.put("childColumns", columns);
+                    inv.put("labelMaps", columns.stream().filter(c -> c.get("enumTypeName") != null)
+                            .map(c -> c.get("enumTypeName") + "Labels").toList());
+                }
                 inv.put("childEntity", Naming.toPascalCase(child.name()));
                 inv.put("childEntityCamel", childCamel);
                 inv.put("mappedBy", Naming.toCamelCase(rel.fieldName()));
                 inv.put("collectionField", coll);
                 inv.put("CollectionField", Naming.toPascalCase(coll));
+                // What the UI calls the collection (its count column): the declared ONE_TO_MANY's
+                // label, else its name as before.
+                putText(inv, "collectionLabel", declared != null && declared.label() != null && !declared.label().isBlank()
+                        ? declared.label() : Naming.toPascalCase(coll));
                 // SQL names for the parent's @Formula child count: the child's table (custom name
                 // or the default snake-plural, schema-qualified when set) and its FK column —
                 // the same derivations the child's own @Table/@JoinColumn use.
@@ -2133,6 +2538,49 @@ public final class EntityScaffoldContext {
             }
         }
         return byLower;
+    }
+
+    /** How many columns of its child rows a parent's details show. */
+    static final int CHILD_LIST_COLUMNS = 6;
+
+    /**
+     * The columns of a ONE_TO_MANY's table in the parent's details: the child's short values in
+     * the model's order (no generated key, long text or attachment), then its other foreign keys
+     * by label — the link back to the parent is the same on every row, so it is left out.
+     */
+    private static List<Map<String, Object>> childColumns(EntityDefinition child, RelationDefinition link,
+                                                          Map<String, Map<String, Object>> summaries) {
+        String childPascal = Naming.toPascalCase(child.name());
+        List<Map<String, Object>> columns = new ArrayList<>();
+        for (FieldDefinition f : child.fields()) {
+            if (f.primaryKey() && f.generated()) continue;
+            if (f.type() == FieldType.TEXT || f.type().isMarkdown() || f.type().isAttachment()) continue;
+            Map<String, Object> col = new LinkedHashMap<>();
+            col.put("key", f.name());
+            col.put("labelTs", escapeTsSingleQuoted(
+                    f.label() != null && !f.label().isBlank() ? f.label() : Naming.toPascalCase(f.name())));
+            col.put("alt", null);
+            col.put("hasAlt", false);
+            col.put("isEnum", f.type() == FieldType.ENUM);
+            col.put("enumTypeName", f.type() == FieldType.ENUM
+                    ? childPascal + Naming.toPascalCase(f.name()) + "Type" : null);
+            columns.add(col);
+        }
+        for (RelationDefinition r : child.relations()) {
+            if (r == link) continue;
+            String name = Naming.toCamelCase(r.fieldName());
+            Map<String, Object> target = summaries.get(r.targetEntity().toLowerCase(Locale.ROOT));
+            boolean labelled = target != null && target.get("labelField") != null;
+            Map<String, Object> col = new LinkedHashMap<>();
+            col.put("key", labelled ? name + "Label" : name + "Id");
+            col.put("labelTs", tsLiteralBody(labelOf(r)));
+            col.put("alt", labelled ? name + "Id" : null);
+            col.put("hasAlt", labelled);
+            col.put("isEnum", false);
+            col.put("enumTypeName", null);
+            columns.add(col);
+        }
+        return columns.size() > CHILD_LIST_COLUMNS ? new ArrayList<>(columns.subList(0, CHILD_LIST_COLUMNS)) : columns;
     }
 
     /** Builds a {@code lower(name) → summary} lookup with each entity's PK type/name and
@@ -2230,12 +2678,113 @@ public final class EntityScaffoldContext {
         return s.replace("\\", "\\\\").replace("'", "\\'");
     }
 
+    /**
+     * The packages of the generated backend that hold a JPA entity and its repository outside
+     * {@code <domain>.entity} / {@code .repository}: the attachment table behind FILE and IMAGE
+     * fields. Boot's own scan finds them; a datasource config class that names its packages
+     * (every database but the default H2) has to be told.
+     */
+    public static List<String> supportPackages(String packageName, List<EntityDefinition> entities) {
+        return supportPackages(packageName, entities, false);
+    }
+
+    /** As above, knowing whether the request's {@code savedViews} option is on (an entity may
+     *  still turn it on or off for itself). */
+    public static List<String> supportPackages(String packageName, List<EntityDefinition> entities, boolean savedViewsOpt) {
+        List<String> packages = new ArrayList<>();
+        if (entities.stream().flatMap(e -> e.fields().stream()).anyMatch(f -> f.type().isAttachment())) {
+            packages.add(packageName + ".attachment");
+        }
+        if (!savedViewLists(entities, savedViewsOpt).isEmpty()) {
+            packages.add(packageName + ".views");
+        }
+        if (entities.stream().anyMatch(e -> e.workflow() != null && e.workflow().trackMoves())) {
+            packages.add(packageName + ".workflow");
+        }
+        return packages;
+    }
+
+    /** What the generated UI calls a relation: its label, else its field name in PascalCase (what
+     *  every relation was called before it could carry one). */
+    static String labelOf(RelationDefinition r) {
+        return r.label() != null && !r.label().isBlank() ? r.label() : Naming.toPascalCase(r.fieldName());
+    }
+
+    /** Matches an {@code &} that JSX would read as the start of a character reference. */
+    private static final java.util.regex.Pattern JSX_ENTITY_START =
+            java.util.regex.Pattern.compile("&(?=#?[A-Za-z0-9]+;)");
+
+    /** User text as the body of a single-quoted TS literal: {@link #escapeTsSingleQuoted} plus
+     *  line breaks, which a literal cannot hold. */
+    static String tsLiteralBody(String s) {
+        return escapeTsSingleQuoted(s).replace("\r", "").replace("\n", "\\n");
+    }
+
+    /** User text inside a double-quoted JSX attribute ({@code label="…"}). JSX reads no backslash
+     *  escapes there, only character references — so a double quote becomes {@code &quot;} and an
+     *  {@code &} that would start a reference {@code &amp;}. Text without those keeps its bytes. */
+    static String escapeJsxAttr(String s) {
+        return JSX_ENTITY_START.matcher(s).replaceAll("&amp;")
+                .replace("\"", "&quot;").replace("\r", "").replace("\n", " ");
+    }
+
+    /** User text as JSX children ({@code <h1>…</h1>}): braces and angle brackets would be read as
+     *  an expression or a tag, so they become character references. */
+    static String escapeJsxText(String s) {
+        return JSX_ENTITY_START.matcher(s).replaceAll("&amp;")
+                .replace("{", "&#123;").replace("}", "&#125;")
+                .replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\r", "").replace("\n", " ");
+    }
+
+    /** Puts a display text under {@code key} (raw, for places that take any text) together with
+     *  the forms a template may splice: {@code <key>Ts} inside a single-quoted TS literal,
+     *  {@code <key>Attr} inside a double-quoted JSX attribute, {@code <key>Jsx} as JSX children
+     *  and {@code <key>Comment} inside a block comment. A template never splices the raw text
+     *  into code — {@code TemplateSpliceGuardTest} checks that. */
+    public static void putText(Map<String, Object> view, String key, String text) {
+        view.put(key, text);
+        view.put(key + "Ts", text == null ? null : tsLiteralBody(text));
+        view.put(key + "Attr", text == null ? null : escapeJsxAttr(text));
+        view.put(key + "Jsx", text == null ? null : escapeJsxText(text));
+        view.put(key + "Comment", text == null ? null
+                : text.replace("*/", "* /").replace("\r", "").replace("\n", " "));
+    }
+
     /** Fallback display label for an enum constant without a user label:
      *  {@code IN_PROGRESS} -> {@code In progress}. */
     static String humanizeConstant(String constant) {
         String words = constant.replace('_', ' ').trim().toLowerCase(Locale.ROOT);
         if (words.isEmpty()) return constant;
         return Character.toUpperCase(words.charAt(0)) + words.substring(1);
+    }
+
+    /**
+     * What the rows editor of a composed child draws ({@code <Child>Rows.tsx}): a column per value
+     * a client may set and per foreign key but the link to the parent, and which imports the
+     * file needs (the generated lint rejects an unused one).
+     */
+    @SuppressWarnings("unchecked")
+    private static void putRows(Map<String, Object> ctx) {
+        List<Map<String, Object>> rowFields = new ArrayList<>();
+        for (Map<String, Object> field : (List<Map<String, Object>>) ctx.get("fields")) {
+            if (Boolean.TRUE.equals(field.get("isPrimaryKey")) || Boolean.TRUE.equals(field.get("isAttachment"))
+                    || Boolean.TRUE.equals(field.get("isWorkflowLocked"))) continue;
+            Map<String, Object> row = new LinkedHashMap<>(field);
+            // Long text is one line in a table cell.
+            Object inputType = field.get("inputType");
+            row.put("rowInputType", Boolean.TRUE.equals(field.get("isText")) || inputType == null ? "text" : inputType);
+            rowFields.add(row);
+        }
+        List<Map<String, Object>> rowRelations = ((List<Map<String, Object>>) ctx.get("relations")).stream()
+                .filter(rel -> !Boolean.TRUE.equals(rel.get("isCompositionLink"))).toList();
+        boolean options = rowRelations.stream().anyMatch(rel -> !Boolean.TRUE.equals(rel.get("targetSearchable")));
+        ctx.put("rowFields", rowFields);
+        ctx.put("rowRelations", rowRelations);
+        ctx.put("rowsUseOptions", options);
+        ctx.put("rowsUsePicker", rowRelations.stream().anyMatch(rel -> Boolean.TRUE.equals(rel.get("targetSearchable"))));
+        ctx.put("rowsUseStrings", options || rowFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isBoolean"))));
+        ctx.put("rowsUseInstant", rowFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isInstant"))));
     }
 
     /** Puts {@code <name>} = {@code base.layer} and {@code <name>Path} = the slash form. */
@@ -2256,6 +2805,53 @@ public final class EntityScaffoldContext {
                 (Map<String, List<Map<String, Object>>>) projectContext.get(INVERSE_RELATIONS_KEY);
         ctx.putAll(entityViewModel(entity, summaries == null ? Map.of() : summaries,
                 inverses == null ? Map.of() : inverses));
+        // The lists of rows that point at this entity, as generated: every ONE_TO_MANY it declares,
+        // and — under inverseCollections — the ones derived for the links it does not name.
+        boolean derive = Boolean.TRUE.equals(projectContext.get("optScaffoldInverse"));
+        List<Map<String, Object>> childLists = new ArrayList<>();
+        for (Map<String, Object> inv : (List<Map<String, Object>>) ctx.get("inverseRelations")) {
+            if (derive || Boolean.TRUE.equals(inv.get("declared"))) childLists.add(inv);
+        }
+        List<Map<String, Object>> childTables = childLists.stream()
+                .filter(inv -> Boolean.TRUE.equals(inv.get("declared"))).toList();
+        ctx.put("childLists", childLists);
+        ctx.put("hasChildLists", !childLists.isEmpty());
+        ctx.put("childTables", childTables);
+        ctx.put("hasChildTables", !childTables.isEmpty());
+        // A composed child: the relation that is its link to the parent is never asked of a
+        // client inside the parent's rows (the parent is the link), so the DTO does not require it.
+        ctx.put("isComposedChild", false);
+        if (inverses != null) {
+            for (List<Map<String, Object>> ofParent : inverses.values()) {
+                for (Map<String, Object> inv : ofParent) {
+                    if (!Boolean.TRUE.equals(inv.get("composition"))
+                            || !String.valueOf(inv.get("childEntity")).equals(ctx.get("EntityName"))) continue;
+                    ctx.put("isComposedChild", true);
+                    ctx.put("CompositionLinkName", inv.get("MappedBy"));
+                    ctx.put("compositionLinkName", inv.get("mappedBy"));
+                    for (Map<String, Object> rel : (List<Map<String, Object>>) ctx.get("relations")) {
+                        if (String.valueOf(rel.get("fieldName")).equals(inv.get("mappedBy"))) {
+                            rel.put("isCompositionLink", true);
+                            rel.put("dtoRequired", false);
+                        }
+                    }
+                    putRows(ctx);
+                }
+            }
+        }
+        // The enum label maps those tables read, once per child entity. A list of the entity's
+        // own rows (Employee.reports) reads the maps its details already import.
+        Map<String, Set<String>> labelMaps = new LinkedHashMap<>();
+        for (Map<String, Object> inv : childTables) {
+            if (String.valueOf(inv.get("childEntity")).equals(ctx.get("EntityName"))) continue;
+            labelMaps.computeIfAbsent((String) inv.get("childKebab"), k -> new LinkedHashSet<>())
+                    .addAll((List<String>) inv.get("labelMaps"));
+        }
+        List<Map<String, Object>> labelMapImports = new ArrayList<>();
+        labelMaps.forEach((from, names) -> {
+            if (!names.isEmpty()) labelMapImports.add(Map.of("from", from, "names", String.join(", ", names)));
+        });
+        ctx.put("childTableImports", labelMapImports);
         // Page layouts only: a relation whose target has a record page renders as a link to it
         // (table cell and detail row). Backend contexts and layout-free frontends never carry the
         // lookup, so their relation view-models — and generated bytes — are untouched.
@@ -2360,18 +2956,50 @@ public final class EntityScaffoldContext {
             lockedRelations |= locked;
         }
         ctx.put("hasLockedRelations", lockedRelations && mutable);
+        // …and to resolve the ids of a MANY_TO_MANY into the rows they name.
+        // The rows a composition saves with this entity. A soft-deleted parent keeps its rows (it can
+        // be restored); one that is really deleted takes them with it.
+        List<Map<String, Object>> compositions = childLists.stream()
+                .filter(inv -> Boolean.TRUE.equals(inv.get("composition"))).toList();
+        boolean keepsRows = Boolean.TRUE.equals(ctx.get("softDeleteApplicable"));
+        for (Map<String, Object> inv : compositions) {
+            inv.put("cascadeJava", keepsRows
+                    ? "{jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE}"
+                    : "{jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE, jakarta.persistence.CascadeType.REMOVE}");
+        }
+        if (Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport"))) putXlsxColumns(ctx);
+        // One busy flag for whichever exports the list page offers.
+        ctx.put("usesDownload", Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport"))
+                || Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport")));
+        boolean hasCompositions = !compositions.isEmpty() && mutable;
+        ctx.put("compositions", hasCompositions ? compositions : List.of());
+        ctx.put("hasCompositions", hasCompositions);
         ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable
-                || (lockedRelations && mutable));
+                || (lockedRelations && mutable) || (Boolean.TRUE.equals(ctx.get("hasCollections")) && mutable)
+                || hasCompositions);
         // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
         // besides the audit rows — so it imports t / LOCALE exactly when one of them is drawn
         // (the generated lint rejects an unused import).
         List<Map<String, Object>> detailFields = (List<Map<String, Object>>) ctx.get("fields");
         boolean audit = Boolean.TRUE.equals(ctx.get("auditApplicable"));
         boolean detailBool = detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isBoolean")));
-        boolean detailDate = detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isDate")) || Boolean.TRUE.equals(f.get("isDateTime")));
         ctx.put("detailUsesT", audit || detailBool);
-        ctx.put("detailUsesLocale", audit || detailDate);
-        ctx.put("detailUsesI18n", audit || detailBool || detailDate);
+        ctx.put("detailUsesLocale", audit);
+        ctx.put("detailUsesI18n", audit || detailBool);
+        // The shared formatters this entity's list and detail call (money, instants), the Markdown
+        // renderer its detail draws, and the instant conversion its form does — each imported only
+        // where used, for the same lint.
+        List<String> formatImports = new ArrayList<>();
+        if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isAttachment")))) formatImports.add("attachmentUrl");
+        if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isDate")))) formatImports.add("formatDate");
+        if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isDateTime")))) formatImports.add("formatDateTime");
+        if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isInstant")))) formatImports.add("formatInstant");
+        if (detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isMoney")))) formatImports.add("formatMoney");
+        ctx.put("usesFormat", !formatImports.isEmpty());
+        ctx.put("formatImports", String.join(", ", formatImports));
+        ctx.put("hasMarkdownField", detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isMarkdown"))));
+        ctx.put("formUsesInstant", detailFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isInstant"))
+                && !Boolean.TRUE.equals(f.get("isWorkflowStatus"))));
         // Bulk delete (opt-in) deletes by a list of single-column ids, so it is offered only for
         // writable, single-PK entities — a composite key can't be addressed by one id list.
         ctx.put("bulkDeleteApplicable",
@@ -2401,10 +3029,33 @@ public final class EntityScaffoldContext {
         ctx.put("bulkSelectApplicable",
                 Boolean.TRUE.equals(ctx.get("bulkDeleteApplicable"))
                         || Boolean.TRUE.equals(ctx.get("bulkUpdateApplicable")));
+        // A bulk edit holds its value to the DTO's Bean Validation, like a single save: the service
+        // takes the Validator for that, or for the CSV import's row checks.
+        boolean bulkValidates = Boolean.TRUE.equals(ctx.get("bulkUpdateApplicable"))
+                && Boolean.TRUE.equals(ctx.get("hasValidation"));
+        ctx.put("bulkValidates", bulkValidates);
+        // …and so does a workflow move, for the fields it asks for.
+        boolean transitionValidates = Boolean.TRUE.equals(ctx.get("workflowRequiresFields"))
+                && Boolean.TRUE.equals(ctx.get("hasValidation"));
+        ctx.put("transitionValidates", transitionValidates);
+        ctx.put("usesValidator", bulkValidates || transitionValidates || Boolean.TRUE.equals(ctx.get("importValidates")));
+        // Reassigning is the ADMIN's when the project can tell roles (an ldap-auth dependency);
+        // without one there are no roles and any signed-in user may. The service asks CurrentUser
+        // for that, or for a transition limited to roles.
+        boolean assignNeedsAdmin = Boolean.TRUE.equals(ctx.get("hasAssignee")) && Boolean.TRUE.equals(ctx.get("hasLdapAuth"));
+        ctx.put("assignNeedsAdmin", assignNeedsAdmin);
+        ctx.put("serviceUsesCurrentUser", assignNeedsAdmin || Boolean.TRUE.equals(ctx.get("workflowUsesRoles")));
+        // The bulk-editable fields a row cannot be without: a bulk edit may not clear them.
+        List<String> requiredBulk = bulkFields == null ? List.of() : bulkFields.stream()
+                .filter(f -> Boolean.TRUE.equals(f.get("isRequired")))
+                .map(f -> "\"" + f.get("name") + "\"").toList();
+        ctx.put("hasRequiredBulkFields", !requiredBulk.isEmpty());
+        ctx.put("requiredBulkFieldsJava", String.join(", ", requiredBulk));
         // A list page's hideActions only reach a list that has an action to hide (the validator
         // rejects them on a read-only entity without an export).
         ctx.put("listActionsConfigurable", Boolean.TRUE.equals(ctx.get("listActionsConfigurable"))
-                && (mutable || Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport"))));
+                && (mutable || Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport"))
+                        || Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport"))));
         return ctx;
     }
 
@@ -2423,6 +3074,8 @@ public final class EntityScaffoldContext {
         String snakePlural = Naming.pluralize(snake);
 
         view.put("EntityName", pascal);
+        // The name as the model spells it — what pages and their links are keyed by.
+        view.put("entityDeclaredName", entity.name());
         view.put("entityName", camel);
         view.put("entity_name", snake);
         view.put("entityNameKebab", kebab);
@@ -2438,8 +3091,8 @@ public final class EntityScaffoldContext {
         String labelPlural = (entity.labelPlural() != null && !entity.labelPlural().isBlank())
                 ? entity.labelPlural()
                 : (entity.label() != null && !entity.label().isBlank()) ? entity.label() : pascalPlural;
-        view.put("entityLabel", label);
-        view.put("entityLabelPlural", labelPlural);
+        putText(view, "entityLabel", label);
+        putText(view, "entityLabelPlural", labelPlural);
         // SQL names go through SqlNames (a mixed-case or quoted schema name survives Boot's naming
         // strategy) and are Java-escaped — every template splices them into a string literal.
         view.put("tableName", SqlNames.javaLiteral(tableOf(entity)));
@@ -2491,6 +3144,7 @@ public final class EntityScaffoldContext {
         // cycles the states — and hidden from the form.
         EntityDefinition.Workflow workflow = entity.workflow();
         view.put("hasWorkflow", workflow != null);
+        view.put("tracksMoves", workflow != null && workflow.trackMoves());
         if (workflow != null) putWorkflow(view, entity, workflow, fieldViews);
         // Re-tag last on nonPkViews
         for (int i = 0; i < nonPkViews.size(); i++) {
@@ -2517,6 +3171,7 @@ public final class EntityScaffoldContext {
         List<Map<String, Object>> bulkUpdatableViews = new ArrayList<>();
         for (Map<String, Object> fv : nonPkViews) {
             if (Boolean.TRUE.equals(fv.get("isReadOnly"))) continue;
+            if (Boolean.FALSE.equals(fv.get("bulkEditable"))) continue;
             Map<String, Object> bf = new LinkedHashMap<>(fv);
             bf.put("bulkInputKind", bulkInputKind(fv));
             bulkUpdatableViews.add(bf);
@@ -2528,6 +3183,10 @@ public final class EntityScaffoldContext {
         view.put("hasBulkUpdatableFields", !bulkUpdatableViews.isEmpty());
 
         view.put("fields", fieldViews);
+        List<Map<String, Object>> attachmentViews = fieldViews.stream()
+                .filter(fv -> Boolean.TRUE.equals(fv.get("isAttachment"))).toList();
+        view.put("attachmentFields", attachmentViews);
+        view.put("hasAttachmentFields", !attachmentViews.isEmpty());
         view.put("hasFieldDefaults", fieldViews.stream().anyMatch(m -> Boolean.TRUE.equals(m.get("hasDefault"))));
         view.put("nonPkFields", nonPkViews);
         view.put("pkField", pkView);
@@ -2684,7 +3343,7 @@ public final class EntityScaffoldContext {
             Map<String, Object> ff = new LinkedHashMap<>();
             ff.put("name", fv.get("name"));
             ff.put("Name", fv.get("Name"));
-            ff.put("label", fv.get("label"));
+            putText(ff, "label", (String) fv.get("label"));
             // The Java type the backend Filters carrier / @RequestParam uses for this field. For an
             // enum this is the per-entity enum type (Spring binds the request String to it by name).
             ff.put("javaType", fv.get("javaType"));
@@ -2711,6 +3370,15 @@ public final class EntityScaffoldContext {
         view.put("viewCards", emitted.contains("cards"));
         view.put("viewKanban", emitted.contains("kanban"));
         view.put("viewCalendar", emitted.contains("calendar"));
+        // The gallery's picture: the entity's first image field.
+        boolean gallery = emitted.contains("gallery");
+        view.put("viewGallery", gallery);
+        if (gallery) {
+            FieldDefinition picture = entity.fields().stream().filter(f -> f.type().isImage()).findFirst().orElseThrow();
+            Map<String, Object> pictureView = fieldViews.stream().filter(fv -> picture.name().equals(fv.get("name"))).findFirst().orElseThrow();
+            view.put("galleryField", picture.name());
+            view.put("galleryLabelTs", pictureView.get("labelTs"));
+        }
         view.put("hasViewToggle", emitted.size() > 1);
         view.put("initialView", emitted.get(0));
         StringBuilder union = new StringBuilder();
@@ -2747,6 +3415,7 @@ public final class EntityScaffoldContext {
             Map<String, Object> rv = new LinkedHashMap<>();
             rv.put("fieldName", relField);
             rv.put("FieldName", Naming.toPascalCase(rel.fieldName()));
+            putText(rv, "label", labelOf(rel));
             rv.put("fkFieldName", relField + "Id");
             rv.put("joinColumn", SqlNames.javaLiteral(joinColumnOf(rel)));
             rv.put("targetEntity", target != null ? target.get("pascal") : Naming.toPascalCase(rel.targetEntity()));
@@ -2772,6 +3441,8 @@ public final class EntityScaffoldContext {
             rv.put("targetPkColumn", target != null ? target.get("pkColumn") : "id");
             rv.put("targetLabelColumn", target == null ? null : target.get("labelColumn"));
             rv.put("required", rel.required());
+            // What the DTO asks of a client: the same, but for the link of a composed child.
+            rv.put("dtoRequired", rel.required());
             rv.put("isManyToOne", rel.type() == RelationType.MANY_TO_ONE);
             rv.put("last", i == entity.relations().size() - 1);
             relationViews.add(rv);
@@ -2779,6 +3450,50 @@ public final class EntityScaffoldContext {
         boolean hasRequiredRelations = relationViews.stream()
                 .anyMatch(m -> Boolean.TRUE.equals(m.get("required")));
         view.put("relations", relationViews);
+        // The sets of other rows this entity owns (MANY_TO_MANY), apart from its foreign keys: the
+        // templates' `relations` loops all mean "a foreign key", and these are not one. The DTO
+        // carries the linked rows' ids (idsField) and labels (labelsField).
+        List<Map<String, Object>> collectionViews = new ArrayList<>(entity.collections().size());
+        for (RelationDefinition c : entity.collections()) {
+            Map<String, Object> target = summaries == null ? null
+                    : summaries.get(c.targetEntity().toLowerCase(Locale.ROOT));
+            String field = Naming.toCamelCase(c.fieldName());
+            Map<String, Object> cv = new LinkedHashMap<>();
+            cv.put("fieldName", field);
+            cv.put("FieldName", Naming.toPascalCase(c.fieldName()));
+            putText(cv, "label", labelOf(c));
+            cv.put("idsField", field + "Ids");
+            cv.put("labelsField", field + "Labels");
+            cv.put("filterName", field + "Id");
+            cv.put("targetEntity", target != null ? target.get("pascal") : Naming.toPascalCase(c.targetEntity()));
+            cv.put("targetEntityKebabPlural", target != null ? target.get("kebabPlural")
+                    : Naming.pluralize(Naming.toKebabCase(c.targetEntity())));
+            cv.put("targetPkName", target != null ? target.get("pkName") : "id");
+            cv.put("TargetPkName", target != null ? target.get("PkName") : "Id");
+            cv.put("targetPkJavaType", target != null ? target.get("pkJavaType") : "Long");
+            String targetPkTs = target != null ? (String) target.get("pkTsType") : "number";
+            cv.put("targetPkTsType", targetPkTs);
+            cv.put("isTargetPkNumeric", "number".equals(targetPkTs));
+            Object labelField = target == null ? null : target.get("labelField");
+            cv.put("targetLabelField", labelField);
+            cv.put("TargetLabelField", labelField == null ? null : Naming.toPascalCase(String.valueOf(labelField)));
+            cv.put("hasTargetLabel", labelField != null);
+            cv.put("targetSearchable", target != null && Boolean.TRUE.equals(target.get("labelSearchable")));
+            // The join table: named, or <entity>_<field> with one <entity>_id column per side.
+            String owner = Naming.toSnakeCase(entity.name());
+            cv.put("joinTable", SqlNames.javaLiteral(SqlNames.physical(c.joinTable() != null ? c.joinTable()
+                    : owner + "_" + Naming.toSnakeCase(c.fieldName()), null)));
+            cv.put("joinColumn", SqlNames.javaLiteral(SqlNames.physical(c.joinColumn() != null ? c.joinColumn()
+                    : owner + "_id", null)));
+            cv.put("inverseJoinColumn", SqlNames.javaLiteral(SqlNames.physical(c.inverseJoinColumn() != null
+                    ? c.inverseJoinColumn() : Naming.toSnakeCase(c.targetEntity()) + "_id", null)));
+            collectionViews.add(cv);
+        }
+        for (int i = 0; i < collectionViews.size(); i++) {
+            collectionViews.get(i).put("last", i == collectionViews.size() - 1);
+        }
+        view.put("collections", collectionViews);
+        view.put("hasCollections", !collectionViews.isEmpty());
         // The form and the details in groups: without sections one untitled group of every field
         // then every relation (the bytes they always had); with sections the entity's key(s) not in
         // one first, each section in its order, then an untitled group of the rest.
@@ -2851,13 +3566,14 @@ public final class EntityScaffoldContext {
             Map<String, Object> ff = new LinkedHashMap<>();
             ff.put("name", rv.get("fkFieldName"));
             ff.put("Name", rv.get("FieldName") + "Id");
-            ff.put("label", rv.get("FieldName"));
+            putText(ff, "label", (String) rv.get("label"));
             ff.put("javaType", rv.get("targetPkJavaType"));
             ff.put("isEnumFilter", false);
             ff.put("isBooleanFilter", false);
             ff.put("isTemporalFilter", false);
             ff.put("isNumericFilter", false);
             ff.put("isRelationFilter", true);
+            ff.put("isCollectionFilter", false);
             ff.put("relationField", rv.get("fieldName"));
             ff.put("targetPkName", rv.get("targetPkName"));
             ff.put("targetEntityKebabPlural", rv.get("targetEntityKebabPlural"));
@@ -2865,6 +3581,31 @@ public final class EntityScaffoldContext {
             ff.put("hasTargetLabel", rv.get("hasTargetLabel"));
             ff.put("targetSearchable", rv.get("targetSearchable"));
             ff.put("isTargetPkNumeric", rv.get("isTargetPkNumeric"));
+            ff.put("enumValues", List.of());
+            filterFieldViews.add(ff);
+        }
+        // Filter by a linked row ("posts tagged 3"): to every surface it is a relation filter — the
+        // same control, the same <field>Id parameter holding ids — and only the service's predicate
+        // differs: the row must have one of them in its set (isCollectionFilter).
+        for (Map<String, Object> cv : collectionViews) {
+            Map<String, Object> ff = new LinkedHashMap<>();
+            ff.put("name", cv.get("filterName"));
+            ff.put("Name", cv.get("FieldName") + "Id");
+            putText(ff, "label", (String) cv.get("label"));
+            ff.put("javaType", cv.get("targetPkJavaType"));
+            ff.put("isEnumFilter", false);
+            ff.put("isBooleanFilter", false);
+            ff.put("isTemporalFilter", false);
+            ff.put("isNumericFilter", false);
+            ff.put("isRelationFilter", true);
+            ff.put("isCollectionFilter", true);
+            ff.put("relationField", cv.get("fieldName"));
+            ff.put("targetPkName", cv.get("targetPkName"));
+            ff.put("targetEntityKebabPlural", cv.get("targetEntityKebabPlural"));
+            ff.put("targetLabelField", cv.get("targetLabelField"));
+            ff.put("hasTargetLabel", cv.get("hasTargetLabel"));
+            ff.put("targetSearchable", cv.get("targetSearchable"));
+            ff.put("isTargetPkNumeric", cv.get("isTargetPkNumeric"));
             ff.put("enumValues", List.of());
             filterFieldViews.add(ff);
         }
@@ -2877,11 +3618,12 @@ public final class EntityScaffoldContext {
         // with that value, so it shows up in the list it was made from. Ranges are left out.
         view.put("newFromFilters", !entity.readOnly() && filterFieldViews.stream().anyMatch(ff ->
                 Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isBooleanFilter"))
-                        || Boolean.TRUE.equals(ff.get("isRelationFilter"))));
+                        || (Boolean.TRUE.equals(ff.get("isRelationFilter")) && !Boolean.TRUE.equals(ff.get("isCollectionFilter")))));
         // An enum or relation filter may hold several values; a new record takes it only when it
         // names one (the helper is emitted only when such a filter exists — the lint rejects it unused).
         view.put("fromFiltersChecksOne", !entity.readOnly() && filterFieldViews.stream().anyMatch(ff ->
-                Boolean.TRUE.equals(ff.get("isEnumFilter")) || Boolean.TRUE.equals(ff.get("isRelationFilter"))));
+                Boolean.TRUE.equals(ff.get("isEnumFilter"))
+                        || (Boolean.TRUE.equals(ff.get("isRelationFilter")) && !Boolean.TRUE.equals(ff.get("isCollectionFilter")))));
         // The generated Service builds a JPA Specification when it has either text search or
         // type-aware filters — gates the Specification import / machinery in the template.
         view.put("needsSpecification", !stringFieldViews.isEmpty() || !filterFieldViews.isEmpty());
@@ -2989,11 +3731,14 @@ public final class EntityScaffoldContext {
         // Human-facing display override for the generated UI (table header, form label, filter
         // chip, detail row). Defaults to the PascalCase name when no custom label was supplied —
         // done here because Mustache has no default operator.
-        fv.put("label", (f.label() != null && !f.label().isBlank()) ? f.label() : pascalName);
+        putText(fv, "label", (f.label() != null && !f.label().isBlank()) ? f.label() : pascalName);
         // Locked-after-create read-only: the form disables it on edit and Service.update skips it.
         fv.put("isReadOnly", f.readOnly());
         // A workflow's status: set by its transitions only (see putWorkflow).
         fv.put("isWorkflowStatus", false);
+        // …and its assignee by claiming and reassigning; either is out of the form.
+        fv.put("isWorkflowAssignee", false);
+        fv.put("isWorkflowLocked", false);
         fv.put("isEditable", !f.readOnly());
 
         String javaType;
@@ -3009,10 +3754,14 @@ public final class EntityScaffoldContext {
         fv.put("enumTypeName", enumTypeName);
 
         boolean isIntegral = f.type() == FieldType.LONG || f.type() == FieldType.INTEGER;
-        boolean isBigDecimal = f.type() == FieldType.BIG_DECIMAL;
+        // MONEY is a BigDecimal to every template that reads this flag (@DecimalMin, step="any", …).
+        boolean isBigDecimal = f.type().isDecimal();
         fv.put("isPrimaryKey", f.primaryKey());
         fv.put("isGenerated", f.generated());
         fv.put("isRequired", f.required());
+        // The column's own NOT NULL: `isRequired` is what a client must send, which is not the
+        // same for a value the server always sets (a workflow's status).
+        fv.put("isNotNullColumn", f.required());
         fv.put("isUnique", f.unique());
         fv.put("isString", f.type().isString());
         fv.put("isText", f.type().isText());
@@ -3025,6 +3774,31 @@ public final class EntityScaffoldContext {
         fv.put("isDate", f.type() == FieldType.LOCAL_DATE);
         fv.put("isDateTime", f.type() == FieldType.LOCAL_DATE_TIME);
         fv.put("isEnum", f.type().isEnum());
+        fv.put("isMoney", f.type().isMoney());
+        fv.put("currency", f.currency());
+        fv.put("isMarkdown", f.type().isMarkdown());
+        fv.put("isTime", f.type().isTime());
+        fv.put("isInstant", f.type().isInstant());
+        fv.put("bulkEditable", f.type().bulkEditable());
+        // A file or image: the field holds an attachment id, and the entity reads the file's name
+        // beside it (nameField) for the list, the detail and the form to show.
+        fv.put("isAttachment", f.type().isAttachment());
+        fv.put("isImage", f.type().isImage());
+        fv.put("nameField", f.name() + "Name");
+        fv.put("NameField", pascalName + "Name");
+        // The TS that draws a non-null value of this field: a list cell reads it off `r`, the
+        // detail view off `value`.
+        fv.put(FIELD_TYPE_KEY, f.type());
+        // In the controller's SORTABLE whitelist and a column the table sorts by.
+        fv.put("isSortable", f.type().sortable());
+        fv.put("cellTs", cellTs(f, enumTypeName));
+        fv.put("detailTs", detailTs(f, enumTypeName));
+        // What a template would otherwise spell out as a chain of type flags — where a type the
+        // chain does not know renders nothing, and the generated file is broken. These come from
+        // switches the compiler checks, so a new FieldType cannot be forgotten here.
+        fv.put("inputType", inputType(f));
+        fv.put("importKind", importKind(f.type()));
+        fv.put("bulkCoerceJava", bulkCoerceJava(f.type(), javaType, entityPascal, enumTypeName));
         fv.put("hasLength", f.length() != null);
         fv.put("length", f.length());
         // Numeric bounds (rendered as @Min/@Max on integral types, @DecimalMin/@DecimalMax on BigDecimal).
@@ -3097,17 +3871,157 @@ public final class EntityScaffoldContext {
      * is the enum type reference to use — the bare nested name inside the entity class, or the
      * {@code Entity.EnumType} form from outside it (demo-data loader).
      */
+    /** The {@code type} of the plain {@code <input>} a field gets in the generated form. */
+    static String inputType(FieldDefinition f) {
+        return switch (f.type()) {
+            case LONG, INTEGER, BIG_DECIMAL -> "number";
+            case LOCAL_DATE -> "date";
+            case LOCAL_DATE_TIME -> "datetime-local";
+            case STRING -> f.email() ? "email" : "text";
+            case MONEY -> "number";
+            // Drawn by the AttachmentField component; no input of its own.
+            case FILE, IMAGE -> "text";
+            case LOCAL_TIME -> "time";
+            // The browser's own zone; the form converts to and from UTC (format.ts).
+            case INSTANT -> "datetime-local";
+            // A textarea, a select — or a text box, for a UUID: no input type of their own.
+            case TEXT, MARKDOWN, UUID, BOOLEAN, ENUM -> "text";
+        };
+    }
+
+    /** The helpers of the generated {@code src/shared/lib/format.ts} a field's cell or detail calls. */
+    static List<String> formatHelpers(FieldType type) {
+        return switch (type) {
+            case MONEY -> List.of("formatMoney");
+            case INSTANT -> List.of("formatInstant");
+            case FILE, IMAGE -> List.of("attachmentUrl");
+            default -> List.of();
+        };
+    }
+
+    /** What a list cell prints for a non-null value (the row is {@code r}). */
+    /** A field view's {@link FieldType}, for the code that builds expressions from views (board
+     *  and inbox cards). Not referenced by any template. */
+    private static final String FIELD_TYPE_KEY = "__type";
+
+    /** Where a value is shown: a table cell, the details, or a board card / inbox row. */
+    enum Display { CELL, DETAIL, CARD }
+
+    static String cellTs(FieldDefinition f, String enumTypeName) {
+        return displayTs(f.type(), "r." + f.name(), enumTypeName, f.currency(), Display.CELL);
+    }
+
+    static String detailTs(FieldDefinition f, String enumTypeName) {
+        return displayTs(f.type(), "value." + f.name(), enumTypeName, f.currency(), Display.DETAIL);
+    }
+
+    /**
+     * How a non-null value of a field reads, as a TS expression over {@code v} ({@code r.status},
+     * {@code value.status}). One function for the table cell, the details and a card, so a value
+     * reads the same wherever it is shown: an enum by its label, a boolean in the app's words, a
+     * date for the app's locale, money in its currency, a file by its name. They used to be three
+     * lists that had drifted apart — a table printed {@code true} and an ISO date where the
+     * details worded and formatted them, and a card printed a file's id.
+     *
+     * <p>The switch has no {@code default}: a new {@link FieldType} does not compile until it
+     * says how it is shown. The helpers it calls are imported per file — {@code t} from the i18n
+     * module, the rest from {@code @shared/ui/format} (see {@code formatImports}).
+     */
+    static String displayTs(FieldType type, String v, String enumTypeName, String currency, Display where) {
+        return switch (type) {
+            case ENUM -> enumTypeName + "Labels[" + v + "]";
+            case BOOLEAN -> "(" + v + " ? t('trueLabel') : t('falseLabel'))";
+            case LOCAL_DATE -> "formatDate(" + v + ")";
+            case LOCAL_DATE_TIME -> "formatDateTime(" + v + ")";
+            case MONEY -> "formatMoney(" + v + ", '" + currency + "')";
+            case INSTANT -> "formatInstant(" + v + ")";
+            case TEXT -> where == Display.DETAIL
+                    ? "<span className=\"whitespace-pre-wrap break-words\">{String(" + v + ")}</span>"
+                    : "String(" + v + ")";
+            case MARKDOWN -> where == Display.DETAIL ? "<Markdown source={String(" + v + ")} />" : "String(" + v + ")";
+            // The file's name, opening the file (a card is itself a link: the name alone there).
+            case FILE -> switch (where) {
+                case CELL -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\" "
+                        + "onClick={e => e.stopPropagation()} className=\"font-medium text-brand hover:underline\">{"
+                        + v + "Name ?? String(" + v + ")}</a>";
+                case DETAIL -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\" "
+                        + "className=\"font-medium text-brand hover:underline\">{" + v + "Name ?? String(" + v + ")}</a>";
+                case CARD -> "(" + v + "Name ?? '\u2014')";
+            };
+            // A small picture in a row, the picture itself (opening the file) in the details.
+            case IMAGE -> switch (where) {
+                case CELL -> "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
+                        + "className=\"h-8 w-8 rounded object-cover\" />";
+                case DETAIL -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\">"
+                        + "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
+                        + "className=\"max-h-48 rounded-lg border border-border\" /></a>";
+                // A card is itself a link, so the picture alone — small, like a table row's.
+                case CARD -> "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
+                        + "className=\"h-10 w-10 rounded object-cover\" />";
+            };
+            case STRING, LONG, INTEGER, LOCAL_TIME, BIG_DECIMAL, UUID -> "String(" + v + ")";
+        };
+    }
+
+    /** How the generated CSV import reads a column of this type ({@code csv.ts} {@code coerce}). */
+    static String importKind(FieldType type) {
+        return switch (type) {
+            case LONG, INTEGER -> "integer";
+            case BIG_DECIMAL, MONEY -> "number";
+            case BOOLEAN -> "boolean";
+            case LOCAL_DATE -> "date";
+            case LOCAL_DATE_TIME -> "datetime";
+            case ENUM -> "enum";
+            // A time and an instant are sent as typed; the server's own parse answers a bad one.
+            case STRING, TEXT, MARKDOWN, UUID, LOCAL_TIME, INSTANT -> "string";
+            // Never offered to an import (a CSV carries no files); the id's own type, for completeness.
+            case FILE, IMAGE -> "string";
+        };
+    }
+
+    /**
+     * The Java expression that turns the bulk-update endpoint's raw JSON scalar ({@code value}, an
+     * {@code Object} known not to be null) into the field's type.
+     */
+    static String bulkCoerceJava(FieldType type, String javaType, String entityPascal, String enumTypeName) {
+        return switch (type) {
+            case ENUM -> entityPascal + "." + enumTypeName + ".valueOf(value.toString())";
+            case BOOLEAN -> "Boolean.valueOf(value.toString())";
+            case BIG_DECIMAL, MONEY -> "new java.math.BigDecimal(value.toString())";
+            case LOCAL_TIME -> "java.time.LocalTime.parse(value.toString())";
+            case INSTANT -> "java.time.Instant.parse(value.toString())";
+            case LONG, INTEGER -> javaType + ".valueOf(value.toString())";
+            case UUID, FILE, IMAGE -> "java.util.UUID.fromString(value.toString())";
+            case LOCAL_DATE -> "java.time.LocalDate.parse(value.toString())";
+            case LOCAL_DATE_TIME -> "java.time.LocalDateTime.parse(value.toString())";
+            case STRING, TEXT, MARKDOWN -> "value.toString()";
+        };
+    }
+
     static String defaultJavaExpression(FieldDefinition f, String enumRef) {
+        return defaultJavaExpression(f, enumRef, false);
+    }
+
+    /**
+     * A field's default as a Java expression. In the entity, where the field's type is imported, the
+     * type is named bare; {@code qualified} spells it out for a file that imports none of the field
+     * types — the demo-data loader, which did not compile for a decimal or date field with a default.
+     */
+    static String defaultJavaExpression(FieldDefinition f, String enumRef, boolean qualified) {
         String v = f.defaultValue();
         return switch (f.type()) {
-            case STRING, TEXT -> "\"" + escapeJavaLiteral(v) + "\"";
+            case STRING, TEXT, MARKDOWN -> "\"" + escapeJavaLiteral(v) + "\"";
             case LONG -> v + "L";
             case INTEGER -> v;
-            case BIG_DECIMAL -> "new BigDecimal(\"" + v + "\")";
+            case BIG_DECIMAL, MONEY -> "new " + (qualified ? "java.math." : "") + "BigDecimal(\"" + v + "\")";
+            case LOCAL_TIME -> "java.time.LocalTime.parse(\"" + v + "\")";
+            case INSTANT -> "java.time.Instant.parse(\"" + v + "\")";
             case BOOLEAN -> v;
-            case LOCAL_DATE -> "LocalDate.parse(\"" + v + "\")";
-            case LOCAL_DATE_TIME -> "LocalDateTime.parse(\"" + v + "\")";
+            case LOCAL_DATE -> (qualified ? "java.time." : "") + "LocalDate.parse(\"" + v + "\")";
+            case LOCAL_DATE_TIME -> (qualified ? "java.time." : "") + "LocalDateTime.parse(\"" + v + "\")";
             case UUID -> "java.util.UUID.fromString(\"" + v + "\")";
+            // The validator refuses a default on an attachment; nothing to initialize.
+            case FILE, IMAGE -> "null";
             case ENUM -> enumRef + "." + v;
         };
     }
@@ -3117,7 +4031,7 @@ public final class EntityScaffoldContext {
     static String defaultTsLiteral(FieldDefinition f) {
         String v = f.defaultValue();
         return switch (f.type()) {
-            case LONG, INTEGER, BIG_DECIMAL, BOOLEAN -> v;
+            case LONG, INTEGER, BIG_DECIMAL, MONEY, BOOLEAN -> v;
             default -> "'" + v.replace("\\", "\\\\").replace("'", "\\'")
                     .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "'";
         };
@@ -3135,7 +4049,7 @@ public final class EntityScaffoldContext {
         // A declared default is the natural demo value — except on keys and unique columns, where
         // every row must differ, so those keep the row-numbered expressions below.
         if (f.hasDefault() && !f.primaryKey() && !f.unique()) {
-            return defaultJavaExpression(f, entityPascal + "." + enumTypeName);
+            return defaultJavaExpression(f, entityPascal + "." + enumTypeName, true);
         }
         String lbl = escapeStringLiteral(label == null ? f.name() : label);
         return switch (f.type()) {
@@ -3144,15 +4058,21 @@ public final class EntityScaffoldContext {
             case STRING -> f.email()
                     ? "\"user\" + i + \"@example.com\""
                     : "label(\"" + lbl + "\", i, " + (f.length() != null ? f.length() : "Integer.MAX_VALUE") + ")";
-            case TEXT -> "text(\"" + lbl + "\", i)";
+            case TEXT, MARKDOWN -> "text(\"" + lbl + "\", i)";
             case LONG -> "bounded(i, " + longLiteral(f.min()) + ", " + longLiteral(f.max()) + ")";
             case INTEGER -> "(int) bounded(i, " + longLiteral(f.min()) + ", " + longLiteral(f.max()) + ")";
-            case BIG_DECIMAL -> "java.math.BigDecimal.valueOf(bounded(i, " + longLiteral(f.min()) + ", "
+            case BIG_DECIMAL, MONEY -> "java.math.BigDecimal.valueOf(bounded(i, " + longLiteral(f.min()) + ", "
                     + longLiteral(f.max()) + "))";
+            case LOCAL_TIME -> "java.time.LocalTime.of(8 + (i % 10), 0)";
+            case INSTANT -> "java.time.Instant.now().minus(java.time.Duration.ofHours(i))";
             case BOOLEAN -> "i % 2 == 0";
             case LOCAL_DATE -> "java.time.LocalDate.now().minusDays(i)";
             case LOCAL_DATE_TIME -> "java.time.LocalDateTime.now().minusHours(i)";
             case UUID -> "java.util.UUID.randomUUID()";
+            // Demo rows carry no files — unless the field demands one, and then a placeholder
+            // the loader stores (its sampleFile / sampleImage).
+            case FILE -> f.required() ? "sampleFile(i)" : "null";
+            case IMAGE -> f.required() ? "sampleImage(i)" : "null";
         };
     }
 

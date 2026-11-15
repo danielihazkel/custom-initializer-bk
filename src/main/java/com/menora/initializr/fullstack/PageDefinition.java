@@ -202,8 +202,14 @@ public record PageDefinition(
     /** The actions an {@link Type#ENTITY_LIST} page leaves out of its list; empty for every other page. */
     public List<ListAction> hiddenActions() { return spec instanceof ListSpec l ? l.hideActions() : List.of(); }
 
+    /** Whether a {@link Type#RECORD} page offers Print; false for every other page. */
+    public boolean printable() { return spec instanceof RecordSpec r && r.printable(); }
+
     /** The settings only one page type has, kept apart so the record does not grow a field per type. */
-    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec, DashboardSpec, ListSpec, InboxSpec {}
+    public sealed interface Spec permits CalendarSpec, BoardSpec, ContentSpec, SearchSpec, DashboardSpec, ListSpec, InboxSpec, RecordSpec {}
+
+    /** @param printable a Print button on the page, which is then laid out for paper */
+    public record RecordSpec(boolean printable) implements Spec {}
 
     /**
      * @param queues     the queues the inbox offers as tabs, the first opening
@@ -325,7 +331,17 @@ public record PageDefinition(
     }
 
     /** The generated shell's navigation, for a layout: its style and whether sections fold. */
-    public record Nav(NavStyle style, boolean collapsibleGroups) {}
+    public record Nav(NavStyle style, boolean collapsibleGroups, boolean userMenu, boolean notifications,
+                      boolean commandPalette) {
+
+        /** The navigation alone, without the header's tools. */
+        public Nav(NavStyle style, boolean collapsibleGroups) {
+            this(style, collapsibleGroups, false, false, false);
+        }
+
+        /** Whether the header carries any of the tools. */
+        public boolean hasTools() { return userMenu || notifications || commandPalette; }
+    }
 
     public enum NavStyle {
         SIDEBAR("sidebar"), TOPBAR("topbar");
@@ -390,7 +406,9 @@ public record PageDefinition(
         /** One entity's whole form on a page: New (and Edit, by id) open it instead of the drawer. */
         FORM("form"),
         /** A workflow's task list: the rows assigned to the user, nobody's, or every open one. */
-        INBOX("inbox");
+        INBOX("inbox"),
+        /** One entity's rows as an outline: each under the row its self-reference names. */
+        TREE("tree");
 
         private final String wire;
 
@@ -425,7 +443,13 @@ public record PageDefinition(
         /** A table of one aggregate over two columns at once: a row per group, a column per series. */
         PIVOT("pivot"),
         /** The latest changes across audited entities, newest first (needs the audit opt). */
-        ACTIVITY("activity");
+        ACTIVITY("activity"),
+        /** An enum's values as the stages of a pipeline: each stage is everything that got that far. */
+        FUNNEL("funnel"),
+        /** One number against a full-scale value, as a dial. */
+        GAUGE("gauge"),
+        /** How long rows stay in each workflow state (needs the workflow's move log). */
+        TIME_IN_STATE("timeInState");
 
         private final String wire;
 
@@ -544,7 +568,7 @@ public record PageDefinition(
         /** A number tile (plain or against a target) takes one grid column; charts and lists two;
          *  a launcher the whole row. */
         public static int defaultSpan(WidgetKind kind) {
-            return kind == WidgetKind.KPI || kind == WidgetKind.PROGRESS ? 1
+            return kind == WidgetKind.KPI || kind == WidgetKind.PROGRESS || kind == WidgetKind.GAUGE ? 1
                     : kind == WidgetKind.LINKS || kind == WidgetKind.LIST || kind == WidgetKind.PIVOT ? 4 : 2;
         }
     }

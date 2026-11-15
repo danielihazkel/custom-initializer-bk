@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 /**
@@ -54,6 +55,14 @@ public class FullstackExampleEntity {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    /**
+     * sha256 of the shipped example this row was last seeded with — see
+     * {@link EntityTemplateFileEntity#getSeedHash()}; an example an admin has not edited follows
+     * the release's {@code catalog/fullstack-examples.json}.
+     */
+    @Column(name = "seed_hash", length = 64)
+    private String seedHash;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getExampleId() { return exampleId; }
@@ -74,4 +83,12 @@ public class FullstackExampleEntity {
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public String getSeedHash() { return seedHash; }
+    public void setSeedHash(String seedHash) { this.seedHash = seedHash; }
+
+    /** A row nobody stamped was not seeded: an admin created or imported it. */
+    @PrePersist
+    void markCustomUnlessSeeded() {
+        if (seedHash == null) seedHash = EntityTemplateFileEntity.CUSTOM_SEED_HASH;
+    }
 }

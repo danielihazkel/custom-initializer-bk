@@ -398,12 +398,14 @@ function KpiSparkline({ title, path, on, bucket, agg, field, params }: {
 
 /** A single number: the record count, or an aggregate of one numeric column — optionally with the
  *  change against the previous period, and a sparkline of it over time. */
-export function KpiTile({ title, path, agg, field, params = '', compareParams, trendOn, trendBucket = 'month', onOpen, className = '' }: {
+export function KpiTile({ title, path, agg, field, currency, params = '', compareParams, trendOn, trendBucket = 'month', onOpen, className = '' }: {
   title: string
   path: string
   /** sum/avg/min/max over `field`; omitted counts records. */
   agg?: string
   field?: string
+  /** The currency the number is written in, when `field` is money. */
+  currency?: string
   /** List filter params the number is limited to (a preset, the dashboard period). */
   params?: string
   /** The same params over the previous period; given, the tile shows the change against it. */
@@ -426,7 +428,7 @@ export function KpiTile({ title, path, agg, field, params = '', compareParams, t
     <Tile onOpen={onOpen} className={className}>
       <div className="text-sm text-muted">{title}</div>
       <div className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-fg">
-        {failed ? '—' : value == null ? <Skeleton className="h-9 w-24" /> : formatStat(value)}
+        {failed ? '—' : value == null ? <Skeleton className="h-9 w-24" /> : formatStat(value, currency)}
       </div>
       {failed && <RetryLink onRetry={retry} />}
       {change != null && (
@@ -443,11 +445,13 @@ export function KpiTile({ title, path, agg, field, params = '', compareParams, t
 }
 
 /** A single number against a target, as a filling bar. */
-export function ProgressTile({ title, path, agg, field, target, params = '', onOpen, className = '' }: {
+export function ProgressTile({ title, path, agg, field, currency, target, params = '', onOpen, className = '' }: {
   title: string
   path: string
   agg?: string
   field?: string
+  /** The currency the number and its target are written in, when `field` is money. */
+  currency?: string
   target: number
   params?: string
   onOpen?: () => void
@@ -461,9 +465,9 @@ export function ProgressTile({ title, path, agg, field, target, params = '', onO
       <div className="text-sm text-muted">{title}</div>
       <div className="mt-2 flex items-baseline gap-2">
         <span className="text-3xl font-semibold tabular-nums tracking-tight text-fg">
-          {failed ? '—' : value == null ? <Skeleton className="inline-block h-9 w-24 align-middle" /> : formatStat(value)}
+          {failed ? '—' : value == null ? <Skeleton className="inline-block h-9 w-24 align-middle" /> : formatStat(value, currency)}
         </span>
-        <span className="text-sm tabular-nums text-muted">/ {formatStat(target)}</span>
+        <span className="text-sm tabular-nums text-muted">/ {formatStat(target, currency)}</span>
       </div>
       <div
         className="mt-3 h-2.5 overflow-hidden rounded-full bg-surface-2"

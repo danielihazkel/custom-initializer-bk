@@ -203,8 +203,8 @@ class SqlToEntityDefinitionConverterTest {
         assertThat(entities).hasSize(1);
         EntityDefinition e = entities.get(0);
         assertThat(e.fields().get(0).type()).isEqualTo(FieldType.LONG);
-        // UUID degrades to STRING — see converter Javadoc
-        assertThat(e.fields().get(1).type()).isEqualTo(FieldType.STRING);
+        // A UUID column is a UUID field (it used to degrade to a string).
+        assertThat(e.fields().get(1).type()).isEqualTo(FieldType.UUID);
         assertThat(e.fields().get(1).required()).isTrue();
     }
 
@@ -285,6 +285,37 @@ class SqlToEntityDefinitionConverterTest {
                 com.menora.initializr.sql.JavaType.langType("Double"))).isEqualTo(FieldType.BIG_DECIMAL);
         assertThat(SqlToEntityDefinitionConverter.mapType(
                 com.menora.initializr.sql.JavaType.langType("byte[]"))).isEqualTo(FieldType.STRING);
+    }
+
+    @Test
+    void importsTimesZonedTimestampsAndUuidsAsTheirOwnTypes() {
+        // These used to become a date-time and a string: the mapping predated the types.
+        String sql = """
+                CREATE TABLE shifts (
+                    id UUID PRIMARY KEY,
+                    starts_at TIME NOT NULL,
+                    clocked_in TIMESTAMPTZ,
+                    planned_for TIMESTAMP,
+                    badge UUID
+                );
+                CREATE TABLE readings (
+                    taken_at TIMESTAMPTZ PRIMARY KEY,
+                    amount NUMERIC(10,2)
+                );
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.POSTGRESQL);
+        EntityDefinition shift = entities.get(0);
+        assertThat(shift.fields()).extracting(FieldDefinition::name, FieldDefinition::type).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("id", FieldType.UUID),
+                org.assertj.core.groups.Tuple.tuple("startsAt", FieldType.LOCAL_TIME),
+                org.assertj.core.groups.Tuple.tuple("clockedIn", FieldType.INSTANT),
+                org.assertj.core.groups.Tuple.tuple("plannedFor", FieldType.LOCAL_DATE_TIME),
+                org.assertj.core.groups.Tuple.tuple("badge", FieldType.UUID));
+        // A UUID takes no length (only text does).
+        assertThat(shift.fields().get(0).length()).isNull();
+        // A key cannot be an instant: such a key column stays a date-time, as before.
+        assertThat(entities.get(1).fields().get(0).type()).isEqualTo(FieldType.LOCAL_DATE_TIME);
+        assertThat(entities.get(1).fields().get(0).type().keyable()).isTrue();
     }
 
     @Test

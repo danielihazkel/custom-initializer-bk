@@ -41,7 +41,7 @@ public final class CatalogManifests {
                                  String excludeFromGroupId, String excludeFromArtifactId,
                                  String repoId, String repoName, String repoUrl,
                                  Boolean snapshotsEnabled, String scope, String subOptionId,
-                                 int sortOrder) {}
+                                 int sortOrder, String compatibilityRange) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SubOptionDef(String depId, String optionId, String label,

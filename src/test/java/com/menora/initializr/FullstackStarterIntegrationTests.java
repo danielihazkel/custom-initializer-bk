@@ -2017,6 +2017,162 @@ class FullstackStarterIntegrationTests {
         // Composite PK: no soft delete, hence no restore anywhere.
         assertThat(contentEndingWith(entries, "/repository/OrderLineRepository.java")).doesNotContain("restore");
         assertThat(contentEndingWith(entries, "/controller/OrderLineController.java")).doesNotContain("restore");
+
+        // With a @Version, Hibernate binds the id and the version to a delete: the custom statement
+        // must take both (with one placeholder every delete failed, answered as a 409). A restore
+        // moves the version on — and the audit timestamp — like any other change.
+        body.put("opts", Map.of("scaffold", List.of("softDelete", "optimisticLocking", "audit")));
+        for (String set : List.of("spring-jpa-crud", "spring-jpa-crud-lombok")) {
+            body.put("backendTemplateSet", set);
+            Map<String, String> locked = generateZip(body);
+            assertThat(contentEndingWith(locked, "/entity/Widget.java"))
+                    .contains("@SQLDelete(sql = \"UPDATE widgets SET deleted = true WHERE id = ? AND version = ?\")");
+            assertThat(contentEndingWith(locked, "/repository/WidgetRepository.java"))
+                    .contains("@Query(value = \"UPDATE widgets SET deleted = false, version = coalesce(version, 0) + 1,"
+                            + " updated_at = CURRENT_TIMESTAMP WHERE id = :id\", nativeQuery = true)");
+        }
+    }
+
+    @Test
+    void fullstackEndpoint_sortsByWhatSortsAndShipsNoDeadFiles() throws Exception {
+        // The Round 9 field types: `notes` is Markdown, `contract` a file, `photo` an image.
+        Map<String, Object> body = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        Map<String, String> classic = generateZip(body);
+
+        // A list sorts by neither long text (a TEXT/CLOB column does not sort on every database)
+        // nor a file (its value is an id): out of the API's whitelist, and no sort arrow on the column.
+        String controller = contentEndingWith(classic, "/controller/ShiftController.java");
+        int from = controller.indexOf("SORTABLE = List.of(");
+        assertThat(controller.substring(from, controller.indexOf("});", from)))
+                .contains("\"title\",").contains("\"startsAt\",").contains("\"createdAt\",")
+                .doesNotContain("\"notes\"").doesNotContain("\"contract\"").doesNotContain("\"photo\"");
+        assertThat(classic.get("rota/frontend/src/pages/shift/ui/ShiftPage.tsx"))
+                .contains("label: 'Title', sortKey: 'title', render:")
+                .contains("label: 'Notes', render:")
+                .contains("label: 'Contract', render:")
+                .doesNotContain("sortKey: 'notes'").doesNotContain("sortKey: 'photo'");
+        body.put("frontendTemplateSet", "react-menora-digital-crud");
+        assertThat(generateZip(body).get("rota/frontend/src/pages/shift/ui/ShiftPage.tsx"))
+                .contains("label: 'Title', sortKey: 'title'").contains("label: 'Notes', render:").doesNotContain("sortKey: 'notes'");
+        body.put("frontendTemplateSet", "react-tailwind-crud");
+
+        // The kanban's "no value" lane key is written as an escape: the file held a raw NUL byte,
+        // which made git and the line-ending pass treat it as binary.
+        String kanban = classic.get("rota/frontend/src/shared/ui/KanbanBoard.tsx");
+        assertThat(kanban).contains("const UNASSIGNED = '\\u0000__unassigned__'").doesNotContain("\u0000").doesNotContain("\r");
+
+        // The classic dashboard page is the classic shell's: a layout draws its own screens and
+        // never imported it, yet it was generated.
+        String dashboard = "rota/frontend/src/pages/dashboard/ui/DashboardPage.tsx";
+        String barrel = "rota/frontend/src/pages/dashboard/index.ts";
+        assertThat(classic).containsKeys(dashboard, barrel);
+        body.put("pages", List.of(Map.of("id", "shifts", "type", "entity-list", "entity", "Shift")));
+        Map<String, String> layout = generateZip(body);
+        assertThat(layout).doesNotContainKeys(dashboard, barrel);
+        assertThat(layout.get("rota/frontend/src/app/App.tsx")).doesNotContain("@pages/dashboard");
+
+        // A page or a recent list that asks to sort by one of them is told so.
+        body.put("pages", List.of(Map.of("id", "shifts", "type", "entity-list", "entity", "Shift",
+                "sort", Map.of("field", "notes", "dir", "asc"))));
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> badSort = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+        assertThat(badSort.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(badSort.getBody()).contains("'notes' is not sortable on Shift");
+        body.put("pages", List.of(
+                Map.of("id", "shifts", "type", "entity-list", "entity", "Shift"),
+                Map.of("id", "home", "type", "dashboard", "widgets", List.of(
+                        Map.of("kind", "recent", "entity", "Shift", "sortBy", "contract")))));
+        ResponseEntity<String> badRecent = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+        assertThat(badRecent.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(badRecent.getBody()).contains("sortBy 'contract' is long text or a file, which a list cannot be sorted by");
+
+        // Lombok entities: a lazy @ManyToOne stays out of equals/hashCode/toString (@Data put it
+        // in all three — touching it there loads the row, or fails outside a session).
+        Map<String, Object> posts = FullstackExampleRequests.manyToManyBody("react-tailwind-crud");
+        posts.put("backendTemplateSet", "spring-jpa-crud-lombok");
+        assertThat(contentEndingWith(generateZip(posts), "/entity/Post.java"))
+                .contains("    @JoinColumn(name = \"author_id\")\n    @lombok.EqualsAndHashCode.Exclude\n    @lombok.ToString.Exclude\n    private Author author;");
+    }
+
+    @Test
+    void fullstackEndpoint_csvGuardsFormulaCellsAndAnImportChecksItsLinks() throws Exception {
+        Map<String, Object> body = FullstackExampleRequests.manyToManyBody("react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "csvImport")));
+        Map<String, String> entries = generateZip(body);
+
+        // Export: a text cell that starts like a formula would run in a spreadsheet.
+        assertThat(contentEndingWith(entries, "/controller/PostController.java"))
+                .contains("private static final String FORMULA_STARTS = \"=+-@\";")
+                .contains("if (value instanceof CharSequence && !s.isEmpty() && FORMULA_STARTS.indexOf(s.charAt(0)) >= 0) {\n"
+                        + "            s = \"'\" + s;");
+        // …and the app's own import drops that apostrophe, so an exported file still imports as it is.
+        assertThat(contentEndingWith(entries, "/shared/ui/csv.ts"))
+                .contains("const text = raw.trim().replace(/^'(?=[=+@-])/, '')");
+
+        // Import: the ids of a many-to-many are resolved per row, like a create's — an unknown id
+        // is that row's problem, not a database error for the whole file.
+        assertThat(contentEndingWith(entries, "/service/PostService.java"))
+                .contains("            Post entity = dto.toEntity();\n"
+                        + "            try {\n"
+                        + "                resolveLinks(entity); // the ids of a many-to-many must name rows, like a create's\n"
+                        + "            } catch (IllegalArgumentException unknown) {\n"
+                        + "                errors.add(new ImportError(row, null, unknown.getMessage()));\n"
+                        + "            }\n"
+                        + "            if (entity.getTags() == null) entity.setTags(new java.util.LinkedHashSet<>());\n");
+        // An entity without a many-to-many keeps its import as it was.
+        assertThat(contentEndingWith(entries, "/service/TagService.java")).doesNotContain("resolveLinks");
+    }
+
+    @Test
+    void fullstackEndpoint_bulkCallsKeepWhatASingleSaveKeeps() throws Exception {
+        // A bulk edit used to skip everything a single save checks: it nulled a required field,
+        // took a value the DTO's validation refuses, and both bulk calls silently skipped ids
+        // that name no row.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        body.put("opts", Map.of("scaffold", List.of("bulkUpdate", "bulkDelete")));
+        body.put("entities", List.of(Map.of("name", "Widget", "fields", List.of(pkField(),
+                Map.of("name", "label", "type", "String", "required", true, "length", 40),
+                Map.of("name", "code", "type", "String", "required", true),
+                Map.of("name", "stock", "type", "Integer", "min", 0)))));
+
+        String service = contentEndingWith(generateZip(body), "/service/WidgetService.java");
+        assertThat(service)
+                // Every id must name a row — checked before anything is changed.
+                .contains("    public void deleteAll(java.util.List<Long> ids) {\n"
+                        + "        java.util.List<Widget> rows = repository.findAllById(ids);\n"
+                        + "        requireAll(ids, rows);\n"
+                        + "        repository.deleteAllById(ids);\n")
+                .contains("        java.util.List<Widget> rows = repository.findAllById(ids);\n"
+                        + "        requireAll(ids, rows);\n"
+                        + "        if (value == null && java.util.Set.of(\"label\", \"code\").contains(field)) {\n"
+                        + "            throw new IllegalArgumentException(field + \" is required\");\n")
+                .contains("private void requireAll(java.util.List<Long> ids, java.util.List<Widget> rows) {")
+                .contains("throw new ResourceNotFoundException(\"Widget not found: \" + missing);")
+                // The value is held to the DTO's own constraints (length, min…), then saved.
+                .contains("private final jakarta.validation.Validator validator;")
+                .contains(": validator.validateProperty(com.menora.shop.dto.WidgetDto.from(rows.get(0)), field)) {\n"
+                        + "                throw new IllegalArgumentException(field + \" \" + violation.getMessage());");
+
+        // Without the validation starter there is no Validator to ask; the other two checks stay.
+        body.put("dependencies", List.of("web", "data-jpa", "h2"));
+        assertThat(contentEndingWith(generateZip(body), "/service/WidgetService.java"))
+                .contains("requireAll(ids, rows);")
+                .contains("java.util.Set.of(\"label\", \"code\").contains(field)")
+                .doesNotContain("Validator");
+
+        // Bulk delete alone: the helper ships with it; an entity with neither has none of this.
+        body.put("opts", Map.of("scaffold", List.of("bulkDelete")));
+        assertThat(contentEndingWith(generateZip(body), "/service/WidgetService.java"))
+                .contains("private void requireAll(").doesNotContain("updateMany");
+        body.put("opts", Map.of("scaffold", List.of()));
+        assertThat(contentEndingWith(generateZip(body), "/service/WidgetService.java")).doesNotContain("requireAll");
     }
 
     @Test
@@ -2117,6 +2273,447 @@ class FullstackStarterIntegrationTests {
                 .contains("int ordersCount")
                 .contains("entity.getOrdersCount() == null ? 0 : entity.getOrdersCount().intValue()")
                 .doesNotContain("entity.getOrders().size()");
+    }
+
+    @Test
+    void fullstackEndpoint_roundNineFieldTypes() throws Exception {
+        Map<String, String> entries = generateZip(FullstackExampleRequests.fieldTypesBody("react-tailwind-crud"));
+
+        // Backend: each type's Java type, its column, its default.
+        assertThat(contentEndingWith(entries, "/entity/Shift.java"))
+                .contains("import java.time.LocalTime;")
+                .contains("import java.time.Instant;")
+                .contains("private LocalTime startsAt = java.time.LocalTime.parse(\"09:00\");")
+                .contains("private Instant clockedIn;")
+                // Money keeps two decimals; its currency is the frontend's to print.
+                .contains("@Column(name = \"rate\", nullable = false, precision = 19, scale = 2)")
+                .contains("private BigDecimal rate;")
+                .contains("private BigDecimal bonus = new BigDecimal(\"12.5\");")
+                // Markdown is long text to the database.
+                .containsPattern("@Column\\(name = \"notes\", columnDefinition = \"TEXT\"\\)\\s+private String notes;");
+        assertThat(contentEndingWith(entries, "/dto/ShiftDto.java"))
+                .contains("LocalTime startsAt")
+                .contains("Instant clockedIn")
+                // A decimal bound, as on BIG_DECIMAL.
+                .contains("@DecimalMin(value = \"0\")");
+        // Money filters and sums like the number it is; a time and an instant are not filters.
+        assertThat(contentEndingWith(entries, "/controller/ShiftController.java"))
+                .contains("rateMin").contains("bonusMax")
+                .doesNotContain("startsAtFrom").doesNotContain("clockedInFrom");
+        // Bulk edit offers what one typed value can set: not the time, the instant or the Markdown.
+        assertThat(contentEndingWith(entries, "/service/ShiftService.java"))
+                .contains("case \"rate\" -> entity.setRate(value == null ? null : new java.math.BigDecimal(value.toString()));")
+                .contains("case \"title\" -> entity.setTitle(value == null ? null : value.toString());")
+                .doesNotContain("case \"startsAt\"").doesNotContain("case \"clockedIn\"").doesNotContain("case \"notes\"");
+        assertThat(contentEndingWith(entries, "/config/DemoDataLoader.java"))
+                .contains("java.time.Instant.now().minus(java.time.Duration.ofHours(i))");
+
+        // Frontend: the shared formatters and the Markdown renderer ship because a field needs them.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/format.ts"))
+                .anyMatch(p -> p.endsWith("frontend/src/shared/ui/Markdown.tsx"));
+        assertThat(contentEndingWith(entries, "/ui/ShiftPage.tsx"))
+                .contains("import { attachmentUrl, formatInstant, formatMoney } from '@shared/ui/format'")
+                // The currency is upper-cased, and ILS when a money field names none.
+                .contains("render: r => r.rate == null ? '—' : formatMoney(r.rate, 'USD')")
+                .contains("formatMoney(r.bonus, 'ILS')")
+                .contains("formatInstant(r.clockedIn)")
+                .contains("render: r => r.startsAt == null ? '—' : String(r.startsAt)");
+        assertThat(contentEndingWith(entries, "/ui/ShiftDetail.tsx"))
+                .contains("import { Markdown } from '@shared/ui/Markdown'")
+                .contains("<Markdown source={String(value.notes)} />")
+                .contains("formatMoney(value.rate, 'USD')")
+                .contains("formatInstant(value.clockedIn)");
+        assertThat(contentEndingWith(entries, "/ui/ShiftForm.tsx"))
+                .contains("import { fromLocalInput, toLocalInput } from '@shared/ui/format'")
+                .contains("type=\"time\"")
+                // An instant is picked in the browser's zone and stored in UTC.
+                .contains("value={toLocalInput(value.clockedIn)}")
+                .contains("onChange={e => set('clockedIn', fromLocalInput(e.target.value))}")
+                .contains("type=\"number\" min=\"0\" step=\"0.01\"");
+        assertThat(contentEndingWith(entries, "/model/types.ts"))
+                .contains("rate").contains("startsAt");
+    }
+
+    @Test
+    void fullstackEndpoint_fileAndImageFields() throws Exception {
+        Map<String, String> entries = generateZip(FullstackExampleRequests.fieldTypesBody("react-tailwind-crud"));
+
+        // The attachment package ships because a field needs it: a table behind a storage interface.
+        for (String file : List.of("Attachment", "AttachmentRepository", "AttachmentStorage", "DbAttachmentStorage",
+                "AttachmentController", "AttachmentConfig")) {
+            assertThat(entries.keySet()).as(file)
+                    .anyMatch(p -> p.endsWith("backend/src/main/java/com/menora/rota/attachment/" + file + ".java"));
+        }
+        assertThat(contentEndingWith(entries, "/attachment/Attachment.java"))
+                .contains("@Table(name = \"app_attachment\")")
+                // A binary column, not a large object (which is an oid on PostgreSQL).
+                .contains("@JdbcTypeCode(SqlTypes.LONG32VARBINARY)")
+                .doesNotContain("@Lob");
+        assertThat(contentEndingWith(entries, "/attachment/AttachmentController.java"))
+                .contains("@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)")
+                // Never served as a page: nosniff, and inline only for what its bytes say is a picture.
+                .contains("\"X-Content-Type-Options\", \"nosniff\"")
+                .contains("image != null ? ContentDisposition.inline() : ContentDisposition.attachment()");
+
+        // The field is the attachment's id; the entity reads the file's name beside it.
+        assertThat(contentEndingWith(entries, "/entity/Shift.java"))
+                .contains("@Column(name = \"contract\")")
+                .contains("private java.util.UUID contract;")
+                .contains("@Column(name = \"photo\", nullable = false)")
+                .contains("@org.hibernate.annotations.Formula(\"(select a.file_name from app_attachment a where a.id = photo)\")")
+                .contains("private String photoName;")
+                .contains("public String getContractName()");
+        assertThat(contentEndingWith(entries, "/dto/ShiftDto.java"))
+                .contains("java.util.UUID contract")
+                .contains("String contractName,")
+                .contains("String photoName) {")
+                .contains("entity.getPhotoName()");
+        // A replaced or deleted record's files go with it; bulk edit and demo data leave files alone.
+        assertThat(contentEndingWith(entries, "/service/ShiftService.java"))
+                .contains("com.menora.rota.attachment.AttachmentStorage attachments")
+                .contains("if (existing.getContract() != null && !existing.getContract().equals(updated.getContract())) {")
+                .contains("attachments.delete(existing.getPhoto());")
+                .doesNotContain("case \"contract\"").doesNotContain("case \"photo\"");
+        assertThat(contentEndingWith(entries, "/web/ApiExceptionHandler.java"))
+                .contains("MaxUploadSizeExceededException").contains("HttpStatus.PAYLOAD_TOO_LARGE");
+
+        // Any database but the default H2 gets a datasource config class that names what it scans:
+        // the attachment entity and repository are outside <domain>.entity / .repository and must
+        // be named too, or the app does not start (no AttachmentRepository bean).
+        Map<String, Object> onPostgres = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        onPostgres.put("dependencies", List.of("web", "data-jpa", "postgresql", "validation"));
+        assertThat(contentEndingWith(generateZip(onPostgres), "/config/PostgresqlConfig.java"))
+                .contains("basePackages = { \"com.menora.rota.repository\", \"com.menora.rota.attachment\" },")
+                .contains("em.setPackagesToScan(\"com.menora.rota.entity\", \"com.menora.rota.attachment\");");
+        // Without a file field there is nothing more to scan and the class keeps its bytes.
+        Map<String, Object> plain = FullstackExampleRequests.manyToManyBody("react-tailwind-crud");
+        plain.put("dependencies", List.of("web", "data-jpa", "postgresql", "validation"));
+        assertThat(contentEndingWith(generateZip(plain), "/config/PostgresqlConfig.java"))
+                .contains("basePackages = \"com.menora.press.repository\",")
+                .contains("em.setPackagesToScan(\"com.menora.press.entity\");");
+
+        // Frontend: the upload call, the field component and its strings.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/AttachmentField.tsx"));
+        assertThat(contentEndingWith(entries, "/shared/api/client.ts"))
+                .contains("async function upload<T>(path: string, file: File").contains("  upload,");
+        assertThat(contentEndingWith(entries, "/shared/i18n/strings.ts"))
+                .contains("chooseFile: 'Choose a file'").contains("chooseImage: 'בחירת תמונה'");
+        assertThat(contentEndingWith(entries, "/ui/ShiftForm.tsx"))
+                .contains("import { AttachmentField } from '@shared/ui/AttachmentField'")
+                .contains("name={value.contractName}")
+                .contains("onChange={(id, name) => onChange({ ...value, photo: id, photoName: name })}");
+        assertThat(contentEndingWith(entries, "/ui/ShiftPage.tsx"))
+                .contains("<a href={attachmentUrl(r.contract)}")
+                .contains("<img src={attachmentUrl(r.photo)} alt={r.photoName ?? ''}");
+        assertThat(contentEndingWith(entries, "/model/types.ts"))
+                .contains("photo: string | null").contains("photoName?: string | null");
+        // A CSV carries no files.
+        assertThat(contentEndingWith(entries, "/model/importFields.ts"))
+                .doesNotContain("'contract'").doesNotContain("'photo'");
+    }
+
+    @Test
+    void fullstackEndpoint_manyToManyRelation() throws Exception {
+        Map<String, String> entries = generateZip(FullstackExampleRequests.manyToManyBody("react-tailwind-crud"));
+
+        // The owner holds a set through a join table; the names are derived when none are given.
+        assertThat(contentEndingWith(entries, "/entity/Post.java"))
+                .contains("@ManyToMany(fetch = FetchType.LAZY)")
+                .contains("@JoinTable(name = \"post_tags\",")
+                .contains("joinColumns = @JoinColumn(name = \"post_id\"),")
+                .contains("inverseJoinColumns = @JoinColumn(name = \"tag_id\"))")
+                .contains("private java.util.Set<Tag> tags = new java.util.LinkedHashSet<>();")
+                // The foreign key beside it is untouched by any of this.
+                .contains("@ManyToOne(fetch = FetchType.LAZY)")
+                .contains("private Author author;");
+        // The DTO carries the linked rows' ids and labels, after everything it had.
+        assertThat(contentEndingWith(entries, "/dto/PostDto.java"))
+                .contains("Long authorId")
+                .contains("java.util.List<Long> tagsIds,")
+                .contains("java.util.List<String> tagsLabels) {")
+                .contains("entity.getTags().stream().map(t -> t.getId()).toList()")
+                .contains("map(t -> String.valueOf(t.getName())).toList()")
+                // No list in the request leaves the links alone.
+                .contains("if (this.tagsIds == null) {");
+        assertThat(contentEndingWith(entries, "/service/PostService.java"))
+                // Read while the session is open: the DTO is built after the transaction.
+                .contains("org.hibernate.Hibernate.initialize(entity.getTags());")
+                .contains("page.forEach(this::loaded);")
+                // Ids become the rows they name, in one query; an unknown one is a 400.
+                .contains("\"select t from Tag t where t.id in :ids\"")
+                .contains("throw new IllegalArgumentException(\"tags: no Tag with one of the ids \" + ids);")
+                .contains("existing.getTags().clear();")
+                // The filter is a subquery on the set, not a join that would repeat rows.
+                .contains("owner.join(\"tags\").get(\"id\").in(filters.tagsId())")
+                .contains("return cb.exists(linked);")
+                // The foreign key's filter is the plain one it always was.
+                .contains("root.get(\"author\").get(\"id\").in(filters.authorId())");
+        assertThat(contentEndingWith(entries, "/controller/PostController.java"))
+                .contains("List<Long> tagsId")
+                .contains("csv(String.join(\"; \", dto.tagsLabels())),");
+        // The other side knows nothing of the link.
+        assertThat(contentEndingWith(entries, "/entity/Tag.java")).doesNotContain("ManyToMany").doesNotContain("Post");
+
+        // Frontend: the multi-pick control, the labels in the list and the detail, the filter.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/MultiRelationPicker.tsx"));
+        assertThat(contentEndingWith(entries, "/post/model/types.ts"))
+                .contains("tagsIds?: number[] | null").contains("tagsLabels?: string[] | null");
+        assertThat(contentEndingWith(entries, "/ui/PostForm.tsx"))
+                .contains("import { MultiRelationPicker } from '@shared/ui/MultiRelationPicker'")
+                .contains("path=\"/api/tags\"")
+                .contains("labelKey=\"name\"")
+                .contains("onChange={(ids, labels) => onChange({ ...value, tagsIds: ids as number[], tagsLabels: labels })}");
+        assertThat(contentEndingWith(entries, "/ui/PostPage.tsx"))
+                .contains("label: 'Tags', render: r => r.tagsLabels == null || r.tagsLabels.length === 0 ? '—' : r.tagsLabels.join(', ')")
+                .contains("name: 'tagsId'")
+                // A new record is pre-filled from a filter on a foreign key, never from one on a set.
+                .contains("record['authorId']")
+                .doesNotContain("record['tagsId']");
+        assertThat(contentEndingWith(entries, "/ui/PostDetail.tsx"))
+                .contains("<Row label=\"Tags\">");
+    }
+
+    @Test
+    void fullstackEndpoint_oneToManyRelation() throws Exception {
+        Map<String, String> entries = generateZip(FullstackExampleRequests.oneToManyBody("react-tailwind-crud"));
+
+        // The parent reads the link its child holds: a collection and a count the database computes.
+        assertThat(contentEndingWith(entries, "/entity/Order.java"))
+                .contains("@OneToMany(mappedBy = \"order\")")
+                .contains("private List<OrderLine> lines = new ArrayList<>();")
+                .contains("@Formula(\"(select count(*) from order_lines c where c.order_id = id)\")")
+                .contains("private Long linesCount;")
+                // Its own foreign key is what it was.
+                .contains("private Customer customer;");
+        assertThat(contentEndingWith(entries, "/dto/OrderDto.java")).contains("int linesCount");
+        // The link named by mappedBy, under the name the model gave the list.
+        assertThat(contentEndingWith(entries, "/entity/Customer.java"))
+                .contains("@OneToMany(mappedBy = \"customer\")")
+                .contains("private List<Order> orders = new ArrayList<>();");
+        // Two lists over one child, each by its own link.
+        assertThat(contentEndingWith(entries, "/entity/Account.java"))
+                .contains("@OneToMany(mappedBy = \"source\")").contains("private List<Transfer> outgoing")
+                .contains("@OneToMany(mappedBy = \"target\")").contains("private List<Transfer> incoming")
+                .contains("where c.source_id = id").contains("where c.target_id = id");
+        // An entity's own rows.
+        assertThat(contentEndingWith(entries, "/entity/Employee.java"))
+                .contains("@OneToMany(mappedBy = \"manager\")").contains("private List<Employee> reports");
+        // Nothing is derived for a link nobody declared: inverseCollections is off.
+        assertThat(contentEndingWith(entries, "/entity/Product.java")).doesNotContain("OneToMany");
+        // The child's side is untouched.
+        assertThat(contentEndingWith(entries, "/entity/OrderLine.java")).doesNotContain("OneToMany");
+
+        // Frontend: the count on the type and the list, and the child rows as a table in the details.
+        assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/RelatedRows.tsx"));
+        assertThat(contentEndingWith(entries, "/order/model/types.ts")).contains("linesCount?: number | null");
+        assertThat(contentEndingWith(entries, "/ui/OrderPage.tsx")).contains("label: 'Lines', render: r => r.linesCount");
+        assertThat(contentEndingWith(entries, "/ui/OrderDetail.tsx"))
+                .contains("import { RelatedRows } from '@shared/ui/RelatedRows'")
+                .contains("title={ 'Lines' }")
+                .contains("path=\"/api/order-lines\"")
+                .contains("param=\"orderId\"")
+                .contains("id={value.id}")
+                .contains("count={value.linesCount}")
+                .contains("{ key: 'quantity', label: 'Quantity' },")
+                // Another link of the child's by its label, else its id; the link back is left out.
+                .contains("{ key: 'productLabel', label: 'Product', alt: 'productId' },")
+                .doesNotContain("key: 'orderLabel'")
+                // Long text has no place in a table cell, and the count is the table's heading.
+                .doesNotContain("key: 'note'")
+                .doesNotContain("<Row label=\"Lines\">");
+        assertThat(contentEndingWith(entries, "/ui/CustomerDetail.tsx"))
+                .contains("import { OrderStatusTypeLabels } from '@entities/order'")
+                .contains("{ key: 'status', label: 'Status', labels: OrderStatusTypeLabels },")
+                .contains("param=\"customerId\"");
+        // Two tables over one child import its label map once.
+        String account = contentEndingWith(entries, "/ui/AccountDetail.tsx");
+        assertThat(account).containsOnlyOnce("import { TransferKindTypeLabels } from '@entities/transfer'")
+                .contains("param=\"sourceId\"").contains("param=\"targetId\"")
+                // The other link of a transfer is a column; the one the table is about is not.
+                .contains("title={ 'Outgoing' }").contains("title={ 'Incoming' }");
+        // A table of the entity's own rows reads the label map its details already import.
+        assertThat(contentEndingWith(entries, "/ui/EmployeeDetail.tsx"))
+                .containsOnlyOnce("import { EmployeeGradeTypeLabels")
+                .contains("param=\"managerId\"")
+                .contains("labels: EmployeeGradeTypeLabels");
+        // A project without a ONE_TO_MANY ships no table.
+        assertThat(generateZip(FullstackExampleRequests.manyToManyBody("react-tailwind-crud")).keySet())
+                .noneMatch(p -> p.endsWith("RelatedRows.tsx"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fullstackEndpoint_oneToManyNamesTheCollectionInverseCollectionsWouldDerive() throws Exception {
+        Map<String, Object> body = FullstackExampleRequests.oneToManyBody("react-tailwind-crud");
+        ((Map<String, Object>) body.get("opts")).put("scaffold", List.of("inverseCollections"));
+        Map<String, String> entries = generateZip(body);
+        // The declared list stands in for the derived one: one collection per link, not two.
+        assertThat(contentEndingWith(entries, "/entity/Order.java"))
+                .containsOnlyOnce("@OneToMany").contains("private List<OrderLine> lines").doesNotContain("orderLines");
+        // A link nobody declared is still derived, and stays a count among the details.
+        assertThat(contentEndingWith(entries, "/entity/Product.java")).contains("private List<OrderLine> orderLines");
+        assertThat(contentEndingWith(entries, "/ui/ProductDetail.tsx"))
+                .contains("<Row label=\"OrderLines\">").doesNotContain("RelatedRows");
+        assertThat(contentEndingWith(entries, "/entity/Account.java"))
+                .contains("outgoing").contains("incoming").doesNotContain("transfersBy");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fullstackEndpoint_rejectsInvalidOneToMany() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        // entity index, its relations, the message, the path.
+        record Bad(int entity, List<Map<String, Object>> relations, String message, String path) {}
+        Map<String, Object> order = Map.of("type", "MANY_TO_ONE", "fieldName", "order", "targetEntity", "Order", "required", true);
+        for (Bad bad : List.of(
+                new Bad(1, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "buyers", "targetEntity", "Customer")),
+                        "which has no MANY_TO_ONE to 'Product'", "entities[1].relations[0].targetEntity"),
+                new Bad(4, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "transfers", "targetEntity", "Transfer")),
+                        "has several MANY_TO_ONEs to 'Account' (source, target) — name one with mappedBy", "entities[4].relations[0].mappedBy"),
+                new Bad(4, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "transfers", "targetEntity", "Transfer", "mappedBy", "sender")),
+                        "mappedBy 'sender' is not a MANY_TO_ONE of 'Transfer' to 'Account' (it has: source, target)", "entities[4].relations[0].mappedBy"),
+                new Bad(4, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "outgoing", "targetEntity", "Transfer", "mappedBy", "source"),
+                        Map.of("type", "ONE_TO_MANY", "fieldName", "sent", "targetEntity", "Transfer", "mappedBy", "SOURCE")),
+                        "lists the same rows as another ONE_TO_MANY", "entities[4].relations[1].mappedBy"),
+                new Bad(0, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "orders", "targetEntity", "Order", "required", true)),
+                        "required does not apply to a ONE_TO_MANY", "entities[0].relations[0].required"),
+                new Bad(0, List.of(Map.of("type", "ONE_TO_MANY", "fieldName", "orders", "targetEntity", "Order", "joinColumn", "customer_id")),
+                        "joinColumn does not apply to a ONE_TO_MANY", "entities[0].relations[0].joinColumn"),
+                new Bad(3, List.of(order, Map.of("type", "MANY_TO_ONE", "fieldName", "product", "targetEntity", "Product", "mappedBy", "lines")),
+                        "mappedBy only applies to a ONE_TO_MANY", "entities[3].relations[1].mappedBy"))) {
+            Map<String, Object> body = FullstackExampleRequests.oneToManyBody(null);
+            ((List<Map<String, Object>>) body.get("entities")).get(bad.entity()).put("relations", bad.relations());
+            ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip",
+                    org.springframework.http.HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+            assertThat(response.getStatusCode()).as(bad.message()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains(bad.message()).contains("\"path\":\"" + bad.path() + "\"");
+        }
+
+        // The count a list adds is a member like any other.
+        Map<String, Object> body = FullstackExampleRequests.oneToManyBody(null);
+        Map<String, Object> orderEntity = ((List<Map<String, Object>>) body.get("entities")).get(2);
+        ((List<Map<String, Object>>) orderEntity.get("fields")).add(Map.of("name", "linesCount", "type", "INTEGER"));
+        ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip",
+                org.springframework.http.HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("field 'linesCount' clashes with 'linesCount'").contains("the count of relation 'lines'");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsInvalidManyToMany() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        record Bad(Map<String, Object> relation, String message) {}
+        for (Bad bad : List.of(
+                new Bad(Map.of("type", "MANY_TO_MANY", "fieldName", "related", "targetEntity", "Post"), "MANY_TO_MANY to itself"),
+                new Bad(Map.of("type", "MANY_TO_MANY", "fieldName", "tags", "targetEntity", "Tag", "required", true), "required does not apply"),
+                new Bad(Map.of("type", "MANY_TO_MANY", "fieldName", "tags", "targetEntity", "Tag", "joinTable", "post tags;"), "not a valid"),
+                new Bad(Map.of("type", "MANY_TO_ONE", "fieldName", "tag", "targetEntity", "Tag", "joinTable", "post_tag"), "only apply to a MANY_TO_MANY"),
+                new Bad(Map.of("type", "ONE_TO_MANY", "fieldName", "tags", "targetEntity", "Tag"), "which has no MANY_TO_ONE to 'Post'"))) {
+            Map<String, Object> body = FullstackExampleRequests.manyToManyBody(null);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> post = ((List<Map<String, Object>>) body.get("entities")).get(2);
+            post.put("relations", List.of(bad.relation()));
+            ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip",
+                    org.springframework.http.HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+            assertThat(response.getStatusCode()).as(bad.message()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains(bad.message()).contains("entities[2].relations[0]");
+        }
+    }
+
+    @Test
+    void fullstackEndpoint_projectsWithoutTheNewTypesShipNoneOfTheirFiles() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "plain");
+        body.put("packageName", "com.menora.plain");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(Map.of("name", "Note", "fields", List.of(pkField(),
+                Map.of("name", "body", "type", "TEXT"), Map.of("name", "price", "type", "BIG_DECIMAL")))));
+        Map<String, String> entries = generateZip(body);
+        assertThat(entries.keySet()).noneMatch(p -> p.endsWith("/format.ts") || p.endsWith("/Markdown.tsx")
+                || p.endsWith("/AttachmentField.tsx") || p.contains("/attachment/"));
+        assertThat(contentEndingWith(entries, "/shared/api/client.ts")).doesNotContain("upload");
+        assertThat(contentEndingWith(entries, "/ui/NotePage.tsx")).doesNotContain("@shared/ui/format");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsMisusedRoundNineTypes() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        record Bad(Map<String, Object> field, String message) {}
+        for (Bad bad : List.of(
+                new Bad(Map.of("name", "amount", "type", "MONEY", "primaryKey", true), "cannot be the primary key"),
+                new Bad(Map.of("name", "amount", "type", "MONEY", "currency", "shekels"), "three-letter currency code"),
+                new Bad(Map.of("name", "amount", "type", "BIG_DECIMAL", "currency", "USD"), "currency only allowed on MONEY"),
+                new Bad(Map.of("name", "amount", "type", "MONEY", "defaultValue", "1.005"), "more than two decimals"),
+                new Bad(Map.of("name", "opens", "type", "LOCAL_TIME", "defaultValue", "9 o'clock"), "not a valid LOCAL_TIME"),
+                new Bad(Map.of("name", "seenAt", "type", "INSTANT", "defaultValue", "2026-01-31"), "not a valid INSTANT"),
+                new Bad(Map.of("name", "notes", "type", "MARKDOWN", "length", 50), "length only allowed on STRING"),
+                new Bad(Map.of("name", "scan", "type", "FILE", "defaultValue", "x.pdf"), "a file is uploaded, not typed"),
+                new Bad(Map.of("name", "scan", "type", "IMAGE", "unique", true), "unique does not apply"),
+                new Bad(Map.of("name", "scan", "type", "FILE", "primaryKey", true), "cannot be the primary key"))) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("artifactId", "demo");
+            body.put("packageName", "com.menora.demo");
+            body.put("bootVersion", "3.2.1");
+            List<Map<String, Object>> fields = new java.util.ArrayList<>();
+            if (!Boolean.TRUE.equals(bad.field().get("primaryKey"))) fields.add(pkField());
+            fields.add(bad.field());
+            body.put("entities", List.of(Map.of("name", "Thing", "fields", fields)));
+            ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip",
+                    org.springframework.http.HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+            assertThat(response.getStatusCode()).as(bad.message()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains(bad.message());
+        }
+    }
+
+    @Test
+    void fullstackEndpoint_twoLinksToOneParentGetTwoInverseCollections() throws Exception {
+        // Both links derived `transfers` on Account before, twice — a class that does not compile.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "bank");
+        body.put("packageName", "com.menora.bank");
+        body.put("bootVersion", "3.2.1");
+        body.put("opts", Map.of("scaffold", List.of("inverseCollections")));
+        body.put("entities", List.of(
+                Map.of("name", "Account", "fields", List.of(pkField(), Map.of("name", "name", "type", "String"))),
+                Map.of("name", "Transfer",
+                        "fields", List.of(pkField(), Map.of("name", "amount", "type", "BigDecimal")),
+                        "relations", List.of(
+                                Map.of("type", "MANY_TO_ONE", "fieldName", "source", "targetEntity", "Account", "required", true),
+                                Map.of("type", "MANY_TO_ONE", "fieldName", "target", "targetEntity", "Account", "required", true)))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/entity/Account.java"))
+                .contains("@OneToMany(mappedBy = \"source\")")
+                .contains("private List<Transfer> transfersBySource = new ArrayList<>();")
+                .contains("@OneToMany(mappedBy = \"target\")")
+                .contains("private List<Transfer> transfersByTarget = new ArrayList<>();")
+                .contains("private Long transfersBySourceCount;")
+                .contains("private Long transfersByTargetCount;")
+                .doesNotContain("List<Transfer> transfers ");
+        assertThat(contentEndingWith(entries, "/dto/AccountDto.java"))
+                .contains("int transfersBySourceCount")
+                .contains("int transfersByTargetCount");
+    }
+
+    @Test
+    void fullstackEndpoint_rejectsNamesTheGeneratedCodeUses() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        for (String name : List.of("Page", "Table", "Dashboard")) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("artifactId", "demo");
+            body.put("packageName", "com.menora.demo");
+            body.put("bootVersion", "3.2.1");
+            body.put("entities", List.of(Map.of("name", name, "fields", List.of(pkField()))));
+            ResponseEntity<String> response = restTemplate.exchange("/starter-fullstack.zip",
+                    org.springframework.http.HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+            assertThat(response.getStatusCode()).as(name).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).contains("entities[0].name '" + name + "' cannot be used");
+        }
     }
 
     @Test
@@ -2645,7 +3242,29 @@ class FullstackStarterIntegrationTests {
                 .contains("createdAt");
 
         // The project-level auditing config is still emitted (the project flag is untouched).
-        assertThat(entries).containsKey("books/backend/src/main/java/com/menora/books/config/JpaAuditingConfig.java");
+        String auditingConfig = "books/backend/src/main/java/com/menora/books/config/JpaAuditingConfig.java";
+        assertThat(entries).containsKey(auditingConfig);
+
+        // The other way round: the project option off and one entity opting in on its own. Its
+        // @CreatedDate fields need @EnableJpaAuditing — the config follows any audited entity,
+        // not the project option (it used to be left out, and the timestamps stayed null).
+        Map<String, Object> audited = new LinkedHashMap<>(note);
+        audited.put("opts", Map.of("audit", true));
+        body.put("entities", List.of(invoice, audited));
+        body.put("opts", Map.of("scaffold", List.of("csvExport")));
+        Map<String, String> oneAudited = generateZip(body);
+        assertThat(contentEndingWith(oneAudited, "/entity/Note.java")).contains("@CreatedDate");
+        assertThat(contentEndingWith(oneAudited, "/entity/Invoice.java")).doesNotContain("@CreatedDate");
+        assertThat(oneAudited).containsKey(auditingConfig);
+        // Nobody audited: no config.
+        body.put("entities", List.of(invoice, note));
+        assertThat(generateZip(body)).doesNotContainKey(auditingConfig);
+        // Every entity opted out of the project option: nothing to enable either.
+        Map<String, Object> invoiceOut = new LinkedHashMap<>(invoice);
+        invoiceOut.put("opts", Map.of("audit", false));
+        body.put("entities", List.of(invoiceOut, note));
+        body.put("opts", Map.of("scaffold", List.of("audit")));
+        assertThat(generateZip(body)).doesNotContainKey(auditingConfig);
 
         // An unknown override key is a 400 naming the key and the entity.
         Map<String, Object> bogus = new LinkedHashMap<>(note);
@@ -2893,8 +3512,13 @@ class FullstackStarterIntegrationTests {
         body.put("entities", List.of(task));
         body.put("editorModel", snapshot);
         Map<String, String> entries = generateZip(body);
-        assertThat(mapper.readTree(entries.get("ops/menora-model.json"))).isEqualTo(mapper.valueToTree(snapshot));
-        assertThat(entries.get("ops/README.md")).contains("## Reopen in the generator").contains("menora-model.json");
+        com.fasterxml.jackson.databind.node.ObjectNode shipped =
+                (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(entries.get("ops/menora-model.json"));
+        // …followed by what the project was rendered with, which is never part of the model.
+        assertThat(shipped.remove("generator").path("templatesHash").asText()).matches("[0-9a-f]{64}");
+        assertThat(shipped).isEqualTo(mapper.valueToTree(snapshot));
+        assertThat(entries.get("ops/README.md")).contains("## Reopen in the generator").contains("menora-model.json")
+                .contains("**Download update**").contains("git apply --3way");
 
         // Without one (curl, an IDE), the file holds the request itself — what was sent, not the
         // dependencies the template set added.
@@ -2969,15 +3593,57 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.get("desk/frontend/src/shared/ui/Table.tsx"))
                 .contains("<EmptyState title={t('noMatchingRecords')} />")
                 .contains("action={emptyAction}");
+        // A value reads the same wherever it is shown — one function (displayTs) writes the table
+        // cell, the details and a card: a boolean in the app's words, a date for its locale. The
+        // table used to print `true` and an ISO date where the details worded and formatted them.
         assertThat(entries.get("desk/frontend/src/features/ticket-form/ui/TicketDetail.tsx"))
-                .contains("import { t, LOCALE } from '@shared/i18n'")
+                .contains("import { t } from '@shared/i18n'")
+                .contains("import { formatDate, formatDateTime } from '@shared/ui/format'")
                 .contains("(value.open ? t('trueLabel') : t('falseLabel'))")
-                .contains("new Date(`${value.due}T00:00:00`).toLocaleDateString(LOCALE)")
-                .contains("new Date(value.closedAt).toLocaleString(LOCALE)")
+                .contains("formatDate(value.due)")
+                .contains("formatDateTime(value.closedAt)")
                 .contains("String(value.title)");
-        // Nothing to word or format: no i18n import at all (the generated lint rejects unused ones).
+        assertThat(entries.get("desk/frontend/src/pages/ticket/ui/TicketPage.tsx"))
+                .contains("import { formatDate, formatDateTime } from '@shared/ui/format'")
+                .contains("render: r => r.open == null ? '—' : (r.open ? t('trueLabel') : t('falseLabel')) }")
+                .contains("render: r => r.due == null ? '—' : formatDate(r.due) }")
+                .contains("render: r => r.closedAt == null ? '—' : formatDateTime(r.closedAt) }")
+                .contains("render: r => r.title == null ? '—' : String(r.title) }");
+        // The helpers ship with the first date (they used to need a money, instant or file field).
+        assertThat(entries.get("desk/frontend/src/shared/ui/format.ts"))
+                .contains("export function formatDate(value: string): string {")
+                .contains("const at = new Date(`${String(value).slice(0, 10)}T00:00:00`)")
+                .contains("export function formatDateTime(value: string): string {");
+        // Nothing to word or format: no i18n or format import at all (the generated lint rejects unused ones).
         assertThat(entries.get("desk/frontend/src/features/note-form/ui/NoteDetail.tsx"))
-                .doesNotContain("@shared/i18n");
+                .doesNotContain("@shared/i18n").doesNotContain("@shared/ui/format");
+
+        // Cards (a board's, an inbox's) go through the same function: money in its currency, a
+        // date for the locale, a file by its name — a card used to print the file's id.
+        Map<String, Object> shift = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        shift.put("pages", List.of(
+                Map.of("id", "shifts", "type", "entity-list", "entity", "Shift"),
+                Map.of("id", "board", "type", "board", "entity", "Shift",
+                        "cardFields", List.of("title", "rate", "contract", "clockedIn"))));
+        String board = generateZip(shift).get("rota/frontend/src/app/screens/BoardScreen.tsx");
+        assertThat(board)
+                .contains("import { formatInstant, formatMoney } from '@shared/ui/format'")
+                .contains("r.rate == null ? '—' : formatMoney(r.rate, 'USD')")
+                .contains("r.contract == null ? '—' : (r.contractName ?? '—')")
+                .contains("r.clockedIn == null ? '—' : formatInstant(r.clockedIn)");
+        // A tile over a money field writes its number in the field's currency.
+        Map<String, Object> money = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        money.put("pages", List.of(
+                Map.of("id", "shifts", "type", "entity-list", "entity", "Shift"),
+                Map.of("id", "home", "type", "dashboard", "widgets", List.of(
+                        Map.of("kind", "kpi", "entity", "Shift", "agg", "sum", "field", "rate"),
+                        Map.of("kind", "kpi", "entity", "Shift")))));
+        Map<String, String> tiles = generateZip(money);
+        assertThat(tiles.get("rota/frontend/src/app/screens/HomeScreen.tsx").replace("\r\n", "\n"))
+                .contains("          agg=\"sum\"\n          field=\"rate\"\n          currency=\"USD\"\n")
+                .containsOnlyOnce("currency=");
+        assertThat(tiles.get("rota/frontend/src/shared/ui/stats.ts"))
+                .contains("export function formatStat(value: number | null, currency?: string): string {");
     }
 
     @Test
@@ -3344,6 +4010,143 @@ class FullstackStarterIntegrationTests {
         assertThat(contentEndingWith(entries, "/controller/TaskController.java"))
                 .contains("@GetMapping(\"/export.csv\")")
                 .doesNotContain("Won't fix");
+    }
+
+    @Test
+    void fullstackEndpoint_escapesLabelsWhereverTheyAreSpliced() throws Exception {
+        // Hebrew abbreviations carry a geresh (') or gershayim ("): מס' , מע"מ , ת"ז. A label is
+        // spliced into single-quoted TS literals, double-quoted JSX attributes and JSX children —
+        // each needs its own escaping, or the generated project does not compile.
+        Map<String, Object> number = new LinkedHashMap<>();
+        number.put("name", "number"); number.put("type", "String"); number.put("label", "מס' חשבונית");
+        Map<String, Object> vat = new LinkedHashMap<>();
+        vat.put("name", "vat"); vat.put("type", "BigDecimal"); vat.put("label", "מע\"מ");
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "note"); note.put("type", "String"); note.put("label", "a <b> & {c} &amp; \\d");
+        Map<String, Object> invoice = new LinkedHashMap<>();
+        invoice.put("name", "Invoice");
+        invoice.put("label", "חשבונית מס'");
+        invoice.put("labelPlural", "חשבוניות \"מס\" <1>");
+        invoice.put("fields", List.of(pkField(), number, vat, note));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "books");
+        body.put("packageName", "com.menora.books");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(invoice));
+        body.put("opts", Map.of("scaffold", List.of("bulkUpdate", "csvImport")));
+        body.put("dashboardTitle", "ספרים של \"מנורה\" {2026}");
+        body.put("dashboardOverview", "it's <new>");
+
+        Map<String, String> entries = generateZip(body);
+
+        // Single-quoted TS literals: apostrophe and backslash escaped, a double quote left alone.
+        String page = entries.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx");
+        assertThat(page)
+                .contains("label: 'מס\\' חשבונית', sortKey: 'number'")
+                .contains("label: 'מע\"מ', sortKey: 'vat'")
+                .contains("label: 'a <b> & {c} &amp; \\\\d', sortKey: 'note'")
+                .contains("t('newX', { x: 'חשבונית מס\\'' })")
+                .contains("t('importX', { x: 'חשבוניות \"מס\" <1>' })")
+                // JSX children: the page heading and the bulk-edit field picker's option text.
+                .contains(">חשבוניות \"מס\" &lt;1&gt;</h1>")
+                .contains("<option value=\"number\">מס' חשבונית</option>")
+                .contains("<option value=\"note\">a &lt;b&gt; & &#123;c&#125; &amp;amp; \\d</option>");
+        // Double-quoted JSX attributes: no backslash escapes there, only character references.
+        assertThat(entries.get("books/frontend/src/features/invoice-form/ui/InvoiceForm.tsx"))
+                .contains("<Field label=\"מס' חשבונית\"")
+                .contains("<Field label=\"מע&quot;מ\"")
+                .contains("<Field label=\"a <b> & {c} &amp;amp; \\d\"");
+        assertThat(contentEndingWith(entries, "/InvoiceDetail.tsx")).contains("<Row label=\"מע&quot;מ\">");
+        assertThat(contentEndingWith(entries, "/importFields.ts"))
+                .contains("label: 'מס\\' חשבונית', kind:");
+        assertThat(entries.get("books/frontend/src/app/App.tsx")).contains("label: 'חשבוניות \"מס\" <1>'");
+        assertThat(contentEndingWith(entries, "/DashboardPage.tsx"))
+                .contains("label: 'חשבוניות \"מס\" <1>', view: 'invoice'")
+                .contains(">ספרים של \"מנורה\" &#123;2026&#125;</h1>")
+                .contains("it's &lt;new&gt;");
+
+        // The Menora set authors its own page and dashboard: same rules.
+        body.put("frontendTemplateSet", "react-menora-digital-crud");
+        Map<String, String> menora = generateZip(body);
+        assertThat(menora.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx"))
+                .contains("label: 'מס\\' חשבונית', sortKey: 'number'")
+                .contains("<SectionHeader title=\"חשבוניות &quot;מס&quot; <1>\" align=\"start\" />")
+                .contains("caption=\"חשבוניות &quot;מס&quot; <1>\"");
+        assertThat(contentEndingWith(menora, "/DashboardPage.tsx"))
+                .contains("'ספרים של \"מנורה\" {2026}.'")
+                .contains("'it\\'s <new>'");
+    }
+
+    @Test
+    void fullstackEndpoint_relationsCarryTheirOwnLabel() throws Exception {
+        // A relation used to be called by its field name in PascalCase everywhere ("Customer" in a
+        // Hebrew app). It now takes a label like a field does; without one nothing changes.
+        Map<String, Object> customer = new LinkedHashMap<>();
+        customer.put("name", "Customer");
+        customer.put("fields", List.of(pkField(), Map.of("name", "name", "type", "String")));
+        customer.put("relations", List.of(
+                Map.of("type", "ONE_TO_MANY", "fieldName", "orders", "targetEntity", "Order", "mappedBy", "customer",
+                        "label", "הזמנות של \"לקוח\"")));
+        Map<String, Object> tag = new LinkedHashMap<>();
+        tag.put("name", "Tag");
+        tag.put("fields", List.of(pkField(), Map.of("name", "name", "type", "String")));
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("name", "Order");
+        order.put("fields", List.of(pkField(), Map.of("name", "reference", "type", "String")));
+        order.put("relations", List.of(
+                Map.of("type", "MANY_TO_ONE", "fieldName", "customer", "targetEntity", "Customer", "required", true,
+                        "label", "  לקוח מס' \"1\"  "),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "billTo", "targetEntity", "Customer"),
+                Map.of("type", "MANY_TO_MANY", "fieldName", "tags", "targetEntity", "Tag", "label", "תגיות")));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "shop");
+        body.put("packageName", "com.menora.shop");
+        body.put("bootVersion", "3.2.1");
+        body.put("entities", List.of(customer, tag, order));
+        body.put("opts", Map.of("scaffold", List.of("csvImport")));
+
+        Map<String, String> entries = generateZip(body);
+
+        String page = entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx");
+        assertThat(page)
+                // Column headings: the label (trimmed, escaped for a TS literal); unlabelled as before.
+                .contains("label: 'לקוח מס\\' \"1\"', render: r =>")
+                .contains("label: 'BillTo', render: r =>")
+                .contains("label: 'תגיות', render: r =>")
+                // The filter bar's controls.
+                .contains("{ name: 'customerId', label: 'לקוח מס\\' \"1\"', kind: 'relation'")
+                .contains("{ name: 'billToId', label: 'BillTo', kind: 'relation'")
+                .contains("{ name: 'tagsId', label: 'תגיות', kind: 'relation'");
+        assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderForm.tsx"))
+                .contains("<Field label=\"לקוח מס' &quot;1&quot;\" required error={errors?.customerId}>")
+                .contains("<Field label=\"BillTo\" error={errors?.billToId}>")
+                .contains("<Field label=\"תגיות\" error={errors?.tagsIds}>");
+        assertThat(contentEndingWith(entries, "/OrderDetail.tsx"))
+                .contains("<Row label=\"לקוח מס' &quot;1&quot;\">")
+                .contains("<Row label=\"תגיות\">");
+        assertThat(contentEndingWith(entries, "order-form/model/importFields.ts"))
+                .contains("{ name: 'customerId', label: 'לקוח מס\\' \"1\"', kind: 'relation'");
+        // A ONE_TO_MANY's label names its count column and the table of child rows in the details.
+        assertThat(entries.get("shop/frontend/src/pages/customer/ui/CustomerPage.tsx"))
+                .contains("label: 'הזמנות של \"לקוח\"', render: r => r.ordersCount == null");
+        assertThat(contentEndingWith(entries, "/CustomerDetail.tsx"))
+                .contains("title={ 'הזמנות של \"לקוח\"' }");
+        // Labels are a UI concern: the backend keeps the field names.
+        assertThat(contentEndingWith(entries, "/dto/OrderDto.java")).doesNotContain("לקוח");
+
+        // Over 80 characters is a 400 that says where.
+        Map<String, Object> longLabel = new LinkedHashMap<>(order);
+        longLabel.put("relations", List.of(Map.of("type", "MANY_TO_ONE", "fieldName", "customer",
+                "targetEntity", "Customer", "label", "x".repeat(81))));
+        body.put("entities", List.of(customer, tag, longLabel));
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> tooLong = restTemplate.exchange("/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+        assertThat(tooLong.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(tooLong.getBody()).contains("label is over 80 characters").contains("entities[2].relations[0].label");
     }
 
     @Test

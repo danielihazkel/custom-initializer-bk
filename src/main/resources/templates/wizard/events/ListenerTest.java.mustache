@@ -1,0 +1,43 @@
+package {{package}};
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+{{#testImports}}
+import {{.}};
+{{/testImports}}
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/** {{stem}}Listener without a broker: a record in, as the container would hand it over. */
+class {{stem}}ListenerTest {
+
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    private final {{stem}}Listener listener = new {{stem}}Listener(mapper);
+
+    private static ConsumerRecord<String, String> record(String value) {
+        return new ConsumerRecord<>("topic-under-test", 0, 0L, "key-1", value);
+    }
+
+{{#listenerReadable}}
+    @Test
+    void readsAMessage() throws Exception {
+{{#hasListenerSample}}
+        String json = mapper.writeValueAsString({{listenerSample}});
+{{/hasListenerSample}}
+{{^hasListenerSample}}
+        String json = "{}";
+{{/hasListenerSample}}
+
+        assertThatCode(() -> listener.onMessage(record(json))).doesNotThrowAnyException();
+    }
+
+{{/listenerReadable}}
+    @Test
+    void refusesWhatIsNotJson() {
+        assertThatThrownBy(() -> listener.onMessage(record("{not json")))
+                .isInstanceOf(JsonProcessingException.class);
+    }
+}

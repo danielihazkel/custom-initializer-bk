@@ -55,9 +55,11 @@ export function useStats(path: string, query: string) {
 
 const NUMBER = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2 })
 
-/** A rollup number for display; an empty group (min/max/avg over no rows) reads as a dash. */
-export function formatStat(value: number | null): string {
-  return value == null ? '—' : NUMBER.format(value)
+/** A rollup number for display; an empty group (min/max/avg over no rows) reads as a dash. A
+ *  rollup of money is written in its `currency`. */
+export function formatStat(value: number | null, currency?: string): string {
+  if (value == null) return '—'
+  return currency ? new Intl.NumberFormat(LOCALE, { style: 'currency', currency }).format(value) : NUMBER.format(value)
 }
 
 /** A bucket's label, through the enum display labels when the column has any. */

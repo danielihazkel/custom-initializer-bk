@@ -1,11 +1,12 @@
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
-{{#hasValidationChecks}}import { t } from '@shared/i18n'
+{{#compositions}}import { validate{{childEntity}} } from '@features/{{childKebab}}-form'
+{{/compositions}}{{#hasValidationChecks}}import { t } from '@shared/i18n'
 {{/hasValidationChecks}}
 /** Client-side checks mirroring the backend's Bean Validation (required, length, min/max,
  *  pattern, email), run before a save so obvious mistakes are flagged without a round-trip.
  *  Returns `{ fieldName: message }`; empty when the value is valid. A generated primary key is
  *  never checked; a client-supplied one is required (an edited row always carries it). */
-export function validate{{EntityName}}(value: Partial<{{EntityName}}>): Record<string, string> {
+export function validate{{EntityName}}(value: Partial<{{EntityName}}>{{#isComposedChild}}, nested = false{{/isComposedChild}}): Record<string, string> {
   const errors: Record<string, string> = {}
 {{#hasBlankChecks}}  const blank = (v: unknown) => v == null || (typeof v === 'string' && v.trim() === '')
 {{/hasBlankChecks}}{{#fields}}{{#isPrimaryKey}}{{^isGenerated}}  if (blank(value.{{name}})) errors.{{name}} = t('required')
@@ -15,6 +16,12 @@ export function validate{{EntityName}}(value: Partial<{{EntityName}}>): Record<s
 {{/hasMin}}{{#hasMax}}  if (!errors.{{name}} && value.{{name}} != null && Number(value.{{name}}) > {{max}}) errors.{{name}} = t('atMost', { n: {{max}} })
 {{/hasMax}}{{/isNumeric}}{{#hasPattern}}  if (!errors.{{name}} && typeof value.{{name}} === 'string' && value.{{name}} !== '' && !new RegExp('^(?:' + "{{patternEscaped}}" + ')$').test(value.{{name}})) errors.{{name}} = t('invalidFormat')
 {{/hasPattern}}{{#isEmail}}  if (!errors.{{name}} && typeof value.{{name}} === 'string' && value.{{name}} !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.{{name}})) errors.{{name}} = t('invalidEmail')
-{{/isEmail}}{{/isGenerated}}{{/fields}}{{#relations}}{{#required}}  if (blank(value.{{fkFieldName}})) errors.{{fkFieldName}} = t('required')
-{{/required}}{{/relations}}  return errors
+{{/isEmail}}{{/isGenerated}}{{/fields}}{{#relations}}{{#required}}  if ({{#isCompositionLink}}!nested && {{/isCompositionLink}}blank(value.{{fkFieldName}})) errors.{{fkFieldName}} = t('required')
+{{/required}}{{/relations}}{{#compositions}}  // Each row by its own rules (inside this record it need not say whose it is), named by its place.
+  ;(value.{{collectionField}} ?? []).forEach((row, index) => {
+    for (const [field, message] of Object.entries(validate{{childEntity}}(row, true))) {
+      errors[`{{collectionField}}[${index}].${field}`] = message
+    }
+  })
+{{/compositions}}  return errors
 }

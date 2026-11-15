@@ -1,7 +1,9 @@
 package com.menora.initializr.extension.dynamic;
 
 import com.menora.initializr.config.EntityDefinitionContext;
+import com.menora.initializr.config.EventsSpecContext;
 import com.menora.initializr.config.OpenApiSpecContext;
+import com.menora.initializr.config.BackendModel;
 import com.menora.initializr.config.CompiledTemplates;
 import com.menora.initializr.config.GeneratedProjectFiles;
 import com.menora.initializr.config.DepartmentResolver;
@@ -11,6 +13,8 @@ import com.menora.initializr.config.SqlScriptsContext;
 import com.menora.initializr.db.DependencyConfigService;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
+import com.menora.initializr.events.EventsCodeGenerator;
+import com.menora.initializr.events.EventsWizardOptions;
 import com.menora.initializr.openapi.GeneratedOpenApiFile;
 import com.menora.initializr.openapi.OpenApiCodeGenerator;
 import com.menora.initializr.openapi.OpenApiWizardOptions;
@@ -21,9 +25,11 @@ import com.menora.initializr.sql.GeneratedJavaFile;
 import com.menora.initializr.sql.SqlDepOptions;
 import com.menora.initializr.sql.SqlDialect;
 import com.menora.initializr.sql.SqlEntityGenerator;
+import com.menora.initializr.sql.SqlProjectFacts;
 import io.spring.initializr.generator.buildsystem.BillOfMaterials;
 import io.spring.initializr.generator.buildsystem.Dependency;
 import io.spring.initializr.generator.spring.scm.git.GitIgnoreCustomizer;
+import io.spring.initializr.generator.version.Version;
 import io.spring.initializr.generator.version.VersionProperty;
 import io.spring.initializr.generator.version.VersionReference;
 import io.spring.initializr.generator.buildsystem.DependencyScope;
@@ -173,6 +179,13 @@ public class DynamicProjectGenerationConfiguration {
                             bc.getId(), bc.getDependencyId(), bc.getMavenArtifactId(), bc.getSubOptionId());
                     continue;
                 }
+                // Skip a row pinned to another Spring Boot line (the spring-cloud BOM and
+                // springdoc carry one row per line).
+                if (!appliesTo(bc.getCompatibilityRange(), description.getPlatformVersion())) {
+                    log.debug("skip bc id={} dep={} artifact={}: outside Boot range '{}'",
+                            bc.getId(), bc.getDependencyId(), bc.getMavenArtifactId(), bc.getCompatibilityRange());
+                    continue;
+                }
                 switch (bc.getCustomizationType()) {
                     case ADD_DEPENDENCY -> {
                         Dependency.Builder<?> dep = Dependency.withCoordinates(
@@ -183,7 +196,17 @@ public class DynamicProjectGenerationConfiguration {
                         if (bc.getVersion() != null && !bc.getVersion().isBlank()) {
                             dep.version(VersionReference.ofValue(bc.getVersion()));
                         }
-                        build.dependencies().add(bc.getMavenArtifactId(), dep.build());
+                        // A dependency the build already holds under these coordinates (the
+                        // catalog entry itself, under its dep id) is replaced, not added again:
+                        // that is how a ranged row gives it another version on another Boot line.
+                        String id = build.dependencies().ids()
+                                .filter(existing -> {
+                                    Dependency held = build.dependencies().get(existing);
+                                    return bc.getMavenGroupId().equals(held.getGroupId())
+                                            && bc.getMavenArtifactId().equals(held.getArtifactId());
+                                })
+                                .findFirst().orElse(bc.getMavenArtifactId());
+                        build.dependencies().add(id, dep.build());
                     }
                     case EXCLUDE_DEPENDENCY -> build.dependencies().add(
                             bc.getExcludeFromArtifactId(),
@@ -225,6 +248,22 @@ public class DynamicProjectGenerationConfiguration {
     }
 
     /**
+     * Whether a row with this Boot version range applies to the project's Boot version. Blank
+     * range: always. A range that does not parse applies too — the row was valid before ranges
+     * existed, and dropping a dependency silently is worse than keeping it.
+     */
+    static boolean appliesTo(String range, io.spring.initializr.generator.version.Version platformVersion) {
+        if (range == null || range.isBlank() || platformVersion == null) return true;
+        try {
+            return io.spring.initializr.generator.version.VersionParser.DEFAULT.parseRange(range.trim())
+                    .match(platformVersion);
+        } catch (RuntimeException e) {
+            log.warn("Build customization has an unreadable Boot range '{}' — applying it to every version", range);
+            return true;
+        }
+    }
+
+    /**
      * Removes the bare {@code spring-boot-starter} that Spring Initializr's
      * {@code DefaultStarterBuildCustomizer} adds under the internal key {@code "root_starter"}
      * when it finds no metadata-known starters in the build.
@@ -261,6 +300,12 @@ public class DynamicProjectGenerationConfiguration {
             SqlEntityGenerator generator) {
         return projectRoot -> {
             if (sqlContext.isEmpty()) return;
+            Set<String> deps = selectedDepIds(description);
+            Version boot = description.getPlatformVersion();
+            SqlProjectFacts facts = new SqlProjectFacts(deps.contains("validation"), deps.contains("flyway"),
+                    boot != null && boot.compareTo(Version.parse("3.4.0")) >= 0);
+            // One schema history: the first script is the baseline, a second database's is not.
+            boolean baselineWritten = false;
             for (var entry : sqlContext.all().entrySet()) {
                 SqlDialect dialect = SqlDialect.forDepId(entry.getKey());
                 if (dialect == null || entry.getValue() == null || entry.getValue().isBlank()) {
@@ -268,9 +313,13 @@ public class DynamicProjectGenerationConfiguration {
                 }
                 SqlDepOptions opts = sqlContext.optionsFor(entry.getKey());
                 List<GeneratedJavaFile> files = generator.generate(
-                        entry.getValue(), dialect, description.getPackageName(), opts);
+                        entry.getValue(), dialect, description.getPackageName(), opts, facts);
                 String packagePath = description.getPackageName().replace('.', '/');
                 for (GeneratedJavaFile f : files) {
+                    if (SqlEntityGenerator.FLYWAY_BASELINE_PATH.equals(f.relativePath())) {
+                        if (baselineWritten) continue;
+                        baselineWritten = true;
+                    }
                     Path target = projectRoot.resolve(
                             f.relativePath().replace("{{packagePath}}", packagePath));
                     GeneratedProjectFiles.createParentDirectories(target);
@@ -302,6 +351,13 @@ public class DynamicProjectGenerationConfiguration {
                 OpenApiWizardOptions opts = specContext.optionsFor(entry.getKey());
                 List<GeneratedOpenApiFile> files = generator.generate(
                         spec, description.getPackageName(), opts, hasValidation);
+                if (opts != null && opts.copySpec()) {
+                    // The contract the code was written from, kept beside it: JSON when it is JSON.
+                    String extension = spec.stripLeading().startsWith("{") ? "json" : "yaml";
+                    Path copy = projectRoot.resolve("src/main/resources/openapi/" + entry.getKey() + "." + extension);
+                    GeneratedProjectFiles.createParentDirectories(copy);
+                    Files.writeString(copy, spec);
+                }
                 String packagePath = description.getPackageName().replace('.', '/');
                 for (GeneratedOpenApiFile f : files) {
                     Path target = projectRoot.resolve(
@@ -320,6 +376,150 @@ public class DynamicProjectGenerationConfiguration {
     private static boolean isYaml(Path path) {
         String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
         return name.endsWith(".yaml") || name.endsWith(".yml");
+    }
+
+    /**
+     * Last of all: {@code menora-model.json}, what this project was generated from — the request
+     * as it was <em>resolved</em> (the starters a wizard added, the datasource roles defaulted), so
+     * that generating it again gives the same project, and a later change of it can be delivered
+     * as a patch ({@code POST /starter.patch}). Then one line ending for every text file, so the
+     * project is the same bytes whatever machine generated it.
+     *
+     * <p>It is written here, from the project description and the per-request contexts, and not
+     * by the endpoints: {@code /starter.zip} is the framework's own, and what it generates has to
+     * stay byte for byte what {@code /starter-wizard.zip} generates without a wizard.
+     * A project that is part of a larger one (a fullstack backend, a module) writes none.
+     */
+    @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE)
+    ProjectContributor backendModelContributor(
+            ProjectDescription description,
+            SelectedFileContributions selectedFileContributions,
+            DependencyConfigService configService,
+            ProjectOptionsContext optionsContext,
+            SqlScriptsContext sqlContext,
+            OpenApiSpecContext specContext,
+            SoapSpecContext soapContext,
+            EventsSpecContext eventsContext) {
+        return projectRoot -> {
+            if (optionsContext.isEmbedded()) return;
+            Set<String> depIds = selectedDepIds(description);
+            com.fasterxml.jackson.databind.node.ObjectNode request = BackendModel.newRequest();
+            request.put("groupId", description.getGroupId());
+            request.put("artifactId", description.getArtifactId());
+            request.put("name", description.getName());
+            if (description.getDescription() != null) request.put("description", description.getDescription());
+            request.put("packageName", description.getPackageName());
+            if (description.getPlatformVersion() != null) request.put("bootVersion", description.getPlatformVersion().toString());
+            request.put("javaVersion", description.getLanguage().jvmVersion());
+            request.put("packaging", description.getPackaging().id());
+            if (description.getVersion() != null) request.put("version", description.getVersion());
+            request.set("dependencies", BackendModel.array(depIds));
+            com.fasterxml.jackson.databind.node.ObjectNode opts = BackendModel.newRequest();
+            new java.util.TreeMap<>(optionsContext.all()).forEach((dep, ids) -> {
+                if (depIds.contains(dep) && !ids.isEmpty()) opts.set(dep, BackendModel.array(new java.util.TreeSet<>(ids)));
+            });
+            if (!opts.isEmpty()) request.set("opts", opts);
+            if (optionsContext.department() != null) request.put("department", optionsContext.department());
+            putWizard(request, "sqlByDep", "sqlOptions", sqlContext.all(), sqlContext::optionsFor);
+            putWizard(request, "specByDep", "openApiOptions", specContext.all(), specContext::optionsFor);
+            putWizard(request, "wsdlByDep", "soapOptions", soapContext.all(), soapContext::optionsFor);
+            putWizard(request, "asyncApiByDep", "eventOptions", eventsContext.all(), eventsContext::optionsFor);
+
+            String catalogHash = BackendModel.catalogHash(selectedFileContributions.rows(),
+                    configService.getBuildCustomizations(depIds));
+            Files.writeString(projectRoot.resolve(BackendModel.FILE),
+                    BackendModel.json(BackendModel.KIND_BACKEND, request, catalogHash));
+            Path gitAttributes = projectRoot.resolve(".gitattributes");
+            Files.writeString(gitAttributes, BackendModel.gitAttributes(
+                    Files.isRegularFile(gitAttributes) ? Files.readString(gitAttributes) : null));
+            GeneratedProjectFiles.normalizeLineEndings(projectRoot);
+        };
+    }
+
+    /** A wizard's documents and — for those that have one — its options, as a request carries them. */
+    private static void putWizard(com.fasterxml.jackson.databind.node.ObjectNode request, String textsKey, String optionsKey,
+                                  Map<String, String> texts, java.util.function.Function<String, Object> optionsFor) {
+        com.fasterxml.jackson.databind.node.ObjectNode byDep = BackendModel.texts(texts);
+        if (byDep == null) return;
+        request.set(textsKey, byDep);
+        com.fasterxml.jackson.databind.node.ObjectNode options = BackendModel.newRequest();
+        byDep.fieldNames().forEachRemaining(dep -> {
+            Object value = optionsFor.apply(dep);
+            if (value != null) options.set(dep, BackendModel.wire(value));
+        });
+        if (!options.isEmpty()) request.set(optionsKey, options);
+    }
+
+    /** HELP.md says what the model file is for. */
+    @Bean
+    io.spring.initializr.generator.spring.documentation.HelpDocumentCustomizer modelHelpCustomizer(
+            ProjectOptionsContext optionsContext) {
+        return document -> {
+            if (optionsContext.isEmbedded()) return;
+            document.addSection(writer -> {
+                writer.println("# Reopening and updating this project");
+                writer.println();
+                writer.println("`" + BackendModel.FILE + "` at the project's root is what this project was generated from: its");
+                writer.println("dependencies and options, and whatever a wizard was given (SQL, OpenAPI, WSDL, AsyncAPI).");
+                writer.println("Keep it in version control.");
+                writer.println();
+                writer.println("* **Reopen** it in the generator (Backend tab, *Import model*) to carry on from where the");
+                writer.println("  project was generated.");
+                writer.println("* **Update** instead of generating again: change the model there and choose *Download update*.");
+                writer.println("  The generator compares what the old model generates with what the new one does and answers");
+                writer.println("  with a patch for `git apply --3way`, which merges with the edits made since.");
+                writer.println();
+            });
+        };
+    }
+
+    /**
+     * Writes the Kafka producers and listeners, their payload types and the topic properties from
+     * the AsyncAPI document given to the events wizard. Skips silently when none was supplied.
+     */
+    @Bean
+    @Order(100)
+    ProjectContributor eventsCodeContributor(
+            ProjectDescription description,
+            EventsSpecContext eventsContext,
+            EventsCodeGenerator generator) {
+        return projectRoot -> {
+            if (eventsContext.isEmpty()) return;
+            EventsCodeGenerator.ProjectFacts facts =
+                    new EventsCodeGenerator.ProjectFacts(selectedDepIds(description).contains("validation"));
+            String packagePath = description.getPackageName().replace('.', '/');
+            for (var entry : eventsContext.all().entrySet()) {
+                String document = entry.getValue();
+                if (document == null || document.isBlank()) continue;
+                EventsWizardOptions opts = eventsContext.optionsFor(entry.getKey());
+                for (EventsCodeGenerator.GeneratedEventFile f
+                        : generator.generate(document, description.getPackageName(), opts, facts)) {
+                    Path target = projectRoot.resolve(f.relativePath().replace("{{packagePath}}", packagePath));
+                    if (isYaml(target)) {
+                        mergeYaml(f.content(), target);
+                    } else {
+                        GeneratedProjectFiles.createParentDirectories(target);
+                        Files.writeString(target, f.content());
+                    }
+                }
+            }
+        };
+    }
+
+    /**
+     * The generated producers and listeners turn payloads into JSON with the application's
+     * {@code ObjectMapper}. A project with Kafka and no web starter has neither Jackson nor that
+     * bean: the JSON starter brings both.
+     */
+    @Bean
+    BuildCustomizer<MavenBuild> eventsBuildCustomizer(EventsSpecContext eventsContext) {
+        return build -> {
+            if (eventsContext.isEmpty()) return;
+            build.dependencies().add("events-json", Dependency
+                    .withCoordinates("org.springframework.boot", "spring-boot-starter-json")
+                    .scope(DependencyScope.COMPILE));
+        };
     }
 
     /**
@@ -517,8 +717,13 @@ public class DynamicProjectGenerationConfiguration {
         // SQL wizard under <packageName>.<subPackage> / .repository (see SqlEntityGenerator).
         String dsEntityPackage = null;
         String dsRepositoryPackage = null;
+        // Packages the fullstack scaffold adds beside those two, each holding an entity and its
+        // repository (attachments): a hand-written config scans only what it names.
+        List<String> dsExtraPackages = List.of();
         boolean hasScaffold = false;
         if (!entityContext.isEmpty()) {                       // fullstack
+            dsExtraPackages = com.menora.initializr.fullstack.EntityScaffoldContext.supportPackages(description.getPackageName(), entityContext.all(),
+                    optionsContext.hasOption("scaffold", com.menora.initializr.fullstack.ScaffoldOption.SAVED_VIEWS.key()));
             String domain = entityContext.getDomainPackage();
             if (domain == null || domain.isBlank()) {
                 domain = description.getPackageName();
@@ -545,6 +750,8 @@ public class DynamicProjectGenerationConfiguration {
         ctx.put("hasScaffoldedEntities", hasScaffold);
         ctx.put("dsEntityPackage", dsEntityPackage);
         ctx.put("dsRepositoryPackage", dsRepositoryPackage);
+        ctx.put("dsExtraPackages", dsExtraPackages);
+        ctx.put("dsHasExtraPackages", !dsExtraPackages.isEmpty());
         return ctx;
     }
 

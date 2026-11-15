@@ -4,7 +4,11 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 {{/hasEnumFields}}
 {{#detailUsesI18n}}import { {{#detailUsesT}}t{{/detailUsesT}}{{#detailUsesT}}{{#detailUsesLocale}}, {{/detailUsesLocale}}{{/detailUsesT}}{{#detailUsesLocale}}LOCALE{{/detailUsesLocale}} } from '@shared/i18n'
 {{/detailUsesI18n}}
-interface Props {
+{{#usesFormat}}import { {{formatImports}} } from '@shared/ui/format'
+{{/usesFormat}}{{#hasMarkdownField}}import { Markdown } from '@shared/ui/Markdown'
+{{/hasMarkdownField}}{{#hasChildTables}}import { RelatedRows } from '@shared/ui/RelatedRows'
+{{#childTableImports}}import { {{names}} } from '@entities/{{from}}'
+{{/childTableImports}}{{/hasChildTables}}interface Props {
   value: {{EntityName}}
 }
 
@@ -23,16 +27,29 @@ const empty = <span className="text-muted">—</span>
  *  audit timestamps and child counts. Long TEXT fields wrap rather than truncate. */
 export function {{EntityName}}Detail({ value }: Props) {
   return (
-    <dl>
+{{#hasChildTables}}    <>
+{{/hasChildTables}}    <dl>
 {{#formGroups}}
 {{#groupHasTitle}}
       <div role="presentation" className="pb-1 pt-5 text-xs font-semibold uppercase tracking-wider text-brand first:pt-0">{ {{{groupTitleExpr}}} }</div>
 {{/groupHasTitle}}
-{{#groupFields}}      <Row label="{{label}}">{value.{{name}} == null ? empty : {{#isText}}<span className="whitespace-pre-wrap break-words">{String(value.{{name}})}</span>{{/isText}}{{^isText}}{{#isEnum}}{{enumTypeName}}Labels[value.{{name}}]{{/isEnum}}{{^isEnum}}{{#isBoolean}}(value.{{name}} ? t('trueLabel') : t('falseLabel')){{/isBoolean}}{{#isDate}}new Date(`${value.{{name}}}T00:00:00`).toLocaleDateString(LOCALE){{/isDate}}{{#isDateTime}}new Date(value.{{name}}).toLocaleString(LOCALE){{/isDateTime}}{{^isBoolean}}{{^isDate}}{{^isDateTime}}String(value.{{name}}){{/isDateTime}}{{/isDate}}{{/isBoolean}}{{/isEnum}}{{/isText}}}</Row>
-{{/groupFields}}{{#groupRelations}}      <Row label="{{FieldName}}">{ {{#targetHasRecordPage}}value.{{fkFieldName}} == null ? empty : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(value.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}value.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(value.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}value.{{fieldName}}Label ?? ({{/hasTargetLabel}}value.{{fkFieldName}} == null ? empty : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(value.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} }</Row>
-{{/groupRelations}}{{/formGroups}}{{#auditApplicable}}      <Row label={t('created')}>{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString(LOCALE)}</Row>
+{{#groupFields}}      <Row label="{{labelAttr}}">{value.{{name}} == null ? empty : {{detailTs}}}</Row>
+{{/groupFields}}{{#groupRelations}}      <Row label="{{labelAttr}}">{ {{#targetHasRecordPage}}value.{{fkFieldName}} == null ? empty : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(value.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}value.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(value.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}value.{{fieldName}}Label ?? ({{/hasTargetLabel}}value.{{fkFieldName}} == null ? empty : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(value.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} }</Row>
+{{/groupRelations}}{{/formGroups}}{{#collections}}      <Row label="{{labelAttr}}">{value.{{labelsField}} == null || value.{{labelsField}}.length === 0 ? empty : value.{{labelsField}}.join(', ')}</Row>
+{{/collections}}{{#auditApplicable}}      <Row label={t('created')}>{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString(LOCALE)}</Row>
       <Row label={t('updated')}>{value.updatedAt == null ? empty : new Date(value.updatedAt).toLocaleString(LOCALE)}</Row>
-{{/auditApplicable}}{{#optScaffoldInverse}}{{#inverseRelations}}      <Row label="{{CollectionField}}">{value.{{collectionField}}Count == null ? empty : String(value.{{collectionField}}Count)}</Row>
-{{/inverseRelations}}{{/optScaffoldInverse}}    </dl>
-  )
+{{/auditApplicable}}{{#childLists}}{{^declared}}      <Row label="{{collectionLabelAttr}}">{value.{{collectionField}}Count == null ? empty : String(value.{{collectionField}}Count)}</Row>
+{{/declared}}{{/childLists}}    </dl>
+{{#hasChildTables}}{{#childTables}}    <RelatedRows
+      title={ '{{{listTitleTs}}}' }
+      path="{{childPath}}"
+      param="{{filterParam}}"
+      id={value.{{pkField.name}}}
+      count={value.{{collectionField}}Count}
+      columns={[
+{{#childColumns}}        { key: '{{key}}', label: '{{{labelTs}}}'{{#hasAlt}}, alt: '{{alt}}'{{/hasAlt}}{{#isEnum}}, labels: {{enumTypeName}}Labels{{/isEnum}} },
+{{/childColumns}}      ]}
+    />
+{{/childTables}}    </>
+{{/hasChildTables}}  )
 }
