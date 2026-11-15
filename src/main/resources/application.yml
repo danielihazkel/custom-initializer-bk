@@ -120,6 +120,14 @@ management:
 menora:
   audit:
     log-remote-addr: true
+  access:
+    # true: a request without the SSO gateway's user header (menora.audit.user-header, "userinfo"
+    # unless renamed) is answered 403 and the UI shows a "No access" screen. Off by default; turn
+    # it on per environment with MENORA_ACCESS_REQUIRE_USER_HEADER=true (or a profile file).
+    require-user-header: false
+    # Still answered without the header, as comma-separated Ant patterns: Kubernetes probes do
+    # not pass the gateway.
+    open-paths: /actuator/**
 
 frontend:
   # React versions, Node versions, and package managers live in the
