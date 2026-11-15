@@ -1270,16 +1270,21 @@ class FullstackPagesIntegrationTests {
             assertThat(page).as(set)
                     .contains("type ListAction = 'new' | 'edit' | 'delete' | 'export' | 'import' | 'bulk'")
                     .contains("  hideActions?: readonly ListAction[]")
-                    .contains("const can = (action: ListAction) => !hideActions?.includes(action)")
+                    // Not what the page leaves out — and, since the project has ldap-auth (a set
+                    // default), nothing that writes for a caller who may not write orders.
+                    .contains("const mayWrite = useCallerMay('ADMIN')")
+                    .contains("const can = (action: ListAction) => !hideActions?.includes(action) && (action === 'export' || mayWrite)")
                     .contains("const editRow = can('edit') ? openEdit : undefined")
                     .contains("          onEdit={editRow}\n          onDelete={deleteRow}\n")
                     .contains("selectable={can('bulk')}")
                     .contains("{can('export') && ")
                     .contains("const emptyAction = !can('new') ? undefined : { label:");
-            // Every other entity's page keeps its bytes.
+            // Every other entity's page takes no hideActions; what it offers follows the caller's
+            // roles alone.
             assertThat(files.get(FE + "src/pages/customer/ui/CustomerPage.tsx")).as(set)
                     .doesNotContain("hideActions")
-                    .doesNotContain("ListAction");
+                    .contains("const can = (action: ListAction) => action === 'export' || mayWrite")
+                    .doesNotContain("=> !hideActions");
         }
 
         assertOrdersRejected(p -> p.put("hideActions", List.of("archive")),
@@ -1888,8 +1893,17 @@ class FullstackPagesIntegrationTests {
                 // The roles as every check in the application sees them (an admin is a user too).
                 .contains("roles.addAll(permissionService.rolesOf(user));");
 
-        // Without roles: no access module, no guard (ldap-auth-rest, a set default, still answers /api/me/roles).
-        Map<String, String> open = generate(exampleBody("tickets", "react-tailwind-crud"));
+        // No page names a role, but the project has ldap-auth (a set default): a page of one
+        // entity asks what reading that entity asks — the backend would refuse its calls anyway —
+        // so the nav and the routes follow the caller's roles.
+        Map<String, String> derived = generate(exampleBody("tickets", "react-tailwind-crud"));
+        assertThat(derived.get(FE + "src/app/access.ts")).contains("['USER'],\n").doesNotContain("['ADMIN']");
+        assertThat(derived.get(FE + "src/app/App.tsx")).contains("canSee");
+
+        // Without the dependency nobody can be asked: no access module, no guard.
+        Map<String, Object> noLdap = exampleBody("tickets", "react-tailwind-crud");
+        noLdap.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        Map<String, String> open = generate(noLdap);
         assertThat(open).doesNotContainKey(FE + "src/app/access.ts");
         assertThat(open.get(FE + "src/app/App.tsx"))
                 .contains("const sections = NAV_SECTIONS\n")

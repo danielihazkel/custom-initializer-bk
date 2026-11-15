@@ -1,5 +1,6 @@
 import { {{#calendarRanged}}useCallback, {{/calendarRanged}}useEffect, useState } from 'react'
-{{#bulkDeleteApplicable}}{{#viewTable}}import { Trash2 } from 'lucide-react'
+{{#writeChecked}}import { useCallerMay } from '@shared/api/roles'
+{{/writeChecked}}{{#bulkDeleteApplicable}}{{#viewTable}}import { Trash2 } from 'lucide-react'
 {{/viewTable}}{{/bulkDeleteApplicable}}{{#mutable}}import { toast } from 'sonner'
 {{/mutable}}import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
@@ -71,11 +72,12 @@ const isStale = (e: unknown) =>
 {{/lockingApplicable}}/** Stable React key per record: the primary key{{#hasCompositePk}} parts joined with '/'{{/hasCompositePk}}. */
 const rowKey = (row: {{EntityName}}) => {{#hasCompositePk}}[{{#pkFields}}String(row.{{name}}){{^last}}, {{/last}}{{/pkFields}}].join('/'){{/hasCompositePk}}{{^hasCompositePk}}row.{{pkField.name}} as string | number{{/hasCompositePk}}
 
-{{#hasPages}}
-{{#listActionsConfigurable}}/** A list action a list page can leave out (its hideActions). */
+{{#listActionsConfigurable}}/** A list action: one a list page can leave out, or one a caller is not offered. */
 type ListAction = 'new' | 'edit' | 'delete' | 'export' | 'import' | 'bulk'
 
-{{/listActionsConfigurable}}interface {{EntityName}}PageProps {
+{{/listActionsConfigurable}}
+{{#hasPages}}
+interface {{EntityName}}PageProps {
 {{#hasFilters}}
   /** Filter values the page opens with (a preset-filtered list page). */
   initialFilters?: FilterValues
@@ -124,10 +126,10 @@ type ListAction = 'new' | 'edit' | 'delete' | 'export' | 'import' | 'bulk'
   /** Rows per page the list opens with (default: 20). */
   initialPageSize?: number
 {{/listConfigurable}}
-{{#listActionsConfigurable}}
+{{#listHidesActions}}
   /** The actions this list leaves out — presentation only, the API still answers them. */
   hideActions?: readonly ListAction[]
-{{/listActionsConfigurable}}
+{{/listHidesActions}}
 }
 
 {{/hasPages}}
@@ -146,7 +148,7 @@ function oneValue(value: string | undefined): boolean {
   return !!value && !value.includes(',')
 }
 
-{{/fromFiltersChecksOne}}{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasCreatePage}}, onCreate{{/hasCreatePage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}}{{#listActionsConfigurable}}, hideActions{{/listActionsConfigurable}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
+{{/fromFiltersChecksOne}}{{/newFromFilters}}export function {{EntityName}}Page({{#hasPages}}{ {{#hasFilters}}initialFilters, {{/hasFilters}}{{#pageScopeable}}scope, {{/pageScopeable}}onOpenRecord, title, description, embedded{{#listSideDetail}}, sidePane, selectedId, onSelect{{/listSideDetail}}{{#hasCreatePage}}, onCreate{{/hasCreatePage}}{{#hasImportPage}}, onImport{{/hasImportPage}}{{#listConfigurable}}, columns: columnKeys, initialSort, initialView, initialPageSize{{/listConfigurable}}{{#listUrlState}}, listState, onListStateChange{{/listUrlState}}{{#listHidesActions}}, hideActions{{/listHidesActions}} }: {{EntityName}}PageProps = {}{{/hasPages}}) {
   // This browser's own settings for the list — rows per page, sort, view, hidden columns — saved as
   // they change; the list opens with them unless the route says otherwise.
   const [prefs] = useState(() => readListPrefs('{{entityNameKebab}}', columns.flatMap(c => c.sortKey ? [c.sortKey] : []), {{{viewModesTs}}}))
@@ -637,8 +639,10 @@ function oneValue(value: string | undefined): boolean {
 {{/viewTable}}{{/bulkUpdateApplicable}}
   // An empty list offers the first record — unless a search or filter is what emptied it.
   const filtered = debouncedSearch !== ''{{#hasFilters}} || Object.values(filters).some(v => v !== ''){{/hasFilters}}
-{{#listActionsConfigurable}}  // What this list page leaves out (its hideActions): the buttons go; the API still answers them.
-  const can = (action: ListAction) => !hideActions?.includes(action)
+{{#listActionsConfigurable}}{{#writeChecked}}  // Who may write: the backend checks every call; this only decides what to offer.
+  const mayWrite = useCallerMay('{{writeLevel}}')
+{{/writeChecked}}  // What this list offers. An action left out loses its button; the API still answers for itself.
+  const can = (action: ListAction) => {{#listHidesActions}}!hideActions?.includes(action){{#writeChecked}} && ({{/writeChecked}}{{/listHidesActions}}{{#writeChecked}}action === 'export' || mayWrite{{#listHidesActions}}){{/listHidesActions}}{{/writeChecked}}
 {{/listActionsConfigurable}}{{#mutable}}  const emptyAction = {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{ label: t('newX', { x: '{{entityLabelTs}}' }), onClick: {{^hasCreatePage}}openNew{{/hasCreatePage}}{{#hasCreatePage}}onCreate ?? openNew{{/hasCreatePage}} }
 {{#listActionsConfigurable}}  const editRow = can('edit') ? openEdit : undefined
   const deleteRow = can('delete') ? setPendingDelete : undefined

@@ -150,9 +150,15 @@ class FullstackShellToolsTests {
                 .contains("    path: '/api/orders',")
                 .contains("    recordPage: 'order',")
                 .contains("    listPage: 'orders',")
+                .contains("    listPage: 'orders',");
+        assertThat(tools.split("    path: '/api/", -1)).hasSize(2);
+        // Without an ldap-auth dependency no page asks for a role, so the palette offers every page.
+        // (With one — the sets' default — the pages of an entity ask what reading it asks.)
+        Map<String, Object> open = plain("commandPalette");
+        open.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        assertThat(generate(open).get(FE + "app/shell/ShellTools.tsx"))
                 .contains("<CommandPalette pages={ PAGES } entities={ENTITIES} onNavigate={onNavigate} />")
                 .doesNotContain("useRoles");
-        assertThat(tools.split("    path: '/api/", -1)).hasSize(2);
     }
 
     @Test

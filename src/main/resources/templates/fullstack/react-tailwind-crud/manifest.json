@@ -102,6 +102,7 @@
     { "source": "EntityValidate.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/model/validate.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 224 },
     { "source": "feature-barrel.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 225 },
     { "source": "EntityImportFields.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/model/importFields.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 226, "gatedBy": "importApplicable" },
+    { "source": "roles.ts", "path": "src/shared/api/roles.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 114, "gatedBy": "hasLdapAuth" },
     { "source": "me.ts", "path": "src/shared/api/me.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 113, "gatedBy": "usesCurrentUser" },
     { "source": "workflow.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/model/workflow.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 227, "gatedBy": "hasWorkflow" },
     { "source": "EntityTransitions.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Transitions.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 228, "gatedBy": "hasWorkflow" },

@@ -150,6 +150,7 @@ WebMvcTest
 WorkflowException
 
 # a name one of the entity's own generated names would spell
+CallerMay
 Dashboard
 Download
 Jpa

@@ -357,6 +357,10 @@ public final class EntityScaffoldContext {
                     // With a create page, Edit reopens the row there (#/<page>/<id>) instead.
                     String editPage = recordMutable ? links.createPageOf(p.entity()) : null;
                     pv.put("recordMutable", recordMutable);
+                    // With ldap-auth, Edit and Delete are offered to those who may write.
+                    pv.put("recordWriteChecked", recordMutable && Boolean.TRUE.equals(ctx.get("hasLdapAuth"))
+                            && !"SIGNED_IN".equals(ev.get("writeLevel")));
+                    pv.put("recordWriteLevel", ev.get("writeLevel"));
                     // The record's workflow moves sit by its Edit and Delete.
                     pv.put("recordHasWorkflow", Boolean.TRUE.equals(ev.get("hasWorkflow")));
                     // A workflow that logs its moves: the record's history under its details.
@@ -513,8 +517,9 @@ public final class EntityScaffoldContext {
             if (p.icon() != null) pv.put("navIcon", p.icon());
             pv.put("navGroup", p.group());
             // Pages restricted to roles: the shell hides them from the nav and guards their route.
-            pv.put("hasRoles", !p.roles().isEmpty());
-            pv.put("rolesTs", "[" + String.join(", ", p.roles().stream().map(r -> "'" + r + "'").toList()) + "]");
+            List<String> pageRoles = effectiveRoles(p, ctx);
+            pv.put("hasRoles", !pageRoles.isEmpty());
+            pv.put("rolesTs", "[" + String.join(", ", pageRoles.stream().map(r -> "'" + r + "'").toList()) + "]");
             viewById.put(p.id(), pv);
         }
 
@@ -2593,6 +2598,9 @@ public final class EntityScaffoldContext {
             Map<String, Object> s = new LinkedHashMap<>();
             s.put("pascal", Naming.toPascalCase(e.name()));
             s.put("camel", Naming.toCamelCase(e.name()));
+            // What a page over this entity asks of the caller (effectiveRoles).
+            s.put("readLevel", e.access().read());
+            s.put("writeLevel", e.access().write());
             s.put("kebab", Naming.toKebabCase(e.name()));
             s.put("kebabPlural", Naming.pluralize(Naming.toKebabCase(e.name())));
             String pkName = pk == null ? "id" : pk.name();
@@ -3053,9 +3061,18 @@ public final class EntityScaffoldContext {
         ctx.put("requiredBulkFieldsJava", String.join(", ", requiredBulk));
         // A list page's hideActions only reach a list that has an action to hide (the validator
         // rejects them on a read-only entity without an export).
-        ctx.put("listActionsConfigurable", Boolean.TRUE.equals(ctx.get("listActionsConfigurable"))
+        boolean hidesActions = Boolean.TRUE.equals(ctx.get("listActionsConfigurable"))
                 && (mutable || Boolean.TRUE.equals(ctx.get("optScaffoldCsvExport"))
-                        || Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport"))));
+                        || Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport")));
+        // With ldap-auth the backend checks who may write: the list offers New, Edit, Delete,
+        // Import and the bulk bar to those callers only. An entity anyone signed in may write
+        // needs no such check, and neither does a project without the dependency.
+        boolean writeChecked = Boolean.TRUE.equals(ctx.get("hasLdapAuth")) && mutable
+                && !"SIGNED_IN".equals(entity.access().write());
+        // The page takes a hideActions prop / asks the caller's roles / has the can() helper.
+        ctx.put("listHidesActions", hidesActions);
+        ctx.put("writeChecked", writeChecked);
+        ctx.put("listActionsConfigurable", hidesActions || writeChecked);
         return ctx;
     }
 
@@ -3680,6 +3697,34 @@ public final class EntityScaffoldContext {
     public static String joinColumnOf(RelationDefinition r) {
         return SqlNames.physical(r.joinColumn() != null ? r.joinColumn()
                 : Naming.toSnakeCase(r.fieldName()) + "_id", null);
+    }
+
+    /**
+     * The roles a page's route asks for: its own, and — with ldap-auth, where the backend refuses
+     * the calls anyway — what its entity's access level asks. A page that only writes (a form, a
+     * wizard, an import) takes the write level, any other page of one entity the read level; a
+     * page over several entities (a dashboard, tabs, search) takes none from them.
+     *
+     * <p>The shell lets a user in who holds <em>any</em> of a page's roles, and an admin is a user
+     * too, so a list of roles asks for its weakest; the page's own and the entity's both have to
+     * hold, which is the stronger of the two. A page with neither keeps an empty list — and its
+     * bytes.
+     */
+    @SuppressWarnings("unchecked")
+    private static List<String> effectiveRoles(PageDefinition p, Map<String, Object> ctx) {
+        List<String> own = p.roles();
+        if (!Boolean.TRUE.equals(ctx.get("hasLdapAuth")) || p.entity() == null) return own;
+        Map<String, Map<String, Object>> summaries = (Map<String, Map<String, Object>>) ctx.get(ENTITY_SUMMARIES_KEY);
+        Map<String, Object> entity = summaries == null ? null : summaries.get(p.entity().toLowerCase(Locale.ROOT));
+        if (entity == null) return own;
+        boolean writes = switch (p.type()) {
+            case FORM, WIZARD, IMPORT -> true;
+            default -> false;
+        };
+        Object level = entity.get(writes ? "writeLevel" : "readLevel");
+        if (level == null || "SIGNED_IN".equals(level)) return own;
+        boolean admin = "ADMIN".equals(level) || (!own.isEmpty() && !own.contains("USER"));
+        return List.of(admin ? "ADMIN" : "USER");
     }
 
     /** The join table of a MANY_TO_MANY: named, or {@code <entity>_<field>}. */

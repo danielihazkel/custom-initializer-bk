@@ -3095,11 +3095,13 @@ class FullstackStarterIntegrationTests {
                 .contains("<FilterBar filters={filterDescriptors}")
                 .contains("options: [{ value: 'OPEN', label: 'Open' }, { value: 'DONE', label: 'Done' }]")
                 .contains("exportCsv('tasks.csv')")
-                .contains("selectable={true}")
+                // The selection bar is for those who may write (ldap-auth is a set default).
+                .contains("selectable={can('bulk')}")
                 .contains("isRowSelected={isRowSelected}")
                 // A failed drag-and-drop is toasted and the board reloaded, never a dropped promise.
                 .contains("async function onKanbanMove(row: Task, value: string)")
-                .contains("onMove={onKanbanMove}")
+                // Dragging a card saves the row: for those who may write.
+                .contains("onMove={can('edit') ? onKanbanMove : undefined}")
                 .contains("await reload()")
                 .contains(" reload,")
                 // The board loads every matching row (not one page) and takes its lane totals from
@@ -3492,7 +3494,8 @@ class FullstackStarterIntegrationTests {
                     .contains("await update(row.id as number | string, next)")
                     // With locking on, a stale cell save reloads the list instead of keeping the editor.
                     .contains("if (isStale(e)) {\n        await reload()".replace("\n", page.contains("\r\n") ? "\r\n" : "\n"))
-                    .contains("columns={inline(columns)}");
+                    // In place for those who may write (ldap-auth is a set default); plain cells otherwise.
+                    .contains("columns={can('edit') ? inline(columns) : columns}");
             assertThat(entries).containsKey("ops/frontend/src/shared/ui/InlineCell.tsx");
             assertThat(entries.get("ops/frontend/src/pages/note/ui/NotePage.tsx")).as(set)
                     .doesNotContain("InlineCell").contains("columns={columns}");
