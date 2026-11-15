@@ -44,6 +44,7 @@ public class DataSeeder implements SmartInitializingSingleton {
     private final ModuleTemplateRepository moduleRepo;
     private final ModuleDependencyMappingRepository moduleMappingRepo;
     private final EntityTemplateSetSync templateSetSync;
+    private final CatalogSync catalogSync;
     private final ColorPaletteRepository colorPaletteRepo;
     private final VersionDefinitionRepository versionRepo;
     private final DepartmentRepository departmentRepo;
@@ -60,6 +61,7 @@ public class DataSeeder implements SmartInitializingSingleton {
                       ModuleTemplateRepository moduleRepo,
                       ModuleDependencyMappingRepository moduleMappingRepo,
                       EntityTemplateSetSync templateSetSync,
+                      CatalogSync catalogSync,
                       ColorPaletteRepository colorPaletteRepo,
                       VersionDefinitionRepository versionRepo,
                       DepartmentRepository departmentRepo,
@@ -75,6 +77,7 @@ public class DataSeeder implements SmartInitializingSingleton {
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
         this.templateSetSync = templateSetSync;
+        this.catalogSync = catalogSync;
         this.colorPaletteRepo = colorPaletteRepo;
         this.versionRepo = versionRepo;
         this.departmentRepo = departmentRepo;
@@ -97,23 +100,27 @@ public class DataSeeder implements SmartInitializingSingleton {
             if (groupRepo.count() > 0) {
                 log.info("Database already seeded — skipping main DataSeeder");
                 normalizeLegacyBlankStrings();
+                // File contributions and build customizations nobody edited follow the release.
+                catalogSync.sync();
                 return;
             }
             log.info("Seeding database from classpath resources...");
             loadDependencyCatalog("catalog/dependencies.json", ProjectKind.BACKEND);
-            loadFileContributions("catalog/file-contributions.json", ProjectKind.BACKEND);
-            loadBuildCustomizations("catalog/build-customizations.json", ProjectKind.BACKEND);
+            fileContribRepo.saveAll(catalogSync.shippedFileContributions(ProjectKind.BACKEND));
+            buildCustomRepo.saveAll(catalogSync.shippedBuildCustomizations(ProjectKind.BACKEND));
             loadSubOptions("catalog/sub-options.json", ProjectKind.BACKEND);
             loadCompatibilityRules("catalog/compatibility.json", ProjectKind.BACKEND);
             seedStarterTemplates();
             seedModuleTemplates();
             loadDependencyCatalog("catalog/frontend/dependencies.json", ProjectKind.FRONTEND);
-            loadFileContributions("catalog/frontend/file-contributions.json", ProjectKind.FRONTEND);
-            loadBuildCustomizations("catalog/frontend/build-customizations.json", ProjectKind.FRONTEND);
+            fileContribRepo.saveAll(catalogSync.shippedFileContributions(ProjectKind.FRONTEND));
+            buildCustomRepo.saveAll(catalogSync.shippedBuildCustomizations(ProjectKind.FRONTEND));
             loadSubOptions("catalog/frontend/sub-options.json", ProjectKind.FRONTEND);
             loadCompatibilityRules("catalog/frontend/compatibility.json", ProjectKind.FRONTEND);
             log.info("Seeded frontend catalog (FRONTEND kind)");
             seedFrontendStarterTemplates();
+            // Every row is the shipped one: recorded as such, so later releases can follow.
+            catalogSync.sync();
             log.info("Database seeding complete");
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to seed database from classpath", e);
@@ -164,9 +171,10 @@ public class DataSeeder implements SmartInitializingSingleton {
     //
     // The backend dependency catalog, file contributions, build customizations,
     // sub-options, and compatibility rules live in src/main/resources/catalog/*.json.
-    // These loaders map the manifests to entities. Content files (templates,
-    // static-configs) stay on the classpath; file-contribution manifests reference
-    // them by path via contentResource, resolved here through readClasspath.
+    // These loaders map the manifests to entities. File contributions and build
+    // customizations are read by CatalogSync (shippedFileContributions /
+    // shippedBuildCustomizations), which also keeps them in step with later releases;
+    // the content files they reference by contentResource stay on the classpath.
 
     private <T> T readManifest(String path, Class<T> type) throws IOException {
         return new ObjectMapper().readValue(readClasspath(path), type);
@@ -203,47 +211,6 @@ public class DataSeeder implements SmartInitializingSingleton {
                 e.setProjectKind(kind);
                 entryRepo.save(e);
             }
-        }
-    }
-
-    private void loadFileContributions(String path, ProjectKind kind) throws IOException {
-        for (FileContribDef d : readManifestList(path, FileContribDef.class)) {
-            FileContributionEntity e = new FileContributionEntity();
-            e.setDependencyId(d.depId());
-            e.setFileType(FileContributionEntity.FileType.valueOf(d.fileType()));
-            e.setContent(d.contentResource() != null ? readClasspath(d.contentResource()) : d.content());
-            e.setTargetPath(d.targetPath());
-            e.setSubstitutionType(d.substitutionType() != null
-                    ? FileContributionEntity.SubstitutionType.valueOf(d.substitutionType()) : null);
-            e.setJavaVersion(d.javaVersion());
-            e.setNodeVersion(d.nodeVersion());
-            e.setSubOptionId(d.subOptionId());
-            e.setSortOrder(d.sortOrder());
-            e.setProjectKind(kind);
-            fileContribRepo.save(e);
-        }
-    }
-
-    private void loadBuildCustomizations(String path, ProjectKind kind) throws IOException {
-        for (BuildCustomDef d : readManifestList(path, BuildCustomDef.class)) {
-            BuildCustomizationEntity e = new BuildCustomizationEntity();
-            e.setDependencyId(d.depId());
-            e.setCustomizationType(BuildCustomizationEntity.CustomizationType.valueOf(d.type()));
-            e.setMavenGroupId(d.mavenGroupId());
-            e.setMavenArtifactId(d.mavenArtifactId());
-            e.setVersion(d.version());
-            e.setExcludeFromGroupId(d.excludeFromGroupId());
-            e.setExcludeFromArtifactId(d.excludeFromArtifactId());
-            e.setRepoId(d.repoId());
-            e.setRepoName(d.repoName());
-            e.setRepoUrl(d.repoUrl());
-            if (d.snapshotsEnabled() != null) e.setSnapshotsEnabled(d.snapshotsEnabled());
-            e.setScope(d.scope());
-            e.setSubOptionId(d.subOptionId());
-            e.setCompatibilityRange(d.compatibilityRange());
-            e.setSortOrder(d.sortOrder());
-            e.setProjectKind(kind);
-            buildCustomRepo.save(e);
         }
     }
 
