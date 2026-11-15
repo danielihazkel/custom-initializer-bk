@@ -54,7 +54,8 @@ public final class FullstackRequestValidator {
                       boolean readOnly, String viewQuery, List<String> listViews,
                       String label, String labelPlural, Map<String, Boolean> opts,
                       List<FullstackStarterRequest.FormSectionDto> rawSections,
-                      FullstackStarterRequest.WorkflowDto rawWorkflow, int pkCount) {}
+                      FullstackStarterRequest.WorkflowDto rawWorkflow, int pkCount,
+                      EntityDefinition.Access access) {}
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
@@ -317,7 +318,8 @@ public final class FullstackRequestValidator {
                         ? null : e.labelPlural().trim();
                 parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
                         readOnly, viewQuery, resolveListViews(e), label, labelPlural,
-                        parseEntityOpts(e.opts(), name), e.formSections(), e.workflow(), pkCount));
+                        parseEntityOpts(e.opts(), name), e.formSections(), e.workflow(), pkCount,
+                        at("access", () -> parseAccess(e.access(), name))));
             } catch (WizardArgumentException problem) {
                 throw problem.at("entities[" + ei + "]");
             }
@@ -362,7 +364,7 @@ public final class FullstackRequestValidator {
                         parseFormSections(p.rawSections(), p.name(), p.fields(), relations),
                         at("workflow", () -> parseWorkflow(p.rawWorkflow(), p.name(), p.fields(), relations,
                                 p.readOnly(), p.pkCount())),
-                        collections, children));
+                        collections, children, p.access()));
             } catch (WizardArgumentException problem) {
                 throw problem.at("entities[" + p.ei() + "]");
             }
@@ -688,6 +690,33 @@ public final class FullstackRequestValidator {
     static final java.util.regex.Pattern TRANSITION_NAME = java.util.regex.Pattern.compile("^[a-z][A-Za-z0-9]{0,39}$");
     /** The roles a transition may be limited to: the ldap-auth {@code Constants}. */
     static final List<String> WORKFLOW_ROLES = List.of("ADMIN", "USER");
+
+    /**
+     * An entity's {@code access}: each level one of {@link EntityDefinition.Access#LEVELS}
+     * (matched ignoring case), a missing one its default, and writing never open to more people
+     * than reading — a user who may change rows they may not see has no way to use it.
+     */
+    static EntityDefinition.Access parseAccess(FullstackStarterRequest.AccessDto dto, String entity) {
+        if (dto == null) return EntityDefinition.Access.DEFAULT;
+        String read = accessLevel(dto.read(), EntityDefinition.Access.DEFAULT.read(), "read", entity);
+        String write = accessLevel(dto.write(), EntityDefinition.Access.DEFAULT.write(), "write", entity);
+        List<String> levels = EntityDefinition.Access.LEVELS;
+        if (levels.indexOf(write) < levels.indexOf(read)) {
+            throw new WizardArgumentException("Entity '" + entity + "' access: write (" + write
+                    + ") cannot be open to more people than read (" + read + ")").on("write");
+        }
+        return new EntityDefinition.Access(read, write);
+    }
+
+    private static String accessLevel(String value, String fallback, String which, String entity) {
+        if (value == null || value.isBlank()) return fallback;
+        String level = value.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!EntityDefinition.Access.LEVELS.contains(level)) {
+            throw new WizardArgumentException("Entity '" + entity + "' access: " + which + " '" + value.trim()
+                    + "' is not one of " + String.join(", ", EntityDefinition.Access.LEVELS)).on(which);
+        }
+        return level;
+    }
 
     /**
      * An entity's workflow, with every name canonicalized. A workflow changes a row's status, so

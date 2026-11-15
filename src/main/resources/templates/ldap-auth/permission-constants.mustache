@@ -7,4 +7,6 @@ package {{packageName}}.security;
 public class Constants {
     public static final String ADMIN = "ADMIN";
     public static final String USER = "USER";
+    /** Not a role: any caller the gateway has identified, whatever groups they are in. */
+    public static final String SIGNED_IN = "SIGNED_IN";
 }

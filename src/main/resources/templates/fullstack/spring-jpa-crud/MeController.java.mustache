@@ -30,11 +30,8 @@ public class MeController {
     public List<String> roles(@RequestHeader(value = "userinfo", required = false) String user) throws UnauthorizedException {
         List<String> roles = new ArrayList<>();
         if (user == null || user.isBlank()) return roles;
-        List<String> groups = permissionService.getUserGroups(user);
-        for (String role : List.of(Constants.ADMIN, Constants.USER)) {
-            String group = permissionService.mapRoleToGroup(role);
-            if (groups.stream().anyMatch(g -> g.contains(group))) roles.add(role);
-        }
+        // ADMIN first, and USER with it: the roles as every check in the application sees them.
+        roles.addAll(permissionService.rolesOf(user));
         return roles;
     }
 }

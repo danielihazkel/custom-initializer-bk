@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -281,6 +282,123 @@ class GeneratedBackendBuildSmokeTests {
                     assertThat(alone.get("orderId").asLong()).isEqualTo(id);
                 }
 
+            """;
+
+    /**
+     * Access, enforced: a backend with ldap-auth-rest — the generated security classes for real,
+     * the AOP check on every endpoint — driven over its API as four callers: nobody, a caller
+     * with no role, a user and an admin. Roles come from {@code app.security.dev-roles}, which is
+     * what a developer's machine uses too; the directory is never asked.
+     */
+    @org.junit.jupiter.api.Test
+    void eachEntitysAccessLevelsAreEnforcedOverTheRealApi(@TempDir Path workDir) throws Exception {
+        Map<String, Object> id = Map.of("name", "id", "type", "LONG", "primaryKey", true, "generated", true);
+        Map<String, Object> product = new LinkedHashMap<>();
+        product.put("name", "Product");
+        product.put("fields", List.of(id, Map.of("name", "name", "type", "STRING", "required", true)));
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "Note");
+        note.put("fields", List.of(id, Map.of("name", "text", "type", "STRING")));
+        note.put("access", Map.of("read", "SIGNED_IN", "write", "USER"));
+        Map<String, Object> audit = new LinkedHashMap<>();
+        audit.put("name", "AuditEntry");
+        audit.put("fields", List.of(id, Map.of("name", "what", "type", "STRING")));
+        audit.put("access", Map.of("read", "ADMIN"));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "desk");
+        body.put("packageName", "com.menora.desk");
+        body.put("bootVersion", "3.2.1");
+        body.put("frontendTemplateSet", "react-tailwind-crud");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "ldap-auth-rest"));
+        body.put("opts", Map.of("scaffold", List.of("seedData", "tests", "csvExport", "bulkDelete")));
+        body.put("entities", List.of(product, note, audit));
+
+        Path backend = postAndExtractBackend(workDir, body);
+        writeProjectTest(backend, "com.menora.desk", "AccessTests", ACCESS_TESTS);
+        runMvn(backend, "-B", "package");
+        assertThat(Files.exists(backend.resolve("target/surefire-reports/com.menora.desk.AccessTests.txt")))
+                .as("the access tests ran in the generated build").isTrue();
+    }
+
+    /** Run inside the generated backend: who gets 401, who 403, and who gets through. */
+    private static final String ACCESS_TESTS = """
+            package com.menora.desk;
+
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.http.MediaType;
+            import org.springframework.test.web.servlet.MockMvc;
+            import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+            @SpringBootTest(properties = {
+                    "app.security.dev-roles.boss=ADMIN",
+                    "app.security.dev-roles.clerk=USER",
+                    "app.security.dev-roles.guest="})
+            @AutoConfigureMockMvc
+            class AccessTests {
+
+                private static final String LAMP = "{\\"name\\":\\"Lamp\\"}";
+                private static final String HELLO = "{\\"text\\":\\"hi\\"}";
+
+                @Autowired MockMvc mvc;
+
+                private static MockHttpServletRequestBuilder as(String user, MockHttpServletRequestBuilder request) {
+                    return request.header("userinfo", user);
+                }
+
+                private static MockHttpServletRequestBuilder create(String path, String json) {
+                    return post(path).contentType(MediaType.APPLICATION_JSON).content(json);
+                }
+
+                @Test
+                void nobodyIsRefusedEverywhere() throws Exception {
+                    mvc.perform(get("/api/products")).andExpect(status().isUnauthorized());
+                    mvc.perform(get("/api/notes")).andExpect(status().isUnauthorized());
+                    mvc.perform(get("/api/products/export.csv")).andExpect(status().isUnauthorized());
+                    mvc.perform(create("/api/products", LAMP)).andExpect(status().isUnauthorized());
+                }
+
+                @Test
+                void theDefaultIsReadForUsersAndWriteForAdmins() throws Exception {
+                    mvc.perform(as("guest", get("/api/products"))).andExpect(status().isForbidden());
+                    mvc.perform(as("clerk", get("/api/products"))).andExpect(status().isOk());
+                    mvc.perform(as("clerk", get("/api/products/export.csv"))).andExpect(status().isOk());
+                    mvc.perform(as("clerk", create("/api/products", LAMP))).andExpect(status().isForbidden());
+                    mvc.perform(as("clerk", delete("/api/products/1"))).andExpect(status().isForbidden());
+                    mvc.perform(as("clerk", delete("/api/products/bulk").contentType(MediaType.APPLICATION_JSON).content("[1]")))
+                            .andExpect(status().isForbidden());
+                    mvc.perform(as("boss", create("/api/products", LAMP))).andExpect(status().is2xxSuccessful());
+                    // An admin is a user too.
+                    mvc.perform(as("boss", get("/api/products"))).andExpect(status().isOk());
+                }
+
+                @Test
+                void anEntitysOwnLevelsAreTheOnesChecked() throws Exception {
+                    // Notes: any signed-in caller reads, users write.
+                    mvc.perform(as("guest", get("/api/notes"))).andExpect(status().isOk());
+                    mvc.perform(as("guest", create("/api/notes", HELLO))).andExpect(status().isForbidden());
+                    mvc.perform(as("clerk", create("/api/notes", HELLO))).andExpect(status().is2xxSuccessful());
+                    // The audit trail: admins only, to read as well.
+                    mvc.perform(as("clerk", get("/api/audit-entries"))).andExpect(status().isForbidden());
+                    mvc.perform(as("boss", get("/api/audit-entries"))).andExpect(status().isOk());
+                }
+
+                @Test
+                void theRolesEndpointSaysWhatTheChecksSee() throws Exception {
+                    mvc.perform(as("boss", get("/api/me/roles"))).andExpect(status().isOk())
+                            .andExpect(content().json("[\\"ADMIN\\",\\"USER\\"]"));
+                    mvc.perform(as("clerk", get("/api/me/roles"))).andExpect(content().json("[\\"USER\\"]"));
+                    mvc.perform(as("guest", get("/api/me/roles"))).andExpect(content().json("[]"));
+                }
+            }
             """;
 
     /**

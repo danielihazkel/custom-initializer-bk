@@ -1,6 +1,8 @@
 package {{packageName}}.views;
 
-import com.fasterxml.jackson.databind.JsonNode;
+{{#hasLdapAuth}}import {{packageName}}.security.Constants;
+import {{packageName}}.security.RequiresPermission;
+{{/hasLdapAuth}}import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -38,14 +40,16 @@ public class SavedViewController {
         this.objectMapper = objectMapper;
     }
 
-    @GetMapping
+{{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
+{{/hasLdapAuth}}    @GetMapping
     public List<View> list(@RequestParam String list,
                            @RequestHeader(value = "userinfo", required = false) String header) {
         String user = userOf(header);
         return service.visibleTo(list, user).stream().map(v -> view(v, user)).toList();
     }
 
-    @PostMapping
+{{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
+{{/hasLdapAuth}}    @PostMapping
     public View create(@RequestBody ViewRequest body,
                        @RequestHeader(value = "userinfo", required = false) String header) {
         String user = userOf(header);
@@ -53,14 +57,16 @@ public class SavedViewController {
                 Boolean.TRUE.equals(body.shared()), Boolean.TRUE.equals(body.defaultView())), user);
     }
 
-    @PutMapping("/{id}")
+{{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
+{{/hasLdapAuth}}    @PutMapping("/{id}")
     public View update(@PathVariable Long id, @RequestBody ViewRequest body,
                        @RequestHeader(value = "userinfo", required = false) String header) {
         String user = userOf(header);
         return view(service.update(id, user, body.name(), body.state(), body.shared(), body.defaultView()), user);
     }
 
-    @DeleteMapping("/{id}")
+{{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
+{{/hasLdapAuth}}    @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id,
                                        @RequestHeader(value = "userinfo", required = false) String header) {
         service.delete(id, userOf(header));

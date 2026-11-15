@@ -1,0 +1,9 @@
+# The "local" profile — for a developer's machine:
+#   mvn spring-boot:run -Dspring-boot.run.profiles=local
+# Never activate it on a server: it hands out roles without asking the directory.
+app:
+  security:
+    # Users who hold roles here without LDAP being asked (PermissionService). The generated
+    # frontend's dev server signs its calls as dev-user (VITE_DEV_USERINFO); ADMIN includes USER.
+    dev-roles:
+      dev-user: ADMIN

@@ -195,8 +195,8 @@ class DataSeederTest {
     void ldapAuthFileContributionsSeeded() {
         // application-ldap-auth YAML + LdapConfigurationProperties, LdapConfiguration, Base64Utils,
         // LdapService, PermissionService, PermissionAspect, Constants, RequiresPermission,
-        // UnauthorizedException + sample-controller
-        assertThat(fileContribRepo.countByDependencyId("ldap-auth")).isEqualTo(11);
+        // UnauthorizedException + sample-controller + application-local.yaml (development roles)
+        assertThat(fileContribRepo.countByDependencyId("ldap-auth")).isEqualTo(12);
     }
 
     @Test
@@ -204,7 +204,8 @@ class DataSeederTest {
         // application-ldap-auth-rest YAML + REST LdapService, PermissionService, PermissionAspect,
         // Constants, RequiresPermission, UnauthorizedException + sample-controller (no direct-LDAP
         // config/properties/Base64Utils — resolved over REST instead).
-        assertThat(fileContribRepo.countByDependencyId("ldap-auth-rest")).isEqualTo(8);
+        // …and application-local.yaml (development roles).
+        assertThat(fileContribRepo.countByDependencyId("ldap-auth-rest")).isEqualTo(9);
     }
 
     @Test

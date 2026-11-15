@@ -84,6 +84,12 @@ public final class FullstackSchema {
 
         doc.put("locales", LOCALES);
         doc.put("roles", FullstackPageValidator.ROLES);
+        // An entity's access.read / access.write, weakest first, and what a missing one means.
+        doc.put("accessLevels", EntityDefinition.Access.LEVELS);
+        Map<String, Object> defaultAccess = new LinkedHashMap<>();
+        defaultAccess.put("read", EntityDefinition.Access.DEFAULT.read());
+        defaultAccess.put("write", EntityDefinition.Access.DEFAULT.write());
+        doc.put("defaultAccess", defaultAccess);
         doc.put("listViews", FullstackPageValidator.LIST_VIEWS);
         doc.put("pageTypes", wires(PageDefinition.Type.values(), PageDefinition.Type::wire));
         doc.put("widgetKinds", wires(PageDefinition.WidgetKind.values(), PageDefinition.WidgetKind::wire));

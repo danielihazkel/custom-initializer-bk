@@ -1,13 +1,11 @@
 package {{packageName}}.web;
 
-{{#hasLdapAuth}}import {{packageName}}.security.Constants;
-import {{packageName}}.security.PermissionService;
+{{#hasLdapAuth}}import {{packageName}}.security.PermissionService;
 import {{packageName}}.security.UnauthorizedException;
 {{/hasLdapAuth}}import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashSet;
-{{#hasLdapAuth}}import java.util.List;
-{{/hasLdapAuth}}import java.util.Set;
+import java.util.Set;
 
 /**
  * Who is calling: the user id is the {@code userinfo} header (set by the SSO gateway; in
@@ -37,11 +35,7 @@ public class CurrentUser {
         Set<String> roles = new LinkedHashSet<>();
         if (user == null) return roles;
 {{#hasLdapAuth}}        try {
-            List<String> groups = permissionService.getUserGroups(user);
-            for (String role : List.of(Constants.ADMIN, Constants.USER)) {
-                String group = permissionService.mapRoleToGroup(role);
-                if (groups.stream().anyMatch(g -> g.contains(group))) roles.add(role);
-            }
+            roles.addAll(permissionService.rolesOf(user));
         } catch (UnauthorizedException e) {
             // A user the directory does not know holds no role.
         }

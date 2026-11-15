@@ -42,7 +42,25 @@ public record EntityDefinition(
         List<FormSection> formSections,
         Workflow workflow,
         List<RelationDefinition> collections,
-        List<RelationDefinition> children) {
+        List<RelationDefinition> children,
+        Access access) {
+
+    /**
+     * Who may call the entity's generated endpoints, when the project has an ldap-auth dependency
+     * to ask (without one nothing is checked): {@code read} for the list, a row, the statistics
+     * and the exports, {@code write} for everything that changes a row. Each is one of
+     * {@link #LEVELS}, weakest first; {@code write} is never weaker than {@code read}.
+     */
+    public record Access(String read, String write) {
+        /** Any signed-in user, a holder of the USER role, a holder of the ADMIN role. */
+        public static final List<String> LEVELS = List.of("SIGNED_IN", "USER", "ADMIN");
+        /** What an entity that says nothing gets: read for users, write for admins. */
+        public static final Access DEFAULT = new Access("USER", "ADMIN");
+
+        public boolean isDefault() {
+            return equals(DEFAULT);
+        }
+    }
 
     /**
      * The entity's workflow: the enum field whose values are its states, the state a new row starts
@@ -116,6 +134,17 @@ public record EntityDefinition(
         formSections = formSections == null ? List.of() : List.copyOf(formSections);
         collections = collections == null ? List.of() : List.copyOf(collections);
         children = children == null ? List.of() : List.copyOf(children);
+        access = access == null ? Access.DEFAULT : access;
+    }
+
+    /** Every property but {@code access} (the default: read for users, write for admins). */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
+                            String label, String labelPlural, Map<String, Boolean> opts, List<FormSection> formSections,
+                            Workflow workflow, List<RelationDefinition> collections, List<RelationDefinition> children) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
+                label, labelPlural, opts, formSections, workflow, collections, children, null);
     }
 
     /**
@@ -135,7 +164,7 @@ public record EntityDefinition(
     /** The same entity with its ONE_TO_MANYs resolved (each naming the MANY_TO_ONE behind it). */
     public EntityDefinition withChildren(List<RelationDefinition> resolved) {
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
-                listViews, label, labelPlural, opts, formSections, workflow, collections, resolved);
+                listViews, label, labelPlural, opts, formSections, workflow, collections, resolved, access);
     }
 
     /**

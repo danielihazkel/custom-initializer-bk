@@ -3106,6 +3106,9 @@ public final class EntityScaffoldContext {
         view.put("readOnly", entity.readOnly());
         view.put("mutable", !entity.readOnly());
         view.put("isView", entity.isView());
+        // The security.Constants an endpoint asks for (the controller template, with ldap-auth).
+        view.put("readLevel", entity.access().read());
+        view.put("writeLevel", entity.access().write());
         view.put("viewQuery", entity.viewQuery());
 
         List<Map<String, Object>> fieldViews = new ArrayList<>(entity.fields().size());

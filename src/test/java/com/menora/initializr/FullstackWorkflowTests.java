@@ -77,9 +77,10 @@ class FullstackWorkflowTests {
                 .contains("@ExceptionHandler(WorkflowException.class)")
                 .contains("if (!ex.errors().isEmpty()) pd.setProperty(\"errors\", ex.errors());");
         assertThat(files.get(BE + "web/WorkflowException.java")).contains("public static WorkflowException wrongState(String message) {");
-        // The default backend set brings ldap-auth-rest: roles come from the user's LDAP groups.
+        // The default backend set brings ldap-auth-rest: roles come from the user's LDAP groups —
+        // through the one place every check asks (an admin is a user too; development roles).
         assertThat(files.get(BE + "web/CurrentUser.java"))
-                .contains("List<String> groups = permissionService.getUserGroups(user);")
+                .contains("roles.addAll(permissionService.rolesOf(user));")
                 .contains("public static String idOf(String header) {");
         assertThat(files.get(BE + "web/CurrentUserController.java")).contains("public Me me(@RequestHeader(value = \"userinfo\", required = false) String header) {");
         // The cost center has no workflow, so it keeps its bytes.
@@ -249,12 +250,13 @@ class FullstackWorkflowTests {
                 .contains("private void requireValid(ExpenseClaim row, String... fields) {")
                 .contains("if (!invalid.isEmpty()) throw WorkflowException.missing(invalid);");
         assertThat(files.get(BE + "controller/ExpenseClaimController.java"))
-                .contains("    // @RequiresPermission(Constants.ADMIN)\n    @PostMapping(\"/{id}/assign\")")
+                .contains("    @RequiresPermission(Constants.ADMIN)\n    @PostMapping(\"/{id}/assign\")")
                 .contains("service.assign(id, request == null ? null : request.assignee(), CurrentUser.idOf(user))")
                 .contains("public record AssignRequest(String assignee) {}")
-                // The other workflow calls carry the hint the CRUD ones do.
-                .contains("    // @RequiresPermission(Constants.USER)\n    @PostMapping(\"/{id}/transitions/{name}\")")
-                .contains("    // @RequiresPermission(Constants.USER)\n    @PostMapping(\"/{id}/claim\")");
+                // The other workflow calls are open to whoever may read the row: which move a user
+                // may make is the transition's own roles, checked by the service.
+                .contains("    @RequiresPermission(Constants.USER)\n    @PostMapping(\"/{id}/transitions/{name}\")")
+                .contains("    @RequiresPermission(Constants.USER)\n    @PostMapping(\"/{id}/claim\")");
 
         // Frontend: out of the form and the import, and a Reassign action beside the moves.
         String feature = FE + "src/features/expense-claim-form/";

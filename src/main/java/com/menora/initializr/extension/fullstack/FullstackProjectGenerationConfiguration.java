@@ -96,10 +96,9 @@ public class FullstackProjectGenerationConfiguration {
             ScaffoldOption.putFlags(projectCtx, optionsContext, ScaffoldOption.Side.BACKEND);
             // Springdoc annotations (@Tag/@Operation). The `openapi` dep is force-added in
             // FullstackStarterController when this opt is set, so the swagger imports resolve.
-            // Per-endpoint @RequiresPermission. The security.* classes only exist when an
-            // ldap-auth variant (direct bind or REST) is on the build, so the flag requires one —
-            // otherwise the imports wouldn't resolve.
-            // With an ldap-auth variant the backend also answers /api/me/roles (page roles in the UI).
+            // With an ldap-auth variant (direct bind or REST) on the build every generated endpoint
+            // carries @RequiresPermission at its entity's access level — the security.* classes only
+            // exist then — and the backend answers /api/me/roles (page roles in the UI).
             projectCtx.put("hasLdapAuth", description.getRequestedDependencies().containsKey("ldap-auth")
                     || description.getRequestedDependencies().containsKey("ldap-auth-rest"));
             projectCtx.put(ScaffoldOption.SECURED.flag(),

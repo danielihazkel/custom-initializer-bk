@@ -1,6 +1,8 @@
 package {{packageName}}.attachment;
 
-import {{packageName}}.web.ResourceNotFoundException;
+{{#hasLdapAuth}}import {{packageName}}.security.Constants;
+import {{packageName}}.security.RequiresPermission;
+{{/hasLdapAuth}}import {{packageName}}.web.ResourceNotFoundException;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -44,7 +46,8 @@ public class AttachmentController {
      * Stores an upload. {@code kind=image} (what an image field sends) refuses anything that is
      * not one of the images the application will show.
      */
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+{{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
+{{/hasLdapAuth}}    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<AttachmentStorage.Info> upload(@RequestParam("file") MultipartFile file,
                                                         @RequestParam(value = "kind", required = false) String kind)
             throws IOException {
@@ -60,12 +63,14 @@ public class AttachmentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(stored);
     }
 
-    @GetMapping("/{id}/info")
+{{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
+{{/hasLdapAuth}}    @GetMapping("/{id}/info")
     public AttachmentStorage.Info info(@PathVariable UUID id) {
         return storage.describe(id).orElseThrow(() -> new ResourceNotFoundException("Attachment " + id + " not found"));
     }
 
-    @GetMapping("/{id}")
+{{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
+{{/hasLdapAuth}}    @GetMapping("/{id}")
     public ResponseEntity<byte[]> download(@PathVariable UUID id) {
         AttachmentStorage.Stored stored = storage.load(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Attachment " + id + " not found"));

@@ -455,6 +455,15 @@
     "ADMIN",
     "USER"
   ],
+  "accessLevels" : [
+    "SIGNED_IN",
+    "USER",
+    "ADMIN"
+  ],
+  "defaultAccess" : {
+    "read" : "USER",
+    "write" : "ADMIN"
+  },
   "listViews" : [
     "table",
     "cards",

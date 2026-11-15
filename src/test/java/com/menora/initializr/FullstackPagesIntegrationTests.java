@@ -1885,7 +1885,8 @@ class FullstackPagesIntegrationTests {
                 .contains(") : !canSee(view, roles) ? (");
         assertThat(files.get("support/backend/src/main/java/com/menora/support/web/MeController.java"))
                 .contains("@GetMapping(\"/roles\")")
-                .contains("permissionService.mapRoleToGroup(role)");
+                // The roles as every check in the application sees them (an admin is a user too).
+                .contains("roles.addAll(permissionService.rolesOf(user));");
 
         // Without roles: no access module, no guard (ldap-auth-rest, a set default, still answers /api/me/roles).
         Map<String, String> open = generate(exampleBody("tickets", "react-tailwind-crud"));

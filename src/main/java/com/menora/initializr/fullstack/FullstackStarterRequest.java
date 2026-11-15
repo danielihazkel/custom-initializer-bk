@@ -162,6 +162,10 @@ public record FullstackStarterRequest(
                 dashboardOverview, locale, null, entities);
     }
 
+    /** {@code read} / {@code write}: SIGNED_IN, USER or ADMIN; either may be left out for its default. */
+    public record AccessDto(String read, String write) {
+    }
+
     public record EntityDefinitionDto(
             String name,
             String tableName,
@@ -200,7 +204,22 @@ public record FullstackStarterRequest(
             // limited to roles and asking for fields) and who the row is assigned to. Null: none.
             // Left out of the request echoed into menora-model.json when absent, so it keeps its bytes.
             @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-            WorkflowDto workflow) {
+            WorkflowDto workflow,
+            // Who may read and who may write the entity's rows through the generated API, when the
+            // project has an ldap-auth dependency: {read, write}, each SIGNED_IN, USER or ADMIN.
+            // Null: read for users, write for admins. Left out of the echoed request when absent.
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            AccessDto access) {
+
+        /** Every property but {@code access} (the default levels). */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql, String listView,
+                                   List<String> listViews, String label, String labelPlural,
+                                   Map<String, Boolean> opts, List<FormSectionDto> formSections, WorkflowDto workflow) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
+                    label, labelPlural, opts, formSections, workflow, null);
+        }
 
         /** Every property but {@code workflow} (no workflow). */
         public EntityDefinitionDto(String name, String tableName, String schema,
@@ -209,7 +228,7 @@ public record FullstackStarterRequest(
                                    List<String> listViews, String label, String labelPlural,
                                    Map<String, Boolean> opts, List<FormSectionDto> formSections) {
             this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
-                    label, labelPlural, opts, formSections, null);
+                    label, labelPlural, opts, formSections, (WorkflowDto) null);
         }
 
         /** Every property but {@code formSections} (one untitled form). */

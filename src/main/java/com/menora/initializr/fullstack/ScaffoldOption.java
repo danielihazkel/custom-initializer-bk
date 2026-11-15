@@ -41,7 +41,11 @@ public enum ScaffoldOption {
     INVERSE_COLLECTIONS("inverseCollections", "optScaffoldInverse", true, true, false),
     /** springdoc annotations; the {@code openapi} dependency is force-added with it. */
     OPENAPI("openapi", "optScaffoldOpenApi", true, false, false),
-    /** Needs an ldap-auth dependency as well — the backend config narrows the flag by that. */
+    /**
+     * No template reads it any more: it used to write commented-out {@code @RequiresPermission}
+     * lines, and the checks are now live whenever an ldap-auth dependency is on the build, by each
+     * entity's own {@code access} levels. Kept so a model that names it still validates.
+     */
     SECURED("secured", "optScaffoldSecured", true, false, false),
     SEED_DATA("seedData", "optScaffoldSeedData", true, false, false),
     /** Not a template flag: sets {@code dir="rtl"} on the generated frontend's description. */

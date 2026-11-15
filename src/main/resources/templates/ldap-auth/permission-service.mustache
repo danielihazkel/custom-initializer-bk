@@ -1,26 +1,96 @@
 package {{packageName}}.security;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
  * Maps the application's logical roles ({@link Constants}) onto the LDAP group naming
- * convention and answers whether a user is a member of the matching group.
+ * convention and answers which of them a user holds.
+ *
+ * <p>{@link #rolesOf} is the one place roles are worked out — the {@code @RequiresPermission}
+ * check and whatever else asks (the current user, the roles endpoint) go through it, so they
+ * cannot disagree. Three things follow from that:
+ * <ul>
+ *   <li><b>ADMIN includes USER</b>: a member of the admin group alone may do what a user may;</li>
+ *   <li>a user's roles are remembered for a minute, so a page that makes a dozen calls asks the
+ *       directory once;</li>
+ *   <li><b>development roles</b>: {@code app.security.dev-roles.<user>: ADMIN} gives a user roles
+ *       without the directory being asked — for a developer's machine, where it cannot be
+ *       reached, and for tests. It is set in the {@code local} profile only
+ *       ({@code application-local.yaml}); never on a server.</li>
+ * </ul>
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class PermissionService {
 
+    /** How long a user's roles are kept before the directory is asked again. */
+    private static final long ROLES_TTL_MILLIS = 60_000;
+    /** More users than this are not remembered at once. */
+    private static final int MAX_REMEMBERED = 10_000;
+
+    private record Remembered(Set<String> roles, long until) {
+    }
+
     private final LdapService ldapService;
+    private final Map<String, Set<String>> devRoles;
+    private final Map<String, Remembered> remembered = new ConcurrentHashMap<>();
 
     @Value("${header.prefix:GRP_{{departmentUpper}}MonitoringUi_}")
     private String GROUP_PREFIX = "GRP_{{departmentUpper}}MonitoringUi_";
+
+    public PermissionService(LdapService ldapService, Environment environment) {
+        this.ldapService = ldapService;
+        this.devRoles = devRolesOf(environment);
+        if (!devRoles.isEmpty()) {
+            log.warn("app.security.dev-roles is set: {} hold roles without the directory being asked. "
+                    + "This is for development only.", devRoles.keySet());
+        }
+    }
+
+    /**
+     * The roles {@code username} holds, {@link Constants#ADMIN} bringing {@link Constants#USER}
+     * with it. Empty for no user.
+     *
+     * @throws UnauthorizedException when the directory cannot be asked
+     */
+    public Set<String> rolesOf(String username) throws UnauthorizedException {
+        if (username == null || username.isBlank()) return Set.of();
+        String user = username.trim();
+        Set<String> dev = devRoles.get(user);
+        if (dev != null) return dev;
+        long now = System.currentTimeMillis();
+        Remembered known = remembered.get(user);
+        if (known != null && known.until() > now) return known.roles();
+
+        List<String> groups = getUserGroups(user);
+        Set<String> roles = new LinkedHashSet<>();
+        for (String role : List.of(Constants.ADMIN, Constants.USER)) {
+            String group = mapRoleToGroup(role);
+            if (groups.stream().anyMatch(g -> g.contains(group))) roles.add(role);
+        }
+        roles = closed(roles);
+        if (remembered.size() >= MAX_REMEMBERED) remembered.clear();
+        remembered.put(user, new Remembered(roles, now + ROLES_TTL_MILLIS));
+        return roles;
+    }
+
+    /**
+     * Whether {@code username} may do what asks for {@code required}: a role they hold, or
+     * {@link Constants#SIGNED_IN}, which every identified caller satisfies.
+     */
+    public boolean holds(String username, String required) throws UnauthorizedException {
+        if (Constants.SIGNED_IN.equals(required)) return username != null && !username.isBlank();
+        return rolesOf(username).contains(required);
+    }
 
     public List<String> getUserGroups(String username) throws UnauthorizedException {
         try {
@@ -41,6 +111,29 @@ public class PermissionService {
             case Constants.USER: return GROUP_PREFIX + "RO";
         }
         return "UNKNOWN_ROLE";
+    }
+
+    /** {@code roles} with what each brings: an admin is a user too. */
+    private static Set<String> closed(Set<String> roles) {
+        Set<String> all = new LinkedHashSet<>(roles);
+        if (all.contains(Constants.ADMIN)) all.add(Constants.USER);
+        return Collections.unmodifiableSet(all);
+    }
+
+    /** {@code app.security.dev-roles}: user → roles (comma-separated), each set closed like any other. */
+    private static Map<String, Set<String>> devRolesOf(Environment environment) {
+        Map<String, String> configured = Binder.get(environment)
+                .bind("app.security.dev-roles", Bindable.mapOf(String.class, String.class))
+                .orElse(Map.of());
+        Map<String, Set<String>> byUser = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : configured.entrySet()) {
+            Set<String> roles = new LinkedHashSet<>();
+            for (String role : entry.getValue().split(",")) {
+                if (!role.isBlank()) roles.add(role.trim().toUpperCase(Locale.ROOT));
+            }
+            byUser.put(entry.getKey().trim(), closed(roles));
+        }
+        return byUser;
     }
 
     private List<String> filterMonitoringGroups(Set<String> groups) {
