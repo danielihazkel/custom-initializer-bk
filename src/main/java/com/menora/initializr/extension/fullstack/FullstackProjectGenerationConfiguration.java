@@ -11,6 +11,7 @@ import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
 import com.menora.initializr.fullstack.FullstackRenderer;
 import com.menora.initializr.fullstack.ScaffoldOption;
+import com.menora.initializr.fullstack.schema.SchemaMigrations;
 import com.menora.initializr.sql.SqlNames;
 import io.spring.initializr.generator.project.ProjectDescription;
 import io.spring.initializr.generator.project.ProjectGenerationConfiguration;
@@ -134,6 +135,13 @@ public class FullstackProjectGenerationConfiguration {
                         "{{packagePath}}", description.getPackageName().replace('.', '/')));
                 Files.createDirectories(target.getParent());
                 Files.writeString(target, SqlNames.namingStrategySource(description.getPackageName()));
+            }
+            // With Flyway on the build the schema is the migration's to create, not Hibernate's:
+            // the entities' tables as V1, in place of the dependency's placeholder (this
+            // contributor runs after the catalog's file contributor).
+            if (description.getRequestedDependencies().containsKey(SchemaMigrations.FLYWAY)) {
+                entityContext.setGeneratedSchema(SchemaMigrations.writeBaseline(projectRoot, projectCtx, entities,
+                        description.getRequestedDependencies().keySet()));
             }
         };
     }

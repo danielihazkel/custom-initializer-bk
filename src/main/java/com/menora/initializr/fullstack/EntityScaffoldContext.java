@@ -3480,13 +3480,9 @@ public final class EntityScaffoldContext {
             cv.put("hasTargetLabel", labelField != null);
             cv.put("targetSearchable", target != null && Boolean.TRUE.equals(target.get("labelSearchable")));
             // The join table: named, or <entity>_<field> with one <entity>_id column per side.
-            String owner = Naming.toSnakeCase(entity.name());
-            cv.put("joinTable", SqlNames.javaLiteral(SqlNames.physical(c.joinTable() != null ? c.joinTable()
-                    : owner + "_" + Naming.toSnakeCase(c.fieldName()), null)));
-            cv.put("joinColumn", SqlNames.javaLiteral(SqlNames.physical(c.joinColumn() != null ? c.joinColumn()
-                    : owner + "_id", null)));
-            cv.put("inverseJoinColumn", SqlNames.javaLiteral(SqlNames.physical(c.inverseJoinColumn() != null
-                    ? c.inverseJoinColumn() : Naming.toSnakeCase(c.targetEntity()) + "_id", null)));
+            cv.put("joinTable", SqlNames.javaLiteral(joinTableOf(entity, c)));
+            cv.put("joinColumn", SqlNames.javaLiteral(ownerJoinColumnOf(entity, c)));
+            cv.put("inverseJoinColumn", SqlNames.javaLiteral(inverseJoinColumnOf(c)));
             collectionViews.add(cv);
         }
         for (int i = 0; i < collectionViews.size(); i++) {
@@ -3671,27 +3667,45 @@ public final class EntityScaffoldContext {
      *  (DDL import), else the snake_case of its name. Every column name rendered for a field —
      *  {@code @Column}, the soft-delete SQL, a referencing entity's label/count subselects — goes
      *  through here, so they always agree. */
-    static String columnOf(FieldDefinition f) {
+    public static String columnOf(FieldDefinition f) {
         return SqlNames.physical(f.column() != null ? f.column() : Naming.toSnakeCase(f.name()), null);
     }
 
     /** The foreign-key column of a relation: its own {@code joinColumn} when set (DDL import), else
      *  {@code <snake fieldName>_id}. Used by {@code @JoinColumn}, the label subselect and the
      *  parent's child-count subselect. */
-    static String joinColumnOf(RelationDefinition r) {
+    public static String joinColumnOf(RelationDefinition r) {
         return SqlNames.physical(r.joinColumn() != null ? r.joinColumn()
                 : Naming.toSnakeCase(r.fieldName()) + "_id", null);
     }
 
+    /** The join table of a MANY_TO_MANY: named, or {@code <entity>_<field>}. */
+    public static String joinTableOf(EntityDefinition owner, RelationDefinition c) {
+        return SqlNames.physical(c.joinTable() != null ? c.joinTable()
+                : Naming.toSnakeCase(owner.name()) + "_" + Naming.toSnakeCase(c.fieldName()), null);
+    }
+
+    /** The join table's column for the owning entity: named, or {@code <entity>_id}. */
+    public static String ownerJoinColumnOf(EntityDefinition owner, RelationDefinition c) {
+        return SqlNames.physical(c.joinColumn() != null ? c.joinColumn()
+                : Naming.toSnakeCase(owner.name()) + "_id", null);
+    }
+
+    /** The join table's column for the other entity: named, or {@code <target>_id}. */
+    public static String inverseJoinColumnOf(RelationDefinition c) {
+        return SqlNames.physical(c.inverseJoinColumn() != null
+                ? c.inverseJoinColumn() : Naming.toSnakeCase(c.targetEntity()) + "_id", null);
+    }
+
     /** The entity's table: its own {@code tableName} (DDL import, or by hand) else the snake plural
      *  of its name, through {@link SqlNames#physical(String, com.menora.initializr.sql.SqlDialect)}. */
-    static String tableOf(EntityDefinition e) {
+    public static String tableOf(EntityDefinition e) {
         return SqlNames.physical(e.tableName() != null ? e.tableName()
                 : Naming.pluralize(Naming.toSnakeCase(e.name())), null);
     }
 
     /** The entity's schema through {@link SqlNames}; null when it has none. */
-    static String schemaOf(EntityDefinition e) {
+    public static String schemaOf(EntityDefinition e) {
         return e.schema() == null || e.schema().isBlank() ? null : SqlNames.physical(e.schema(), null);
     }
 

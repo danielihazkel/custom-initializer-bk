@@ -161,6 +161,21 @@ public final class ProjectUpdateBuilder {
                 .append("  re-apply your edits by hand.\n\n")
                 .append("A working tree checked out with CRLF line endings may also need `--ignore-whitespace`.\n\n");
 
+        // With Flyway, a change to the entities comes with a migration (fullstack/schema/SchemaDiff).
+        for (String path : added) {
+            if (!path.matches(".*/db/migration/V\\d+__model_update\\.sql")) continue;
+            md.append("## The database\n\n")
+                    .append("`").append(path).append("` is what the changed model needs of the database; Flyway runs it\n")
+                    .append("on the next start. What the model adds runs as it is. What it removes or tightens — a\n")
+                    .append("dropped column or table, a changed type, a field that became required — is at the end of\n")
+                    .append("that file, commented out: it loses data or can fail on the rows already there. Read each\n")
+                    .append("statement, then uncomment it or leave it for a later migration.\n\n")
+                    .append("A renamed field or entity shows there as one removed and one added: rename the column or\n")
+                    .append("table instead. The migration is the difference between the two models, not a look at your\n")
+                    .append("database. A migration you add by hand later needs a timestamp version like this one's —\n")
+                    .append("Flyway refuses a version lower than the last one applied.\n\n");
+        }
+
         if (!binary.isEmpty()) {
             md.append("## Not in the patch\n\n")
                     .append("The patch does not carry these: they are not text, or they are files a generation\n")

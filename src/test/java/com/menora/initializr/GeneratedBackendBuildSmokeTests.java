@@ -283,6 +283,163 @@ class GeneratedBackendBuildSmokeTests {
 
             """;
 
+    /**
+     * With Flyway on the build, the entity model is written as the first migration and Hibernate
+     * only validates. These builds start each backend on the schema the migration made — the
+     * context-load test, the demo rows and, for Orders and Approvals, the live API tests — so a
+     * column the migration spells differently from the entity fails here, at {@code validate}.
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"orders", "approvals", "fieldTypes", "manyToMany", "oneToMany", "enrolments", "projects"})
+    @SuppressWarnings("unchecked")
+    void flywayBaselineIsTheSchemaTheEntitiesExpect(String model, @TempDir Path workDir) throws Exception {
+        Map<String, Object> body = switch (model) {
+            case "fieldTypes" -> FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+            case "manyToMany" -> FullstackExampleRequests.manyToManyBody("react-tailwind-crud");
+            case "oneToMany" -> FullstackExampleRequests.oneToManyBody("react-tailwind-crud");
+            default -> FullstackPagesIntegrationTests.exampleBody(model, "react-tailwind-crud");
+        };
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "flyway"));
+        String liveTests = null;
+        if (model.equals("orders")) {
+            body.put("pages", List.of());
+            body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "inverseCollections", "csvExport",
+                    "xlsxExport", "savedViews", "csvImport", "bulkDelete", "bulkUpdate", "optimisticLocking",
+                    "seedData", "tests")));
+            liveTests = LIVE_ORDERS_TESTS;
+        } else if (model.equals("approvals")) {
+            body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "csvImport",
+                    "bulkUpdate", "seedData", "tests")));
+            liveTests = LIVE_APPROVALS_TESTS;
+        } else {
+            body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "optimisticLocking", "seedData", "tests")));
+        }
+        // Roles need ldap-auth, whose artifact is in the company repository.
+        for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
+            Map<String, Object> workflow = (Map<String, Object>) entity.get("workflow");
+            if (workflow == null) continue;
+            workflow.put("trackMoves", true);
+            for (Map<String, Object> t : (List<Map<String, Object>>) workflow.get("transitions")) t.remove("roles");
+        }
+        if (body.get("pages") instanceof List<?> pages) {
+            for (Object page : pages) ((Map<String, Object>) page).remove("roles");
+        }
+        Path backend = postAndExtractBackend(workDir, body);
+        assertThat(Files.readString(backend.resolve("src/main/resources/db/migration/V1__init.sql")))
+                .contains("create table ").doesNotContain("app_metadata");
+        assertThat(Files.readString(backend.resolve("src/main/resources/application.yaml")))
+                .contains("ddl-auto: validate").doesNotContain("create-drop");
+        if (liveTests != null) writeLiveTest(backend, "com.menora.support", liveTests);
+        // That the tables are there says a schema was made; this says who made it.
+        String packageName = (String) body.get("packageName");
+        writeProjectTest(backend, packageName, "MigrationRanTests", MIGRATION_RAN_TESTS.formatted(packageName));
+        runMvn(backend, "-B", "package");
+        assertThat(Files.exists(backend.resolve("target/surefire-reports/" + packageName + ".MigrationRanTests.txt")))
+                .as("the migration check ran in the generated build").isTrue();
+    }
+
+    /**
+     * An update's migration, run: a database made by the old model's baseline, then the migration
+     * the update carries — as generated, nothing uncommented — and the new model's backend started
+     * on the result with {@code ddl-auto: validate}. What the model added has to be there for the
+     * new entities; what it removed stays, commented out, and is nobody's problem.
+     */
+    @org.junit.jupiter.api.Test
+    void anUpdatesMigrationTakesTheOldSchemaToTheNewEntities(@TempDir Path workDir) throws Exception {
+        Map<String, Object> base = FullstackMigrationTests.press("web", "data-jpa", "h2", "validation", "flyway");
+        Map<String, Object> target = FullstackMigrationTests.changed(base);
+        Path backend = postAndExtractBackend(workDir, target);
+        Path migrations = backend.resolve("src/main/resources/db/migration");
+
+        // The project as it was: its first migration is the old model's.
+        Map<String, byte[]> old = FullstackExampleRequests.unzip(FullstackExampleRequests.post(rest, base).getBody());
+        Files.write(migrations.resolve("V1__init.sql"), old.get("press/backend/src/main/resources/db/migration/V1__init.sql"));
+        assertThat(Files.readString(migrations.resolve("V1__init.sql"))).contains("create table tags (").doesNotContain("categories");
+
+        // The update: what the model changed, as its own migration.
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> update = rest.exchange("/starter-fullstack.patch", HttpMethod.POST,
+                new HttpEntity<>(Map.of("base", base, "target", target), headers), byte[].class);
+        assertThat(update.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, byte[]> files = FullstackExampleRequests.unzip(update.getBody());
+        String path = files.keySet().stream().filter(p -> p.endsWith("__model_update.sql")).findFirst().orElseThrow();
+        String name = path.substring(path.lastIndexOf('/') + 1);
+        Files.write(migrations.resolve(name), files.get(path));
+
+        writeProjectTest(backend, "com.menora.press", "UpdateMigrationRanTests", UPDATE_MIGRATION_RAN_TESTS.formatted(name));
+        runMvn(backend, "-B", "package");
+        assertThat(Files.exists(backend.resolve("target/surefire-reports/com.menora.press.UpdateMigrationRanTests.txt")))
+                .as("the migration check ran in the generated build").isTrue();
+    }
+
+    /** Both migrations applied, the new table and columns there, the removed table still there. */
+    private static final String UPDATE_MIGRATION_RAN_TESTS = """
+            package com.menora.press;
+
+            import org.flywaydb.core.Flyway;
+            import org.flywaydb.core.api.MigrationInfo;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.jdbc.core.JdbcTemplate;
+
+            import java.util.Arrays;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+
+            @SpringBootTest
+            class UpdateMigrationRanTests {
+
+                @Autowired Flyway flyway;
+                @Autowired JdbcTemplate jdbc;
+
+                @Test
+                void theOldSchemaWasBroughtToTheNewModel() {
+                    MigrationInfo[] applied = flyway.info().applied();
+                    assertThat(Arrays.stream(applied).map(MigrationInfo::getScript)).containsExactly("V1__init.sql", "%s");
+                    assertThat(Arrays.stream(applied).noneMatch(m -> m.getState().isFailed())).isTrue();
+                    // What the model added.
+                    assertThat(jdbc.queryForObject("select count(*) from categories", Long.class)).isNotNull();
+                    jdbc.queryForList("select summary, slug, category_id from posts");
+                    // What it removed is still there: dropping it was left to a person.
+                    assertThat(jdbc.queryForObject("select count(*) from tags", Long.class)).isNotNull();
+                    assertThat(jdbc.queryForObject("select count(*) from post_tags", Long.class)).isNotNull();
+                }
+            }
+            """;
+
+    /** Added to a generated backend with Flyway: its first migration is recorded as applied, and nothing else. */
+    private static final String MIGRATION_RAN_TESTS = """
+            package %s;
+
+            import org.flywaydb.core.Flyway;
+            import org.flywaydb.core.api.MigrationInfo;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.core.env.Environment;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+
+            @SpringBootTest
+            class MigrationRanTests {
+
+                @Autowired Flyway flyway;
+                @Autowired Environment environment;
+
+                @Test
+                void theSchemaIsTheMigrationsNotHibernates() {
+                    MigrationInfo[] applied = flyway.info().applied();
+                    assertThat(applied).hasSize(1);
+                    assertThat(applied[0].getVersion().getVersion()).isEqualTo("1");
+                    assertThat(applied[0].getScript()).isEqualTo("V1__init.sql");
+                    assertThat(applied[0].getState().isFailed()).isFalse();
+                    assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
+                }
+            }
+            """;
+
     @org.junit.jupiter.api.Test
     void liveApiOfABackendWithEveryOptBehaves(@TempDir Path workDir) throws Exception {
         // The generated tests mock the service, so no SQL the options add is ever executed by

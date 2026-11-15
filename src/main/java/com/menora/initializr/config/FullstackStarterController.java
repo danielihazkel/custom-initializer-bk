@@ -34,6 +34,7 @@ import org.springframework.util.FileSystemUtils;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import com.menora.initializr.fullstack.patch.ProjectUpdateBuilder;
+import com.menora.initializr.fullstack.schema.SchemaMigrations;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -187,11 +188,19 @@ public class FullstackStarterController {
         Path baseDir = Files.createTempDirectory("fullstack-update-base-");
         Path targetDir = Files.createTempDirectory("fullstack-update-target-");
         try {
-            generateSide("base", body.base(), baseDir);
-            WebProjectRequest request = generateSide("target", body.target(), targetDir);
+            Side base = generateSide("base", body.base(), baseDir);
+            Side changed = generateSide("target", body.target(), targetDir);
+            WebProjectRequest request = changed.request();
+            Map<String, byte[]> baseTree = GeneratedProjectFiles.readTree(baseDir);
             Map<String, byte[]> target = GeneratedProjectFiles.readTree(targetDir);
+            // With Flyway, the first migration has run and stays as it was; what the model
+            // changed is a migration of its own.
+            java.time.LocalDateTime now = java.time.LocalDateTime.now(java.time.ZoneOffset.UTC);
+            SchemaMigrations.carryBaselineOver(baseTree, target, base.schema(), changed.schema(),
+                    now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss")),
+                    now.toLocalDate().toString());
             ProjectUpdateBuilder.ProjectUpdate update = ProjectUpdateBuilder.build(
-                    GeneratedProjectFiles.readTree(baseDir), target,
+                    baseTree, target,
                     new ProjectUpdateBuilder.Info(request.getArtifactId(), body.baseTemplatesHash(),
                             templatesHashOf(target.get(MODEL_FILE))),
                     // Never edited by hand and rewritten whole by every generation: replaced, not patched.
@@ -212,13 +221,18 @@ public class FullstackStarterController {
         }
     }
 
+    /** One side of an update: the request it resolved to, and the schema it wrote a migration for (or null). */
+    private record Side(WebProjectRequest request, SchemaMigrations.Generated schema) {
+    }
+
     /**
      * Generates one side of an update. The per-request contexts are cleared after each side —
      * the second generation must not see the first one's entities or options.
      */
-    private WebProjectRequest generateSide(String side, FullstackStarterRequest model, Path dir) throws IOException {
+    private Side generateSide(String side, FullstackStarterRequest model, Path dir) throws IOException {
         try {
-            return buildArtifacts(model, dir);
+            WebProjectRequest request = buildArtifacts(model, dir);
+            return new Side(request, entityContext.generatedSchema());
         } catch (WizardArgumentException problem) {
             throw problem.at(side);
         } finally {

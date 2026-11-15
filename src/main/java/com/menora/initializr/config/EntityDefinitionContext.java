@@ -23,6 +23,9 @@ public class EntityDefinitionContext {
     private static final ThreadLocal<String> DOMAIN_PACKAGE = new ThreadLocal<>();
     /** The layout's shell shows who is signed in: the backend answers GET /api/me without a workflow. */
     private static final ThreadLocal<Boolean> SHELL_USER = ThreadLocal.withInitial(() -> false);
+    /** Set by the backend contributor when it wrote a Flyway baseline; read by the update endpoint. */
+    private static final ThreadLocal<com.menora.initializr.fullstack.schema.SchemaMigrations.Generated> SCHEMA =
+            new ThreadLocal<>();
 
     public void populate(List<EntityDefinition> entities, String backendSetKey, String frontendSetKey,
                          String domainPackage) {
@@ -47,6 +50,16 @@ public class EntityDefinitionContext {
         FRONTEND_KEY.remove();
         DOMAIN_PACKAGE.remove();
         SHELL_USER.remove();
+        SCHEMA.remove();
+    }
+
+    /** The schema the generation on this thread wrote a migration for, or null when it wrote none. */
+    public com.menora.initializr.fullstack.schema.SchemaMigrations.Generated generatedSchema() {
+        return SCHEMA.get();
+    }
+
+    public void setGeneratedSchema(com.menora.initializr.fullstack.schema.SchemaMigrations.Generated schema) {
+        SCHEMA.set(schema);
     }
 
     public boolean shellUser() {
