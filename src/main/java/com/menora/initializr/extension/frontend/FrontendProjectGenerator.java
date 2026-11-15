@@ -227,7 +227,7 @@ public class FrontendProjectGenerator {
             }
             if (nodeVersionMismatch(fc, desc)) continue;
             String targetRel = resolveTargetPath(fc.getTargetPath(), desc);
-            Path target = projectRoot.resolve(targetRel);
+            Path target = GeneratedProjectFiles.resolveInside(projectRoot, targetRel);
             switch (fc.getFileType()) {
                 case STATIC_COPY -> writeStatic(fc.getContent(), target);
                 case TEMPLATE -> writeTemplate(fc, ctx, target);
@@ -245,7 +245,8 @@ public class FrontendProjectGenerator {
                 continue;
             }
             if (nodeVersionMismatch(fc, desc)) continue;
-            Files.deleteIfExists(projectRoot.resolve(resolveTargetPath(fc.getTargetPath(), desc)));
+            Files.deleteIfExists(GeneratedProjectFiles.resolveInside(projectRoot,
+                    resolveTargetPath(fc.getTargetPath(), desc)));
         }
     }
 
@@ -430,7 +431,7 @@ public class FrontendProjectGenerator {
             files.put("msw.ts", mswHandlersRenderer.render(parsedSpec));
         }
         for (Map.Entry<String, String> entry : files.entrySet()) {
-            Files.writeString(generatedDir.resolve(entry.getKey()), entry.getValue());
+            Files.writeString(GeneratedProjectFiles.resolveInside(generatedDir, entry.getKey()), entry.getValue());
         }
     }
 

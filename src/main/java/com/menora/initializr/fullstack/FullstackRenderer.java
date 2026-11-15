@@ -89,7 +89,7 @@ public final class FullstackRenderer {
         String relativePath = renderString(file.getPathTemplate(), ctx, file.getSubstitutionType());
         String content = file.getContent() == null ? "" :
                 renderString(file.getContent(), ctx, file.getSubstitutionType());
-        Path target = targetRoot.resolve(relativePath);
+        Path target = GeneratedProjectFiles.resolveInside(targetRoot, relativePath);
         GeneratedProjectFiles.createParentDirectories(target);
         Files.writeString(target, content);
     }

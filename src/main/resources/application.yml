@@ -24,6 +24,11 @@ admin:
   # same password (or token-secret, which takes precedence when set).
   # token-secret:
   token-ttl: 12h
+  # Wrong passwords from one address before it is refused (429) until the window has passed;
+  # 0 switches the limit off. Counted per instance. See AdminLoginThrottle.
+  login:
+    max-failures: 10
+    window: 5m
 
 spring:
   cache:
@@ -52,7 +57,9 @@ spring:
     ignore-migration-patterns: "*:missing,*:future"
   h2:
     console:
-      enabled: true
+      # Off: the console is a SQL prompt on the catalog database (user "sa", no password) and is
+      # not behind the admin login. On a developer's machine: --spring.h2.console.enabled=true.
+      enabled: false
       path: /h2-console
 
 initializr:
@@ -118,6 +125,10 @@ management:
         include: health,info,metrics
 
 menora:
+  wizard:
+    # The documents pasted into the wizards (SQL, OpenAPI, WSDL, AsyncAPI) of one request,
+    # together. Each is parsed in memory, so a request past this is answered 400.
+    max-documents-size: 5MB
   audit:
     log-remote-addr: true
   access:

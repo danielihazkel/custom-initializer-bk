@@ -1,5 +1,6 @@
 package com.menora.initializr.extension.frontend.codegen;
 
+import com.menora.initializr.openapi.SelfContainedDocument;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
@@ -61,7 +62,14 @@ public class OpenApiTsGenerator {
         if (specText == null || specText.isBlank()) {
             throw new OpenApiCodegenException("Spec is empty");
         }
-        SwaggerParseResult result = new OpenAPIV3Parser().readContents(specText);
+        // The parser fetches what a document refers to; one that refers outside itself is refused.
+        SelfContainedDocument.Checked document;
+        try {
+            document = SelfContainedDocument.check(specText);
+        } catch (SelfContainedDocument.ExternalReferenceException e) {
+            throw new OpenApiCodegenException(e.getMessage());
+        }
+        SwaggerParseResult result = new OpenAPIV3Parser().readContents(document.text(), null, document.parseOptions());
         OpenAPI api = result.getOpenAPI();
         if (api == null) {
             String msg = (result.getMessages() == null || result.getMessages().isEmpty())

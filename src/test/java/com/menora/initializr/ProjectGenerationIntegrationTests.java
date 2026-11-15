@@ -20,6 +20,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.FileSystemUtils;
 
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
@@ -28,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -1312,6 +1314,122 @@ class ProjectGenerationIntegrationTests {
         ResponseEntity<String> response = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).contains("Unknown SQL wizard apiMode: 'DTO'");
+    }
+
+    @Test
+    void aWizardKeyCannotNameAFileOutsideTheProject() throws Exception {
+        // The OpenAPI wizard keeps the spec as openapi/<key>.yaml, and the key came from the
+        // request as it was: "../../../../../x" wrote the pasted document outside the project,
+        // on the server's disk.
+        Path outside = Files.createTempDirectory("wizard-key-");
+        try {
+            String spec = (String) ((Map<?, ?>) openApiPetstoreBody().get("specByDep")).get("web");
+            // From the project's own src/main/resources/openapi/ up to the temp directory and
+            // back down into the one made here — where the copy would land without the check.
+            String key = "../../../../../" + outside.getFileName() + "/escaped";
+            for (String endpoint : List.of("/starter-wizard.zip", "/starter-wizard.preview")) {
+                Map<String, Object> body = openApiBaseBody();
+                body.put("specByDep", Map.of(key, spec));
+                body.put("openApiOptions", Map.of(key, Map.of("mode", "CONTROLLERS", "copySpec", true)));
+                ResponseEntity<String> refused = restTemplate.postForEntity(endpoint, body, String.class);
+                assertThat(refused.getStatusCode()).as(endpoint).isEqualTo(HttpStatus.BAD_REQUEST);
+                assertThat(refused.getBody()).as(endpoint).contains("specByDep").contains("plain name");
+            }
+            try (Stream<Path> written = Files.list(outside)) {
+                assertThat(written.toList()).isEmpty();
+            }
+        } finally {
+            FileSystemUtils.deleteRecursively(outside);
+        }
+
+        // Every map a wizard is keyed by is checked, options included.
+        for (String map : List.of("sqlByDep", "wsdlByDep", "asyncApiByDep")) {
+            Map<String, Object> body = openApiBaseBody();
+            body.put(map, Map.of("a/b", "x"));
+            ResponseEntity<String> refused = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+            assertThat(refused.getStatusCode()).as(map).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(refused.getBody()).as(map).contains(map);
+        }
+        Map<String, Object> options = openApiBaseBody();
+        options.put("eventOptions", Map.of("..", Map.of("generateTests", true)));
+        assertThat(restTemplate.postForEntity("/starter-wizard.zip", options, String.class).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void anArtifactIdIsAPlainName() {
+        // It names the zip's root folder and the download. The framework cleans it for the pom,
+        // but the endpoints that build their own request used it as sent.
+        Map<String, Object> body = openApiPetstoreBody();
+        body.put("artifactId", "../../demo");
+        ResponseEntity<String> wizard = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+        assertThat(wizard.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(wizard.getBody()).contains("artifactId").contains("plain name");
+
+        ResponseEntity<String> modules = restTemplate.getForEntity(
+                "/starter-multimodule.zip?artifactId={artifactId}&modules=api", String.class, "../x");
+        assertThat(modules.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(modules.getBody()).contains("artifactId");
+
+        ResponseEntity<String> frontend = restTemplate.getForEntity(
+                "/frontend/starter.zip?projectName={name}", String.class, "../x");
+        assertThat(frontend.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(frontend.getBody()).contains("projectName").contains("plain name");
+    }
+
+    @Test
+    void aRequestsDocumentsHaveASizeLimit() {
+        // Each is parsed in memory; nothing used to bound them.
+        String large = "-- padding\n".repeat(5 * 1024 * 1024 / 11 + 1);
+        Map<String, Object> body = openApiBaseBody();
+        body.put("dependencies", List.of("data-jpa", "postgresql"));
+        body.put("sqlByDep", Map.of("postgresql", large + "CREATE TABLE t (id BIGINT PRIMARY KEY);"));
+        for (String endpoint : List.of("/starter-wizard.zip", "/starter-wizard.preview")) {
+            ResponseEntity<String> refused = restTemplate.postForEntity(endpoint, body, String.class);
+            assertThat(refused.getStatusCode()).as(endpoint).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(refused.getBody()).as(endpoint).contains("menora.wizard.max-documents-size");
+        }
+        for (Map.Entry<String, String> detect : Map.of("/starter-wizard.detect-paths", "spec",
+                "/starter-wizard.detect-channels", "spec", "/starter-wizard.detect-services", "wsdl",
+                "/metadata/fullstack/import-ddl", "sql").entrySet()) {
+            ResponseEntity<String> refused = restTemplate.postForEntity(detect.getKey(),
+                    Map.of(detect.getValue(), large), String.class);
+            assertThat(refused.getStatusCode()).as(detect.getKey()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(refused.getBody()).as(detect.getKey()).contains("menora.wizard.max-documents-size");
+        }
+    }
+
+    @Test
+    void aSpecThatRefersOutOfItselfIsRefused() {
+        // The parser would fetch the URL — from this server, for whoever posted the document.
+        String spec = """
+                openapi: 3.0.3
+                info: { title: Pets, version: "1.0" }
+                paths:
+                  /pets:
+                    get:
+                      operationId: listPets
+                      responses:
+                        '200':
+                          description: ok
+                          content:
+                            application/json:
+                              schema: { $ref: 'http://127.0.0.1:9/schemas.yaml#/Pet' }
+                """;
+        Map<String, Object> body = openApiBaseBody();
+        body.put("specByDep", Map.of("web", spec));
+        for (String endpoint : List.of("/starter-wizard.zip", "/starter-wizard.preview")) {
+            ResponseEntity<String> refused = restTemplate.postForEntity(endpoint, body, String.class);
+            assertThat(refused.getStatusCode()).as(endpoint).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(refused.getBody()).as(endpoint)
+                    .contains("Invalid OpenAPI spec")
+                    .contains("schema.$ref refers to 'http://127.0.0.1:9/schemas.yaml#/Pet'")
+                    .contains("not part of the document given");
+        }
+        ResponseEntity<String> detect = restTemplate.postForEntity("/starter-wizard.detect-paths",
+                Map.of("spec", spec), String.class);
+        assertThat(detect.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(detect.getBody()).contains("not part of the document given");
     }
 
     @Test

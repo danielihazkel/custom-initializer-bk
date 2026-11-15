@@ -40,6 +40,54 @@ public final class GeneratedProjectFiles {
 
     private GeneratedProjectFiles() {}
 
+    /**
+     * A name that is safe as one path segment, a zip's root folder and a download's file name:
+     * letters, digits, {@code _ . -}, starting with a letter, digit or underscore, without
+     * {@code ..}. An artifact id and a dependency id are both of this shape.
+     */
+    private static final java.util.regex.Pattern PLAIN_NAME =
+            java.util.regex.Pattern.compile("[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}");
+
+    /**
+     * {@code relative} under {@code root}, refused when it leads anywhere else.
+     *
+     * <p>Every path a generation writes is put together from text somebody typed: a wizard's
+     * sub-package, the key of a request map, a catalog row's target path, a template's path
+     * pattern. {@code root.resolve("../../x")} happily names a file outside the project — on the
+     * server's disk, since the project is generated into a temp directory there — so the paths
+     * built from such text go through here rather than through {@link Path#resolve(String)}.
+     *
+     * @throws WizardArgumentException (a 400) for an absolute path, one that climbs out of
+     *         {@code root}, {@code root} itself, or text that is no path at all
+     */
+    public static Path resolveInside(Path root, String relative) {
+        Path base = root.toAbsolutePath().normalize();
+        Path target;
+        try {
+            target = base.resolve(relative).normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            throw new WizardArgumentException("'" + relative + "' is not a file path");
+        }
+        if (target.equals(base) || !target.startsWith(base)) {
+            throw new WizardArgumentException("'" + relative + "' is not a path inside the project");
+        }
+        return target;
+    }
+
+    /**
+     * {@code value} when it is a plain name (see {@link #PLAIN_NAME}), a 400 naming
+     * {@code parameter} otherwise. For the request values that become a folder or a file name
+     * as they are: the artifact id (the zip's root folder, a module's directory, the download's
+     * name) and the dependency ids a wizard's documents are keyed by.
+     */
+    public static String requirePlainName(String value, String parameter) {
+        if (value == null || !PLAIN_NAME.matcher(value).matches() || value.contains("..")) {
+            throw new WizardArgumentException(parameter + " '" + value + "' must be a plain name: letters, "
+                    + "digits, '-', '_' and '.', starting with a letter or digit", parameter);
+        }
+        return value;
+    }
+
     /** Zip every regular file under {@code dir}, nested beneath a single {@code rootDirName} folder. */
     public static byte[] zipDirectory(Path dir, String rootDirName) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();

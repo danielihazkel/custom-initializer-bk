@@ -13,7 +13,6 @@ import io.swagger.v3.oas.models.parameters.RequestBody;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.parser.OpenAPIV3Parser;
-import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import org.springframework.stereotype.Service;
 
@@ -144,9 +143,14 @@ public class OpenApiCodeGenerator {
     // ── Parsing ───────────────────────────────────────────────────────────────
 
     private OpenAPI parseOrThrow(String spec) {
-        ParseOptions po = new ParseOptions();
-        po.setResolve(true);
-        SwaggerParseResult result = new OpenAPIV3Parser().readContents(spec, null, po);
+        // The parser fetches what a document refers to; one that refers outside itself is refused.
+        SelfContainedDocument.Checked document;
+        try {
+            document = SelfContainedDocument.check(spec);
+        } catch (SelfContainedDocument.ExternalReferenceException e) {
+            throw new OpenApiParseException(e.messages());
+        }
+        SwaggerParseResult result = new OpenAPIV3Parser().readContents(document.text(), null, document.parseOptions());
         if (result.getOpenAPI() == null) {
             List<String> msgs = result.getMessages() == null || result.getMessages().isEmpty()
                     ? List.of("Unrecognised OpenAPI document") : result.getMessages();

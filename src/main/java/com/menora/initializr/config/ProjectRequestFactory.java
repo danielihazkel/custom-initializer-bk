@@ -49,7 +49,8 @@ public class ProjectRequestFactory {
      * The request for {@code base} with {@code dependencies} (null: none named).
      *
      * @throws WizardArgumentException for a Spring Boot or Java version the metadata does not
-     *         offer — a clean 400 here instead of an opaque failure deep in generation
+     *         offer — a clean 400 here instead of an opaque failure deep in generation — and for
+     *         an artifact id that is not a plain name
      */
     /** Whether the catalog has a dependency with this id — before adding one a caller did not name. */
     public boolean offers(String dependencyId) {
@@ -63,7 +64,10 @@ public class ProjectRequestFactory {
         r.setLanguage(orDefault(base.language(), defaultOf(metadata.getLanguages())));
         r.setBootVersion(knownVersion(metadata.getBootVersions(), base.bootVersion(), "bootVersion"));
         r.setGroupId(orDefault(base.groupId(), metadata.getGroupId().getContent()));
-        r.setArtifactId(orDefault(base.artifactId(), metadata.getArtifactId().getContent()));
+        // The artifact id names the zip's root folder, a module's directory and the download:
+        // the framework cleans it for the pom, but these endpoints use it as it was sent.
+        r.setArtifactId(GeneratedProjectFiles.requirePlainName(
+                orDefault(base.artifactId(), metadata.getArtifactId().getContent()), "artifactId"));
         r.setName(orDefault(base.name(), r.getArtifactId()));
         r.setDescription(orDefault(base.description(), ""));
         r.setPackageName(orDefault(base.packageName(), r.getGroupId() + "." + r.getArtifactId()));

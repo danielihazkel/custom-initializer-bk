@@ -1093,7 +1093,7 @@ Every FE project description carries optional `apiBaseUrl` and `backendArtifactI
 
 The admin API manages the database that drives project generation. All changes take effect immediately after calling `/admin/refresh` — no restart needed.
 
-> **Note:** The admin API is protected by a single shared password read from the `admin.password` property (`application.yml`, default `changeme`). Override it per environment with `--admin.password=...` or `ADMIN_PASSWORD=...` (Spring's relaxed binding maps the env var onto the property). `POST /admin/login` exchanges the password for a bearer token held in memory for the JVM's lifetime; the admin UI manages login/logout automatically, and for curl you pass `Authorization: Bearer <token>`.
+> **Note:** The admin API is protected by a single shared password read from the `admin.password` property (`application.yml`, default `changeme`). Override it per environment with `--admin.password=...` or `ADMIN_PASSWORD=...` (Spring's relaxed binding maps the env var onto the property). `POST /admin/login` exchanges the password for a signed bearer token that expires by itself (`admin.token-ttl`, 12h); after ten wrong passwords in five minutes an address is answered 429 for the rest of that window (`admin.login.max-failures`, `admin.login.window`); the admin UI manages login/logout automatically, and for curl you pass `Authorization: Bearer <token>`.
 
 ### Hot-Reload Metadata
 

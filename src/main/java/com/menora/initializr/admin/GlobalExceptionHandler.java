@@ -1,5 +1,6 @@
 package com.menora.initializr.admin;
 
+import com.menora.initializr.config.WizardArgumentException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
@@ -68,6 +69,21 @@ public class GlobalExceptionHandler {
         log.warn("Request rejected as invalid argument", ex);
         return ResponseEntity.badRequest()
                 .body(Map.of("error", "Validation failed", "detail", String.valueOf(ex.getMessage())));
+    }
+
+    /**
+     * A request value the generators refuse, from an endpoint with no handler of its own for it:
+     * {@code /starter.zip} (the framework's controller) and the frontend endpoints. The wizard,
+     * fullstack, multi-module and patch controllers answer it themselves, clearing their
+     * per-request contexts as they do.
+     */
+    @ExceptionHandler(WizardArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidRequest(WizardArgumentException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "Invalid request");
+        body.put("detail", ex.getMessage());
+        if (ex.path() != null) body.put("path", ex.path());
+        return ResponseEntity.badRequest().body(body);
     }
 
     /**

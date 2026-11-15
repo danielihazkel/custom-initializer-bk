@@ -15,9 +15,9 @@ import com.menora.initializr.openapi.SchemaModel;
 import com.menora.initializr.openapi.SchemaRecordEmitter;
 import com.menora.initializr.openapi.SchemaRecordEmitter.JavaTypeRef;
 import com.menora.initializr.openapi.SchemaRecordEmitter.SchemaSet;
+import com.menora.initializr.openapi.SelfContainedDocument;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.parser.OpenAPIV3Parser;
-import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import org.springframework.stereotype.Service;
 
@@ -227,9 +227,14 @@ public class EventsCodeGenerator {
             } catch (JsonProcessingException e) {
                 throw new AsyncApiParseException("The document's schemas could not be read: " + e.getOriginalMessage());
             }
-            ParseOptions parseOptions = new ParseOptions();
-            parseOptions.setResolve(true);
-            SwaggerParseResult result = new OpenAPIV3Parser().readContents(text, null, parseOptions);
+            // A payload schema may refer to a URL or a file, which the parser would fetch.
+            SelfContainedDocument.Checked checked;
+            try {
+                checked = SelfContainedDocument.check(text);
+            } catch (SelfContainedDocument.ExternalReferenceException e) {
+                throw new AsyncApiParseException(e.messages());
+            }
+            SwaggerParseResult result = new OpenAPIV3Parser().readContents(checked.text(), null, checked.parseOptions());
             if (result.getOpenAPI() == null) {
                 List<String> messages = result.getMessages() == null || result.getMessages().isEmpty()
                         ? List.of("The document's schemas could not be read") : result.getMessages();

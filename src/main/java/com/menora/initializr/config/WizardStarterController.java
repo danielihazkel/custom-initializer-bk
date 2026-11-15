@@ -66,6 +66,7 @@ public class WizardStarterController {
     private final EventsCodeGenerator eventsGenerator;
     private final SqlEntityGenerator sqlGenerator;
     private final DependencyConfigService configService;
+    private final WizardDocumentLimit documentLimit;
 
     public WizardStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                    ProjectRequestFactory requestFactory,
@@ -78,7 +79,8 @@ public class WizardStarterController {
                                    SoapCodeGenerator soapGenerator,
                                    EventsCodeGenerator eventsGenerator,
                                    SqlEntityGenerator sqlGenerator,
-                                   DependencyConfigService configService) {
+                                   DependencyConfigService configService,
+                                   WizardDocumentLimit documentLimit) {
         this.invoker = invoker;
         this.requestFactory = requestFactory;
         this.optionsContext = optionsContext;
@@ -91,6 +93,7 @@ public class WizardStarterController {
         this.eventsGenerator = eventsGenerator;
         this.sqlGenerator = sqlGenerator;
         this.configService = configService;
+        this.documentLimit = documentLimit;
     }
 
     /** A project generated from a request body: where it is, and the request it resolved to. */
@@ -103,10 +106,7 @@ public class WizardStarterController {
      * do not see each other's.
      */
     GeneratedProject generateProject(WizardStarterRequest body) throws IOException {
-        validateSpecs(body);
-        validateWsdls(body);
-        validateEvents(body);
-        validateSql(body);
+        validate(body);
         WebProjectRequest request = toWebRequest(body);
         try {
             populateContexts(body);
@@ -123,10 +123,7 @@ public class WizardStarterController {
 
     @PostMapping("/starter-wizard.zip")
     public ResponseEntity<byte[]> generate(@RequestBody WizardStarterRequest body) throws IOException {
-        validateSpecs(body);
-        validateWsdls(body);
-        validateEvents(body);
-        validateSql(body);
+        validate(body);
         WebProjectRequest request = toWebRequest(body);
         Path projectDir = null;
         try {
@@ -150,10 +147,7 @@ public class WizardStarterController {
 
     @PostMapping("/starter-wizard.preview")
     public ProjectPreviewController.PreviewResponse preview(@RequestBody WizardStarterRequest body) throws IOException {
-        validateSpecs(body);
-        validateWsdls(body);
-        validateEvents(body);
-        validateSql(body);
+        validate(body);
         WebProjectRequest request = toWebRequest(body);
         Path projectDir = null;
         try {
@@ -185,6 +179,7 @@ public class WizardStarterController {
     /** Server-side path detection for the OpenAPI wizard's live preview. */
     @PostMapping("/starter-wizard.detect-paths")
     public List<String> detectPaths(@RequestBody DetectPathsRequest body) {
+        documentLimit.check(body.spec());
         return openApiGenerator.detectPaths(body.spec());
     }
 
@@ -195,12 +190,14 @@ public class WizardStarterController {
      */
     @PostMapping("/starter-wizard.detect-channels")
     public List<EventsCodeGenerator.DetectedChannel> detectChannels(@RequestBody DetectChannelsRequest body) {
+        documentLimit.check(body.spec());
         return eventsGenerator.detectChannels(body.spec());
     }
 
     /** Server-side service detection for the SOAP wizard's live preview. */
     @PostMapping("/starter-wizard.detect-services")
     public List<String> detectServices(@RequestBody DetectServicesRequest body) {
+        documentLimit.check(body.wsdl());
         return soapGenerator.detectServices(body.wsdl());
     }
 
@@ -253,6 +250,40 @@ public class WizardStarterController {
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
+
+    /** Everything checked before a project is generated, so a bad request is a 400 with nothing on disk. */
+    private void validate(WizardStarterRequest body) {
+        validateKeys(body);
+        documentLimit.check(body.sqlByDep(), body.specByDep(), body.wsdlByDep(), body.asyncApiByDep());
+        validateSpecs(body);
+        validateWsdls(body);
+        validateEvents(body);
+        validateSql(body);
+    }
+
+    /**
+     * A wizard's documents and options are keyed by the dependency they belong to, and a key is
+     * used as it is: the OpenAPI wizard's kept copy of the spec is {@code openapi/<key>.yaml}.
+     * So a key has to look like a dependency id — {@code ../../x} named a file outside the
+     * project, on the server's disk.
+     */
+    private static void validateKeys(WizardStarterRequest body) {
+        requireDependencyKeys(body.sqlByDep(), "sqlByDep");
+        requireDependencyKeys(body.sqlOptions(), "sqlOptions");
+        requireDependencyKeys(body.specByDep(), "specByDep");
+        requireDependencyKeys(body.openApiOptions(), "openApiOptions");
+        requireDependencyKeys(body.wsdlByDep(), "wsdlByDep");
+        requireDependencyKeys(body.soapOptions(), "soapOptions");
+        requireDependencyKeys(body.asyncApiByDep(), "asyncApiByDep");
+        requireDependencyKeys(body.eventOptions(), "eventOptions");
+    }
+
+    private static void requireDependencyKeys(Map<String, ?> byDependency, String parameter) {
+        if (byDependency == null) return;
+        for (String key : byDependency.keySet()) {
+            GeneratedProjectFiles.requirePlainName(key, parameter);
+        }
+    }
 
     /**
      * Runs every submitted spec through the generator once up-front so parse

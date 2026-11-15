@@ -157,7 +157,8 @@ public class FrontendStarterController {
                                                         String backendArtifactId,
                                                         boolean rtl) {
         FrontendProjectDescription desc = new FrontendProjectDescription();
-        desc.setProjectName(projectName);
+        // The zip's root folder, the download's name and a {{projectName}} in a target path.
+        desc.setProjectName(GeneratedProjectFiles.requirePlainName(projectName, "projectName"));
         desc.setDescription(description);
         desc.setScope(scope);
         desc.setAppTitle(appTitle.isBlank() ? toTitleCase(projectName) : appTitle);

@@ -101,7 +101,8 @@ public class DynamicProjectGenerationConfiguration {
             for (FileContributionEntity fc : contributions) {
                 if (isGatedOut(fc, description, optionsContext)) continue;
 
-                Path target = projectRoot.resolve(resolveTargetPath(fc.getTargetPath(), description));
+                Path target = GeneratedProjectFiles.resolveInside(projectRoot,
+                        resolveTargetPath(fc.getTargetPath(), description));
 
                 switch (fc.getFileType()) {
                     case YAML_MERGE -> mergeYaml(render(fc, baseContext), target);
@@ -132,7 +133,8 @@ public class DynamicProjectGenerationConfiguration {
                 // Same gating and path resolution as the write pass — a DELETE row can be
                 // gated on a sub-option or Java version, and can use {{packagePath}}.
                 if (isGatedOut(fc, description, optionsContext)) continue;
-                Files.deleteIfExists(projectRoot.resolve(resolveTargetPath(fc.getTargetPath(), description)));
+                Files.deleteIfExists(GeneratedProjectFiles.resolveInside(projectRoot,
+                        resolveTargetPath(fc.getTargetPath(), description)));
             }
         };
     }
@@ -320,7 +322,7 @@ public class DynamicProjectGenerationConfiguration {
                         if (baselineWritten) continue;
                         baselineWritten = true;
                     }
-                    Path target = projectRoot.resolve(
+                    Path target = GeneratedProjectFiles.resolveInside(projectRoot,
                             f.relativePath().replace("{{packagePath}}", packagePath));
                     GeneratedProjectFiles.createParentDirectories(target);
                     Files.writeString(target, f.content());
@@ -354,13 +356,14 @@ public class DynamicProjectGenerationConfiguration {
                 if (opts != null && opts.copySpec()) {
                     // The contract the code was written from, kept beside it: JSON when it is JSON.
                     String extension = spec.stripLeading().startsWith("{") ? "json" : "yaml";
-                    Path copy = projectRoot.resolve("src/main/resources/openapi/" + entry.getKey() + "." + extension);
+                    Path copy = GeneratedProjectFiles.resolveInside(projectRoot,
+                            "src/main/resources/openapi/" + entry.getKey() + "." + extension);
                     GeneratedProjectFiles.createParentDirectories(copy);
                     Files.writeString(copy, spec);
                 }
                 String packagePath = description.getPackageName().replace('.', '/');
                 for (GeneratedOpenApiFile f : files) {
-                    Path target = projectRoot.resolve(
+                    Path target = GeneratedProjectFiles.resolveInside(projectRoot,
                             f.relativePath().replace("{{packagePath}}", packagePath));
                     if (isYaml(target)) {
                         mergeYaml(f.content(), target);
@@ -495,7 +498,8 @@ public class DynamicProjectGenerationConfiguration {
                 EventsWizardOptions opts = eventsContext.optionsFor(entry.getKey());
                 for (EventsCodeGenerator.GeneratedEventFile f
                         : generator.generate(document, description.getPackageName(), opts, facts)) {
-                    Path target = projectRoot.resolve(f.relativePath().replace("{{packagePath}}", packagePath));
+                    Path target = GeneratedProjectFiles.resolveInside(projectRoot,
+                            f.relativePath().replace("{{packagePath}}", packagePath));
                     if (isYaml(target)) {
                         mergeYaml(f.content(), target);
                     } else {
@@ -543,7 +547,7 @@ public class DynamicProjectGenerationConfiguration {
                         wsdl, description.getPackageName(), opts);
                 String packagePath = description.getPackageName().replace('.', '/');
                 for (GeneratedSoapFile f : files) {
-                    Path target = projectRoot.resolve(
+                    Path target = GeneratedProjectFiles.resolveInside(projectRoot,
                             f.relativePath().replace("{{packagePath}}", packagePath));
                     if (isYaml(target)) {
                         mergeYaml(f.content(), target);

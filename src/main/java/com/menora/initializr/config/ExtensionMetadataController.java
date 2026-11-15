@@ -53,6 +53,7 @@ public class ExtensionMetadataController {
     private final EntityTemplateSetRepository entityTemplateSetRepo;
     private final EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo;
     private final SqlToEntityDefinitionConverter sqlToEntityConverter;
+    private final WizardDocumentLimit documentLimit;
 
     public ExtensionMetadataController(DependencyConfigService configService,
                                        DependencyCompatibilityRepository compatibilityRepo,
@@ -63,7 +64,8 @@ public class ExtensionMetadataController {
                                        DependencyEntryRepository entryRepo,
                                        EntityTemplateSetRepository entityTemplateSetRepo,
                                        EntityTemplateSetDefaultDepRepository entityTemplateSetDefaultDepRepo,
-                                       SqlToEntityDefinitionConverter sqlToEntityConverter) {
+                                       SqlToEntityDefinitionConverter sqlToEntityConverter,
+                                       WizardDocumentLimit documentLimit) {
         this.configService = configService;
         this.compatibilityRepo = compatibilityRepo;
         this.templateRepo = templateRepo;
@@ -74,6 +76,7 @@ public class ExtensionMetadataController {
         this.entityTemplateSetRepo = entityTemplateSetRepo;
         this.entityTemplateSetDefaultDepRepo = entityTemplateSetDefaultDepRepo;
         this.sqlToEntityConverter = sqlToEntityConverter;
+        this.documentLimit = documentLimit;
     }
 
     @GetMapping("/metadata/extensions")
@@ -249,6 +252,7 @@ public class ExtensionMetadataController {
     public ImportDdlResponse importDdl(@RequestBody ImportDdlRequest req) {
         SqlDialect dialect = parseDialect(req == null ? null : req.dialect());
         String sql = req == null ? null : req.sql();
+        documentLimit.check(sql);
         return new ImportDdlResponse(toWire(sqlToEntityConverter.convert(sql, dialect)), null);
     }
 
@@ -263,6 +267,7 @@ public class ExtensionMetadataController {
     public ImportDdlResponse importSelect(@RequestBody ImportDdlRequest req) {
         SqlDialect dialect = parseDialect(req == null ? null : req.dialect());
         String sql = req == null ? null : req.sql();
+        documentLimit.check(sql);
         SqlToEntityDefinitionConverter.SelectImportResult result =
                 sqlToEntityConverter.convertSelect(sql, dialect);
         return new ImportDdlResponse(toWire(result.entities()), result.note());
