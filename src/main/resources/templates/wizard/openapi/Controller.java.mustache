@@ -10,9 +10,12 @@ import {{.}};
 public class {{className}} {
 
 {{#operations}}
-{{#hasSummary}}
-    /** {{summaryJavadoc}} */
-{{/hasSummary}}
+{{#javadoc}}
+{{.}}
+{{/javadoc}}
+{{#securityAnnotations}}
+    {{.}}
+{{/securityAnnotations}}
     {{mappingLine}}
 {{#hasStatus}}
     {{statusLine}}

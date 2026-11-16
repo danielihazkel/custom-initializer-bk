@@ -79,6 +79,19 @@ class WizardGoldenOutputTests {
         // A RestClient client with the document kept in the project; no web starter named (it is added).
         golden.pin("openapi__client__rest-client__copy-spec", wizard(openApiBody("CLIENT", List.of("validation"), Map.of(
                 "clientKind", "restClient", "copySpec", true))));
+        // The interface style: an Api interface per tag and the class that implements it.
+        golden.pin("openapi__both__interfaces", wizard(openApiBody("BOTH", List.of("web", "validation"), Map.of(
+                "apiStyle", "interfaces"))));
+        // Security schemes, a multipart and a form body: springdoc declares the schemes, the
+        // RestClient client sends the credentials; and the same as classes with RestTemplate (the
+        // wizard adds springdoc with the controllers either way).
+        Map<String, Object> secure = openApiBody("BOTH", List.of("web", "validation", "openapi"), Map.of(
+                "apiStyle", "interfaces", "clientKind", "restClient"));
+        secure.put("specByDep", Map.of("web", fixture("secure-forms.yaml")));
+        golden.pin("openapi__secure-forms__interfaces", wizard(secure));
+        Map<String, Object> secureClasses = openApiBody("BOTH", List.of("web"), null);
+        secureClasses.put("specByDep", Map.of("web", fixture("secure-forms.yaml")));
+        golden.pin("openapi__secure-forms__classes", wizard(secureClasses));
 
         // The events wizard: an AsyncAPI 3 document as the application it describes; the same events
         // as a 2.x document, for the other party, with chosen channels, tests and validation.

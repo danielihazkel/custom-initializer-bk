@@ -12,6 +12,12 @@ import java.util.Locale;
  * <p>{@code clientKind}: what the generated client calls through — {@code RestTemplate} (the
  * default, as before) or Spring 6.1's {@code RestClient}. {@code copySpec}: keep the document in
  * the project, under {@code src/main/resources/openapi/}.
+ *
+ * <p>{@code apiStyle}: how the server side is written. {@code CLASSES} (what a request that names no
+ * style gets, as before) is one concrete {@code <Tag>Controller} per tag with TODO bodies;
+ * {@code INTERFACES} is a {@code <Tag>Api} interface carrying every mapping, whose methods answer
+ * 501 until overridden, and a {@code <Tag>Controller} that implements it, written once and never
+ * changed by the spec — so an update of the spec patches only the interface.
  */
 public record OpenApiWizardOptions(
         String apiSubPackage,
@@ -20,12 +26,39 @@ public record OpenApiWizardOptions(
         GenerationMode mode,
         String baseUrlProperty,
         ClientKind clientKind,
-        boolean copySpec) {
+        boolean copySpec,
+        ApiStyle apiStyle) {
 
     /** The options before the client kind and the spec copy existed. */
     public OpenApiWizardOptions(String apiSubPackage, String dtoSubPackage, String clientSubPackage,
                                 GenerationMode mode, String baseUrlProperty) {
-        this(apiSubPackage, dtoSubPackage, clientSubPackage, mode, baseUrlProperty, null, false);
+        this(apiSubPackage, dtoSubPackage, clientSubPackage, mode, baseUrlProperty, null, false, null);
+    }
+
+    /** The options before the API style existed. */
+    public OpenApiWizardOptions(String apiSubPackage, String dtoSubPackage, String clientSubPackage,
+                                GenerationMode mode, String baseUrlProperty, ClientKind clientKind, boolean copySpec) {
+        this(apiSubPackage, dtoSubPackage, clientSubPackage, mode, baseUrlProperty, clientKind, copySpec, null);
+    }
+
+    public enum ApiStyle {
+        CLASSES, INTERFACES;
+
+        /** {@code classes} / {@code interfaces}, in any case; absent → null (classes). */
+        public static ApiStyle parse(String raw) {
+            if (raw == null || raw.isBlank()) return null;
+            return switch (raw.trim().toLowerCase(Locale.ROOT)) {
+                case "classes" -> CLASSES;
+                case "interfaces" -> INTERFACES;
+                default -> throw new WizardArgumentException(
+                        "Unknown OpenAPI wizard apiStyle: '" + raw + "'. Valid values: classes, interfaces");
+            };
+        }
+    }
+
+    /** The server side as an interface per tag and an implementation written once. */
+    public boolean interfaces() {
+        return apiStyle == ApiStyle.INTERFACES;
     }
 
     public enum ClientKind {

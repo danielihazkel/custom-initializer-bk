@@ -8,9 +8,15 @@ import {{.}};
 public class {{className}} {
 
     private final RestClient restClient;
+{{#credentials}}
+    private final OpenApiCredentials credentials;
+{{/credentials}}
 
-    public {{className}}(RestClient openApiRestClient) {
+    public {{className}}(RestClient openApiRestClient{{#credentials}}, OpenApiCredentials credentials{{/credentials}}) {
         this.restClient = openApiRestClient;
+{{#credentials}}
+        this.credentials = credentials;
+{{/credentials}}
     }
 
 {{#operations}}
@@ -18,11 +24,17 @@ public class {{className}} {
     /** {{summaryJavadoc}} */
 {{/hasSummary}}
     public {{returnType}} {{operationId}}({{arguments}}) {
+{{#formLines}}
+        {{.}}
+{{/formLines}}
         {{returnKeyword}}restClient.method(HttpMethod.{{httpMethod}})
                 .uri(uriBuilder -> uriBuilder.path("{{path}}")
 {{#queryParams}}
                         .queryParamIfPresent("{{wireName}}", Optional.ofNullable({{name}}))
 {{/queryParams}}
+{{#authQuery}}
+                        {{.}}
+{{/authQuery}}
                         .build({{pathArguments}}))
 {{#hasHeaders}}
                 .headers(httpHeaders -> {
@@ -32,10 +44,16 @@ public class {{className}} {
 {{#cookieParams}}
                     {{^required}}if ({{name}} != null) {{/required}}httpHeaders.add(HttpHeaders.COOKIE, "{{wireName}}=" + {{name}});
 {{/cookieParams}}
+{{#authHeaders}}
+                    {{.}}
+{{/authHeaders}}
                 })
 {{/hasHeaders}}
+{{#contentType}}
+                {{.}}
+{{/contentType}}
 {{#hasBody}}
-                .body(body)
+                .body({{bodyVar}})
 {{/hasBody}}
                 .retrieve()
                 .{{terminal}};

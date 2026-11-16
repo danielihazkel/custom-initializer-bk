@@ -1,0 +1,18 @@
+package {{package}};
+
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * Implements {@link {{apiName}}}: override an operation here to implement it. This class is yours —
+ * generating the project again from a changed document, or downloading an update of it, rewrites
+ * {@code {{apiName}}} and leaves this file alone; an operation the document adds answers 501 until it
+ * is overridden.
+ *
+ * <p>Override with the signature alone: the mapping, the parameters' bindings and their constraints
+ * are the interface's, and Bean Validation refuses an override that declares constraints of its own.
+ */
+@RestController
+@Validated
+public class {{className}} implements {{apiName}} {
+}

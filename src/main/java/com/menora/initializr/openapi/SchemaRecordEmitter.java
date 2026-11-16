@@ -59,7 +59,11 @@ public final class SchemaRecordEmitter {
             "DeleteMapping", "PatchMapping", "RequestBody", "PathVariable", "RequestParam", "RequestHeader",
             "CookieValue", "ResponseStatus", "HttpStatus", "RequestMethod", "DateTimeFormat", "Component", "Value",
             "HttpEntity", "HttpHeaders", "HttpMethod", "ResponseEntity", "RestTemplate", "RestClient",
-            "UriComponentsBuilder", "ParameterizedTypeReference", "Configuration", "Bean");
+            "UriComponentsBuilder", "ParameterizedTypeReference", "Configuration", "Bean",
+            // The interfaces, forms and security the wizard writes too.
+            "MultipartFile", "Resource", "MultiValueMap", "LinkedMultiValueMap", "MediaType", "RequestPart",
+            "ResponseStatusException", "SecurityRequirement", "SecurityScheme", "SecuritySchemes",
+            "SecuritySchemeType", "SecuritySchemeIn", "OpenApiCredentials");
 
     /** Every {@code components.schemas} entry that becomes a type, by type name — without constraints. */
     public static Map<String, SchemaModel> schemas(OpenAPI api) {
@@ -221,6 +225,30 @@ public final class SchemaRecordEmitter {
                 imports.add("jakarta.validation.Valid");
             }
             return out;
+        }
+
+        /**
+         * The properties of an object schema — a reference followed, {@code allOf} parts merged —
+         * in the document's order; the names it requires are added to {@code required}. Empty for
+         * anything that is not an object.
+         */
+        public Map<String, Schema> propertiesOf(Schema schema, Set<String> required) {
+            Map<String, Schema> props = new LinkedHashMap<>();
+            collect(schema, props, required, Collections.newSetFromMap(new IdentityHashMap<>()));
+            return props;
+        }
+
+        /** {@code type: string, format: binary} (or {@code byte}), a reference followed: a file in a form. */
+        public boolean isBinary(Schema schema) {
+            Schema s = effective(schema);
+            return s != null && "string".equals(typeName(s))
+                    && ("binary".equals(s.getFormat()) || "byte".equals(s.getFormat()));
+        }
+
+        /** An array of binary items. */
+        public boolean isBinaryArray(Schema schema) {
+            Schema s = effective(schema);
+            return s != null && "array".equals(typeName(s)) && s.getItems() != null && isBinary(s.getItems());
         }
 
         // ── Classification ────────────────────────────────────────────────────

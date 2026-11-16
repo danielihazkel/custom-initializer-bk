@@ -6,12 +6,15 @@ import com.menora.initializr.openapi.SchemaRecordEmitter.SchemaSet;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
+import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.parameters.RequestBody;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import org.springframework.stereotype.Service;
@@ -29,9 +32,9 @@ import java.util.regex.Pattern;
 
 /**
  * Parses an OpenAPI 3.x spec via swagger-parser and emits Spring MVC
- * controllers, clients and the DTO types they exchange ({@link SchemaRecordEmitter}).
- * One instance handles one spec at generation time; it is stateless and
- * {@code @Service}-scoped.
+ * controllers (or interfaces and their implementations), clients and the DTO types they exchange
+ * ({@link SchemaRecordEmitter}). One instance handles one spec at generation time; it is stateless
+ * and {@code @Service}-scoped.
  */
 @Service
 public class OpenApiCodeGenerator {
@@ -57,9 +60,12 @@ public class OpenApiCodeGenerator {
     /** Names the generated methods use themselves: a parameter called one of these is renamed. */
     private static final Set<String> RESERVED_PARAMETER_NAMES = Set.of(
             "body", "uri", "builder", "headers", "response", "restTemplate", "restClient", "baseUrl",
-            "uriBuilder", "httpHeaders");
+            "uriBuilder", "httpHeaders", "form", "credentials");
 
     private static final Pattern PATH_VARIABLE = Pattern.compile("\\{([^}/]+)}");
+
+    private static final String MULTIPART = "multipart/form-data";
+    private static final String FORM = "application/x-www-form-urlencoded";
 
     public List<GeneratedOpenApiFile> generate(String spec, String packageName, OpenApiWizardOptions options) {
         // Default: do not emit Bean Validation. The 3-arg path is used by the discard-only
@@ -74,6 +80,16 @@ public class OpenApiCodeGenerator {
      */
     public List<GeneratedOpenApiFile> generate(String spec, String packageName,
                                                OpenApiWizardOptions options, boolean hasValidation) {
+        return generate(spec, packageName, options, hasValidation, false);
+    }
+
+    /**
+     * @param springdoc whether springdoc (the {@code openapi} dependency) is on the build: the
+     *                  document's security schemes are then declared for the generated API
+     *                  documentation, and each operation names the ones it requires.
+     */
+    public List<GeneratedOpenApiFile> generate(String spec, String packageName, OpenApiWizardOptions options,
+                                               boolean hasValidation, boolean springdoc) {
         if (spec == null || spec.isBlank()) return List.of();
         OpenAPI api = parseOrThrow(spec);
         OpenApiWizardOptions opts = options != null ? options
@@ -81,8 +97,9 @@ public class OpenApiCodeGenerator {
 
         String dtoPackage = packageName + "." + opts.dtoPackageOrDefault();
         SchemaSet schemas = SchemaRecordEmitter.read(api, hasValidation, dtoPackage);
+        Map<String, SecurityUse> schemes = securitySchemes(api);
         // Reading the operations names the objects written inside them (a request body, a response).
-        List<OperationModel> operations = buildOperations(api, schemas);
+        List<OperationModel> operations = buildOperations(api, schemas, schemes);
 
         List<GeneratedOpenApiFile> out = new ArrayList<>();
         for (SchemaModel s : schemas.models().values()) {
@@ -91,18 +108,27 @@ public class OpenApiCodeGenerator {
                     SchemaRecordEmitter.render(s, dtoPackage)));
         }
         Map<String, List<OperationModel>> byTag = groupByTag(operations);
+        boolean documented = springdoc && operations.stream().anyMatch(op -> !op.security().isEmpty());
         if (opts.emitControllers()) {
             for (var group : byTag.entrySet()) {
-                out.add(renderController(group.getKey(), group.getValue(), packageName, opts, hasValidation));
+                if (opts.interfaces()) {
+                    out.add(renderApi(group.getKey(), group.getValue(), packageName, opts, hasValidation, documented));
+                    out.add(renderApiController(group.getKey(), packageName, opts));
+                } else {
+                    out.add(renderController(group.getKey(), group.getValue(), packageName, opts, hasValidation, documented));
+                }
             }
+            if (documented) out.add(renderSecuritySchemes(api, packageName, opts));
         }
         if (opts.emitClient() && !byTag.isEmpty()) {
             boolean restClient = opts.clientKindOrDefault() == OpenApiWizardOptions.ClientKind.REST_CLIENT;
+            Map<String, CredentialField> credentials = credentialFields(operations, opts);
             for (var group : byTag.entrySet()) {
-                out.add(renderClient(group.getKey(), group.getValue(), packageName, opts, restClient));
+                out.add(renderClient(group.getKey(), group.getValue(), packageName, opts, restClient, credentials));
             }
             out.add(renderClientConfig(packageName, opts, restClient));
-            out.add(renderApplicationYmlStub(opts));
+            if (!credentials.isEmpty()) out.add(renderCredentials(packageName, opts, credentials));
+            out.add(renderApplicationYmlStub(opts, credentials));
         }
         return out;
     }
@@ -161,7 +187,7 @@ public class OpenApiCodeGenerator {
 
     // ── Operations ────────────────────────────────────────────────────────────
 
-    private List<OperationModel> buildOperations(OpenAPI api, SchemaSet schemas) {
+    private List<OperationModel> buildOperations(OpenAPI api, SchemaSet schemas, Map<String, SecurityUse> schemes) {
         List<OperationModel> out = new ArrayList<>();
         if (api.getPaths() == null) return out;
         Set<String> usedOpIds = new LinkedHashSet<>();
@@ -171,15 +197,15 @@ public class OpenApiCodeGenerator {
             // HEAD and OPTIONS were listed by the preview and then left out of the code.
             for (String method : METHODS) {
                 Operation op = operationOf(item, method);
-                if (op != null) out.add(toOperation(usedOpIds, schemas, method, e.getKey(), item, op));
+                if (op != null) out.add(toOperation(api, usedOpIds, schemas, schemes, method, e.getKey(), item, op));
             }
         }
         return out;
     }
 
     @SuppressWarnings("rawtypes")
-    private OperationModel toOperation(Set<String> usedOpIds, SchemaSet schemas, String method, String path,
-                                       PathItem item, Operation op) {
+    private OperationModel toOperation(OpenAPI api, Set<String> usedOpIds, SchemaSet schemas, Map<String, SecurityUse> schemes,
+                                       String method, String path, PathItem item, Operation op) {
         String opIdRaw = op.getOperationId();
         String opId = (opIdRaw == null || opIdRaw.isBlank())
                 ? fallbackOpId(method, path) : SchemaRecordEmitter.javaName(opIdRaw);
@@ -206,12 +232,7 @@ public class OpenApiCodeGenerator {
             Set<String> annotationImports = new LinkedHashSet<>();
             // "required" is the binding annotation's to say; the rest are the schema's constraints.
             List<String> annotations = new ArrayList<>(schemas.constraintsOf(schema, type, false, annotationImports));
-            String format = dateFormatOf(type.typeName());
-            if (format != null) {
-                // Without it Spring reads a date in the server locale's short style, not ISO 8601.
-                annotations.add("@DateTimeFormat(iso = DateTimeFormat.ISO." + format + ")");
-                annotationImports.add("org.springframework.format.annotation.DateTimeFormat");
-            }
+            addDateFormat(type, annotations, annotationImports);
             params.add(new ParamModel(
                     parameterName(p.getName(), usedNames),
                     p.getName(),
@@ -227,16 +248,33 @@ public class OpenApiCodeGenerator {
         String reqType = null;
         Set<String> reqImports = Set.of();
         boolean reqRequired = true;
+        OperationModel.BodyKind bodyKind = OperationModel.BodyKind.NONE;
+        List<FormField> formFields = List.of();
         RequestBody rb = op.getRequestBody();
         if (rb != null && rb.getContent() != null) {
-            MediaType mt = pickJsonOrFirst(rb.getContent());
-            if (mt != null && mt.getSchema() != null) {
-                JavaTypeRef tr = schemas.typeOf(mt.getSchema(), typeStem + "Request");
-                reqType = tr.typeName();
-                reqImports = tr.imports();
-                // Only a document that says "required: false" gets an optional body; one that says
-                // nothing keeps Spring's default, as before.
+            Content content = rb.getContent();
+            MediaType multipart = content.get(MULTIPART);
+            MediaType form = content.get(FORM);
+            // JSON when the document offers it; a form only when it is the body's way in.
+            if (content.get("application/json") == null && multipart != null && multipart.getSchema() != null) {
+                bodyKind = OperationModel.BodyKind.MULTIPART;
                 reqRequired = !Boolean.FALSE.equals(rb.getRequired());
+                formFields = formFields(schemas, multipart.getSchema(), typeStem, true, reqRequired, usedNames);
+            } else if (content.get("application/json") == null && form != null && form.getSchema() != null) {
+                bodyKind = OperationModel.BodyKind.FORM;
+                reqRequired = !Boolean.FALSE.equals(rb.getRequired());
+                formFields = formFields(schemas, form.getSchema(), typeStem, false, reqRequired, usedNames);
+            } else {
+                MediaType mt = pickJsonOrFirst(content);
+                if (mt != null && mt.getSchema() != null) {
+                    JavaTypeRef tr = schemas.typeOf(mt.getSchema(), typeStem + "Request");
+                    reqType = tr.typeName();
+                    reqImports = tr.imports();
+                    // Only a document that says "required: false" gets an optional body; one that says
+                    // nothing keeps Spring's default, as before.
+                    reqRequired = !Boolean.FALSE.equals(rb.getRequired());
+                    bodyKind = OperationModel.BodyKind.JSON;
+                }
             }
         }
 
@@ -259,7 +297,73 @@ public class OpenApiCodeGenerator {
         }
 
         return new OperationModel(method, path, opId, tag, op.getSummary(),
-                params, reqType, reqImports, reqRequired, respType, respImports, status);
+                params, reqType, reqImports, reqRequired, respType, respImports, status,
+                bodyKind, formFields, securityOf(api, op, schemes));
+    }
+
+    /**
+     * The properties of a form body, each a parameter of its own: a binary one a file
+     * ({@code MultipartFile} in the controller, a {@code Resource} in the client), an object in a
+     * multipart body a JSON part, anything else a plain field. A form-urlencoded body has no parts:
+     * an object there travels as text.
+     */
+    @SuppressWarnings("rawtypes")
+    private static List<FormField> formFields(SchemaSet schemas, Schema body, String typeStem, boolean multipart,
+                                              boolean bodyRequired, Set<String> usedNames) {
+        Set<String> required = new LinkedHashSet<>();
+        Map<String, Schema> props = schemas.propertiesOf(body, required);
+        List<FormField> out = new ArrayList<>();
+        for (var e : props.entrySet()) {
+            String wire = e.getKey();
+            Schema prop = e.getValue();
+            boolean req = bodyRequired && required.contains(wire);
+            String name = parameterName(wire, usedNames);
+            if (multipart && schemas.isBinary(prop)) {
+                out.add(new FormField(name, wire, FormField.Part.FILE,
+                        "MultipartFile", Set.of("org.springframework.web.multipart.MultipartFile"),
+                        "Resource", Set.of("org.springframework.core.io.Resource"), req, List.of(), Set.of()));
+                continue;
+            }
+            if (multipart && schemas.isBinaryArray(prop)) {
+                out.add(new FormField(name, wire, FormField.Part.FILES,
+                        "List<MultipartFile>", Set.of("java.util.List", "org.springframework.web.multipart.MultipartFile"),
+                        "List<Resource>", Set.of("java.util.List", "org.springframework.core.io.Resource"), req, List.of(), Set.of()));
+                continue;
+            }
+            JavaTypeRef type = schemas.parameterTypeOf(prop);
+            FormField.Part kind = FormField.Part.FIELD;
+            if (isObject(schemas, type)) {
+                if (multipart) {
+                    type = schemas.typeOf(prop, typeStem + toPascalCase(wire));
+                    kind = FormField.Part.JSON;
+                } else {
+                    type = new JavaTypeRef("String", Set.of());
+                }
+            }
+            Set<String> annotationImports = new LinkedHashSet<>();
+            List<String> annotations = new ArrayList<>(schemas.constraintsOf(prop, type, false, annotationImports));
+            if (kind == FormField.Part.FIELD) addDateFormat(type, annotations, annotationImports);
+            out.add(new FormField(name, wire, kind, type.typeName(), type.imports(), type.typeName(), type.imports(),
+                    req, List.copyOf(annotations), annotationImports));
+        }
+        return out;
+    }
+
+    /** An object: a record, a union, a map or an untyped one — not something a form field holds. */
+    private static boolean isObject(SchemaSet schemas, JavaTypeRef type) {
+        String name = type.typeName();
+        if (name.equals("Object") || name.startsWith("Map<")) return true;
+        SchemaModel model = schemas.models().get(name);
+        return model != null && model.kind() != SchemaModel.Kind.ENUM;
+    }
+
+    private static void addDateFormat(JavaTypeRef type, List<String> annotations, Set<String> imports) {
+        String format = dateFormatOf(type.typeName());
+        if (format != null) {
+            // Without it Spring reads a date in the server locale's short style, not ISO 8601.
+            annotations.add("@DateTimeFormat(iso = DateTimeFormat.ISO." + format + ")");
+            imports.add("org.springframework.format.annotation.DateTimeFormat");
+        }
     }
 
     /** The operation's parameters, after those declared once for the whole path (which it may override). */
@@ -316,19 +420,233 @@ public class OpenApiCodeGenerator {
         return map;
     }
 
+    // ── Security ──────────────────────────────────────────────────────────────
+
+    /** Every {@code components.securitySchemes} entry, by its name in the document. */
+    private static Map<String, SecurityUse> securitySchemes(OpenAPI api) {
+        Map<String, SecurityUse> out = new LinkedHashMap<>();
+        if (api.getComponents() == null || api.getComponents().getSecuritySchemes() == null) return out;
+        Set<String> used = new LinkedHashSet<>();
+        api.getComponents().getSecuritySchemes().forEach((name, scheme) -> {
+            if (scheme == null || scheme.getType() == null) return;
+            out.put(name, useOf(name, uniqueName(SchemaRecordEmitter.javaName(name), used), scheme));
+        });
+        return out;
+    }
+
+    private static SecurityUse useOf(String name, String javaName, SecurityScheme scheme) {
+        return switch (scheme.getType()) {
+            case APIKEY -> {
+                String in = scheme.getIn() == null ? "header" : scheme.getIn().toString().toLowerCase(Locale.ROOT);
+                SecurityUse.Kind kind = switch (in) {
+                    case "query" -> SecurityUse.Kind.API_KEY_QUERY;
+                    case "cookie" -> SecurityUse.Kind.API_KEY_COOKIE;
+                    default -> SecurityUse.Kind.API_KEY_HEADER;
+                };
+                String param = scheme.getName() == null || scheme.getName().isBlank() ? "api_key" : scheme.getName();
+                yield new SecurityUse(name, javaName, kind, param, "API key in " + in + " " + param);
+            }
+            case HTTP -> {
+                String s = scheme.getScheme() == null ? "" : scheme.getScheme().toLowerCase(Locale.ROOT);
+                yield switch (s) {
+                    case "bearer" -> new SecurityUse(name, javaName, SecurityUse.Kind.BEARER, null, "HTTP bearer token");
+                    case "basic" -> new SecurityUse(name, javaName, SecurityUse.Kind.BASIC, null, "HTTP basic");
+                    default -> new SecurityUse(name, javaName, SecurityUse.Kind.OTHER, null, "HTTP " + s);
+                };
+            }
+            case OAUTH2 -> new SecurityUse(name, javaName, SecurityUse.Kind.BEARER, null, "OAuth2 access token");
+            case OPENIDCONNECT -> new SecurityUse(name, javaName, SecurityUse.Kind.BEARER, null, "OpenID Connect token");
+            case MUTUALTLS -> new SecurityUse(name, javaName, SecurityUse.Kind.OTHER, null, "mutual TLS");
+        };
+    }
+
+    /**
+     * The requirements an operation declares — its own, else the document's. Each is an
+     * alternative; an empty one ({@code {}}) says the operation may be called without any, and so
+     * does an empty list. A scheme the document does not define is left out.
+     */
+    private static List<List<SecurityUse>> securityOf(OpenAPI api, Operation op, Map<String, SecurityUse> schemes) {
+        List<SecurityRequirement> requirements = op.getSecurity() != null ? op.getSecurity() : api.getSecurity();
+        if (requirements == null) return List.of();
+        List<List<SecurityUse>> out = new ArrayList<>();
+        boolean any = false;
+        for (SecurityRequirement requirement : requirements) {
+            List<SecurityUse> alternative = new ArrayList<>();
+            if (requirement != null) {
+                for (String name : requirement.keySet()) {
+                    SecurityUse use = schemes.get(name);
+                    if (use != null) alternative.add(use);
+                }
+            }
+            any |= !alternative.isEmpty();
+            out.add(List.copyOf(alternative));
+        }
+        return any ? List.copyOf(out) : List.of();
+    }
+
+    /**
+     * Javadoc for a server method: the summary as before, and — when the operation is secured and
+     * springdoc does not say so — which schemes it requires. Lines with their indentation.
+     */
+    private static List<String> serverJavadoc(OperationModel op, boolean documented) {
+        boolean summarized = op.summary() != null && !op.summary().isBlank();
+        String summary = summarized ? SchemaRecordEmitter.escapeJavadoc(op.summary()) : null;
+        if (op.security().isEmpty() || documented) {
+            return summarized ? List.of("    /** " + summary + " */") : List.of();
+        }
+        List<String> lines = new ArrayList<>();
+        lines.add("    /**");
+        if (summarized) {
+            lines.add("     * " + summary);
+            lines.add("     *");
+        }
+        lines.add("     * " + (summarized ? "<p>" : "") + "Security: " + SchemaRecordEmitter.escapeJavadoc(requirementText(op.security())) + ".");
+        lines.add("     * Not checked here: the gateway, or the application's own security, enforces it.");
+        lines.add("     */");
+        return lines;
+    }
+
+    /** {@code api_key (API key in header X-API-Key) or petstore_auth (OAuth2 access token)}. */
+    private static String requirementText(List<List<SecurityUse>> requirements) {
+        List<String> alternatives = new ArrayList<>();
+        for (List<SecurityUse> alternative : requirements) {
+            if (alternative.isEmpty()) {
+                alternatives.add("none");
+                continue;
+            }
+            alternatives.add(String.join(" and ", alternative.stream().map(u -> u.scheme() + " (" + u.label() + ")").toList()));
+        }
+        return String.join(" or ", alternatives);
+    }
+
+    /** springdoc's {@code @SecurityRequirement} per scheme an operation may be called with. */
+    private static List<String> securityAnnotations(OperationModel op, boolean documented) {
+        if (!documented) return List.of();
+        Set<String> names = new LinkedHashSet<>();
+        for (List<SecurityUse> alternative : op.security()) {
+            for (SecurityUse use : alternative) names.add(use.scheme());
+        }
+        return names.stream()
+                .map(n -> "@SecurityRequirement(name = \"" + SchemaRecordEmitter.javaString(n) + "\")")
+                .toList();
+    }
+
+    private GeneratedOpenApiFile renderSecuritySchemes(OpenAPI api, String packageName, OpenApiWizardOptions opts) {
+        String apiPkg = opts.apiPackageOrDefault();
+        Set<String> imports = new TreeSet<>(List.of(
+                "io.swagger.v3.oas.annotations.enums.SecuritySchemeType",
+                "io.swagger.v3.oas.annotations.security.SecurityScheme",
+                "io.swagger.v3.oas.annotations.security.SecuritySchemes",
+                "org.springframework.context.annotation.Configuration"));
+        List<String> schemes = new ArrayList<>();
+        api.getComponents().getSecuritySchemes().forEach((name, scheme) -> {
+            if (scheme == null || scheme.getType() == null) return;
+            StringBuilder a = new StringBuilder("@SecurityScheme(name = \"").append(SchemaRecordEmitter.javaString(name)).append("\"");
+            switch (scheme.getType()) {
+                case APIKEY -> {
+                    imports.add("io.swagger.v3.oas.annotations.enums.SecuritySchemeIn");
+                    String in = scheme.getIn() == null ? "HEADER" : scheme.getIn().toString().toUpperCase(Locale.ROOT);
+                    a.append(", type = SecuritySchemeType.APIKEY, in = SecuritySchemeIn.").append(in)
+                            .append(", paramName = \"").append(SchemaRecordEmitter.javaString(
+                                    scheme.getName() == null ? "api_key" : scheme.getName())).append("\"");
+                }
+                case HTTP -> {
+                    a.append(", type = SecuritySchemeType.HTTP, scheme = \"")
+                            .append(SchemaRecordEmitter.javaString(scheme.getScheme() == null ? "" : scheme.getScheme())).append("\"");
+                    if (scheme.getBearerFormat() != null && !scheme.getBearerFormat().isBlank()) {
+                        a.append(", bearerFormat = \"").append(SchemaRecordEmitter.javaString(scheme.getBearerFormat())).append("\"");
+                    }
+                }
+                case OAUTH2 -> a.append(", type = SecuritySchemeType.OAUTH2");
+                case OPENIDCONNECT -> {
+                    a.append(", type = SecuritySchemeType.OPENIDCONNECT");
+                    if (scheme.getOpenIdConnectUrl() != null) {
+                        a.append(", openIdConnectUrl = \"").append(SchemaRecordEmitter.javaString(scheme.getOpenIdConnectUrl())).append("\"");
+                    }
+                }
+                case MUTUALTLS -> a.append(", type = SecuritySchemeType.MUTUALTLS");
+            }
+            if (scheme.getDescription() != null && !scheme.getDescription().isBlank()) {
+                a.append(", description = \"").append(SchemaRecordEmitter.javaString(scheme.getDescription())).append("\"");
+            }
+            schemes.add(a.append(")").toString());
+        });
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", packageName + "." + apiPkg);
+        view.put("imports", imports);
+        view.put("schemes", String.join(",\n        ", schemes));
+        return new GeneratedOpenApiFile("src/main/java/{{packagePath}}/" + apiPkg + "/OpenApiSecuritySchemes.java",
+                WizardTemplates.render("openapi/SecuritySchemes.java", view));
+    }
+
     // ── Operations → controllers ──────────────────────────────────────────────
 
     private GeneratedOpenApiFile renderController(String tag, List<OperationModel> ops,
                                                   String packageName, OpenApiWizardOptions opts,
-                                                  boolean hasValidation) {
+                                                  boolean hasValidation, boolean documented) {
         String apiPkg = opts.apiPackageOrDefault();
         String className = tag + "Controller";
 
-        Set<String> imports = new TreeSet<>();
+        Set<String> imports = serverImports(ops, hasValidation, documented);
         imports.add("org.springframework.web.bind.annotation.RestController");
         imports.add("org.springframework.web.bind.annotation.RequestMapping");
         imports.add("org.springframework.validation.annotation.Validated");
 
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", packageName + "." + apiPkg);
+        view.put("imports", imports);
+        view.put("className", className);
+        List<Map<String, Object>> methods = new ArrayList<>();
+        for (OperationModel op : ops) methods.add(serverMethod(op, hasValidation, documented));
+        view.put("operations", methods);
+
+        return new GeneratedOpenApiFile(
+                "src/main/java/{{packagePath}}/" + apiPkg + "/" + className + ".java",
+                WizardTemplates.render("openapi/Controller.java", view));
+    }
+
+    /**
+     * The interface of a tag's operations: every mapping, binding and constraint, each method a
+     * default that answers 501. Regenerated whole from the document.
+     */
+    private GeneratedOpenApiFile renderApi(String tag, List<OperationModel> ops, String packageName,
+                                           OpenApiWizardOptions opts, boolean hasValidation, boolean documented) {
+        String apiPkg = opts.apiPackageOrDefault();
+        Set<String> imports = serverImports(ops, hasValidation, documented);
+        imports.add("org.springframework.http.HttpStatus");
+        imports.add("org.springframework.web.server.ResponseStatusException");
+
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", packageName + "." + apiPkg);
+        view.put("imports", imports);
+        view.put("className", tag + "Api");
+        view.put("implName", tag + "Controller");
+        List<Map<String, Object>> methods = new ArrayList<>();
+        for (OperationModel op : ops) methods.add(serverMethod(op, hasValidation, documented));
+        view.put("operations", methods);
+        return new GeneratedOpenApiFile(
+                "src/main/java/{{packagePath}}/" + apiPkg + "/" + tag + "Api.java",
+                WizardTemplates.render("openapi/Api.java", view));
+    }
+
+    /**
+     * The class that implements a tag's interface — the team's. It names nothing the document says
+     * but the tag, so a change of the document never changes it, and an update never patches it.
+     */
+    private GeneratedOpenApiFile renderApiController(String tag, String packageName, OpenApiWizardOptions opts) {
+        String apiPkg = opts.apiPackageOrDefault();
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", packageName + "." + apiPkg);
+        view.put("className", tag + "Controller");
+        view.put("apiName", tag + "Api");
+        return new GeneratedOpenApiFile(
+                "src/main/java/{{packagePath}}/" + apiPkg + "/" + tag + "Controller.java",
+                WizardTemplates.render("openapi/ApiController.java", view));
+    }
+
+    /** What the methods of a controller or an API interface import. */
+    private static Set<String> serverImports(List<OperationModel> ops, boolean hasValidation, boolean documented) {
+        Set<String> imports = new TreeSet<>();
         boolean hasBody = false;
         for (OperationModel op : ops) {
             if (isPlainMethod(op.httpMethod())) {
@@ -351,6 +669,18 @@ public class OpenApiCodeGenerator {
                 imports.addAll(p.typeImports());
                 imports.addAll(p.annotationImports());
             }
+            if (op.isForm()) {
+                imports.add("org.springframework.http.MediaType");
+                for (FormField f : op.formFields()) {
+                    imports.add("org.springframework.web.bind.annotation."
+                            + (f.kind() == FormField.Part.FIELD ? "RequestParam" : "RequestPart"));
+                    imports.addAll(f.imports());
+                    imports.addAll(f.annotationImports());
+                }
+            }
+            if (!securityAnnotations(op, documented).isEmpty()) {
+                imports.add("io.swagger.v3.oas.annotations.security.SecurityRequirement");
+            }
             imports.addAll(op.requestBodyImports());
             imports.addAll(op.responseImports());
         }
@@ -358,27 +688,30 @@ public class OpenApiCodeGenerator {
             imports.add("org.springframework.web.bind.annotation.RequestBody");
             if (hasValidation) imports.add("jakarta.validation.Valid");
         }
-
-        Map<String, Object> view = new LinkedHashMap<>();
-        view.put("package", packageName + "." + apiPkg);
-        view.put("imports", imports);
-        view.put("className", className);
-        List<Map<String, Object>> methods = new ArrayList<>();
-        for (OperationModel op : ops) methods.add(controllerMethod(op, hasValidation));
-        view.put("operations", methods);
-
-        return new GeneratedOpenApiFile(
-                "src/main/java/{{packagePath}}/" + apiPkg + "/" + className + ".java",
-                WizardTemplates.render("openapi/Controller.java", view));
+        return imports;
     }
 
-    /** One operation as the controller template reads it. */
-    private Map<String, Object> controllerMethod(OperationModel op, boolean hasValidation) {
+    /** One operation as the controller and API templates read it. */
+    private Map<String, Object> serverMethod(OperationModel op, boolean hasValidation, boolean documented) {
         Map<String, Object> m = operationView(op);
+        m.put("javadoc", serverJavadoc(op, documented));
+        m.put("securityAnnotations", securityAnnotations(op, documented));
         String path = "\"" + SchemaRecordEmitter.javaString(op.path()) + "\"";
-        m.put("mappingLine", isPlainMethod(op.httpMethod())
-                ? "@" + mappingAnnotation(op.httpMethod()) + "(" + path + ")"
-                : "@RequestMapping(value = " + path + ", method = RequestMethod." + op.httpMethod() + ")");
+        String consumes = switch (op.bodyKind()) {
+            case MULTIPART -> "MediaType.MULTIPART_FORM_DATA_VALUE";
+            case FORM -> "MediaType.APPLICATION_FORM_URLENCODED_VALUE";
+            default -> null;
+        };
+        String mapping;
+        if (isPlainMethod(op.httpMethod())) {
+            mapping = consumes == null
+                    ? "@" + mappingAnnotation(op.httpMethod()) + "(" + path + ")"
+                    : "@" + mappingAnnotation(op.httpMethod()) + "(value = " + path + ", consumes = " + consumes + ")";
+        } else {
+            mapping = "@RequestMapping(value = " + path + ", method = RequestMethod." + op.httpMethod()
+                    + (consumes == null ? "" : ", consumes = " + consumes) + ")";
+        }
+        m.put("mappingLine", mapping);
         // The status the document declares for success, where it is not the 200 a method answers anyway.
         String statusName = STATUS_NAMES.get(op.successStatus());
         m.put("hasStatus", statusName != null);
@@ -400,6 +733,15 @@ public class OpenApiCodeGenerator {
                         .append("\", required = ").append(p.required()).append(") ");
             }
             arg.append(p.javaType()).append(' ').append(p.name());
+            args.add(arg.toString());
+        }
+        for (FormField f : op.formFields()) {
+            StringBuilder arg = new StringBuilder();
+            for (String annotation : f.annotations()) arg.append(annotation).append(' ');
+            arg.append(f.kind() == FormField.Part.FIELD ? "@RequestParam" : "@RequestPart")
+                    .append("(name = \"").append(SchemaRecordEmitter.javaString(f.wireName()))
+                    .append("\", required = ").append(f.required()).append(") ")
+                    .append(f.javaType()).append(' ').append(f.name());
             args.add(arg.toString());
         }
         if (op.requestBodyType() != null) {
@@ -440,8 +782,54 @@ public class OpenApiCodeGenerator {
 
     // ── Operations → client ───────────────────────────────────────────────────
 
+    /** A value the client reads from a property: an API key, a token, a user name or a password. */
+    private record CredentialField(String field, String property, String label) {}
+
+    /**
+     * The credentials the clients send, by field name, in the order the schemes are first used:
+     * {@code <base>.security.<scheme>.api-key|token|username|password}, where {@code <base>} is the
+     * base-URL property without its last segment.
+     */
+    private static Map<String, CredentialField> credentialFields(List<OperationModel> ops, OpenApiWizardOptions opts) {
+        Map<String, CredentialField> out = new LinkedHashMap<>();
+        String base = securityPrefix(opts.baseUrlPropertyOrDefault());
+        for (OperationModel op : ops) {
+            for (SecurityUse use : op.clientSecurity()) {
+                String prefix = base + "." + kebab(use.scheme()) + ".";
+                switch (use.kind()) {
+                    case API_KEY_HEADER, API_KEY_QUERY, API_KEY_COOKIE ->
+                            out.putIfAbsent(use.javaName(), new CredentialField(use.javaName(), prefix + "api-key", use.label()));
+                    case BEARER ->
+                            out.putIfAbsent(use.javaName(), new CredentialField(use.javaName(), prefix + "token", use.label()));
+                    case BASIC -> {
+                        out.putIfAbsent(use.javaName() + "Username",
+                                new CredentialField(use.javaName() + "Username", prefix + "username", "HTTP basic user"));
+                        out.putIfAbsent(use.javaName() + "Password",
+                                new CredentialField(use.javaName() + "Password", prefix + "password", "HTTP basic password"));
+                    }
+                    case OTHER -> { }
+                }
+            }
+        }
+        return out;
+    }
+
+    static String securityPrefix(String baseUrlProperty) {
+        int dot = baseUrlProperty.lastIndexOf('.');
+        return (dot > 0 ? baseUrlProperty.substring(0, dot) : "openapi.client") + ".security";
+    }
+
+    /** {@code petstore_auth} → {@code petstore-auth}, {@code apiKey} → {@code api-key}. */
+    static String kebab(String raw) {
+        String s = raw.replaceAll("([a-z0-9])([A-Z])", "$1-$2").toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "-");
+        s = s.replaceAll("^-+|-+$", "");
+        return s.isEmpty() ? "scheme" : s;
+    }
+
     private GeneratedOpenApiFile renderClient(String tag, List<OperationModel> ops, String packageName,
-                                              OpenApiWizardOptions opts, boolean restClient) {
+                                              OpenApiWizardOptions opts, boolean restClient,
+                                              Map<String, CredentialField> credentials) {
         String clientPkg = opts.clientPackageOrDefault();
         String className = tag + "Client";
 
@@ -458,11 +846,22 @@ public class OpenApiCodeGenerator {
             imports.add("org.springframework.web.client.RestTemplate");
             imports.add("org.springframework.web.util.UriComponentsBuilder");
         }
+        boolean usesCredentials = false;
         for (OperationModel op : ops) {
             for (ParamModel p : op.params()) {
                 imports.addAll(p.typeImports());
                 if (restClient && p.in() == ParamModel.ParamLocation.QUERY) imports.add("java.util.Optional");
                 if (restClient && p.in() == ParamModel.ParamLocation.COOKIE) imports.add("org.springframework.http.HttpHeaders");
+            }
+            if (op.isForm()) {
+                imports.add("org.springframework.http.MediaType");
+                imports.add("org.springframework.util.LinkedMultiValueMap");
+                imports.add("org.springframework.util.MultiValueMap");
+                for (FormField f : op.formFields()) imports.addAll(f.clientImports());
+            }
+            for (SecurityUse use : op.clientSecurity()) {
+                usesCredentials = true;
+                if (use.kind() == SecurityUse.Kind.API_KEY_COOKIE) imports.add("org.springframework.http.HttpHeaders");
             }
             imports.addAll(op.requestBodyImports());
             imports.addAll(op.responseImports());
@@ -473,10 +872,11 @@ public class OpenApiCodeGenerator {
         view.put("package", packageName + "." + clientPkg);
         view.put("imports", imports);
         view.put("className", className);
+        view.put("credentials", usesCredentials);
         // Written whole: "${" beside a Mustache tag would read as a triple brace.
         view.put("baseUrlPlaceholder", "${" + opts.baseUrlPropertyOrDefault() + "}");
         List<Map<String, Object>> methods = new ArrayList<>();
-        for (OperationModel op : ops) methods.add(clientMethod(op));
+        for (OperationModel op : ops) methods.add(clientMethod(op, restClient, credentials));
         view.put("operations", methods);
 
         return new GeneratedOpenApiFile(
@@ -487,14 +887,18 @@ public class OpenApiCodeGenerator {
     /**
      * One operation as the client templates read it: the URI is the base URL plus the path, with
      * the path variables expanded and the query parameters appended (an optional one only when
-     * given); headers and cookies likewise; the body travels with them.
+     * given); headers and cookies likewise; the body travels with them — a form as its parts —
+     * and the credentials its security requires, when they are configured.
      */
-    private Map<String, Object> clientMethod(OperationModel op) {
+    private Map<String, Object> clientMethod(OperationModel op, boolean restClient, Map<String, CredentialField> credentials) {
         Map<String, Object> m = operationView(op);
 
         List<String> args = new ArrayList<>();
         for (ParamModel p : op.params()) {
             args.add(p.javaType() + " " + p.name());
+        }
+        for (FormField f : op.formFields()) {
+            args.add(f.clientType() + " " + f.name());
         }
         if (op.requestBodyType() != null) {
             args.add(op.requestBodyType() + " body");
@@ -529,17 +933,76 @@ public class OpenApiCodeGenerator {
         m.put("queryParams", queryParams);
         m.put("hasPathParams", !pathArguments.isEmpty());
         m.put("pathArguments", String.join(", ", pathArguments));
-        boolean hasHeader = !headerParams.isEmpty() || !cookieParams.isEmpty();
+
+        // The credentials: a query key with the parameters, the rest as headers.
+        List<String> authQuery = new ArrayList<>();
+        List<String> authHeaders = new ArrayList<>();
+        String headersVar = restClient ? "httpHeaders" : "headers";
+        for (SecurityUse use : op.clientSecurity()) {
+            String value = "credentials." + use.javaName() + "()";
+            String param = use.paramName() == null ? null : SchemaRecordEmitter.javaString(use.paramName());
+            switch (use.kind()) {
+                case API_KEY_QUERY -> authQuery.add(restClient
+                        ? ".queryParamIfPresent(\"" + param + "\", OpenApiCredentials.optional(" + value + "))"
+                        : "if (OpenApiCredentials.present(" + value + ")) builder.queryParam(\"" + param + "\", " + value + ");");
+                case API_KEY_HEADER -> authHeaders.add("if (OpenApiCredentials.present(" + value + ")) "
+                        + headersVar + ".add(\"" + param + "\", " + value + ");");
+                case API_KEY_COOKIE -> authHeaders.add("if (OpenApiCredentials.present(" + value + ")) "
+                        + headersVar + ".add(HttpHeaders.COOKIE, \"" + param + "=\" + " + value + ");");
+                case BEARER -> authHeaders.add("if (OpenApiCredentials.present(" + value + ")) "
+                        + headersVar + ".setBearerAuth(" + value + ");");
+                case BASIC -> {
+                    String user = "credentials." + use.javaName() + "Username()";
+                    String password = "credentials." + use.javaName() + "Password()";
+                    authHeaders.add("if (OpenApiCredentials.present(" + user + ")) "
+                            + headersVar + ".setBasicAuth(" + user + ", " + password + ");");
+                }
+                case OTHER -> { }
+            }
+        }
+        m.put("authQuery", authQuery);
+
+        // A form body: its parts, and its content type.
+        List<String> formLines = new ArrayList<>();
+        if (op.isForm()) {
+            boolean multipart = op.bodyKind() == OperationModel.BodyKind.MULTIPART;
+            formLines.add(multipart ? "MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();"
+                    : "MultiValueMap<String, String> form = new LinkedMultiValueMap<>();");
+            for (FormField f : op.formFields()) {
+                String wire = SchemaRecordEmitter.javaString(f.wireName());
+                boolean list = f.clientType().startsWith("List<");
+                // A file or a JSON part is sent as it is; a plain field as its text, which is what
+                // the controller's @RequestParam reads (a date would otherwise travel as JSON).
+                boolean asIs = multipart && f.kind() != FormField.Part.FIELD;
+                String add = asIs ? "form.add(\"" + wire + "\", %s)" : "form.add(\"" + wire + "\", String.valueOf(%s))";
+                formLines.add(list
+                        ? "if (" + f.name() + " != null) " + f.name() + ".forEach(v -> " + String.format(add, "v") + ");"
+                        : "if (" + f.name() + " != null) " + String.format(add, f.name()) + ";");
+            }
+            if (!restClient) {
+                authHeaders.add(0, "headers.setContentType(MediaType." + (multipart ? "MULTIPART_FORM_DATA" : "APPLICATION_FORM_URLENCODED") + ");");
+            }
+        }
+        m.put("formLines", formLines);
+        m.put("contentType", op.isForm() && restClient
+                ? List.of(".contentType(MediaType." + (op.bodyKind() == OperationModel.BodyKind.MULTIPART
+                        ? "MULTIPART_FORM_DATA" : "APPLICATION_FORM_URLENCODED") + ")")
+                : List.of());
+
+        boolean hasHeader = !headerParams.isEmpty() || !cookieParams.isEmpty() || !authHeaders.isEmpty();
         m.put("hasHeaders", hasHeader);
         m.put("headerParams", headerParams);
         m.put("cookieParams", cookieParams);
-        m.put("hasBody", op.requestBodyType() != null);
+        m.put("authHeaders", authHeaders);
+        String bodyVar = op.isForm() ? "form" : op.requestBodyType() != null ? "body" : null;
+        m.put("hasBody", bodyVar != null);
+        m.put("bodyVar", bodyVar);
 
         String entityExpr;
-        if (op.requestBodyType() != null && hasHeader) {
-            entityExpr = "new HttpEntity<>(body, headers)";
-        } else if (op.requestBodyType() != null) {
-            entityExpr = "new HttpEntity<>(body)";
+        if (bodyVar != null && hasHeader) {
+            entityExpr = "new HttpEntity<>(" + bodyVar + ", headers)";
+        } else if (bodyVar != null) {
+            entityExpr = "new HttpEntity<>(" + bodyVar + ")";
         } else if (hasHeader) {
             entityExpr = "new HttpEntity<>(headers)";
         } else {
@@ -584,24 +1047,73 @@ public class OpenApiCodeGenerator {
                 WizardTemplates.render(restClient ? "openapi/RestClientConfig.java" : "openapi/ClientConfig.java", view));
     }
 
-    private GeneratedOpenApiFile renderApplicationYmlStub(OpenApiWizardOptions opts) {
-        String prop = opts.baseUrlPropertyOrDefault();
-        String[] parts = prop.split("\\.");
+    /** The credentials the clients send, each read from its property (empty: not sent). */
+    private GeneratedOpenApiFile renderCredentials(String packageName, OpenApiWizardOptions opts,
+                                                   Map<String, CredentialField> credentials) {
+        String clientPkg = opts.clientPackageOrDefault();
+        List<Map<String, Object>> fields = new ArrayList<>();
+        List<CredentialField> list = new ArrayList<>(credentials.values());
+        for (int i = 0; i < list.size(); i++) {
+            CredentialField c = list.get(i);
+            Map<String, Object> f = new LinkedHashMap<>();
+            f.put("field", c.field());
+            f.put("property", c.property());
+            f.put("placeholder", "${" + c.property() + ":}");
+            f.put("label", SchemaRecordEmitter.escapeJavadoc(c.label()));
+            f.put("separator", i == list.size() - 1 ? ") {" : ",");
+            fields.add(f);
+        }
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", packageName + "." + clientPkg);
+        view.put("fields", fields);
+        view.put("prefix", securityPrefix(opts.baseUrlPropertyOrDefault()));
+        return new GeneratedOpenApiFile(
+                "src/main/java/{{packagePath}}/" + clientPkg + "/OpenApiCredentials.java",
+                WizardTemplates.render("openapi/Credentials.java", view));
+    }
 
+    private GeneratedOpenApiFile renderApplicationYmlStub(OpenApiWizardOptions opts, Map<String, CredentialField> credentials) {
+        // The base URL, and each credential's property, empty: an environment variable or Vault
+        // gives its value (OPENAPI_CLIENT_SECURITY_<SCHEME>_TOKEN and the like).
+        Map<String, String> properties = new LinkedHashMap<>();
+        properties.put(opts.baseUrlPropertyOrDefault(), "http://localhost:8080");
+        for (CredentialField c : credentials.values()) properties.put(c.property(), "\"\"");
+        return new GeneratedOpenApiFile("src/main/resources/application.yaml", yaml(properties));
+    }
+
+    /** Dotted properties as nested YAML, in the order first named. */
+    @SuppressWarnings("unchecked")
+    private static String yaml(Map<String, String> properties) {
+        Map<String, Object> tree = new LinkedHashMap<>();
+        for (var e : properties.entrySet()) {
+            String[] parts = e.getKey().split("\\.");
+            Map<String, Object> node = tree;
+            for (int i = 0; i < parts.length - 1; i++) {
+                Object next = node.computeIfAbsent(parts[i], k -> new LinkedHashMap<String, Object>());
+                if (!(next instanceof Map)) {
+                    next = new LinkedHashMap<String, Object>();
+                    node.put(parts[i], next);
+                }
+                node = (Map<String, Object>) next;
+            }
+            node.put(parts[parts.length - 1], e.getValue());
+        }
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < parts.length; i++) {
-            for (int s = 0; s < i * 2; s++) sb.append(' ');
-            sb.append(parts[i]);
-            if (i == parts.length - 1) {
-                sb.append(": http://localhost:8080\n");
-            } else {
+        writeYaml(tree, 0, sb);
+        return sb.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void writeYaml(Map<String, Object> node, int depth, StringBuilder sb) {
+        for (var e : node.entrySet()) {
+            sb.append("  ".repeat(depth)).append(e.getKey());
+            if (e.getValue() instanceof Map) {
                 sb.append(":\n");
+                writeYaml((Map<String, Object>) e.getValue(), depth + 1, sb);
+            } else {
+                sb.append(": ").append(e.getValue()).append('\n');
             }
         }
-
-        return new GeneratedOpenApiFile(
-                "src/main/resources/application.yaml",
-                sb.toString());
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

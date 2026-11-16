@@ -9,10 +9,17 @@ public class {{className}} {
 
     private final RestTemplate restTemplate;
     private final String baseUrl;
+{{#credentials}}
+    private final OpenApiCredentials credentials;
+{{/credentials}}
 
-    public {{className}}(RestTemplate restTemplate, @Value("{{baseUrlPlaceholder}}") String baseUrl) {
+    public {{className}}(RestTemplate restTemplate, @Value("{{baseUrlPlaceholder}}") String baseUrl{{#credentials}},
+            OpenApiCredentials credentials{{/credentials}}) {
         this.restTemplate = restTemplate;
         this.baseUrl = baseUrl;
+{{#credentials}}
+        this.credentials = credentials;
+{{/credentials}}
     }
 
 {{#operations}}
@@ -25,6 +32,9 @@ public class {{className}} {
 {{#queryParams}}
         {{^required}}if ({{name}} != null) {{/required}}builder.queryParam("{{wireName}}", {{name}});
 {{/queryParams}}
+{{#authQuery}}
+        {{.}}
+{{/authQuery}}
 {{#hasPathParams}}
         String uri = builder.buildAndExpand({{pathArguments}}).toUriString();
 {{/hasPathParams}}
@@ -39,7 +49,13 @@ public class {{className}} {
 {{#cookieParams}}
         {{^required}}if ({{name}} != null) {{/required}}headers.add(HttpHeaders.COOKIE, "{{wireName}}=" + {{name}});
 {{/cookieParams}}
+{{#authHeaders}}
+        {{.}}
+{{/authHeaders}}
 {{/hasHeaders}}
+{{#formLines}}
+        {{.}}
+{{/formLines}}
         ResponseEntity<{{responseBoxed}}> response =
                 restTemplate.exchange(uri, HttpMethod.{{httpMethod}}, {{entityExpr}}, {{responseTypeArg}});
 {{#returnsBody}}

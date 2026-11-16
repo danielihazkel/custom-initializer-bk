@@ -1,0 +1,142 @@
+openapi: 3.0.3
+info:
+  title: Claims intake
+  version: 1.0.0
+security:
+  - bearerAuth: []
+paths:
+  /claims:
+    get:
+      tags: [claims]
+      operationId: listClaims
+      summary: Every claim, newest first
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [OPEN, PAID] }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Claim' }
+    post:
+      tags: [claims]
+      operationId: fileClaim
+      summary: File a claim with its documents
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [policyNumber, receipt]
+              properties:
+                policyNumber: { type: string, maxLength: 20 }
+                incidentDate: { type: string, format: date }
+                receipt: { type: string, format: binary }
+                photos:
+                  type: array
+                  items: { type: string, format: binary }
+                details: { $ref: '#/components/schemas/ClaimDetails' }
+      responses:
+        '201':
+          description: filed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Claim' }
+  /claims/{claimId}/notes:
+    post:
+      tags: [claims]
+      operationId: addNote
+      security:
+        - apiKey: []
+        - basicAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1 }
+                visibleTo:
+                  type: array
+                  items: { type: string }
+      responses:
+        '204':
+          description: added
+  /status:
+    get:
+      tags: [health]
+      operationId: status
+      security: []
+      responses:
+        '200':
+          description: ok
+          content:
+            text/plain:
+              schema: { type: string }
+  /partners/{partnerId}:
+    get:
+      tags: [partners]
+      operationId: getPartner
+      security:
+        - partnerKey: []
+          oauth: [read]
+      parameters:
+        - name: partnerId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimDetails' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    basicAuth:
+      type: http
+      scheme: basic
+    partnerKey:
+      type: apiKey
+      in: query
+      name: partner_key
+    oauth:
+      type: oauth2
+      description: The partners' identity provider
+      flows:
+        clientCredentials:
+          tokenUrl: https://idp.example.com/token
+          scopes:
+            read: read partners
+  schemas:
+    Claim:
+      type: object
+      required: [id, policyNumber]
+      properties:
+        id: { type: integer, format: int64 }
+        policyNumber: { type: string }
+        status: { type: string, enum: [OPEN, PAID] }
+    ClaimDetails:
+      type: object
+      properties:
+        description: { type: string }
+        amount: { type: number }

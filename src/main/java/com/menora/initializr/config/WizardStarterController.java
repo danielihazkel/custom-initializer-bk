@@ -533,7 +533,8 @@ public class WizardStarterController {
                 OpenApiWizardOptions.GenerationMode.parse(dto.mode()),
                 dto.baseUrlProperty(),
                 OpenApiWizardOptions.ClientKind.parse(dto.clientKind()),
-                Boolean.TRUE.equals(dto.copySpec()));
+                Boolean.TRUE.equals(dto.copySpec()),
+                OpenApiWizardOptions.ApiStyle.parse(dto.apiStyle()));
     }
 
     private static SoapWizardOptions toSoapOptions(SoapOptionsDto dto) {
@@ -614,12 +615,14 @@ public class WizardStarterController {
             String mode,
             String baseUrlProperty,
             String clientKind,
-            Boolean copySpec) {
+            Boolean copySpec,
+            // classes (absent: as before) or interfaces — see OpenApiWizardOptions.apiStyle.
+            String apiStyle) {
 
         /** The options before the client kind and the spec copy existed. */
         public OpenApiOptionsDto(String apiSubPackage, String dtoSubPackage, String clientSubPackage,
                                  String mode, String baseUrlProperty) {
-            this(apiSubPackage, dtoSubPackage, clientSubPackage, mode, baseUrlProperty, null, null);
+            this(apiSubPackage, dtoSubPackage, clientSubPackage, mode, baseUrlProperty, null, null, null);
         }
     }
 

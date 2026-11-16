@@ -352,7 +352,9 @@ public class DynamicProjectGenerationConfiguration {
                 if (spec == null || spec.isBlank()) continue;
                 OpenApiWizardOptions opts = specContext.optionsFor(entry.getKey());
                 List<GeneratedOpenApiFile> files = generator.generate(
-                        spec, description.getPackageName(), opts, hasValidation);
+                        spec, description.getPackageName(), opts, hasValidation,
+                        // springdoc on the build: the security schemes go into the API documentation.
+                        selectedDepIds(description).contains("openapi"));
                 if (opts != null && opts.copySpec()) {
                     // The contract the code was written from, kept beside it: JSON when it is JSON.
                     String extension = spec.stripLeading().startsWith("{") ? "json" : "yaml";

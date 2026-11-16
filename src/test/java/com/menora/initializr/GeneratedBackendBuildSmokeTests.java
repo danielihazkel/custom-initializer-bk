@@ -1085,6 +1085,180 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(project, "-B", "package");
     }
 
+    @ParameterizedTest(name = "Spring Boot {0}")
+    @ValueSource(strings = {"3.2.1", FullstackGoldenOutputTests.BOOT_35})
+    void openApiWizardInterfacesFormsAndSecurityWork(String bootVersion, @TempDir Path workDir) throws Exception {
+        // The interface style on the secure-forms document, both sides, a RestClient client, with
+        // validation and springdoc. The team's class is replaced by one that implements two
+        // operations, as a team would: those answer, the others 501; the multipart and form bodies
+        // bind; the client sends each operation's credentials; springdoc lists the schemes.
+        Map<String, Object> body = openApiBody("claims", List.of("web", "validation", "openapi"),
+                Map.of("mode", "BOTH", "apiStyle", "interfaces", "clientKind", "restClient"));
+        body.put("bootVersion", bootVersion);
+        body.put("specByDep", Map.of("web", WizardGoldenOutputTests.fixture("secure-forms.yaml")));
+        Path project = postAndExtractWizard(workDir, body);
+        Path impl = project.resolve("src/main/java/com/menora/petstore/api/ClaimsController.java");
+        assertThat(Files.readString(impl)).contains("public class ClaimsController implements ClaimsApi {\n}");
+        Files.writeString(impl, OPENAPI_TEAM_CLAIMS_CONTROLLER);
+        writeProjectTest(project, "com.menora.petstore", "InterfaceTests", OPENAPI_INTERFACE_TESTS);
+        runMvn(project, "-B", "package");
+    }
+
+    @org.junit.jupiter.api.Test
+    void openApiWizardSecureFormsAsClassesCompile(@TempDir Path workDir) throws Exception {
+        // The same document as classes with a RestTemplate client (springdoc comes with the
+        // controllers): the forms bind in the classes, the client builds its parts.
+        Map<String, Object> body = openApiBody("claimsclasses", List.of("web", "validation"), Map.of("mode", "BOTH"));
+        body.put("specByDep", Map.of("web", WizardGoldenOutputTests.fixture("secure-forms.yaml")));
+        runMvn(postAndExtractWizard(workDir, body), "-B", "package");
+    }
+
+    /** What a team writes in the generated ClaimsController: two of the operations, signatures only. */
+    private static final String OPENAPI_TEAM_CLAIMS_CONTROLLER = """
+            package com.menora.petstore.api;
+
+            import com.menora.petstore.dto.Claim;
+            import com.menora.petstore.dto.ClaimDetails;
+            import org.springframework.validation.annotation.Validated;
+            import org.springframework.web.bind.annotation.RestController;
+            import org.springframework.web.multipart.MultipartFile;
+
+            import java.time.LocalDate;
+            import java.util.List;
+
+            @RestController
+            @Validated
+            public class ClaimsController implements ClaimsApi {
+
+                @Override
+                public Claim fileClaim(String policyNumber, LocalDate incidentDate, MultipartFile receipt,
+                                       List<MultipartFile> photos, ClaimDetails details) {
+                    long size = receipt.getSize() + (photos == null ? 0 : photos.size());
+                    return new Claim(size, policyNumber + "/" + incidentDate + "/" + (details == null ? "-" : details.description()), null);
+                }
+
+                @Override
+                public void addNote(Long claimId, String text, List<String> visibleTo) {
+                    if (!"hi".equals(text) || !List.of("agent", "owner").equals(visibleTo)) {
+                        throw new IllegalArgumentException(text + " " + visibleTo);
+                    }
+                }
+            }
+            """;
+
+    private static final String OPENAPI_INTERFACE_TESTS = """
+            package com.menora.petstore;
+
+            import com.menora.petstore.client.ClaimsClient;
+            import com.menora.petstore.client.PartnersClient;
+            import com.menora.petstore.dto.Claim;
+            import com.menora.petstore.dto.ClaimDetails;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.autoconfigure.web.client.AutoConfigureMockRestServiceServer;
+            import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.core.io.ByteArrayResource;
+            import org.springframework.http.HttpMethod;
+            import org.springframework.http.MediaType;
+            import org.springframework.mock.web.MockMultipartFile;
+            import org.springframework.test.web.client.MockRestServiceServer;
+            import org.springframework.test.web.servlet.MockMvc;
+
+            import java.time.LocalDate;
+            import java.util.List;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+            import static org.hamcrest.Matchers.containsString;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+            import static org.springframework.test.web.client.response.MockRestResponseCreators.withNoContent;
+            import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+            @SpringBootTest(properties = {
+                    "openapi.client.security.bearer-auth.token=t0k",
+                    "openapi.client.security.api-key.api-key=k3y",
+                    "openapi.client.security.partner-key.api-key=p4r",
+                    "openapi.client.security.oauth.token=0auth"})
+            @AutoConfigureMockMvc
+            @AutoConfigureMockRestServiceServer
+            class InterfaceTests {
+
+                @Autowired private MockMvc mvc;
+                @Autowired private MockRestServiceServer server;
+                @Autowired private ClaimsClient claims;
+                @Autowired private PartnersClient partners;
+
+                @Test
+                void anOperationNobodyImplementedAnswers501() throws Exception {
+                    mvc.perform(get("/claims")).andExpect(status().isNotImplemented());
+                    mvc.perform(get("/partners/p1")).andExpect(status().isNotImplemented());
+                }
+
+                @Test
+                void aMultipartBodyBindsItsFilesFieldsAndJsonPart() throws Exception {
+                    mvc.perform(multipart("/claims")
+                                    .file(new MockMultipartFile("receipt", "r.pdf", "application/pdf", new byte[10]))
+                                    .file(new MockMultipartFile("photos", "a.jpg", "image/jpeg", new byte[1]))
+                                    .file(new MockMultipartFile("photos", "b.jpg", "image/jpeg", new byte[1]))
+                                    .file(new MockMultipartFile("details", "", "application/json", "{\\"description\\":\\"dent\\"}".getBytes()))
+                                    .param("policyNumber", "P-1").param("incidentDate", "2026-11-01"))
+                            .andExpect(status().isCreated())
+                            .andExpect(jsonPath("$.id").value(12))
+                            .andExpect(jsonPath("$.policyNumber").value("P-1/2026-11-01/dent"));
+                    // The receipt is required.
+                    mvc.perform(multipart("/claims").param("policyNumber", "P-1")).andExpect(status().isBadRequest());
+                }
+
+                @Test
+                void aFormBodyBindsItsFields() throws Exception {
+                    mvc.perform(post("/claims/7/notes").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                                    .param("text", "hi").param("visibleTo", "agent").param("visibleTo", "owner"))
+                            .andExpect(status().isNoContent());
+                }
+
+                @Test
+                void springdocListsTheSchemes() throws Exception {
+                    String docs = mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+                            .andReturn().getResponse().getContentAsString();
+                    assertThat(docs).contains("\\"bearerAuth\\"").contains("\\"X-API-Key\\"").contains("\\"partner_key\\"");
+                }
+
+                @Test
+                void theClientSendsTheFormsAndTheCredentials() {
+                    server.expect(requestTo("http://localhost:8080/claims")).andExpect(method(HttpMethod.POST))
+                            .andExpect(header("Authorization", "Bearer t0k"))
+                            .andExpect(header("Content-Type", containsString("multipart/form-data")))
+                            .andExpect(content().string(containsString("name=\\"policyNumber\\"")))
+                            .andExpect(content().string(containsString("2026-11-01")))
+                            .andRespond(withSuccess("{\\"id\\":1,\\"policyNumber\\":\\"P-1\\"}", MediaType.APPLICATION_JSON));
+                    // The first requirement: the API key, not basic.
+                    server.expect(requestTo("http://localhost:8080/claims/7/notes")).andExpect(method(HttpMethod.POST))
+                            .andExpect(header("X-API-Key", "k3y"))
+                            .andExpect(content().string(containsString("text=hi")))
+                            .andRespond(withNoContent());
+                    // Both schemes of the one requirement.
+                    server.expect(requestTo("http://localhost:8080/partners/p1?partner_key=p4r"))
+                            .andExpect(header("Authorization", "Bearer 0auth"))
+                            .andRespond(withSuccess("{\\"description\\":\\"x\\"}", MediaType.APPLICATION_JSON));
+                    Claim filed = claims.fileClaim("P-1", LocalDate.of(2026, 11, 1),
+                            new ByteArrayResource(new byte[3]) { @Override public String getFilename() { return "r.pdf"; } },
+                            null, new ClaimDetails("dent", 10.0));
+                    assertThat(filed.policyNumber()).isEqualTo("P-1");
+                    claims.addNote(7L, "hi", List.of("agent"));
+                    assertThat(partners.getPartner("p1").description()).isEqualTo("x");
+                    server.verify();
+                }
+            }
+            """;
+
     @org.junit.jupiter.api.Test
     void eventsWizardBackendCompilesAndPassesItsTests(@TempDir Path workDir) throws Exception {
         // Producers, listeners and payload types from the AsyncAPI 3 fixture, every channel in both

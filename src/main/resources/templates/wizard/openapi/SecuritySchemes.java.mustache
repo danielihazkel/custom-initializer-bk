@@ -1,0 +1,17 @@
+package {{package}};
+
+{{#imports}}
+import {{.}};
+{{/imports}}
+
+/**
+ * The security schemes of the OpenAPI document, declared for the generated API documentation
+ * (springdoc); each operation names the ones it requires with {@code @SecurityRequirement}.
+ * Documented, not enforced: the gateway, or the application's own security, checks the caller.
+ */
+@Configuration
+@SecuritySchemes({
+        {{{schemes}}}
+})
+public class OpenApiSecuritySchemes {
+}
