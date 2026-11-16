@@ -383,9 +383,11 @@ in `renderFrontend`. `optScaffoldSecured` is additionally ANDed with `ldap-auth`
 (its `security.*` imports come from that library), so it no-ops cleanly when ldap-auth is deselected.
 
 Also on the backend fullstack path: `hasValidation` (true when the `validation` starter is selected) —
-gate generated Bean Validation annotations on it so imports resolve — and `useMockitoBean` (true for
-Boot ≥ 3.4, where `@MockBean` is deprecated in favour of `@MockitoBean`; read by
-`EntityControllerTest.java.mustache`).
+gate generated Bean Validation annotations on it so imports resolve — `useMockitoBean` (true for
+Boot ≥ 3.4, where `@MockBean` is deprecated in favour of `@MockitoBean`; no shipped template reads it
+since the mocked controller test was replaced, kept for templates edited in admin), and the tests
+option's view (`hasApiTests`, `apiTestRows`, `testDatabases`, per entity `apiTest*` — built by
+`fullstack/GeneratedTests`).
 
 Only on the frontend fullstack path (`renderFrontend`): `hasLdapAuth` (an `ldap-auth`/`ldap-auth-rest` dep is
 on the backend build — gates the dev-only `userinfo` header in `client.ts`), `dashboardTitle` /
@@ -516,11 +518,11 @@ A **fullstack entity template** is an `EntityTemplateFileEntity` row inside a se
 ```json
 { "source": "Entity.java.mustache", "path": "src/main/java/{{entityPackagePath}}/{{EntityName}}.java", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 10 }
 { "source": "EntityId.java.mustache", "path": "src/main/java/{{entityPackagePath}}/{{EntityName}}Id.java", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 15, "gatedBy": "hasCompositePk" }
-{ "source": "EntityControllerTest.java.mustache", "path": "src/test/java/{{controllerPackagePath}}/{{EntityName}}ControllerTest.java", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 60, "gatedBy": "optScaffoldTests" }
+{ "source": "EntityApiTest.java.mustache", "path": "src/test/java/{{controllerPackagePath}}/{{EntityName}}ApiTest.java", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 62, "gatedBy": "apiTestApplicable" }
 ```
 
-Note `gatedBy` can name **any** truthy context flag — `optScaffoldTests` (an opt-in) or `hasCompositePk`
-(a derived per-entity flag).
+Note `gatedBy` can name **any** truthy context flag — `hasApiTests` (a project flag the tests option
+sets), `hasCompositePk` or `apiTestApplicable` (derived per-entity flags).
 
 ---
 

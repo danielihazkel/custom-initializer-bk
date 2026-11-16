@@ -1,0 +1,136 @@
+package {{controllerPackage}};
+
+import {{packageName}}.ApiTestSupport;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+
+/**
+ * {{EntityName}}'s API, called for real: the controller, the service and the database (the
+ * {@code test} profile's in-memory one) — nothing mocked. Rows are made through the API by
+ * {@link ApiTestSupport#body}; change it there when a field needs another value.
+ */
+class {{EntityName}}ApiTest extends ApiTestSupport {
+
+    private static final String PATH = "{{{apiTestListPath}}}";
+
+    @Test
+    void theListAnswersAPage() throws Exception {
+        JsonNode page = read(PATH + "?size=5");
+        assertThat(page.get("content").isArray()).isTrue();
+        assertThat(page.has("totalElements") || page.has("page")).isTrue();
+    }
+
+    @Test
+    void anUnknownSortIsRefused() throws Exception {
+        send(get(PATH + "?sort=noSuchColumn,asc"), null, 400);
+    }
+{{#apiTestHasMissing}}
+
+    @Test
+    void aRowThatIsNotThereIs404() throws Exception {
+        send(get(PATH + "{{{apiTestMissing}}}"), null, 404);
+    }
+{{/apiTestHasMissing}}
+{{#apiTestMutable}}
+
+    @Test
+{{#apiTestBlocked}}    @Disabled("{{{apiTestBlockedReason}}}")
+{{/apiTestBlocked}}    void aRowIsCreatedReadChangedAndDeleted() throws Exception {
+        JsonNode created = create("{{EntityName}}");
+        String path = pathOf("{{EntityName}}", created);
+        assertThat(read(path).get("{{apiTestKey}}")).isEqualTo(created.get("{{apiTestKey}}"));
+
+        ObjectNode changed = created.deepCopy();
+{{#apiTestHasUpdate}}        changed.put("{{apiTestUpdateField}}", {{{apiTestUpdateValue}}});
+{{/apiTestHasUpdate}}        JsonNode updated = send(put(path), changed, 200);
+{{#apiTestHasUpdate}}        assertThat(updated.get("{{apiTestUpdateField}}")).isEqualTo(changed.get("{{apiTestUpdateField}}"));
+        assertThat(read(path).get("{{apiTestUpdateField}}")).isEqualTo(changed.get("{{apiTestUpdateField}}"));
+{{/apiTestHasUpdate}}{{^apiTestHasUpdate}}        assertThat(updated.get("{{apiTestKey}}")).isEqualTo(created.get("{{apiTestKey}}"));
+{{/apiTestHasUpdate}}
+
+        send(delete(path), null, 204);
+        send(get(path), null, 404);
+{{#apiTestRestores}}
+        // Deleted softly: it can be brought back.
+        send(post(path + "/restore"), null, 200);
+        assertThat(read(path).get("{{apiTestKey}}")).isEqualTo(created.get("{{apiTestKey}}"));
+{{/apiTestRestores}}
+    }
+{{#apiTestHasSearch}}
+
+    @Test
+{{#apiTestBlocked}}    @Disabled("{{{apiTestBlockedReason}}}")
+{{/apiTestBlocked}}    void theSearchFindsARowByItsText() throws Exception {
+        JsonNode created = create("{{EntityName}}");
+        String text = created.get("{{apiTestSearchField}}").asText();
+        JsonNode found = send(get(PATH).param("size", "100").param("q", text), null, 200);
+        assertThat(found.get("content").findValuesAsText("{{apiTestKey}}")).contains(created.get("{{apiTestKey}}").asText());
+    }
+{{/apiTestHasSearch}}
+{{#apiTestHasRequired}}
+
+    @Test
+{{#apiTestBlocked}}    @Disabled("{{{apiTestBlockedReason}}}")
+{{/apiTestBlocked}}    void aRequiredValueLeftOutIsRefusedByName() throws Exception {
+        ObjectNode row = body("{{EntityName}}");
+        row.remove("{{apiTestRequiredField}}");
+        JsonNode problem = send(post(PATH), row, 400);
+        assertThat(problem.get("errors").has("{{apiTestRequiredField}}")).isTrue();
+    }
+{{/apiTestHasRequired}}
+{{#apiTestHasWorkflow}}
+
+    @Test
+{{#apiTestBlocked}}    @Disabled("{{{apiTestBlockedReason}}}")
+{{/apiTestBlocked}}    void aRowMovesOnlyByItsWorkflow() throws Exception {
+        JsonNode created = create("{{EntityName}}");
+        String path = pathOf("{{EntityName}}", created);
+        // Whatever a client sends, a new row starts where the workflow starts it.
+        assertThat(created.get("{{apiTestStatusField}}").asText()).isEqualTo("{{apiTestInitial}}");
+{{#apiTestHasAssignee}}        // Claiming makes it the caller's.
+        assertThat(send(post(path + "/claim"), null, 200).get("{{apiTestAssigneeField}}").asText()).isEqualTo(ADMIN);
+{{/apiTestHasAssignee}}
+        JsonNode moved = send(post(path + "/transitions/{{apiTestMove}}"), null, 200);
+        assertThat(moved.get("{{apiTestStatusField}}").asText()).isEqualTo("{{apiTestMovedTo}}");
+{{#apiTestHasWrongMove}}        // A move that does not start where the row is, is refused.
+        send(post(path + "/transitions/{{apiTestWrongMove}}"), null, 409);
+{{/apiTestHasWrongMove}}        send(post(path + "/transitions/noSuchMove"), null, 400);
+    }
+{{/apiTestHasWorkflow}}
+{{/apiTestMutable}}
+{{#apiTestChecksAccess}}
+
+    @Test
+    void nobodySignedInIsTurnedAway() throws Exception {
+        send(get(PATH), null, null, 401);
+    }
+
+    @Test
+    void readingTakesTheEntitysReadLevel() throws Exception {
+{{#apiTestReadSignedIn}}        // Anyone signed in may read.
+        send(get(PATH), NO_ROLES, null, 200);
+{{/apiTestReadSignedIn}}{{#apiTestReadUser}}        // Users read; a caller without a role does not.
+        send(get(PATH), NO_ROLES, null, 403);
+        send(get(PATH), USER, null, 200);
+{{/apiTestReadUser}}{{#apiTestReadAdmin}}        // Admins only.
+        send(get(PATH), USER, null, 403);
+        send(get(PATH), ADMIN, null, 200);
+{{/apiTestReadAdmin}}    }
+{{#apiTestWriteAdmin}}
+
+    @Test
+    void onlyAnAdminWrites() throws Exception {
+        send(post(PATH), USER, body("{{EntityName}}"), 403);
+        send(post(PATH), ADMIN, body("{{EntityName}}"), 200);
+    }
+{{/apiTestWriteAdmin}}
+{{/apiTestChecksAccess}}
+}

@@ -6,6 +6,11 @@
   "designSystem": "TAILWIND",
   "sortOrder": 20,
   "files": [
+    { "source": "vitest.config.ts", "path": "vitest.config.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 21, "gatedBy": "hasFrontendTests" },
+    { "source": "route.test.ts.mustache", "path": "src/app/route.test.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 81, "gatedBy": "feTestsRoute" },
+    { "source": "csv.test.ts", "path": "src/shared/ui/csv.test.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 151, "gatedBy": "feTestsCsv" },
+    { "source": "validate.test.ts.mustache", "path": "src/features/{{entityNameKebab}}-form/model/validate.test.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 226, "gatedBy": "feTestApplicable" },
+    { "source": "EntityPage.test.tsx.mustache", "path": "src/pages/{{entityNameKebab}}/ui/{{EntityName}}Page.test.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 236, "gatedBy": "feRenderTestApplicable" },
     { "source": "package.json.mustache", "path": "package.json", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 10 },
     { "source": "vite.config.ts.mustache", "path": "vite.config.ts", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 20 },
     { "source": "tsconfig.json", "path": "tsconfig.json", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 30 },

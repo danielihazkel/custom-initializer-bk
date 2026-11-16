@@ -10,9 +10,14 @@ import com.menora.initializr.db.repository.EntityTemplateSetRepository;
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
 import com.menora.initializr.fullstack.FullstackRenderer;
+import com.menora.initializr.fullstack.GeneratedTests;
 import com.menora.initializr.fullstack.ScaffoldOption;
 import com.menora.initializr.fullstack.schema.SchemaMigrations;
 import com.menora.initializr.sql.SqlNames;
+import io.spring.initializr.generator.buildsystem.Dependency;
+import io.spring.initializr.generator.buildsystem.DependencyScope;
+import io.spring.initializr.generator.buildsystem.maven.MavenBuild;
+import io.spring.initializr.generator.spring.build.BuildCustomizer;
 import io.spring.initializr.generator.project.ProjectDescription;
 import io.spring.initializr.generator.project.ProjectGenerationConfiguration;
 import io.spring.initializr.generator.project.contributor.ProjectContributor;
@@ -20,6 +25,7 @@ import io.spring.initializr.generator.version.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 
 import java.nio.file.Files;
@@ -124,6 +130,8 @@ public class FullstackProjectGenerationConfiguration {
             // Boot 3.4 deprecated @MockBean in favour of Spring Framework 6.2's @MockitoBean and
             // Boot 4 removes it — pick the annotation the generated slice test uses by platform version.
             projectCtx.put("useMockitoBean", usesMockitoBean(description.getPlatformVersion()));
+            // The tests option: an API test per entity on an in-memory H2 (the `test` profile).
+            GeneratedTests.putBackend(projectCtx, entities, description.getRequestedDependencies().keySet());
             log.info("Rendering backend CRUD scaffolding: set='{}', {} files, {} entities",
                     setKey, files.size(), entities.size());
             FullstackRenderer.render(files, projectCtx, entities, projectRoot);
@@ -141,6 +149,50 @@ public class FullstackProjectGenerationConfiguration {
             if (description.getRequestedDependencies().containsKey(SchemaMigrations.FLYWAY)) {
                 entityContext.setGeneratedSchema(SchemaMigrations.writeBaseline(projectRoot, projectCtx, entities,
                         description.getRequestedDependencies().keySet()));
+            }
+        };
+    }
+
+    /**
+     * The generated tests run on an in-memory H2 whatever the application's database, so a build
+     * without the {@code h2} dependency gets it for its tests only.
+     */
+    @Bean
+    BuildCustomizer<MavenBuild> testDatabaseCustomizer(EntityDefinitionContext entityContext, ProjectOptionsContext optionsContext,
+                                                       ProjectDescription description) {
+        return build -> {
+            if (entityContext.isEmpty() || description.getRequestedDependencies().containsKey("h2")) return;
+            if (!GeneratedTests.anyTested(entityContext.all(), optionsContext.hasOption("scaffold", ScaffoldOption.TESTS.key()))) return;
+            build.dependencies().add("h2-test", Dependency.withCoordinates("com.h2database", "h2")
+                    .scope(DependencyScope.TEST_RUNTIME));
+        };
+    }
+
+    /**
+     * With the generated tests, the framework's own context-load test ({@code *ApplicationTests})
+     * starts on the {@code test} profile too: without it, it needs the application's real database
+     * running — which on anything but H2 failed {@code mvn package} on a developer's machine.
+     */
+    @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE - 10)
+    ProjectContributor testProfileContributor(EntityDefinitionContext entityContext, ProjectOptionsContext optionsContext,
+                                              ProjectDescription description) {
+        return projectRoot -> {
+            if (entityContext.isEmpty()
+                    || !GeneratedTests.anyTested(entityContext.all(), optionsContext.hasOption("scaffold", ScaffoldOption.TESTS.key()))) {
+                return;
+            }
+            Path tests = projectRoot.resolve("src/test/java/" + description.getPackageName().replace('.', '/'));
+            if (!Files.isDirectory(tests)) return;
+            try (var files = Files.list(tests)) {
+                for (Path file : files.filter(f -> f.getFileName().toString().endsWith("ApplicationTests.java")).toList()) {
+                    String source = Files.readString(file);
+                    if (source.contains("@ActiveProfiles") || !source.contains("@SpringBootTest")) continue;
+                    source = source.replace("import org.springframework.boot.test.context.SpringBootTest;",
+                                    "import org.springframework.boot.test.context.SpringBootTest;\nimport org.springframework.test.context.ActiveProfiles;")
+                            .replace("@SpringBootTest", "@SpringBootTest\n@ActiveProfiles(\"test\")");
+                    Files.writeString(file, source);
+                }
             }
         };
     }

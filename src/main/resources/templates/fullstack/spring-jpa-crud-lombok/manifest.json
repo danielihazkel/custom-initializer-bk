@@ -303,14 +303,34 @@
       "sortOrder": 50
     },
     {
-      "source": "EntityControllerTest.java.mustache",
+      "source": "ApiTestSupport.java.mustache",
       "sourceSet": "spring-jpa-crud",
-      "path": "src/test/java/{{controllerPackagePath}}/{{EntityName}}ControllerTest.java",
-      "perEntity": true,
+      "path": "src/test/java/{{packagePath}}/ApiTestSupport.java",
+      "perEntity": false,
       "substitutionType": "MUSTACHE",
       "fileType": "TEMPLATE",
       "sortOrder": 60,
-      "gatedBy": "optScaffoldTests"
+      "gatedBy": "hasApiTests"
+    },
+    {
+      "source": "application-test.yaml.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/test/resources/application-test.yaml",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 61,
+      "gatedBy": "hasApiTests"
+    },
+    {
+      "source": "EntityApiTest.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/test/java/{{controllerPackagePath}}/{{EntityName}}ApiTest.java",
+      "perEntity": true,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 62,
+      "gatedBy": "apiTestApplicable"
     }
   ]
 }

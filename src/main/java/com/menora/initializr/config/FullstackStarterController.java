@@ -17,6 +17,7 @@ import com.menora.initializr.extension.frontend.FrontendProjectGenerator;
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
 import com.menora.initializr.fullstack.FullstackRenderer;
+import com.menora.initializr.fullstack.GeneratedTests;
 import com.menora.initializr.fullstack.FullstackPageValidator;
 import com.menora.initializr.fullstack.FullstackRequestValidator;
 import com.menora.initializr.fullstack.PageDefinition;
@@ -347,7 +348,8 @@ public class FullstackStarterController {
                 body.dashboardTitle(), body.dashboardOverview(), locale, tempDir.resolve("frontend"));
 
         // Root files
-        Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId(), ldap));
+        Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId(), ldap,
+                GeneratedTests.anyTested(entities, optionsContext.hasOption("scaffold", ScaffoldOption.TESTS.key()))));
         Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
         Files.writeString(tempDir.resolve(".gitattributes"), ROOT_GITATTRIBUTES);
         Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body, templatesHash(backendSet, frontendSet)));
@@ -626,6 +628,9 @@ public class FullstackStarterController {
         // → hasPages=false, the classic shell. Runs last: a report screen resolves its Export
         // button from optScaffoldCsvExport, which is only in the context by this point.
         EntityScaffoldContext.putPageContext(projectCtx, pages, nav);
+        // The tests option: Vitest, a test of each entity's validator and list page, and of the
+        // shared CSV reader and route parsing where the app has them.
+        GeneratedTests.putFrontend(projectCtx, entities);
         log.info("Rendering frontend: substrate via FrontendProjectGenerator + {} overlay files, "
                         + "{} entities (set='{}', palette='{}')",
                 files.size(), entities.size(), set.getSetKey(), palette.getPaletteId());
@@ -689,7 +694,7 @@ public class FullstackStarterController {
         return sentinel;
     }
 
-    private String buildReadme(String artifactId, boolean ldap) {
+    private String buildReadme(String artifactId, boolean ldap, boolean tests) {
         // With ldap-auth every endpoint asks the caller's roles of the directory, which a laptop
         // cannot reach: the local profile gives the dev user its roles instead.
         String run = ldap ? "mvn spring-boot:run -Dspring-boot.run.profiles=local" : "mvn spring-boot:run";
@@ -716,6 +721,7 @@ public class FullstackStarterController {
                 + "`app.cors.allowed-origins=http://localhost:5173` (comma-separated; CORS is off\n"
                 + "when the property is empty — see `CorsConfig`).\n\n"
                 + (ldap ? ACCESS_README : "")
+                + (tests ? TESTS_README : "")
                 + "## Reopen in the generator\n\n"
                 + "`menora-model.json` is the model this project was generated from. To change the\n"
                 + "entities or pages and generate again, open the Fullstack tab of the Menora\n"
@@ -740,6 +746,16 @@ public class FullstackStarterController {
             + "(`backend/src/main/resources/application-local.yaml`) gives `dev-user` — the name the\n"
             + "frontend's dev server signs its calls with — the `ADMIN` role instead; change it there to\n"
             + "see the app as a plain user. Never activate that profile on a server.\n\n";
+
+    /** The README's section on the project's own tests — only with the tests option. */
+    private static final String TESTS_README = "## Tests\n\n"
+            + "- `cd backend && mvn test` — an API test per entity (`*ApiTest`): its real endpoints, service\n"
+            + "  and database, called through MockMvc. They run on the `test` profile\n"
+            + "  (`backend/src/test/resources/application-test.yaml`): an in-memory H2 database whatever\n"
+            + "  the application's own, so nothing has to be running. Rows are made through the API by\n"
+            + "  `ApiTestSupport.body` — change a value there when a field needs another one.\n"
+            + "- `cd frontend && npm test` — Vitest: each entity's form checks (`validate.test.ts`) and\n"
+            + "  its list page against a mocked API (`*Page.test.tsx`).\n\n";
 
     private static final String ROOT_GITIGNORE =
             "# Maven\nbackend/target/\n\n# Local secrets (VAULT_TOKEN for the vault-local profile)\nbackend/.env\n\n# Node\nfrontend/node_modules/\nfrontend/dist/\n\n# IDE\n.idea/\n.vscode/\n*.iml\n";

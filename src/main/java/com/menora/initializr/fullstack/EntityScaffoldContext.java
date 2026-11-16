@@ -3073,6 +3073,9 @@ public final class EntityScaffoldContext {
         ctx.put("listHidesActions", hidesActions);
         ctx.put("writeChecked", writeChecked);
         ctx.put("listActionsConfigurable", hidesActions || writeChecked);
+        // The tests option: the entity's API test (backend) or validator test (frontend), from the
+        // views GeneratedTests put on the project context.
+        GeneratedTests.putEntity(ctx, entity);
         return ctx;
     }
 

@@ -1,0 +1,161 @@
+package {{packageName}};
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+import java.math.BigDecimal;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/**
+ * What every {@code *ApiTest} stands on: the whole application, started once with the
+ * {@code test} profile (an in-memory database, see src/test/resources/application-test.yaml),
+ * called through MockMvc, and a way to make a valid row of any entity through the API itself.
+ *
+ * <p>{@link #body(String)} is where a row's values come from. Each call takes a fresh row number,
+ * so unique columns never clash; a required link makes its parent first. When the model changes,
+ * so does this class — and a value the generator could not choose (a field that must match a
+ * pattern) is yours to put in.
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+public abstract class ApiTestSupport {
+
+    /** A caller {{#hasLdapAuth}}holding the ADMIN role (the test profile's app.security.dev-roles){{/hasLdapAuth}}{{^hasLdapAuth}}(the project checks no roles){{/hasLdapAuth}}. */
+    protected static final String ADMIN = "{{apiTestAdmin}}";
+{{#hasLdapAuth}}    /** A caller holding the USER role only. */
+    protected static final String USER = "{{apiTestUser}}";
+    /** A signed-in caller holding no role. */
+    protected static final String NO_ROLES = "{{apiTestNobody}}";
+{{/hasLdapAuth}}
+    private static final AtomicInteger ROW = new AtomicInteger(1000);
+
+    @Autowired
+    protected MockMvc mvc;
+
+    protected final ObjectMapper json = new ObjectMapper();
+
+    /** A row number no other row of this run has. */
+    protected static int nextRow() {
+        return ROW.incrementAndGet();
+    }
+
+    /** Sends {@code body} (null: none) as {@code user} (null: nobody signed in) and reads the JSON answer, expecting {@code expected}. */
+    protected JsonNode send(MockHttpServletRequestBuilder call, String user, Object body, int expected) throws Exception {
+        if (user != null) call.header("userinfo", user);
+        if (body != null) call.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body));
+        byte[] answer = mvc.perform(call).andExpect(status().is(expected)).andReturn().getResponse().getContentAsByteArray();
+        return answer.length == 0 ? json.nullNode() : json.readTree(answer);
+    }
+
+    /** {@link #send(MockHttpServletRequestBuilder, String, Object, int)} as the admin caller. */
+    protected JsonNode send(MockHttpServletRequestBuilder call, Object body, int expected) throws Exception {
+        return send(call, ADMIN, body, expected);
+    }
+
+    /** GETs a path that must answer 200, as the admin caller. */
+    protected JsonNode read(String path) throws Exception {
+        return send(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path), ADMIN, null, 200);
+    }
+
+    /** Creates a row of {@code entity} through its API and answers it as the API returned it. */
+    protected JsonNode create(String entity) throws Exception {
+        return send(post(listPath(entity)), ADMIN, body(entity), 200);
+    }
+
+    /** The JSON of a new, valid row of {@code entity}: what {@code POST} takes. Parents it needs are created first. */
+    protected ObjectNode body(String entity) throws Exception {
+        int i = nextRow();
+        ObjectNode row = json.createObjectNode();
+        switch (entity) {
+{{#apiTestRows}}
+            case "{{EntityName}}" -> {
+{{#unwritable}}                throw new IllegalStateException("No {{EntityName}} can be made here: {{reasonJava}}");
+{{/unwritable}}{{^unwritable}}{{#puts}}                {{{.}}}
+{{/puts}}{{/unwritable}}            }
+{{/apiTestRows}}
+            default -> throw new IllegalArgumentException("No entity " + entity);
+        }
+        return row;
+    }
+
+    /** Where {@code entity}'s rows are listed and created. */
+    protected static String listPath(String entity) {
+        return switch (entity) {
+{{#apiTestRows}}            case "{{EntityName}}" -> "{{listPath}}";
+{{/apiTestRows}}            default -> throw new IllegalArgumentException("No entity " + entity);
+        };
+    }
+
+    /** Where one row of {@code entity} is read, changed and deleted: the list path and its key. */
+    protected static String pathOf(String entity, JsonNode row) {
+        return switch (entity) {
+{{#apiTestRows}}            case "{{EntityName}}" -> {{{pathJava}}};
+{{/apiTestRows}}            default -> throw new IllegalArgumentException("No entity " + entity);
+        };
+    }
+{{#apiTestUsesAttachments}}
+
+    /** A one-pixel PNG. */
+    private static final byte[] PNG = java.util.Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+
+    /** Uploads a small file (or picture) and answers its id, for a required file or image field. */
+    protected String attachment(int i, boolean image) throws Exception {
+        org.springframework.mock.web.MockMultipartFile file = image
+                ? new org.springframework.mock.web.MockMultipartFile("file", "test-" + i + ".png", "image/png", PNG)
+                : new org.springframework.mock.web.MockMultipartFile("file", "test-" + i + ".txt", "text/plain",
+                        ("Test file " + i).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return send(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/attachments").file(file),
+                ADMIN, null, 201).get("id").asText();
+    }
+{{/apiTestUsesAttachments}}
+
+    /** "{base} {i}", shortened to {max} characters while keeping the row number. */
+    protected static String label(String base, int i, int max) {
+        String s = base + " " + i;
+        if (s.length() <= max) return s;
+        String n = String.valueOf(i);
+        return n.length() >= max ? n.substring(n.length() - max) : s.substring(0, max - n.length() - 1).trim() + " " + n;
+    }
+
+    /** Like {@link #label} with no space in it: a key travels in a URL path. */
+    protected static String key(String base, int i, int max) {
+        return label(base, i, max).replace(' ', '-');
+    }
+
+    /** Row number {i} inside [{min}, {max}] when they are set (cycling through the range), else {i}. */
+    protected static long bounded(int i, Long min, Long max) {
+        if (min == null && max == null) return i;
+        long lo = min != null ? min : Math.min(0L, max);
+        long hi = max != null ? max : lo + 100_000;
+        long span = Math.max(1L, hi - lo + 1);
+        return lo + (i % span);
+    }
+
+    /** A decimal inside [{min}, {max}]: a whole number when one fits, else {min} itself. */
+    protected static BigDecimal decimal(int i, String min, String max) {
+        BigDecimal lo = min == null ? null : new BigDecimal(min);
+        BigDecimal hi = max == null ? null : new BigDecimal(max);
+        Long wholeLo = lo == null ? null : lo.setScale(0, java.math.RoundingMode.CEILING).longValueExact();
+        Long wholeHi = hi == null ? null : hi.setScale(0, java.math.RoundingMode.FLOOR).longValueExact();
+        if (wholeLo != null && wholeHi != null && wholeLo > wholeHi) return lo;
+        return BigDecimal.valueOf(bounded(i, wholeLo, wholeHi));
+    }
+
+    /** One of {@code values}, by row number. */
+    protected static String pick(int i, String... values) {
+        return values[i % values.length];
+    }
+}

@@ -152,6 +152,26 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
 
+    /**
+     * The tests option on a backend whose database is not there: PostgreSQL with Flyway. Its own
+     * tests — an API test per entity and the context-load test — run on the {@code test} profile's
+     * in-memory H2, so {@code mvn package} passes on a machine with no database running.
+     */
+    @org.junit.jupiter.api.Test
+    void aPostgresqlBackendPassesItsOwnTestsOnH2(@TempDir Path workDir) throws Exception {
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
+        body.put("pages", List.of());
+        body.put("dependencies", List.of("web", "data-jpa", "postgresql", "validation", "flyway"));
+        body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "optimisticLocking", "tests")));
+        Path backend = postAndExtractBackend(workDir, body);
+        runMvn(backend, "-B", "package");
+        Path reports = backend.resolve("target/surefire-reports");
+        assertThat(reports.resolve("com.menora.support.SupportApplicationTests.txt")).isRegularFile();
+        assertThat(reports.resolve("com.menora.support.controller.OrderApiTest.txt")).isRegularFile();
+        assertThat(Files.readString(reports.resolve("com.menora.support.controller.OrderApiTest.txt")))
+                .contains("Failures: 0, Errors: 0, Skipped: 0");
+    }
+
     /** The Orders example with its lines composed into the order (whatever the catalog's copy says). */
     @SuppressWarnings("unchecked")
     static Map<String, Object> composedOrders(String frontendSet) throws Exception {

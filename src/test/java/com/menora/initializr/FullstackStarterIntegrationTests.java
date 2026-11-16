@@ -353,10 +353,9 @@ class FullstackStarterIntegrationTests {
                 .doesNotContain("q.toLowerCase(Locale.ROOT)")
                 .doesNotContain("escapeLike");
 
-        // Boot 3.2 still uses @MockBean; the switch to @MockitoBean is pinned by
-        // FullstackProjectGenerationConfigurationTest.
-        assertThat(contentEndingWith(entries, "/ProductControllerTest.java"))
-                .contains("@MockBean").doesNotContain("MockitoBean");
+        // The tests option: the API test drives the real endpoints (FullstackGeneratedTestsTests).
+        assertThat(contentEndingWith(entries, "/ProductApiTest.java"))
+                .contains("class ProductApiTest extends ApiTestSupport");
 
         // The API client reads the problem-detail shape.
         assertThat(entries.get("shop/frontend/src/shared/api/client.ts"))
@@ -971,71 +970,6 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.keySet()).anyMatch(p -> p.endsWith("/dto/UserDto.java"));
         // Lombok is a __common__ dependency, so it is on every generated pom.
         assertThat(entries.get("shop/backend/pom.xml")).contains("lombok");
-    }
-
-    @Test
-    void fullstackEndpoint_emitsControllerTestsWhenOptedIn() throws Exception {
-        // opts.scaffold=[tests] flips the optScaffoldTests gate, so the per-entity @WebMvcTest is
-        // rendered under src/test. It mocks the service, so it needs no datasource or extra dep.
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("artifactId", "demo");
-        body.put("packageName", "com.menora.demo");
-        body.put("bootVersion", "3.2.1");
-        body.put("opts", Map.of("scaffold", List.of("tests")));
-        // User has no filterable field (2-arg findAll); Task has a BOOLEAN -> Filters + 3-arg findAll.
-        body.put("entities", List.of(
-                Map.of("name", "User", "fields", List.of(pkField())),
-                Map.of("name", "Task", "fields", List.of(pkField(), Map.of("name", "done", "type", "Boolean")))));
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        ResponseEntity<byte[]> response = restTemplate.exchange(
-                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
-                new HttpEntity<>(body, headers), byte[].class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        Map<String, String> entries = unzip(response.getBody());
-
-        assertThat(entries.keySet()).anyMatch(p ->
-                p.equals("demo/backend/src/test/java/com/menora/demo/controller/UserControllerTest.java"));
-        assertThat(contentEndingWith(entries, "/controller/UserControllerTest.java"))
-                .contains("@WebMvcTest(UserController.class)")
-                .contains("@MockBean")
-                .contains("get(\"/api/users\")")
-                // No filter fields -> the service only has findAll(q, pageable): two matchers.
-                .contains("service.findAll(any(), any())")
-                .doesNotContain("service.findAll(any(), any(), any())");
-        // A filterable field switches the service to findAll(q, filters, pageable); the mocked
-        // call must carry three matchers or the generated test does not compile.
-        assertThat(contentEndingWith(entries, "/service/TaskService.java"))
-                .contains("findAll(String q, Filters filters, Pageable pageable)");
-        assertThat(contentEndingWith(entries, "/controller/TaskControllerTest.java"))
-                .contains("service.findAll(any(), any(), any())")
-                .doesNotContain("service.findAll(any(), any()))")
-                // The mocked page carries a real PageRequest: PageImpl(List) alone holds
-                // Pageable.unpaged(), which Jackson cannot serialize (the test would 500).
-                .contains("new PageImpl<Task>(List.of(), PageRequest.of(0, 20), 0)")
-                .contains("import org.springframework.data.domain.PageRequest;");
-    }
-
-    @Test
-    void fullstackEndpoint_omitsControllerTestsByDefault() throws Exception {
-        // No opts → the gated test file is not rendered (the default, lean output).
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("artifactId", "demo");
-        body.put("packageName", "com.menora.demo");
-        body.put("bootVersion", "3.2.1");
-        body.put("entities", List.of(Map.of("name", "User", "fields", List.of(pkField()))));
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        ResponseEntity<byte[]> response = restTemplate.exchange(
-                "/starter-fullstack.zip", org.springframework.http.HttpMethod.POST,
-                new HttpEntity<>(body, headers), byte[].class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        Map<String, String> entries = unzip(response.getBody());
-        assertThat(entries.keySet()).noneMatch(p -> p.endsWith("ControllerTest.java"));
     }
 
     @Test

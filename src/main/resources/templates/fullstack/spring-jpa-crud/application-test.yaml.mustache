@@ -1,0 +1,37 @@
+# The `test` profile: what the generated tests run on (src/test/java/**/*ApiTest.java extend
+# ApiTestSupport, which turns it on). An in-memory H2 database, whatever the application's own,
+# so `mvn test` needs nothing running — it does not check SQL particular to that database.
+spring:
+  datasource:
+    url: {{{testDbUrl}}}
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: {{testDdlAuto}}
+{{#testHasFlyway}}  flyway:
+    enabled: {{testUsesMigrations}}
+{{/testHasFlyway}}{{#testDatabases}}
+{{prefix}}:
+  datasource:
+    jdbc-url: {{{testDbUrl}}}
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  hibernate:
+    dialect: org.hibernate.dialect.H2Dialect
+    hbm2ddl-auto: {{testDdlAuto}}
+{{/testDatabases}}
+
+app:
+  # The tests make their own rows.
+  demo-data:
+    enabled: false
+{{#hasLdapAuth}}  security:
+    # The callers the tests sign in as; LDAP is never asked.
+    dev-roles:
+      {{apiTestAdmin}}: ADMIN
+      {{apiTestUser}}: USER
+      {{apiTestNobody}}: ""
+{{/hasLdapAuth}}

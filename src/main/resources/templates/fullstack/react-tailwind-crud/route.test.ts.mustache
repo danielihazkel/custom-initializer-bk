@@ -1,0 +1,17 @@
+import { describe, expect, it } from 'vitest'
+import { parseRoute, toHash } from './route'
+
+describe('the route', () => {
+  it('opens the start page for an empty hash', () => {
+    expect(parseRoute('')).toEqual({ view: '{{initialPageId}}', query: {} })
+  })
+
+  it('reads back the hash it writes', () => {
+    const route = { view: '{{initialPageId}}' as const, arg: 'a b', query: { q: 'x&y' } }
+    expect(parseRoute(toHash(route))).toEqual(route)
+  })
+
+  it('flags a page the app does not have', () => {
+    expect(parseRoute('#/no-such-page').notFound).toBe('no-such-page')
+  })
+})

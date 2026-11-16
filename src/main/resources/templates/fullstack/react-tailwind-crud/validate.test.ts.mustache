@@ -1,0 +1,16 @@
+import { describe, expect, it } from 'vitest'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+import { validate{{EntityName}} } from './validate'
+
+/** A {{EntityName}} every check passes{{^feTestComplete}} — but for a field that must match a pattern: put a matching value in{{/feTestComplete}}. */
+const VALID: Partial<{{EntityName}}> = {{{feTestRowTs}}}
+
+describe('validate{{EntityName}}', () => {
+{{#feTestComplete}}  it('passes a complete record', () => {
+    expect(validate{{EntityName}}(VALID)).toEqual({})
+  })
+{{/feTestComplete}}{{#feTestCases}}
+  it('{{{title}}}', () => {
+    expect(validate{{EntityName}}({ ...VALID, {{{patch}}} })).toHaveProperty('{{field}}')
+  })
+{{/feTestCases}}})

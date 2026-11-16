@@ -599,6 +599,38 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     /**
+     * The tests option: Vitest and its tests — each entity's validator and list page, the CSV
+     * reader — type-checked by the build, linted, and run. Orders without a layout on the tailwind
+     * set.
+     */
+    @Test
+    void fullstackFrontendTestsPass(@TempDir Path workDir) throws Exception {
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
+        body.put("pages", List.of());
+        body.put("opts", Map.of("scaffold", List.of("tests", "softDelete", "csvImport", "audit")));
+        Path project = postAndExtractFrontend(workDir, body);
+        assertThat(project.resolve("src/shared/ui/csv.test.ts")).isRegularFile();
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+        runPnpm(project, "run", "test");
+    }
+
+    /** The same on the Menora set with a page layout (the route test), in Hebrew: Approvals. */
+    @Test
+    void fullstackFrontendMenoraTestsPass(@TempDir Path workDir) throws Exception {
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-menora-digital-crud");
+        body.put("locale", "he");
+        body.put("opts", Map.of("scaffold", List.of("tests", "audit", "optimisticLocking", "csvExport", "rtl")));
+        Path project = postAndExtractFrontend(workDir, body);
+        assertThat(project.resolve("src/app/route.test.ts")).isRegularFile();
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+        runPnpm(project, "run", "test");
+    }
+
+    /**
      * Lints the whole generated frontend with no warnings allowed: the screens gate their imports
      * (t, the enum label consts, onNavigate) on use, which only eslint's no-unused-vars catches, and
      * the generated pre-commit hook runs the same lint.

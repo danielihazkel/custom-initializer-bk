@@ -1,0 +1,28 @@
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+import { {{EntityName}}Page } from './{{EntityName}}Page'
+
+/** The one row the API has. */
+const ROW: Partial<{{EntityName}}> = {{{feRenderRowTs}}}
+
+/** What the API answers: the list holds ROW, every other list is empty, the caller is an admin. */
+function answer(url: string): unknown {
+  const path = url.split('?')[0]
+  if (path === '/api/{{entityNamePluralKebab}}') return { content: [ROW], totalElements: 1, totalPages: 1, number: 0, size: 20 }
+  if (path === '/api/me/roles') return ['ADMIN', 'USER']
+  if (path === '/api/me') return { id: 'dev-user', roles: ['ADMIN', 'USER'] }
+  if (path.endsWith('/stats')) return { buckets: [], total: 0 }
+  if (path === '/api/views') return []
+  return { content: [], totalElements: 0, totalPages: 0, number: 0, size: 20 }
+}
+
+describe('{{EntityName}}Page', () => {
+  it('lists the rows the API returns', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) =>
+      new Response(JSON.stringify(answer(String(input))), { status: 200, headers: { 'content-type': 'application/json' } })))
+    render(<{{EntityName}}Page />)
+    expect((await screen.findAllByText({{{feRenderText}}})).length).toBeGreaterThan(0)
+    vi.unstubAllGlobals()
+  })
+})
