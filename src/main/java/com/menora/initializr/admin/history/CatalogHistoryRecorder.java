@@ -51,8 +51,8 @@ public class CatalogHistoryRecorder implements PostInsertEventListener, PostUpda
             DependencyCompatibilityEntity.class, DependencyEntryEntity.class, DependencyGroupEntity.class,
             DependencySubOptionEntity.class, EntityTemplateFileEntity.class, EntityTemplateSetDefaultDepEntity.class,
             EntityTemplateSetEntity.class, FileContributionEntity.class, FullstackExampleEntity.class,
-            ModuleDependencyMappingEntity.class, ModuleTemplateEntity.class, StarterTemplateDepEntity.class,
-            StarterTemplateEntity.class, VersionDefinitionEntity.class);
+            ModuleDependencyMappingEntity.class, ModuleTemplateEntity.class, SchemaSourceEntity.class,
+            StarterTemplateDepEntity.class, StarterTemplateEntity.class, VersionDefinitionEntity.class);
 
     /** The properties that name a row, in the order they are tried for its label. */
     private static final List<String> LABEL_PROPERTIES = List.of(

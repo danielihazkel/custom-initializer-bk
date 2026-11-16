@@ -139,6 +139,20 @@ menora:
     # The documents pasted into the wizards (SQL, OpenAPI, WSDL, AsyncAPI) of one request,
     # together. Each is parsed in memory, so a request past this is answered 400.
     max-documents-size: 5MB
+  live-schema:
+    # Reading a database's schema for the SQL wizard and the fullstack import (liveschema/).
+    # true: anyone may type in a database (host, user, password) besides the admins' sources.
+    # MENORA_LIVESCHEMA_TYPEDCONNECTIONS=false leaves the sources only.
+    typed-connections: true
+    # Comma-separated host patterns a typed connection may name (*.menora.co.il, 10.20.*);
+    # empty: any host. Admin sources are not limited by it.
+    allowed-hosts: ""
+    # Tables and views one read may take, and reads running at once (the rest wait 5 s, then 429).
+    max-tables: 300
+    max-concurrent-reads: 4
+    # Source passwords: an admin source names one of these (or an env var SCHEMA_SOURCE_...).
+    # secrets:
+    #   hr: ${HR_DB_PASSWORD}
   audit:
     log-remote-addr: true
     # Generation events older than this are deleted every night (0 keeps them all).

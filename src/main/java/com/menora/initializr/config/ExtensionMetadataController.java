@@ -284,7 +284,7 @@ public class ExtensionMetadataController {
         return com.menora.initializr.fullstack.FullstackSchema.document();
     }
 
-    private static List<EntityWire> toWire(List<EntityDefinition> defs) {
+    static List<EntityWire> toWire(List<EntityDefinition> defs) {
         List<EntityWire> wire = new ArrayList<>(defs.size());
         for (EntityDefinition d : defs) {
             List<FieldWire> fields = new ArrayList<>(d.fields().size());

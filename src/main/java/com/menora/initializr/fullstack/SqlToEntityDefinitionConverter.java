@@ -324,6 +324,12 @@ public class SqlToEntityDefinitionConverter {
         };
     }
 
+    /** The field type a column of {@code rawType} imports as, as the DDL import would type it. */
+    public static FieldType fieldTypeOf(SqlDialect dialect, String rawType, Integer precision, Integer scale,
+                                        boolean primaryKey) {
+        return mapType(TypeMappers.map(dialect, rawType, precision, scale), primaryKey);
+    }
+
     /** {@link #mapType} for a column: a key keeps a type a key can have — a time or an instant
      *  cannot be one, so such a key column stays the date-time it was imported as before. */
     static FieldType mapType(JavaType jt, boolean primaryKey) {

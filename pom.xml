@@ -60,6 +60,24 @@
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- Reading a live database's schema for the SQL wizard and the fullstack import
+             (liveschema/). Only java.sql is used in code; the drivers are runtime. DB2 for IBM i
+             (jt400) is in the db2-driver profile below, until it is in the offline mirror. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.sqlserver</groupId>
+            <artifactId>mssql-jdbc</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc11</artifactId>
+            <scope>runtime</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
@@ -222,5 +240,22 @@
             </snapshots>
         </repository>
     </repositories>
+
+    <profiles>
+        <!-- `mvn package -Pdb2-driver`: adds the DB2 for IBM i driver (jt400), so the live schema
+             reader can read DB2. Without it, DB2 is offered as "no driver on the server". Kept
+             out of the default build because the artifact is not in the offline repository. -->
+        <profile>
+            <id>db2-driver</id>
+            <dependencies>
+                <dependency>
+                    <groupId>net.sf.jt400</groupId>
+                    <artifactId>jt400</artifactId>
+                    <version>20.0.6</version>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 
 </project>
