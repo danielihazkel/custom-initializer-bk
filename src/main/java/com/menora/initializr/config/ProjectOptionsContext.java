@@ -134,6 +134,8 @@ public class ProjectOptionsContext {
      *  {@link #populate(Map)}, which leaves the department untouched. */
     public void setDepartment(String departmentId) {
         DEPARTMENT.set(departmentId == null || departmentId.isBlank() ? null : departmentId.trim());
+        // The audit row says which department generated (a JSON request names it in its body).
+        com.menora.initializr.observability.AuditDetails.department(departmentId);
     }
 
     /** The requested department id, or null when none was sent (→ the default department). */

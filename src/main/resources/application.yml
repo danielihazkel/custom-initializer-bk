@@ -131,6 +131,11 @@ menora:
     max-documents-size: 5MB
   audit:
     log-remote-addr: true
+    # Generation events older than this are deleted every night (0 keeps them all).
+    retention-days: 365
+    retention-cron: "0 30 3 * * *"
+    # Events are written by a background writer (a queue of 1000); false writes them in the request.
+    async: true
   access:
     # true: a request without the SSO gateway's user header (menora.audit.user-header, "userinfo"
     # unless renamed) is answered 403 and the UI shows a "No access" screen. Off by default; turn

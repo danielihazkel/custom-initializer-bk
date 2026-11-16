@@ -58,6 +58,25 @@ public class GenerationEventEntity {
     @Column(length = 255)
     private String username;
 
+    /** backend, wizard, multimodule, fullstack or frontend. */
+    @Column(length = 16)
+    private String kind;
+
+    /** download, patch, preview (or other, for rows recorded before V30). */
+    @Column(length = 16)
+    private String action;
+
+    @Column(length = 64)
+    private String department;
+
+    /** The wizards given a document, comma-separated: sql, openapi, soap, events. */
+    @Column(length = 64)
+    private String wizards;
+
+    /** A fullstack model's entities. */
+    @Column(name = "entity_count")
+    private Integer entityCount;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Instant getEventTimestamp() { return eventTimestamp; }
@@ -88,4 +107,14 @@ public class GenerationEventEntity {
     public void setRemoteAddr(String remoteAddr) { this.remoteAddr = remoteAddr; }
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
+    public String getKind() { return kind; }
+    public void setKind(String kind) { this.kind = kind; }
+    public String getAction() { return action; }
+    public void setAction(String action) { this.action = action; }
+    public String getDepartment() { return department; }
+    public void setDepartment(String department) { this.department = department; }
+    public String getWizards() { return wizards; }
+    public void setWizards(String wizards) { this.wizards = wizards; }
+    public Integer getEntityCount() { return entityCount; }
+    public void setEntityCount(Integer entityCount) { this.entityCount = entityCount; }
 }

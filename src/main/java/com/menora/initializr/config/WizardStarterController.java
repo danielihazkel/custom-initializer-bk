@@ -390,9 +390,18 @@ public class WizardStarterController {
         if (hasWsdl(body) && !deps.contains("web-services") && requestFactory.offers("web-services")) {
             deps.add("web-services");
         }
-        return requestFactory.create(new ProjectRequestFactory.Base(body.groupId(), body.artifactId(), body.name(),
+        WebProjectRequest request = requestFactory.create(new ProjectRequestFactory.Base(body.groupId(), body.artifactId(), body.name(),
                 body.description(), body.packageName(), body.type(), body.language(), body.bootVersion(),
                 body.packaging(), body.javaVersion(), body.version(), body.configurationFileFormat()), deps);
+        // The audit row: what this JSON request resolved to, and which wizards it fed.
+        com.menora.initializr.observability.AuditDetails.request(request);
+        List<String> wizards = new ArrayList<>();
+        if (hasSqlScript(body)) wizards.add("sql");
+        if (hasSpec(body)) wizards.add("openapi");
+        if (hasWsdl(body)) wizards.add("soap");
+        if (hasAsyncApi(body)) wizards.add("events");
+        com.menora.initializr.observability.AuditDetails.wizards(wizards);
+        return request;
     }
 
     private static boolean hasSpec(WizardStarterRequest body) {

@@ -234,6 +234,10 @@ public class MultiModuleController {
         } finally {
             optionsContext.setEmbedded(false);
         }
+        // The audit row: the project as a whole, every module's dependencies.
+        com.menora.initializr.observability.AuditDetails.request(root);
+        com.menora.initializr.observability.AuditDetails.dependencies(everyDependency);
+        com.menora.initializr.observability.AuditDetails.kind("multimodule");
         Files.writeString(dir.resolve("pom.xml"), parentPom(root, moduleNames), StandardCharsets.UTF_8);
         Files.writeString(dir.resolve(BackendModel.FILE), modelOf(root, moduleTemplates, extraDeps, everyDependency),
                 StandardCharsets.UTF_8);

@@ -37,6 +37,23 @@ public class ProjectPreviewController {
         this.metadataProvider = metadataProvider;
     }
 
+    private static void fillMissing(WebProjectRequest r, InitializrMetadata metadata) {
+        if (blank(r.getType())) r.setType(metadata.getTypes().getDefault().getId());
+        if (blank(r.getLanguage())) r.setLanguage(metadata.getLanguages().getDefault().getId());
+        if (blank(r.getPackaging())) r.setPackaging(metadata.getPackagings().getDefault().getId());
+        if (blank(r.getJavaVersion())) r.setJavaVersion(metadata.getJavaVersions().getDefault().getId());
+        if (blank(r.getBootVersion())) r.setBootVersion(metadata.getBootVersions().getDefault().getId());
+        if (blank(r.getGroupId())) r.setGroupId(metadata.getGroupId().getContent());
+        if (blank(r.getArtifactId())) r.setArtifactId(metadata.getArtifactId().getContent());
+        if (blank(r.getName())) r.setName(r.getArtifactId());
+        if (r.getDescription() == null) r.setDescription(metadata.getDescription().getContent());
+        if (blank(r.getPackageName())) r.setPackageName(r.getGroupId() + "." + r.getArtifactId());
+    }
+
+    private static boolean blank(String s) {
+        return s == null || s.isBlank();
+    }
+
     @GetMapping("/starter.preview")
     public PreviewResponse preview(@ModelAttribute WebProjectRequest request) throws IOException {
         // Do NOT call request.initialize(metadata) here — it unconditionally
@@ -47,6 +64,9 @@ public class ProjectPreviewController {
         if (request.getVersion() == null || request.getVersion().isEmpty()) {
             request.setVersion((String) metadata.defaults().get("version"));
         }
+        // What the caller left out is the metadata's default, as /starter.zip does (a URL that
+        // named only its dependencies was a 400, "Text must not be null"). Only the missing ones.
+        fillMissing(request, metadata);
         Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
         try {
             List<PreviewFile> files = new ArrayList<>();

@@ -316,6 +316,9 @@ public class FullstackStarterController {
         }
         optionsContext.populate(body.opts());
         optionsContext.setDepartment(body.department());
+        // The audit row: the backend request as resolved (the dependencies added below count too).
+        com.menora.initializr.observability.AuditDetails.request(request);
+        com.menora.initializr.observability.AuditDetails.entityCount(entities.size());
         // The `openapi` scaffold opt enriches generated controllers with springdoc @Tag/@Operation
         // annotations, which need the springdoc starter on the classpath. Force-add it here (before
         // generation) so the dep lands in the pom — analogous to how the `tests` opt relies on

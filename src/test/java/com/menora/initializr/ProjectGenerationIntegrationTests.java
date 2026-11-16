@@ -1950,4 +1950,13 @@ class ProjectGenerationIntegrationTests {
                 .contains("validation")
                 .contains("quartz");
     }
+
+    @Test
+    void aPreviewThatNamesOnlyItsDependenciesUsesTheDefaults() {
+        // /starter.zip fills what a URL leaves out from the metadata; the preview answered 400
+        // ("Text must not be null") until it did the same.
+        ResponseEntity<String> response = restTemplate.getForEntity("/starter.preview?dependencies=web&artifactId=peek", String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).contains("\"pom.xml\"").contains("PeekApplication.java");
+    }
 }
