@@ -67,7 +67,8 @@ public class CatalogSyncController {
             return ResponseEntity.badRequest().body(Map.of("error", "Nothing to apply",
                     "detail", "Name the rows in 'keys', or send 'all': true for every row that differs or is missing"));
         }
-        int written = catalogSync.apply(all ? null : selection.keys());
+        int written = com.menora.initializr.admin.history.CatalogChangeContext.as("catalog-sync",
+                () -> catalogSync.apply(all ? null : selection.keys()));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("written", written);
         body.put("summary", catalogSync.report().summary());

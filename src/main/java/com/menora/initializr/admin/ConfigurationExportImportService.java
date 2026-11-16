@@ -321,25 +321,35 @@ public class ConfigurationExportImportService {
 
     // ── Import ───────────────────────────────────────────────────────────────
 
+    /**
+     * Empties a catalog table row by row, then flushes: the catalog history records each row it
+     * removes (a batch delete would pass it by), and the inserts that follow, which run at once
+     * (IDENTITY ids), cannot meet a row whose delete is still pending.
+     */
+    private static void clear(org.springframework.data.jpa.repository.JpaRepository<?, ?> repo) {
+        repo.deleteAll();
+        repo.flush();
+    }
+
     @Transactional
     public Map<String, Integer> importAll(ConfigurationExport data) {
         validate(data);
 
         // Clear all tables in child-first order
-        entityTemplateFileRepo.deleteAllInBatch();
-        entityTemplateSetDefaultDepRepo.deleteAllInBatch();
-        entityTemplateSetRepo.deleteAllInBatch();
-        colorPaletteRepo.deleteAllInBatch();
-        moduleMappingRepo.deleteAllInBatch();
-        moduleRepo.deleteAllInBatch();
-        templateDepRepo.deleteAllInBatch();
-        templateRepo.deleteAllInBatch();
-        compatibilityRepo.deleteAllInBatch();
-        subOptionRepo.deleteAllInBatch();
-        buildCustomRepo.deleteAllInBatch();
-        fileContribRepo.deleteAllInBatch();
-        entryRepo.deleteAllInBatch();
-        groupRepo.deleteAllInBatch();
+        clear(entityTemplateFileRepo);
+        clear(entityTemplateSetDefaultDepRepo);
+        clear(entityTemplateSetRepo);
+        clear(colorPaletteRepo);
+        clear(moduleMappingRepo);
+        clear(moduleRepo);
+        clear(templateDepRepo);
+        clear(templateRepo);
+        clear(compatibilityRepo);
+        clear(subOptionRepo);
+        clear(buildCustomRepo);
+        clear(fileContribRepo);
+        clear(entryRepo);
+        clear(groupRepo);
 
         // Insert groups, build name→entity map
         Map<String, DependencyGroupEntity> groupMap = new LinkedHashMap<>();
@@ -554,7 +564,7 @@ public class ConfigurationExportImportService {
         // Version definitions. Backward-compatible: only touch the table when the export
         // carries them (older exports predate this field — leave existing versions intact).
         if (data.getVersionDefinitions() != null) {
-            versionRepo.deleteAllInBatch();
+            clear(versionRepo);
             for (VersionExport v : data.getVersionDefinitions()) {
                 VersionDefinitionEntity entity = new VersionDefinitionEntity();
                 entity.setKind(VersionKind.valueOf(v.getKind()));
@@ -571,7 +581,7 @@ public class ConfigurationExportImportService {
 
         // Departments. Backward-compatible like versions: older exports predate the field.
         if (data.getDepartments() != null) {
-            departmentRepo.deleteAllInBatch();
+            clear(departmentRepo);
             for (DepartmentExport d : data.getDepartments()) {
                 DepartmentEntity entity = new DepartmentEntity();
                 entity.setDepartmentId(d.getDepartmentId());
@@ -585,7 +595,7 @@ public class ConfigurationExportImportService {
         // Fullstack examples. Backward-compatible: older exports predate the field. Entities
         // were already checked against the fullstack validator in validate().
         if (data.getFullstackExamples() != null) {
-            fullstackExampleRepo.deleteAllInBatch();
+            clear(fullstackExampleRepo);
             for (FullstackExampleExport ex : data.getFullstackExamples()) {
                 FullstackExampleEntity entity = new FullstackExampleEntity();
                 entity.setExampleId(ex.getExampleId());

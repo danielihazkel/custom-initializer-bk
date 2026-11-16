@@ -47,8 +47,9 @@ class AdminLoginTest {
 
     private final MovableClock clock = new MovableClock();
     private final AdminLoginThrottle throttle = new AdminLoginThrottle(3, Duration.ofMinutes(5), clock);
-    private final AdminAuthController controller = new AdminAuthController("s3cret",
-            new AdminTokenStore("s3cret", "", Duration.ofHours(12), clock), throttle);
+    private final AdminAuthController controller = new AdminAuthController("s3cret", true, "userinfo",
+            new AdminTokenStore("s3cret", "", Duration.ofHours(12), clock), throttle,
+            new AdminDirectory("", "", "", org.springframework.web.client.RestClient.builder()));
 
     private ResponseEntity<?> login(String password, String address) {
         MockHttpServletRequest request = new MockHttpServletRequest();

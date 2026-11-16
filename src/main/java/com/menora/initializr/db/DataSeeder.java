@@ -87,6 +87,27 @@ public class DataSeeder implements SmartInitializingSingleton {
     @Override
     @Transactional
     public void afterSingletonsInstantiated() {
+        // The catalog history: seeding an empty database is the release itself, not a change
+        // anybody made, so it is not recorded; what a start does to an existing one (the syncs
+        // bringing rows up to this release) is, as "release-sync" by "system".
+        // Flushed inside the scope: the history is written as the changes reach the database, and
+        // this method's own transaction would otherwise commit them after the scope has closed.
+        boolean fresh = groupRepo.count() == 0;
+        Runnable work = () -> {
+            seedAndSync();
+            entityManager.flush();
+        };
+        if (fresh) {
+            com.menora.initializr.admin.history.CatalogChangeContext.suppressed(work);
+        } else {
+            com.menora.initializr.admin.history.CatalogChangeContext.as("release-sync", work);
+        }
+    }
+
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
+    private void seedAndSync() {
         try {
             // Run table-scoped seeds before the main guard so new tables added in
             // later releases (e.g. color_palette, entity_template_set) get populated

@@ -29,6 +29,16 @@ admin:
   login:
     max-failures: 10
     window: 5m
+  # Signing in as yourself: the SSO gateway's user header names you, and you are an admin when
+  # one of your LDAP groups contains `group`, as Menora's LDAP REST service answers
+  # (GET {base-url}/employee/findGroupsByCn/{user}). Without both, only the password signs in.
+  ldap-rest:
+    base-url: ${ADMIN_LDAP_REST_BASE_URL:}
+  group: ${ADMIN_GROUP:}
+  # Admins without the directory being asked — a developer's machine only.
+  dev-users: ""
+  # false: the shared password no longer signs in (once single sign-on works).
+  password-login: true
 
 spring:
   cache:

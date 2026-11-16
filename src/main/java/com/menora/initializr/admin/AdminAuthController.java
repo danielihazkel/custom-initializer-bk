@@ -12,8 +12,16 @@ import org.springframework.web.bind.annotation.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * Signing in to the admin screens. An admin is named: through single sign-on the SSO gateway's
+ * user header says who is asking and {@link AdminDirectory} whether they are an admin; the shared
+ * password ({@code admin.password}) stays for an environment without the directory, and its
+ * holder is "password" — or "&lt;user&gt; (password)" when the header names them. The name goes
+ * into the token, and from there into the catalog history.
+ */
 @RestController
 @RequestMapping("/admin")
 public class AdminAuthController {
@@ -26,21 +34,44 @@ public class AdminAuthController {
     private final byte[] configuredPasswordDigest;
     private final AdminTokenStore tokenStore;
     private final AdminLoginThrottle throttle;
+    private final AdminDirectory directory;
+    private final boolean passwordLogin;
+    private final String userHeader;
 
     public AdminAuthController(@Value("${admin.password}") String configuredPassword,
+                               @Value("${admin.password-login:true}") boolean passwordLogin,
+                               @Value("${menora.audit.user-header:userinfo}") String userHeader,
                                AdminTokenStore tokenStore,
-                               AdminLoginThrottle throttle) {
+                               AdminLoginThrottle throttle,
+                               AdminDirectory directory) {
         this.configuredPasswordDigest = digest(configuredPassword);
         this.tokenStore = tokenStore;
         this.throttle = throttle;
-        if (DEFAULT_PASSWORD.equals(configuredPassword)) {
+        this.directory = directory;
+        this.passwordLogin = passwordLogin;
+        this.userHeader = userHeader;
+        if (passwordLogin && DEFAULT_PASSWORD.equals(configuredPassword)) {
             log.warn("admin.password is still the default '{}': anyone who can reach /admin can edit the catalog. "
                     + "Set ADMIN_PASSWORD (or admin.password) for this environment.", DEFAULT_PASSWORD);
         }
     }
 
+    /** What the login screen may offer, and who the gateway says is asking. Open to anyone. */
+    @GetMapping("/login/options")
+    public Map<String, Object> options(HttpServletRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("password", passwordLogin);
+        body.put("sso", directory.ssoAvailable());
+        body.put("user", userOf(request));
+        return body;
+    }
+
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        if (!passwordLogin) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Signing in with the password is turned off here: sign in with your own account."));
+        }
         String address = request.getRemoteAddr();
         long wait = throttle.retryAfterSeconds(address);
         if (wait > 0) {
@@ -53,10 +84,42 @@ public class AdminAuthController {
         // nothing about how much of it was right.
         if (password != null && MessageDigest.isEqual(digest(password), configuredPasswordDigest)) {
             throttle.succeeded(address);
-            return ResponseEntity.ok(Map.of("token", tokenStore.issue()));
+            String user = userOf(request);
+            String name = user == null ? AdminTokenStore.PASSWORD_USER : user + " (password)";
+            return ResponseEntity.ok(Map.of("token", tokenStore.issue(name), "user", name));
         }
         throttle.failed(address);
         return ResponseEntity.status(401).body(Map.of("error", "Invalid password"));
+    }
+
+    /** Single sign-on: the gateway's user header names the user, the directory says whether they are an admin. */
+    @PostMapping("/login/sso")
+    public ResponseEntity<?> loginSso(HttpServletRequest request) {
+        String user = userOf(request);
+        if (user == null) {
+            return ResponseEntity.status(401).body(Map.of("error",
+                    "No signed-in user: the request did not come through the single sign-on gateway."));
+        }
+        boolean admin;
+        try {
+            admin = directory.isAdmin(user);
+        } catch (AdminDirectory.DirectoryUnavailableException e) {
+            log.warn("Admin sign-in of {}: {}", user, e.getCause() == null ? e.getMessage() : e.getCause().toString());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("error",
+                    "The directory that says who is an admin did not answer. Try again, or sign in with the password."));
+        }
+        if (!admin) {
+            log.info("Admin sign-in refused: {} is not in the admin group", user);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error",
+                    user + " is not an admin of this service.", "user", user));
+        }
+        return ResponseEntity.ok(Map.of("token", tokenStore.issue(user), "user", user));
+    }
+
+    /** Who the token in the request was issued to. */
+    @GetMapping("/me")
+    public Map<String, Object> me(@RequestAttribute(name = AdminAuthFilter.USER_ATTRIBUTE, required = false) String user) {
+        return Map.of("user", user == null ? AdminTokenStore.PASSWORD_USER : user);
     }
 
     // Tokens are stateless (see AdminTokenStore): the client drops its copy and the token
@@ -64,6 +127,13 @@ public class AdminAuthController {
     @PostMapping("/logout")
     public ResponseEntity<Void> logout() {
         return ResponseEntity.noContent().build();
+    }
+
+    private String userOf(HttpServletRequest request) {
+        String value = request.getHeader(userHeader);
+        if (value == null || value.isBlank()) return null;
+        String user = value.trim();
+        return user.length() > 200 ? user.substring(0, 200) : user;
     }
 
     private static String minutes(long seconds) {

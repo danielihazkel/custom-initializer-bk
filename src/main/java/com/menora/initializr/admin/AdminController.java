@@ -549,7 +549,18 @@ public class AdminController {
      */
     @PostMapping("/entity-template-sets/reset")
     public Map<String, Object> resetEntityTemplateSets() throws java.io.IOException {
-        EntityTemplateSetSync.Result result = templateSetSync.reset();
+        EntityTemplateSetSync.Result result;
+        try {
+            result = com.menora.initializr.admin.history.CatalogChangeContext.as("template-reset", () -> {
+                try {
+                    return templateSetSync.reset();
+                } catch (java.io.IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+            });
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
+        }
         return Map.of("added", result.added(), "updated", result.updated(), "removed", result.removed());
     }
 
@@ -665,7 +676,9 @@ public class AdminController {
 
     @PostMapping("/import")
     public ResponseEntity<Map<String, Object>> importConfiguration(@RequestBody ConfigurationExport data) {
-        Map<String, Integer> counts = exportImportService.importAll(data);
+        // One request in the catalog history: an admin can undo the whole import.
+        Map<String, Integer> counts = com.menora.initializr.admin.history.CatalogChangeContext.as("import",
+                () -> exportImportService.importAll(data));
         return ResponseEntity.ok(Map.of("imported", counts));
     }
 }
