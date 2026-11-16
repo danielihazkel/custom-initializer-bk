@@ -172,6 +172,51 @@ class GeneratedBackendBuildSmokeTests {
                 .contains("Failures: 0, Errors: 0, Skipped: 0");
     }
 
+    /**
+     * The fullstack {@code db-tests} profile resolves — Testcontainers' JDBC driver and the
+     * database's module, Flyway's module on Boot 3.5 — and the tests compile under it. Running it
+     * needs Docker: {@code LocalRunDockerSmokeTests}.
+     */
+    @ParameterizedTest(name = "{0} on Spring Boot {1}")
+    @org.junit.jupiter.params.provider.CsvSource({
+            "postgresql, 3.2.1", "postgresql, " + FullstackGoldenOutputTests.BOOT_35,
+            "oracle, " + FullstackGoldenOutputTests.BOOT_35, "mssql, " + FullstackGoldenOutputTests.BOOT_35})
+    void theDbTestsProfileResolvesAndCompiles(String db, String boot, @TempDir Path workDir) throws Exception {
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
+        body.put("pages", List.of());
+        body.put("bootVersion", boot);
+        body.put("dependencies", List.of("web", "data-jpa", db, "validation", "flyway"));
+        body.put("opts", Map.of("scaffold", List.of("tests")));
+        Path backend = postAndExtractBackend(workDir, body);
+        assertThat(Files.readString(backend.resolve("pom.xml"))).contains("<id>db-tests</id>");
+        runMvn(backend, "-B", "test-compile", "-Pdb-tests");
+    }
+
+    /**
+     * The {@code testcontainers} dependency's sample test compiles with each database's container
+     * and is skipped where Docker is not running — as in the image build, which runs the tests.
+     */
+    @ParameterizedTest(name = "Spring Boot {0}")
+    @ValueSource(strings = {"3.2.1", FullstackGoldenOutputTests.BOOT_35})
+    void theTestcontainersSampleTestCompilesAndWaitsForDocker(String bootVersion, @TempDir Path workDir) throws Exception {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "tcdemo");
+        body.put("packageName", "com.menora.tcdemo");
+        body.put("bootVersion", bootVersion);
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("web", "data-jpa", "postgresql", "oracle", "mssql", "flyway", "testcontainers"));
+        body.put("opts", Map.of("postgresql", List.of("pg-primary"), "oracle", List.of("oracle-secondary"),
+                "mssql", List.of("mssql-secondary")));
+        Path project = postAndExtractWizard(workDir, body);
+        assertThat(project.resolve("compose.yaml")).isRegularFile();
+        runMvn(project, "-B", "test", "-Dtest=ContainerDatabaseTests");
+        String report = Files.readString(project.resolve("target/surefire-reports/com.menora.tcdemo.ContainerDatabaseTests.txt"));
+        // Skipped without Docker, run with it: either way nothing fails.
+        assertThat(report).contains("Tests run: 1, Failures: 0, Errors: 0");
+        log.info("ContainerDatabaseTests: {}", report.lines().filter(l -> l.startsWith("Tests run")).findFirst().orElse(""));
+    }
+
     /** The Orders example with its lines composed into the order (whatever the catalog's copy says). */
     @SuppressWarnings("unchecked")
     static Map<String, Object> composedOrders(String frontendSet) throws Exception {

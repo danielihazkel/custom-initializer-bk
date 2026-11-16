@@ -1,4 +1,5 @@
 0910d5c5483eceff0b4b666d84a5f4343ac775aa568e06d54c0a1802bd3667b7  golden/.gitattributes
+b84a4be27df302918eb9b4464a81e4d326299d832a27da1a524ea29e1f535cdf  golden/compose.yaml
 32abd4837b7d6b9a34495995930e0c3983e127287143b0c9db59b69dada8964a  golden/golden-api/.editorconfig
 de7cd6dd2e2e685c793b14403c34da350e06b1459efcf62422c68f340b306e7c  golden/golden-api/.env
 5775a77ad2f6d12dde053a3fb0cca4309189163f0888f4e7e984cd0ab327028b  golden/golden-api/.gitattributes
@@ -15,6 +16,7 @@ c1472eead393d284301250879f955f0d5d92f7841438ccdd6642a954a03cbf3f  golden/golden-
 a49dc2587e5611fa0e63083ce366a054da2c3caa282e800bcc1ce107d98cd286  golden/golden-api/src/main/java/com/menora/golden/config/SecurityConfig.java
 53ad94d454c30e6f8eeac94ee9d60e275d47a043a2cdd96dd3d42923676f0d6d  golden/golden-api/src/main/java/com/menora/golden/config/VaultLocalEnvironmentPostProcessor.java
 0e969d37d4ef545db70577aed8f5c9ffe3863a6bff3e334cbf9aefb4352049e4  golden/golden-api/src/main/resources/META-INF/spring.factories
+c5461278bcd62f82a4377bd4c7b03bf2f0494153360426db542047e513d84bec  golden/golden-api/src/main/resources/application-compose.yaml
 2e114ffa71c2de7b2a4965aef16ee0037f7fdc6839edbae73f77a402c198d087  golden/golden-api/src/main/resources/application-vault-local.yaml
 2063e85ea0ebd1d4351741749766ae2b019590f4998b92ee86985edfe20ce5cb  golden/golden-api/src/main/resources/application.yaml
 22086473262739b42ed019915d334be790c9588f5a97f06f4d1f2b4e98cf6df5  golden/golden-api/src/main/resources/detailedLogFormat.json

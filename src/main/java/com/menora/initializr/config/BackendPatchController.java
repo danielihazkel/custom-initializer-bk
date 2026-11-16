@@ -57,6 +57,22 @@ public class BackendPatchController {
 
     public record BackendPatchRequest(JsonNode base, JsonNode target, String baseCatalogHash) {}
 
+    /**
+     * The files an update replaces instead of patching: the model file, and every {@code HELP.md} —
+     * the generated {@code .gitignore} leaves it out of the project's repository, so a patch to it
+     * has no file in the index to apply to and fails {@code git apply --3way}.
+     */
+    static Set<String> deliveredWhole(Map<String, byte[]> base, Map<String, byte[]> target) {
+        Set<String> paths = new java.util.TreeSet<>();
+        paths.add(BackendModel.FILE);
+        for (Map<String, byte[]> tree : List.of(base, target)) {
+            for (String path : tree.keySet()) {
+                if (path.equals("HELP.md") || path.endsWith("/HELP.md")) paths.add(path);
+            }
+        }
+        return paths;
+    }
+
     @PostMapping("/starter.patch")
     public ResponseEntity<byte[]> patch(@RequestBody BackendPatchRequest body) throws IOException {
         if (body == null || requestOf(body.base()) == null || requestOf(body.target()) == null) {
@@ -82,7 +98,7 @@ public class BackendPatchController {
                             BackendModel.catalogHashOf(base.get(BackendModel.FILE)),
                             "the folder holding `pom.xml`", "catalog"),
                     // Never edited by hand and rewritten whole by every generation: replaced, not patched.
-                    Set.of(BackendModel.FILE));
+                    deliveredWhole(base, target));
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=\"" + request.getArtifactId() + "-update.zip\"")

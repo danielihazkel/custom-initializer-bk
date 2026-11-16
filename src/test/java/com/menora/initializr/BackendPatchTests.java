@@ -189,7 +189,12 @@ class BackendPatchTests {
         assertThat(patch)
                 .contains("+++ b/shop-persistence/pom.xml")
                 .contains("--- a/pom.xml").contains("+        <module>shop-persistence</module>")
-                .doesNotContain("--- a/shop-api/");
+                // The new module's database joins the project's compose services, and the entry
+                // module's compose profile follows; nothing else of an existing module moves.
+                .contains("--- a/compose.yaml").contains("+  postgres:")
+                .contains("--- a/shop-api/src/main/resources/application-compose.yaml");
+        assertThat(patch.lines().filter(l -> l.startsWith("--- a/shop-api/")).toList())
+                .containsExactly("--- a/shop-api/src/main/resources/application-compose.yaml");
     }
 
     @Test
@@ -247,8 +252,9 @@ class BackendPatchTests {
         Files.write(patch, update.get("club-update/update.patch"));
         git(repo, "apply", "--check", "--3way", patch.toString());
         git(repo, "apply", "--3way", "--whitespace=nowarn", patch.toString());
-        // The one file delivered whole.
+        // The files delivered whole: the model, and HELP.md — git ignores it, so no patch could reach it.
         Files.write(repo.resolve("menora-model.json"), update.get("club-update/files/menora-model.json"));
+        Files.write(repo.resolve("HELP.md"), update.get("club-update/files/HELP.md"));
 
         Map<String, byte[]> expected = new TreeMap<>();
         generate(target()).forEach((path, bytes) -> expected.put(path.substring("club/".length()), bytes));

@@ -56,19 +56,22 @@ public class MultiModuleController {
     private final ModuleDependencyMappingRepository moduleMappingRepo;
     private final ProjectOptionsContext optionsContext;
     private final com.menora.initializr.db.DependencyConfigService configService;
+    private final com.menora.initializr.localrun.ContainerImages containerImages;
 
     public MultiModuleController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                  ProjectRequestFactory requestFactory,
                                  ModuleTemplateRepository moduleRepo,
                                  ModuleDependencyMappingRepository moduleMappingRepo,
                                  ProjectOptionsContext optionsContext,
-                                 com.menora.initializr.db.DependencyConfigService configService) {
+                                 com.menora.initializr.db.DependencyConfigService configService,
+                                 com.menora.initializr.localrun.ContainerImages containerImages) {
         this.invoker = invoker;
         this.requestFactory = requestFactory;
         this.moduleRepo = moduleRepo;
         this.moduleMappingRepo = moduleMappingRepo;
         this.optionsContext = optionsContext;
         this.configService = configService;
+        this.containerImages = containerImages;
     }
 
     /**
@@ -194,6 +197,7 @@ public class MultiModuleController {
                         Collectors.mapping(ModuleDependencyMappingEntity::getDependencyId, Collectors.toList())));
 
         List<String> moduleNames = new ArrayList<>();
+        String entryModule = null;
         Set<String> everyDependency = new LinkedHashSet<>(extraDeps);
         // The project keeps one model, at its root: a module writes none.
         optionsContext.setEmbedded(true);
@@ -201,6 +205,7 @@ public class MultiModuleController {
         for (ModuleTemplateEntity module : moduleTemplates) {
             String moduleArtifactId = root.getArtifactId() + module.getSuffix();
             moduleNames.add(moduleArtifactId);
+            if (module.isHasMainClass() && entryModule == null) entryModule = moduleArtifactId;
 
             // The module's own dependencies, then the ones asked for on every module.
             Set<String> moduleDeps = new LinkedHashSet<>(depsByModule.getOrDefault(module.getModuleId(), List.of()));
@@ -233,6 +238,14 @@ public class MultiModuleController {
         Files.writeString(dir.resolve(BackendModel.FILE), modelOf(root, moduleTemplates, extraDeps, everyDependency),
                 StandardCharsets.UTF_8);
         Files.writeString(dir.resolve(".gitattributes"), BackendModel.gitAttributes(null), StandardCharsets.UTF_8);
+        // The services every module's dependencies need, for the whole project; the profile that
+        // points the application at them goes with the module that starts it.
+        if (entryModule != null && com.menora.initializr.localrun.LocalRun.hasServices(everyDependency)) {
+            Files.writeString(dir.resolve(com.menora.initializr.localrun.LocalRun.COMPOSE_FILE),
+                    com.menora.initializr.localrun.LocalRun.compose(root.getArtifactId(), everyDependency, containerImages, false,
+                            entryModule + "/" + com.menora.initializr.localrun.LocalRun.PROFILE_FILE), StandardCharsets.UTF_8);
+            com.menora.initializr.localrun.LocalRun.writeProfile(dir.resolve(entryModule), everyDependency, true);
+        }
         // One set of bytes whatever machine generated it.
         GeneratedProjectFiles.normalizeLineEndings(dir);
     }

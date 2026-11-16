@@ -32,7 +32,8 @@
         { "depId": "mongodb", "name": "MongoDB", "description": "Spring Data MongoDB — document database driver", "sortOrder": 6 },
         { "depId": "flyway", "name": "Flyway Migration", "description": "Database schema migrations with Flyway — drop SQL files under db/migration/", "mavenGroupId": "org.flywaydb", "mavenArtifactId": "flyway-core", "sortOrder": 7 },
         { "depId": "liquibase", "name": "Liquibase Migration", "description": "Database schema migrations with Liquibase — XML changelogs under db/changelog/", "mavenGroupId": "org.liquibase", "mavenArtifactId": "liquibase-core", "sortOrder": 8 },
-        { "depId": "redis", "name": "Spring Data Redis", "description": "Spring Data Redis — Lettuce client + RedisTemplate for cache and ops", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-data-redis", "sortOrder": 9 }
+        { "depId": "redis", "name": "Spring Data Redis", "description": "Spring Data Redis — Lettuce client + RedisTemplate for cache and ops", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-data-redis", "sortOrder": 9 },
+        { "depId": "testcontainers", "name": "Testcontainers", "description": "Test on a real PostgreSQL, SQL Server or Oracle in Docker — a sample test that starts the application on its databases (skipped where Docker is not running)", "mavenGroupId": "org.testcontainers", "mavenArtifactId": "junit-jupiter", "scope": "test", "sortOrder": 10 }
       ]
     },
     {

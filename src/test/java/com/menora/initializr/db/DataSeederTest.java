@@ -77,7 +77,7 @@ class DataSeederTest {
 
     @Test
     void seedsAllBackendDependencyEntries() {
-        assertThat(entryRepo.findAllByProjectKind(ProjectKind.BACKEND)).hasSize(29);
+        assertThat(entryRepo.findAllByProjectKind(ProjectKind.BACKEND)).hasSize(30);
     }
 
     @Test

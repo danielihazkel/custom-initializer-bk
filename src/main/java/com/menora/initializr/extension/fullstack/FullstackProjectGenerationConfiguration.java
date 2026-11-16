@@ -13,6 +13,8 @@ import com.menora.initializr.fullstack.FullstackRenderer;
 import com.menora.initializr.fullstack.GeneratedTests;
 import com.menora.initializr.fullstack.ScaffoldOption;
 import com.menora.initializr.fullstack.schema.SchemaMigrations;
+import com.menora.initializr.localrun.ContainerImages;
+import com.menora.initializr.localrun.LocalRun;
 import com.menora.initializr.sql.SqlNames;
 import io.spring.initializr.generator.buildsystem.Dependency;
 import io.spring.initializr.generator.buildsystem.DependencyScope;
@@ -166,6 +168,44 @@ public class FullstackProjectGenerationConfiguration {
             build.dependencies().add("h2-test", Dependency.withCoordinates("com.h2database", "h2")
                     .scope(DependencyScope.TEST_RUNTIME));
         };
+    }
+
+    /**
+     * With the generated tests and a database a container fits: the {@code db-tests} Maven profile,
+     * which runs the same API tests on that database in Docker ({@code mvn test -Pdb-tests}).
+     */
+    @Bean
+    BuildCustomizer<MavenBuild> dbTestsProfileCustomizer(EntityDefinitionContext entityContext, ProjectOptionsContext optionsContext,
+                                                         ProjectDescription description) {
+        return build -> {
+            if (!dbTestsApply(entityContext, optionsContext)) return;
+            var deps = description.getRequestedDependencies().keySet();
+            LocalRun.dbTestsDatabase(deps).ifPresent(db ->
+                    LocalRun.addDbTestsProfile(build, db, deps.contains(SchemaMigrations.FLYWAY)));
+        };
+    }
+
+    /** What the {@code db-tests} profile reads from the test resources: the image proxy, SQL Server's licence. */
+    @Bean
+    ProjectContributor dbTestsResourcesContributor(EntityDefinitionContext entityContext, ProjectOptionsContext optionsContext,
+                                                   ProjectDescription description, ContainerImages images) {
+        return projectRoot -> {
+            if (!dbTestsApply(entityContext, optionsContext)) return;
+            var db = LocalRun.dbTestsDatabase(description.getRequestedDependencies().keySet());
+            if (db.isEmpty()) return;
+            LocalRun.writeTestcontainersProperties(projectRoot, images);
+            var licence = LocalRun.licenceAcceptance(db.get());
+            if (licence.isPresent()) {
+                Path target = projectRoot.resolve("src/test/resources/container-license-acceptance.txt");
+                Files.createDirectories(target.getParent());
+                Files.writeString(target, licence.get());
+            }
+        };
+    }
+
+    private static boolean dbTestsApply(EntityDefinitionContext entityContext, ProjectOptionsContext optionsContext) {
+        return !entityContext.isEmpty()
+                && GeneratedTests.anyTested(entityContext.all(), optionsContext.hasOption("scaffold", ScaffoldOption.TESTS.key()));
     }
 
     /**

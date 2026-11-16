@@ -36,6 +36,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import com.menora.initializr.fullstack.patch.ProjectUpdateBuilder;
 import com.menora.initializr.fullstack.schema.SchemaMigrations;
+import com.menora.initializr.localrun.ContainerImages;
+import com.menora.initializr.localrun.LocalRun;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -87,6 +89,7 @@ public class FullstackStarterController {
     private final VersionService versionService;
     private final DependencyConfigService configService;
     private final DepartmentResolver departmentResolver;
+    private final ContainerImages containerImages;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                       ProjectRequestFactory requestFactory,
@@ -100,7 +103,8 @@ public class FullstackStarterController {
                                       FrontendProperties frontendProperties,
                                       VersionService versionService,
                                       DependencyConfigService configService,
-                                      DepartmentResolver departmentResolver) {
+                                      DepartmentResolver departmentResolver,
+                                      ContainerImages containerImages) {
         this.invoker = invoker;
         this.requestFactory = requestFactory;
         this.optionsContext = optionsContext;
@@ -114,6 +118,7 @@ public class FullstackStarterController {
         this.versionService = versionService;
         this.configService = configService;
         this.departmentResolver = departmentResolver;
+        this.containerImages = containerImages;
     }
 
     @PostMapping("/starter-fullstack.zip")
@@ -348,8 +353,12 @@ public class FullstackStarterController {
                 body.dashboardTitle(), body.dashboardOverview(), locale, tempDir.resolve("frontend"));
 
         // Root files
-        Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId(), ldap,
-                GeneratedTests.anyTested(entities, optionsContext.hasOption("scaffold", ScaffoldOption.TESTS.key()))));
+        Set<String> backendDeps = new LinkedHashSet<>(request.getDependencies() == null ? List.of() : request.getDependencies());
+        boolean tested = GeneratedTests.anyTested(entities, optionsContext.hasOption("scaffold", ScaffoldOption.TESTS.key()));
+        // The whole application in Docker: its services, its backend and its frontend.
+        Files.writeString(tempDir.resolve(LocalRun.COMPOSE_FILE),
+                LocalRun.compose(request.getArtifactId(), backendDeps, containerImages, true));
+        Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId(), ldap, tested, backendDeps));
         Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
         Files.writeString(tempDir.resolve(".gitattributes"), ROOT_GITATTRIBUTES);
         Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body, templatesHash(backendSet, frontendSet)));
@@ -694,7 +703,7 @@ public class FullstackStarterController {
         return sentinel;
     }
 
-    private String buildReadme(String artifactId, boolean ldap, boolean tests) {
+    private String buildReadme(String artifactId, boolean ldap, boolean tests, Set<String> deps) {
         // With ldap-auth every endpoint asks the caller's roles of the directory, which a laptop
         // cannot reach: the local profile gives the dev user its roles instead.
         String run = ldap ? "mvn spring-boot:run -Dspring-boot.run.profiles=local" : "mvn spring-boot:run";
@@ -704,6 +713,7 @@ public class FullstackStarterController {
                 + "- `backend/` — Spring Boot app. Run with `cd backend && " + run + "` (port 8080).\n"
                 + "- `frontend/` — React + Vite app. Run with `cd frontend && npm install && npm run dev` (port 5173).\n\n"
                 + "Open http://localhost:5173 to use the UI.\n\n"
+                + composeReadme(deps)
                 + "## How the frontend reaches the backend\n\n"
                 + "The app always calls same-origin `/api/...` paths (`VITE_API_BASE_URL` is empty in\n"
                 + "both `frontend/.env.development` and `frontend/.env.production`):\n\n"
@@ -721,7 +731,7 @@ public class FullstackStarterController {
                 + "`app.cors.allowed-origins=http://localhost:5173` (comma-separated; CORS is off\n"
                 + "when the property is empty — see `CorsConfig`).\n\n"
                 + (ldap ? ACCESS_README : "")
-                + (tests ? TESTS_README : "")
+                + (tests ? TESTS_README.stripTrailing() + "\n" + dbTestsReadme(deps) + "\n" : "")
                 + "## Reopen in the generator\n\n"
                 + "`menora-model.json` is the model this project was generated from. To change the\n"
                 + "entities or pages and generate again, open the Fullstack tab of the Menora\n"
@@ -746,6 +756,49 @@ public class FullstackStarterController {
             + "(`backend/src/main/resources/application-local.yaml`) gives `dev-user` — the name the\n"
             + "frontend's dev server signs its calls with — the `ADMIN` role instead; change it there to\n"
             + "see the app as a plain user. Never activate that profile on a server.\n\n";
+
+    /** The README's section on running everything in Docker ({@code compose.yaml}). */
+    private static String composeReadme(Set<String> deps) {
+        List<String> services = LocalRun.SERVICES.stream().filter(deps::contains).toList();
+        String profiles = LocalRun.profiles(deps);
+        return "## Run it all in Docker\n\n"
+                + "`docker compose up --build` starts "
+                + (services.isEmpty() ? "" : String.join(", ", services.stream().map(FullstackStarterController::serviceLabel).toList()) + ", ")
+                + "the backend and the frontend, each built from its\n"
+                + "Dockerfile; then open http://localhost:3000 (the API is on :8080). The backend runs on the\n"
+                + "`" + profiles + "` profile" + (profiles.contains(",") ? "s" : "") + " (`backend/" + LocalRun.PROFILE_FILE
+                + "`\npoints it at the containers)"
+                + (LocalRun.ldap(deps) ? ", and the frontend's nginx signs calls as `dev-user`, who is an\nadmin there" : "")
+                + ".\n\n"
+                + (services.isEmpty() ? ""
+                        : "To work on the code instead, start the services alone (`docker compose up -d "
+                        + String.join(" ", services.stream().map(LocalRun::serviceName).toList())
+                        + "`)\nand run the backend with `-Dspring-boot.run.profiles=" + profiles + "`.\n\n")
+                + (deps.contains("db2") ? "IBM i (the `db2` dependency) has no container image: it still needs a real server.\n\n" : "")
+                + "`docker compose down` stops it all and throws the data away. The passwords in\n"
+                + "`compose.yaml` are for this machine only.\n\n";
+    }
+
+    private static String serviceLabel(String dep) {
+        return switch (dep) {
+            case "postgresql" -> "PostgreSQL";
+            case "oracle" -> "Oracle";
+            case "mssql" -> "SQL Server";
+            case "mongodb" -> "MongoDB";
+            case "redis" -> "Redis";
+            case "kafka" -> "Kafka";
+            default -> dep;
+        };
+    }
+
+    /** The Tests section's line on the {@code db-tests} profile, when a container fits the database. */
+    private static String dbTestsReadme(Set<String> deps) {
+        return LocalRun.dbTestsDatabase(deps).map(db -> "- `cd backend && mvn test -P" + LocalRun.DB_TESTS_PROFILE
+                + "` — the same API tests on the application's own database\n  (" + serviceLabel(db)
+                + ") in Docker, through Testcontainers"
+                + (deps.contains("flyway") ? ", on the schema the Flyway migration makes" : "")
+                + ". Needs Docker running.\n").orElse("");
+    }
 
     /** The README's section on the project's own tests — only with the tests option. */
     private static final String TESTS_README = "## Tests\n\n"

@@ -1,0 +1,73 @@
+package {{packageName}};
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+{{#mssql}}
+import org.testcontainers.containers.MSSQLServerContainer;
+{{/mssql}}
+{{#postgresql}}
+import org.testcontainers.containers.PostgreSQLContainer;
+{{/postgresql}}
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+{{#oracle}}
+import org.testcontainers.oracle.OracleContainer;
+{{/oracle}}
+{{#mssql}}
+import org.testcontainers.utility.DockerImageName;
+{{/mssql}}
+
+/**
+ * Starts the application on {{databases}} in Docker, as it starts on a server:
+ * its datasource configuration{{#flyway}} and its Flyway migrations{{/flyway}} against a real database.
+ * Docker Hub images come through {@code hub.image.name.prefix} in
+ * {@code src/test/resources/testcontainers.properties} when that file is there.
+ *
+ * <p>Skipped where Docker is not running — the image build among them, which runs the tests.
+ */
+@SpringBootTest
+@Testcontainers(disabledWithoutDocker = true)
+class ContainerDatabaseTests {
+{{#postgresql}}
+
+    @Container
+    static final PostgreSQLContainer<?> POSTGRESQL = new PostgreSQLContainer<>("{{postgresImage}}");
+{{/postgresql}}
+{{#oracle}}
+
+    @Container
+    static final OracleContainer ORACLE = new OracleContainer("{{oracleImage}}");
+{{/oracle}}
+{{#mssql}}
+
+    @Container
+    static final MSSQLServerContainer<?> MSSQL = new MSSQLServerContainer<>(
+            DockerImageName.parse("{{mssqlImage}}").asCompatibleSubstituteFor("mcr.microsoft.com/mssql/server"))
+            .acceptLicense();
+{{/mssql}}
+
+    @DynamicPropertySource
+    static void databases(DynamicPropertyRegistry registry) {
+{{#postgresql}}
+        registry.add("postgresql.datasource.jdbc-url", POSTGRESQL::getJdbcUrl);
+        registry.add("postgresql.datasource.username", POSTGRESQL::getUsername);
+        registry.add("postgresql.datasource.password", POSTGRESQL::getPassword);
+{{/postgresql}}
+{{#oracle}}
+        registry.add("oracle.datasource.jdbc-url", ORACLE::getJdbcUrl);
+        registry.add("oracle.datasource.username", ORACLE::getUsername);
+        registry.add("oracle.datasource.password", ORACLE::getPassword);
+{{/oracle}}
+{{#mssql}}
+        registry.add("mssql.datasource.jdbc-url", MSSQL::getJdbcUrl);
+        registry.add("mssql.datasource.username", MSSQL::getUsername);
+        registry.add("mssql.datasource.password", MSSQL::getPassword);
+{{/mssql}}
+    }
+
+    @Test
+    void theApplicationStartsOnItsDatabases() {
+    }
+}

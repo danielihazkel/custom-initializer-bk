@@ -1,0 +1,46 @@
+# The `compose` profile: this application on the containers of {{composePath}}
+# (`docker compose up -d` there, then -Dspring-boot.run.profiles={{profiles}}). Each value
+# below still gives way to its environment variable. For a developer's machine only — never
+# turn it on on a server.
+{{^hasSettings}}
+#
+# The application's own defaults already reach the containers: nothing to change.
+{{/hasSettings}}
+{{#postgresql}}{{#createsSchema}}
+postgresql:
+  hibernate:
+    # No migration on the build: Hibernate makes the tables on the empty database.
+    hbm2ddl-auto: update
+{{/createsSchema}}{{/postgresql}}
+{{#oracle}}
+oracle:
+  datasource:
+    jdbc-url: ${ORACLE_DB_URL:jdbc:oracle:thin:@//localhost:1521/FREEPDB1}
+    username: ${ORACLE_DB_USERNAME:appuser}
+    password: ${ORACLE_DB_PASSWORD:password}
+{{#createsSchema}}
+  hibernate:
+    # No migration on the build: Hibernate makes the tables on the empty database.
+    hbm2ddl-auto: update
+{{/createsSchema}}
+{{/oracle}}
+{{#mssql}}
+mssql:
+  datasource:
+    # The container's certificate is its own: trusted here, never on a server.
+    jdbc-url: ${MSSQL_DB_URL:jdbc:sqlserver://localhost:1433;databaseName=appdb;encrypt=true;trustServerCertificate=true}
+    username: ${MSSQL_DB_USERNAME:sa}
+    password: ${MSSQL_DB_PASSWORD:LocalDev-Passw0rd}
+{{#createsSchema}}
+  hibernate:
+    # No migration on the build: Hibernate makes the tables on the empty database.
+    hbm2ddl-auto: update
+{{/createsSchema}}
+{{/mssql}}
+{{#kafka}}
+spring:
+  kafka:
+    # The compose broker has no TLS or SASL (KafkaConfig reads this; SASL_SSL otherwise).
+    security:
+      protocol: PLAINTEXT
+{{/kafka}}
