@@ -55,7 +55,8 @@ public final class FullstackRequestValidator {
                       String label, String labelPlural, Map<String, Boolean> opts,
                       List<FullstackStarterRequest.FormSectionDto> rawSections,
                       FullstackStarterRequest.WorkflowDto rawWorkflow, int pkCount,
-                      EntityDefinition.Access access) {}
+                      EntityDefinition.Access access,
+                      List<FullstackStarterRequest.UniqueKeyDto> rawUniqueKeys) {}
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
@@ -250,6 +251,11 @@ public final class FullstackRequestValidator {
                         String label = (f.label() == null || f.label().isBlank()) ? null : f.label().trim();
                         String defaultValue = normalizeDefault(f.defaultValue(), type, isGenerated, f.length(),
                                 f.enumValues(), fname, name);
+                        String help = f.help() == null || f.help().isBlank() ? null : f.help().trim();
+                        if (help != null && help.length() > MAX_HELP) {
+                            throw new WizardArgumentException("help of field '" + fname + "' on entity '" + name
+                                    + "' is over " + MAX_HELP + " characters").on("help");
+                        }
                         String column = parseColumnName(f.column(), "column", fname, name);
                         if (column != null && viewQuery != null) {
                             throw new WizardArgumentException("Field '" + fname + "' on entity '" + name
@@ -279,7 +285,8 @@ public final class FullstackRequestValidator {
                                 defaultValue,
                                 enumLabels,
                                 column,
-                                currency));
+                                currency,
+                                help));
                     } catch (WizardArgumentException problem) {
                         throw problem.at("fields[" + fi + "]");
                     }
@@ -319,7 +326,7 @@ public final class FullstackRequestValidator {
                 parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
                         readOnly, viewQuery, resolveListViews(e), label, labelPlural,
                         parseEntityOpts(e.opts(), name), e.formSections(), e.workflow(), pkCount,
-                        at("access", () -> parseAccess(e.access(), name))));
+                        at("access", () -> parseAccess(e.access(), name)), e.uniqueKeys()));
             } catch (WizardArgumentException problem) {
                 throw problem.at("entities[" + ei + "]");
             }
@@ -364,7 +371,8 @@ public final class FullstackRequestValidator {
                         parseFormSections(p.rawSections(), p.name(), p.fields(), relations),
                         at("workflow", () -> parseWorkflow(p.rawWorkflow(), p.name(), p.fields(), relations,
                                 p.readOnly(), p.pkCount())),
-                        collections, children, p.access()));
+                        collections, children, p.access(),
+                        parseUniqueKeys(p.rawUniqueKeys(), p.name(), p.viewQuery(), p.fields(), relations)));
             } catch (WizardArgumentException problem) {
                 throw problem.at("entities[" + p.ei() + "]");
             }
@@ -445,6 +453,12 @@ public final class FullstackRequestValidator {
         if (child.workflow() != null) {
             throw new WizardArgumentException(where + "'" + child.name()
                     + "' has a workflow: its rows change by their own moves, not with a parent's save").on("composition");
+        }
+        if (!child.uniqueKeys().isEmpty()) {
+            // A save inserts the new rows before it deletes the removed ones: a row swapped for
+            // another with the same key would clash with the one it replaces.
+            throw new WizardArgumentException(where + "'" + child.name()
+                    + "' has a unique key, which rows replaced in one save of the parent would break").on("composition");
         }
         for (FieldDefinition f : child.fields()) {
             if (f.type() == FieldType.FILE || f.type() == FieldType.IMAGE) {
@@ -682,6 +696,98 @@ public final class FullstackRequestValidator {
                 out.add(new EntityDefinition.FormSection(title, names));
             } catch (WizardArgumentException problem) {
                 throw problem.at("formSections[" + i + "]");
+            }
+        }
+        return out;
+    }
+
+    /** A field's help text: a line or two under its input. */
+    static final int MAX_HELP = 300;
+    static final int MAX_UNIQUE_KEYS = 10;
+    static final int MAX_UNIQUE_KEY_FIELDS = 8;
+
+    /**
+     * Unique keys over several fields and many-to-one links. Each names two or more of the
+     * entity's own non-key fields or MANY_TO_ONE relation field names, once each; a long text
+     * cannot be part of one (Oracle and SQL Server index no LOB), and two keys over the same
+     * fields are one too many. A SELECT-backed view has no table to hold one.
+     */
+    static List<EntityDefinition.UniqueKey> parseUniqueKeys(List<FullstackStarterRequest.UniqueKeyDto> raw,
+                                                           String entity, String viewQuery,
+                                                           List<FieldDefinition> fields,
+                                                           List<RelationDefinition> relations) {
+        if (raw == null || raw.isEmpty()) return List.of();
+        if (viewQuery != null) {
+            throw new WizardArgumentException("Entity '" + entity + "' is a SELECT-backed view and cannot have unique keys")
+                    .on("uniqueKeys");
+        }
+        if (raw.size() > MAX_UNIQUE_KEYS) {
+            throw new WizardArgumentException("Entity '" + entity + "' has more than " + MAX_UNIQUE_KEYS + " unique keys")
+                    .on("uniqueKeys");
+        }
+        Map<String, FieldDefinition> byField = new LinkedHashMap<>();
+        for (FieldDefinition f : fields) byField.put(f.name().toLowerCase(Locale.ROOT), f);
+        Map<String, String> links = new LinkedHashMap<>();
+        for (RelationDefinition r : relations) links.put(r.fieldName().toLowerCase(Locale.ROOT), r.fieldName());
+        List<EntityDefinition.UniqueKey> out = new ArrayList<>();
+        Set<Set<String>> seenKeys = new HashSet<>();
+        for (int i = 0; i < raw.size(); i++) {
+            try {
+                FullstackStarterRequest.UniqueKeyDto key = raw.get(i);
+                List<String> given = key == null || key.fields() == null ? List.of() : key.fields();
+                String where = "Entity '" + entity + "' unique key " + (i + 1);
+                if (given.size() < 2) {
+                    throw new WizardArgumentException(where + " names " + given.size()
+                            + " field" + (given.size() == 1 ? "" : "s") + ": a key needs two or more "
+                            + "(one field is unique on its own — tick its Unique)").on("fields");
+                }
+                if (given.size() > MAX_UNIQUE_KEY_FIELDS) {
+                    throw new WizardArgumentException(where + " names more than " + MAX_UNIQUE_KEY_FIELDS + " fields")
+                            .on("fields");
+                }
+                List<String> names = new ArrayList<>();
+                for (String name : given) {
+                    String lower = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+                    FieldDefinition field = byField.get(lower);
+                    String canonical;
+                    if (field != null) {
+                        if (field.primaryKey()) {
+                            throw new WizardArgumentException(where + " includes the primary key '" + field.name()
+                                    + "', which is unique already").on("fields");
+                        }
+                        if (field.type().isText() || field.type().isMarkdown()) {
+                            throw new WizardArgumentException(where + " includes '" + field.name()
+                                    + "', a long text, which a database cannot index").on("fields");
+                        }
+                        canonical = field.name();
+                    } else if (links.containsKey(lower)) {
+                        canonical = links.get(lower);
+                    } else {
+                        throw new WizardArgumentException(where + " names '" + name
+                                + "', which is not one of its fields or many-to-one links").on("fields");
+                    }
+                    if (names.contains(canonical)) {
+                        throw new WizardArgumentException(where + " names '" + canonical + "' twice").on("fields");
+                    }
+                    names.add(canonical);
+                }
+                // Rows must be able to differ in it: the demo data and the generated tests make
+                // several, varying each value by a row number — which an enum, a yes/no field or a
+                // text that must match a pattern does not take.
+                boolean varies = names.stream().anyMatch(n -> {
+                    FieldDefinition f = byField.get(n.toLowerCase(Locale.ROOT));
+                    return f == null || (f.type() != FieldType.ENUM && f.type() != FieldType.BOOLEAN && f.pattern() == null);
+                });
+                if (!varies) {
+                    throw new WizardArgumentException(where + " is over enums, yes/no fields and patterned texts only, "
+                            + "which allow few distinct rows: add a field or link that tells rows apart").on("fields");
+                }
+                if (!seenKeys.add(Set.copyOf(names))) {
+                    throw new WizardArgumentException(where + " is over the same fields as another key").on("fields");
+                }
+                out.add(new EntityDefinition.UniqueKey(names));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("uniqueKeys[" + i + "]");
             }
         }
         return out;

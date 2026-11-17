@@ -46,11 +46,14 @@ public class DemoDataLoader implements CommandLineRunner {
         }
 {{#seedEntities}}
         List<{{EntityName}}> {{entityName}}Rows = new ArrayList<>();
-        for (int i = 1; i <= ROWS; i++) {
+{{#uniqueKeys}}        // Unique key {{index}}: a row that would repeat another's values is left out.
+        java.util.Set<List<Object>> {{entityName}}Key{{index}} = new java.util.HashSet<>();
+{{/uniqueKeys}}        for (int i = 1; i <= ROWS; i++) {
             {{EntityName}} row = new {{EntityName}}();
 {{#fields}}{{^isGenerated}}            row.set{{Name}}({{seedExpr}});
 {{/isGenerated}}{{/fields}}{{#relations}}{{#targetSeeded}}            row.set{{FieldName}}({{targetEntityCamel}}Rows.get((i - 1) % {{targetEntityCamel}}Rows.size()));
-{{/targetSeeded}}{{/relations}}            {{entityName}}Rows.add(row);
+{{/targetSeeded}}{{/relations}}{{#uniqueKeys}}            if (!{{entityName}}Key{{index}}.add(java.util.Arrays.<Object>asList({{{tuple}}}))) continue;
+{{/uniqueKeys}}            {{entityName}}Rows.add(row);
         }
         {{entityName}}Rows = {{entityName}}Repository.saveAll({{entityName}}Rows);
 {{#tracksMoves}}        // A history for each: created some days ago, and moved on if it is no longer where it started.

@@ -638,6 +638,7 @@ public class FullstackStarterController {
         // The record's version rides along in the DTO; the page turns a stale 409 into the
         // conflict dialog. Mirrors the backend config.
         EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
+        EntityScaffoldContext.putUniqueKeys(projectCtx, entities);
         EntityScaffoldContext.putXlsxExport(projectCtx, entities);
         EntityScaffoldContext.putSavedViews(projectCtx, entities);
         // Who changed a row (audit) and the change history: the strings, the shared history panel.

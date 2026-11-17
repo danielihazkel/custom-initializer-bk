@@ -970,6 +970,83 @@ public final class EntityScaffoldContext {
         ctx.put("hasOptimisticLocking", entities.stream().anyMatch(e -> lockingApplies(e, projectOpt)));
     }
 
+    /**
+     * {@code hasUniqueKeys} — some entity has a unique key over several fields — and
+     * {@code uniqueKeyViolations}: every such key's constraint (lower case, the longest first, so a
+     * name that begins another is tried after it), the fields to mark and the message, for the
+     * API's 409. The frontend's api-client keeps a 409's field errors for the form when it is set.
+     */
+    public static void putUniqueKeys(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        List<Map<String, Object>> violations = new ArrayList<>();
+        for (EntityDefinition e : entities) violations.addAll(uniqueKeyViews(e));
+        violations.sort(java.util.Comparator.comparingInt((Map<String, Object> v) -> ((String) v.get("constraint")).length()).reversed());
+        for (int i = 0; i < violations.size(); i++) violations.get(i).put("last", i == violations.size() - 1);
+        ctx.put("hasUniqueKeys", !violations.isEmpty());
+        ctx.put("uniqueKeyViolations", violations);
+    }
+
+    /** The physical column of a unique key's member: a field's column, or a link's join column. */
+    public static String uniqueKeyColumnOf(EntityDefinition entity, String member) {
+        for (FieldDefinition f : entity.fields()) {
+            if (f.name().equals(member)) return columnOf(f);
+        }
+        for (RelationDefinition r : entity.relations()) {
+            if (r.fieldName().equals(member)) return joinColumnOf(r);
+        }
+        throw new IllegalArgumentException("No field or link '" + member + "' on " + entity.name());
+    }
+
+    /**
+     * An entity's unique keys as the templates read them: the constraint's name (the schema's),
+     * its columns for {@code @UniqueConstraint}, the getters of a row for the demo loader, the
+     * names a client knows the members by (a link's is its {@code <field>Id}) and the message.
+     */
+    static List<Map<String, Object>> uniqueKeyViews(EntityDefinition entity) {
+        if (entity.uniqueKeys().isEmpty()) return List.of();
+        String entityLabel = entity.label() != null ? entity.label() : Naming.toPascalCase(entity.name());
+        String table = com.menora.initializr.fullstack.schema.SchemaBuilder.name(tableOf(entity));
+        List<Map<String, Object>> out = new ArrayList<>();
+        int index = 0;
+        for (EntityDefinition.UniqueKey key : entity.uniqueKeys()) {
+            List<String> columns = new ArrayList<>();
+            List<String> getters = new ArrayList<>();
+            List<String> clientNames = new ArrayList<>();
+            List<String> labels = new ArrayList<>();
+            for (String member : key.fields()) {
+                columns.add(uniqueKeyColumnOf(entity, member));
+                FieldDefinition field = entity.fields().stream().filter(f -> f.name().equals(member)).findFirst().orElse(null);
+                if (field != null) {
+                    getters.add("row.get" + Naming.toPascalCase(field.name()) + "()");
+                    clientNames.add(field.name());
+                    labels.add(field.label() != null && !field.label().isBlank() ? field.label() : Naming.toPascalCase(field.name()));
+                } else {
+                    RelationDefinition link = entity.relations().stream().filter(r -> r.fieldName().equals(member))
+                            .findFirst().orElseThrow();
+                    getters.add("row.get" + Naming.toPascalCase(link.fieldName()) + "()");
+                    clientNames.add(Naming.toCamelCase(link.fieldName()) + "Id");
+                    labels.add(labelOf(link));
+                }
+            }
+            List<String> physical = columns.stream().map(com.menora.initializr.fullstack.schema.SchemaBuilder::name).toList();
+            Map<String, Object> kv = new LinkedHashMap<>();
+            kv.put("index", index++);
+            kv.put("constraint", com.menora.initializr.fullstack.schema.SchemaBuilder.uniqueKeyName(table, physical)
+                    .toLowerCase(Locale.ROOT));
+            kv.put("columnsJava", String.join(", ", columns.stream().map(c -> "\"" + SqlNames.javaLiteral(c) + "\"").toList()));
+            kv.put("tuple", String.join(", ", getters));
+            kv.put("fieldsJava", String.join(", ", clientNames.stream().map(n -> "\"" + n + "\"").toList()));
+            kv.put("messageJava", escapeJavaLiteral("Another " + entityLabel + " has the same " + listing(labels)));
+            out.add(kv);
+        }
+        return out;
+    }
+
+    /** "a and b", "a, b and c". */
+    private static String listing(List<String> items) {
+        if (items.size() <= 1) return String.join("", items);
+        return String.join(", ", items.subList(0, items.size() - 1)) + " and " + items.get(items.size() - 1);
+    }
+
     /** {@code optimisticLocking} for one entity: the override, else the project option; writable tables only. */
     public static boolean lockingApplies(EntityDefinition e, boolean projectOpt) {
         Boolean override = e.opts().get("optimisticLocking");
@@ -3297,6 +3374,13 @@ public final class EntityScaffoldContext {
         // Schema-qualified, for native SQL (@SQLDelete, the restore query), which @Table's schema
         // attribute does not reach.
         view.put("tableRef", SqlNames.javaLiteral(tableRefOf(entity)));
+        // Unique keys over several fields: @Table's uniqueConstraints and the demo loader's check.
+        List<Map<String, Object>> uniqueKeys = uniqueKeyViews(entity);
+        view.put("uniqueKeys", uniqueKeys);
+        view.put("hasUniqueKeys", !uniqueKeys.isEmpty());
+        view.put("uniqueConstraintsJava", "{" + String.join(", ", uniqueKeys.stream()
+                .map(k -> "@UniqueConstraint(name = \"" + k.get("constraint") + "\", columnNames = {" + k.get("columnsJava") + "})")
+                .toList()) + "}");
         // Read-only / view flags — gate CRUD in the backend & frontend templates.
         // `isView` swaps @Table for @Immutable/@Subselect; `mutable` gates create/update/delete.
         view.put("readOnly", entity.readOnly());
@@ -3313,9 +3397,15 @@ public final class EntityScaffoldContext {
         List<Map<String, Object>> nonPkViews = new ArrayList<>();
         Set<String> imports = new TreeSet<>();
 
+        Set<String> keyed = new HashSet<>();
+        for (EntityDefinition.UniqueKey key : entity.uniqueKeys()) keyed.addAll(key.fields());
         for (int i = 0; i < entity.fields().size(); i++) {
             FieldDefinition f = entity.fields().get(i);
             Map<String, Object> fv = fieldViewModel(pascal, f);
+            // Part of a unique key: demo rows vary it by row number, as they do a unique column.
+            if (keyed.contains(f.name()) && f.hasDefault() && !f.unique() && !f.primaryKey()) {
+                fv.put("seedExpr", seedExpression(pascal, f, (String) fv.get("label"), (String) fv.get("enumTypeName"), true));
+            }
             fv.put("first", i == 0);
             fv.put("last", i == entity.fields().size() - 1);
             fieldViews.add(fv);
@@ -3974,6 +4064,9 @@ public final class EntityScaffoldContext {
         // chip, detail row). Defaults to the PascalCase name when no custom label was supplied —
         // done here because Mustache has no default operator.
         putText(fv, "label", (f.label() != null && !f.label().isBlank()) ? f.label() : pascalName);
+        // A hint under the field's input in the form.
+        putText(fv, "help", f.help());
+        fv.put("hasHelp", f.help() != null);
         // Locked-after-create read-only: the form disables it on edit and Service.update skips it.
         fv.put("isReadOnly", f.readOnly());
         // A workflow's status: set by its transitions only (see putWorkflow).
@@ -4288,9 +4381,15 @@ public final class EntityScaffoldContext {
     /** See {@code seedExpr} in {@link #fieldViewModel}. The helper calls ({@code label}, {@code text},
      *  {@code bounded}) are static methods of the generated {@code DemoDataLoader}. */
     static String seedExpression(String entityPascal, FieldDefinition f, String label, String enumTypeName) {
+        return seedExpression(entityPascal, f, label, enumTypeName, f.unique());
+    }
+
+    /** @param distinct every row must differ in it (a unique column, a member of a unique key) */
+    static String seedExpression(String entityPascal, FieldDefinition f, String label, String enumTypeName,
+                                 boolean distinct) {
         // A declared default is the natural demo value — except on keys and unique columns, where
         // every row must differ, so those keep the row-numbered expressions below.
-        if (f.hasDefault() && !f.primaryKey() && !f.unique()) {
+        if (f.hasDefault() && !f.primaryKey() && !distinct) {
             return defaultJavaExpression(f, entityPascal + "." + enumTypeName, true);
         }
         String lbl = escapeStringLiteral(label == null ? f.name() : label);

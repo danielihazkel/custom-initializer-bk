@@ -151,6 +151,9 @@ public final class FullstackSchema {
         limits.put("defaultPerEntity", FullstackPageValidator.DEFAULT_PER_ENTITY);
         limits.put("maxFormSections", FullstackRequestValidator.MAX_FORM_SECTIONS);
         limits.put("maxSectionTitle", FullstackRequestValidator.MAX_SECTION_TITLE);
+        limits.put("maxHelp", FullstackRequestValidator.MAX_HELP);
+        limits.put("maxUniqueKeys", FullstackRequestValidator.MAX_UNIQUE_KEYS);
+        limits.put("maxUniqueKeyFields", FullstackRequestValidator.MAX_UNIQUE_KEY_FIELDS);
         limits.put("maxEnumLabel", FullstackRequestValidator.MAX_ENUM_LABEL_LENGTH);
         limits.put("maxTransitions", FullstackRequestValidator.MAX_TRANSITIONS);
         limits.put("maxTransitionLabel", FullstackRequestValidator.MAX_TRANSITION_LABEL);

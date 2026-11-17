@@ -43,7 +43,18 @@ public record EntityDefinition(
         Workflow workflow,
         List<RelationDefinition> collections,
         List<RelationDefinition> children,
-        Access access) {
+        Access access,
+        List<UniqueKey> uniqueKeys) {
+
+    /**
+     * No two rows share the values of {@code fields}: two or more field names and MANY_TO_ONE
+     * relation field names, in the order given (validated by FullstackRequestValidator).
+     */
+    public record UniqueKey(List<String> fields) {
+        public UniqueKey {
+            fields = List.copyOf(fields);
+        }
+    }
 
     /**
      * Who may call the entity's generated endpoints, when the project has an ldap-auth dependency
@@ -150,6 +161,18 @@ public record EntityDefinition(
         collections = collections == null ? List.of() : List.copyOf(collections);
         children = children == null ? List.of() : List.copyOf(children);
         access = access == null ? Access.DEFAULT : access;
+        uniqueKeys = uniqueKeys == null ? List.of() : List.copyOf(uniqueKeys);
+    }
+
+    /** Every property but {@code uniqueKeys} (none). */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
+                            String label, String labelPlural, Map<String, Boolean> opts, List<FormSection> formSections,
+                            Workflow workflow, List<RelationDefinition> collections, List<RelationDefinition> children,
+                            Access access) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
+                label, labelPlural, opts, formSections, workflow, collections, children, access, null);
     }
 
     /** Every property but {@code access} (the default: read for users, write for admins). */
@@ -159,7 +182,7 @@ public record EntityDefinition(
                             String label, String labelPlural, Map<String, Boolean> opts, List<FormSection> formSections,
                             Workflow workflow, List<RelationDefinition> collections, List<RelationDefinition> children) {
         this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
-                label, labelPlural, opts, formSections, workflow, collections, children, null);
+                label, labelPlural, opts, formSections, workflow, collections, children, null, null);
     }
 
     /**
@@ -179,7 +202,7 @@ public record EntityDefinition(
     /** The same entity with its ONE_TO_MANYs resolved (each naming the MANY_TO_ONE behind it). */
     public EntityDefinition withChildren(List<RelationDefinition> resolved) {
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
-                listViews, label, labelPlural, opts, formSections, workflow, collections, resolved, access);
+                listViews, label, labelPlural, opts, formSections, workflow, collections, resolved, access, uniqueKeys);
     }
 
     /**
@@ -229,8 +252,9 @@ public record EntityDefinition(
     public EntityDefinition withOpt(String key, boolean value) {
         Map<String, Boolean> next = new java.util.LinkedHashMap<>(opts);
         next.put(key, value);
+        // Every other property kept: this once dropped `access`, so an import page reset the levels.
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
-                listViews, label, labelPlural, next, formSections, workflow, collections, children);
+                listViews, label, labelPlural, next, formSections, workflow, collections, children, access, uniqueKeys);
     }
 
     public String listView() {

@@ -657,6 +657,41 @@ class GeneratedBackendBuildSmokeTests {
     }
 
     @org.junit.jupiter.api.Test
+    void liveApiOfAUniqueKeyBehaves(@TempDir Path workDir) throws Exception {
+        // Projects, whose tasks are unique per project and title, on its Flyway baseline (the
+        // constraint is the migration's, and Hibernate validates against it), with demo rows and
+        // the generated API tests — which make many tasks, and must not clash.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-tailwind-crud");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "flyway"));
+        body.put("opts", Map.of("scaffold", List.of("seedData", "tests")));
+        Path backend = postAndExtractBackend(workDir, body);
+        writeLiveTest(backend, "com.menora.support", FIELD_MODEL_LIVE_TESTS);
+        runMvn(backend, "-B", "package");
+    }
+
+    /** Added to the Projects backend: a second task of one project and title is a 409 naming both. */
+    private static final String FIELD_MODEL_LIVE_TESTS = """
+                @Test
+                void aTaskIsUniquePerProjectAndTitle() throws Exception {
+                    JsonNode projects = get("/api/projects?size=2").get("content");
+                    long one = projects.get(0).get("id").asLong();
+                    long other = projects.get(1).get("id").asLong();
+                    String task = "{\\"title\\": \\"Write the plan\\", \\"status\\": \\"TODO\\", \\"projectId\\": %d}";
+                    send(post("/api/tasks"), null, task.formatted(one), 200);
+
+                    JsonNode clash = send(post("/api/tasks"), null, task.formatted(one), 409);
+                    assertThat(clash.get("detail").asText()).isEqualTo("Another Task has the same Project and Title");
+                    assertThat(clash.get("errors").get("projectId").asText()).isEqualTo("Another Task has the same Project and Title");
+                    assertThat(clash.get("errors").get("title").asText()).isEqualTo("Another Task has the same Project and Title");
+
+                    // The same title in another project is another task; an edit into a clash is refused too.
+                    JsonNode second = send(post("/api/tasks"), null, task.formatted(other), 200);
+                    send(put("/api/tasks/" + second.get("id").asLong()), null, task.formatted(one), 409);
+                }
+
+            """;
+
+    @org.junit.jupiter.api.Test
     @SuppressWarnings("unchecked")
     void liveApiOfAnEventsBackendBehaves(@TempDir Path workDir) throws Exception {
         // Approvals with the events option, Kafka on the build (its channel off: no broker here),

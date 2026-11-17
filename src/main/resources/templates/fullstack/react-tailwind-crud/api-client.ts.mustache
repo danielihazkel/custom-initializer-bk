@@ -77,7 +77,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       ? (problem.errors as Record<string, string>)
       : undefined
     // A 400 carrying `errors` is bean validation: keep the field map for the form.
-    if (res.status === 400 && errors) {
+    if ({{#hasUniqueKeys}}(res.status === 400 || res.status === 409){{/hasUniqueKeys}}{{^hasUniqueKeys}}res.status === 400{{/hasUniqueKeys}} && errors) {
       throw new ApiError(res.status, String(problem?.detail ?? t('errorValidation')), errors)
     }
     // `detail` is the problem-detail field; `error`/`message` cover non-scaffolded endpoints. The

@@ -28,7 +28,7 @@ import org.hibernate.annotations.Formula;
 @Subselect("""
 {{{viewQuery}}}
 """)
-{{/isView}}{{^isView}}@Table(name = "{{tableName}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}})
+{{/isView}}{{^isView}}@Table(name = "{{tableName}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}}{{#hasUniqueKeys}}, uniqueConstraints = {{{uniqueConstraintsJava}}}{{/hasUniqueKeys}})
 {{/isView}}@Data
 @NoArgsConstructor
 @AllArgsConstructor

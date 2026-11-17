@@ -1599,7 +1599,8 @@
             "name": "estimate",
             "type": "INTEGER",
             "min": 0,
-            "max": 100
+            "max": 100,
+            "help": "Hours of work, roughly. Leave empty if nobody has looked yet."
           },
           {
             "name": "notes",
@@ -1625,6 +1626,14 @@
             "label": "Part of",
             "targetEntity": "Task",
             "required": false
+          }
+        ],
+        "uniqueKeys": [
+          {
+            "fields": [
+              "project",
+              "title"
+            ]
           }
         ]
       }

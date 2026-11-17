@@ -84,6 +84,12 @@ public final class SchemaBuilder {
             if (f.primaryKey()) primaryKey.add(column);
             else if (f.unique()) uniques.add(new Unique(constraint("uk", table, column), List.of(column)));
         }
+        // Unique keys over several fields and links, in the order the model gives them.
+        for (EntityDefinition.UniqueKey key : entity.uniqueKeys()) {
+            List<String> keyColumns = new ArrayList<>();
+            for (String member : key.fields()) keyColumns.add(name(EntityScaffoldContext.uniqueKeyColumnOf(entity, member)));
+            uniques.add(new Unique(uniqueKeyName(table, keyColumns), keyColumns));
+        }
         for (RelationDefinition rel : entity.relations()) {
             EntityDefinition target = byName.get(rel.targetEntity());
             if (target == null) continue;
@@ -259,7 +265,7 @@ public final class SchemaBuilder {
      * of the five databases reads — when the model spells exact case in any of the three styles
      * Hibernate takes ({@code "x"}, {@code `x`}, {@code [x]}).
      */
-    static String name(String physical) {
+    public static String name(String physical) {
         if (physical == null) return null;
         return SqlNames.isQuoted(physical) ? "\"" + SqlNames.unquote(physical) + "\"" : physical;
     }
@@ -273,6 +279,16 @@ public final class SchemaBuilder {
         String raw = (prefix + "_" + plain(table) + "_" + plain(column)).toLowerCase(Locale.ROOT);
         if (raw.length() <= 60) return raw;
         return raw.substring(0, 51) + "_" + String.format("%08x", raw.hashCode());
+    }
+
+    /**
+     * A unique key's constraint: {@code uk_<table>_<column>_<column>…} by the same rule. The
+     * generated entity's {@code @UniqueConstraint} and its API's 409 name it the same way.
+     */
+    public static String uniqueKeyName(String table, List<String> columns) {
+        List<String> plain = new ArrayList<>();
+        for (String column : columns) plain.add(plain(column));
+        return constraint("uk", table, String.join("_", plain));
     }
 
     /** {@code <prefix>_<table>}, by the same rule. */

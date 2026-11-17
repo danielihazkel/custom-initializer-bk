@@ -209,7 +209,22 @@ public record FullstackStarterRequest(
             // project has an ldap-auth dependency: {read, write}, each SIGNED_IN, USER or ADMIN.
             // Null: read for users, write for admins. Left out of the echoed request when absent.
             @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-            AccessDto access) {
+            AccessDto access,
+            // Unique keys over two or more fields or many-to-one links: {fields: [...]}. A single
+            // field's is its own `unique`. Left out of the echoed request when absent.
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            List<UniqueKeyDto> uniqueKeys) {
+
+        /** Every property but {@code uniqueKeys} (none). */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql, String listView,
+                                   List<String> listViews, String label, String labelPlural,
+                                   Map<String, Boolean> opts, List<FormSectionDto> formSections, WorkflowDto workflow,
+                                   AccessDto access) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
+                    label, labelPlural, opts, formSections, workflow, access, null);
+        }
 
         /** Every property but {@code access} (the default levels). */
         public EntityDefinitionDto(String name, String tableName, String schema,
@@ -289,6 +304,9 @@ public record FullstackStarterRequest(
 
     /** A titled group of an entity's form: field and relation names, in order. */
     public record FormSectionDto(String title, List<String> fields) {}
+
+    /** No two rows share the values of {@code fields} (field names and MANY_TO_ONE relation field names). */
+    public record UniqueKeyDto(List<String> fields) {}
 
     /**
      * An entity's workflow ("human tasks"): {@code statusField} is an enum whose values are the
@@ -856,7 +874,22 @@ public record FullstackStarterRequest(
             // Left out of the JSON when absent, so the request echoed into menora-model.json
             // reads as it did before the attribute existed.
             @JsonInclude(JsonInclude.Include.NON_NULL)
-            String currency) {
+            String currency,
+            // A hint shown under the field's input in the generated form. Left out of the JSON
+            // when absent.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String help) {
+
+        /** Back-compat constructor without {@code help}. */
+        public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                                  String pattern, Boolean email, List<String> enumValues,
+                                  Boolean searchable, Boolean filterable, String label, Boolean readOnly,
+                                  String defaultValue, Map<String, String> enumLabels, String column, String currency) {
+            this(name, type, primaryKey, generated, required, unique, length, min, max,
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
+                    column, currency, null);
+        }
 
         /** Back-compat constructor without {@code currency}. */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
