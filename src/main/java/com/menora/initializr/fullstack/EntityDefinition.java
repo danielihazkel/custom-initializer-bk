@@ -52,7 +52,35 @@ public record EntityDefinition(
      * checked by FullstackRequestValidator): where {@code when} holds (null: always), {@code check}
      * must not be false. {@code message} is shown on {@code field}, a field the entity has.
      */
-    public record Rule(String when, String check, String message, String field) {}
+    public record Rule(String when, String check, String message, String field, boolean requiredWhenShown) {
+
+        /** A rule the model wrote. */
+        public Rule(String when, String check, String message, String field) {
+            this(when, check, message, field, false);
+        }
+    }
+
+    /** What a field that is required while it is shown, and left empty, says (the form says it in its own language). */
+    public static final String REQUIRED_MESSAGE = "must not be empty";
+
+    /**
+     * The rules the generated code checks: the model's, then one per field that is required only
+     * while its show-when holds ({@code when <showWhen>: not isEmpty(<field>)}).
+     */
+    public List<Rule> allRules() {
+        List<Rule> out = new java.util.ArrayList<>(rules);
+        for (FieldDefinition f : fields) {
+            if (f.requiredWhenShown()) {
+                out.add(new Rule(f.showWhen(), "not isEmpty(" + f.name() + ")", REQUIRED_MESSAGE, f.name(), true));
+            }
+        }
+        return out;
+    }
+
+    /** It has rules, show-when conditions or computed fields: the generated rules class runs them. */
+    public boolean hasRowLogic() {
+        return !rules.isEmpty() || fields.stream().anyMatch(f -> f.showWhen() != null || f.computed());
+    }
 
     /**
      * No two rows share the values of {@code fields}: two or more field names and MANY_TO_ONE

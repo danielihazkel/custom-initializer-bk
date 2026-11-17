@@ -1535,6 +1535,13 @@
           {
             "name": "endsOn",
             "type": "LOCAL_DATE"
+          },
+          {
+            "name": "durationDays",
+            "type": "INTEGER",
+            "label": "Days",
+            "formula": "daysBetween(startsOn, endsOn) + 1",
+            "help": "Counted from the start and end dates."
           }
         ],
         "relations": [
@@ -1607,7 +1614,8 @@
             "type": "INTEGER",
             "min": 0,
             "max": 100,
-            "help": "Hours of work, roughly. Leave empty if nobody has looked yet."
+            "help": "Hours of work, roughly. Leave empty if nobody has looked yet.",
+            "showWhen": "status != 'TODO'"
           },
           {
             "name": "notes",

@@ -99,6 +99,25 @@ export const daysBetween = (a: number | null, b: number | null): number | null =
 export const length = (s: string | null): number | null => (s == null ? null : s.length)
 export const abs = (a: number | null): number | null => (a == null ? null : Math.abs(a))
 
+const pad = (n: number): string => String(n).padStart(2, '0')
+
+/** A computed date and time as a date-time field holds it (local, to the second). */
+export function localMoment(at: number | null): string | null {
+  if (at == null) return null
+  const d = new Date(at)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+/** A computed instant as an instant field holds it. */
+export const isoInstant = (at: number | null): string | null => (at == null ? null : new Date(at).toISOString())
+
+/** A computed value as the form shows it: empty for nothing, a number without float noise. */
+export function show(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'number') return String(Math.round(v * 1e6) / 1e6)
+  return String(v)
+}
+
 /** Half away from zero, like the backend's HALF_UP. */
 export function round(a: number | null, places: number): number | null {
   if (a == null) return null

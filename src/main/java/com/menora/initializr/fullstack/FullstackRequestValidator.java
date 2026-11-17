@@ -289,11 +289,16 @@ public final class FullstackRequestValidator {
                                 enumLabels,
                                 column,
                                 currency,
-                                help));
+                                help,
+                                f.showWhen(),
+                                f.formula(),
+                                false));
                     } catch (WizardArgumentException problem) {
                         throw problem.at("fields[" + fi + "]");
                     }
                 }
+                // Show-when conditions and formulas read the other fields: checked once all are known.
+                checkDerivations(fields, name, readOnly || viewQuery != null);
 
                 if (pkCount == 0) {
                     throw new WizardArgumentException("Entity '" + name + "' has no primary key field");
@@ -369,14 +374,29 @@ public final class FullstackRequestValidator {
                         .filter(r -> r.type() == RelationType.ONE_TO_MANY).toList();
                 checkColumnClashes(p.name(), p.fields(), relations);
                 checkVersionName(p.name(), p.fields(), relations, p.readOnly(), p.viewQuery(), p.opts(), body);
-                result.add(new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
+                EntityDefinition built = new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
                         p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts(),
                         parseFormSections(p.rawSections(), p.name(), p.fields(), relations),
                         at("workflow", () -> parseWorkflow(p.rawWorkflow(), p.name(), p.fields(), relations,
                                 p.readOnly(), p.pkCount())),
                         collections, children, p.access(),
                         parseUniqueKeys(p.rawUniqueKeys(), p.name(), p.viewQuery(), p.fields(), relations),
-                        parseRules(p.rawRules(), p.name(), p.readOnly(), p.fields())));
+                        parseRules(p.rawRules(), p.name(), p.readOnly(), p.fields()));
+                // A workflow's status and assignee are set by its moves: never hidden or computed.
+                if (built.workflow() != null) {
+                    for (int fi = 0; fi < built.fields().size(); fi++) {
+                        FieldDefinition f = built.fields().get(fi);
+                        boolean moved = f.name().equals(built.workflow().statusField())
+                                || f.name().equals(built.workflow().assigneeField());
+                        if (moved && (f.showWhen() != null || f.computed())) {
+                            throw new WizardArgumentException("field '" + f.name() + "' on entity '" + p.name()
+                                    + "' is the workflow's " + (f.name().equals(built.workflow().statusField()) ? "status" : "assignee")
+                                    + ", which its moves set: it cannot be hidden or computed")
+                                    .on(f.computed() ? "formula" : "showWhen").at("fields[" + fi + "]");
+                        }
+                    }
+                }
+                result.add(built);
             } catch (WizardArgumentException problem) {
                 throw problem.at("entities[" + p.ei() + "]");
             }
@@ -458,9 +478,10 @@ public final class FullstackRequestValidator {
             throw new WizardArgumentException(where + "'" + child.name()
                     + "' has a workflow: its rows change by their own moves, not with a parent's save").on("composition");
         }
-        if (!child.rules().isEmpty()) {
+        if (!child.rules().isEmpty() || child.fields().stream().anyMatch(f -> f.showWhen() != null || f.computed())) {
             throw new WizardArgumentException(where + "'" + child.name()
-                    + "' has rules, which a save of its parent does not check yet").on("composition");
+                    + "' has rules, show-when conditions or computed fields, which a save of its parent does not run yet")
+                    .on("composition");
         }
         if (!child.uniqueKeys().isEmpty()) {
             // A save inserts the new rows before it deletes the removed ones: a row swapped for
@@ -707,6 +728,96 @@ public final class FullstackRequestValidator {
             }
         }
         return out;
+    }
+
+    /**
+     * A field's {@code showWhen} (a yes/no condition over the other fields) and {@code formula} (an
+     * expression of the field's own kind over the other fields), each a 400 at {@code fields[i]}.
+     * A required field with a condition is required only while it is shown: it becomes optional,
+     * marked {@code requiredWhenShown} (a rule the generated code adds). A computed field is set by
+     * the server: never a key, never asked for, no default, no condition, and it reads no other
+     * computed field. A read-only entity is never saved, so it has neither.
+     */
+    static void checkDerivations(List<FieldDefinition> fields, String entity, boolean readOnly) {
+        for (int i = 0; i < fields.size(); i++) {
+            FieldDefinition f = fields.get(i);
+            if (f.showWhen() == null && f.formula() == null) continue;
+            String where = "field '" + f.name() + "' on entity '" + entity + "'";
+            try {
+                if (readOnly) {
+                    throw new WizardArgumentException(where + ": a read-only entity is never saved, so it has no "
+                            + (f.formula() != null ? "computed fields" : "show-when conditions"))
+                            .on(f.formula() != null ? "formula" : "showWhen");
+                }
+                if (f.primaryKey()) {
+                    throw new WizardArgumentException(where + ": the primary key is never hidden or computed")
+                            .on(f.formula() != null ? "formula" : "showWhen");
+                }
+                if (f.showWhen() != null) {
+                    if (f.formula() != null) {
+                        throw new WizardArgumentException(where + ": a computed field is not edited, so it has no show-when")
+                                .on("showWhen");
+                    }
+                    ExprCheck.Checked when;
+                    try {
+                        when = ExprCheck.check(f.showWhen(), fields, Expr.Type.BOOL);
+                    } catch (Expr.ExprException e) {
+                        throw new WizardArgumentException(where + " (its show-when): " + e.describe()).on("showWhen");
+                    }
+                    if (when.refs().contains(f.name())) {
+                        throw new WizardArgumentException(where + ": its show-when reads the field itself").on("showWhen");
+                    }
+                }
+                if (f.formula() != null) {
+                    Expr.Type wanted = formulaType(f.type());
+                    if (wanted == null) {
+                        throw new WizardArgumentException(where + ": a " + f.type() + " field cannot be computed").on("formula");
+                    }
+                    if (f.required()) {
+                        throw new WizardArgumentException(where + ": a computed field is set by the server, so it is never required")
+                                .on("formula");
+                    }
+                    if (f.hasDefault()) {
+                        throw new WizardArgumentException(where + ": a computed field has no default").on("formula");
+                    }
+                    ExprCheck.Checked formula;
+                    try {
+                        formula = ExprCheck.check(f.formula(), fields, wanted);
+                    } catch (Expr.ExprException e) {
+                        throw new WizardArgumentException(where + " (its formula): " + e.describe()).on("formula");
+                    }
+                    for (String ref : formula.refs()) {
+                        FieldDefinition read = fields.stream().filter(x -> x.name().equals(ref)).findFirst().orElseThrow();
+                        if (read.computed()) {
+                            throw new WizardArgumentException(where + ": its formula reads '" + ref
+                                    + "', which is computed too (a formula reads entered fields only)").on("formula");
+                        }
+                    }
+                }
+            } catch (WizardArgumentException problem) {
+                throw problem.at("fields[" + i + "]");
+            }
+            if (f.showWhen() != null && f.required()) {
+                fields.set(i, new FieldDefinition(f.name(), f.type(), f.primaryKey(), f.generated(), false, f.unique(),
+                        f.length(), f.min(), f.max(), f.pattern(), f.email(), f.enumValues(), f.searchable(), f.filterable(),
+                        f.label(), f.readOnly(), f.defaultValue(), f.enumLabels(), f.column(), f.currency(), f.help(),
+                        f.showWhen(), f.formula(), true));
+            }
+        }
+    }
+
+    /** What a formula of a field of this type must come out as, or null for a type that cannot be computed. */
+    static Expr.Type formulaType(FieldType type) {
+        return switch (type) {
+            case INTEGER, LONG, BIG_DECIMAL, MONEY -> Expr.Type.NUMBER;
+            case STRING, TEXT, MARKDOWN -> Expr.Type.TEXT;
+            case BOOLEAN -> Expr.Type.BOOL;
+            case LOCAL_DATE -> Expr.Type.DATE;
+            case LOCAL_DATE_TIME -> Expr.Type.DATETIME;
+            case INSTANT -> Expr.Type.INSTANT;
+            case LOCAL_TIME -> Expr.Type.TIME;
+            case ENUM, UUID, FILE, IMAGE -> null;
+        };
     }
 
     static final int MAX_RULES = 20;

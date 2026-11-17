@@ -170,7 +170,8 @@ public final class GeneratedTests {
         Set<String> ruled = RuleRows.read(e);
         FieldDefinition update = sent.stream()
                 .filter(f -> (f.type() == FieldType.STRING || f.type() == FieldType.TEXT || f.type() == FieldType.MARKDOWN)
-                        && !f.primaryKey() && !f.readOnly() && f.pattern() == null && !f.email() && !ruled.contains(f.name()))
+                        && !f.primaryKey() && !f.readOnly() && f.pattern() == null && !f.email() && !ruled.contains(f.name())
+                        && !f.computed() && f.showWhen() == null)
                 .findFirst().orElse(null);
         v.put("apiTestHasUpdate", update != null);
         if (update != null) {
@@ -179,7 +180,8 @@ public final class GeneratedTests {
         }
         // Search: the first text field the list's `q` reads that the tests fill.
         FieldDefinition search = sent.stream()
-                .filter(f -> (f.type() == FieldType.STRING || f.type() == FieldType.TEXT) && f.searchable())
+                .filter(f -> (f.type() == FieldType.STRING || f.type() == FieldType.TEXT) && f.searchable()
+                        && !f.computed() && f.showWhen() == null)
                 .findFirst().orElse(null);
         v.put("apiTestHasSearch", search != null);
         v.put("apiTestSearchField", search == null ? null : search.name());
@@ -269,12 +271,12 @@ public final class GeneratedTests {
                 break;
             }
         }
-        if (reason == null && !e.rules().isEmpty()) {
+        if (reason == null && !e.allRules().isEmpty()) {
             try {
                 RuleRows.solve(e, sent(e));
             } catch (RuleRows.Unsolvable u) {
                 reason = "no row the tests can make passes its rule " + (u.rule + 1) + " ('"
-                        + e.rules().get(u.rule).check() + "') — put values that do in ApiTestSupport.body";
+                        + e.allRules().get(u.rule).check() + "') — put values that do in ApiTestSupport.body";
             }
         }
         for (RelationDefinition r : e.relations()) {
@@ -408,6 +410,9 @@ public final class GeneratedTests {
         for (FieldDefinition f : e.fields()) {
             if (f.primaryKey() && f.generated()) continue;
             if (wf != null && (f.name().equals(wf.statusField()) || f.name().equals(wf.assigneeField()))) continue;
+            // Computed: never checked in the form. Shown on a condition: cleared while hidden, so a
+            // case of its own might not reach its check.
+            if (f.computed() || f.showWhen() != null) continue;
             boolean checked = f.required() || f.primaryKey();
             if (f.pattern() != null) {
                 if (f.hasDefault()) props.add(f.name() + ": " + tsString(f.defaultValue()));
@@ -445,7 +450,7 @@ public final class GeneratedTests {
         List<String> unruled = new ArrayList<>(props);
         // The fields the entity's rules read: values the rules accept (empty where that is how).
         boolean usesDays = false;
-        if (!e.rules().isEmpty()) {
+        if (!e.allRules().isEmpty()) {
             try {
                 RuleRows.Solution solution = RuleRows.solve(e, sent(e));
                 for (Map.Entry<String, RuleRows.Pick> pick : solution.picks().entrySet()) {

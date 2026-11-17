@@ -985,17 +985,77 @@ public final class EntityScaffoldContext {
         ctx.put("uniqueKeyViolations", violations);
     }
 
-    /** {@code hasRules}: some entity has rules — the generated rules runtime and its 400. */
+    /**
+     * {@code hasRules}: some entity has rules, show-when conditions or computed fields — the
+     * generated rules runtime (both sides) and its 400.
+     */
     public static void putRules(Map<String, Object> ctx, List<EntityDefinition> entities) {
-        ctx.put("hasRules", entities.stream().anyMatch(e -> !e.rules().isEmpty()));
+        ctx.put("hasRules", entities.stream().anyMatch(EntityDefinition::hasRowLogic));
+    }
+
+    /** A computed field's value in the form, as the field holds it (a date and time as text, not milliseconds). */
+    static String computedTs(EntityDefinition entity, FieldDefinition f) {
+        var c = com.menora.initializr.fullstack.expr.ExprCheck.check(f.formula(), entity.fields(), null);
+        String ts = com.menora.initializr.fullstack.expr.ExprCode.ts(c, "value");
+        return switch (f.type()) {
+            case LOCAL_DATE_TIME -> "rule.localMoment(" + ts + ")";
+            case INSTANT -> "rule.isoInstant(" + ts + ")";
+            default -> ts;
+        };
+    }
+
+    /** A computed field's value in Java, as the entity holds it (a whole number rounded, money to cents, text to its length). */
+    static String computedJava(EntityDefinition entity, FieldDefinition f) {
+        var c = com.menora.initializr.fullstack.expr.ExprCheck.check(f.formula(), entity.fields(), null);
+        String java = com.menora.initializr.fullstack.expr.ExprCode.java(c, "row");
+        return switch (f.type()) {
+            case INTEGER -> "Expr.toInteger(" + java + ")";
+            case LONG -> "Expr.toLong(" + java + ")";
+            case MONEY -> "Expr.money(" + java + ")";
+            case STRING -> f.length() != null ? "Expr.fit(" + java + ", " + f.length() + ")" : java;
+            default -> java;
+        };
+    }
+
+    /** What the rules class does before it checks: hide (clear) and compute. */
+    static void putDerivations(Map<String, Object> view, EntityDefinition entity) {
+        List<Map<String, Object>> hidden = new ArrayList<>();
+        List<Map<String, Object>> computed = new ArrayList<>();
+        for (FieldDefinition f : entity.fields()) {
+            if (f.showWhen() != null) {
+                var when = com.menora.initializr.fullstack.expr.ExprCheck.check(f.showWhen(), entity.fields(),
+                        com.menora.initializr.fullstack.expr.Expr.Type.BOOL);
+                Map<String, Object> h = new LinkedHashMap<>();
+                h.put("name", f.name());
+                h.put("Name", Naming.toPascalCase(f.name()));
+                putText(h, "showWhenText", f.showWhen());
+                h.put("showWhenJava", com.menora.initializr.fullstack.expr.ExprCode.java(when, "row"));
+                h.put("showWhenTs", "rule.applies(" + com.menora.initializr.fullstack.expr.ExprCode.ts(when, "value") + ")");
+                hidden.add(h);
+            }
+            if (f.computed()) {
+                Map<String, Object> c = new LinkedHashMap<>();
+                c.put("name", f.name());
+                c.put("Name", Naming.toPascalCase(f.name()));
+                putText(c, "formulaText", f.formula());
+                c.put("formulaJava", computedJava(entity, f));
+                c.put("formulaTs", computedTs(entity, f));
+                computed.add(c);
+            }
+        }
+        view.put("hiddenFields", hidden);
+        view.put("computedFields", computed);
+        view.put("hasComputedFields", !computed.isEmpty());
+        view.put("hasShowWhenFields", !hidden.isEmpty());
+        view.put("formUsesRules", !computed.isEmpty() || !hidden.isEmpty());
     }
 
     /** An entity's rules as the templates write them: the check (and when) in Java over {@code row} and in TS over {@code value}. */
     static List<Map<String, Object>> ruleViews(EntityDefinition entity) {
-        if (entity.rules().isEmpty()) return List.of();
+        if (entity.allRules().isEmpty()) return List.of();
         List<Map<String, Object>> out = new ArrayList<>();
         int index = 0;
-        for (EntityDefinition.Rule rule : entity.rules()) {
+        for (EntityDefinition.Rule rule : entity.allRules()) {
             var check = com.menora.initializr.fullstack.expr.ExprCheck.check(rule.check(), entity.fields(),
                     com.menora.initializr.fullstack.expr.Expr.Type.BOOL);
             Map<String, Object> rv = new LinkedHashMap<>();
@@ -1003,6 +1063,8 @@ public final class EntityScaffoldContext {
             rv.put("field", rule.field());
             rv.put("messageJava", escapeJavaLiteral(rule.message()));
             putText(rv, "message", rule.message());
+            // The form says a required field's message in its own language.
+            rv.put("messageTsExpr", rule.requiredWhenShown() ? "t('required')" : "'" + tsLiteralBody(rule.message()) + "'");
             putText(rv, "checkText", rule.check());
             rv.put("checkJava", com.menora.initializr.fullstack.expr.ExprCode.java(check, "row"));
             rv.put("checkTs", com.menora.initializr.fullstack.expr.ExprCode.ts(check, "value"));
@@ -3173,6 +3235,16 @@ public final class EntityScaffoldContext {
         Map<String, String> wizards = (Map<String, String>) projectContext.get(WIZARD_PAGES_KEY);
         ctx.put("formHasSteps", (wizards != null && wizards.containsKey(entity.name()))
                 || Boolean.TRUE.equals(ctx.get("workflowRequiresFields")));
+        // A field shown only while its condition holds: the form's guard, with the step's own.
+        boolean steps = Boolean.TRUE.equals(ctx.get("formHasSteps"));
+        if (ctx.get("fields") instanceof List<?> fieldList) {
+            for (Object o : fieldList) {
+                Map<String, Object> fv = (Map<String, Object>) o;
+                if (!Boolean.TRUE.equals(fv.get("hasShowWhen"))) continue;
+                fv.put("guardOpen", "{" + (steps ? "show('" + fv.get("name") + "') && " : "") + fv.get("showWhenTs") + " && (");
+                fv.put("guardClose", ")}");
+            }
+        }
         // An entity with an import page: its list page takes `onImport` (Import opens that page
         // instead of the drawer).
         Map<String, String> imports = (Map<String, String>) projectContext.get(IMPORT_PAGES_KEY);
@@ -3416,7 +3488,8 @@ public final class EntityScaffoldContext {
         // same checks in the form's validate<Entity>.
         List<Map<String, Object>> rules = ruleViews(entity);
         view.put("rules", rules);
-        view.put("hasRules", !rules.isEmpty());
+        view.put("hasRules", entity.hasRowLogic());
+        putDerivations(view, entity);
         view.put("uniqueConstraintsJava", "{" + String.join(", ", uniqueKeys.stream()
                 .map(k -> "@UniqueConstraint(name = \"" + k.get("constraint") + "\", columnNames = {" + k.get("columnsJava") + "})")
                 .toList()) + "}");
@@ -3449,6 +3522,21 @@ public final class EntityScaffoldContext {
             }
             RuleRows.Pick pick = ruled.get(f.name());
             if (pick != null && pick.seed() != null) fv.put("seedExpr", pick.seed());
+            // Shown only while a condition holds (the form's guard is put once the form's steps are known).
+            fv.put("hasShowWhen", f.showWhen() != null);
+            if (f.showWhen() != null) {
+                var when = com.menora.initializr.fullstack.expr.ExprCheck.check(f.showWhen(), entity.fields(),
+                        com.menora.initializr.fullstack.expr.Expr.Type.BOOL);
+                fv.put("showWhenTs", "rule.applies(" + com.menora.initializr.fullstack.expr.ExprCode.ts(when, "value") + ")");
+            }
+            // Computed on every save: the form shows it, read-only, as it would come out.
+            fv.put("isComputed", f.computed());
+            if (f.computed()) {
+                fv.put("computedTs", computedTs(entity, f));
+                // Never set by a client: locked like a workflow's status (no PUT, bulk or inline edit, no import column).
+                fv.put("isReadOnly", true);
+                fv.put("isEditable", false);
+            }
             fv.put("first", i == 0);
             fv.put("last", i == entity.fields().size() - 1);
             fieldViews.add(fv);
@@ -3868,8 +3956,9 @@ public final class EntityScaffoldContext {
         // least one check (blank, length, min/max, pattern, email) is actually emitted.
         view.put("hasValidationChecks",
                 hasBlankChecks
+                        || entity.fields().stream().anyMatch(FieldDefinition::requiredWhenShown)
                         || fieldViews.stream().anyMatch(m ->
-                                !Boolean.TRUE.equals(m.get("isGenerated"))
+                                !Boolean.TRUE.equals(m.get("isGenerated")) && !Boolean.TRUE.equals(m.get("isComputed"))
                                 && (Boolean.TRUE.equals(m.get("hasLength")) || Boolean.TRUE.equals(m.get("hasMin"))
                                         || Boolean.TRUE.equals(m.get("hasMax")) || Boolean.TRUE.equals(m.get("hasPattern"))
                                         || Boolean.TRUE.equals(m.get("isEmail")))));

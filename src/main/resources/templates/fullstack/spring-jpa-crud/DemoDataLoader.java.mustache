@@ -52,7 +52,8 @@ public class DemoDataLoader implements CommandLineRunner {
             {{EntityName}} row = new {{EntityName}}();
 {{#fields}}{{^isGenerated}}            row.set{{Name}}({{seedExpr}});
 {{/isGenerated}}{{/fields}}{{#relations}}{{#targetSeeded}}            row.set{{FieldName}}({{targetEntityCamel}}Rows.get((i - 1) % {{targetEntityCamel}}Rows.size()));
-{{/targetSeeded}}{{/relations}}{{#uniqueKeys}}            if (!{{entityName}}Key{{index}}.add(java.util.Arrays.<Object>asList({{{tuple}}}))) continue;
+{{/targetSeeded}}{{/relations}}{{#hasRules}}            {{packageName}}.rules.{{EntityName}}Rules.derive(row); // hidden fields cleared, computed ones computed
+{{/hasRules}}{{#uniqueKeys}}            if (!{{entityName}}Key{{index}}.add(java.util.Arrays.<Object>asList({{{tuple}}}))) continue;
 {{/uniqueKeys}}            {{entityName}}Rows.add(row);
         }
         {{entityName}}Rows = {{entityName}}Repository.saveAll({{entityName}}Rows);

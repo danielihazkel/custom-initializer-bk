@@ -493,7 +493,7 @@ public class {{EntityName}}Service {
             } else if (id != null && repository.existsById(id)) {
                 errors.add(new ImportError(row, null, "{{EntityName}} " + id + " already exists"));
             }
-{{/pkField.isGenerated}}{{#hasRules}}            {{packageName}}.rules.{{EntityName}}Rules.violations(entity)
+{{/pkField.isGenerated}}{{#hasRules}}            {{packageName}}.rules.{{EntityName}}Rules.apply(entity)
                     .forEach((field, message) -> errors.add(new ImportError(row, field, message)));
 {{/hasRules}}            entities.add(entity);
         }

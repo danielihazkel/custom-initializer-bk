@@ -141,4 +141,24 @@ public final class Expr {
     public static BigDecimal round(BigDecimal a, int places) {
         return a == null ? null : a.setScale(places, RoundingMode.HALF_UP);
     }
+
+    // ── A computed value, as its field holds it ──────────────────────────────
+
+    public static Integer toInteger(BigDecimal a) {
+        return a == null ? null : a.setScale(0, RoundingMode.HALF_UP).intValueExact();
+    }
+
+    public static Long toLong(BigDecimal a) {
+        return a == null ? null : a.setScale(0, RoundingMode.HALF_UP).longValueExact();
+    }
+
+    /** Money is kept to the cent. */
+    public static BigDecimal money(BigDecimal a) {
+        return a == null ? null : a.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** A text cut to the column's length. */
+    public static String fit(String s, int length) {
+        return s == null || s.length() <= length ? s : s.substring(0, length);
+    }
 }

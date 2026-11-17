@@ -707,6 +707,24 @@ class GeneratedBackendBuildSmokeTests {
                     send(put("/api/tasks/" + created.get("id").asLong()), null, done.formatted("b", ""), 400);
                 }
 
+                @Test
+                void aComputedFieldIsComputedAndAHiddenOneCleared() throws Exception {
+                    // Days are computed from the dates, whatever the client sends — on a create and an edit.
+                    JsonNode p = send(post("/api/projects"), null,
+                            "{\\"name\\": \\"Ten days\\", \\"status\\": \\"ACTIVE\\", \\"startsOn\\": \\"2026-05-01\\", \\"endsOn\\": \\"2026-05-10\\", \\"durationDays\\": 99}", 200);
+                    assertThat(p.get("durationDays").asInt()).isEqualTo(10);
+                    JsonNode edited = send(put("/api/projects/" + p.get("id").asLong()), null,
+                            "{\\"name\\": \\"Ten days\\", \\"status\\": \\"ACTIVE\\", \\"startsOn\\": \\"2026-05-01\\", \\"endsOn\\": \\"2026-05-02\\"}", 200);
+                    assertThat(edited.get("durationDays").asInt()).isEqualTo(2);
+                    assertThat(get("/api/projects/" + p.get("id").asLong()).get("durationDays").asInt()).isEqualTo(2);
+
+                    // The estimate is shown once a task has started: on a task still to do it is cleared.
+                    long project = p.get("id").asLong();
+                    String task = "{\\"title\\": \\"%s\\", \\"status\\": \\"%s\\", \\"estimate\\": 5, \\"projectId\\": " + project + "}";
+                    assertThat(send(post("/api/tasks"), null, task.formatted("Not started", "TODO"), 200).get("estimate").isNull()).isTrue();
+                    assertThat(send(post("/api/tasks"), null, task.formatted("Started", "DOING"), 200).get("estimate").asInt()).isEqualTo(5);
+                }
+
             """;
 
     @org.junit.jupiter.api.Test

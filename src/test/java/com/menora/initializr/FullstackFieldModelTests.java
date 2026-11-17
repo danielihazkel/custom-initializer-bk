@@ -172,7 +172,7 @@ class FullstackFieldModelTests {
         assertThat(file(files, "service/TaskService.java"))
                 .contains("rules.TaskRules.check(entity);")
                 .contains("rules.TaskRules.check(existing);")
-                .contains("rules.TaskRules.violations(entity)");
+                .contains("rules.TaskRules.apply(entity)");
         assertThat(file(files, "web/ApiExceptionHandler.java")).contains("public ProblemDetail handleRules(RuleViolationException ex) {");
         assertThat(file(files, "task-form/model/validate.ts"))
                 .contains("import * as rule from '@shared/ui/rules'")
@@ -217,9 +217,59 @@ class FullstackFieldModelTests {
                         List.of(Map.of("check", "endsOn >= startsOn", "message", "x", "field", "nope"))),
                 "entities[1].rules[0]", "shows its message on 'nope'");
         assertRefused(body -> {
-            entity(body, "Project").put("readOnly", true);
-            entity(body, "Project").put("rules", List.of(Map.of("check", "endsOn >= startsOn", "message", "x")));
-        }, "entities[1]", "read-only: nothing saves a row");
+            entity(body, "Person").put("readOnly", true);
+            entity(body, "Person").put("rules", List.of(Map.of("check", "length(fullName) > 1", "message", "x")));
+        }, "entities[0]", "read-only: nothing saves a row");
+        // …nor computed fields (Project's days).
+        assertRefused(body -> entity(body, "Project").put("readOnly", true),
+                "entities[1].fields[5]", "a read-only entity is never saved, so it has no computed fields");
+    }
+
+    @Test
+    void aFieldShownOnAConditionIsClearedWhileHiddenAndAComputedOneIsComputed() throws Exception {
+        // The estimate is required while it is shown: a rule of its own, in the form's language.
+        Map<String, String> files = generate(body -> {
+            body.put("opts", Map.of("scaffold", List.of("tests", "seedData")));
+            field(entity(body, "Task"), "estimate").put("required", true);
+        });
+        assertThat(file(files, "rules/TaskRules.java"))
+                .contains("if (!Expr.applies(Expr.ne(Expr.name(row.getStatus()), \"TODO\"))) row.setEstimate(null);")
+                .contains("// when status != 'TODO': not isEmpty(estimate)")
+                .contains("errors.putIfAbsent(\"estimate\", \"must not be empty\");");
+        assertThat(file(files, "rules/ProjectRules.java")).contains(
+                "row.setDurationDays(Expr.toInteger(Expr.add(Expr.daysBetween(row.getStartsOn(), row.getEndsOn()), new java.math.BigDecimal(\"1\"))));");
+        // Required only while shown: no NOT NULL, no @NotNull, no "asks for" case of its own.
+        assertThat(file(files, "entity/Task.java")).doesNotContain("name = \"estimate\", nullable = false");
+        assertThat(file(files, "task-form/model/validate.ts"))
+                .contains("value = { ...value, estimate: rule.applies(rule.ne(rule.text(value.status), 'TODO')) ? value.estimate : null }")
+                .contains("errors.estimate = t('required')")
+                .doesNotContain("if (blank(value.estimate))");
+        assertThat(file(files, "task-form/ui/TaskForm.tsx"))
+                .contains("{rule.applies(rule.ne(rule.text(value.status), 'TODO')) && (<Field label=\"Estimate\"");
+        // The computed field: shown, read-only, as it will come out; never in a bulk change or a PUT.
+        assertThat(file(files, "project-form/ui/ProjectForm.tsx"))
+                .contains("value={rule.show(rule.add(rule.daysBetweenDates(rule.date(value.startsOn), rule.date(value.endsOn)), 1))} readOnly");
+        assertThat(file(files, "project-form/model/validate.ts"))
+                .contains("value = { ...value, durationDays: rule.add(rule.daysBetweenDates(rule.date(value.startsOn), rule.date(value.endsOn)), 1) }");
+        assertThat(file(files, "service/ProjectService.java")).doesNotContain("existing.setDurationDays(updated.getDurationDays());");
+        // Demo rows are derived too.
+        assertThat(file(files, "config/DemoDataLoader.java")).contains("rules.ProjectRules.derive(row);");
+    }
+
+    @Test
+    void whatAShowWhenOrAFormulaCannotBeIsRefusedOnItsField() {
+        assertRefused(body -> field(entity(body, "Project"), "durationDays").put("formula", "endsOn"),
+                "entities[1].fields[5]", "(its formula): This must be a number, but it is a date");
+        assertRefused(body -> field(entity(body, "Project"), "durationDays").put("required", true),
+                "entities[1].fields[5]", "never required");
+        assertRefused(body -> field(entity(body, "Project"), "status").put("formula", "'ACTIVE'"),
+                "entities[1].fields[2]", "cannot be computed");
+        assertRefused(body -> field(entity(body, "Project"), "endsOn").put("formula", "startsOn + durationDays"),
+                "entities[1].fields[4]", "reads 'durationDays', which is computed too");
+        assertRefused(body -> field(entity(body, "Task"), "estimate").put("showWhen", "estimate > 1"),
+                "entities[2].fields[6]", "reads the field itself");
+        assertRefused(body -> field(entity(body, "Task"), "estimate").put("showWhen", "status"),
+                "entities[2].fields[6]", "(its show-when): This must be a yes/no condition");
     }
 
     private void assertRefused(Consumer<Map<String, Object>> change, String path, String message) {

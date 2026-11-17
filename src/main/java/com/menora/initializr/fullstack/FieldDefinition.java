@@ -62,7 +62,10 @@ public record FieldDefinition(
         Map<String, String> enumLabels,
         String column,
         String currency,
-        String help) {
+        String help,
+        String showWhen,
+        String formula,
+        boolean requiredWhenShown) {
 
     /** The currency of a MONEY field that names none. */
     public static final String DEFAULT_CURRENCY = "ILS";
@@ -70,6 +73,28 @@ public record FieldDefinition(
     public FieldDefinition {
         enumLabels = enumLabels == null ? Map.of() : Map.copyOf(enumLabels);
         help = help == null || help.isBlank() ? null : help.trim();
+        showWhen = showWhen == null || showWhen.isBlank() ? null : showWhen.trim();
+        formula = formula == null || formula.isBlank() ? null : formula.trim();
+    }
+
+    /**
+     * Back-compat constructor without {@code showWhen}, {@code formula} and
+     * {@code requiredWhenShown}: a field the form always shows and a client sets.
+     */
+    public FieldDefinition(String name, FieldType type, boolean primaryKey, boolean generated,
+                           boolean required, boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                           String pattern, boolean email, List<String> enumValues,
+                           boolean searchable, boolean filterable, String label, boolean readOnly,
+                           String defaultValue, Map<String, String> enumLabels, String column, String currency,
+                           String help) {
+        this(name, type, primaryKey, generated, required, unique, length, min, max,
+                pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
+                column, currency, help, null, null, false);
+    }
+
+    /** The value is computed from other fields on every save. */
+    public boolean computed() {
+        return formula != null;
     }
 
     /** Back-compat constructor without {@code help} (no hint in the form). */
@@ -80,7 +105,7 @@ public record FieldDefinition(
                            String defaultValue, Map<String, String> enumLabels, String column, String currency) {
         this(name, type, primaryKey, generated, required, unique, length, min, max,
                 pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
-                column, currency, null);
+                column, currency, null, null, null, false);
     }
 
     /** Back-compat constructor without {@code currency} (only a MONEY field has one). */

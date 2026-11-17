@@ -6,7 +6,8 @@ import { Field, inputClass{{#formUsesPicker}}, RelationPicker{{/formUsesPicker}}
 {{/hasAttachmentFields}}{{#hasMarkdownField}}import { MarkdownEditor } from '@shared/ui/MarkdownEditor'
 {{/hasMarkdownField}}{{#hasCollections}}import { MultiRelationPicker } from '@shared/ui/MultiRelationPicker'
 {{/hasCollections}}{{#compositions}}import { {{childEntity}}Rows } from '@features/{{childKebab}}-form'
-{{/compositions}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
+{{/compositions}}{{#formUsesRules}}import * as rule from '@shared/ui/rules'
+{{/formUsesRules}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
 {{#fields}}{{#isEnum}}{{^isWorkflowStatus}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
 {{/isWorkflowStatus}}{{/isEnum}}{{/fields}}
 
@@ -46,7 +47,7 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           />
         </Field>
       )}
-{{/isGenerated}}{{^isGenerated}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}}{{#hasHelp}} hint="{{helpAttr}}"{{/hasHelp}} error={errors?.{{name}}}>
+{{/isGenerated}}{{^isGenerated}}      {{#hasShowWhen}}{{{guardOpen}}}{{/hasShowWhen}}{{^hasShowWhen}}{{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}{{/hasShowWhen}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}}{{#hasHelp}} hint="{{helpAttr}}"{{/hasHelp}} error={errors?.{{name}}}>
         <input
           className={isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -56,7 +57,10 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
         />
       </Field>{{#formHasSteps}})}{{/formHasSteps}}
 {{/isGenerated}}{{/isPrimaryKey}}
-{{^isPrimaryKey}}{{#isBoolean}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}}{{#hasHelp}} hint="{{helpAttr}}"{{/hasHelp}} error={errors?.{{name}}}>
+{{^isPrimaryKey}}{{#isComputed}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#hasHelp}} hint="{{helpAttr}}"{{/hasHelp}}>
+        <input className={`${inputClass} cursor-not-allowed bg-surface-2 text-muted`} value={rule.show({{{computedTs}}})} readOnly aria-readonly />
+      </Field>{{#formHasSteps}})}{{/formHasSteps}}
+{{/isComputed}}{{^isComputed}}{{#isBoolean}}      {{#hasShowWhen}}{{{guardOpen}}}{{/hasShowWhen}}{{^hasShowWhen}}{{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}{{/hasShowWhen}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}}{{#hasHelp}} hint="{{helpAttr}}"{{/hasHelp}} error={errors?.{{name}}}>
         <select
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           value={value.{{name}} == null ? '' : String(value.{{name}})}
@@ -67,8 +71,8 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           <option value="true">{t('trueLabel')}</option>
           <option value="false">{t('falseLabel')}</option>
         </select>
-      </Field>{{#formHasSteps}})}{{/formHasSteps}}
-{{/isBoolean}}{{#isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}}{{#hasHelp}} hint="{{helpAttr}}"{{/hasHelp}} error={errors?.{{name}}}>
+      </Field>{{#hasShowWhen}}{{{guardClose}}}{{/hasShowWhen}}{{^hasShowWhen}}{{#formHasSteps}})}{{/formHasSteps}}{{/hasShowWhen}}
+{{/isBoolean}}{{#isEnum}}      {{#hasShowWhen}}{{{guardOpen}}}{{/hasShowWhen}}{{^hasShowWhen}}{{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}{{/hasShowWhen}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}}{{#hasHelp}} hint="{{helpAttr}}"{{/hasHelp}} error={errors?.{{name}}}>
         <select
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           value={(value.{{name}} as string | null | undefined) ?? ''}
@@ -78,8 +82,8 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           <option value="">—</option>
           { {{enumTypeName}}Options.map(o => <option key={o.value} value={o.value}>{o.label}</option>) }
         </select>
-      </Field>{{#formHasSteps}})}{{/formHasSteps}}
-{{/isEnum}}{{^isBoolean}}{{^isEnum}}      {{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}}{{#hasHelp}} hint="{{helpAttr}}"{{/hasHelp}} error={errors?.{{name}}}>
+      </Field>{{#hasShowWhen}}{{{guardClose}}}{{/hasShowWhen}}{{^hasShowWhen}}{{#formHasSteps}})}{{/formHasSteps}}{{/hasShowWhen}}
+{{/isEnum}}{{^isBoolean}}{{^isEnum}}      {{#hasShowWhen}}{{{guardOpen}}}{{/hasShowWhen}}{{^hasShowWhen}}{{#formHasSteps}}{show('{{name}}') && ({{/formHasSteps}}{{/hasShowWhen}}<Field label="{{labelAttr}}"{{#isRequired}} required{{/isRequired}}{{#hasHelp}} hint="{{helpAttr}}"{{/hasHelp}} error={errors?.{{name}}}>
 {{#isText}}{{#isMarkdown}}        <MarkdownEditor
           label="{{labelAttr}}"
           value={value.{{name}}}
@@ -106,8 +110,8 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           onChange={e => set('{{name}}', {{#isInstant}}fromLocalInput(e.target.value){{/isInstant}}{{^isInstant}}{{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}}{{/isInstant}})}
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         />
-{{/isAttachment}}{{/isText}}      </Field>{{#formHasSteps}})}{{/formHasSteps}}
-{{/isEnum}}{{/isBoolean}}{{/isPrimaryKey}}
+{{/isAttachment}}{{/isText}}      </Field>{{#hasShowWhen}}{{{guardClose}}}{{/hasShowWhen}}{{^hasShowWhen}}{{#formHasSteps}})}{{/formHasSteps}}{{/hasShowWhen}}
+{{/isEnum}}{{/isBoolean}}{{/isComputed}}{{/isPrimaryKey}}
 {{/isWorkflowLocked}}
 {{/groupFields}}
 {{#groupRelations}}

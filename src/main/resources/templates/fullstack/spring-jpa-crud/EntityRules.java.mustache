@@ -7,14 +7,23 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * {{EntityName}}'s rules, as the model wrote them. Its service checks them before every save — a
- * create, an update, a workflow move, a bulk change, an import — and the form runs the same
- * checks before it sends (validate{{EntityName}}).
+ * {{EntityName}}'s rules, as the model wrote them. Its service runs them before every save — a
+ * create, an update, a workflow move, a bulk change, an import: first {@link #derive} (a field
+ * shown only on a condition is cleared while it does not hold, a computed field is computed),
+ * then the checks. The form runs the same before it sends (validate{{EntityName}}).
  */
 public final class {{EntityName}}Rules {
 
     private {{EntityName}}Rules() {
     }
+
+    /** Clears what is hidden and computes what is computed, in the row itself. */
+    public static void derive({{EntityName}} row) {
+{{#hiddenFields}}        // shown when {{showWhenTextComment}}
+        if (!Expr.applies({{{showWhenJava}}})) row.set{{Name}}(null);
+{{/hiddenFields}}{{#computedFields}}        // {{name}} = {{formulaTextComment}}
+        row.set{{Name}}({{{formulaJava}}});
+{{/computedFields}}    }
 
     /** Each field's message for the first rule on it that is broken; empty when every rule holds. */
     public static Map<String, String> violations({{EntityName}} row) {
@@ -26,9 +35,15 @@ public final class {{EntityName}}Rules {
 {{/rules}}        return errors;
     }
 
-    /** Refuses a row a rule is broken by: a 400 with each field's message. */
+    /** {@link #derive}, then the rules: each field's message, empty when every rule holds. */
+    public static Map<String, String> apply({{EntityName}} row) {
+        derive(row);
+        return violations(row);
+    }
+
+    /** {@link #apply}, refusing a row a rule is broken by: a 400 with each field's message. */
     public static void check({{EntityName}} row) {
-        Map<String, String> errors = violations(row);
+        Map<String, String> errors = apply(row);
         if (!errors.isEmpty()) throw new RuleViolationException(errors);
     }
 }

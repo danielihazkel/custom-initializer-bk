@@ -900,7 +900,27 @@ public record FullstackStarterRequest(
             // A hint shown under the field's input in the generated form. Left out of the JSON
             // when absent.
             @JsonInclude(JsonInclude.Include.NON_NULL)
-            String help) {
+            String help,
+            // A condition in the model's expression language: the form shows the field only while
+            // it holds, and a save clears the field while it does not. Left out when absent.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String showWhen,
+            // An expression the field's value is computed from on every save (a stored column the
+            // client does not set). Left out when absent.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String formula) {
+
+        /** Back-compat constructor without {@code showWhen} and {@code formula}. */
+        public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                                  String pattern, Boolean email, List<String> enumValues,
+                                  Boolean searchable, Boolean filterable, String label, Boolean readOnly,
+                                  String defaultValue, Map<String, String> enumLabels, String column, String currency,
+                                  String help) {
+            this(name, type, primaryKey, generated, required, unique, length, min, max,
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
+                    column, currency, help, null, null);
+        }
 
         /** Back-compat constructor without {@code help}. */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
@@ -910,7 +930,7 @@ public record FullstackStarterRequest(
                                   String defaultValue, Map<String, String> enumLabels, String column, String currency) {
             this(name, type, primaryKey, generated, required, unique, length, min, max,
                     pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
-                    column, currency, null);
+                    column, currency, null, null, null);
         }
 
         /** Back-compat constructor without {@code currency}. */
