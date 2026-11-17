@@ -154,6 +154,9 @@ public final class FullstackSchema {
         limits.put("maxHelp", FullstackRequestValidator.MAX_HELP);
         limits.put("maxUniqueKeys", FullstackRequestValidator.MAX_UNIQUE_KEYS);
         limits.put("maxUniqueKeyFields", FullstackRequestValidator.MAX_UNIQUE_KEY_FIELDS);
+        limits.put("maxRules", FullstackRequestValidator.MAX_RULES);
+        limits.put("maxRuleMessage", FullstackRequestValidator.MAX_RULE_MESSAGE);
+        limits.put("maxExpression", com.menora.initializr.fullstack.expr.Expr.MAX_LENGTH);
         limits.put("maxEnumLabel", FullstackRequestValidator.MAX_ENUM_LABEL_LENGTH);
         limits.put("maxTransitions", FullstackRequestValidator.MAX_TRANSITIONS);
         limits.put("maxTransitionLabel", FullstackRequestValidator.MAX_TRANSITION_LABEL);

@@ -98,7 +98,15 @@ public class ApiExceptionHandler {
         return pd;
     }
 
-{{/hasWorkflows}}    @ExceptionHandler(DataIntegrityViolationException.class)
+{{/hasWorkflows}}{{#hasRules}}    /** A save an entity's rules refuse: 400 with each field's message, as bean validation answers. */
+    @ExceptionHandler(RuleViolationException.class)
+    public ProblemDetail handleRules(RuleViolationException ex) {
+        ProblemDetail pd = problem(HttpStatus.BAD_REQUEST, ex.getMessage());
+        pd.setProperty("errors", ex.errors());
+        return pd;
+    }
+
+{{/hasRules}}    @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
         String cause = rootMessage(ex).toLowerCase(Locale.ROOT);
 {{#hasUniqueKeys}}        // A unique key over several fields: the message says which, and marks each of them.

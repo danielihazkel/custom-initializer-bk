@@ -985,6 +985,40 @@ public final class EntityScaffoldContext {
         ctx.put("uniqueKeyViolations", violations);
     }
 
+    /** {@code hasRules}: some entity has rules — the generated rules runtime and its 400. */
+    public static void putRules(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        ctx.put("hasRules", entities.stream().anyMatch(e -> !e.rules().isEmpty()));
+    }
+
+    /** An entity's rules as the templates write them: the check (and when) in Java over {@code row} and in TS over {@code value}. */
+    static List<Map<String, Object>> ruleViews(EntityDefinition entity) {
+        if (entity.rules().isEmpty()) return List.of();
+        List<Map<String, Object>> out = new ArrayList<>();
+        int index = 0;
+        for (EntityDefinition.Rule rule : entity.rules()) {
+            var check = com.menora.initializr.fullstack.expr.ExprCheck.check(rule.check(), entity.fields(),
+                    com.menora.initializr.fullstack.expr.Expr.Type.BOOL);
+            Map<String, Object> rv = new LinkedHashMap<>();
+            rv.put("index", index++);
+            rv.put("field", rule.field());
+            rv.put("messageJava", escapeJavaLiteral(rule.message()));
+            putText(rv, "message", rule.message());
+            putText(rv, "checkText", rule.check());
+            rv.put("checkJava", com.menora.initializr.fullstack.expr.ExprCode.java(check, "row"));
+            rv.put("checkTs", com.menora.initializr.fullstack.expr.ExprCode.ts(check, "value"));
+            rv.put("hasWhen", rule.when() != null);
+            if (rule.when() != null) {
+                var when = com.menora.initializr.fullstack.expr.ExprCheck.check(rule.when(), entity.fields(),
+                        com.menora.initializr.fullstack.expr.Expr.Type.BOOL);
+                putText(rv, "whenText", rule.when());
+                rv.put("whenJava", com.menora.initializr.fullstack.expr.ExprCode.java(when, "row"));
+                rv.put("whenTs", com.menora.initializr.fullstack.expr.ExprCode.ts(when, "value"));
+            }
+            out.add(rv);
+        }
+        return out;
+    }
+
     /** The physical column of a unique key's member: a field's column, or a link's join column. */
     public static String uniqueKeyColumnOf(EntityDefinition entity, String member) {
         for (FieldDefinition f : entity.fields()) {
@@ -3378,6 +3412,11 @@ public final class EntityScaffoldContext {
         List<Map<String, Object>> uniqueKeys = uniqueKeyViews(entity);
         view.put("uniqueKeys", uniqueKeys);
         view.put("hasUniqueKeys", !uniqueKeys.isEmpty());
+        // Rules over several fields: a <Entity>Rules class the service asks before a save, and the
+        // same checks in the form's validate<Entity>.
+        List<Map<String, Object>> rules = ruleViews(entity);
+        view.put("rules", rules);
+        view.put("hasRules", !rules.isEmpty());
         view.put("uniqueConstraintsJava", "{" + String.join(", ", uniqueKeys.stream()
                 .map(k -> "@UniqueConstraint(name = \"" + k.get("constraint") + "\", columnNames = {" + k.get("columnsJava") + "})")
                 .toList()) + "}");
@@ -3399,6 +3438,8 @@ public final class EntityScaffoldContext {
 
         Set<String> keyed = new HashSet<>();
         for (EntityDefinition.UniqueKey key : entity.uniqueKeys()) keyed.addAll(key.fields());
+        // Values the entity's rules accept, for the fields they read (the tests' rows take the same).
+        Map<String, RuleRows.Pick> ruled = GeneratedTests.solved(entity).picks();
         for (int i = 0; i < entity.fields().size(); i++) {
             FieldDefinition f = entity.fields().get(i);
             Map<String, Object> fv = fieldViewModel(pascal, f);
@@ -3406,6 +3447,8 @@ public final class EntityScaffoldContext {
             if (keyed.contains(f.name()) && f.hasDefault() && !f.unique() && !f.primaryKey()) {
                 fv.put("seedExpr", seedExpression(pascal, f, (String) fv.get("label"), (String) fv.get("enumTypeName"), true));
             }
+            RuleRows.Pick pick = ruled.get(f.name());
+            if (pick != null && pick.seed() != null) fv.put("seedExpr", pick.seed());
             fv.put("first", i == 0);
             fv.put("last", i == entity.fields().size() - 1);
             fieldViews.add(fv);

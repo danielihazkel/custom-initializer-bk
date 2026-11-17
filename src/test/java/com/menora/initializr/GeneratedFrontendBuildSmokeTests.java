@@ -616,6 +616,24 @@ class GeneratedFrontendBuildSmokeTests {
         runPnpm(project, "run", "test");
     }
 
+    /**
+     * Rules over several fields (Projects: dates in order, an estimate on a finished task) in the
+     * form's validate and its test, whose valid row takes values the rules accept — dates counted
+     * from today by the test's own day(k).
+     */
+    @Test
+    void fullstackFrontendRulesPass(@TempDir Path workDir) throws Exception {
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("tests")));
+        Path project = postAndExtractFrontend(workDir, body);
+        assertThat(project.resolve("src/shared/ui/rules.ts")).isRegularFile();
+        assertThat(Files.readString(project.resolve("src/features/task-form/model/validate.test.ts"))).contains("const day = ");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+        runPnpm(project, "run", "test");
+    }
+
     /** The same on the Menora set with a page layout (the route test), in Hebrew: Approvals. */
     @Test
     void fullstackFrontendMenoraTestsPass(@TempDir Path workDir) throws Exception {

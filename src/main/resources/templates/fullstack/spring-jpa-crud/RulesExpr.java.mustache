@@ -1,0 +1,144 @@
+package {{packageName}}.rules;
+
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.Temporal;
+
+/**
+ * What the entities' rules are written in: the model's expression language, as Java (see each
+ * {@code *Rules} class beside this one). Numbers are decimals, enums their constants' names.
+ *
+ * <p>An empty value (null) makes an operation empty and a comparison unknown, and {@code and} /
+ * {@code or} follow three-valued logic. A rule that comes out unknown holds: asking for a value is
+ * a required field's job, or {@code isEmpty}'s. The form's {@code shared/lib/expr.ts} means the same.
+ */
+public final class Expr {
+
+    private Expr() {
+    }
+
+    /** A rule's condition applies only when it is true. */
+    public static boolean applies(Boolean when) {
+        return Boolean.TRUE.equals(when);
+    }
+
+    /** A rule's check fails only when it is false. */
+    public static boolean fails(Boolean check) {
+        return Boolean.FALSE.equals(check);
+    }
+
+    public static BigDecimal num(Number n) {
+        return n == null ? null : n instanceof BigDecimal b ? b : new BigDecimal(n.toString());
+    }
+
+    public static String name(Enum<?> e) {
+        return e == null ? null : e.name();
+    }
+
+    public static Boolean and(Boolean a, Boolean b) {
+        if (Boolean.FALSE.equals(a) || Boolean.FALSE.equals(b)) return false;
+        return a == null || b == null ? null : true;
+    }
+
+    public static Boolean or(Boolean a, Boolean b) {
+        if (Boolean.TRUE.equals(a) || Boolean.TRUE.equals(b)) return true;
+        return a == null || b == null ? null : false;
+    }
+
+    public static Boolean not(Boolean a) {
+        return a == null ? null : !a;
+    }
+
+    public static Boolean eq(Object a, Object b) {
+        return a == null || b == null ? null : compare(a, b) == 0;
+    }
+
+    public static Boolean ne(Object a, Object b) {
+        return a == null || b == null ? null : compare(a, b) != 0;
+    }
+
+    public static Boolean lt(Object a, Object b) {
+        return a == null || b == null ? null : compare(a, b) < 0;
+    }
+
+    public static Boolean le(Object a, Object b) {
+        return a == null || b == null ? null : compare(a, b) <= 0;
+    }
+
+    public static Boolean gt(Object a, Object b) {
+        return a == null || b == null ? null : compare(a, b) > 0;
+    }
+
+    public static Boolean ge(Object a, Object b) {
+        return a == null || b == null ? null : compare(a, b) >= 0;
+    }
+
+    /** Decimals by value (1.0 is 1), the rest by their own order; a yes/no is only equal or not. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static int compare(Object a, Object b) {
+        if (a instanceof Boolean) return a.equals(b) ? 0 : 1;
+        return ((Comparable) a).compareTo(b);
+    }
+
+    public static BigDecimal add(BigDecimal a, BigDecimal b) {
+        return a == null || b == null ? null : a.add(b);
+    }
+
+    public static BigDecimal sub(BigDecimal a, BigDecimal b) {
+        return a == null || b == null ? null : a.subtract(b);
+    }
+
+    public static BigDecimal mul(BigDecimal a, BigDecimal b) {
+        return a == null || b == null ? null : a.multiply(b);
+    }
+
+    /** Division by zero is empty, like a missing value. */
+    public static BigDecimal div(BigDecimal a, BigDecimal b) {
+        return a == null || b == null || b.signum() == 0 ? null : a.divide(b, MathContext.DECIMAL64);
+    }
+
+    public static BigDecimal neg(BigDecimal a) {
+        return a == null ? null : a.negate();
+    }
+
+    public static String concat(String a, String b) {
+        return a == null || b == null ? null : a + b;
+    }
+
+    public static LocalDate plusDays(LocalDate date, BigDecimal days) {
+        return date == null || days == null ? null : date.plusDays(days.longValue());
+    }
+
+    public static boolean isEmpty(Object value) {
+        return value == null || value instanceof String s && s.isBlank();
+    }
+
+    public static LocalDate today() {
+        return LocalDate.now();
+    }
+
+    public static LocalDateTime now() {
+        return LocalDateTime.now();
+    }
+
+    /** Whole days from {@code a} to {@code b} (negative when b is earlier). */
+    public static BigDecimal daysBetween(Temporal a, Temporal b) {
+        return a == null || b == null ? null : BigDecimal.valueOf(ChronoUnit.DAYS.between(a, b));
+    }
+
+    public static BigDecimal length(String s) {
+        return s == null ? null : BigDecimal.valueOf(s.length());
+    }
+
+    public static BigDecimal abs(BigDecimal a) {
+        return a == null ? null : a.abs();
+    }
+
+    public static BigDecimal round(BigDecimal a, int places) {
+        return a == null ? null : a.setScale(places, RoundingMode.HALF_UP);
+    }
+}

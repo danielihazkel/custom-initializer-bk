@@ -1,0 +1,295 @@
+package com.menora.initializr.fullstack.expr;
+
+import com.menora.initializr.fullstack.FieldDefinition;
+import com.menora.initializr.fullstack.expr.Expr.Binary;
+import com.menora.initializr.fullstack.expr.Expr.Call;
+import com.menora.initializr.fullstack.expr.Expr.ExprException;
+import com.menora.initializr.fullstack.expr.Expr.Lit;
+import com.menora.initializr.fullstack.expr.Expr.Node;
+import com.menora.initializr.fullstack.expr.Expr.Ref;
+import com.menora.initializr.fullstack.expr.Expr.Type;
+import com.menora.initializr.fullstack.expr.Expr.Unary;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Checks an expression against an entity's fields: every name is one of them, every operator
+ * gets what it takes, an enum is compared with one of its own values. What it learns — each
+ * node's type, the enum literals spelled as the constants are, the fields read — is what the
+ * code writers ({@link ExprCode}) and the interpreter ({@link ExprEval}) need.
+ */
+public final class ExprCheck {
+
+    private ExprCheck() {
+    }
+
+    /** The functions, as they are spelled. */
+    public static final List<String> FUNCTIONS =
+            List.of("isEmpty", "today", "now", "daysBetween", "length", "abs", "round", "date");
+
+    /**
+     * A checked expression.
+     *
+     * @param refs the fields it reads, in the order it first reads them
+     */
+    public record Checked(String text, Node root, Type type, Map<Node, Type> types, Map<Node, Object> literals,
+                          Set<String> refs, Map<String, FieldDefinition> fields) {
+
+        public Type typeOf(Node node) {
+            return types.get(node);
+        }
+
+        /** A literal's value as the code uses it: an enum literal spelled as its constant, a date literal a LocalDate. */
+        public Object literal(Node node) {
+            return literals.get(node);
+        }
+    }
+
+    /** Parses and checks {@code text} over {@code fields}; it must come out as {@code expected} (null: anything). */
+    public static Checked check(String text, List<FieldDefinition> fields, Type expected) {
+        Node root = Expr.parse(text);
+        Map<String, FieldDefinition> byName = new LinkedHashMap<>();
+        for (FieldDefinition f : fields) byName.put(f.name(), f);
+        Checker c = new Checker(byName);
+        Type type = c.type(root, false);
+        if (expected != null && type != expected) {
+            throw new ExprException("This must be " + describe(expected) + ", but it is " + describe(type), root.at());
+        }
+        return new Checked(text, root, type, c.types, c.literals, c.refs, byName);
+    }
+
+    /** The expression type of a field, or null for one an expression cannot read (only test with isEmpty). */
+    public static Type typeOf(FieldDefinition f) {
+        return switch (f.type()) {
+            case INTEGER, LONG, BIG_DECIMAL, MONEY -> Type.NUMBER;
+            case STRING, TEXT, MARKDOWN -> Type.TEXT;
+            case BOOLEAN -> Type.BOOL;
+            case LOCAL_DATE -> Type.DATE;
+            case LOCAL_DATE_TIME -> Type.DATETIME;
+            case INSTANT -> Type.INSTANT;
+            case LOCAL_TIME -> Type.TIME;
+            case ENUM -> Type.ENUM;
+            case UUID, FILE, IMAGE -> null;
+        };
+    }
+
+    public static String describe(Type type) {
+        return switch (type) {
+            case NUMBER -> "a number";
+            case TEXT -> "a text";
+            case BOOL -> "a yes/no condition";
+            case DATE -> "a date";
+            case DATETIME -> "a date and time";
+            case INSTANT -> "an instant";
+            case TIME -> "a time of day";
+            case ENUM -> "an enum value";
+            case ANY -> "a value";
+        };
+    }
+
+    private static final class Checker {
+        private final Map<String, FieldDefinition> fields;
+        final Map<Node, Type> types = new IdentityHashMap<>();
+        final Map<Node, Object> literals = new IdentityHashMap<>();
+        final Set<String> refs = new LinkedHashSet<>();
+
+        Checker(Map<String, FieldDefinition> fields) {
+            this.fields = fields;
+        }
+
+        Type type(Node node, boolean emptinessOnly) {
+            Type t = compute(node, emptinessOnly);
+            types.put(node, t);
+            return t;
+        }
+
+        private Type compute(Node node, boolean emptinessOnly) {
+            if (node instanceof Lit lit) {
+                literals.put(lit, lit.value());
+                if (lit.value() instanceof BigDecimal) return Type.NUMBER;
+                if (lit.value() instanceof Boolean) return Type.BOOL;
+                return Type.TEXT;
+            }
+            if (node instanceof Ref ref) {
+                FieldDefinition f = fields.get(ref.name());
+                if (f == null) {
+                    FieldDefinition loose = fields.values().stream()
+                            .filter(x -> x.name().equalsIgnoreCase(ref.name())).findFirst().orElse(null);
+                    throw new ExprException("'" + ref.name() + "' is not a field of this entity"
+                            + (loose != null ? " (did you mean '" + loose.name() + "'?)" : ""), ref.at());
+                }
+                refs.add(f.name());
+                Type t = typeOf(f);
+                if (t == null) {
+                    if (emptinessOnly) return Type.ANY;
+                    throw new ExprException("'" + f.name() + "' (" + f.type() + ") can only be tested with isEmpty()", ref.at());
+                }
+                return t;
+            }
+            if (node instanceof Unary u) {
+                Type t = type(u.operand(), false);
+                if (u.op().equals("-")) {
+                    require(t, Type.NUMBER, u.operand(), "'-'");
+                    return Type.NUMBER;
+                }
+                require(t, Type.BOOL, u.operand(), "'not'");
+                return Type.BOOL;
+            }
+            if (node instanceof Binary b) return binary(b);
+            return call((Call) node);
+        }
+
+        private Type binary(Binary b) {
+            Type l = type(b.left(), false);
+            Type r = type(b.right(), false);
+            switch (b.op()) {
+                case "and", "or" -> {
+                    require(l, Type.BOOL, b.left(), "'" + b.op() + "'");
+                    require(r, Type.BOOL, b.right(), "'" + b.op() + "'");
+                    return Type.BOOL;
+                }
+                case "==", "!=" -> {
+                    comparable(b, l, r, false);
+                    return Type.BOOL;
+                }
+                case "<", "<=", ">", ">=" -> {
+                    comparable(b, l, r, true);
+                    return Type.BOOL;
+                }
+                case "+" -> {
+                    if (l == Type.NUMBER && r == Type.NUMBER) return Type.NUMBER;
+                    if (l == Type.TEXT && r == Type.TEXT) return Type.TEXT;
+                    if (l == Type.DATE && r == Type.NUMBER || l == Type.NUMBER && r == Type.DATE) return Type.DATE;
+                    throw new ExprException("'+' adds two numbers, joins two texts, or adds days to a date — not "
+                            + describe(l) + " and " + describe(r), b.at());
+                }
+                case "-" -> {
+                    if (l == Type.NUMBER && r == Type.NUMBER) return Type.NUMBER;
+                    if (l == Type.DATE && r == Type.NUMBER) return Type.DATE;
+                    throw new ExprException("'-' takes two numbers, or days from a date (daysBetween(a, b) is the days between two dates) — not "
+                            + describe(l) + " and " + describe(r), b.at());
+                }
+                default -> {
+                    require(l, Type.NUMBER, b.left(), "'" + b.op() + "'");
+                    require(r, Type.NUMBER, b.right(), "'" + b.op() + "'");
+                    return Type.NUMBER;
+                }
+            }
+        }
+
+        private void comparable(Binary b, Type l, Type r, boolean ordered) {
+            // An enum against a text: the text must be one of its values, spelled as the constant is.
+            if (l == Type.ENUM && r == Type.TEXT) {
+                enumLiteral(b.left(), b.right());
+                if (ordered) throw new ExprException("Enum values are not ordered: compare with == or !=", b.at());
+                return;
+            }
+            if (l == Type.TEXT && r == Type.ENUM) {
+                enumLiteral(b.right(), b.left());
+                if (ordered) throw new ExprException("Enum values are not ordered: compare with == or !=", b.at());
+                return;
+            }
+            if (l != r) {
+                throw new ExprException("Cannot compare " + describe(l) + " with " + describe(r), b.at());
+            }
+            if (ordered && (l == Type.BOOL || l == Type.ENUM)) {
+                throw new ExprException(describe(l) + " is not ordered: compare with == or !=", b.at());
+            }
+        }
+
+        private void enumLiteral(Node enumSide, Node textSide) {
+            if (!(textSide instanceof Lit lit) || !(enumSide instanceof Ref ref)) return;
+            FieldDefinition f = fields.get(ref.name());
+            String text = (String) lit.value();
+            String constant = f.enumValues().stream().filter(v -> v.equalsIgnoreCase(text)).findFirst().orElse(null);
+            if (constant == null) {
+                throw new ExprException("'" + text + "' is not one of " + f.name() + "'s values ("
+                        + String.join(", ", f.enumValues()) + ")", lit.at());
+            }
+            literals.put(lit, constant);
+        }
+
+        private Type call(Call c) {
+            String fn = FUNCTIONS.stream().filter(n -> n.equalsIgnoreCase(c.fn())).findFirst().orElseThrow(() ->
+                    new ExprException("'" + c.fn() + "' is not a function (there are " + String.join(", ", FUNCTIONS) + ")", c.at()));
+            List<Node> args = c.args();
+            switch (fn) {
+                case "isEmpty" -> {
+                    arity(c, fn, 1);
+                    type(args.get(0), true);
+                    return Type.BOOL;
+                }
+                case "today", "now" -> {
+                    arity(c, fn, 0);
+                    return fn.equals("today") ? Type.DATE : Type.DATETIME;
+                }
+                case "daysBetween" -> {
+                    arity(c, fn, 2);
+                    Type a = type(args.get(0), false);
+                    Type b = type(args.get(1), false);
+                    if (a != b || !(a == Type.DATE || a == Type.DATETIME || a == Type.INSTANT)) {
+                        throw new ExprException("daysBetween takes two dates, or two dates and times — not "
+                                + describe(a) + " and " + describe(b), c.at());
+                    }
+                    return Type.NUMBER;
+                }
+                case "length" -> {
+                    arity(c, fn, 1);
+                    Type a = type(args.get(0), false);
+                    if (a != Type.TEXT && a != Type.ENUM) require(a, Type.TEXT, args.get(0), "length");
+                    return Type.NUMBER;
+                }
+                case "abs" -> {
+                    arity(c, fn, 1);
+                    require(type(args.get(0), false), Type.NUMBER, args.get(0), "abs");
+                    return Type.NUMBER;
+                }
+                case "round" -> {
+                    arity(c, fn, 2);
+                    require(type(args.get(0), false), Type.NUMBER, args.get(0), "round");
+                    type(args.get(1), false);
+                    if (!(args.get(1) instanceof Lit lit) || !(lit.value() instanceof BigDecimal n)
+                            || n.scale() > 0 || n.signum() < 0 || n.intValue() > 10) {
+                        throw new ExprException("round's second argument is a whole number of decimal places, 0 to 10",
+                                args.get(1).at());
+                    }
+                    return Type.NUMBER;
+                }
+                default -> {
+                    arity(c, fn, 1);
+                    type(args.get(0), false);
+                    if (!(args.get(0) instanceof Lit lit) || !(lit.value() instanceof String s)) {
+                        throw new ExprException("date takes a date written out: date('2025-01-31')", c.at());
+                    }
+                    try {
+                        literals.put(c, LocalDate.parse(s));
+                    } catch (DateTimeParseException e) {
+                        throw new ExprException("'" + s + "' is not a date (year-month-day, like 2025-01-31)", args.get(0).at());
+                    }
+                    return Type.DATE;
+                }
+            }
+        }
+
+        private static void arity(Call c, String fn, int n) {
+            if (c.args().size() != n) {
+                throw new ExprException(fn + " takes " + (n == 0 ? "no arguments" : n == 1 ? "one argument" : n + " arguments"),
+                        c.at());
+            }
+        }
+
+        private static void require(Type actual, Type wanted, Node where, String what) {
+            if (actual != wanted) {
+                throw new ExprException(what + " takes " + describe(wanted) + ", not " + describe(actual), where.at());
+            }
+        }
+    }
+}

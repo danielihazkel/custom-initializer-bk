@@ -436,7 +436,8 @@ public class {{EntityName}}Service {
             throw new ResourceConflictException("{{EntityName}} " + id + " already exists");
         }
 {{/pkField.isGenerated}}{{#hasLockedRelations}}        withReferences(entity);
-{{/hasLockedRelations}}{{^tracksMoves}}        return repository.save(entity);
+{{/hasLockedRelations}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(entity);
+{{/hasRules}}{{^tracksMoves}}        return repository.save(entity);
 {{/tracksMoves}}{{#tracksMoves}}        {{EntityName}} saved = repository.save(entity);
         moves.created("{{entityNameKebab}}", saved.get{{pkField.Name}}(), saved.get{{WorkflowStatusName}}());
         return saved;
@@ -492,7 +493,9 @@ public class {{EntityName}}Service {
             } else if (id != null && repository.existsById(id)) {
                 errors.add(new ImportError(row, null, "{{EntityName}} " + id + " already exists"));
             }
-{{/pkField.isGenerated}}            entities.add(entity);
+{{/pkField.isGenerated}}{{#hasRules}}            {{packageName}}.rules.{{EntityName}}Rules.violations(entity)
+                    .forEach((field, message) -> errors.add(new ImportError(row, field, message)));
+{{/hasRules}}            entities.add(entity);
         }
         if (errors.isEmpty()) repository.saveAll(entities);
         return errors;
@@ -523,7 +526,8 @@ public class {{EntityName}}Service {
 {{#lockingApplicable}}            // A change to its rows is a change to the {{EntityName}}: its version moves too.
             entityManager.lock(existing, jakarta.persistence.LockModeType.OPTIMISTIC_FORCE_INCREMENT);
 {{/lockingApplicable}}        }
-{{/compositions}}        return repository.save(existing);
+{{/compositions}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(existing);
+{{/hasRules}}        return repository.save(existing);
     }
 {{#hasWorkflow}}
 
@@ -558,7 +562,8 @@ public class {{EntityName}}Service {
 {{#tracksMoves}}        moves.moved("{{entityNameKebab}}", existing.get{{pkField.Name}}(), before, existing.get{{WorkflowStatusName}}(), name);
 {{/tracksMoves}}{{#transitionEvents}}        // The row's event says which move it was (and the move's e-mail goes out).
         {{packageName}}.events.EventRecorder.transition("{{entityNameKebab}}", id, name);
-{{/transitionEvents}}        return repository.save(existing);
+{{/transitionEvents}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(existing);
+{{/hasRules}}        return repository.save(existing);
     }
 {{#tracksMoves}}
 
@@ -743,7 +748,8 @@ public class {{EntityName}}Service {
                 throw new IllegalArgumentException(field + " " + violation.getMessage());
             }
         }
-{{/bulkValidates}}        repository.saveAll(rows);
+{{/bulkValidates}}{{#hasRules}}        rows.forEach({{packageName}}.rules.{{EntityName}}Rules::check);
+{{/hasRules}}        repository.saveAll(rows);
     }
 {{/bulkUpdateApplicable}}{{#bulkSelectApplicable}}
     /** A bulk call names the records it changes: all of them must exist, or none is touched. */

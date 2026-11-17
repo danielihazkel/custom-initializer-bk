@@ -1,0 +1,34 @@
+package {{packageName}}.rules;
+
+import {{entityPackage}}.{{EntityName}};
+import {{packageName}}.web.RuleViolationException;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * {{EntityName}}'s rules, as the model wrote them. Its service checks them before every save — a
+ * create, an update, a workflow move, a bulk change, an import — and the form runs the same
+ * checks before it sends (validate{{EntityName}}).
+ */
+public final class {{EntityName}}Rules {
+
+    private {{EntityName}}Rules() {
+    }
+
+    /** Each field's message for the first rule on it that is broken; empty when every rule holds. */
+    public static Map<String, String> violations({{EntityName}} row) {
+        Map<String, String> errors = new LinkedHashMap<>();
+{{#rules}}        // {{#hasWhen}}when {{whenTextComment}}: {{/hasWhen}}{{checkTextComment}}
+        if ({{#hasWhen}}Expr.applies({{{whenJava}}}) && {{/hasWhen}}Expr.fails({{{checkJava}}})) {
+            errors.putIfAbsent("{{field}}", "{{{messageJava}}}");
+        }
+{{/rules}}        return errors;
+    }
+
+    /** Refuses a row a rule is broken by: a 400 with each field's message. */
+    public static void check({{EntityName}} row) {
+        Map<String, String> errors = violations(row);
+        if (!errors.isEmpty()) throw new RuleViolationException(errors);
+    }
+}

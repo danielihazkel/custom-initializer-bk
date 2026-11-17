@@ -1544,6 +1544,13 @@
             "targetEntity": "Person",
             "required": false
           }
+        ],
+        "rules": [
+          {
+            "check": "endsOn >= startsOn",
+            "message": "A project ends on or after the day it starts",
+            "field": "endsOn"
+          }
         ]
       },
       {
@@ -1634,6 +1641,18 @@
               "project",
               "title"
             ]
+          }
+        ],
+        "rules": [
+          {
+            "check": "dueOn >= startsOn",
+            "message": "Due on or after the day it starts",
+            "field": "dueOn"
+          },
+          {
+            "when": "status == 'DONE'",
+            "check": "not isEmpty(estimate)",
+            "message": "Say how many hours it took"
           }
         ]
       }

@@ -657,10 +657,11 @@ class GeneratedBackendBuildSmokeTests {
     }
 
     @org.junit.jupiter.api.Test
-    void liveApiOfAUniqueKeyBehaves(@TempDir Path workDir) throws Exception {
+    void liveApiOfTheFieldModelBehaves(@TempDir Path workDir) throws Exception {
         // Projects, whose tasks are unique per project and title, on its Flyway baseline (the
         // constraint is the migration's, and Hibernate validates against it), with demo rows and
-        // the generated API tests — which make many tasks, and must not clash.
+        // the generated API tests — which make many tasks, and must not clash — and its rules
+        // (dates in order, an estimate on a finished task), which the tests' rows must pass.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-tailwind-crud");
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "flyway"));
         body.put("opts", Map.of("scaffold", List.of("seedData", "tests")));
@@ -687,6 +688,23 @@ class GeneratedBackendBuildSmokeTests {
                     // The same title in another project is another task; an edit into a clash is refused too.
                     JsonNode second = send(post("/api/tasks"), null, task.formatted(other), 200);
                     send(put("/api/tasks/" + second.get("id").asLong()), null, task.formatted(one), 409);
+                }
+
+                @Test
+                void aSaveTheRulesRefuseIsA400OnTheField() throws Exception {
+                    JsonNode refused = send(post("/api/projects"), null,
+                            "{\\"name\\": \\"Backwards\\", \\"status\\": \\"ACTIVE\\", \\"startsOn\\": \\"2026-05-10\\", \\"endsOn\\": \\"2026-05-01\\"}", 400);
+                    assertThat(refused.get("errors").get("endsOn").asText()).isEqualTo("A project ends on or after the day it starts");
+                    // An empty value a rule reads makes it hold.
+                    send(post("/api/projects"), null, "{\\"name\\": \\"Open-ended\\", \\"status\\": \\"ACTIVE\\", \\"startsOn\\": \\"2026-05-10\\"}", 200);
+
+                    long project = firstId("/api/projects");
+                    String done = "{\\"title\\": \\"Finished %s\\", \\"status\\": \\"DONE\\", \\"projectId\\": " + project + "%s}";
+                    JsonNode noEstimate = send(post("/api/tasks"), null, done.formatted("a", ""), 400);
+                    assertThat(noEstimate.get("errors").get("estimate").asText()).isEqualTo("Say how many hours it took");
+                    JsonNode created = send(post("/api/tasks"), null, done.formatted("b", ", \\"estimate\\": 3"), 200);
+                    // The rules hold on an edit too.
+                    send(put("/api/tasks/" + created.get("id").asLong()), null, done.formatted("b", ""), 400);
                 }
 
             """;

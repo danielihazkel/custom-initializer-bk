@@ -639,6 +639,7 @@ public class FullstackStarterController {
         // conflict dialog. Mirrors the backend config.
         EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
         EntityScaffoldContext.putUniqueKeys(projectCtx, entities);
+        EntityScaffoldContext.putRules(projectCtx, entities);
         EntityScaffoldContext.putXlsxExport(projectCtx, entities);
         EntityScaffoldContext.putSavedViews(projectCtx, entities);
         // Who changed a row (audit) and the change history: the strings, the shared history panel.

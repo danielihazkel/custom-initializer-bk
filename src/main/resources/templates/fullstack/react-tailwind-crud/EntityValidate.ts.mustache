@@ -1,5 +1,6 @@
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
-{{#compositions}}import { validate{{childEntity}} } from '@features/{{childKebab}}-form'
+{{#hasRules}}import * as rule from '@shared/ui/rules'
+{{/hasRules}}{{#compositions}}import { validate{{childEntity}} } from '@features/{{childKebab}}-form'
 {{/compositions}}{{#hasValidationChecks}}import { t } from '@shared/i18n'
 {{/hasValidationChecks}}
 /** Client-side checks mirroring the backend's Bean Validation (required, length, min/max,
@@ -23,5 +24,7 @@ export function validate{{EntityName}}(value: Partial<{{EntityName}}>{{#isCompos
       errors[`{{collectionField}}[${index}].${field}`] = message
     }
   })
-{{/compositions}}  return errors
+{{/compositions}}{{#rules}}  // {{#hasWhen}}when {{whenTextComment}}: {{/hasWhen}}{{checkTextComment}}
+  if (!errors.{{field}} && {{#hasWhen}}rule.applies({{{whenTs}}}) && {{/hasWhen}}rule.fails({{{checkTs}}})) errors.{{field}} = '{{messageTs}}'
+{{/rules}}  return errors
 }

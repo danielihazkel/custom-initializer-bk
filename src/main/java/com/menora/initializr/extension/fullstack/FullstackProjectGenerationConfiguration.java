@@ -122,6 +122,7 @@ public class FullstackProjectGenerationConfiguration {
             // hasOptimisticLocking gates the shared stale-update handler.
             EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
             EntityScaffoldContext.putUniqueKeys(projectCtx, entities);
+            EntityScaffoldContext.putRules(projectCtx, entities);
             EntityScaffoldContext.putXlsxExport(projectCtx, entities);
             EntityScaffoldContext.putSavedViews(projectCtx, entities);
             // CurrentUser and GET /api/me: for a workflow, or for a shell that shows who is signed in.

@@ -45,6 +45,7 @@
     { "source": "RelationPicker.tsx", "path": "src/shared/ui/RelationPicker.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 125 },
     { "source": "FormDrawer.tsx", "path": "src/shared/ui/FormDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 130 },
     { "source": "Field.tsx", "path": "src/shared/ui/Field.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 140 },
+    { "source": "rules.ts", "path": "src/shared/ui/rules.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 140, "gatedBy": "hasRules" },
     { "source": "Badge.tsx", "path": "src/shared/ui/Badge.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 141 },
     { "source": "Alert.tsx", "path": "src/shared/ui/Alert.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 142 },
     { "source": "EmptyState.tsx", "path": "src/shared/ui/EmptyState.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 143 },

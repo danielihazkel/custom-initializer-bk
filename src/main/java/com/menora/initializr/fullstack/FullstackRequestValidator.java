@@ -1,6 +1,8 @@
 package com.menora.initializr.fullstack;
 
 import com.menora.initializr.config.WizardArgumentException;
+import com.menora.initializr.fullstack.expr.Expr;
+import com.menora.initializr.fullstack.expr.ExprCheck;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -56,7 +58,8 @@ public final class FullstackRequestValidator {
                       List<FullstackStarterRequest.FormSectionDto> rawSections,
                       FullstackStarterRequest.WorkflowDto rawWorkflow, int pkCount,
                       EntityDefinition.Access access,
-                      List<FullstackStarterRequest.UniqueKeyDto> rawUniqueKeys) {}
+                      List<FullstackStarterRequest.UniqueKeyDto> rawUniqueKeys,
+                      List<FullstackStarterRequest.RuleDto> rawRules) {}
 
         Set<String> seenLowerNames = new HashSet<>();
         Map<String, String> canonicalByLower = new HashMap<>();
@@ -326,7 +329,7 @@ public final class FullstackRequestValidator {
                 parsed.add(new Parsed(ei, name, tableName, schema, fields, seenFieldNames, e.relations(),
                         readOnly, viewQuery, resolveListViews(e), label, labelPlural,
                         parseEntityOpts(e.opts(), name), e.formSections(), e.workflow(), pkCount,
-                        at("access", () -> parseAccess(e.access(), name)), e.uniqueKeys()));
+                        at("access", () -> parseAccess(e.access(), name)), e.uniqueKeys(), e.rules()));
             } catch (WizardArgumentException problem) {
                 throw problem.at("entities[" + ei + "]");
             }
@@ -372,7 +375,8 @@ public final class FullstackRequestValidator {
                         at("workflow", () -> parseWorkflow(p.rawWorkflow(), p.name(), p.fields(), relations,
                                 p.readOnly(), p.pkCount())),
                         collections, children, p.access(),
-                        parseUniqueKeys(p.rawUniqueKeys(), p.name(), p.viewQuery(), p.fields(), relations)));
+                        parseUniqueKeys(p.rawUniqueKeys(), p.name(), p.viewQuery(), p.fields(), relations),
+                        parseRules(p.rawRules(), p.name(), p.readOnly(), p.fields())));
             } catch (WizardArgumentException problem) {
                 throw problem.at("entities[" + p.ei() + "]");
             }
@@ -453,6 +457,10 @@ public final class FullstackRequestValidator {
         if (child.workflow() != null) {
             throw new WizardArgumentException(where + "'" + child.name()
                     + "' has a workflow: its rows change by their own moves, not with a parent's save").on("composition");
+        }
+        if (!child.rules().isEmpty()) {
+            throw new WizardArgumentException(where + "'" + child.name()
+                    + "' has rules, which a save of its parent does not check yet").on("composition");
         }
         if (!child.uniqueKeys().isEmpty()) {
             // A save inserts the new rows before it deletes the removed ones: a row swapped for
@@ -696,6 +704,71 @@ public final class FullstackRequestValidator {
                 out.add(new EntityDefinition.FormSection(title, names));
             } catch (WizardArgumentException problem) {
                 throw problem.at("formSections[" + i + "]");
+            }
+        }
+        return out;
+    }
+
+    static final int MAX_RULES = 20;
+    static final int MAX_RULE_MESSAGE = 200;
+
+    /**
+     * An entity's rules: {@code check} (and {@code when}, if given) in the expression language,
+     * each a yes/no condition over the entity's own fields; a message; and the field the message
+     * is shown on — given, else the first field the check reads. A read-only entity is never
+     * saved, so it has nothing to check.
+     */
+    static List<EntityDefinition.Rule> parseRules(List<FullstackStarterRequest.RuleDto> raw, String entity,
+                                                 boolean readOnly, List<FieldDefinition> fields) {
+        if (raw == null || raw.isEmpty()) return List.of();
+        if (readOnly) {
+            throw new WizardArgumentException("Entity '" + entity + "' is read-only: nothing saves a row to check rules on")
+                    .on("rules");
+        }
+        if (raw.size() > MAX_RULES) {
+            throw new WizardArgumentException("Entity '" + entity + "' has more than " + MAX_RULES + " rules").on("rules");
+        }
+        List<EntityDefinition.Rule> out = new ArrayList<>();
+        for (int i = 0; i < raw.size(); i++) {
+            try {
+                FullstackStarterRequest.RuleDto rule = raw.get(i);
+                String where = "Entity '" + entity + "' rule " + (i + 1);
+                if (rule == null || rule.check() == null || rule.check().isBlank()) {
+                    throw new WizardArgumentException(where + " has no check").on("check");
+                }
+                String check = rule.check().trim();
+                ExprCheck.Checked checked;
+                try {
+                    checked = ExprCheck.check(check, fields, Expr.Type.BOOL);
+                } catch (Expr.ExprException e) {
+                    throw new WizardArgumentException(where + ": " + e.describe()).on("check");
+                }
+                String when = rule.when() == null || rule.when().isBlank() ? null : rule.when().trim();
+                if (when != null) {
+                    try {
+                        ExprCheck.check(when, fields, Expr.Type.BOOL);
+                    } catch (Expr.ExprException e) {
+                        throw new WizardArgumentException(where + " (its when): " + e.describe()).on("when");
+                    }
+                }
+                String message = rule.message() == null ? "" : rule.message().trim();
+                if (message.isEmpty()) throw new WizardArgumentException(where + " has no message").on("message");
+                if (message.length() > MAX_RULE_MESSAGE) {
+                    throw new WizardArgumentException(where + " has a message over " + MAX_RULE_MESSAGE + " characters").on("message");
+                }
+                String field;
+                if (rule.field() != null && !rule.field().isBlank()) {
+                    String wanted = rule.field().trim();
+                    field = fields.stream().map(FieldDefinition::name).filter(n -> n.equalsIgnoreCase(wanted)).findFirst()
+                            .orElseThrow(() -> new WizardArgumentException(where + " shows its message on '" + wanted
+                                    + "', which is not one of its fields").on("field"));
+                } else {
+                    field = checked.refs().stream().findFirst().orElseThrow(() -> new WizardArgumentException(where
+                            + " reads no field: say which field its message is shown on").on("field"));
+                }
+                out.add(new EntityDefinition.Rule(when, check, message, field));
+            } catch (WizardArgumentException problem) {
+                throw problem.at("rules[" + i + "]");
             }
         }
         return out;

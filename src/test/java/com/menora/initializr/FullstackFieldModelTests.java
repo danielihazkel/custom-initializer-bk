@@ -159,6 +159,69 @@ class FullstackFieldModelTests {
                 .doesNotContain("@RequiresPermission(Constants.ADMIN)");
     }
 
+    @Test
+    void rulesAreCheckedByTheServiceAndTheFormAlike() throws Exception {
+        Map<String, String> files = generate(body -> body.put("opts", Map.of("scaffold", List.of("tests", "seedData"))));
+        assertThat(file(files, "rules/ProjectRules.java"))
+                .contains("if (Expr.fails(Expr.ge(row.getEndsOn(), row.getStartsOn()))) {")
+                .contains("errors.putIfAbsent(\"endsOn\", \"A project ends on or after the day it starts\");");
+        assertThat(file(files, "rules/TaskRules.java"))
+                .contains("// when status == 'DONE': not isEmpty(estimate)")
+                .contains("Expr.applies(Expr.eq(Expr.name(row.getStatus()), \"DONE\")) && Expr.fails(Expr.not(Expr.isEmpty(Expr.num(row.getEstimate()))))");
+        // Before every save: a create, an update, an import's rows.
+        assertThat(file(files, "service/TaskService.java"))
+                .contains("rules.TaskRules.check(entity);")
+                .contains("rules.TaskRules.check(existing);")
+                .contains("rules.TaskRules.violations(entity)");
+        assertThat(file(files, "web/ApiExceptionHandler.java")).contains("public ProblemDetail handleRules(RuleViolationException ex) {");
+        assertThat(file(files, "task-form/model/validate.ts"))
+                .contains("import * as rule from '@shared/ui/rules'")
+                .contains("if (!errors.dueOn && rule.fails(rule.ge(rule.date(value.dueOn), rule.date(value.startsOn)))) errors.dueOn = 'Due on or after the day it starts'");
+        assertThat(file(files, "frontend/src/shared/ui/rules.ts")).isNotNull();
+        assertThat(file(files, "rules/Expr.java")).isNotNull();
+
+        // The rows the generator makes pass the rules: the dates the rules read are counted from today.
+        String support = file(files, "ApiTestSupport.java");
+        assertThat(support).contains("row.put(\"startsOn\", java.time.LocalDate.now().plusDays(0).toString());")
+                .contains("row.put(\"endsOn\", java.time.LocalDate.now().plusDays(0).toString());");
+        // Demo rows keep their spread of dates, shifted as the test rows' are.
+        assertThat(file(files, "config/DemoDataLoader.java")).contains("row.setEndsOn(java.time.LocalDate.now().minusDays(i).plusDays(0));");
+        assertThat(file(files, "task-form/model/validate.test.ts")).contains("const day = (k: number): string =>")
+                .contains("dueOn: day(0)");
+    }
+
+    @Test
+    void aRuleNoTestRowCanPassLeavesItsEntitysTestsToYou() throws Exception {
+        Map<String, String> files = generate(body -> {
+            body.put("opts", Map.of("scaffold", List.of("tests")));
+            // The title is the row's own (it is in a unique key), and never this long.
+            entity(body, "Task").put("rules", List.of(Map.of("check", "length(title) > 500", "message", "Too short")));
+        });
+        assertThat(file(files, "ApiTestSupport.java"))
+                .contains("No Task can be made here: no row the tests can make passes its rule 1 ('length(title) > 500')");
+    }
+
+    @Test
+    void whatARuleCannotBeIsRefusedWhereItIs() {
+        Consumer<Map<String, Object>> badCheck = body -> entity(body, "Project").put("rules",
+                List.of(Map.of("check", "endsOn >= 3", "message", "x")));
+        assertRefused(badCheck, "entities[1].rules[0]", "Cannot compare a date with a number (at character 8)");
+        assertRefused(body -> entity(body, "Project").put("rules", List.of(Map.of("check", "endsOn >= startsOn"))),
+                "entities[1].rules[0]", "has no message");
+        assertRefused(body -> entity(body, "Project").put("rules", List.of(Map.of("check", "today() > date('2020-01-01')", "message", "x"))),
+                "entities[1].rules[0]", "reads no field");
+        assertRefused(body -> entity(body, "Project").put("rules",
+                        List.of(Map.of("when", "status", "check", "endsOn >= startsOn", "message", "x"))),
+                "entities[1].rules[0]", "(its when): This must be a yes/no condition, but it is an enum value");
+        assertRefused(body -> entity(body, "Project").put("rules",
+                        List.of(Map.of("check", "endsOn >= startsOn", "message", "x", "field", "nope"))),
+                "entities[1].rules[0]", "shows its message on 'nope'");
+        assertRefused(body -> {
+            entity(body, "Project").put("readOnly", true);
+            entity(body, "Project").put("rules", List.of(Map.of("check", "endsOn >= startsOn", "message", "x")));
+        }, "entities[1]", "read-only: nothing saves a row");
+    }
+
     private void assertRefused(Consumer<Map<String, Object>> change, String path, String message) {
         ResponseEntity<String> response = post(change);
         assertThat(response.getStatusCode()).as(response.getBody()).isEqualTo(HttpStatus.BAD_REQUEST);

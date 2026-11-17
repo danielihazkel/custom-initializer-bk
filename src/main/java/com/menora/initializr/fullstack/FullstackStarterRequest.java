@@ -213,7 +213,22 @@ public record FullstackStarterRequest(
             // Unique keys over two or more fields or many-to-one links: {fields: [...]}. A single
             // field's is its own `unique`. Left out of the echoed request when absent.
             @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-            List<UniqueKeyDto> uniqueKeys) {
+            List<UniqueKeyDto> uniqueKeys,
+            // Checks over several fields: {when?, check, message, field?} in the model's
+            // expression language. Left out of the echoed request when absent.
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            List<RuleDto> rules) {
+
+        /** Every property but {@code rules} (none). */
+        public EntityDefinitionDto(String name, String tableName, String schema,
+                                   List<FieldDefinitionDto> fields, List<RelationDefinitionDto> relations,
+                                   Boolean readOnly, String viewQuery, String sourceSql, String listView,
+                                   List<String> listViews, String label, String labelPlural,
+                                   Map<String, Boolean> opts, List<FormSectionDto> formSections, WorkflowDto workflow,
+                                   AccessDto access, List<UniqueKeyDto> uniqueKeys) {
+            this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
+                    label, labelPlural, opts, formSections, workflow, access, uniqueKeys, null);
+        }
 
         /** Every property but {@code uniqueKeys} (none). */
         public EntityDefinitionDto(String name, String tableName, String schema,
@@ -223,7 +238,7 @@ public record FullstackStarterRequest(
                                    Map<String, Boolean> opts, List<FormSectionDto> formSections, WorkflowDto workflow,
                                    AccessDto access) {
             this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listView, listViews,
-                    label, labelPlural, opts, formSections, workflow, access, null);
+                    label, labelPlural, opts, formSections, workflow, access, null, null);
         }
 
         /** Every property but {@code access} (the default levels). */
@@ -307,6 +322,13 @@ public record FullstackStarterRequest(
 
     /** No two rows share the values of {@code fields} (field names and MANY_TO_ONE relation field names). */
     public record UniqueKeyDto(List<String> fields) {}
+
+    /**
+     * A check over several of a row's fields: where {@code when} holds (none: always),
+     * {@code check} must not be false — an empty value it reads makes it hold. {@code message}
+     * is shown on {@code field} (none: the first field {@code check} reads).
+     */
+    public record RuleDto(String when, String check, String message, String field) {}
 
     /**
      * An entity's workflow ("human tasks"): {@code statusField} is an enum whose values are the

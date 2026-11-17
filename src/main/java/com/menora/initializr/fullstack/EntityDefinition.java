@@ -44,7 +44,15 @@ public record EntityDefinition(
         List<RelationDefinition> collections,
         List<RelationDefinition> children,
         Access access,
-        List<UniqueKey> uniqueKeys) {
+        List<UniqueKey> uniqueKeys,
+        List<Rule> rules) {
+
+    /**
+     * A check over several of a row's fields, in the model's expression language (already
+     * checked by FullstackRequestValidator): where {@code when} holds (null: always), {@code check}
+     * must not be false. {@code message} is shown on {@code field}, a field the entity has.
+     */
+    public record Rule(String when, String check, String message, String field) {}
 
     /**
      * No two rows share the values of {@code fields}: two or more field names and MANY_TO_ONE
@@ -162,9 +170,21 @@ public record EntityDefinition(
         children = children == null ? List.of() : List.copyOf(children);
         access = access == null ? Access.DEFAULT : access;
         uniqueKeys = uniqueKeys == null ? List.of() : List.copyOf(uniqueKeys);
+        rules = rules == null ? List.of() : List.copyOf(rules);
     }
 
-    /** Every property but {@code uniqueKeys} (none). */
+    /** Every property but {@code rules} (none). */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
+                            String label, String labelPlural, Map<String, Boolean> opts, List<FormSection> formSections,
+                            Workflow workflow, List<RelationDefinition> collections, List<RelationDefinition> children,
+                            Access access, List<UniqueKey> uniqueKeys) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
+                label, labelPlural, opts, formSections, workflow, collections, children, access, uniqueKeys, null);
+    }
+
+    /** Every property but {@code uniqueKeys} and {@code rules} (none). */
     public EntityDefinition(String name, String tableName, String schema,
                             List<FieldDefinition> fields, List<RelationDefinition> relations,
                             boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
@@ -172,7 +192,7 @@ public record EntityDefinition(
                             Workflow workflow, List<RelationDefinition> collections, List<RelationDefinition> children,
                             Access access) {
         this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
-                label, labelPlural, opts, formSections, workflow, collections, children, access, null);
+                label, labelPlural, opts, formSections, workflow, collections, children, access, null, null);
     }
 
     /** Every property but {@code access} (the default: read for users, write for admins). */
@@ -182,7 +202,7 @@ public record EntityDefinition(
                             String label, String labelPlural, Map<String, Boolean> opts, List<FormSection> formSections,
                             Workflow workflow, List<RelationDefinition> collections, List<RelationDefinition> children) {
         this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
-                label, labelPlural, opts, formSections, workflow, collections, children, null, null);
+                label, labelPlural, opts, formSections, workflow, collections, children, null, null, null);
     }
 
     /**
@@ -202,7 +222,7 @@ public record EntityDefinition(
     /** The same entity with its ONE_TO_MANYs resolved (each naming the MANY_TO_ONE behind it). */
     public EntityDefinition withChildren(List<RelationDefinition> resolved) {
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
-                listViews, label, labelPlural, opts, formSections, workflow, collections, resolved, access, uniqueKeys);
+                listViews, label, labelPlural, opts, formSections, workflow, collections, resolved, access, uniqueKeys, rules);
     }
 
     /**
@@ -254,7 +274,7 @@ public record EntityDefinition(
         next.put(key, value);
         // Every other property kept: this once dropped `access`, so an import page reset the levels.
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
-                listViews, label, labelPlural, next, formSections, workflow, collections, children, access, uniqueKeys);
+                listViews, label, labelPlural, next, formSections, workflow, collections, children, access, uniqueKeys, rules);
     }
 
     public String listView() {

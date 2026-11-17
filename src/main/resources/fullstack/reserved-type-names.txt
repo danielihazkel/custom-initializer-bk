@@ -7,6 +7,9 @@
 ## The Java types of the field types (String, LocalDate, BigDecimal, …) are added from FieldType.
 
 # a type the generated code already uses
+LinkedHashMap
+Map
+RuleViolationException
 TreeBranch
 TreeNode
 GalleryView

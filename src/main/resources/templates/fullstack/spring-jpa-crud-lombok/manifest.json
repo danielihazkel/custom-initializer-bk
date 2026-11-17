@@ -103,6 +103,36 @@
       "gatedBy": "hasOutbox"
     },
     {
+      "source": "RulesExpr.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/rules/Expr.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasRules"
+    },
+    {
+      "source": "RuleViolationException.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/web/RuleViolationException.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasRules"
+    },
+    {
+      "source": "EntityRules.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/rules/{{EntityName}}Rules.java",
+      "perEntity": true,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasRules"
+    },
+    {
       "source": "OutboxSender.java.mustache",
       "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{packagePath}}/events/OutboxSender.java",

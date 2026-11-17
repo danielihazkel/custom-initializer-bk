@@ -90,7 +90,14 @@ public final class GeneratedTests {
             row.put("reasonJava", reason == null ? "" : javaString(reason));
             List<String> puts = new ArrayList<>();
             if (reason == null) {
+                // The fields the entity's rules read take values the rules accept.
+                Map<String, RuleRows.Pick> picks = solved(e).picks();
                 for (FieldDefinition f : sent(e)) {
+                    RuleRows.Pick pick = picks.get(f.name());
+                    if (pick != null) {
+                        if (pick.java() != null) puts.add("row.put(\"" + f.name() + "\", " + pick.java() + ");");
+                        continue;
+                    }
                     puts.add("row.put(\"" + f.name() + "\", " + valueJava(f) + ");");
                     attachments |= f.type() == FieldType.FILE || f.type() == FieldType.IMAGE;
                 }
@@ -158,10 +165,12 @@ public final class GeneratedTests {
         v.put("apiTestHasMissing", missing != null);
         v.put("apiTestMissing", missing);
         List<FieldDefinition> sent = sent(e);
-        // The field an update changes: plain text the row can hold another value of.
+        // The field an update changes: plain text the row can hold another value of — and that
+        // no rule reads, so the new value cannot break one.
+        Set<String> ruled = RuleRows.read(e);
         FieldDefinition update = sent.stream()
                 .filter(f -> (f.type() == FieldType.STRING || f.type() == FieldType.TEXT || f.type() == FieldType.MARKDOWN)
-                        && !f.primaryKey() && !f.readOnly() && f.pattern() == null && !f.email())
+                        && !f.primaryKey() && !f.readOnly() && f.pattern() == null && !f.email() && !ruled.contains(f.name()))
                 .findFirst().orElse(null);
         v.put("apiTestHasUpdate", update != null);
         if (update != null) {
@@ -211,6 +220,15 @@ public final class GeneratedTests {
         return v;
     }
 
+    /** The values {@code e}'s rules accept for a test row; none when it has no rules or none can be found. */
+    static RuleRows.Solution solved(EntityDefinition e) {
+        try {
+            return RuleRows.solve(e, sent(e));
+        } catch (RuleRows.Unsolvable u) {
+            return RuleRows.Solution.NONE;
+        }
+    }
+
     /** The fields a test row sends: everything a client may set, less what it can leave out and the tests cannot fill. */
     private static List<FieldDefinition> sent(EntityDefinition e) {
         EntityDefinition.Workflow wf = e.workflow();
@@ -249,6 +267,14 @@ public final class GeneratedTests {
                 reason = "'" + f.name() + "' must match a pattern the tests cannot guess a value for"
                         + " — put a matching value in ApiTestSupport.body";
                 break;
+            }
+        }
+        if (reason == null && !e.rules().isEmpty()) {
+            try {
+                RuleRows.solve(e, sent(e));
+            } catch (RuleRows.Unsolvable u) {
+                reason = "no row the tests can make passes its rule " + (u.rule + 1) + " ('"
+                        + e.rules().get(u.rule).check() + "') — put values that do in ApiTestSupport.body";
             }
         }
         for (RelationDefinition r : e.relations()) {
@@ -415,10 +441,27 @@ public final class GeneratedTests {
                     ? "1" : targetKey.type() == FieldType.UUID ? "'00000000-0000-0000-0000-000000000001'" : "'1'"));
             cases.add(testCase("asks for " + r.fieldName(), fk, fk + ": undefined"));
         }
+        // The list page's test shows a row; it runs no rules, so it keeps the usual values.
+        List<String> unruled = new ArrayList<>(props);
+        // The fields the entity's rules read: values the rules accept (empty where that is how).
+        boolean usesDays = false;
+        if (!e.rules().isEmpty()) {
+            try {
+                RuleRows.Solution solution = RuleRows.solve(e, sent(e));
+                for (Map.Entry<String, RuleRows.Pick> pick : solution.picks().entrySet()) {
+                    props.removeIf(p -> p.startsWith(pick.getKey() + ": "));
+                    if (pick.getValue().ts() != null) props.add(pick.getKey() + ": " + pick.getValue().ts());
+                }
+                usesDays = solution.usesDays();
+            } catch (RuleRows.Unsolvable u) {
+                complete = false;
+            }
+        }
         Map<String, Object> v = new LinkedHashMap<>();
+        v.put("feTestUsesDays", usesDays);
         v.put("feTestRowTs", props.isEmpty() ? "{}" : "{\n  " + String.join(",\n  ", props) + ",\n}");
         // The list page's test: the API's one row, and a text of it to find on the page.
-        List<String> shown = new ArrayList<>(props);
+        List<String> shown = new ArrayList<>(unruled);
         for (FieldDefinition k : keys(e)) {
             if (k.generated()) shown.add(0, k.name() + ": " + (k.type() == FieldType.UUID ? "'00000000-0000-0000-0000-000000000001'" : "1"));
         }

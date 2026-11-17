@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { validate{{EntityName}} } from './validate'
+{{#feTestUsesDays}}
+/** Today plus k days, as a date field holds it: the entity's rules are checked against today. */
+const day = (k: number): string => {
+  const d = new Date()
+  d.setDate(d.getDate() + k)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+{{/feTestUsesDays}}
 
 /** A {{EntityName}} every check passes{{^feTestComplete}} — but for a field that must match a pattern: put a matching value in{{/feTestComplete}}. */
 const VALID: Partial<{{EntityName}}> = {{{feTestRowTs}}}
