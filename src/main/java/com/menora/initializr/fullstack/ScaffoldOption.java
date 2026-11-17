@@ -39,6 +39,8 @@ public enum ScaffoldOption {
     SAVED_VIEWS("savedViews", "optScaffoldSavedViews", true, true, true),
     /** Every change to a row kept with who made it, shown on the record and restorable by an admin. */
     HISTORY("history", "optScaffoldHistory", true, true, true),
+    /** Every change to a row sent out — Kafka, webhooks — and pushed to open browsers. */
+    EVENTS("events", "optScaffoldEvents", true, true, true),
 
     INVERSE_COLLECTIONS("inverseCollections", "optScaffoldInverse", true, true, false),
     /** springdoc annotations; the {@code openapi} dependency is force-added with it. */

@@ -34,4 +34,8 @@ app:
       {{apiTestAdmin}}: ADMIN
       {{apiTestUser}}: USER
       {{apiTestNobody}}: ""
-{{/hasLdapAuth}}
+{{/hasLdapAuth}}{{#eventsKafka}}  events:
+    # No broker in the tests: the changes are not queued for Kafka.
+    kafka:
+      enabled: false
+{{/eventsKafka}}

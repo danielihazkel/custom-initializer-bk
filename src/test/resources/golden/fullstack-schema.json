@@ -171,6 +171,7 @@
       "object",
       "objectoptimisticlockingfailureexception",
       "onetomany",
+      "outbox",
       "override",
       "page",
       "pageable",
@@ -425,6 +426,12 @@
     },
     {
       "key" : "history",
+      "perEntity" : true,
+      "backend" : true,
+      "frontend" : true
+    },
+    {
+      "key" : "events",
       "perEntity" : true,
       "backend" : true,
       "frontend" : true

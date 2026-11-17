@@ -316,6 +316,18 @@ public class FullstackStarterController {
         }
         optionsContext.populate(body.opts());
         optionsContext.setDepartment(body.department());
+        // A move that e-mails the row's creator reads its created_by, which the audit option keeps.
+        boolean auditOpt = optionsContext.hasOption("scaffold", ScaffoldOption.AUDIT.key());
+        for (EntityDefinition e : entities) {
+            if (e.workflow() == null) continue;
+            Boolean auditOverride = e.opts().get("audit");
+            if (auditOverride != null ? auditOverride : auditOpt) continue;
+            e.workflow().transitions().stream().filter(t -> t.mailTo().contains("creator")).findFirst().ifPresent(t -> {
+                throw new WizardArgumentException("Entity '" + e.name() + "' workflow: transition '" + t.name()
+                        + "' notifies the creator, which needs the audit option on " + e.name(),
+                        "entities[" + entities.indexOf(e) + "].workflow");
+            });
+        }
         // The audit row: the backend request as resolved (the dependencies added below count too).
         com.menora.initializr.observability.AuditDetails.request(request);
         com.menora.initializr.observability.AuditDetails.entityCount(entities.size());
@@ -361,7 +373,11 @@ public class FullstackStarterController {
         // The whole application in Docker: its services, its backend and its frontend.
         Files.writeString(tempDir.resolve(LocalRun.COMPOSE_FILE),
                 LocalRun.compose(request.getArtifactId(), backendDeps, containerImages, true));
-        Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId(), ldap, tested, backendDeps));
+        boolean eventsOpt = optionsContext.hasOption("scaffold", ScaffoldOption.EVENTS.key());
+        boolean events = entities.stream().anyMatch(e -> EntityScaffoldContext.eventsApply(e, eventsOpt));
+        boolean mails = entities.stream().anyMatch(EntityScaffoldContext::notifies);
+        Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId(), ldap, tested, backendDeps)
+                .replace(REOPEN_HEADING, eventsReadme(events, mails, backendDeps) + REOPEN_HEADING));
         Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
         Files.writeString(tempDir.resolve(".gitattributes"), ROOT_GITATTRIBUTES);
         Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body, templatesHash(backendSet, frontendSet)));
@@ -627,6 +643,9 @@ public class FullstackStarterController {
         // Who changed a row (audit) and the change history: the strings, the shared history panel.
         EntityScaffoldContext.putAudit(projectCtx, entities);
         EntityScaffoldContext.putHistory(projectCtx, entities);
+        // Entity events: the live stream the lists and the bell listen to.
+        EntityScaffoldContext.putEvents(projectCtx, entities,
+                request.getDependencies() == null ? List.of() : request.getDependencies());
         // A change is recorded under the caller's name: the dev user travels with the calls.
         if (Boolean.TRUE.equals(projectCtx.get("usesRequestUser"))) projectCtx.put("sendsDevUser", true);
         // A view belongs to the user who saved it: the dev user travels with the calls.
@@ -740,7 +759,7 @@ public class FullstackStarterController {
                 + "when the property is empty — see `CorsConfig`).\n\n"
                 + (ldap ? ACCESS_README : "")
                 + (tests ? TESTS_README.stripTrailing() + "\n" + dbTestsReadme(deps) + "\n" : "")
-                + "## Reopen in the generator\n\n"
+                + REOPEN_HEADING
                 + "`menora-model.json` is the model this project was generated from. To change the\n"
                 + "entities or pages and generate again, open the Fullstack tab of the Menora\n"
                 + "Initializr and choose **Start from → Import JSON** with that file.\n\n"
@@ -750,6 +769,42 @@ public class FullstackStarterController {
                 + "back a patch for `git apply --3way` (with notes, `UPDATE.md`), which merges the\n"
                 + "change into the code as it is now. Commit the project as generated before editing\n"
                 + "it — that commit is what the merge works from.\n";
+    }
+
+    private static final String REOPEN_HEADING = "## Reopen in the generator\n\n";
+
+    /** The README's section on the events option and the transition e-mails (empty without either). */
+    static String eventsReadme(boolean events, boolean mails, Set<String> deps) {
+        if (!events && !mails) return "";
+        StringBuilder s = new StringBuilder("## Events and e-mails\n\n");
+        s.append("Each change ");
+        if (events) {
+            s.append("to a row of an entity with the `events` option");
+            if (mails) s.append(", and each workflow move that e-mails somebody,");
+        } else {
+            s.append("by a workflow move that e-mails somebody");
+        }
+        s.append(" is written to the\n`app_outbox` table in the same transaction, and sent from there every few seconds\n")
+                .append("(`backend/.../events/OutboxRelay`), tried again until it gets through: a message is\n")
+                .append("never lost, and a consumer may see one twice (each carries its event's `id`).\n\n");
+        if (events) {
+            if (deps.contains("kafka")) {
+                s.append("- **Kafka** — a topic per entity, `<artifactId>.<entity>`, keyed by the row's id; set\n")
+                        .append("  `app.events.kafka.topic-prefix`, or `app.events.kafka.enabled: false` to stop.\n");
+            }
+            s.append("- **Webhooks** — none until listed under `app.events.webhooks` (name, url, secret,\n")
+                    .append("  events); each call is a JSON POST signed `X-Event-Signature: sha256=<hmac>`.\n")
+                    .append("- **The browser** — `GET /api/events/stream` tells open pages that a row changed, and\n")
+                    .append("  their lists, charts and bell read it again.\n");
+        }
+        if (mails) {
+            s.append("- **E-mail** — off until `app.events.mail.enabled: true` and `spring.mail.host` are set.\n")
+                    .append("  A user's address comes from `app.events.mail.users`, ")
+                    .append(deps.contains("ldap-auth-rest") ? "the LDAP REST service\n  (`app.events.mail.lookup-path`), " : "")
+                    .append("or `<user>@<app.events.mail.domain>`;\n")
+                    .append("  a role's from `app.events.mail.roles`.\n");
+        }
+        return s.append("\nEvery setting is described in `backend/.../events/EventsProperties.java`.\n\n").toString();
     }
 
     /** The README's section on who may call the API — only with an ldap-auth dependency. */

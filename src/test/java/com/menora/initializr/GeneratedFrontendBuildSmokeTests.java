@@ -292,10 +292,10 @@ class GeneratedFrontendBuildSmokeTests {
 
     @Test
     void fullstackFrontendApprovalsInstallsAndBuilds(@TempDir Path workDir) throws Exception {
-        // The Approvals example with its own opts: a KPI trend and an activity feed, an inbox, a
+        // The Approvals example with its own opts (and live updates): a KPI trend and an activity feed, an inbox, a
         // form page that takes over New and the record's Edit, a kanban over the workflow's status.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
-        body.put("opts", Map.of("scaffold", List.of("audit", "history", "optimisticLocking", "csvExport", "seedData")));
+        body.put("opts", Map.of("scaffold", List.of("audit", "history", "events", "optimisticLocking", "csvExport", "seedData")));
         Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
@@ -308,7 +308,7 @@ class GeneratedFrontendBuildSmokeTests {
         // strings come from the Hebrew table.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-menora-digital-crud");
         body.put("locale", "he");
-        body.put("opts", Map.of("scaffold", List.of("audit", "history", "optimisticLocking", "csvExport", "seedData", "rtl")));
+        body.put("opts", Map.of("scaffold", List.of("audit", "history", "events", "optimisticLocking", "csvExport", "seedData", "rtl")));
         Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);

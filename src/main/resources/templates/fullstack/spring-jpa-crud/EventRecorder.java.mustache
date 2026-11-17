@@ -1,0 +1,339 @@
+package {{packageName}}.events;
+
+import {{packageName}}.web.RequestUser;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.hibernate.event.service.spi.EventListenerRegistry;
+import org.hibernate.event.spi.EventType;
+import org.hibernate.event.spi.PostDeleteEvent;
+import org.hibernate.event.spi.PostDeleteEventListener;
+import org.hibernate.event.spi.PostInsertEvent;
+import org.hibernate.event.spi.PostInsertEventListener;
+import org.hibernate.event.spi.PostUpdateEvent;
+import org.hibernate.event.spi.PostUpdateEventListener;
+import org.hibernate.internal.SessionFactoryImpl;
+import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.proxy.HibernateProxy;
+import org.hibernate.type.Type;
+{{#hasEvents}}
+import org.springframework.beans.factory.ObjectProvider;
+{{/hasEvents}}
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.sql.PreparedStatement;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+{{#hasNotifications}}
+import java.util.LinkedHashSet;
+{{/hasNotifications}}
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Turns every change to the rows below into messages for the outbox (table {@code app_outbox}),
+ * in the transaction of the change: Hibernate calls it after each insert, update and delete — by
+ * any call, a bulk one, a transition or an import alike — and it writes on the same connection, so
+ * a change and its messages commit or roll back together. {@link OutboxRelay} sends them.
+ *
+ * <p>An event is JSON:
+ * <pre>
+ * {"id": "…", "type": "order.updated", "entity": "order", "rowId": "12", "occurredAt": "…",
+ *  "actor": "dana", "changedFields": ["total"], "data": {…the row…}, "before": {…}}
+ * </pre>
+ * {@code type} is the entity and one of {@code created}, {@code updated}, {@code deleted},
+ * {@code restored} (a soft-deleted row brought back) or {@code transitioned} (a workflow move, with
+ * {@code transition}, {@code from} and {@code to}). A row is its columns by property name; a link
+ * is the id it points at; lists of links and computed values are left out.
+ */
+@Component
+public class EventRecorder implements PostInsertEventListener, PostUpdateEventListener, PostDeleteEventListener {
+
+    /**
+     * An entity the recorder watches: its name in the events, whether its changes are published
+     * (the events option) or only its transitions e-mailed, its workflow's status field, and who
+     * may read it (what the live stream checks).
+     */
+    public record Tracked(String name, boolean publishes, String statusField, String readLevel) {}
+{{#hasNotifications}}
+
+    /** Whom a transition e-mails: the row's assignee (the field holding it), who created it, every holder of these roles. */
+    public record Notify(String assigneeField, boolean creator, Set<String> roles, String entityLabel, String transitionLabel) {}
+{{/hasNotifications}}
+
+    public static final Map<Class<?>, Tracked> TRACKED = Map.ofEntries(
+{{#outboxEntities}}            Map.entry({{entityClass}}.class, new Tracked("{{entityKey}}", {{publishes}}, {{{statusJava}}}, "{{readLevel}}")){{^last}},{{/last}}
+{{/outboxEntities}}    );
+{{#hasNotifications}}
+
+    /** The moves that send e-mail, by "entity:transition". */
+    static final Map<String, Notify> NOTIFY = Map.ofEntries(
+{{#notifyTransitions}}            Map.entry("{{key}}", new Notify({{{assigneeJava}}}, {{creator}}, Set.of({{{rolesJava}}}), "{{{entityLabelJava}}}", "{{{transitionLabelJava}}}")){{^last}},{{/last}}
+{{/notifyTransitions}}    );
+
+    /** Each state as the application shows it, for the e-mails. */
+    static final Map<String, Map<String, String>> STATE_LABELS = Map.ofEntries(
+{{#notifyStateLabels}}            Map.entry("{{entityKey}}", Map.ofEntries({{{labelsJava}}})){{^last}},{{/last}}
+{{/notifyStateLabels}}    );
+{{/hasNotifications}}
+
+    /** Kept by the framework: an update that changes only these tells nobody anything. */
+    static final Set<String> FRAMEWORK = Set.of("version", "createdAt", "updatedAt", "createdBy", "updatedBy");
+
+    /** Not part of what a row says. */
+    static final Set<String> NOT_SENT = Set.of("deleted");
+
+    private static final String INSERT = "INSERT INTO app_outbox (event_id, event_type, entity_name, row_id, channel, payload, "
+            + "status, attempts, created_at, next_attempt_at) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', 0, ?, ?)";
+
+    /** The workflow moves under way in this thread's transaction, by "entity:id". */
+    private static final ThreadLocal<Map<String, String>> MOVES = ThreadLocal.withInitial(HashMap::new);
+
+    private final EntityManagerFactory entityManagerFactory;
+    private final EntityManager entityManager;
+    private final ObjectMapper json;
+    private final EventsProperties properties;
+{{#hasEvents}}
+    private final ObjectProvider<LiveEvents> live;
+{{/hasEvents}}
+
+    public EventRecorder(EntityManagerFactory entityManagerFactory, EntityManager entityManager, ObjectMapper json,
+                         EventsProperties properties{{#hasEvents}}, ObjectProvider<LiveEvents> live{{/hasEvents}}) {
+        this.entityManagerFactory = entityManagerFactory;
+        this.entityManager = entityManager;
+        this.json = json;
+        this.properties = properties;
+{{#hasEvents}}
+        this.live = live;
+{{/hasEvents}}
+    }
+
+    @PostConstruct
+    void register() {
+        EventListenerRegistry registry = entityManagerFactory.unwrap(SessionFactoryImpl.class)
+                .getServiceRegistry().getService(EventListenerRegistry.class);
+        registry.appendListeners(EventType.POST_INSERT, this);
+        registry.appendListeners(EventType.POST_UPDATE, this);
+        registry.appendListeners(EventType.POST_DELETE, this);
+    }
+
+    /**
+     * Says that the update of this row about to be flushed is the workflow move {@code name}: its
+     * event is then {@code transitioned}, and the move's e-mail goes out. The services call it.
+     */
+    public static void transition(String entity, Object id, String name) {
+        MOVES.get().put(entity + ":" + id, name);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    MOVES.remove();
+                }
+            });
+        }
+    }
+
+    /** A soft-deleted row brought back — plain SQL, which Hibernate does not see. The services call it. */
+    public void restored(Object row) {
+        Tracked tracked = TRACKED.get(row.getClass());
+        if (tracked == null) return;
+        SessionImplementor session = entityManager.unwrap(SessionImplementor.class);
+        EntityPersister persister = session.getEntityPersister(null, row);
+        Object id = persister.getIdentifier(row, session);
+        record(session, tracked, id, "restored", null, snapshot(persister, persister.getValues(row), session), null, null);
+    }
+
+    @Override
+    public boolean requiresPostCommitHandling(EntityPersister persister) {
+        return false;
+    }
+
+    @Override
+    public void onPostInsert(PostInsertEvent event) {
+        Tracked tracked = TRACKED.get(event.getEntity().getClass());
+        if (tracked == null) return;
+        record(event.getSession(), tracked, event.getId(), "created", null,
+                snapshot(event.getPersister(), event.getState(), event.getSession()), null, null);
+    }
+
+    @Override
+    public void onPostUpdate(PostUpdateEvent event) {
+        Tracked tracked = TRACKED.get(event.getEntity().getClass());
+        if (tracked == null) return;
+        Map<String, Object> after = snapshot(event.getPersister(), event.getState(), event.getSession());
+        Map<String, Object> before = event.getOldState() == null ? null
+                : snapshot(event.getPersister(), event.getOldState(), event.getSession());
+        List<String> changed = null;
+        if (before != null) {
+            changed = new ArrayList<>();
+            for (var e : after.entrySet()) {
+                if (!FRAMEWORK.contains(e.getKey()) && !same(e.getValue(), before.get(e.getKey()))) changed.add(e.getKey());
+            }
+            // Only the framework's columns moved (a touch, a version bump): nothing happened.
+            if (changed.isEmpty()) return;
+        }
+        String transition = MOVES.get().remove(tracked.name() + ":" + event.getId());
+        record(event.getSession(), tracked, event.getId(), transition != null ? "transitioned" : "updated",
+                before, after, changed, transition);
+    }
+
+    @Override
+    public void onPostDelete(PostDeleteEvent event) {
+        Tracked tracked = TRACKED.get(event.getEntity().getClass());
+        if (tracked == null) return;
+        record(event.getSession(), tracked, event.getId(), "deleted",
+                snapshot(event.getPersister(), event.getDeletedState(), event.getSession()), null, null, null);
+    }
+
+    private void record(SharedSessionContractImplementor session, Tracked tracked, Object id, String kind,
+                        Map<String, Object> before, Map<String, Object> after, List<String> changed, String transition) {
+        String actor = RequestUser.current();
+        Instant now = Instant.now();
+        String rowId = String.valueOf(id);
+        String eventId = UUID.randomUUID().toString();
+        String type = tracked.name() + "." + kind;
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("id", eventId);
+        event.put("type", type);
+        event.put("entity", tracked.name());
+        event.put("rowId", rowId);
+        event.put("occurredAt", now.toString());
+        event.put("actor", actor);
+        if (transition != null) {
+            event.put("transition", transition);
+            event.put("from", before == null ? null : before.get(tracked.statusField()));
+            event.put("to", after.get(tracked.statusField()));
+        }
+        if (changed != null) event.put("changedFields", changed);
+        event.put("data", after != null ? after : before);
+        if (before != null && after != null) event.put("before", before);
+
+        // channel → payload
+        List<String[]> messages = new ArrayList<>();
+        if (tracked.publishes()) {
+            String payload = toJson(event);
+{{#eventsKafka}}
+            if (properties.getKafka().isEnabled()) messages.add(new String[] {"kafka", payload});
+{{/eventsKafka}}
+            for (EventsProperties.Webhook hook : properties.getWebhooks()) {
+                if (hook.accepts(type)) messages.add(new String[] {WebhookSender.PREFIX + hook.getName(), payload});
+            }
+        }
+{{#hasNotifications}}
+        Notify notify = transition == null ? null : NOTIFY.get(tracked.name() + ":" + transition);
+        if (notify != null && properties.getMail().isEnabled()) {
+            Set<String> users = new LinkedHashSet<>();
+            if (notify.assigneeField() != null && after.get(notify.assigneeField()) instanceof String assignee
+                    && !assignee.isBlank()) users.add(assignee);
+            if (notify.creator() && after.get("createdBy") instanceof String creator && !creator.isBlank()) users.add(creator);
+            // Nobody is told of their own move.
+            users.remove(actor);
+            Map<String, String> states = STATE_LABELS.getOrDefault(tracked.name(), Map.of());
+            String from = String.valueOf(event.get("from"));
+            String to = String.valueOf(event.get("to"));
+            Map<String, Object> recipients = new LinkedHashMap<>();
+            recipients.put("users", List.copyOf(users));
+            recipients.put("roles", List.copyOf(notify.roles()));
+            recipients.put("entityLabel", notify.entityLabel());
+            recipients.put("transitionLabel", notify.transitionLabel());
+            recipients.put("fromLabel", states.getOrDefault(from, from));
+            recipients.put("toLabel", states.getOrDefault(to, to));
+            Map<String, Object> mail = new LinkedHashMap<>(event);
+            mail.put("notify", recipients);
+            if (!users.isEmpty() || !notify.roles().isEmpty()) messages.add(new String[] {"mail", toJson(mail)});
+        }
+{{/hasNotifications}}
+        if (!messages.isEmpty()) {
+            session.doWork(connection -> {
+                try (PreparedStatement insert = connection.prepareStatement(INSERT)) {
+                    for (String[] message : messages) {
+                        insert.setString(1, eventId);
+                        insert.setString(2, type);
+                        insert.setString(3, tracked.name());
+                        insert.setString(4, rowId);
+                        insert.setString(5, message[0]);
+                        insert.setString(6, message[1]);
+                        insert.setTimestamp(7, Timestamp.from(now));
+                        insert.setTimestamp(8, Timestamp.from(now));
+                        insert.addBatch();
+                    }
+                    insert.executeBatch();
+                }
+            });
+        }
+{{#hasEvents}}
+        // Open browsers hear of it once it is committed — never of a change that rolled back.
+        if (tracked.publishes()) afterCommit(() -> live.ifAvailable(l -> l.publish(tracked.name(), rowId, kind)));
+{{/hasEvents}}
+    }
+{{#hasEvents}}
+
+    private static void afterCommit(Runnable task) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            task.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                task.run();
+            }
+        });
+    }
+{{/hasEvents}}
+
+    /** The row's values by property: a link as the id it points at; lists and computed values left out. */
+    Map<String, Object> snapshot(EntityPersister persister, Object[] state, SharedSessionContractImplementor session) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        String[] names = persister.getPropertyNames();
+        Type[] types = persister.getPropertyTypes();
+        boolean[] insertable = persister.getPropertyInsertability();
+        boolean[] updatable = persister.getPropertyUpdateability();
+        for (int i = 0; i < names.length; i++) {
+            if (types[i].isCollectionType() || NOT_SENT.contains(names[i])) continue;
+            if (!insertable[i] && !updatable[i]) continue; // a @Formula: the database's, not the row's
+            Object value = state == null ? null : state[i];
+            if (types[i].isEntityType() && value != null) value = idOf(value, session);
+            values.put(names[i], value);
+        }
+        // Through JSON text and back, so the event holds what a consumer reads.
+        try {
+            return json.readValue(json.writeValueAsString(values), new TypeReference<LinkedHashMap<String, Object>>() {});
+        } catch (Exception e) {
+            throw new IllegalStateException("A row could not be written as an event", e);
+        }
+    }
+
+    /** Equal values; numbers by value (an amount saved as 40 reads back as 40.00). */
+    private static boolean same(Object a, Object b) {
+        if (a instanceof Number x && b instanceof Number y) {
+            return new java.math.BigDecimal(x.toString()).compareTo(new java.math.BigDecimal(y.toString())) == 0;
+        }
+        return Objects.equals(a, b);
+    }
+
+    private static Object idOf(Object entity, SharedSessionContractImplementor session) {
+        if (entity instanceof HibernateProxy proxy) return proxy.getHibernateLazyInitializer().getInternalIdentifier();
+        return session.getEntityPersister(null, entity).getIdentifier(entity, session);
+    }
+
+    private String toJson(Map<String, Object> event) {
+        try {
+            return json.writeValueAsString(event);
+        } catch (Exception e) {
+            throw new IllegalStateException("An event could not be written", e);
+        }
+    }
+}

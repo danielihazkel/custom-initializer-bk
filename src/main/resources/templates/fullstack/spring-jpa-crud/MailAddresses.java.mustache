@@ -1,0 +1,110 @@
+package {{packageName}}.events;
+
+{{#notifyLdapRest}}
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+{{/notifyLdapRest}}
+import org.springframework.stereotype.Component;
+{{#notifyLdapRest}}
+import org.springframework.web.client.RestClient;
+{{/notifyLdapRest}}
+
+import java.util.Optional;
+{{#notifyLdapRest}}
+import java.util.concurrent.ConcurrentHashMap;
+{{/notifyLdapRest}}
+
+/**
+ * A user's e-mail address, for the transition e-mails. In order:
+ * <ol>
+ *   <li>{@code app.events.mail.users} — an address set by hand;</li>
+ *   <li>a user id that is an address already;</li>
+{{#notifyLdapRest}}
+ *   <li>the LDAP REST service: {@code GET {menora.ldap-rest.base-url}{app.events.mail.lookup-path}},
+ *       answered with the address as text, as a JSON string, or as an object with {@code email} or
+ *       {@code mail} (kept an hour);</li>
+{{/notifyLdapRest}}
+ *   <li>{@code <user>@<app.events.mail.domain>}, when a domain is set.</li>
+ * </ol>
+ * A user none of them knows gets no mail (logged). Replace the bean to look addresses up elsewhere.
+ */
+@Component
+public class MailAddresses {
+
+{{#notifyLdapRest}}
+    private static final Logger log = LoggerFactory.getLogger(MailAddresses.class);
+    private static final long KEEP_MS = 60 * 60 * 1000L;
+
+    private record Known(Optional<String> address, long until) {}
+
+{{/notifyLdapRest}}
+    private final EventsProperties properties;
+{{#notifyLdapRest}}
+    private final RestClient directory;
+    private final ObjectMapper json;
+    private final ConcurrentHashMap<String, Known> known = new ConcurrentHashMap<>();
+{{/notifyLdapRest}}
+
+    public MailAddresses(EventsProperties properties{{#notifyLdapRest}}, ObjectMapper json,
+                         @Value("${menora.ldap-rest.base-url}") String directoryUrl{{/notifyLdapRest}}) {
+        this.properties = properties;
+{{#notifyLdapRest}}
+        this.json = json;
+        this.directory = RestClient.builder().baseUrl(directoryUrl).build();
+{{/notifyLdapRest}}
+    }
+
+    public Optional<String> of(String user) {
+        if (user == null || user.isBlank()) return Optional.empty();
+        EventsProperties.Mail mail = properties.getMail();
+        String set = mail.getUsers().get(user);
+        if (set != null && !set.isBlank()) return Optional.of(set.trim());
+        if (user.contains("@")) return Optional.of(user);
+{{#notifyLdapRest}}
+        Optional<String> found = fromDirectory(user);
+        if (found.isPresent()) return found;
+{{/notifyLdapRest}}
+        if (mail.getDomain() != null && !mail.getDomain().isBlank()) return Optional.of(user + "@" + mail.getDomain().trim());
+        return Optional.empty();
+    }
+{{#notifyLdapRest}}
+
+    private Optional<String> fromDirectory(String user) {
+        long now = System.currentTimeMillis();
+        Known cached = known.get(user);
+        if (cached != null && cached.until() > now) return cached.address();
+        Optional<String> address = Optional.empty();
+        try {
+            String answer = directory.get().uri(properties.getMail().getLookupPath(), user).retrieve().body(String.class);
+            address = parse(answer);
+        } catch (Exception e) {
+            // Not remembered: the next mail asks again.
+            log.warn("Could not look up the address of {}: {}", user, e.getMessage());
+            return Optional.empty();
+        }
+        known.put(user, new Known(address, now + KEEP_MS));
+        return address;
+    }
+
+    /** The address in the directory's answer: text, a JSON string, or {@code {email}} / {@code {mail}}. */
+    Optional<String> parse(String answer) {
+        if (answer == null || answer.isBlank()) return Optional.empty();
+        String text = answer.trim();
+        if (text.startsWith("{") || text.startsWith("\"")) {
+            try {
+                JsonNode node = json.readTree(text);
+                if (node.isTextual()) text = node.asText();
+                else if (node.hasNonNull("email")) text = node.get("email").asText();
+                else if (node.hasNonNull("mail")) text = node.get("mail").asText();
+                else return Optional.empty();
+            } catch (Exception e) {
+                return Optional.empty();
+            }
+        }
+        return text.contains("@") ? Optional.of(text.trim()) : Optional.empty();
+    }
+{{/notifyLdapRest}}
+}

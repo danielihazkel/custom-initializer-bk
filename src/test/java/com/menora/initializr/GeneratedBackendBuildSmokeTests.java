@@ -491,7 +491,7 @@ class GeneratedBackendBuildSmokeTests {
                     "seedData", "tests")));
             liveTests = LIVE_ORDERS_TESTS;
         } else if (model.equals("approvals")) {
-            body.put("opts", Map.of("scaffold", List.of("audit", "history", "optimisticLocking", "csvExport", "csvImport",
+            body.put("opts", Map.of("scaffold", List.of("audit", "history", "events", "optimisticLocking", "csvExport", "csvImport",
                     "bulkUpdate", "seedData", "tests")));
             liveTests = LIVE_APPROVALS_TESTS + LIVE_HISTORY_TESTS;
         } else {
@@ -655,6 +655,301 @@ class GeneratedBackendBuildSmokeTests {
         writeLiveTest(backend, "com.menora.support", LIVE_APPROVALS_TESTS + LIVE_HISTORY_TESTS);
         runMvn(backend, "-B", "package");
     }
+
+    @org.junit.jupiter.api.Test
+    @SuppressWarnings("unchecked")
+    void liveApiOfAnEventsBackendBehaves(@TempDir Path workDir) throws Exception {
+        // Approvals with the events option, Kafka on the build (its channel off: no broker here),
+        // soft delete for the restore event, and an approve that e-mails the claim's creator and
+        // the admins. EVENTS_LIVE_TESTS sends to a webhook server of its own and catches the mail.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "kafka"));
+        body.put("opts", Map.of("scaffold", List.of("audit", "events", "softDelete", "seedData", "tests")));
+        for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
+            Map<String, Object> workflow = (Map<String, Object>) entity.get("workflow");
+            if (workflow == null) continue;
+            for (Map<String, Object> t : (List<Map<String, Object>>) workflow.get("transitions")) {
+                t.remove("roles");
+                if ("approve".equals(t.get("name"))) t.put("notify", List.of("creator", "ADMIN"));
+            }
+        }
+        Path backend = postAndExtractBackend(workDir, body);
+        useOfflineMail(backend);
+        writeProjectTest(backend, "com.menora.support", "EventsLiveTests", EVENTS_LIVE_TESTS);
+        runMvn(backend, "-B", "package");
+        assertThat(Files.exists(backend.resolve("target/surefire-reports/com.menora.support.EventsLiveTests.txt")))
+                .as("the events tests ran in the generated build").isTrue();
+    }
+
+    /**
+     * The offline repository has no {@code spring-boot-starter-mail} of this Boot line: the build
+     * takes the mail classes from the versions it does have (a generated project on the company
+     * mirror keeps the starter).
+     */
+    private static void useOfflineMail(Path backend) throws Exception {
+        Path pom = backend.resolve("pom.xml");
+        String text = Files.readString(pom);
+        String swapped = text.replaceFirst(
+                "<dependency>\\s*<groupId>org\\.springframework\\.boot</groupId>\\s*<artifactId>spring-boot-starter-mail</artifactId>\\s*</dependency>",
+                "<dependency><groupId>org.springframework</groupId><artifactId>spring-context-support</artifactId></dependency>"
+                        + "<dependency><groupId>jakarta.mail</groupId><artifactId>jakarta.mail-api</artifactId><version>2.1.1</version></dependency>"
+                        + "<dependency><groupId>org.eclipse.angus</groupId><artifactId>angus-mail</artifactId><version>2.0.1</version></dependency>");
+        assertThat(swapped).as("the generated pom asks for the mail starter").isNotEqualTo(text);
+        Files.writeString(pom, swapped);
+    }
+
+    /** Added to the events backend: webhooks (a server of its own), the e-mail of a move, the live stream. */
+    private static final String EVENTS_LIVE_TESTS = """
+            package com.menora.support;
+
+            import com.fasterxml.jackson.databind.JsonNode;
+            import com.fasterxml.jackson.databind.ObjectMapper;
+            import com.fasterxml.jackson.databind.node.ObjectNode;
+            import com.sun.net.httpserver.HttpServer;
+            import org.junit.jupiter.api.AfterAll;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.boot.test.context.TestConfiguration;
+            import org.springframework.context.annotation.Bean;
+            import org.springframework.http.MediaType;
+            import org.springframework.jdbc.core.JdbcTemplate;
+            import org.springframework.mail.SimpleMailMessage;
+            import org.springframework.mail.javamail.JavaMailSender;
+            import org.springframework.mail.javamail.JavaMailSenderImpl;
+            import org.springframework.test.context.DynamicPropertyRegistry;
+            import org.springframework.test.context.DynamicPropertySource;
+            import org.springframework.test.web.servlet.MockMvc;
+            import org.springframework.test.web.servlet.MvcResult;
+            import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+            import javax.crypto.Mac;
+            import javax.crypto.spec.SecretKeySpec;
+            import java.net.InetSocketAddress;
+            import java.nio.charset.StandardCharsets;
+            import java.util.Arrays;
+            import java.util.HashMap;
+            import java.util.HexFormat;
+            import java.util.List;
+            import java.util.Locale;
+            import java.util.Map;
+            import java.util.Queue;
+            import java.util.concurrent.ConcurrentLinkedQueue;
+            import java.util.function.Predicate;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+            @SpringBootTest(properties = {
+                    "app.events.relay.interval-ms=200",
+                    "app.events.relay.initial-delay-ms=200",
+                    "app.events.kafka.enabled=false",
+                    "app.events.mail.enabled=true",
+                    "app.events.mail.domain=example.com",
+                    "app.events.mail.roles.ADMIN=boss@example.com",
+                    "app.events.mail.app-url=http://approvals.example",
+            })
+            @AutoConfigureMockMvc
+            class EventsLiveTests {
+
+                record Call(String path, Map<String, String> headers, String body) {}
+
+                static final Queue<Call> CALLS = new ConcurrentLinkedQueue<>();
+                static final Queue<SimpleMailMessage> MAILS = new ConcurrentLinkedQueue<>();
+                static final HttpServer HOOKS = start();
+
+                static HttpServer start() {
+                    try {
+                        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+                        server.createContext("/", exchange -> {
+                            Map<String, String> headers = new HashMap<>();
+                            exchange.getRequestHeaders().forEach((k, v) -> headers.put(k.toLowerCase(Locale.ROOT), v.get(0)));
+                            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                            String path = exchange.getRequestURI().getPath();
+                            CALLS.add(new Call(path, headers, body));
+                            exchange.sendResponseHeaders(path.equals("/broken") ? 500 : 200, -1);
+                            exchange.close();
+                        });
+                        server.start();
+                        return server;
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                }
+
+                // One source for the whole list: Boot binds a list from the first source that has it.
+                @DynamicPropertySource
+                static void hooks(DynamicPropertyRegistry registry) {
+                    String base = "http://127.0.0.1:" + HOOKS.getAddress().getPort();
+                    registry.add("app.events.webhooks[0].name", () -> "crm");
+                    registry.add("app.events.webhooks[0].url", () -> base + "/crm");
+                    registry.add("app.events.webhooks[0].secret", () -> "s3cret");
+                    registry.add("app.events.webhooks[0].events", () -> "expense-claim.*");
+                    registry.add("app.events.webhooks[1].name", () -> "broken");
+                    registry.add("app.events.webhooks[1].url", () -> base + "/broken");
+                    registry.add("app.events.webhooks[1].events", () -> "*.deleted");
+                }
+
+                @AfterAll
+                static void stop() {
+                    HOOKS.stop(0);
+                }
+
+                @TestConfiguration
+                static class CatchMail {
+                    @Bean
+                    JavaMailSender mailSender() {
+                        return new JavaMailSenderImpl() {
+                            @Override
+                            public void send(SimpleMailMessage... messages) {
+                                MAILS.addAll(Arrays.asList(messages));
+                            }
+                        };
+                    }
+                }
+
+                @Autowired MockMvc mvc;
+                @Autowired JdbcTemplate jdbc;
+                final ObjectMapper json = new ObjectMapper();
+
+                private JsonNode send(MockHttpServletRequestBuilder call, String user, String body, int expected) throws Exception {
+                    if (user != null) call.header("userinfo", user);
+                    if (body != null) call.contentType(MediaType.APPLICATION_JSON).content(body);
+                    byte[] answer = mvc.perform(call).andExpect(status().is(expected)).andReturn().getResponse().getContentAsByteArray();
+                    return answer.length == 0 ? json.nullNode() : json.readTree(answer);
+                }
+
+                private JsonNode newClaim(String user) throws Exception {
+                    JsonNode centers = json.readTree(mvc.perform(get("/api/cost-centers?size=1")).andReturn().getResponse().getContentAsByteArray());
+                    long center = centers.get("content").get(0).get("id").asLong();
+                    return send(post("/api/expense-claims"), user, "{\\"title\\":\\"Taxi\\",\\"amount\\":40,\\"category\\":\\"TRAVEL\\","
+                            + "\\"spentOn\\":\\"2026-11-01\\",\\"costCenterId\\":" + center + "}", 200);
+                }
+
+                /** The first webhook call to {@code path} with an event of {@code type} about row {@code id}. */
+                private static Call awaitCall(String path, String type, String id, String... also) throws InterruptedException {
+                    Predicate<Call> wanted = c -> c.path().equals(path) && c.body().contains("\\"type\\":\\"" + type + "\\"")
+                            && c.body().contains("\\"rowId\\":\\"" + id + "\\"") && Arrays.stream(also).allMatch(c.body()::contains);
+                    long until = System.currentTimeMillis() + 20_000;
+                    while (System.currentTimeMillis() < until) {
+                        for (Call c : CALLS) if (wanted.test(c)) return c;
+                        Thread.sleep(100);
+                    }
+                    throw new AssertionError("No " + type + " for row " + id + " reached " + path + " (" + CALLS.size() + " calls)");
+                }
+
+                private static List<SimpleMailMessage> mailsAbout(String id) {
+                    return MAILS.stream().filter(m -> m.getSubject() != null && m.getSubject().startsWith("ExpenseClaim " + id + ":")).toList();
+                }
+
+                private static String hmac(String secret, String body) throws Exception {
+                    Mac mac = Mac.getInstance("HmacSHA256");
+                    mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+                    return HexFormat.of().formatHex(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)));
+                }
+
+                @Test
+                void eachChangeReachesTheWebhookSignedAndAMoveEmailsWhomItNames() throws Exception {
+                    JsonNode made = newClaim("alice");
+                    String id = made.get("id").asText();
+                    String path = "/api/expense-claims/" + id;
+                    Call created = awaitCall("/crm", "expense-claim.created", id);
+                    JsonNode event = json.readTree(created.body());
+                    assertThat(event.get("actor").asText()).isEqualTo("alice");
+                    assertThat(event.get("entity").asText()).isEqualTo("expense-claim");
+                    assertThat(event.get("data").get("title").asText()).isEqualTo("Taxi");
+                    assertThat(event.get("data").get("createdBy").asText()).isEqualTo("alice");
+                    assertThat(created.headers().get("x-event-id")).isEqualTo(event.get("id").asText());
+                    assertThat(created.headers().get("x-event-type")).isEqualTo("expense-claim.created");
+                    assertThat(created.headers().get("x-event-signature")).isEqualTo("sha256=" + hmac("s3cret", created.body()));
+
+                    // An edit names what it changed and carries the row as it was.
+                    ObjectNode edit = (ObjectNode) made.deepCopy();
+                    edit.put("title", "Taxi home");
+                    send(put(path), "bob", edit.toString(), 200);
+                    JsonNode updated = json.readTree(awaitCall("/crm", "expense-claim.updated", id).body());
+                    assertThat(updated.get("changedFields").toString()).isEqualTo("[\\"title\\"]");
+                    assertThat(updated.get("before").get("title").asText()).isEqualTo("Taxi");
+                    assertThat(updated.get("data").get("title").asText()).isEqualTo("Taxi home");
+
+                    // A workflow move says which move, from where and to where.
+                    send(post(path + "/transitions/submit"), "bob", null, 200);
+                    JsonNode moved = json.readTree(awaitCall("/crm", "expense-claim.transitioned", id).body());
+                    assertThat(moved.get("transition").asText()).isEqualTo("submit");
+                    assertThat(moved.get("from").asText()).isEqualTo("DRAFT");
+                    assertThat(moved.get("to").asText()).isEqualTo("SUBMITTED");
+
+                    // Approving e-mails the claim's creator and the admins, never the one who approved.
+                    send(post(path + "/transitions/approve"), "carol", "{\\"approvedAmount\\":35}", 200);
+                    long until = System.currentTimeMillis() + 20_000;
+                    while (mailsAbout(id).isEmpty() && System.currentTimeMillis() < until) Thread.sleep(100);
+                    List<SimpleMailMessage> mails = mailsAbout(id);
+                    assertThat(mails).hasSize(1);
+                    assertThat(mails.get(0).getSubject()).isEqualTo("ExpenseClaim " + id + ": Approve");
+                    assertThat(mails.get(0).getTo()).containsExactlyInAnyOrder("alice@example.com", "boss@example.com");
+                    assertThat(mails.get(0).getText())
+                            .isEqualTo("carol moved ExpenseClaim " + id + " from Waiting for approval to Approved.\\n\\nhttp://approvals.example");
+
+                    // Paying names nobody: no second mail.
+                    send(post(path + "/transitions/pay"), "carol", null, 200);
+                    awaitCall("/crm", "expense-claim.transitioned", id, "\\"transition\\":\\"pay\\"");
+                    Thread.sleep(1_000);
+                    assertThat(mailsAbout(id)).hasSize(1);
+
+                    // Every message of the row got through.
+                    assertThat(jdbc.queryForObject("select count(*) from app_outbox where row_id = ? and entity_name = 'expense-claim'"
+                            + " and status <> 'SENT' and channel <> 'webhook:broken'", Long.class, id)).isZero();
+                }
+
+                @Test
+                void aWebhookThatFailsWaitsToBeTriedAgainWhileTheOthersGetTheirs() throws Exception {
+                    String id = newClaim("alice").get("id").asText();
+                    send(delete("/api/expense-claims/" + id), "alice", null, 204);
+                    awaitCall("/broken", "expense-claim.deleted", id);
+                    awaitCall("/crm", "expense-claim.deleted", id);
+                    // The failure is on the row, with when to try again.
+                    Map<String, Object> row = Map.of();
+                    long until = System.currentTimeMillis() + 20_000;
+                    while (System.currentTimeMillis() < until) {
+                        row = jdbc.queryForMap("select status, attempts, last_error from app_outbox where row_id = ?"
+                                + " and channel = 'webhook:broken' and event_type = 'expense-claim.deleted'", id);
+                        if (((Number) row.get("ATTEMPTS")).intValue() >= 1) break;
+                        Thread.sleep(100);
+                    }
+                    assertThat(row.get("STATUS")).isEqualTo("PENDING");
+                    assertThat(((Number) row.get("ATTEMPTS")).intValue()).isGreaterThanOrEqualTo(1);
+                    assertThat((String) row.get("LAST_ERROR")).contains("500");
+
+                    // A soft-deleted claim brought back says so.
+                    send(post("/api/expense-claims/" + id + "/restore"), "alice", null, 200);
+                    JsonNode restored = json.readTree(awaitCall("/crm", "expense-claim.restored", id).body());
+                    assertThat(restored.get("data").get("title").asText()).isEqualTo("Taxi");
+                }
+
+                @Test
+                void anOpenPageHearsOfEachCommittedChange() throws Exception {
+                    MvcResult stream = mvc.perform(get("/api/events/stream").header("userinfo", "alice"))
+                            .andExpect(request().asyncStarted()).andReturn();
+                    String id = newClaim("bob").get("id").asText();
+                    String text = "";
+                    long until = System.currentTimeMillis() + 10_000;
+                    while (System.currentTimeMillis() < until) {
+                        text = stream.getResponse().getContentAsString();
+                        if (text.contains("\\"rowId\\":\\"" + id + "\\"")) break;
+                        Thread.sleep(50);
+                    }
+                    assertThat(text).contains("event:ready").contains("event:change")
+                            .contains("{\\"entity\\":\\"expense-claim\\",\\"rowId\\":\\"" + id + "\\",\\"kind\\":\\"created\\"}");
+                    assertThat(stream.getResponse().getHeader("X-Accel-Buffering")).isEqualTo("no");
+                }
+            }
+            """;
 
     /** Approvals with {@code audit} and {@code history}: who made each change, the log, a restore. */
     private static final String LIVE_HISTORY_TESTS = """

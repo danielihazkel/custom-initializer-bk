@@ -248,6 +248,9 @@ public final class EntityScaffoldContext {
                 }
                 case DASHBOARD -> {
                     putDashboard(pv, p, entityByPascal, summaries, links);
+                    // The dashboard's own reload count adds to the live one (LiveUpdates), which it
+                    // would otherwise hide from its widgets.
+                    pv.put("dashLive", Boolean.TRUE.equals(pv.get("hasRefresh")) && Boolean.TRUE.equals(ctx.get("hasEvents")));
                     pv.put("navIcon", "LayoutDashboard");
                     defaultTitleExpr = "t('dashboard')";
                 }
@@ -852,6 +855,101 @@ public final class EntityScaffoldContext {
         ctx.put("hasHistory", !tracked.isEmpty());
         ctx.put("historyEntities", tracked);
         ctx.put("usesRequestUser", !tracked.isEmpty() || Boolean.TRUE.equals(ctx.get("hasAudit")));
+    }
+
+    /**
+     * Entity events and transition e-mails across the project, on both render paths. Call after
+     * {@code putHistory}.
+     *
+     * <ul>
+     *   <li>{@code hasEvents}: some entity resolves the {@code events} option on. Its changes go out
+     *       to Kafka (with the {@code kafka} dependency, {@code eventsKafka}) and to webhooks, and
+     *       the browser hears of them over {@code /api/events/stream}.</li>
+     *   <li>{@code hasNotifications}: some workflow transition e-mails somebody ({@code notify}),
+     *       whether or not its entity has the option.</li>
+     *   <li>{@code hasOutbox}: either. Both leave through the same outbox table and relay.</li>
+     *   <li>{@code outboxEntities}: the classes the recorder watches; {@code notifyTransitions}: the
+     *       moves that send mail.</li>
+     * </ul>
+     */
+    public static void putEvents(Map<String, Object> ctx, List<EntityDefinition> entities, java.util.Collection<String> deps) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldEvents"));
+        List<Map<String, Object>> watched = new ArrayList<>();
+        List<Map<String, Object>> notify = new ArrayList<>();
+        List<Map<String, Object>> stateLabels = new ArrayList<>();
+        boolean publishes = false;
+        for (EntityDefinition e : entities) {
+            boolean events = eventsApply(e, projectOpt);
+            boolean notifies = notifies(e);
+            if (!events && !notifies) continue;
+            publishes |= events;
+            String key = Naming.toKebabCase(e.name());
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("entityClass", ctx.get("entityPackage") + "." + e.name());
+            view.put("entityKey", key);
+            view.put("publishes", events);
+            view.put("statusJava", e.workflow() == null ? "null" : "\"" + e.workflow().statusField() + "\"");
+            view.put("readLevel", e.access().read());
+            watched.add(view);
+            if (!notifies) continue;
+            String entityLabel = e.label() != null && !e.label().isBlank() ? e.label() : Naming.toPascalCase(e.name());
+            FieldDefinition status = e.fields().stream()
+                    .filter(f -> f.name().equals(e.workflow().statusField())).findFirst().orElseThrow();
+            List<String> labels = new ArrayList<>();
+            for (String v : status.enumValues()) {
+                String constant = v.toUpperCase(Locale.ROOT);
+                String label = status.enumLabels() != null && status.enumLabels().get(constant) != null
+                        ? status.enumLabels().get(constant) : humanizeConstant(constant);
+                labels.add("Map.entry(\"" + constant + "\", \"" + escapeStringLiteral(label) + "\")");
+            }
+            stateLabels.add(new LinkedHashMap<>(Map.of("entityKey", key,
+                    "labelsJava", String.join(", ", labels))));
+            for (EntityDefinition.Transition t : e.workflow().transitions()) {
+                if (t.mailTo().isEmpty()) continue;
+                Map<String, Object> n = new LinkedHashMap<>();
+                n.put("key", key + ":" + t.name());
+                n.put("assigneeJava", t.mailTo().contains("assignee") ? "\"" + e.workflow().assigneeField() + "\"" : "null");
+                n.put("creator", t.mailTo().contains("creator"));
+                n.put("rolesJava", t.mailTo().stream().filter(r -> r.equals("ADMIN") || r.equals("USER"))
+                        .map(r -> "\"" + r + "\"").collect(java.util.stream.Collectors.joining(", ")));
+                n.put("entityLabelJava", escapeStringLiteral(entityLabel));
+                n.put("transitionLabelJava", escapeStringLiteral(t.label() != null ? t.label() : humanizeCamel(t.name())));
+                notify.add(n);
+            }
+        }
+        if (!watched.isEmpty()) watched.get(watched.size() - 1).put("last", true);
+        if (!notify.isEmpty()) notify.get(notify.size() - 1).put("last", true);
+        if (!stateLabels.isEmpty()) stateLabels.get(stateLabels.size() - 1).put("last", true);
+        boolean hasNotifications = !notify.isEmpty();
+        ctx.put("hasEvents", publishes);
+        ctx.put("hasNotifications", hasNotifications);
+        ctx.put("hasOutbox", publishes || hasNotifications);
+        ctx.put("outboxEntities", watched);
+        ctx.put("notifyTransitions", notify);
+        ctx.put("notifyStateLabels", stateLabels);
+        ctx.put("eventsKafka", publishes && deps.contains("kafka"));
+        ctx.put("notifyLdapRest", hasNotifications && deps.contains("ldap-auth-rest"));
+        // Who caused the change travels with each event.
+        if (publishes || hasNotifications) ctx.put("usesRequestUser", true);
+    }
+
+    /** {@code events} for one entity: its override, else the project option; writable single-key tables only. */
+    public static boolean eventsApply(EntityDefinition e, boolean projectOpt) {
+        Boolean override = e.opts().get("events");
+        return !e.readOnly() && e.viewQuery() == null
+                && e.fields().stream().filter(FieldDefinition::primaryKey).count() == 1
+                && (override != null ? override : projectOpt);
+    }
+
+    /** Whether a transition of the entity's workflow e-mails somebody. */
+    public static boolean notifies(EntityDefinition e) {
+        return e.workflow() != null && e.workflow().notifies();
+    }
+
+    /** {@code markPaid} → "Mark paid": a transition's name as words, when it has no label. */
+    static String humanizeCamel(String name) {
+        String words = name.replaceAll("([a-z0-9])([A-Z])", "$1 $2").toLowerCase(Locale.ROOT);
+        return words.isEmpty() ? name : Character.toUpperCase(words.charAt(0)) + words.substring(1);
     }
 
     /** {@code history} for one entity: its override, else the project option; writable single-key tables only. */
@@ -2753,9 +2851,18 @@ public final class EntityScaffoldContext {
     /** As above, knowing the {@code history} option too (its change log is an entity of its own). */
     public static List<String> supportPackages(String packageName, List<EntityDefinition> entities, boolean savedViewsOpt,
                                                boolean historyOpt) {
+        return supportPackages(packageName, entities, savedViewsOpt, historyOpt, false);
+    }
+
+    /** As above, knowing the {@code events} option too (its outbox is an entity of its own). */
+    public static List<String> supportPackages(String packageName, List<EntityDefinition> entities, boolean savedViewsOpt,
+                                               boolean historyOpt, boolean eventsOpt) {
         List<String> packages = new ArrayList<>();
         if (entities.stream().anyMatch(e -> historyApplies(e, historyOpt))) {
             packages.add(packageName + ".history");
+        }
+        if (entities.stream().anyMatch(e -> eventsApply(e, eventsOpt) || notifies(e))) {
+            packages.add(packageName + ".events");
         }
         if (entities.stream().flatMap(e -> e.fields().stream()).anyMatch(f -> f.type().isAttachment())) {
             packages.add(packageName + ".attachment");
@@ -3000,6 +3107,15 @@ public final class EntityScaffoldContext {
         // The change log: writable, table-backed, single-key rows (the log addresses a row by its id).
         ctx.put("historyApplicable", Boolean.TRUE.equals(ctx.get("optScaffoldHistory")) && mutable
                 && !Boolean.TRUE.equals(ctx.get("isView")) && !Boolean.TRUE.equals(ctx.get("hasCompositePk")));
+        // Entity events: the same rows as the change log (an event names its row by one id).
+        boolean eventsApplicable = Boolean.TRUE.equals(ctx.get("optScaffoldEvents")) && mutable
+                && !Boolean.TRUE.equals(ctx.get("isView")) && !Boolean.TRUE.equals(ctx.get("hasCompositePk"));
+        ctx.put("eventsApplicable", eventsApplicable);
+        // A soft-deleted row's restore is plain SQL Hibernate does not see: the service reports it.
+        ctx.put("eventsRestores", eventsApplicable && Boolean.TRUE.equals(ctx.get("softDeleteApplicable")));
+        // A move names its transition in the event, and may e-mail somebody.
+        ctx.put("transitionEvents", Boolean.TRUE.equals(ctx.get("hasWorkflow"))
+                && (eventsApplicable || Boolean.TRUE.equals(ctx.get("workflowNotifies"))));
         // Optimistic locking (a @Version column, stale updates answered 409) — writable tables only.
         ctx.put("lockingApplicable", Boolean.TRUE.equals(ctx.get("optScaffoldOptimisticLocking"))
                 && mutable && !Boolean.TRUE.equals(ctx.get("isView")));
@@ -3228,6 +3344,7 @@ public final class EntityScaffoldContext {
         EntityDefinition.Workflow workflow = entity.workflow();
         view.put("hasWorkflow", workflow != null);
         view.put("tracksMoves", workflow != null && workflow.trackMoves());
+        view.put("workflowNotifies", workflow != null && workflow.notifies());
         if (workflow != null) putWorkflow(view, entity, workflow, fieldViews);
         // Re-tag last on nonPkViews
         for (int i = 0; i < nonPkViews.size(); i++) {

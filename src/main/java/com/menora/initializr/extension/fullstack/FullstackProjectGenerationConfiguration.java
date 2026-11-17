@@ -129,6 +129,8 @@ public class FullstackProjectGenerationConfiguration {
             EntityScaffoldContext.putAudit(projectCtx, entities);
             // The change log (history option) and who makes a change (audit columns and the log).
             EntityScaffoldContext.putHistory(projectCtx, entities);
+            // Entity events (Kafka, webhooks, the browser) and transition e-mails, through one outbox.
+            EntityScaffoldContext.putEvents(projectCtx, entities, description.getRequestedDependencies().keySet());
             // Demo rows on first start (config/DemoDataLoader, a CommandLineRunner). Backend-only;
             // the seeding order/expressions come from EntityScaffoldContext (seedEntities/seedExpr).
             // Boot 3.4 deprecated @MockBean in favour of Spring Framework 6.2's @MockitoBean and
@@ -169,6 +171,18 @@ public class FullstackProjectGenerationConfiguration {
             if (!GeneratedTests.anyTested(entityContext.all(), optionsContext.hasOption("scaffold", ScaffoldOption.TESTS.key()))) return;
             build.dependencies().add("h2-test", Dependency.withCoordinates("com.h2database", "h2")
                     .scope(DependencyScope.TEST_RUNTIME));
+        };
+    }
+
+    /**
+     * A workflow transition that e-mails somebody needs Spring's mail support. The catalog has no
+     * mail dependency, so the starter is added here, its version from Boot's own BOM.
+     */
+    @Bean
+    BuildCustomizer<MavenBuild> notificationMailCustomizer(EntityDefinitionContext entityContext) {
+        return build -> {
+            if (entityContext.isEmpty() || entityContext.all().stream().noneMatch(EntityScaffoldContext::notifies)) return;
+            build.dependencies().add("mail", Dependency.withCoordinates("org.springframework.boot", "spring-boot-starter-mail"));
         };
     }
 

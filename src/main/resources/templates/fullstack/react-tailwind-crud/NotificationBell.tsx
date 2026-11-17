@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, {{#hasEvents}}useContext, {{/hasEvents}}useEffect, useRef, useState } from 'react'
 import { Bell } from 'lucide-react'
-import { api } from '@shared/api'
+import { api{{#hasEvents}}, RefreshTick{{/hasEvents}} } from '@shared/api'
 import { t } from '@shared/i18n'
 import { useDismiss } from './dismiss'
 
@@ -102,6 +102,13 @@ export function NotificationBell({ sources, onNavigate }: Props) {
       window.removeEventListener('focus', tick)
     }
   }, [load])
+{{#hasEvents}}
+  // A change the server pushed (LiveUpdates): read the counts again now.
+  const live = useContext(RefreshTick)
+  useEffect(() => {
+    if (live > 0) load()
+  }, [live, load])
+{{/hasEvents}}
 
   const mine = counts?.reduce((sum, c) => sum + c.mine, 0) ?? 0
   // Fewer than were seen: the mark comes down with them, so the next new task is news again.

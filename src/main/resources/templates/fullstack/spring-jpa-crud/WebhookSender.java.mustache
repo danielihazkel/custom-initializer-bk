@@ -1,0 +1,70 @@
+package {{packageName}}.events;
+
+import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
+
+/**
+ * POSTs each change to the webhooks that asked for it ({@code app.events.webhooks}): the event's
+ * JSON, with {@code X-Event-Id} and {@code X-Event-Type}, and — when the webhook has a secret —
+ * {@code X-Event-Signature: sha256=<hex>}, the HMAC-SHA256 of the body under that secret, for the
+ * receiver to check. Any answer but 2xx is a failure, tried again later.
+ */
+@Component
+public class WebhookSender implements OutboxSender {
+
+    static final String PREFIX = "webhook:";
+
+    private final EventsProperties properties;
+    private final RestClient http;
+
+    public WebhookSender(EventsProperties properties) {
+        this.properties = properties;
+        SimpleClientHttpRequestFactory timeouts = new SimpleClientHttpRequestFactory();
+        timeouts.setConnectTimeout(5_000);
+        timeouts.setReadTimeout(15_000);
+        this.http = RestClient.builder().requestFactory(timeouts).build();
+    }
+
+    @Override
+    public boolean handles(String channel) {
+        return channel.startsWith(PREFIX);
+    }
+
+    @Override
+    public void send(OutboxMessage message) throws Exception {
+        String name = message.getChannel().substring(PREFIX.length());
+        EventsProperties.Webhook hook = properties.webhook(name);
+        if (hook == null || !hook.isEnabled()) throw new IllegalStateException("No webhook named '" + name + "' is set up");
+        http.post()
+                .uri(hook.getUrl())
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("X-Event-Id", message.getEventId())
+                .header("X-Event-Type", message.getEventType())
+                .headers(h -> {
+                    if (hook.getSecret() != null && !hook.getSecret().isBlank()) {
+                        h.set("X-Event-Signature", "sha256=" + sign(hook.getSecret(), message.getPayload()));
+                    }
+                })
+                .body(message.getPayload())
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    /** The HMAC-SHA256 of {@code body} under {@code secret}, in lower-case hex. */
+    static String sign(String secret, String body) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new IllegalStateException("Could not sign a webhook call", e);
+        }
+    }
+}

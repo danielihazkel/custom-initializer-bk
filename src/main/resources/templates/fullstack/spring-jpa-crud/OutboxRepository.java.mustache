@@ -1,0 +1,52 @@
+package {{packageName}}.events;
+
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * The relay's queries. A message is taken by setting {@code lockedUntil} with a conditional update,
+ * so two instances of the application never send it at the same moment; one that stops while
+ * sending leaves a lock that runs out, and the message is sent again (at least once).
+ */
+public interface OutboxRepository extends JpaRepository<OutboxMessage, Long> {
+
+    /** Messages due now that nobody is sending, oldest first. */
+    @Query("select m from OutboxMessage m where m.status = :status and m.nextAttemptAt <= :now"
+            + " and (m.lockedUntil is null or m.lockedUntil < :now) order by m.id")
+    List<OutboxMessage> due(@Param("status") OutboxMessage.Status status, @Param("now") Instant now, Pageable page);
+
+    /** Takes a message until {@code until}: 1 when this caller has it, 0 when another one does. */
+    @Modifying
+    @Transactional
+    @Query("update OutboxMessage m set m.lockedUntil = :until where m.id = :id and m.status = :status"
+            + " and (m.lockedUntil is null or m.lockedUntil < :now)")
+    int lock(@Param("id") Long id, @Param("status") OutboxMessage.Status status, @Param("now") Instant now,
+             @Param("until") Instant until);
+
+    @Modifying
+    @Transactional
+    @Query("update OutboxMessage m set m.status = :status, m.sentAt = :at, m.lockedUntil = null, m.lastError = null"
+            + " where m.id = :id")
+    int sent(@Param("id") Long id, @Param("status") OutboxMessage.Status status, @Param("at") Instant at);
+
+    /** Another try later ({@code status} PENDING), or none ({@code status} FAILED). */
+    @Modifying
+    @Transactional
+    @Query("update OutboxMessage m set m.status = :status, m.attempts = :attempts, m.nextAttemptAt = :next,"
+            + " m.lockedUntil = null, m.lastError = :error where m.id = :id")
+    int failed(@Param("id") Long id, @Param("status") OutboxMessage.Status status, @Param("attempts") int attempts,
+               @Param("next") Instant next, @Param("error") String error);
+
+    /** Sent messages older than {@code before}: kept for a while to look into, then dropped. */
+    @Modifying
+    @Transactional
+    @Query("delete from OutboxMessage m where m.status = :status and m.sentAt < :before")
+    int deleteSentBefore(@Param("status") OutboxMessage.Status status, @Param("before") Instant before);
+}

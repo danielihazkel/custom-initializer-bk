@@ -492,10 +492,10 @@ class FullstackRequestValidatorTest {
         // The backend templates never read inlineEdit; the frontend ones never read the
         // backend-only options. (rtl is no template flag at all.)
         assertThat(read.apply(ScaffoldOption.Side.BACKEND)).containsExactly(
-                "audit", "bulkDelete", "bulkUpdate", "csvExport", "csvImport", "history", "inverseCollections",
+                "audit", "bulkDelete", "bulkUpdate", "csvExport", "csvImport", "events", "history", "inverseCollections",
                 "openapi", "optimisticLocking", "savedViews", "secured", "seedData", "softDelete", "tests", "xlsxExport");
         assertThat(read.apply(ScaffoldOption.Side.FRONTEND)).containsExactly(
-                "audit", "bulkDelete", "bulkUpdate", "csvExport", "csvImport", "history", "inlineEdit",
+                "audit", "bulkDelete", "bulkUpdate", "csvExport", "csvImport", "events", "history", "inlineEdit",
                 "inverseCollections", "optimisticLocking", "savedViews", "softDelete", "tests", "xlsxExport");
     }
 

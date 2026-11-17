@@ -1,0 +1,36 @@
+package {{packageName}}.events;
+
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Component;
+
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Puts each change on its entity's topic ({@code app.events.kafka.topic-prefix} + the entity,
+ * e.g. {@code {{artifactId}}.order}), keyed by the row's id so one row's events share a partition.
+ * The message is the event's JSON, through the project's {@code KafkaTemplate<String, String>}
+ * (config/KafkaConfig). Waits for the broker's answer, so a message counts as sent only once
+ * Kafka has it.
+ */
+@Component
+public class KafkaEventSender implements OutboxSender {
+
+    private final KafkaTemplate<String, String> kafka;
+    private final EventsProperties properties;
+
+    public KafkaEventSender(KafkaTemplate<String, String> kafka, EventsProperties properties) {
+        this.kafka = kafka;
+        this.properties = properties;
+    }
+
+    @Override
+    public boolean handles(String channel) {
+        return "kafka".equals(channel);
+    }
+
+    @Override
+    public void send(OutboxMessage message) throws Exception {
+        kafka.send(properties.getKafka().topicOf(message.getEntityName()), message.getRowId(), message.getPayload())
+                .get(30, TimeUnit.SECONDS);
+    }
+}

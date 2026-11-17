@@ -177,3 +177,4 @@ Permission
 SavedView
 WorkflowMove
 ChangeLog
+Outbox

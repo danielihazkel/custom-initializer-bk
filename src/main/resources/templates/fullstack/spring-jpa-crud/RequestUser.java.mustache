@@ -6,7 +6,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
- * Who is making the change now, for the audit columns{{#hasHistory}} and the change history{{/hasHistory}}: the
+ * Who is making the change now, for the audit columns{{#hasHistory}} and the change history{{/hasHistory}}{{#hasOutbox}} and the events{{/hasOutbox}}: the
  * {@code userinfo} header of the request being served (set by the SSO gateway; in development by
  * the frontend's API client); {@value #ANONYMOUS} for a request without one, {@value #SYSTEM}
  * outside a request — demo data, scheduled work.

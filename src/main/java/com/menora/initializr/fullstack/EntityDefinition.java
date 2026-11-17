@@ -85,16 +85,31 @@ public record EntityDefinition(
             for (Transition t : transitions) open.addAll(t.from());
             return open;
         }
+
+        /** Whether some move e-mails somebody. */
+        public boolean notifies() {
+            return transitions.stream().anyMatch(t -> !t.mailTo().isEmpty());
+        }
     }
 
     /** One move: from any of {@code from} to {@code to}, for the {@code roles} (empty: anyone),
      *  asking for the {@code requires} fields and relation field names. */
     public record Transition(String name, String label, List<String> from, String to, List<String> roles,
-                             List<String> requires) {
+                             List<String> requires, List<String> mailTo) {
+        /** Who a move can tell: the row's assignee, who created it, or everyone holding a role. */
+        public static final List<String> RECIPIENTS = List.of("assignee", "creator", "ADMIN", "USER");
+
         public Transition {
             from = List.copyOf(from);
             roles = List.copyOf(roles);
             requires = List.copyOf(requires);
+            mailTo = mailTo == null ? List.of() : List.copyOf(mailTo);
+        }
+
+        /** A move that tells nobody. */
+        public Transition(String name, String label, List<String> from, String to, List<String> roles,
+                          List<String> requires) {
+            this(name, label, from, to, roles, requires, List.of());
         }
     }
 

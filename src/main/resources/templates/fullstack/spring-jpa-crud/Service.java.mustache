@@ -41,13 +41,16 @@ public class {{EntityName}}Service {
 {{/usesValidator}}{{#serviceUsesCurrentUser}}    private final CurrentUser currentUser;
 {{/serviceUsesCurrentUser}}{{#hasAttachmentFields}}    private final {{packageName}}.attachment.AttachmentStorage attachments;
 {{/hasAttachmentFields}}{{#tracksMoves}}    private final {{packageName}}.workflow.WorkflowMoveLog moves;
-{{/tracksMoves}}
+{{/tracksMoves}}{{#eventsRestores}}    private final {{packageName}}.events.EventRecorder events;
+{{/eventsRestores}}
     public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#usesValidator}},
                                  jakarta.validation.Validator validator{{/usesValidator}}{{#serviceUsesCurrentUser}}, CurrentUser currentUser{{/serviceUsesCurrentUser}}{{#hasAttachmentFields}},
                                  {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachmentFields}}{{#tracksMoves}},
-                                 {{packageName}}.workflow.WorkflowMoveLog moves{{/tracksMoves}}) {
+                                 {{packageName}}.workflow.WorkflowMoveLog moves{{/tracksMoves}}{{#eventsRestores}},
+                                 {{packageName}}.events.EventRecorder events{{/eventsRestores}}) {
         this.repository = repository;
-{{#tracksMoves}}        this.moves = moves;
+{{#eventsRestores}}        this.events = events;
+{{/eventsRestores}}{{#tracksMoves}}        this.moves = moves;
 {{/tracksMoves}}{{#hasAttachmentFields}}        this.attachments = attachments;
 {{/hasAttachmentFields}}
 {{#usesEntityManager}}        this.entityManager = entityManager;
@@ -553,7 +556,9 @@ public class {{EntityName}}Service {
 {{/workflowTransitions}}            default -> throw new IllegalArgumentException("Unknown transition: " + name);
         }
 {{#tracksMoves}}        moves.moved("{{entityNameKebab}}", existing.get{{pkField.Name}}(), before, existing.get{{WorkflowStatusName}}(), name);
-{{/tracksMoves}}        return repository.save(existing);
+{{/tracksMoves}}{{#transitionEvents}}        // The row's event says which move it was (and the move's e-mail goes out).
+        {{packageName}}.events.EventRecorder.transition("{{entityNameKebab}}", id, name);
+{{/transitionEvents}}        return repository.save(existing);
     }
 {{#tracksMoves}}
 
@@ -694,7 +699,14 @@ public class {{EntityName}}Service {
         if (repository.restore(id{{#auditApplicable}}, {{packageName}}.web.RequestUser.current(){{/auditApplicable}}) == 0) {
             throw new ResourceNotFoundException("{{EntityName}} " + id + " not found");
         }
+{{^eventsRestores}}
         return findById(id);
+{{/eventsRestores}}
+{{#eventsRestores}}
+        {{EntityName}} restored = findById(id);
+        events.restored(restored);
+        return restored;
+{{/eventsRestores}}
     }
 {{/softDeleteApplicable}}
 {{#bulkDeleteApplicable}}

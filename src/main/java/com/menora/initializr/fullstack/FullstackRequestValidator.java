@@ -844,7 +844,22 @@ public final class FullstackRequestValidator {
                     if (requires.contains(canonical)) throw new WizardArgumentException(at + "requires '" + canonical + "' twice");
                     requires.add(canonical);
                 }
-                transitions.add(new EntityDefinition.Transition(name, label, List.copyOf(from), to, List.copyOf(roles), requires));
+                List<String> notify = new ArrayList<>();
+                for (String n : t.mailTo() == null ? List.<String>of() : t.mailTo()) {
+                    String key = n == null ? "" : n.trim();
+                    String canonical = EntityDefinition.Transition.RECIPIENTS.stream()
+                            .filter(r -> r.equalsIgnoreCase(key)).findFirst().orElse(null);
+                    if (canonical == null) {
+                        throw new WizardArgumentException(at + "notifies '" + n
+                                + "' (expected assignee, creator, ADMIN or USER)").on("notify");
+                    }
+                    if (canonical.equals("assignee") && assignee == null) {
+                        throw new WizardArgumentException(at + "notifies the assignee, but the workflow has no assigneeField").on("notify");
+                    }
+                    if (notify.contains(canonical)) throw new WizardArgumentException(at + "notifies '" + canonical + "' twice").on("notify");
+                    notify.add(canonical);
+                }
+                transitions.add(new EntityDefinition.Transition(name, label, List.copyOf(from), to, List.copyOf(roles), requires, notify));
             } catch (WizardArgumentException problem) {
                 throw problem.at("transitions[" + i + "]");
             }

@@ -76,6 +76,105 @@
       "gatedBy": "hasHistory"
     },
     {
+      "source": "OutboxMessage.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/OutboxMessage.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasOutbox"
+    },
+    {
+      "source": "OutboxRepository.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/OutboxRepository.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasOutbox"
+    },
+    {
+      "source": "OutboxSender.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/OutboxSender.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasOutbox"
+    },
+    {
+      "source": "EventsProperties.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/EventsProperties.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasOutbox"
+    },
+    {
+      "source": "EventRecorder.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/EventRecorder.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasOutbox"
+    },
+    {
+      "source": "OutboxRelay.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/OutboxRelay.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasOutbox"
+    },
+    {
+      "source": "WebhookSender.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/WebhookSender.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasEvents"
+    },
+    {
+      "source": "KafkaEventSender.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/KafkaEventSender.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "eventsKafka"
+    },
+    {
+      "source": "LiveEvents.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/LiveEvents.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasEvents"
+    },
+    {
+      "source": "MailAddresses.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/MailAddresses.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasNotifications"
+    },
+    {
+      "source": "MailNotifier.java.mustache",
+      "path": "src/main/java/{{packagePath}}/events/MailNotifier.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasNotifications"
+    },
+    {
       "source": "Attachment.java.mustache",
       "path": "src/main/java/{{packagePath}}/attachment/Attachment.java",
       "perEntity": false,

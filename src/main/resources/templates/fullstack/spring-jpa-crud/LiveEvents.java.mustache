@@ -1,0 +1,127 @@
+package {{packageName}}.events;
+
+{{#hasLdapAuth}}
+import {{packageName}}.security.PermissionService;
+import {{packageName}}.security.UnauthorizedException;
+{{/hasLdapAuth}}
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpHeaders;
+{{#hasLdapAuth}}
+import org.springframework.http.HttpStatus;
+{{/hasLdapAuth}}
+import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RestController;
+{{#hasLdapAuth}}
+import org.springframework.web.server.ResponseStatusException;
+{{/hasLdapAuth}}
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * {@code GET /api/events/stream}: the browser's live line to the data — a server-sent event
+ * {@code change} ({@code {"entity", "rowId", "kind"}}) whenever a row it may read is committed, so
+ * open lists and the bell refresh without polling. It says only which row changed; the page reads
+ * the row through the API, with the caller's own access.
+ *
+ * <p>Each instance tells its own browsers of its own changes: behind a load balancer, a change made
+ * on another instance reaches a page at its next refresh. A connection is closed after 30 minutes
+ * and the page opens a new one; a comment every 25 seconds keeps proxies from closing it sooner.
+ */
+@RestController
+public class LiveEvents {
+
+    private static final long TIMEOUT_MS = 30 * 60 * 1000L;
+
+    /** One open page, and the entities it may hear of. */
+    private record Listener(SseEmitter emitter, Set<String> entities) {}
+
+    private final Set<Listener> listeners = ConcurrentHashMap.newKeySet();
+{{#hasLdapAuth}}
+    private final PermissionService permissions;
+
+    public LiveEvents(PermissionService permissions) {
+        this.permissions = permissions;
+    }
+{{/hasLdapAuth}}
+
+    @GetMapping(path = "/api/events/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@RequestHeader(value = "userinfo", required = false) String user, HttpServletResponse response) {
+{{#hasLdapAuth}}
+        if (user == null || user.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User authentication required");
+        }
+{{/hasLdapAuth}}
+        Set<String> entities = new TreeSet<>();
+        for (EventRecorder.Tracked tracked : EventRecorder.TRACKED.values()) {
+            if (tracked.publishes() && mayRead(user, tracked.readLevel())) entities.add(tracked.name());
+        }
+        // nginx passes each event on as it comes instead of buffering the response.
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-cache");
+        SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
+        Listener listener = new Listener(emitter, entities);
+        listeners.add(listener);
+        emitter.onCompletion(() -> listeners.remove(listener));
+        emitter.onTimeout(() -> listeners.remove(listener));
+        emitter.onError(e -> listeners.remove(listener));
+        send(listener, SseEmitter.event().name("ready").data(entities, MediaType.APPLICATION_JSON));
+        return emitter;
+    }
+
+{{#hasLdapAuth}}
+    private boolean mayRead(String user, String level) {
+        try {
+            return permissions.holds(user.trim(), level);
+        } catch (UnauthorizedException e) {
+            return false;
+        }
+    }
+{{/hasLdapAuth}}
+{{^hasLdapAuth}}
+    private boolean mayRead(String user, String level) {
+        // No roles without an ldap-auth dependency: every caller reads everything.
+        return true;
+    }
+{{/hasLdapAuth}}
+
+    /** Tells every page that may read {@code entity} that one of its rows changed. */
+    public void publish(String entity, String rowId, String kind) {
+        Map<String, String> change = new LinkedHashMap<>();
+        change.put("entity", entity);
+        change.put("rowId", rowId);
+        change.put("kind", kind);
+        for (Listener listener : listeners) {
+            if (listener.entities().contains(entity)) {
+                send(listener, SseEmitter.event().name("change").data(change, MediaType.APPLICATION_JSON));
+            }
+        }
+    }
+
+    /** How many pages are listening (for monitoring and tests). */
+    public int listening() {
+        return listeners.size();
+    }
+
+    @Scheduled(fixedRate = 25_000)
+    public void heartbeat() {
+        for (Listener listener : listeners) send(listener, SseEmitter.event().comment("still here"));
+    }
+
+    private void send(Listener listener, SseEmitter.SseEventBuilder event) {
+        try {
+            listener.emitter().send(event);
+        } catch (Exception gone) {
+            // The page went away: forget it.
+            listeners.remove(listener);
+            listener.emitter().completeWithError(gone);
+        }
+    }
+}

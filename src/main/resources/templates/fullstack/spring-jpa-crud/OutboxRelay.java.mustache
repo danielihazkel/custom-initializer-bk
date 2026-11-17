@@ -1,0 +1,101 @@
+package {{packageName}}.events;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Empties the outbox: every few seconds ({@code app.events.relay.interval-ms}) it takes the
+ * messages that are due and hands each to the {@link OutboxSender} of its channel. A message that
+ * fails is tried again later — after 30 seconds, then a minute, two, four… up to an hour — and is
+ * marked FAILED after {@code max-attempts}; its last error stays on the row. Sent messages are
+ * kept {@code retention-days}, then dropped.
+ *
+ * <p>Delivery is at least once: a consumer may see a message twice (an instance stopped after
+ * sending it, before marking it), and messages of one row can arrive out of order after a retry.
+ * Every message carries its event's {@code id} to tell repeats apart.
+ */
+@Configuration
+@EnableScheduling
+@EnableConfigurationProperties(EventsProperties.class)
+public class OutboxRelay {
+
+    private static final Logger log = LoggerFactory.getLogger(OutboxRelay.class);
+
+    private final OutboxRepository outbox;
+    private final List<OutboxSender> senders;
+    private final EventsProperties properties;
+
+    public OutboxRelay(OutboxRepository outbox, List<OutboxSender> senders, EventsProperties properties) {
+        this.outbox = outbox;
+        this.senders = senders;
+        this.properties = properties;
+    }
+
+    @Scheduled(fixedDelayString = "${app.events.relay.interval-ms:5000}", initialDelayString = "${app.events.relay.initial-delay-ms:5000}")
+    public void relay() {
+        Instant now = Instant.now();
+        EventsProperties.Relay relay = properties.getRelay();
+        List<OutboxMessage> due = outbox.due(OutboxMessage.Status.PENDING, now, PageRequest.of(0, relay.getBatchSize()));
+        // A channel that just failed (a broker or a webhook down) is not tried again this round: its
+        // other messages wait for the next one instead of each waiting for the same time-out.
+        Set<String> down = new HashSet<>();
+        for (OutboxMessage message : due) {
+            if (down.contains(message.getChannel())) continue;
+            Instant until = Instant.now().plusSeconds(relay.getLeaseSeconds());
+            // Another instance took it first.
+            if (outbox.lock(message.getId(), OutboxMessage.Status.PENDING, Instant.now(), until) == 0) continue;
+            if (!deliver(message)) down.add(message.getChannel());
+        }
+    }
+
+    /** Sends one message now and records how it went: whether it got through. */
+    boolean deliver(OutboxMessage message) {
+        OutboxSender sender = senders.stream().filter(s -> s.handles(message.getChannel())).findFirst().orElse(null);
+        try {
+            if (sender == null) throw new IllegalStateException("Nothing sends to channel '" + message.getChannel() + "'");
+            sender.send(message);
+            outbox.sent(message.getId(), OutboxMessage.Status.SENT, Instant.now());
+            return true;
+        } catch (Exception e) {
+            int attempts = message.getAttempts() + 1;
+            boolean last = attempts >= properties.getRelay().getMaxAttempts();
+            String error = e.getClass().getSimpleName() + ": " + e.getMessage();
+            if (error.length() > 2000) error = error.substring(0, 2000);
+            outbox.failed(message.getId(), last ? OutboxMessage.Status.FAILED : OutboxMessage.Status.PENDING, attempts,
+                    Instant.now().plus(backoff(attempts)), error);
+            if (last) {
+                log.error("Gave up on {} message {} ({}) after {} attempts: {}", message.getChannel(), message.getId(),
+                        message.getEventType(), attempts, error);
+            } else {
+                log.warn("Could not send {} message {} ({}), attempt {}: {}", message.getChannel(), message.getId(),
+                        message.getEventType(), attempts, error);
+            }
+            return false;
+        }
+    }
+
+    /** 30 seconds, doubled each time, at most an hour. */
+    static Duration backoff(int attempts) {
+        long seconds = 30L << Math.min(attempts - 1, 7);
+        return Duration.ofSeconds(Math.min(seconds, 3600));
+    }
+
+    /** Sent messages past their retention, once a night. */
+    @Scheduled(cron = "${app.events.relay.cleanup-cron:0 30 3 * * *}")
+    public void cleanup() {
+        int dropped = outbox.deleteSentBefore(OutboxMessage.Status.SENT,
+                Instant.now().minus(Duration.ofDays(properties.getRelay().getRetentionDays())));
+        if (dropped > 0) log.info("Dropped {} sent outbox messages", dropped);
+    }
+}

@@ -1,0 +1,90 @@
+package {{packageName}}.events;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Sends the e-mail of a workflow transition: to the users the move names (its assignee, who
+ * created the row — never the person who made the move) and to the addresses set for the roles it
+ * names ({@code app.events.mail.roles}). Subject and body are {@code app.events.mail.subject} /
+ * {@code body}, with {entity}, {id}, {transition}, {from}, {to} and {actor} filled in; the
+ * application's link ({@code app-url}) ends the body.
+ *
+ * <p>Needs {@code spring.mail.host}: without it Boot makes no mail sender, and each mail waits in
+ * the outbox, failing, until one is set.
+ */
+@Component
+public class MailNotifier implements OutboxSender {
+
+    private static final Logger log = LoggerFactory.getLogger(MailNotifier.class);
+
+    private final ObjectProvider<JavaMailSender> mailSender;
+    private final MailAddresses addresses;
+    private final EventsProperties properties;
+    private final ObjectMapper json;
+
+    public MailNotifier(ObjectProvider<JavaMailSender> mailSender, MailAddresses addresses, EventsProperties properties,
+                        ObjectMapper json) {
+        this.mailSender = mailSender;
+        this.addresses = addresses;
+        this.properties = properties;
+        this.json = json;
+    }
+
+    @Override
+    public boolean handles(String channel) {
+        return "mail".equals(channel);
+    }
+
+    @Override
+    public void send(OutboxMessage message) throws Exception {
+        JsonNode event = json.readTree(message.getPayload());
+        JsonNode notify = event.path("notify");
+        EventsProperties.Mail mail = properties.getMail();
+        Set<String> to = new LinkedHashSet<>();
+        for (JsonNode user : notify.path("users")) {
+            addresses.of(user.asText()).ifPresentOrElse(to::add,
+                    () -> log.warn("No e-mail address for {}: not told of {}", user.asText(), message.getEventType()));
+        }
+        for (JsonNode role : notify.path("roles")) {
+            for (String address : mail.getRoles().getOrDefault(role.asText(), java.util.List.of())) {
+                if (address != null && !address.isBlank()) to.add(address.trim());
+            }
+        }
+        if (to.isEmpty()) return; // nobody to tell: done
+        JavaMailSender sender = mailSender.getIfAvailable();
+        if (sender == null) throw new IllegalStateException("No mail server: set spring.mail.host");
+        Map<String, String> values = Map.of(
+                "entity", notify.path("entityLabel").asText(),
+                "id", event.path("rowId").asText(),
+                "transition", notify.path("transitionLabel").asText(),
+                "from", notify.path("fromLabel").asText(),
+                "to", notify.path("toLabel").asText(),
+                "actor", event.path("actor").asText());
+        SimpleMailMessage email = new SimpleMailMessage();
+        email.setFrom(mail.getFrom());
+        email.setTo(to.toArray(String[]::new));
+        email.setSubject(fill(mail.getSubject(), values));
+        String body = fill(mail.getBody(), values);
+        if (mail.getAppUrl() != null && !mail.getAppUrl().isBlank()) body += "\n\n" + mail.getAppUrl();
+        email.setText(body);
+        sender.send(email);
+    }
+
+    /** {@code text} with each {name} replaced by its value. */
+    static String fill(String text, Map<String, String> values) {
+        String out = text;
+        for (var e : values.entrySet()) out = out.replace("{" + e.getKey() + "}", e.getValue());
+        return out;
+    }
+}

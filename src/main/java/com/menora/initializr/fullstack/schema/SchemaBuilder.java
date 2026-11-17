@@ -62,6 +62,7 @@ public final class SchemaBuilder {
         if (Boolean.TRUE.equals(projectContext.get("hasSavedViews"))) tables.add(savedViews());
         if (Boolean.TRUE.equals(projectContext.get("hasWorkflowMoves"))) tables.add(workflowMoves());
         if (Boolean.TRUE.equals(projectContext.get("hasHistory"))) tables.add(changeLog());
+        if (Boolean.TRUE.equals(projectContext.get("hasOutbox"))) tables.add(outbox());
         return new Schema(tables);
     }
 
@@ -213,6 +214,27 @@ public final class SchemaBuilder {
                 Column.of("after_json", ColumnType.TEXT, true)),
                 List.of("id"), List.of(), List.of(),
                 List.of(new Index("ix_app_change_log_row", List.of("entity_name", "row_id"))));
+    }
+
+    /** What the events option and the transition e-mails send, until sent ({@code events/OutboxMessage}). */
+    private static Table outbox() {
+        return new Table(null, "app_outbox", List.of(
+                new Column("id", ColumnType.BIGINT, null, false, true, false),
+                Column.varchar("event_id", 36, false),
+                Column.varchar("event_type", 150, false),
+                Column.varchar("entity_name", 100, false),
+                Column.varchar("row_id", 100, false),
+                Column.varchar("channel", 120, false),
+                Column.of("payload", ColumnType.TEXT, false),
+                Column.varchar("status", 16, false),
+                Column.of("attempts", ColumnType.INTEGER, false),
+                Column.of("created_at", ColumnType.INSTANT, false),
+                Column.of("next_attempt_at", ColumnType.INSTANT, false),
+                Column.of("locked_until", ColumnType.INSTANT, true),
+                Column.of("sent_at", ColumnType.INSTANT, true),
+                Column.varchar("last_error", 2000, true)),
+                List.of("id"), List.of(), List.of(),
+                List.of(new Index("ix_app_outbox_due", List.of("status", "next_attempt_at"))));
     }
 
     private static Table workflowMoves() {

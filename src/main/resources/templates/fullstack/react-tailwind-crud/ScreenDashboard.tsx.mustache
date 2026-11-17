@@ -1,5 +1,5 @@
 {{#usesDashboardState}}
-import { {{#hasAutoRefresh}}useEffect, {{/hasAutoRefresh}}useState } from 'react'
+import { {{#dashLive}}useContext, {{/dashLive}}{{#hasAutoRefresh}}useEffect, {{/hasAutoRefresh}}useState } from 'react'
 {{/usesDashboardState}}
 import { {{#usesBar}}BreakdownCard, {{/usesBar}}{{#usesKpi}}KpiTile, {{/usesKpi}}{{#hasDateRange}}PeriodSelect, {{/hasDateRange}}{{#usesProgress}}ProgressTile, {{/usesProgress}}{{#usesTop}}TopList, {{/usesTop}}{{#usesLine}}TrendCard, {{/usesLine}}{{#usesRecent}}RecentList, {{/usesRecent}}{{#usesStacked}}StackedCard, {{/usesStacked}}{{#usesPivot}}PivotCard, {{/usesPivot}}{{#usesActivity}}ActivityFeed, {{/usesActivity}}{{#usesText}}TextCard, {{/usesText}}{{#usesList}}ListCard, {{/usesList}}{{#hasRefresh}}RefreshButton, {{/hasRefresh}}} from '@shared/ui/widgets'
 {{#listImports}}
@@ -84,6 +84,10 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
   // Bumped by Refresh{{#hasAutoRefresh}} and every {{refreshMs}} ms while the tab is visible{{/hasAutoRefresh}}: the widgets reload.
   const [tick, setTick] = useState(0)
 {{/hasRefresh}}
+{{#dashLive}}
+  // A change anywhere in the data (the live stream) reloads them too.
+  const live = useContext(RefreshTick)
+{{/dashLive}}
 {{#hasAutoRefresh}}
   useEffect(() => {
     const timer = setInterval(() => {
@@ -126,7 +130,7 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
       </div>
 {{/hasDashFilters}}
 {{#hasRefresh}}
-      <RefreshTick.Provider value={tick}>
+      <RefreshTick.Provider value={tick{{#dashLive}} + live{{/dashLive}}}>
 {{/hasRefresh}}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 {{#widgets}}

@@ -1,0 +1,14 @@
+package {{packageName}}.events;
+
+/**
+ * Sends the outbox messages of one kind of channel. A send that throws is tried again later by
+ * {@link OutboxRelay}; one that returns counts as delivered. Declare another bean to add a channel
+ * — the recorder only writes the ones it knows ({@code kafka}, {@code webhook:<name>}, {@code mail}).
+ */
+public interface OutboxSender {
+
+    /** Whether this sender delivers messages of {@code channel}. */
+    boolean handles(String channel);
+
+    void send(OutboxMessage message) throws Exception;
+}

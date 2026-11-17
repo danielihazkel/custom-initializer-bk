@@ -1,0 +1,172 @@
+package {{packageName}}.events;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Where the application's events and e-mails go, under {@code app.events} in
+ * {@code application.yaml}. Everything has a default, so nothing needs setting to start:
+ *
+ * <pre>
+ * app:
+ *   events:
+{{#eventsKafka}}
+ *     kafka:
+ *       enabled: true                  # a topic per entity: &lt;topic-prefix&gt;&lt;entity&gt;
+ *       topic-prefix: {{artifactId}}.
+{{/eventsKafka}}
+{{#hasEvents}}
+ *     webhooks:                        # none by default
+ *       - name: crm
+ *         url: https://crm.example/hooks/{{artifactId}}
+ *         secret: ${CRM_WEBHOOK_SECRET:}  # signs each call: X-Event-Signature: sha256=&lt;hex&gt;
+ *         events: [ "*.created", "*.transitioned" ]   # all when left out
+{{/hasEvents}}
+{{#hasNotifications}}
+ *     mail:
+ *       enabled: false                 # also set spring.mail.host (and port, username, password)
+ *       from: no-reply@example.com
+ *       app-url: https://{{artifactId}}.example     # the link at the end of each mail
+ *       domain: example.com            # user id → user@domain, when nothing else knows the address
+ *       users: { dev-user: dev@example.com }
+ *       roles: { ADMIN: [ ops@example.com ] }
+{{/hasNotifications}}
+ *     relay:
+ *       interval-ms: 5000
+ *       batch-size: 100
+ *       max-attempts: 10
+ *       retention-days: 7
+ * </pre>
+ */
+@ConfigurationProperties("app.events")
+public class EventsProperties {
+
+    private final Relay relay = new Relay();
+{{#eventsKafka}}
+    private final Kafka kafka = new Kafka();
+{{/eventsKafka}}
+    private List<Webhook> webhooks = new ArrayList<>();
+{{#hasNotifications}}
+    private final Mail mail = new Mail();
+{{/hasNotifications}}
+
+    public Relay getRelay() { return relay; }
+{{#eventsKafka}}
+    public Kafka getKafka() { return kafka; }
+{{/eventsKafka}}
+    public List<Webhook> getWebhooks() { return webhooks; }
+    public void setWebhooks(List<Webhook> webhooks) { this.webhooks = webhooks; }
+{{#hasNotifications}}
+    public Mail getMail() { return mail; }
+{{/hasNotifications}}
+
+    /** The webhook of that name, or null. */
+    public Webhook webhook(String name) {
+        return webhooks.stream().filter(w -> name.equals(w.getName())).findFirst().orElse(null);
+    }
+
+    /** How the outbox is emptied (the scheduled interval itself is read as {@code app.events.relay.interval-ms}). */
+    public static class Relay {
+        private int batchSize = 100;
+        private int maxAttempts = 10;
+        private long leaseSeconds = 60;
+        private int retentionDays = 7;
+
+        public int getBatchSize() { return batchSize; }
+        public void setBatchSize(int batchSize) { this.batchSize = batchSize; }
+        public int getMaxAttempts() { return maxAttempts; }
+        public void setMaxAttempts(int maxAttempts) { this.maxAttempts = maxAttempts; }
+        public long getLeaseSeconds() { return leaseSeconds; }
+        public void setLeaseSeconds(long leaseSeconds) { this.leaseSeconds = leaseSeconds; }
+        public int getRetentionDays() { return retentionDays; }
+        public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
+    }
+{{#eventsKafka}}
+
+    /** Each entity's changes on a topic of its own, keyed by the row's id. */
+    public static class Kafka {
+        private boolean enabled = true;
+        private String topicPrefix = "{{artifactId}}.";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getTopicPrefix() { return topicPrefix; }
+        public void setTopicPrefix(String topicPrefix) { this.topicPrefix = topicPrefix; }
+
+        public String topicOf(String entity) {
+            return topicPrefix + entity;
+        }
+    }
+{{/eventsKafka}}
+
+    /** A URL told of every change it asks for, with a JSON POST. */
+    public static class Webhook {
+        private String name;
+        private String url;
+        private String secret;
+        private boolean enabled = true;
+        /** Event types ({@code order.created}), with {@code *} for any part; empty: every event. */
+        private List<String> events = new ArrayList<>();
+
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+        public String getSecret() { return secret; }
+        public void setSecret(String secret) { this.secret = secret; }
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public List<String> getEvents() { return events; }
+        public void setEvents(List<String> events) { this.events = events; }
+
+        /** Whether this webhook wants an event of {@code type}. */
+        public boolean accepts(String type) {
+            if (!enabled || name == null || url == null || url.isBlank()) return false;
+            if (events == null || events.isEmpty()) return true;
+            for (String pattern : events) {
+                String regex = java.util.regex.Pattern.quote(pattern.trim()).replace("*", "\\E[^.]*\\Q");
+                if (type.matches(regex)) return true;
+            }
+            return false;
+        }
+    }
+{{#hasNotifications}}
+
+    /** The e-mails a workflow transition sends. */
+    public static class Mail {
+        private boolean enabled = false;
+        private String from = "no-reply@localhost";
+        private String appUrl = "";
+        /** On the LDAP REST service ({@code menora.ldap-rest.base-url}): a user's address. */
+        private String lookupPath = "/employee/findEmailByCn/{user}";
+        private String domain = "";
+        private Map<String, String> users = new LinkedHashMap<>();
+        private Map<String, List<String>> roles = new LinkedHashMap<>();
+        private String subject = "{entity} {id}: {transition}";
+        private String body = "{actor} moved {entity} {id} from {from} to {to}.";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getFrom() { return from; }
+        public void setFrom(String from) { this.from = from; }
+        public String getAppUrl() { return appUrl; }
+        public void setAppUrl(String appUrl) { this.appUrl = appUrl; }
+        public String getLookupPath() { return lookupPath; }
+        public void setLookupPath(String lookupPath) { this.lookupPath = lookupPath; }
+        public String getDomain() { return domain; }
+        public void setDomain(String domain) { this.domain = domain; }
+        public Map<String, String> getUsers() { return users; }
+        public void setUsers(Map<String, String> users) { this.users = users; }
+        public Map<String, List<String>> getRoles() { return roles; }
+        public void setRoles(Map<String, List<String>> roles) { this.roles = roles; }
+        public String getSubject() { return subject; }
+        public void setSubject(String subject) { this.subject = subject; }
+        public String getBody() { return body; }
+        public void setBody(String body) { this.body = body; }
+    }
+{{/hasNotifications}}
+}

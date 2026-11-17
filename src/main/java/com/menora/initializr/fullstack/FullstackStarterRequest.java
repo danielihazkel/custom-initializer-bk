@@ -315,7 +315,20 @@ public record FullstackStarterRequest(
     /** One move of a workflow: from any of {@code from} to {@code to}, by a user holding one of
      *  {@code roles} (none: anyone), asking for the {@code requires} fields and relations. */
     public record TransitionDto(String name, String label, List<String> from, String to, List<String> roles,
-                                List<String> requires) {}
+                                List<String> requires,
+                                // Who is e-mailed when a row takes this move: "assignee", "creator",
+                                // "ADMIN", "USER". Left out of the echoed request when absent.
+                                // (notify() is Object's, hence the Java name.)
+                                @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                                @com.fasterxml.jackson.annotation.JsonProperty("notify")
+                                List<String> mailTo) {
+
+        /** A transition that tells nobody. */
+        public TransitionDto(String name, String label, List<String> from, String to, List<String> roles,
+                             List<String> requires) {
+            this(name, label, from, to, roles, requires, null);
+        }
+    }
 
     /**
      * One page of the generated frontend. {@code type} is {@code entity-list}, {@code dashboard},
