@@ -80,7 +80,9 @@ class FullstackXlsxExportTests {
                         + "                        \"Status\",\n"
                         + "                        \"Customer\",\n"
                         + "                        \"Created\",\n"
-                        + "                        \"Updated\"\n"
+                        + "                        \"Updated\",\n"
+                        + "                        \"Created by\",\n"
+                        + "                        \"Updated by\"\n"
                         + "                );")
                 .contains("                        sheet.row(\n"
                         + "                                dto.id(),\n"
@@ -88,7 +90,9 @@ class FullstackXlsxExportTests {
                         + "                                dto.status(),\n"
                         + "                                dto.customerLabel(),\n"
                         + "                                dto.createdAt(),\n"
-                        + "                                dto.updatedAt()\n"
+                        + "                                dto.updatedAt(),\n"
+                        + "                                dto.createdBy(),\n"
+                        + "                                dto.updatedBy()\n"
                         + "                        );")
                 .contains("filename=\\\"orders.xlsx\\\"")
                 .contains("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

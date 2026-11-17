@@ -38,6 +38,8 @@ export function {{EntityName}}Detail({ value }: Props) {
 {{/groupRelations}}{{/formGroups}}{{#collections}}      <Row label="{{labelAttr}}">{value.{{labelsField}} == null || value.{{labelsField}}.length === 0 ? empty : value.{{labelsField}}.join(', ')}</Row>
 {{/collections}}{{#auditApplicable}}      <Row label={t('created')}>{value.createdAt == null ? empty : new Date(value.createdAt).toLocaleString(LOCALE)}</Row>
       <Row label={t('updated')}>{value.updatedAt == null ? empty : new Date(value.updatedAt).toLocaleString(LOCALE)}</Row>
+      <Row label={t('createdBy')}>{value.createdBy ?? empty}</Row>
+      <Row label={t('updatedBy')}>{value.updatedBy ?? empty}</Row>
 {{/auditApplicable}}{{#childLists}}{{^declared}}      <Row label="{{collectionLabelAttr}}">{value.{{collectionField}}Count == null ? empty : String(value.{{collectionField}}Count)}</Row>
 {{/declared}}{{/childLists}}    </dl>
 {{#hasChildTables}}{{#childTables}}    <RelatedRows

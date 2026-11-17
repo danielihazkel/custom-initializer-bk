@@ -621,6 +621,8 @@ public final class FullstackPageValidator {
         if (audit) {
             out.put("createdat", "createdAt");
             out.put("updatedat", "updatedAt");
+            out.put("createdby", "createdBy");
+            out.put("updatedby", "updatedBy");
         }
         return out;
     }
@@ -635,12 +637,15 @@ public final class FullstackPageValidator {
         if (audit) {
             out.put("createdat", "createdAt");
             out.put("updatedat", "updatedAt");
+            out.put("createdby", "createdBy");
+            out.put("updatedby", "updatedBy");
         }
         return out;
     }
 
     private static boolean isAuditColumn(String name) {
-        return name.equalsIgnoreCase("createdAt") || name.equalsIgnoreCase("updatedAt");
+        return name.equalsIgnoreCase("createdAt") || name.equalsIgnoreCase("updatedAt")
+                || name.equalsIgnoreCase("createdBy") || name.equalsIgnoreCase("updatedBy");
     }
 
     /** The ordered subset of columns a list page shows: each a known column, none twice, canonicalized. */

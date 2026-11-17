@@ -54,6 +54,8 @@
     { "source": "savedViews.ts", "path": "src/shared/ui/savedViews.ts", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146, "gatedBy": "hasSavedViews" },
     { "source": "ViewsMenu.tsx", "path": "src/shared/ui/ViewsMenu.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146, "gatedBy": "hasSavedViews" },
     { "source": "MovesList.tsx", "path": "src/shared/ui/MovesList.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146, "gatedBy": "hasWorkflowMoves" },
+    { "source": "ChangeHistory.tsx", "path": "src/shared/ui/ChangeHistory.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 147, "gatedBy": "hasHistory" },
+    { "source": "EntityHistory.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}History.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 228, "gatedBy": "historyApplicable" },
     { "source": "GalleryView.tsx", "path": "src/shared/ui/GalleryView.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146, "gatedBy": "hasGalleryViews" },
     { "source": "ConfirmDialog.tsx", "path": "src/shared/ui/ConfirmDialog.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 146 },
     { "source": "DetailDrawer.tsx", "path": "src/shared/ui/DetailDrawer.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 145 },

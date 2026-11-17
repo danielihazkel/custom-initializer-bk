@@ -37,6 +37,8 @@ public enum ScaffoldOption {
     XLSX_EXPORT("xlsxExport", "optScaffoldXlsxExport", true, true, true),
     /** Named views of a list — its search, filters, sort and columns — kept on the server per user. */
     SAVED_VIEWS("savedViews", "optScaffoldSavedViews", true, true, true),
+    /** Every change to a row kept with who made it, shown on the record and restorable by an admin. */
+    HISTORY("history", "optScaffoldHistory", true, true, true),
 
     INVERSE_COLLECTIONS("inverseCollections", "optScaffoldInverse", true, true, false),
     /** springdoc annotations; the {@code openapi} dependency is force-added with it. */

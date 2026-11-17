@@ -373,6 +373,9 @@ public final class EntityScaffoldContext {
                                 ((List<Map<String, Object>>) ev.get("workflowTransitions")).stream()
                                         .map(tv -> tv.get("name") + ": " + tv.get("labelTs")).toList()) + " }");
                     }
+                    // The history option: a History tab (or, without tabs, a section) of the row's changes.
+                    pv.put("recordHasHistory", ((List<Map<String, Object>>) ctx.getOrDefault("historyEntities", List.of()))
+                            .stream().anyMatch(h -> h.get("EntityName").equals(ev.get("EntityName"))));
                     pv.put("recordEditsInPage", editPage != null);
                     pv.put("recordEditsInDrawer", recordMutable && editPage == null);
                     pv.put("createPageId", editPage);
@@ -819,6 +822,47 @@ public final class EntityScaffoldContext {
     }
 
     /**
+     * The {@code history} option across the project: {@code hasHistory} (the change log ships),
+     * {@code historyEntities} (the classes the log records, each with the fields a restore must
+     * leave alone), and {@code usesRequestUser} — who makes a change, for the audit columns and the
+     * log. Call after {@code putAudit} and the scaffold flags, on both render paths.
+     */
+    public static void putHistory(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldHistory"));
+        List<Map<String, Object>> tracked = new ArrayList<>();
+        for (EntityDefinition e : entities) {
+            if (!historyApplies(e, projectOpt)) continue;
+            Map<String, Object> view = new LinkedHashMap<>();
+            // Fully qualified: the recorder names every tracked class in one file.
+            view.put("entityClass", ctx.get("entityPackage") + "." + e.name());
+            view.put("EntityName", e.name());
+            view.put("entityKey", Naming.toKebabCase(e.name()));
+            // A workflow's status and assignee move only through its own calls; a file is deleted
+            // when replaced, so an old id points at nothing.
+            List<String> keep = new ArrayList<>();
+            if (e.workflow() != null) {
+                keep.add(e.workflow().statusField());
+                if (e.workflow().assigneeField() != null) keep.add(e.workflow().assigneeField());
+            }
+            e.fields().stream().filter(f -> f.type().isAttachment()).forEach(f -> keep.add(f.name()));
+            view.put("keepJava", keep.stream().map(k -> "\"" + k + "\"").collect(java.util.stream.Collectors.joining(", ")));
+            tracked.add(view);
+        }
+        if (!tracked.isEmpty()) tracked.get(tracked.size() - 1).put("last", true);
+        ctx.put("hasHistory", !tracked.isEmpty());
+        ctx.put("historyEntities", tracked);
+        ctx.put("usesRequestUser", !tracked.isEmpty() || Boolean.TRUE.equals(ctx.get("hasAudit")));
+    }
+
+    /** {@code history} for one entity: its override, else the project option; writable single-key tables only. */
+    public static boolean historyApplies(EntityDefinition e, boolean projectOpt) {
+        Boolean override = e.opts().get("history");
+        return !e.readOnly() && e.viewQuery() == null
+                && e.fields().stream().filter(FieldDefinition::primaryKey).count() == 1
+                && (override != null ? override : projectOpt);
+    }
+
+    /**
      * Whether any entity resolves the {@code optimisticLocking} option on (its override, else the
      * project option) and can use it (writable, table-backed) — {@code hasOptimisticLocking}, which
      * gates the project-wide stale-update handler, so an entity that opts in on its own still gets it.
@@ -906,6 +950,10 @@ public final class EntityScaffoldContext {
             cells.add("dto.createdAt()");
             headers.add("Updated");
             cells.add("dto.updatedAt()");
+            headers.add("Created by");
+            cells.add("dto.createdBy()");
+            headers.add("Updated by");
+            cells.add("dto.updatedBy()");
         }
         ctx.put("xlsxHeaders", headers);
         ctx.put("xlsxCells", cells);
@@ -2699,7 +2747,16 @@ public final class EntityScaffoldContext {
     /** As above, knowing whether the request's {@code savedViews} option is on (an entity may
      *  still turn it on or off for itself). */
     public static List<String> supportPackages(String packageName, List<EntityDefinition> entities, boolean savedViewsOpt) {
+        return supportPackages(packageName, entities, savedViewsOpt, false);
+    }
+
+    /** As above, knowing the {@code history} option too (its change log is an entity of its own). */
+    public static List<String> supportPackages(String packageName, List<EntityDefinition> entities, boolean savedViewsOpt,
+                                               boolean historyOpt) {
         List<String> packages = new ArrayList<>();
+        if (entities.stream().anyMatch(e -> historyApplies(e, historyOpt))) {
+            packages.add(packageName + ".history");
+        }
         if (entities.stream().flatMap(e -> e.fields().stream()).anyMatch(f -> f.type().isAttachment())) {
             packages.add(packageName + ".attachment");
         }
@@ -2940,6 +2997,9 @@ public final class EntityScaffoldContext {
         // a @Subselect view would have to project created_at/updated_at columns that may not exist.
         ctx.put("auditApplicable",
                 Boolean.TRUE.equals(ctx.get("optScaffoldAudit")) && mutable);
+        // The change log: writable, table-backed, single-key rows (the log addresses a row by its id).
+        ctx.put("historyApplicable", Boolean.TRUE.equals(ctx.get("optScaffoldHistory")) && mutable
+                && !Boolean.TRUE.equals(ctx.get("isView")) && !Boolean.TRUE.equals(ctx.get("hasCompositePk")));
         // Optimistic locking (a @Version column, stale updates answered 409) — writable tables only.
         ctx.put("lockingApplicable", Boolean.TRUE.equals(ctx.get("optScaffoldOptimisticLocking"))
                 && mutable && !Boolean.TRUE.equals(ctx.get("isView")));

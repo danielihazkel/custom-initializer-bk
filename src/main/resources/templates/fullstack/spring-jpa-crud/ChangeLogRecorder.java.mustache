@@ -1,0 +1,185 @@
+package {{packageName}}.history;
+
+import {{packageName}}.web.RequestUser;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.hibernate.event.service.spi.EventListenerRegistry;
+import org.hibernate.event.spi.EventType;
+import org.hibernate.event.spi.PostDeleteEvent;
+import org.hibernate.event.spi.PostDeleteEventListener;
+import org.hibernate.event.spi.PostInsertEvent;
+import org.hibernate.event.spi.PostInsertEventListener;
+import org.hibernate.event.spi.PostUpdateEvent;
+import org.hibernate.event.spi.PostUpdateEventListener;
+import org.hibernate.internal.SessionFactoryImpl;
+import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.proxy.HibernateProxy;
+import org.hibernate.type.Type;
+import org.springframework.stereotype.Component;
+
+import java.sql.PreparedStatement;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+/**
+ * Keeps the change log: every row of the entities below that is created, changed or deleted — by
+ * any call, a bulk one, a transition or an import alike — is written to {@code app_change_log}
+ * with who did it ({@link RequestUser}) and the row before and after. Hibernate calls it after
+ * each insert, update and delete, and it writes on the same connection, so a change and its entry
+ * commit or roll back together.
+ *
+ * <p>What it leaves out: the columns the framework keeps (version, the audit columns, the soft
+ * delete flag), values the database computes, and many-to-many links. A row changed with plain
+ * SQL — a soft-deleted row's restore — is logged by the code that does it ({@link ChangeHistory#restored}).
+ */
+@Component
+public class ChangeLogRecorder implements PostInsertEventListener, PostUpdateEventListener, PostDeleteEventListener {
+
+    /** An entity whose changes are kept: its name in the log, and the fields a restore leaves alone. */
+    public record Tracked(String name, Set<String> keep) {}
+
+    public static final Map<Class<?>, Tracked> TRACKED = Map.ofEntries(
+{{#historyEntities}}            Map.entry({{entityClass}}.class, new Tracked("{{entityKey}}", Set.of({{{keepJava}}}))){{^last}},{{/last}}
+{{/historyEntities}}    );
+
+    /** Kept up to date by the framework, not by a person: not part of a version. */
+    static final Set<String> NOT_RECORDED = Set.of("version", "deleted", "createdAt", "updatedAt", "createdBy", "updatedBy");
+
+    private static final String INSERT = "INSERT INTO app_change_log (entity_name, row_id, action, changed_at, "
+            + "changed_by, changed_fields, before_json, after_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+    /** Set while {@link ChangeHistory} puts a version back, so the update is logged as a restore. */
+    static final ThreadLocal<Boolean> RESTORING = new ThreadLocal<>();
+
+    private final EntityManagerFactory entityManagerFactory;
+    private final ObjectMapper json;
+
+    public ChangeLogRecorder(EntityManagerFactory entityManagerFactory, ObjectMapper json) {
+        this.entityManagerFactory = entityManagerFactory;
+        this.json = json;
+    }
+
+    @PostConstruct
+    void register() {
+        EventListenerRegistry registry = entityManagerFactory.unwrap(SessionFactoryImpl.class)
+                .getServiceRegistry().getService(EventListenerRegistry.class);
+        registry.appendListeners(EventType.POST_INSERT, this);
+        registry.appendListeners(EventType.POST_UPDATE, this);
+        registry.appendListeners(EventType.POST_DELETE, this);
+    }
+
+    @Override
+    public boolean requiresPostCommitHandling(EntityPersister persister) {
+        return false;
+    }
+
+    @Override
+    public void onPostInsert(PostInsertEvent event) {
+        Tracked tracked = TRACKED.get(event.getEntity().getClass());
+        if (tracked == null) return;
+        write(event.getSession(), tracked, event.getId(), ChangeLogEntry.Action.CREATE, null,
+                snapshot(event.getPersister(), event.getState(), event.getSession()), null);
+    }
+
+    @Override
+    public void onPostUpdate(PostUpdateEvent event) {
+        Tracked tracked = TRACKED.get(event.getEntity().getClass());
+        if (tracked == null) return;
+        Map<String, Object> after = snapshot(event.getPersister(), event.getState(), event.getSession());
+        Map<String, Object> before = event.getOldState() == null ? null
+                : snapshot(event.getPersister(), event.getOldState(), event.getSession());
+        List<String> changed = new ArrayList<>();
+        if (before != null) {
+            for (var e : after.entrySet()) {
+                if (!same(e.getValue(), before.get(e.getKey()))) changed.add(e.getKey());
+            }
+            // Only the framework's columns moved (a touch, a version bump): nothing a person changed.
+            if (changed.isEmpty()) return;
+        }
+        ChangeLogEntry.Action action = Boolean.TRUE.equals(RESTORING.get())
+                ? ChangeLogEntry.Action.RESTORE : ChangeLogEntry.Action.UPDATE;
+        write(event.getSession(), tracked, event.getId(), action, before, after, changed);
+    }
+
+    @Override
+    public void onPostDelete(PostDeleteEvent event) {
+        Tracked tracked = TRACKED.get(event.getEntity().getClass());
+        if (tracked == null) return;
+        write(event.getSession(), tracked, event.getId(), ChangeLogEntry.Action.DELETE,
+                snapshot(event.getPersister(), event.getDeletedState(), event.getSession()), null, null);
+    }
+
+    /** The row's values by property: a link as the id it points at; lists, computed values and the framework's columns left out. */
+    Map<String, Object> snapshot(EntityPersister persister, Object[] state, SharedSessionContractImplementor session) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        String[] names = persister.getPropertyNames();
+        Type[] types = persister.getPropertyTypes();
+        boolean[] insertable = persister.getPropertyInsertability();
+        boolean[] updatable = persister.getPropertyUpdateability();
+        for (int i = 0; i < names.length; i++) {
+            if (types[i].isCollectionType() || NOT_RECORDED.contains(names[i])) continue;
+            if (!insertable[i] && !updatable[i]) continue; // a @Formula: the database's, not the row's
+            Object value = state == null ? null : state[i];
+            if (types[i].isEntityType() && value != null) value = idOf(value, session);
+            values.put(names[i], value);
+        }
+        // Through JSON text and back, so a value compares equal to one read back from the log.
+        try {
+            return json.readValue(json.writeValueAsString(values), new TypeReference<LinkedHashMap<String, Object>>() {});
+        } catch (Exception e) {
+            throw new IllegalStateException("A row could not be written to the change log", e);
+        }
+    }
+
+    /** Equal values; numbers by value (an amount saved as 40 reads back as 40.00). */
+    private static boolean same(Object a, Object b) {
+        if (a instanceof Number x && b instanceof Number y) {
+            return new java.math.BigDecimal(x.toString()).compareTo(new java.math.BigDecimal(y.toString())) == 0;
+        }
+        return Objects.equals(a, b);
+    }
+
+    private static Object idOf(Object entity, SharedSessionContractImplementor session) {
+        if (entity instanceof HibernateProxy proxy) return proxy.getHibernateLazyInitializer().getInternalIdentifier();
+        return session.getEntityPersister(null, entity).getIdentifier(entity, session);
+    }
+
+    private void write(SharedSessionContractImplementor session, Tracked tracked, Object id, ChangeLogEntry.Action action,
+                       Map<String, Object> before, Map<String, Object> after, List<String> changed) {
+        String fields = changed == null || changed.isEmpty() ? null : String.join(",", changed);
+        String user = RequestUser.current();
+        String beforeJson = toJson(before);
+        String afterJson = toJson(after);
+        session.doWork(connection -> {
+            try (PreparedStatement insert = connection.prepareStatement(INSERT)) {
+                insert.setString(1, tracked.name());
+                insert.setString(2, String.valueOf(id));
+                insert.setString(3, action.name());
+                insert.setTimestamp(4, Timestamp.from(Instant.now()));
+                insert.setString(5, user.length() > 255 ? user.substring(0, 255) : user);
+                insert.setString(6, fields != null && fields.length() > 2000 ? fields.substring(0, 2000) : fields);
+                insert.setString(7, beforeJson);
+                insert.setString(8, afterJson);
+                insert.executeUpdate();
+            }
+        });
+    }
+
+    private String toJson(Map<String, Object> row) {
+        if (row == null) return null;
+        try {
+            return json.writeValueAsString(row);
+        } catch (Exception e) {
+            throw new IllegalStateException("A row could not be written to the change log", e);
+        }
+    }
+}

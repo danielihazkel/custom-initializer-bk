@@ -148,6 +148,10 @@ Tuple
 Version
 WebMvcTest
 WorkflowException
+ChangeHistory
+CreatedBy
+HistoryField
+LastModifiedBy
 
 # a name one of the entity's own generated names would spell
 CallerMay
@@ -159,6 +163,7 @@ Memo
 Resource
 Rest
 State
+Change
 
 # a folder of the generated frontend
 Dashboard
@@ -171,3 +176,4 @@ Me
 Permission
 SavedView
 WorkflowMove
+ChangeLog

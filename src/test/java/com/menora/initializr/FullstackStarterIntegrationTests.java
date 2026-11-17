@@ -2036,7 +2036,7 @@ class FullstackStarterIntegrationTests {
                     .contains("@SQLDelete(sql = \"UPDATE widgets SET deleted = true WHERE id = ? AND version = ?\")");
             assertThat(contentEndingWith(locked, "/repository/WidgetRepository.java"))
                     .contains("@Query(value = \"UPDATE widgets SET deleted = false, version = coalesce(version, 0) + 1,"
-                            + " updated_at = CURRENT_TIMESTAMP WHERE id = :id\", nativeQuery = true)");
+                            + " updated_at = CURRENT_TIMESTAMP, updated_by = :user WHERE id = :id\", nativeQuery = true)");
         }
     }
 

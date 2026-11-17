@@ -1,13 +1,23 @@
 package {{packageName}}.config;
 
+import {{packageName}}.web.RequestUser;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
+import java.util.Optional;
+
 /**
- * Enables Spring Data JPA auditing so {@code @CreatedDate}/{@code @LastModifiedDate}
- * fields on entities are populated automatically.
+ * Enables Spring Data JPA auditing: {@code @CreatedDate}/{@code @LastModifiedDate} take the time,
+ * {@code @CreatedBy}/{@code @LastModifiedBy} the caller's user id ({@link RequestUser}).
  */
 @Configuration
-@EnableJpaAuditing
+@EnableJpaAuditing(auditorAwareRef = "auditor")
 public class JpaAuditingConfig {
+
+    @Bean
+    public AuditorAware<String> auditor() {
+        return () -> Optional.of(RequestUser.current());
+    }
 }

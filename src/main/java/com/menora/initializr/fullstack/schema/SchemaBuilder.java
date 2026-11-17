@@ -61,6 +61,7 @@ public final class SchemaBuilder {
         if (Boolean.TRUE.equals(projectContext.get("hasAttachments"))) tables.add(attachments());
         if (Boolean.TRUE.equals(projectContext.get("hasSavedViews"))) tables.add(savedViews());
         if (Boolean.TRUE.equals(projectContext.get("hasWorkflowMoves"))) tables.add(workflowMoves());
+        if (Boolean.TRUE.equals(projectContext.get("hasHistory"))) tables.add(changeLog());
         return new Schema(tables);
     }
 
@@ -96,6 +97,8 @@ public final class SchemaBuilder {
         if (Boolean.TRUE.equals(ctx.get("auditApplicable"))) {
             columns.add(Column.of("created_at", ColumnType.INSTANT, true));
             columns.add(Column.of("updated_at", ColumnType.INSTANT, true));
+            columns.add(Column.varchar("created_by", 255, true));
+            columns.add(Column.varchar("updated_by", 255, true));
         }
         if (Boolean.TRUE.equals(ctx.get("lockingApplicable"))) {
             columns.add(Column.of("version", ColumnType.BIGINT, true));
@@ -194,6 +197,22 @@ public final class SchemaBuilder {
                 List.of("id"), List.of(),
                 List.of(new Unique("uk_app_saved_view_name", List.of("list_name", "owner_id", "view_name"))),
                 List.of());
+    }
+
+    /** The history option's change log ({@code history/ChangeLogEntry}). */
+    private static Table changeLog() {
+        return new Table(null, "app_change_log", List.of(
+                new Column("id", ColumnType.BIGINT, null, false, true, false),
+                Column.varchar("entity_name", 100, false),
+                Column.varchar("row_id", 100, false),
+                Column.varchar("action", 16, false),
+                Column.of("changed_at", ColumnType.INSTANT, false),
+                Column.varchar("changed_by", 255, false),
+                Column.varchar("changed_fields", 2000, true),
+                Column.of("before_json", ColumnType.TEXT, true),
+                Column.of("after_json", ColumnType.TEXT, true)),
+                List.of("id"), List.of(), List.of(),
+                List.of(new Index("ix_app_change_log_row", List.of("entity_name", "row_id"))));
     }
 
     private static Table workflowMoves() {

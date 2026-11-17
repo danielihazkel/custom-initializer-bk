@@ -122,6 +122,23 @@ public class {{EntityName}}Service {
 {{/stringFields}}        );
     }
 {{/hasStringFields}}{{/hasFilters}}
+{{#auditApplicable}}
+    /** The list narrowed to the rows {@code changedBy} created or last changed — "Changed by me". */
+    @Transactional(readOnly = true)
+    public Page<{{EntityName}}> findAll(String q, {{#hasFilters}}Filters filters, {{/hasFilters}}String changedBy, Pageable pageable) {
+        org.springframework.data.jpa.domain.Specification<{{EntityName}}> spec = {{#hasFilters}}specOf(q, filters){{/hasFilters}}{{^hasFilters}}{{#hasStringFields}}specOf(q){{/hasStringFields}}{{^hasStringFields}}null{{/hasStringFields}}{{/hasFilters}};
+        if (changedBy != null && !changedBy.isBlank()) {
+            org.springframework.data.jpa.domain.Specification<{{EntityName}}> theirs = (root, query, cb) -> cb.or(
+                    cb.equal(root.get("createdBy"), changedBy), cb.equal(root.get("updatedBy"), changedBy));
+            spec = spec == null ? theirs : spec.and(theirs);
+        }
+{{^hasCollections}}        return spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
+{{/hasCollections}}{{#hasCollections}}        Page<{{EntityName}}> page = spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
+        page.forEach(this::loaded);
+        return page;
+{{/hasCollections}}    }
+
+{{/auditApplicable}}
 {{#statsApplicable}}
     /** One group of a {@link #stats} result: the group's key (an enum constant, {@code true}/
      *  {@code false}, a date bucket like {@code 2026-09}, or empty when nothing is grouped), the
@@ -674,7 +691,7 @@ public class {{EntityName}}Service {
     /** Un-deletes a soft-deleted record (the frontend's Undo after delete). 404 when no row has
      *  that id; restoring a live row is a harmless no-op. */
     public {{EntityName}} restore({{pkField.javaType}} id) {
-        if (repository.restore(id) == 0) {
+        if (repository.restore(id{{#auditApplicable}}, {{packageName}}.web.RequestUser.current(){{/auditApplicable}}) == 0) {
             throw new ResourceNotFoundException("{{EntityName}} " + id + " not found");
         }
         return findById(id);

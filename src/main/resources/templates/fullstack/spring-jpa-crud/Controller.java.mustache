@@ -31,10 +31,13 @@ import {{packageName}}.security.RequiresPermission;
 public class {{EntityName}}Controller {
 
     private final {{EntityName}}Service service;
+{{#historyApplicable}}    private final {{packageName}}.history.ChangeHistory history;
+{{/historyApplicable}}
 
-    public {{EntityName}}Controller({{EntityName}}Service service) {
+    public {{EntityName}}Controller({{EntityName}}Service service{{#historyApplicable}}, {{packageName}}.history.ChangeHistory history{{/historyApplicable}}) {
         this.service = service;
-    }
+{{#historyApplicable}}        this.history = history;
+{{/historyApplicable}}    }
 
 {{#optScaffoldOpenApi}}    @Operation(summary = "List {{EntityName}} records (paged, optional `q` filter)")
 {{/optScaffoldOpenApi}}{{#hasLdapAuth}}    @RequiresPermission(Constants.{{readLevel}})
@@ -44,12 +47,16 @@ public class {{EntityName}}Controller {
 {{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isRelationFilter}},
 {{/filterFields}}{{#hasAssignee}}            @RequestParam(required = false) String inbox,
             @RequestHeader(value = "userinfo", required = false) String workflowUser,
-{{/hasAssignee}}            Pageable pageable) {
+{{/hasAssignee}}{{#auditApplicable}}            // "me" (the caller), or a user id: the rows they created or last changed.
+            @RequestParam(required = false) String changedBy,
+{{/auditApplicable}}            Pageable pageable) {
         Pageable effective = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sortOf(pageable));
 {{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#hasAssignee}}inbox, CurrentUser.idOf(workflowUser), {{/hasAssignee}}{{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
-        return service.findAll(q, filters, effective).map({{EntityName}}Dto::from);
+{{/hasFilters}}{{#auditApplicable}}        String author = "me".equals(changedBy) ? {{packageName}}.web.RequestUser.current() : changedBy;
+        return service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}author, effective).map({{EntityName}}Dto::from);
+{{/auditApplicable}}{{^auditApplicable}}{{#hasFilters}}        return service.findAll(q, filters, effective).map({{EntityName}}Dto::from);
 {{/hasFilters}}{{^hasFilters}}        return service.findAll(q, effective).map({{EntityName}}Dto::from);
-{{/hasFilters}}    }
+{{/hasFilters}}{{/auditApplicable}}    }
 {{#statsApplicable}}
 {{#optScaffoldOpenApi}}    @Operation(summary = "Aggregate {{EntityName}} records (honors `q` and filters)")
 {{/optScaffoldOpenApi}}{{#hasLdapAuth}}    @RequiresPermission(Constants.{{readLevel}})
@@ -153,6 +160,8 @@ public class {{EntityName}}Controller {
 {{/hasTargetLabel}}{{/relations}}{{#collections}}                            csv(String.join("; ", dto.{{labelsField}}())),
 {{/collections}}{{#auditApplicable}}                            csv(dto.createdAt()),
                             csv(dto.updatedAt()),
+                            csv(dto.createdBy()),
+                            csv(dto.updatedBy()),
 {{/auditApplicable}}                    };
                     w.write(String.join(",", cells));
                     w.write("\r\n");
@@ -176,6 +185,8 @@ public class {{EntityName}}Controller {
 {{/hasTargetLabel}}{{/relations}}{{#collections}}            "{{fieldName}}",
 {{/collections}}{{#auditApplicable}}            "createdAt",
             "updatedAt",
+            "createdBy",
+            "updatedBy",
 {{/auditApplicable}}    };
 
     /** Minimal RFC-4180 CSV cell: null → empty, and quote when the value contains a comma, quote,
@@ -268,9 +279,35 @@ public class {{EntityName}}Controller {
 {{/optScaffoldOpenApi}}{{#hasLdapAuth}}    @RequiresPermission(Constants.{{writeLevel}})
 {{/hasLdapAuth}}    @PostMapping("/{id}/restore")
     public {{EntityName}}Dto restore(@PathVariable {{pkField.javaType}} id) {
-        return {{EntityName}}Dto.from(service.restore(id));
+{{#historyApplicable}}        {{EntityName}}Dto restored = {{EntityName}}Dto.from(service.restore(id));
+        history.restored("{{entityNameKebab}}", id);
+        return restored;
+{{/historyApplicable}}{{^historyApplicable}}        return {{EntityName}}Dto.from(service.restore(id));
+{{/historyApplicable}}    }
+{{/softDeleteApplicable}}{{#historyApplicable}}
+
+    /** The row's changes, newest first: who, when, which fields, the row before and after. */
+{{#optScaffoldOpenApi}}    @Operation(summary = "The change history of a {{EntityName}}")
+{{/optScaffoldOpenApi}}{{#hasLdapAuth}}    @RequiresPermission(Constants.{{readLevel}})
+{{/hasLdapAuth}}    @GetMapping("/{id}/history")
+    public java.util.List<{{packageName}}.history.ChangeHistory.Change> history(@PathVariable {{pkField.javaType}} id) {
+        return history.of("{{entityNameKebab}}", id);
     }
-{{/softDeleteApplicable}}{{#hasWorkflow}}
+
+    /** {@code latest}: the newest change the caller saw — a newer one is a 409 unless {@code force}. */
+    public record RestoreVersion(Long latest, Boolean force) {}
+
+    /** Puts the row back to what one of its changes left.{{#hasLdapAuth}} Admins only.{{/hasLdapAuth}} */
+{{#optScaffoldOpenApi}}    @Operation(summary = "Restore a {{EntityName}} to an earlier version")
+{{/optScaffoldOpenApi}}{{#hasLdapAuth}}    @RequiresPermission(Constants.ADMIN)
+{{/hasLdapAuth}}    @PostMapping("/{id}/history/{changeId}/restore")
+    public {{EntityName}}Dto restoreVersion(@PathVariable {{pkField.javaType}} id, @PathVariable Long changeId,
+                                            @RequestBody(required = false) RestoreVersion body) {
+        history.restore("{{entityNameKebab}}", id, changeId,
+                body == null ? null : body.latest(), body != null && Boolean.TRUE.equals(body.force()));
+        return {{EntityName}}Dto.from(service.findById(id));
+    }
+{{/historyApplicable}}{{#hasWorkflow}}
     /** Moves the row by one of its workflow's transitions; the body carries the fields it asks for. */
 {{#optScaffoldOpenApi}}    @Operation(summary = "Move a {{EntityName}} by a workflow transition")
 {{/optScaffoldOpenApi}}{{#hasLdapAuth}}    @RequiresPermission(Constants.{{readLevel}})
@@ -357,6 +394,8 @@ public class {{EntityName}}Controller {
 {{#fields}}{{#isSortable}}            "{{name}}",
 {{/isSortable}}{{/fields}}{{#auditApplicable}}            "createdAt",
             "updatedAt",
+            "createdBy",
+            "updatedBy",
 {{/auditApplicable}}    });
 
     /** Stable default order when the client sends none: every primary-key column. */

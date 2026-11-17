@@ -589,6 +589,8 @@ public final class FullstackRequestValidator {
             if (mutable && scaffoldOn("audit", e, body)) {
                 generated.add(new String[] {"createdAt", "the 'audit' option's created-at timestamp"});
                 generated.add(new String[] {"updatedAt", "the 'audit' option's updated-at timestamp"});
+                generated.add(new String[] {"createdBy", "the 'audit' option's created-by user"});
+                generated.add(new String[] {"updatedBy", "the 'audit' option's updated-by user"});
             }
             long keys = e.fields().stream().filter(FieldDefinition::primaryKey).count();
             if (mutable && keys == 1 && scaffoldOn("softDelete", e, body)) {

@@ -19,6 +19,6 @@ public interface {{EntityName}}Repository
      *  still holding the old one is told.{{/lockingApplicable}} */
     @Modifying
     @Transactional
-    @Query(value = "UPDATE {{tableRef}} SET deleted = false{{#lockingApplicable}}, version = coalesce(version, 0) + 1{{/lockingApplicable}}{{#auditApplicable}}, updated_at = CURRENT_TIMESTAMP{{/auditApplicable}} WHERE {{pkField.column}} = :id", nativeQuery = true)
-    int restore(@Param("id") {{pkField.javaType}} id);
+    @Query(value = "UPDATE {{tableRef}} SET deleted = false{{#lockingApplicable}}, version = coalesce(version, 0) + 1{{/lockingApplicable}}{{#auditApplicable}}, updated_at = CURRENT_TIMESTAMP, updated_by = :user{{/auditApplicable}} WHERE {{pkField.column}} = :id", nativeQuery = true)
+    int restore(@Param("id") {{pkField.javaType}} id{{#auditApplicable}}, @Param("user") String user{{/auditApplicable}});
 {{/softDeleteApplicable}}}

@@ -1,0 +1,142 @@
+package {{packageName}}.history;
+
+import {{packageName}}.web.RequestUser;
+import {{packageName}}.web.ResourceConflictException;
+import {{packageName}}.web.ResourceNotFoundException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.type.EntityType;
+import org.hibernate.type.Type;
+import org.springframework.beans.DirectFieldAccessor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * A row's change history (newest first, at most {@value #MAX}) and putting a row back to a
+ * version from it. A restore sets the row's fields to what the chosen change left — not the
+ * framework's columns, not what {@link ChangeLogRecorder.Tracked#keep} names (a workflow's status
+ * and assignee, which move only through their own calls; files, which are deleted when replaced) —
+ * and is logged as a change of its own. It is refused (409) when the row has changed since the
+ * caller last looked ({@code latest}), unless told to go ahead.
+ */
+@Service
+public class ChangeHistory {
+
+    static final int MAX = 200;
+
+    /** One entry as the API answers it. */
+    public record Change(Long id, String action, Instant at, String by, List<String> fields,
+                         Map<String, Object> before, Map<String, Object> after) {}
+
+    private final ChangeLogRepository repository;
+    private final ObjectMapper json;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    public ChangeHistory(ChangeLogRepository repository, ObjectMapper json) {
+        this.repository = repository;
+        this.json = json;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Change> of(String entity, Object rowId) {
+        return repository.findByEntityNameAndRowIdOrderByIdDesc(entity, String.valueOf(rowId), PageRequest.of(0, MAX))
+                .stream().map(this::toChange).toList();
+    }
+
+    /**
+     * Puts the row back to what change {@code changeId} left. {@code latest}: the newest change the
+     * caller saw; a newer one is a 409 naming who made it, unless {@code force}. Null skips the check.
+     */
+    @Transactional
+    public void restore(String entity, Object rowId, long changeId, Long latest, boolean force) {
+        Class<?> type = ChangeLogRecorder.TRACKED.entrySet().stream()
+                .filter(e -> e.getValue().name().equals(entity)).map(Map.Entry::getKey).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("No history is kept of " + entity));
+        ChangeLogEntry change = repository.findById(changeId)
+                .filter(c -> c.getEntityName().equals(entity) && c.getRowId().equals(String.valueOf(rowId)))
+                .orElseThrow(() -> new ResourceNotFoundException("No change " + changeId + " of this row"));
+        if (change.getAfterJson() == null) {
+            throw new IllegalArgumentException("A deletion leaves no version to restore");
+        }
+        if (latest != null && !force) {
+            repository.findFirstByEntityNameAndRowIdOrderByIdDesc(entity, String.valueOf(rowId))
+                    .filter(newest -> newest.getId() > latest)
+                    .ifPresent(newest -> {
+                        throw new ResourceConflictException(newest.getChangedBy() + " changed it since");
+                    });
+        }
+        Object row = entityManager.find(type, rowId);
+        if (row == null) throw new ResourceNotFoundException("The row no longer exists");
+
+        Map<String, Object> version = read(change.getAfterJson());
+        Set<String> keep = ChangeLogRecorder.TRACKED.get(type).keep();
+        SessionImplementor session = entityManager.unwrap(SessionImplementor.class);
+        EntityPersister persister = session.getEntityPersister(null, row);
+        String[] names = persister.getPropertyNames();
+        Type[] types = persister.getPropertyTypes();
+        boolean[] updatable = persister.getPropertyUpdateability();
+        DirectFieldAccessor fields = new DirectFieldAccessor(row);
+        for (int i = 0; i < names.length; i++) {
+            String name = names[i];
+            if (!version.containsKey(name) || keep.contains(name) || !updatable[i] || types[i].isCollectionType()
+                    || ChangeLogRecorder.NOT_RECORDED.contains(name)) {
+                continue;
+            }
+            Object raw = version.get(name);
+            Object value;
+            if (raw == null) {
+                value = null;
+            } else if (types[i] instanceof EntityType link) {
+                EntityPersister target = session.getFactory().getMappingMetamodel()
+                        .getEntityDescriptor(link.getAssociatedEntityName());
+                Object id = json.convertValue(raw, target.getIdentifierType().getReturnedClass());
+                value = entityManager.getReference(target.getMappedClass(), id);
+            } else {
+                value = json.convertValue(raw, types[i].getReturnedClass());
+            }
+            fields.setPropertyValue(name, value);
+        }
+        ChangeLogRecorder.RESTORING.set(true);
+        try {
+            entityManager.flush();
+        } finally {
+            ChangeLogRecorder.RESTORING.remove();
+        }
+    }
+
+    /** A soft-deleted row brought back with plain SQL, which Hibernate does not see: logged here. */
+    @Transactional
+    public void restored(String entity, Object rowId) {
+        repository.save(ChangeLogEntry.of(entity, String.valueOf(rowId), ChangeLogEntry.Action.RESTORE,
+                RequestUser.current(), null, null, null));
+    }
+
+    private Change toChange(ChangeLogEntry e) {
+        List<String> fields = e.getChangedFields() == null ? List.of() : Arrays.asList(e.getChangedFields().split(","));
+        return new Change(e.getId(), e.getAction().name(), e.getChangedAt(), e.getChangedBy(), fields,
+                e.getBeforeJson() == null ? null : read(e.getBeforeJson()),
+                e.getAfterJson() == null ? null : read(e.getAfterJson()));
+    }
+
+    private Map<String, Object> read(String text) {
+        try {
+            return json.readValue(text, new TypeReference<LinkedHashMap<String, Object>>() {});
+        } catch (Exception e) {
+            throw new IllegalStateException("A change log entry could not be read", e);
+        }
+    }
+}

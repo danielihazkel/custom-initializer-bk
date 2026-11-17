@@ -24,6 +24,8 @@ import { {{childEntityName}}Page } from '@pages/{{childEntityNameKebab}}'
 import { {{moveLabelsRef}} as MOVE_STATES } from '@entities/{{entityNameKebab}}'
 import { MovesList } from '@shared/ui/MovesList'
 {{/recordTracksMoves}}
+{{#recordHasHistory}}import { {{EntityName}}History } from '@features/{{entityNameKebab}}-form/ui/{{EntityName}}History'
+{{/recordHasHistory}}
 
 interface Props {
   /** The record's key, as the shell received it from the row that opened this page. */
@@ -39,7 +41,8 @@ const TABS = [
 {{#childTabs}}
   { id: '{{tabId}}', label: {{tabTitleExpr}} },
 {{/childTabs}}
-]
+{{#recordHasHistory}}  { id: 'history', label: t('changeHistory') },
+{{/recordHasHistory}}]
 {{/hasChildTabs}}
 
 const PATH = '/api/{{entityNamePluralKebab}}/'
@@ -358,7 +361,12 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
             </div>
           )}
 {{/childTabs}}
-        </>
+{{#recordHasHistory}}          {TABS[active]?.id === 'history' && (
+            <div role="tabpanel" id="history-panel" aria-labelledby="history-tab">
+              <{{EntityName}}History id={recordId} version={record} onRestored={next => setRecord(next)} />
+            </div>
+          )}
+{{/recordHasHistory}}        </>
 {{/hasChildTabs}}
 {{^hasChildTabs}}
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
@@ -366,6 +374,12 @@ export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/ne
         </div>
 {{/hasChildTabs}}
       )}
+{{#recordHasHistory}}
+{{^hasChildTabs}}
+      {/* The row's changes; read again whenever the row changes. */}
+      {record && <{{EntityName}}History id={recordId} version={record} onRestored={next => setRecord(next)} />}
+{{/hasChildTabs}}
+{{/recordHasHistory}}
 {{#recordTracksMoves}}
       {/* The row's steps through its workflow; read again whenever the row changes. */}
       {record && (

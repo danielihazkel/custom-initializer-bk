@@ -89,7 +89,7 @@ class GeneratedBackendBuildSmokeTests {
         body.put("bootVersion", bootVersion);
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
         // openapi too: springdoc's version follows the Boot line, and the wrong one fails at startup.
-        body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "inverseCollections", "csvExport",
+        body.put("opts", Map.of("scaffold", List.of("audit", "history", "softDelete", "inverseCollections", "csvExport",
                 "csvImport", "bulkDelete", "bulkUpdate", "optimisticLocking", "seedData", "tests", "openapi")));
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
@@ -486,14 +486,14 @@ class GeneratedBackendBuildSmokeTests {
         String liveTests = null;
         if (model.equals("orders")) {
             body.put("pages", List.of());
-            body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "inverseCollections", "csvExport",
+            body.put("opts", Map.of("scaffold", List.of("audit", "history", "softDelete", "inverseCollections", "csvExport",
                     "xlsxExport", "savedViews", "csvImport", "bulkDelete", "bulkUpdate", "optimisticLocking",
                     "seedData", "tests")));
             liveTests = LIVE_ORDERS_TESTS;
         } else if (model.equals("approvals")) {
-            body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "csvImport",
+            body.put("opts", Map.of("scaffold", List.of("audit", "history", "optimisticLocking", "csvExport", "csvImport",
                     "bulkUpdate", "seedData", "tests")));
-            liveTests = LIVE_APPROVALS_TESTS;
+            liveTests = LIVE_APPROVALS_TESTS + LIVE_HISTORY_TESTS;
         } else {
             body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "optimisticLocking", "seedData", "tests")));
         }
@@ -631,7 +631,7 @@ class GeneratedBackendBuildSmokeTests {
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
         body.put("pages", List.of());
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
-        body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "inverseCollections", "csvExport", "xlsxExport", "savedViews",
+        body.put("opts", Map.of("scaffold", List.of("audit", "history", "softDelete", "inverseCollections", "csvExport", "xlsxExport", "savedViews",
                 "csvImport", "bulkDelete", "bulkUpdate", "optimisticLocking", "seedData", "tests")));
         Path backend = postAndExtractBackend(workDir, body);
         writeLiveTest(backend, "com.menora.support", LIVE_ORDERS_TESTS);
@@ -645,16 +645,85 @@ class GeneratedBackendBuildSmokeTests {
         // takes. Without ldap-auth (its artifact is in the company repository), so no roles.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
-        body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "csvImport", "bulkUpdate", "seedData", "tests")));
+        body.put("opts", Map.of("scaffold", List.of("audit", "history", "optimisticLocking", "csvExport", "csvImport", "bulkUpdate", "seedData", "tests")));
         for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
             Map<String, Object> workflow = (Map<String, Object>) entity.get("workflow");
             if (workflow == null) continue;
             for (Map<String, Object> t : (List<Map<String, Object>>) workflow.get("transitions")) t.remove("roles");
         }
         Path backend = postAndExtractBackend(workDir, body);
-        writeLiveTest(backend, "com.menora.support", LIVE_APPROVALS_TESTS);
+        writeLiveTest(backend, "com.menora.support", LIVE_APPROVALS_TESTS + LIVE_HISTORY_TESTS);
         runMvn(backend, "-B", "package");
     }
+
+    /** Approvals with {@code audit} and {@code history}: who made each change, the log, a restore. */
+    private static final String LIVE_HISTORY_TESTS = """
+
+                @Test
+                void everyChangeIsKeptWithWhoMadeItAndAnEarlierVersionComesBack() throws Exception {
+                    JsonNode made = newClaim("");
+                    String path = "/api/expense-claims/" + made.get("id").asLong();
+                    // The audit columns name the caller.
+                    assertThat(made.get("createdBy").asText()).isEqualTo("alice");
+                    assertThat(made.get("updatedBy").asText()).isEqualTo("alice");
+                    ObjectNode edit = (ObjectNode) made.deepCopy();
+                    edit.put("title", "Taxi to the airport");
+                    JsonNode saved = send(put(path), "bob", edit.toString(), 200);
+                    assertThat(saved.get("createdBy").asText()).isEqualTo("alice");
+                    assertThat(saved.get("updatedBy").asText()).isEqualTo("bob");
+                    // Rows made outside a request (the demo data) are the system's.
+                    assertThat(get("/api/cost-centers?size=1").get("content").get(0).get("createdBy").asText()).isEqualTo("system");
+
+                    // The log, newest first: who, which fields, before and after — not the framework's columns.
+                    JsonNode history = get(path + "/history");
+                    assertThat(history).hasSize(2);
+                    assertThat(history.get(0).get("action").asText()).isEqualTo("UPDATE");
+                    assertThat(history.get(0).get("by").asText()).isEqualTo("bob");
+                    assertThat(history.get(0).get("fields").toString()).isEqualTo("[\\"title\\"]");
+                    assertThat(history.get(0).get("before").get("title").asText()).isEqualTo("Taxi");
+                    assertThat(history.get(0).get("after").get("title").asText()).isEqualTo("Taxi to the airport");
+                    assertThat(history.get(0).get("after").has("version")).isFalse();
+                    assertThat(history.get(1).get("action").asText()).isEqualTo("CREATE");
+                    assertThat(history.get(1).get("by").asText()).isEqualTo("alice");
+
+                    // A transition is a change like any other.
+                    send(post(path + "/transitions/submit"), "bob", null, 200);
+                    history = get(path + "/history");
+                    assertThat(history.get(0).get("fields").toString()).contains("status");
+                    long created = history.get(2).get("id").asLong();
+                    long newest = history.get(0).get("id").asLong();
+
+                    // Restoring over a change the caller has not seen is refused, then done when told to.
+                    send(post(path + "/history/" + created + "/restore"), "carol", "{\\"latest\\":" + (newest - 1) + "}", 409);
+                    JsonNode restored = send(post(path + "/history/" + created + "/restore"), "carol", "{\\"latest\\":" + newest + "}", 200);
+                    assertThat(restored.get("title").asText()).isEqualTo("Taxi");
+                    // The workflow's status moves only by its transitions.
+                    assertThat(restored.get("status").asText()).isEqualTo("SUBMITTED");
+                    assertThat(restored.get("updatedBy").asText()).isEqualTo("carol");
+                    history = get(path + "/history");
+                    assertThat(history.get(0).get("action").asText()).isEqualTo("RESTORE");
+                    assertThat(history.get(0).get("by").asText()).isEqualTo("carol");
+                    assertThat(history.get(0).get("fields").toString()).isEqualTo("[\\"title\\"]");
+                    send(post(path + "/history/" + created + "/restore"), "carol", "{\\"latest\\":1,\\"force\\":true}", 200);
+
+                    // "Changed by me": the rows the caller created or last changed.
+                    JsonNode mine = json.readTree(mvc.perform(MockMvcRequestBuilders.get("/api/expense-claims?changedBy=me&size=100")
+                            .header("userinfo", "carol")).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
+                    assertThat(mine.get("content")).isNotEmpty();
+                    for (JsonNode row : mine.get("content")) {
+                        assertThat(java.util.List.of(row.get("createdBy").asText(), row.get("updatedBy").asText())).contains("carol");
+                    }
+
+                    // A deletion is logged; it leaves no version to restore.
+                    long gone = newClaim("").get("id").asLong();
+                    send(delete("/api/expense-claims/" + gone), "dave", null, 204);
+                    JsonNode afterDelete = get("/api/expense-claims/" + gone + "/history");
+                    assertThat(afterDelete.get(0).get("action").asText()).isEqualTo("DELETE");
+                    assertThat(afterDelete.get(0).get("by").asText()).isEqualTo("dave");
+                    send(post("/api/expense-claims/" + gone + "/history/" + afterDelete.get(0).get("id").asLong() + "/restore"),
+                            "carol", "{}", 400);
+                }
+            """;
 
     /** Test methods run against the generated Approvals backend (no roles) and its demo rows. */
     private static final String LIVE_APPROVALS_TESTS = """

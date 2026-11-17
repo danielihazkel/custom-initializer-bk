@@ -9,7 +9,8 @@ import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 import { {{#viewTable}}Table, {{/viewTable}}{{#viewCards}}CardGrid, {{/viewCards}}type Column, type SortSpec, {{#listUrlState}}type ListState, {{/listUrlState}}{{#viewKanban}}KanbanBoard, {{/viewKanban}}{{#viewCalendar}}CalendarView, {{/viewCalendar}}{{#hasFilters}}FilterBar, type FilterDescriptor, type FilterValues, {{/hasFilters}}} from '@shared/ui'
 import { Alert, DetailDrawer{{#mutable}}, FormDrawer, ConfirmDialog{{/mutable}} } from '@shared/ui'
 import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
-{{#viewGallery}}import { GalleryView } from '@shared/ui/GalleryView'
+{{#historyApplicable}}import { {{EntityName}}History } from '@features/{{entityNameKebab}}-form/ui/{{EntityName}}History'
+{{/historyApplicable}}{{#viewGallery}}import { GalleryView } from '@shared/ui/GalleryView'
 {{/viewGallery}}{{#optScaffoldSavedViews}}import { ViewsMenu } from '@shared/ui/ViewsMenu'
 import type { ViewState } from '@shared/ui/savedViews'
 {{/optScaffoldSavedViews}}{{#usesFormat}}import { {{formatImports}} } from '@shared/ui/format'
@@ -41,8 +42,14 @@ type ListColumn = Column<{{EntityName}}> & { key: string }
 {{/relations}}{{#collections}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{labelTs}}', render: r => r.{{labelsField}} == null || r.{{labelsField}}.length === 0 ? '—' : r.{{labelsField}}.join(', ') },
 {{/collections}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', numeric: true, render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
   { {{#listConfigurable}}key: 'updatedAt', {{/listConfigurable}}label: t('updated'), sortKey: 'updatedAt', numeric: true, render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
+  { {{#listConfigurable}}key: 'createdBy', {{/listConfigurable}}label: t('createdBy'), sortKey: 'createdBy', render: r => r.createdBy ?? '—' },
+  { {{#listConfigurable}}key: 'updatedBy', {{/listConfigurable}}label: t('updatedBy'), sortKey: 'updatedBy', render: r => r.updatedBy ?? '—' },
 {{/auditApplicable}}{{#childLists}}  { {{#listConfigurable}}key: '{{collectionField}}Count', {{/listConfigurable}}label: '{{collectionLabelTs}}', numeric: true, render: r => r.{{collectionField}}Count == null ? '—' : String(r.{{collectionField}}Count) },
 {{/childLists}}]
+{{#auditApplicable}}
+/** Who created and last changed a row: in the Columns menu, not shown until asked for. */
+const WHO_HIDDEN = ['createdBy', 'updatedBy']
+{{/auditApplicable}}
 {{#hasViewToggle}}
 // The enabled list views, in order; drives the toolbar Tabs (a view switcher, so `bare`).
 const VIEW_TABS: { id: {{viewModeType}}; label: string }[] = [{{#viewTable}}{ id: 'table', label: t('tableView') }, {{/viewTable}}{{#viewCards}}{ id: 'cards', label: t('cardView') }, {{/viewCards}}{{#viewKanban}}{ id: 'kanban', label: t('boardView') }, {{/viewKanban}}{{#viewCalendar}}{ id: 'calendar', label: t('calendarView') }, {{/viewCalendar}}{{#viewGallery}}{ id: 'gallery', label: t('galleryView') }, {{/viewGallery}}]
@@ -183,15 +190,16 @@ function oneValue(value: string | undefined): boolean {
 {{#kanbanIsWorkflow}}
   const me = useMe()
 {{/kanbanIsWorkflow}}
-  const [hiddenColumns{{#viewTable}}, setHiddenColumns{{/viewTable}}] = useState<string[]>(prefs.hidden ?? [])
+  const [hiddenColumns{{#viewTable}}, setHiddenColumns{{/viewTable}}] = useState<string[]>(prefs.hidden ?? {{#auditApplicable}}WHO_HIDDEN{{/auditApplicable}}{{^auditApplicable}}[]{{/auditApplicable}})
   // Only what differs from how the list opens by default is kept.
   useEffect(() => {
     writeListPrefs('{{entityNameKebab}}', {
       size: size === openingSize ? undefined : size,
       sort: JSON.stringify(sort) === openingSort ? undefined : sort,
       view: viewMode === openingView ? undefined : viewMode,
-      hidden: hiddenColumns.length > 0 ? hiddenColumns : undefined,
-    })
+{{^auditApplicable}}      hidden: hiddenColumns.length > 0 ? hiddenColumns : undefined,
+{{/auditApplicable}}{{#auditApplicable}}      hidden: hiddenColumns.join() === WHO_HIDDEN.join() ? undefined : hiddenColumns,
+{{/auditApplicable}}    })
   }, [size, sort, viewMode, hiddenColumns, openingSize, openingSort, openingView])
 {{#listConfigurable}}
   // A list page may show an ordered subset of the columns.
@@ -228,7 +236,7 @@ function oneValue(value: string | undefined): boolean {
     setSort(state.sort !== undefined ? state.sort : JSON.parse(openingSort))
     setSize(state.size ?? openingSize)
 {{#hasViewToggle}}    setViewMode((state.view as {{viewModeType}} | undefined) ?? openingView)
-{{/hasViewToggle}}{{#viewTable}}    setHiddenColumns(state.hidden ?? [])
+{{/hasViewToggle}}{{#viewTable}}    setHiddenColumns(state.hidden ?? {{#auditApplicable}}WHO_HIDDEN{{/auditApplicable}}{{^auditApplicable}}[]{{/auditApplicable}})
 {{/viewTable}}{{#hasFilters}}    setFilters(state.filters ?? {})
 {{/hasFilters}}  }
 {{/optScaffoldSavedViews}}
@@ -274,10 +282,12 @@ function oneValue(value: string | undefined): boolean {
   // The board and the calendar show every matching record (up to WHOLE_VIEW_LIMIT), not one page.
   const wholeView = {{#viewKanban}}viewMode === 'kanban'{{/viewKanban}}{{#viewKanban}}{{#calendarRanged}} || {{/calendarRanged}}{{/viewKanban}}{{#calendarRanged}}(viewMode === 'calendar' && calendarRange != null){{/calendarRanged}}
 {{/wholeViews}}
-  const {
+{{#auditApplicable}}  const [changedByMe, setChangedByMe] = useState(false)
+  const withMine = (f?: Record<string, string>) => changedByMe ? { ...f, changedBy: 'me' } : f
+{{/auditApplicable}}  const {
     items, totalElements, totalPages, pageNumber, pageSize,
     loading, error, reload,{{#viewKanban}} countBy,{{/viewKanban}}{{#mutable}} create, update, remove,{{#softDeleteApplicable}} restore,{{/softDeleteApplicable}}{{/mutable}}{{#bulkDeleteApplicable}}{{#viewTable}} removeMany,{{/viewTable}}{{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}{{#viewTable}} updateMany,{{/viewTable}}{{/bulkUpdateApplicable}}{{#optScaffoldCsvExport}} exportCsv,{{/optScaffoldCsvExport}}
-  } = use{{EntityName}}({ {{#wholeViews}}page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size{{/wholeViews}}{{^wholeViews}}page, size{{/wholeViews}}, sort, q: debouncedSearch{{#hasFilters}}, filters{{#calendarRanged}}: listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/calendarRanged}}{{/hasFilters}} })
+  } = use{{EntityName}}({ {{#wholeViews}}page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size{{/wholeViews}}{{^wholeViews}}page, size{{/wholeViews}}, sort, q: debouncedSearch{{^auditApplicable}}{{#hasFilters}}, filters{{#calendarRanged}}: listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}: scopedFilters{{/pageScopeable}}{{/calendarRanged}}{{/hasFilters}}{{/auditApplicable}}{{#auditApplicable}}, filters: withMine({{#hasFilters}}{{#calendarRanged}}listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}scopedFilters{{/pageScopeable}}{{^pageScopeable}}filters{{/pageScopeable}}{{/calendarRanged}}{{/hasFilters}}){{/auditApplicable}} })
 {{#usesDownload}}  const download = useDownload()
 {{/usesDownload}}{{#optScaffoldXlsxExport}}  // The rows the list shows — its search, filters and sort — as an Excel workbook.
   const exportXlsx = () => {
@@ -651,7 +661,7 @@ function oneValue(value: string | undefined): boolean {
     hidden: hiddenColumns,
     onChange: setHiddenColumns,
     onReset: () => {
-      setHiddenColumns([])
+      setHiddenColumns({{#auditApplicable}}WHO_HIDDEN{{/auditApplicable}}{{^auditApplicable}}[]{{/auditApplicable}})
       setSize(openingSize)
       setSort(JSON.parse(openingSort))
 {{#hasViewToggle}}      setViewMode(openingView)
@@ -692,7 +702,8 @@ function oneValue(value: string | undefined): boolean {
 {{/isView}}        </div>
         <div className="flex items-center gap-2">
 {{#optScaffoldSavedViews}}          {{#hasPages}}{!embedded && {{/hasPages}}<ViewsMenu list="{{entityNameKebab}}" current={viewState} sortable={columns.flatMap(c => c.sortKey ? [c.sortKey] : [])} views={ {{{viewModesTs}}} } onApply={applyView} opensPlain={ {{#listUrlState}}listState == null || (listState.q == null && listState.sort === undefined && listState.size == null && listState.view == null && Object.keys(listState.filters ?? {}).length === 0){{/listUrlState}}{{^listUrlState}}true{{/listUrlState}} } />{{#hasPages}}}{{/hasPages}}
-{{/optScaffoldSavedViews}}{{#optScaffoldCsvExport}}          {{#listActionsConfigurable}}{can('export') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={download.busy ? t('exporting') : t('export')} onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
+{{/optScaffoldSavedViews}}{{#auditApplicable}}          <Button variant="outlined" className="mn-btn--compact" label={(changedByMe ? '✓ ' : '') + t('changedByMe')} onClick={() => setChangedByMe(on => !on)} />
+{{/auditApplicable}}{{#optScaffoldCsvExport}}          {{#listActionsConfigurable}}{can('export') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={download.busy ? t('exporting') : t('export')} onClick={() => download.run(() => exportCsv('{{entityNamePluralKebab}}.csv'))} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
 {{/optScaffoldCsvExport}}{{#optScaffoldXlsxExport}}          {{#listActionsConfigurable}}{can('export') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={t('excel')} onClick={() => download.run(exportXlsx)} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
 {{/optScaffoldXlsxExport}}{{#importApplicable}}          {{#listActionsConfigurable}}{can('import') && {{/listActionsConfigurable}}<Button variant="outlined" className="mn-btn--compact" label={t('import')} onClick={ {{#hasImportPage}}onImport ?? {{/hasImportPage}}(() => setImporting(true)) } />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
 {{/importApplicable}}{{#mutable}}          {{#listActionsConfigurable}}{can('new') && {{/listActionsConfigurable}}<Button variant="primary" className="mn-btn--compact" label={t('newX', { x: '{{entityLabelTs}}' })} {{^hasCreatePage}}onClick={openNew}{{/hasCreatePage}}{{#hasCreatePage}}onClick={onCreate ?? openNew}{{/hasCreatePage}} />{{#listActionsConfigurable}}}{{/listActionsConfigurable}}
@@ -894,6 +905,8 @@ function oneValue(value: string | undefined): boolean {
                 </div>
               </div>
               <{{EntityName}}Detail value={selectedRow} />
+{{#historyApplicable}}              <{{EntityName}}History id={String(rowKey(selectedRow))} version={selectedRow} onRestored={next => { setFetchedRow(next); void reload() }} />
+{{/historyApplicable}}
 {{#hasWorkflow}}
               <div className="mt-4 border-t border-border pt-4">
                 <{{EntityName}}Transitions row={selectedRow} onDone={next => { setFetchedRow(next); void reload() }} />
@@ -991,6 +1004,8 @@ function oneValue(value: string | undefined): boolean {
 {{/listActionsConfigurable}}{{#listActionsConfigurable}}        onEdit={can('edit') ? () => { if (detailRow) { openEdit(detailRow); setDetailRow(null) } } : undefined}
 {{/listActionsConfigurable}}{{/mutable}}      >
         {detailRow && <{{EntityName}}Detail value={detailRow} />}
+{{#historyApplicable}}        {detailRow && <{{EntityName}}History id={String(rowKey(detailRow))} version={detailRow} onRestored={next => { setDetailRow(next); void reload() }} />}
+{{/historyApplicable}}
 {{#hasWorkflow}}
         {detailRow && (
           <div className="mt-4 border-t border-border pt-4">

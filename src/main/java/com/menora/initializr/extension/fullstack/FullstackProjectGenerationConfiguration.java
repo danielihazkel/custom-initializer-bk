@@ -127,6 +127,8 @@ public class FullstackProjectGenerationConfiguration {
             projectCtx.put("usesCurrentUser", Boolean.TRUE.equals(projectCtx.get("hasWorkflows")) || entityContext.shellUser());
             // @EnableJpaAuditing ships when any entity is audited, not only with the project option.
             EntityScaffoldContext.putAudit(projectCtx, entities);
+            // The change log (history option) and who makes a change (audit columns and the log).
+            EntityScaffoldContext.putHistory(projectCtx, entities);
             // Demo rows on first start (config/DemoDataLoader, a CommandLineRunner). Backend-only;
             // the seeding order/expressions come from EntityScaffoldContext (seedEntities/seedExpr).
             // Boot 3.4 deprecated @MockBean in favour of Spring Framework 6.2's @MockitoBean and

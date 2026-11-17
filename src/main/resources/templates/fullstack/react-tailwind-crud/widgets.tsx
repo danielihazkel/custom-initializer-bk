@@ -865,6 +865,7 @@ export function ActivityFeed({ title, sources, limit, className = '' }: {
                     <span className="text-fg">{name}</span>
                   )}
                   <span className="text-muted"> · {from.label} {created ? t('activityCreated') : t('activityUpdated')}</span>
+                  {row.updatedBy != null && <span className="text-muted" dir="ltr"> · {String(row.updatedBy)}</span>}
                 </span>
                 <span className="shrink-0 text-xs tabular-nums text-muted">{timeAgo(row.updatedAt)}</span>
               </li>

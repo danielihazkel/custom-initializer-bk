@@ -20,6 +20,9 @@ export interface {{EntityName}} {
   {{labelsField}}?: string[] | null
 {{/collections}}{{#auditApplicable}}  createdAt?: string | null
   updatedAt?: string | null
+  /** Who created and who last changed the row (their user id); set by the backend, never sent. */
+  createdBy?: string | null
+  updatedBy?: string | null
 {{/auditApplicable}}{{#lockingApplicable}}  /** Optimistic-lock version: sent back on save so a stale edit is refused, never shown. */
   version?: number | null
 {{/lockingApplicable}}{{#childLists}}  {{collectionField}}Count?: number | null

@@ -10,7 +10,9 @@ import lombok.AllArgsConstructor;
 {{#isView}}import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.Subselect;
 {{/isView}}{{#auditApplicable}}import java.time.Instant;
+import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 {{/auditApplicable}}{{#softDeleteApplicable}}import org.hibernate.annotations.SQLDelete;
@@ -83,6 +85,15 @@ import org.hibernate.annotations.Formula;
     @LastModifiedDate
     @Column(name = "updated_at")
     private Instant updatedAt;
+
+    /** Who created the row: the caller's user id (config/JpaAuditingConfig), "system" outside a request. */
+    @CreatedBy
+    @Column(name = "created_by", updatable = false)
+    private String createdBy;
+
+    @LastModifiedBy
+    @Column(name = "updated_by")
+    private String updatedBy;
 
 {{/auditApplicable}}{{#lockingApplicable}}    /** Optimistic lock: bumped by every update; an update carrying an older value is refused. */
     @Version

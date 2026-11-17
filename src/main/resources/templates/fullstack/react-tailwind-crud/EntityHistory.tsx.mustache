@@ -1,0 +1,32 @@
+{{#hasLdapAuth}}import { useCallerMay } from '@shared/api/roles'
+{{/hasLdapAuth}}import { ChangeHistory, type HistoryField } from '@shared/ui/ChangeHistory'
+import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
+
+/** How each field reads in the history: its label, and an enum's labels. */
+const FIELDS: Record<string, HistoryField> = {
+{{#fields}}  '{{name}}': { label: '{{labelTs}}'{{#isEnum}}, values: { {{#enumValues}}'{{value}}': '{{labelTs}}'{{^last}}, {{/last}}{{/enumValues}} }{{/isEnum}} },
+{{/fields}}{{#relations}}  '{{fieldName}}': { label: '{{labelTs}}' },
+{{/relations}}}
+
+interface Props {
+  /** The row's key. */
+  id: string
+  /** Changes when the row has changed, so the history reads again. */
+  version?: unknown
+  /** The row as a restore left it. */
+  onRestored?: (row: {{EntityName}}) => void
+}
+
+/** The row's change history.{{#hasLdapAuth}} An admin may put it back to an earlier version.{{/hasLdapAuth}} */
+export function {{EntityName}}History({ id, version, onRestored }: Props) {
+{{#hasLdapAuth}}  const mayRestore = useCallerMay('ADMIN')
+{{/hasLdapAuth}}  return (
+    <ChangeHistory
+      path={`/api/{{entityNamePluralKebab}}/${encodeURIComponent(id)}`}
+      fields={FIELDS}
+      canRestore={ {{#hasLdapAuth}}mayRestore{{/hasLdapAuth}}{{^hasLdapAuth}}true{{/hasLdapAuth}} }
+      version={version}
+      onRestored={row => onRestored?.(row as {{EntityName}})}
+    />
+  )
+}

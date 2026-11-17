@@ -33,6 +33,56 @@
       "gatedBy": "hasAudit"
     },
     {
+      "source": "RequestUser.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/web/RequestUser.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "usesRequestUser"
+    },
+    {
+      "source": "ChangeLogEntry.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/history/ChangeLogEntry.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasHistory"
+    },
+    {
+      "source": "ChangeLogRepository.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/history/ChangeLogRepository.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasHistory"
+    },
+    {
+      "source": "ChangeLogRecorder.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/history/ChangeLogRecorder.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasHistory"
+    },
+    {
+      "source": "ChangeHistory.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/history/ChangeHistory.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 6,
+      "gatedBy": "hasHistory"
+    },
+    {
       "source": "Attachment.java.mustache",
       "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{packagePath}}/attachment/Attachment.java",

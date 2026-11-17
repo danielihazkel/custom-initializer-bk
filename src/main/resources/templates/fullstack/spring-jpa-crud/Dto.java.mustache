@@ -21,7 +21,9 @@ public record {{EntityName}}Dto(
         String {{fieldName}}Label{{/hasTargetLabel}}{{^last}},{{/last}}
 {{/relations}}{{#auditApplicable}},
         java.time.Instant createdAt,
-        java.time.Instant updatedAt{{/auditApplicable}}{{#lockingApplicable}},
+        java.time.Instant updatedAt,
+        String createdBy,
+        String updatedBy{{/auditApplicable}}{{#lockingApplicable}},
         Long version{{/lockingApplicable}}{{#childLists}},
         int {{collectionField}}Count{{/childLists}}{{#attachmentFields}},
         String {{nameField}}{{/attachmentFields}}{{#collections}},
@@ -36,7 +38,9 @@ public record {{EntityName}}Dto(
                 entity.get{{FieldName}}Label(){{/hasTargetLabel}}{{^last}},{{/last}}
 {{/relations}}{{#auditApplicable}},
                 entity.getCreatedAt(),
-                entity.getUpdatedAt(){{/auditApplicable}}{{#lockingApplicable}},
+                entity.getUpdatedAt(),
+                entity.getCreatedBy(),
+                entity.getUpdatedBy(){{/auditApplicable}}{{#lockingApplicable}},
                 entity.getVersion(){{/lockingApplicable}}{{#childLists}},
                 entity.get{{CollectionField}}Count() == null ? 0 : entity.get{{CollectionField}}Count().intValue(){{/childLists}}{{#attachmentFields}},
                 entity.get{{NameField}}(){{/attachmentFields}}{{#collections}},
