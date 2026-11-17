@@ -2,9 +2,7 @@ package com.menora.initializr;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -21,8 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * for an entity with an image field. Built for real by
  * {@code GeneratedFrontendBuildSmokeTests.fullstackFrontend*RichFields*}.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class FullstackGalleryViewTests {
 
     private static final String FE = "rota/frontend/src/";

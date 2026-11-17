@@ -1,9 +1,9 @@
 package com.menora.initializr.config;
 
+import com.menora.initializr.CatalogTest;
 import com.menora.initializr.fullstack.EntityDefinition;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>{@link InitializrWebConfiguration} is the unconditional backstop; these tests drive the
  * filter directly so the guarantee is pinned independently of any controller.
  */
-@SpringBootTest
+@CatalogTest
 class GenerationContextCleanupTests {
 
     @Autowired private InitializrWebConfiguration filter;

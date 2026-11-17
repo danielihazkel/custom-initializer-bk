@@ -4,12 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.menora.initializr.fullstack.patch.GitPatchWriterTest;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -30,8 +29,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * updated from it: {@code POST /starter.patch} compares what the old model generates with what the
  * new one does. The fullstack counterpart is {@link FullstackPatchTests}.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
+@Tag("slow") // left out of mvn test -Pquick
 class BackendPatchTests {
 
     private static final String SQL = "CREATE TABLE teams (id BIGINT PRIMARY KEY, name VARCHAR(60) NOT NULL);\n";

@@ -1,10 +1,9 @@
 package com.menora.initializr;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -28,8 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code mvn test -Dtest=FullstackGoldenOutputTests -Dgolden.update=true} and review the
  * {@code src/test/resources/golden/fullstack/*.sha} diff.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
+@Tag("slow") // left out of mvn test -Pquick
 class FullstackGoldenOutputTests {
 
     private static final List<String> FRONTEND_SETS = List.of("react-tailwind-crud", "react-menora-digital-crud");

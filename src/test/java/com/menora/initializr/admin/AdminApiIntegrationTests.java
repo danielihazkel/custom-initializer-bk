@@ -1,11 +1,10 @@
 package com.menora.initializr.admin;
 
+import com.menora.initializr.CatalogTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -31,8 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>Tests are non-mutating — validation failures don't insert, and the orphan-conflict
  * (409) path doesn't delete — so no DB cleanup is needed across the shared in-memory DB.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
+@CatalogTest
 class AdminApiIntegrationTests {
 
     @Autowired

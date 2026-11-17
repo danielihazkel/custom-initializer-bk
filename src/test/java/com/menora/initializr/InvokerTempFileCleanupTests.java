@@ -5,8 +5,6 @@ import io.spring.initializr.web.project.ProjectRequest;
 import io.spring.initializr.web.project.WebProjectRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Files;
@@ -25,8 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The map is private, so this asserts on it reflectively — that is the only way to
  * observe the leak without waiting for an OOM.
  */
-@SpringBootTest
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class InvokerTempFileCleanupTests {
 
     @Autowired

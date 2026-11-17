@@ -8,9 +8,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -37,8 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>A {@code fin} department is inserted per test and removed afterwards, so the seeded
  * single-{@code lts} state other tests (e.g. {@code DataSeederTest}) rely on is restored.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class DepartmentIntegrationTests {
 
     private static final String BACKEND_PARAMS = "groupId=com.menora&artifactId=demo"

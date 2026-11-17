@@ -2,9 +2,7 @@ package com.menora.initializr;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -29,8 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code notify} e-mails, on the Approvals example. Their behaviour over a real API is
  * {@code GeneratedBackendBuildSmokeTests} ({@code LIVE_EVENTS_TESTS}).
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class FullstackEntityEventsTests {
 
     @Autowired

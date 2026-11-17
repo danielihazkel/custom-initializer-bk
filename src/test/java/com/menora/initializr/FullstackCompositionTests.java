@@ -4,9 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -25,8 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * generated on both sides. The generated backend is driven for real by
  * {@code GeneratedBackendBuildSmokeTests.liveApiOfAComposedParentBehaves}.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class FullstackCompositionTests {
 
     private static final String BE = "shop/backend/src/main/java/com/menora/shop/";

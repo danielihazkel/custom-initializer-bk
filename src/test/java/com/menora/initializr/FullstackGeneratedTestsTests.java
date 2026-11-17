@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -21,8 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * database; the frontend gets Vitest and a test of each entity's validator and list page. Built
  * and run for real by {@code GeneratedBackendBuildSmokeTests} / {@code GeneratedFrontendBuildSmokeTests}.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class FullstackGeneratedTestsTests {
 
     private static final String BE = "support/backend/";

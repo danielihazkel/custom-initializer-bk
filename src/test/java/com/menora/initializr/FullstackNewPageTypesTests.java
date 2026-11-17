@@ -2,7 +2,6 @@ package com.menora.initializr;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
@@ -30,8 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * example ({@code projects}), and the {@code csvImport} scaffold opt they build on. The real
  * type-check/lint runs in {@code GeneratedFrontendBuildSmokeTests.fullstackFrontend*PlanningLayout*}.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class FullstackNewPageTypesTests {
 
     private static final String FE = "support/frontend/";

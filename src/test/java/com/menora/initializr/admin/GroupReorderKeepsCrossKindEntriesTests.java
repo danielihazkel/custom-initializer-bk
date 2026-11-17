@@ -1,5 +1,6 @@
 package com.menora.initializr.admin;
 
+import com.menora.initializr.CatalogTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.DependencyGroupEntity;
@@ -8,8 +9,6 @@ import com.menora.initializr.db.repository.DependencyEntryRepository;
 import com.menora.initializr.db.repository.DependencyGroupRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -27,8 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * to drop a group's cross-kind entries with {@code removeIf} on the managed orphanRemoval
  * collection, so the commit deleted those rows from the database.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
+@CatalogTest
 class GroupReorderKeepsCrossKindEntriesTests {
 
     @Autowired private MockMvc mvc;

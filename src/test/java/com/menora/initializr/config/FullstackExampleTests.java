@@ -1,11 +1,11 @@
 package com.menora.initializr.config;
 
+import com.menora.initializr.IntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.admin.FullstackExampleAdminController;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * own validator, and the {@code /admin/fullstack-examples} CRUD guards its input (auth, 400
  * for an entity model the generator would reject, 409 on a duplicate id, disabled rows hidden).
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@IntegrationTest
 class FullstackExampleTests {
 
     private static final String ADMIN = "/admin/fullstack-examples";

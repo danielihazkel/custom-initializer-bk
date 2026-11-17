@@ -3,12 +3,11 @@ package com.menora.initializr;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.fullstack.patch.GitPatchWriterTest;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -33,8 +32,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * {@code POST /starter-fullstack.patch}: what a model change does to a project a team already
  * has. The model here loses an entity and a relation, gains an entity, a relation and a field.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
+@Tag("slow") // left out of mvn test -Pquick
 class FullstackPatchTests {
 
     private static final String ROOT = "press-update/";

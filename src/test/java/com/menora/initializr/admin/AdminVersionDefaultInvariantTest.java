@@ -1,13 +1,12 @@
 package com.menora.initializr.admin;
 
+import com.menora.initializr.CatalogTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.db.entity.VersionDefinitionEntity;
 import com.menora.initializr.db.entity.VersionKind;
 import com.menora.initializr.db.repository.VersionDefinitionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -34,8 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>Auth mirrors {@link AdminApiIntegrationTests}: the admin gate is a custom bearer-token
  * filter (no Spring Security); log in with the test password to obtain the token.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
+@CatalogTest
 @Transactional
 class AdminVersionDefaultInvariantTest {
 

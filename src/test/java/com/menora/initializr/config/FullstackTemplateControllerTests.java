@@ -1,12 +1,12 @@
 package com.menora.initializr.config;
 
+import com.menora.initializr.IntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.db.repository.FullstackTemplateRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the designer binds to (content included in the list), names unique per kind, the kind filter,
  * and the 400/404/409 error paths.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@IntegrationTest
 class FullstackTemplateControllerTests {
 
     private static final String BASE = "/metadata/fullstack/templates";

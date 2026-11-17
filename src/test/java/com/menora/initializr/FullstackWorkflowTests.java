@@ -2,9 +2,7 @@ package com.menora.initializr;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -30,8 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * asking for fields, with claim/release and inbox queues over an assignee. Pinned on an expense
  * claim with a cost center; entities without a workflow keep their bytes.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class FullstackWorkflowTests {
 
     private static final String BE = "claims/backend/src/main/java/com/menora/claims/";

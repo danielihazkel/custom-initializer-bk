@@ -1,10 +1,9 @@
 package com.menora.initializr;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,8 +31,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>After an intended change: {@code mvn test -Dtest=WizardGoldenOutputTests -Dgolden.update=true},
  * then review the {@code src/test/resources/golden/wizard/*.sha} diff.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
+@Tag("slow") // left out of mvn test -Pquick
 class WizardGoldenOutputTests {
 
     @Autowired

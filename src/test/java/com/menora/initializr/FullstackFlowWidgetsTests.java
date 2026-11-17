@@ -2,9 +2,7 @@ package com.menora.initializr;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -22,8 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * only with a dashboard that draws one. Built for real by
  * {@code GeneratedFrontendBuildSmokeTests.fullstackFrontend*FlowWidgets*}.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class FullstackFlowWidgetsTests {
 
     private static final String FE = "support/frontend/src/";

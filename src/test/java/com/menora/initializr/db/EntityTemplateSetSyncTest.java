@@ -1,5 +1,6 @@
 package com.menora.initializr.db;
 
+import com.menora.initializr.CatalogTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.admin.AdminController;
@@ -12,7 +13,6 @@ import com.menora.initializr.db.repository.EntityTemplateSetRepository;
 import com.menora.initializr.db.repository.FullstackExampleRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * database, and an admin's edits survive it. Every test rolls back, so the shared context keeps
  * the freshly seeded sets.
  */
-@SpringBootTest
+@CatalogTest
 @Transactional
 class EntityTemplateSetSyncTest {
 

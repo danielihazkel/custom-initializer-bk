@@ -8,7 +8,6 @@ import com.menora.initializr.observability.GenerationAuditFilter;
 import com.menora.initializr.observability.GenerationAuditService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -33,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the period summary (generations apart from previews, per day, by kind, department and user,
  * failures by reason), the filtered events, the CSV, and retention.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@IntegrationTest
 class GenerationAuditCoverageTests {
 
     @Autowired private TestRestTemplate rest;

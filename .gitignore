@@ -5,6 +5,8 @@ pom.xml.releaseBackup
 pom.xml.versionsBackup
 pom.xml.next
 release.properties
+# Surefire's run times, for runOrder=balanced (each machine its own)
+.surefire-*
 
 # IDE
 .idea/

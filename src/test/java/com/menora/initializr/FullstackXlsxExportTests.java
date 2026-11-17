@@ -2,9 +2,7 @@ package com.menora.initializr;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -21,8 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * generated backend itself. What is generated, and for which entities. The workbook is opened for
  * real by {@code GeneratedBackendBuildSmokeTests.liveApiOfABackendWithEveryOptBehaves}.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class FullstackXlsxExportTests {
 
     private static final String BE = "shop/backend/src/main/java/com/menora/shop/";

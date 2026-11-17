@@ -2,9 +2,7 @@ package com.menora.initializr;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -31,8 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the Projects example, whose tasks are unique per project and title. Their behaviour over a real
  * API is {@code GeneratedBackendBuildSmokeTests} ({@code FIELD_MODEL_LIVE_TESTS}).
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class FullstackFieldModelTests {
 
     @Autowired

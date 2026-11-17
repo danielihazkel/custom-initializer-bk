@@ -1,5 +1,6 @@
 package com.menora.initializr.admin;
 
+import com.menora.initializr.CatalogTest;
 import com.menora.initializr.admin.dto.ConfigurationExport;
 import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.ProjectKind;
@@ -19,7 +20,6 @@ import com.menora.initializr.db.repository.StarterTemplateRepository;
 import com.menora.initializr.db.repository.VersionDefinitionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>The export contract carries {@code projectKind} (so FRONTEND rows survive a round trip)
  * and the {@code version_definition} table.
  */
-@SpringBootTest
+@CatalogTest
 @Transactional
 class ConfigurationExportImportServiceTest {
 

@@ -1,10 +1,10 @@
 package com.menora.initializr;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import com.menora.initializr.db.VersionService;
 import com.menora.initializr.db.entity.VersionKind;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
@@ -24,8 +24,8 @@ import java.util.zip.ZipInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
+@Tag("slow") // left out of mvn test -Pquick
 class FullstackStarterIntegrationTests {
 
     @Autowired

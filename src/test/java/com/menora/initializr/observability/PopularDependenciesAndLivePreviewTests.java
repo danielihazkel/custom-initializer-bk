@@ -1,10 +1,10 @@
 package com.menora.initializr.observability;
 
+import com.menora.initializr.IntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -15,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@code X-Preview-Intent: live}) staying out of the audit. Against a real embedded server, like
  * {@link GenerationAuditUsernameTests}, because the audit filter is a servlet filter.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@IntegrationTest
 class PopularDependenciesAndLivePreviewTests {
 
     @Autowired
@@ -81,10 +82,30 @@ class PopularDependenciesAndLivePreviewTests {
         return artifacts;
     }
 
+    @Autowired
+    private com.menora.initializr.observability.GenerationAuditService auditService;
+
+    /**
+     * A dependency's count, from the service with room for every dependency: the endpoint shows the
+     * top ten, and the context is shared with the classes that ran before, whose generations may
+     * have pushed one out of them. Waits for what is being written first — a request is audited
+     * after its answer has gone.
+     */
+    private long counted(String depId) throws Exception {
+        for (int i = 0; i < 10; i++) {
+            auditService.awaitIdle(java.time.Duration.ofSeconds(2));
+            Thread.sleep(100);
+        }
+        for (Map<String, Object> row : auditService.popularDependencies(false, 90, 50)) {
+            if (depId.equals(row.get("depId"))) return (Long) row.get("count");
+        }
+        return 0;
+    }
+
     @Test
     void popularDependenciesCountSuccessfulBackendGenerationsOnly() throws Exception {
-        long kafkaBefore = countOf(popular("BACKEND"), "kafka");
-        long webBefore = countOf(popular("BACKEND"), "web");
+        long kafkaBefore = counted("kafka");
+        long webBefore = counted("web");
 
         // Two generations with kafka, one of them with web too.
         assertThat(get("/starter.zip?dependencies=kafka&artifactId=pop-a&type=maven-project", null)).isEqualTo(HttpStatus.OK);
@@ -94,10 +115,11 @@ class PopularDependenciesAndLivePreviewTests {
         // Neither does a generation that failed.
         assertThat(get("/starter.zip?dependencies=kafka,no-such-dependency&artifactId=pop-d&type=maven-project", null).is2xxSuccessful()).isFalse();
 
+        assertThat(counted("kafka")).isEqualTo(kafkaBefore + 2);
+        assertThat(counted("web")).isEqualTo(webBefore + 1);
+        assertThat(counted("no-such-dependency")).isZero();
+        // The endpoint: at most ten, most used first.
         JsonNode backend = popular("BACKEND");
-        assertThat(countOf(backend, "kafka")).isEqualTo(kafkaBefore + 2);
-        assertThat(countOf(backend, "web")).isEqualTo(webBefore + 1);
-        assertThat(countOf(backend, "no-such-dependency")).isZero();
         assertThat(backend.size()).isLessThanOrEqualTo(10);
         // Most used first.
         for (int i = 1; i < backend.size(); i++) {

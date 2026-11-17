@@ -1,5 +1,6 @@
 package com.menora.initializr.db;
 
+import com.menora.initializr.CatalogTest;
 import com.menora.initializr.db.entity.BuildCustomizationEntity;
 import com.menora.initializr.db.entity.DependencyCompatibilityEntity;
 import com.menora.initializr.db.entity.DependencyEntryEntity;
@@ -24,7 +25,6 @@ import com.menora.initializr.db.repository.StarterTemplateRepository;
 import com.menora.initializr.db.repository.VersionDefinitionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 
 import java.util.List;
 
@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The test relies on {@code DataSeeder} having already run at application startup
  * (see {@code src/test/resources/application.properties}, in-memory H2).
  */
-@SpringBootTest
+@CatalogTest
 class DataSeederTest {
 
     @Autowired private DependencyGroupRepository groupRepo;

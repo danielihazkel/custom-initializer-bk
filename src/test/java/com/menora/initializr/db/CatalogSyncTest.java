@@ -1,5 +1,6 @@
 package com.menora.initializr.db;
 
+import com.menora.initializr.CatalogTest;
 import com.menora.initializr.db.CatalogSync.Report;
 import com.menora.initializr.db.CatalogSync.Result;
 import com.menora.initializr.db.CatalogSync.Row;
@@ -15,7 +16,6 @@ import com.menora.initializr.db.repository.FileContributionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the other test classes. For the same reason nothing here assumes what they left behind —
  * {@link #inStep()} first takes the shipped version of everything, inside the transaction.
  */
-@SpringBootTest
+@CatalogTest
 @Transactional
 class CatalogSyncTest {
 

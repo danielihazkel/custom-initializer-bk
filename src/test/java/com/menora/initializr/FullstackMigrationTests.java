@@ -2,9 +2,7 @@ package com.menora.initializr;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -28,8 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * proved by building: {@code GeneratedBackendBuildSmokeTests.flywayBaselineIsTheSchemaTheEntitiesExpect}
  * starts generated backends on it with {@code ddl-auto: validate}.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class FullstackMigrationTests {
 
     private static final String RESOURCES = "press/backend/src/main/resources/";

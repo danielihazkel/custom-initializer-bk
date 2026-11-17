@@ -8,8 +8,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Build (skip tests)
 mvn clean package -DskipTests
 
-# Run all tests
-mvn test
+# Run all tests, with the coverage floor (~3.5 min: 4 test JVMs, slowest classes first)
+mvn verify
+
+# The inner loop: everything but the classes tagged `slow` (the golden manifests and the suites
+# that generate many whole projects), no coverage (~2 min)
+mvn test -Pquick
+
+# One test JVM instead of four (-Dtest.forks=N for another number)
+mvn verify -Dtest.forks=1
 
 # Run a single test class
 mvn test -Dtest=ProjectGenerationIntegrationTests
@@ -30,6 +37,14 @@ curl -o test.zip "http://localhost:8080/starter.zip?dependencies=web,kafka"
 # Hot-reload metadata after DB change (no restart needed)
 curl -X POST http://localhost:8080/admin/refresh
 ```
+
+### How the test suite runs (2026-11)
+
+- **Four JVMs at once** (`test.forks` in the pom, surefire `forkCount`; `reuseForks`): classes are spread over them, one after another within a JVM. Each JVM has its own in-memory `testdb`, seeded by its first context. `runOrder=balanced` starts the slowest classes first, by the last run's times in `.surefire-*` (git-ignored); the first run on a machine has none. Measured on a 20-core machine: 9:22 in one JVM, 4:31 in four, 3:30–3:56 with the shared contexts and the balanced order; six JVMs were no faster.
+- **Two shared Spring contexts.** A context is cached by its configuration, so a class that says exactly what another says reuses its context instead of starting one (≈8 s each, ≈30 s for a JVM's first). `@IntegrationTest` (server on a random port, MockMvc, `TestInvokerConfiguration`) is the generation tests'. `@CatalogTest` (MockMvc, no server) is for the classes that **change the catalog** — the admin API, imports, the seeder, the catalog and template syncs: they reload what the application caches from it, and in the generation tests' context that left "Unknown dependency 'data-jpa'" behind for the next class. A class with its own properties or an extra bean (`AdminIdentityAndHistoryTests`, `UserInfoGateTests`, `LiveSchemaIntegrationTests`, `GlobalErrorHandlingTests`, the smoke suites) keeps its own context. **A new test class should use one of the two annotations**; a test in a shared context must not assume it ran first (`PopularDependenciesAndLivePreviewTests` counts through the service, since the endpoint's top ten can hide a dependency other classes pushed down).
+- **`@Tag("slow")`** on `FullstackStarterIntegrationTests`, `FullstackPagesIntegrationTests`, `FullstackGoldenOutputTests`, `WizardGoldenOutputTests`, `BackendPatchTests`, `FullstackPatchTests`: left out by `-Pquick` (`test.excludedGroups=slow`, `jacoco.skip=true`).
+- **Coverage** (JaCoCo) is reported and enforced in `verify`; `mvn test` only records it, `-Pquick` not even that.
+- Not done: what each context does on start is mostly a cold JVM and Hibernate; the seed runs once per JVM and the syncs on a seeded database only compare, so skipping them would save little.
 
 ## Architecture
 

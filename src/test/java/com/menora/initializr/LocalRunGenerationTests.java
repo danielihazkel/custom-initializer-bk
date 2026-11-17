@@ -3,9 +3,7 @@ package com.menora.initializr;
 import com.menora.initializr.localrun.LocalRun;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -25,8 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code testcontainers} dependency, and Flyway's database modules. What the files say is
  * {@code LocalRunTest}'s; this is where they land and when.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestInvokerConfiguration.class)
+@IntegrationTest
 class LocalRunGenerationTests {
 
     @Autowired
