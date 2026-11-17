@@ -1,0 +1,108 @@
+asyncapi: 3.0.0
+info:
+  title: Orders (Avro)
+  version: 1.0.0
+  description: >-
+    The events wizard's Avro payloads (EventsAvroTest, WizardGoldenOutputTests): a component record with
+    logical types, nested types and a union; a record in another namespace that two payloads share; two
+    kinds of message on one channel, one of which refers to a type the other defines; a schema given as
+    its JSON text; and a JSON channel beside them.
+channels:
+  orderPlaced:
+    address: orders.placed
+    description: A new order was placed
+    messages:
+      placed:
+        $ref: '#/components/messages/OrderPlaced'
+  customerEvents:
+    address: customers.events
+    messages:
+      created:
+        $ref: '#/components/messages/CustomerCreated'
+      deleted:
+        $ref: '#/components/messages/CustomerDeleted'
+  audit:
+    address: ops.audit
+    messages:
+      entry:
+        name: AuditEntry
+        payload:
+          type: object
+          properties:
+            who: { type: string }
+            what: { type: string }
+operations:
+  publishOrderPlaced:
+    action: send
+    channel:
+      $ref: '#/channels/orderPlaced'
+  onOrderPlaced:
+    action: receive
+    channel:
+      $ref: '#/channels/orderPlaced'
+  onCustomerEvent:
+    action: receive
+    channel:
+      $ref: '#/channels/customerEvents'
+  publishAudit:
+    action: send
+    channel:
+      $ref: '#/channels/audit'
+components:
+  messages:
+    OrderPlaced:
+      name: OrderPlaced
+      title: An order was placed
+      payload:
+        schemaFormat: application/vnd.apache.avro;version=1.9.0
+        schema:
+          $ref: '#/components/schemas/OrderPlaced'
+    CustomerCreated:
+      name: CustomerCreated
+      payload:
+        schemaFormat: application/vnd.apache.avro+yaml;version=1.9.0
+        schema:
+          type: record
+          name: CustomerCreated
+          fields:
+            - { name: customerId, type: string }
+            - { name: address, type: com.acme.common.Address }
+            - name: tier
+              type: { type: enum, name: Tier, symbols: [GOLD, SILVER] }
+    CustomerDeleted:
+      name: CustomerDeleted
+      payload:
+        schemaFormat: application/vnd.apache.avro+json;version=1.9.0
+        schema: '{"type": "record", "name": "CustomerDeleted", "fields": [{"name": "customerId", "type": "string"}, {"name": "tier", "type": "Tier"}]}'
+  schemas:
+    OrderPlaced:
+      type: record
+      name: OrderPlaced
+      namespace: com.acme.orders
+      doc: An order, as it was placed
+      fields:
+        - { name: id, type: long }
+        - name: placedAt
+          type: { type: long, logicalType: timestamp-millis }
+        - name: total
+          type: { type: bytes, logicalType: decimal, precision: 12, scale: 2 }
+        - name: status
+          type: { type: enum, name: OrderStatus, symbols: [NEW, PAID, SHIPPED] }
+        - name: lines
+          type:
+            type: array
+            items:
+              type: record
+              name: OrderLine
+              fields:
+                - { name: sku, type: string }
+                - { name: quantity, type: int }
+        - { name: note, type: ['null', string], default: null }
+        - { name: shipTo, type: ['null', com.acme.common.Address], default: null }
+    Address:
+      type: record
+      name: Address
+      namespace: com.acme.common
+      fields:
+        - { name: street, type: string }
+        - { name: city, type: string }

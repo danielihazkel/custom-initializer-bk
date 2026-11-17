@@ -1647,6 +1647,35 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(project, "-B", "package");
     }
 
+    /**
+     * Avro payloads, built for real: the avro-maven-plugin makes the classes from the .avsc files
+     * (in the order the pom's imports give), the producers and listeners compile against them, and
+     * the generated tests send each record through the single-object encoding and back. Needs
+     * {@code org.apache.avro:avro} and {@code avro-maven-plugin} resolvable — the company mirror
+     * has them, the offline repository does not — hence its own switch:
+     * {@code -Dsmoke.be=true -Dsmoke.avro=true}.
+     */
+    @org.junit.jupiter.api.Test
+    @EnabledIfSystemProperty(named = "smoke.avro", matches = "true")
+    void eventsWizardAvroBackendCompilesAndPassesItsTests(@TempDir Path workDir) throws Exception {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "orders");
+        body.put("packageName", "com.menora.orders");
+        body.put("bootVersion", "3.2.1");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("kafka"));
+        body.put("asyncApiByDep", Map.of("kafka", WizardGoldenOutputTests.fixture("orders-avro-asyncapi.yaml")));
+        body.put("eventOptions", Map.of("kafka", Map.of("generateTests", true, "channels", List.of(
+                Map.of("name", "orderPlaced", "produce", true, "consume", true),
+                Map.of("name", "customerEvents", "produce", true, "consume", true),
+                Map.of("name", "audit", "produce", true, "consume", true)))));
+        Path project = postAndExtractWizard(workDir, body);
+        assertThat(project.resolve("src/main/avro/com.acme.orders.OrderPlaced.avsc")).isRegularFile();
+        runMvn(project, "-B", "package");
+        assertThat(project.resolve("target/generated-sources/avro/com/acme/orders/OrderPlaced.java")).isRegularFile();
+    }
+
     /** Run inside the generated Petstore project (controllers + RestTemplate client + validation). */
     private static final String OPENAPI_CONTRACT_TESTS = """
             package com.menora.petstore;

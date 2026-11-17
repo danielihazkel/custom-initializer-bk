@@ -519,13 +519,57 @@ public class DynamicProjectGenerationConfiguration {
      * bean: the JSON starter brings both.
      */
     @Bean
-    BuildCustomizer<MavenBuild> eventsBuildCustomizer(EventsSpecContext eventsContext) {
+    BuildCustomizer<MavenBuild> eventsBuildCustomizer(ProjectDescription description, EventsSpecContext eventsContext,
+                                                      EventsCodeGenerator generator) {
         return build -> {
             if (eventsContext.isEmpty()) return;
             build.dependencies().add("events-json", Dependency
                     .withCoordinates("org.springframework.boot", "spring-boot-starter-json")
                     .scope(DependencyScope.COMPILE));
+            // Avro payloads: their .avsc files become classes when the project is built.
+            List<String> avroImports = null;
+            for (var entry : eventsContext.all().entrySet()) {
+                List<String> imports = generator.avroImports(entry.getValue(), description.getPackageName(),
+                        eventsContext.optionsFor(entry.getKey()));
+                if (imports != null) {
+                    if (avroImports == null) avroImports = new java.util.ArrayList<>();
+                    avroImports.addAll(imports);
+                }
+            }
+            if (avroImports == null) return;
+            addAvro(build, avroImports);
         };
+    }
+
+    /**
+     * Avro and the avro-maven-plugin's {@code schema} goal over {@code src/main/avro}. The files
+     * other files refer to are read first ({@code imports}): the plugin reads every file with one
+     * parser, and in no order of its own.
+     */
+    private static void addAvro(MavenBuild build, List<String> imports) {
+        VersionProperty avroVersion = VersionProperty.of("avro.version");
+        build.properties().version(avroVersion, EventsCodeGenerator.AVRO_VERSION);
+        build.dependencies().add("events-avro", Dependency.withCoordinates("org.apache.avro", "avro")
+                .version(VersionReference.ofProperty(avroVersion))
+                .scope(DependencyScope.COMPILE));
+        build.plugins().add("org.apache.avro", "avro-maven-plugin", plugin -> {
+            plugin.version("${avro.version}");
+            plugin.execution("avro-schemas", execution -> {
+                execution.phase("generate-sources");
+                execution.goal("schema");
+                execution.configuration(config -> {
+                    config.add("sourceDirectory", "${project.basedir}/src/main/avro");
+                    config.add("outputDirectory", "${project.build.directory}/generated-sources/avro");
+                    config.add("stringType", "String");
+                    config.add("enableDecimalLogicalType", "true");
+                    if (!imports.isEmpty()) {
+                        config.add("imports", list -> {
+                            for (String file : imports) list.add("import", "${project.basedir}/src/main/avro/" + file);
+                        });
+                    }
+                });
+            });
+        });
     }
 
     /**

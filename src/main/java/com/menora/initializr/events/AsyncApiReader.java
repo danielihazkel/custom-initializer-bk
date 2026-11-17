@@ -80,18 +80,30 @@ public final class AsyncApiReader {
      * @param address  where it is on the broker (the Kafka topic): 3.x's {@code address}, 2.x's key
      * @param sends    the described application sends to it
      * @param receives the described application receives from it
-     * @param problem  why no code can be written for it (a parameterized address), or null
+     * @param problem  why no code can be written for it (a parameterized address, Avro and JSON
+     *                messages on one channel), or null
      */
     public record EventChannel(String name, String address, String description, boolean sends, boolean receives,
                                List<EventMessage> messages, String problem) {
+
+        /** Every message it carries is an Avro record (and there is at least one). */
+        public boolean avro() {
+            return !messages.isEmpty() && messages.stream().allMatch(EventMessage::avro);
+        }
     }
 
     /**
      * @param name    the message's name: its {@code name}, else its key, else the channel's
      * @param payload the payload's schema as written (it may be a {@code $ref}), or null when the
      *                message declares none
+     * @param avro    the payload is an Avro schema ({@code schemaFormat: application/vnd.apache.avro…}),
+     *                not JSON Schema
      */
-    public record EventMessage(String name, String title, JsonNode payload) {
+    public record EventMessage(String name, String title, JsonNode payload, boolean avro) {
+
+        public EventMessage(String name, String title, JsonNode payload) {
+            this(name, title, payload, false);
+        }
     }
 
     public static AsyncApiDocument read(String document) {
@@ -170,7 +182,7 @@ public final class AsyncApiReader {
                     }
                 }
                 out.add(new EventChannel(address, address, text(channel, "description"), sent.isObject(), received.isObject(),
-                        List.copyOf(messages.values()), problemOf(address)));
+                        List.copyOf(messages.values()), problemOf(address, messages)));
             }
             return out;
         }
@@ -218,7 +230,7 @@ public final class AsyncApiReader {
                     addMessage(messages, m.getValue(), m.getKey(), name);
                 }
                 out.add(new EventChannel(name, address, text(channel, "description"),
-                        sends.containsKey(name), receives.containsKey(name), List.copyOf(messages.values()), problemOf(address)));
+                        sends.containsKey(name), receives.containsKey(name), List.copyOf(messages.values()), problemOf(address, messages)));
             }
             return out;
         }
@@ -242,13 +254,30 @@ public final class AsyncApiReader {
                 format = payload.path("schemaFormat").asText(null);
                 payload = payload.path("schema");
             }
-            if (format != null && !isJsonSchema(format)) {
+            boolean avro = format != null && isAvro(format);
+            if (format != null && !avro && !isJsonSchema(format)) {
                 problems.add("Message '" + name + "' has schemaFormat '" + format
-                        + "': the wizard reads JSON Schema payloads only (AsyncAPI's own format, JSON Schema or OpenAPI)");
+                        + "': the wizard reads JSON Schema and Avro payloads (AsyncAPI's own format, JSON Schema, "
+                        + "OpenAPI or application/vnd.apache.avro)");
                 return;
             }
+            if (avro) {
+                // An Avro schema is sometimes given as its JSON text.
+                if (payload.isTextual() && payload.asText().trim().startsWith("{")) {
+                    try {
+                        payload = JSON.readTree(payload.asText());
+                    } catch (Exception e) {
+                        problems.add("Message '" + name + "' has an Avro schema that is not valid JSON");
+                        return;
+                    }
+                }
+                if (payload.isMissingNode() || payload.isNull()) {
+                    problems.add("Message '" + name + "' says its payload is Avro but gives no schema");
+                    return;
+                }
+            }
             into.putIfAbsent(name, new EventMessage(name, text(message, "title") != null ? text(message, "title")
-                    : text(message, "summary"), payload.isMissingNode() || payload.isNull() ? null : payload));
+                    : text(message, "summary"), payload.isMissingNode() || payload.isNull() ? null : payload, avro));
         }
 
         private static boolean isJsonSchema(String format) {
@@ -257,9 +286,17 @@ public final class AsyncApiReader {
                     || f.startsWith("application/schema+yaml") || f.startsWith("application/vnd.oai.openapi");
         }
 
-        /** A Kafka topic is a fixed name: an address with a parameter in it is not one. */
-        private static String problemOf(String address) {
-            return address.contains("{") ? "its address has a parameter ('" + address + "'), which a Kafka topic cannot have" : null;
+        /**
+         * A Kafka topic is a fixed name: an address with a parameter in it is not one. One channel's
+         * messages travel either as Avro or as JSON: a listener cannot tell the two apart.
+         */
+        private static String problemOf(String address, Map<String, EventMessage> messages) {
+            if (address.contains("{")) return "its address has a parameter ('" + address + "'), which a Kafka topic cannot have";
+            long avro = messages.values().stream().filter(EventMessage::avro).count();
+            if (avro > 0 && avro < messages.size()) {
+                return "it carries Avro and JSON messages together, and one topic is read one way";
+            }
+            return null;
         }
 
         /** Follows {@code $ref}s inside the document. One that points outside it is a problem. */
@@ -293,6 +330,11 @@ public final class AsyncApiReader {
             JsonNode value = node.path(field);
             return value.isTextual() && !value.asText().isBlank() ? value.asText() : null;
         }
+    }
+
+    /** {@code application/vnd.apache.avro;version=…}, and its {@code +json} / {@code +yaml} forms. */
+    static boolean isAvro(String format) {
+        return format.toLowerCase(Locale.ROOT).startsWith("application/vnd.apache.avro");
     }
 
     /** {@code components.schemas} of the document, or an empty object. */

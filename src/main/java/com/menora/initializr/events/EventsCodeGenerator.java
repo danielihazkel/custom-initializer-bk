@@ -50,9 +50,16 @@ public class EventsCodeGenerator {
     /** {@code relativePath} may contain {@code {{packagePath}}}, resolved when the file is written. */
     public record GeneratedEventFile(String relativePath, String content) {}
 
-    /** What the wizard's drawer shows of a channel before anything is generated. */
+    /**
+     * What the wizard's drawer shows of a channel before anything is generated.
+     *
+     * @param format {@code avro} when its messages are Avro records, else {@code json}
+     */
     public record DetectedChannel(String name, String address, boolean sends, boolean receives,
-                                  List<String> messages, String problem) {}
+                                  List<String> messages, String problem, String format) {}
+
+    /** The version of Avro (and of its Maven plugin) a project with Avro payloads is given. */
+    public static final String AVRO_VERSION = "1.11.4";
 
     /** @param validation the validation starter is on the build: payload constraints are written */
     public record ProjectFacts(boolean validation) {
@@ -65,9 +72,21 @@ public class EventsCodeGenerator {
         List<DetectedChannel> out = new ArrayList<>();
         for (EventChannel c : AsyncApiReader.read(document).channels()) {
             out.add(new DetectedChannel(c.name(), c.address(), c.sends(), c.receives(),
-                    c.messages().stream().map(EventMessage::name).toList(), c.problem()));
+                    c.messages().stream().map(EventMessage::name).toList(), c.problem(), c.avro() ? "avro" : "json"));
         }
         return out;
+    }
+
+    /**
+     * The {@code .avsc} files the avro-maven-plugin must read before the others (names under
+     * {@code src/main/avro}), or null when the document has no Avro schema — the build then gets
+     * neither Avro nor the plugin.
+     */
+    public List<String> avroImports(String document, String packageName, EventsWizardOptions options) {
+        if (document == null || document.isBlank()) return null;
+        EventsWizardOptions opts = options == null ? EventsWizardOptions.DEFAULTS : options;
+        AvroSchemas avro = new AvroSchemas(AsyncApiReader.read(document), packageName + "." + opts.payloadPackageOrDefault());
+        return avro.isEmpty() ? null : avro.imports();
     }
 
     public List<GeneratedEventFile> generate(String document, String packageName, EventsWizardOptions options,
@@ -80,22 +99,35 @@ public class EventsCodeGenerator {
 
         String payloadPackage = packageName + "." + opts.payloadPackageOrDefault();
         String eventsPackage = packageName + "." + opts.packageOrDefault();
-        Payloads payloads = new Payloads(doc, facts.validation(), payloadPackage);
+        AvroSchemas avro = new AvroSchemas(doc, payloadPackage);
+        Payloads payloads = new Payloads(doc, facts.validation(), payloadPackage, avro.components());
 
         List<GeneratedEventFile> out = new ArrayList<>();
         Map<String, String> topics = new LinkedHashMap<>();
         List<Map<String, Object>> rendered = new ArrayList<>();
         Set<String> usedStems = new LinkedHashSet<>();
+        boolean anyAvro = false;
         for (Planned p : plan) {
             String stem = uniqueStem(p.channel().name(), usedStems);
             String topicKey = Naming.toKebabCase(stem);
             topics.put(topicKey, p.channel().address());
-            List<MessageType> messages = new ArrayList<>();
-            for (EventMessage m : p.channel().messages()) messages.add(payloads.typeOf(m));
-            Map<String, Object> view = channelView(p.channel(), stem, topicKey, messages, eventsPackage, opts);
+            Map<String, Object> view;
+            if (p.channel().avro()) {
+                anyAvro = true;
+                view = avroChannelView(p.channel(), stem, topicKey, avro, eventsPackage, opts);
+            } else {
+                List<MessageType> messages = new ArrayList<>();
+                for (EventMessage m : p.channel().messages()) messages.add(payloads.typeOf(m));
+                view = channelView(p.channel(), stem, topicKey, messages, eventsPackage, opts);
+            }
+            view.put("avro", p.channel().avro());
             view.put("produce", p.produce());
             view.put("consume", p.consume());
             rendered.add(view);
+        }
+        // The Avro schemas: the plugin makes their classes when the project is built.
+        for (AvroSchemas.AvroFile f : avro.files()) {
+            out.add(new GeneratedEventFile(AvroSchemas.DIRECTORY + "/" + f.fileName(), f.content()));
         }
         // The payload types: every schema the document names, and each payload written in place.
         String payloadPath = opts.payloadPackageOrDefault().replace('.', '/');
@@ -106,22 +138,27 @@ public class EventsCodeGenerator {
         String eventsPath = opts.packageOrDefault().replace('.', '/');
         for (Map<String, Object> view : rendered) {
             String stem = (String) view.get("stem");
+            String kind = (boolean) view.get("avro") ? "events/Avro" : "events/";
             if ((boolean) view.get("produce")) {
                 out.add(new GeneratedEventFile("src/main/java/{{packagePath}}/" + eventsPath + "/" + stem + "Producer.java",
-                        WizardTemplates.render("events/Producer.java", view)));
+                        WizardTemplates.render(kind + "Producer.java", view)));
                 if (opts.generateTests()) {
                     out.add(new GeneratedEventFile("src/test/java/{{packagePath}}/" + eventsPath + "/" + stem + "ProducerTest.java",
-                            WizardTemplates.render("events/ProducerTest.java", view)));
+                            WizardTemplates.render(kind + "ProducerTest.java", view)));
                 }
             }
             if ((boolean) view.get("consume")) {
                 out.add(new GeneratedEventFile("src/main/java/{{packagePath}}/" + eventsPath + "/" + stem + "Listener.java",
-                        WizardTemplates.render("events/Listener.java", view)));
+                        WizardTemplates.render(kind + "Listener.java", view)));
                 if (opts.generateTests()) {
                     out.add(new GeneratedEventFile("src/test/java/{{packagePath}}/" + eventsPath + "/" + stem + "ListenerTest.java",
-                            WizardTemplates.render("events/ListenerTest.java", view)));
+                            WizardTemplates.render(kind + "ListenerTest.java", view)));
                 }
             }
+        }
+        if (anyAvro) {
+            out.add(new GeneratedEventFile("src/main/java/{{packagePath}}/" + eventsPath + "/AvroKafkaConfig.java",
+                    WizardTemplates.render("events/AvroKafkaConfig.java", Map.of("package", eventsPackage))));
         }
         out.add(new GeneratedEventFile("src/main/resources/application.yaml", topicsYaml(topics)));
         return out;
@@ -188,12 +225,14 @@ public class EventsCodeGenerator {
         private final SchemaSet schemas;
         private final Map<String, String> schemaOfMessage = new LinkedHashMap<>();
 
-        Payloads(AsyncApiDocument doc, boolean validation, String payloadPackage) {
+        /** @param avroComponents the keys of {@code components.schemas} that are Avro, which are not JSON Schema */
+        Payloads(AsyncApiDocument doc, boolean validation, String payloadPackage, Set<String> avroComponents) {
             this.doc = doc;
             ObjectNode componentSchemas = AsyncApiReader.schemasOf(doc.root());
+            componentSchemas.remove(avroComponents);
             for (EventChannel channel : doc.channels()) {
                 for (EventMessage message : channel.messages()) {
-                    if (message.payload() == null || schemaOfMessage.containsKey(message.name())) continue;
+                    if (message.avro() || message.payload() == null || schemaOfMessage.containsKey(message.name())) continue;
                     String ref = message.payload().path("$ref").asText("");
                     if (ref.startsWith("#/components/schemas/")) {
                         schemaOfMessage.put(message.name(), ref.substring("#/components/schemas/".length()));
@@ -377,6 +416,106 @@ public class EventsCodeGenerator {
         view.put("testImports", testImports);
         view.put("hasTestImports", !testImports.isEmpty());
         view.put("hasAnySample", typed.stream().anyMatch(m -> m.sample() != null));
+        return view;
+    }
+
+    /**
+     * A channel whose messages are Avro records: their classes are the ones the avro-maven-plugin
+     * makes from the {@code .avsc} files, named by each record's full name.
+     */
+    private static Map<String, Object> avroChannelView(EventChannel channel, String stem, String topicKey,
+                                                       AvroSchemas avro, String eventsPackage,
+                                                       EventsWizardOptions opts) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("package", eventsPackage);
+        view.put("stem", stem);
+        view.put("addressJavadoc", SchemaRecordEmitter.escapeJavadoc(channel.address()));
+        view.put("addressString", SchemaRecordEmitter.javaString(channel.address()));
+        boolean described = channel.description() != null;
+        view.put("hasDescription", described);
+        view.put("descriptionJavadoc", described ? SchemaRecordEmitter.escapeJavadoc(channel.description()) : null);
+        view.put("topicPlaceholder", "${app.events.topics." + topicKey + "}");
+        view.put("topicProperty", "app.events.topics." + topicKey);
+        view.put("groupId", opts.groupId() == null || opts.groupId().isBlank()
+                ? "${spring.kafka.consumer.group-id}" : SchemaRecordEmitter.javaString(opts.groupId().trim()));
+
+        record Sent(EventMessage message, AvroSchemas.AvroType type) {}
+        List<Sent> sent = new ArrayList<>();
+        for (EventMessage m : channel.messages()) sent.add(new Sent(m, avro.typeOf(m)));
+        // A class is imported by its simple name unless two of the channel's share one.
+        List<String> fullNames = sent.stream().map(s -> s.type().javaType()).distinct().toList();
+        Set<String> simpleNames = new LinkedHashSet<>();
+        boolean clash = false;
+        for (String full : fullNames) clash |= !simpleNames.add(full.substring(full.lastIndexOf('.') + 1));
+        boolean imported = !clash;
+        java.util.function.Function<String, String> shown = full -> imported ? full.substring(full.lastIndexOf('.') + 1) : full;
+        Set<String> typeImports = new TreeSet<>();
+        if (imported) {
+            for (String full : fullNames) {
+                if (full.contains(".") && !isIn(full, eventsPackage)) typeImports.add(full);
+            }
+        }
+
+        boolean single = sent.size() == 1;
+        List<Map<String, Object>> sends = new ArrayList<>();
+        Set<String> usedMethods = new LinkedHashSet<>();
+        for (Sent s : sent) {
+            Map<String, Object> mv = new LinkedHashMap<>();
+            String method = single ? "send"
+                    : "send" + SchemaRecordEmitter.toPascalCase(s.message().name().replaceAll("[^A-Za-z0-9]+", " ").trim());
+            String candidate = method;
+            for (int n = 2; !usedMethods.add(candidate); n++) candidate = method + n;
+            mv.put("method", candidate);
+            mv.put("type", shown.apply(s.type().javaType()));
+            mv.put("hasTitle", s.message().title() != null);
+            mv.put("titleJavadoc", s.message().title() == null ? null : SchemaRecordEmitter.escapeJavadoc(s.message().title()));
+            mv.put("hasSample", s.type().sample() != null);
+            mv.put("sample", s.type().sample());
+            mv.put("testName", candidate + "WritesAvroToTheTopic");
+            sends.add(mv);
+        }
+        view.put("sends", sends);
+        view.put("hasAnySample", sent.stream().anyMatch(s -> s.type().sample() != null));
+
+        // The listener: the one class, or SpecificRecord when several kinds share the channel.
+        boolean several = fullNames.size() > 1;
+        view.put("hasCandidates", several);
+        view.put("listenerType", several ? "SpecificRecord" : shown.apply(fullNames.get(0)));
+        view.put("candidates", fullNames.stream().map(f -> Map.of("type", shown.apply(f))).toList());
+        view.put("candidatesText", String.join(", ", fullNames.stream().map(shown).toList()));
+        String listenerSample = sent.stream().map(s -> s.type().sample()).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        view.put("hasListenerSample", listenerSample != null);
+        view.put("listenerSample", listenerSample);
+
+        Set<String> producerImports = new TreeSet<>(typeImports);
+        producerImports.addAll(List.of(
+                "java.io.IOException",
+                "java.io.UncheckedIOException",
+                "java.nio.ByteBuffer",
+                "java.util.concurrent.CompletableFuture",
+                "org.springframework.beans.factory.annotation.Qualifier",
+                "org.springframework.beans.factory.annotation.Value",
+                "org.springframework.kafka.core.KafkaTemplate",
+                "org.springframework.kafka.support.SendResult",
+                "org.springframework.stereotype.Component"));
+        view.put("producerImports", producerImports);
+
+        Set<String> listenerImports = new TreeSet<>(typeImports);
+        if (several) {
+            listenerImports.add("org.apache.avro.message.MissingSchemaException");
+            listenerImports.add("org.apache.avro.specific.SpecificRecord");
+        }
+        listenerImports.addAll(List.of(
+                "java.io.IOException",
+                "org.apache.kafka.clients.consumer.ConsumerRecord",
+                "org.slf4j.Logger",
+                "org.slf4j.LoggerFactory",
+                "org.springframework.kafka.annotation.KafkaListener",
+                "org.springframework.stereotype.Component"));
+        view.put("listenerImports", listenerImports);
+
+        // The producer's test names the payload classes; the listener's makes a value by its full name.
+        view.put("testImports", typeImports);
         return view;
     }
 

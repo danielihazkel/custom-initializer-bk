@@ -1,0 +1,39 @@
+package {{package}};
+
+import org.apache.avro.AvroRuntimeException;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.Test;
+
+import java.nio.charset.StandardCharsets;
+
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/** {{stem}}Listener without a broker: a record in, as the container would hand it over. */
+class {{stem}}ListenerTest {
+
+    private final {{stem}}Listener listener = new {{stem}}Listener();
+
+    private static ConsumerRecord<String, byte[]> record(byte[] value) {
+        return new ConsumerRecord<>("topic-under-test", 0, 0L, "key-1", value);
+    }
+
+{{#hasListenerSample}}
+    @Test
+    void readsAMessage() throws Exception {
+        java.nio.ByteBuffer buffer = {{listenerSample}}.toByteBuffer();
+        byte[] value = new byte[buffer.remaining()];
+        buffer.get(value);
+
+        assertThatCode(() -> listener.onMessage(record(value))).doesNotThrowAnyException();
+    }
+
+{{/hasListenerSample}}
+    @Test
+    void refusesWhatIsNotAvro() {
+        byte[] value = "this is not an Avro message".getBytes(StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> listener.onMessage(record(value)))
+                .isInstanceOf(AvroRuntimeException.class);
+    }
+}

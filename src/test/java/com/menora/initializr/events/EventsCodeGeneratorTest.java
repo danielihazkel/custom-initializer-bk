@@ -103,16 +103,16 @@ class EventsCodeGeneratorTest {
                 .hasMessageContaining("AsyncAPI 1.2.0 is not supported");
         assertThatThrownBy(() -> AsyncApiReader.read("asyncapi: 3.0.0\ninfo: {title: t, version: '1'}"))
                 .hasMessageContaining("declares no channels");
-        // A payload that is not JSON Schema, a reference out of the document, one into nothing.
+        // A payload that is neither JSON Schema nor Avro, a reference out of the document, one into nothing.
         assertThatThrownBy(() -> AsyncApiReader.read("""
                 asyncapi: 2.6.0
                 channels:
                   a:
                     publish:
                       message:
-                        name: Avro
-                        schemaFormat: application/vnd.apache.avro;version=1.9.0
-                        payload: { type: record }
+                        name: Proto
+                        schemaFormat: application/vnd.google.protobuf;version=3
+                        payload: 'message Order {}'
                   b:
                     publish:
                       message: { $ref: './messages.yaml#/Order' }
@@ -121,7 +121,7 @@ class EventsCodeGeneratorTest {
                       message: { $ref: '#/components/messages/Missing' }
                 """))
                 .isInstanceOfSatisfying(AsyncApiParseException.class, e -> assertThat(e.messages()).hasSize(3)
-                        .anySatisfy(m -> assertThat(m).contains("Message 'Avro' has schemaFormat 'application/vnd.apache.avro;version=1.9.0'"))
+                        .anySatisfy(m -> assertThat(m).contains("Message 'Proto' has schemaFormat 'application/vnd.google.protobuf;version=3'"))
                         .anySatisfy(m -> assertThat(m).contains("'./messages.yaml#/Order'").contains("self-contained"))
                         .anySatisfy(m -> assertThat(m).contains("'#/components/messages/Missing'").contains("does not contain")));
         // JSON is read too.

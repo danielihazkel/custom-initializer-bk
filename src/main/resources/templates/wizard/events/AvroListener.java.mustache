@@ -1,0 +1,55 @@
+package {{package}};
+
+{{#listenerImports}}
+import {{.}};
+{{/listenerImports}}
+
+/**
+ * Receives from {@code {{addressJavadoc}}}{{#hasDescription}}: {{descriptionJavadoc}}{{/hasDescription}}.
+ * The topic's name is the property {@code {{topicProperty}}}; a message arrives as Avro, in the
+ * single-object encoding, with no schema registry (see {@link AvroKafkaConfig}).
+{{#hasCandidates}}
+ *
+ * <p>The channel carries several kinds of message ({{candidatesText}}). Each is told apart by
+ * the fingerprint of its schema, which the encoding carries: {@link #decode} tries each one's
+ * decoder.
+{{/hasCandidates}}
+ */
+@Component
+public class {{stem}}Listener {
+
+    private static final Logger log = LoggerFactory.getLogger({{stem}}Listener.class);
+
+    /** A message that is not one of the records expected fails here, and is the container's error handler's to deal with. */
+    @KafkaListener(topics = "{{topicPlaceholder}}", groupId = "{{groupId}}",
+            containerFactory = AvroKafkaConfig.LISTENER_FACTORY)
+    public void onMessage(ConsumerRecord<String, byte[]> record) throws IOException {
+{{^hasCandidates}}
+        {{listenerType}} payload = {{listenerType}}.getDecoder().decode(record.value());
+        handle(record.key(), payload);
+{{/hasCandidates}}
+{{#hasCandidates}}
+        handle(record.key(), decode(record.value()));
+{{/hasCandidates}}
+    }
+{{#hasCandidates}}
+
+    /** The message as the record it is: a decoder knows only the fingerprint of its own schema. */
+    static SpecificRecord decode(byte[] value) throws IOException {
+{{#candidates}}
+        try {
+            return {{type}}.getDecoder().decode(value);
+        } catch (MissingSchemaException notThisOne) {
+            // another kind of message
+        }
+{{/candidates}}
+        throw new MissingSchemaException("The message is none of {{candidatesText}}: its schema's fingerprint is unknown");
+    }
+{{/hasCandidates}}
+
+    /** What the application does with a message.{{#hasCandidates}} Tell the kinds apart with {@code instanceof}.{{/hasCandidates}} */
+    void handle(String key, {{listenerType}} payload) {
+        // TODO: implement
+        log.info("Received a message from {}: key={}", "{{addressString}}", key);
+    }
+}

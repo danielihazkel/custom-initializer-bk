@@ -1,0 +1,42 @@
+package {{package}};
+
+{{#producerImports}}
+import {{.}};
+{{/producerImports}}
+
+/**
+ * Sends to {@code {{addressJavadoc}}}{{#hasDescription}}: {{descriptionJavadoc}}{{/hasDescription}}.
+ * The topic's name is the property {@code {{topicProperty}}}; a message travels as Avro, in the
+ * single-object encoding, with no schema registry (see {@link AvroKafkaConfig}).
+ */
+@Component
+public class {{stem}}Producer {
+
+    private final KafkaTemplate<String, byte[]> kafkaTemplate;
+    private final String topic;
+
+    public {{stem}}Producer(@Qualifier(AvroKafkaConfig.TEMPLATE) KafkaTemplate<String, byte[]> kafkaTemplate,
+            @Value("{{topicPlaceholder}}") String topic) {
+        this.kafkaTemplate = kafkaTemplate;
+        this.topic = topic;
+    }
+
+{{#sends}}
+{{#hasTitle}}
+    /** {{titleJavadoc}} */
+{{/hasTitle}}
+    public CompletableFuture<SendResult<String, byte[]>> {{method}}(String key, {{type}} payload) {
+        try {
+            return kafkaTemplate.send(topic, key, bytes(payload.toByteBuffer()));
+        } catch (IOException e) {
+            throw new UncheckedIOException("The payload could not be written as Avro", e);
+        }
+    }
+
+{{/sends}}
+    private static byte[] bytes(ByteBuffer buffer) {
+        byte[] out = new byte[buffer.remaining()];
+        buffer.get(out);
+        return out;
+    }
+}

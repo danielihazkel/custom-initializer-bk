@@ -1,0 +1,54 @@
+package {{package}};
+
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.ProducerFactory;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Kafka for the channels whose messages are Avro: the application's own producer and consumer
+ * settings (servers, security, acknowledgements — the {@code ProducerFactory} and
+ * {@code ConsumerFactory} the project already has), with the value written and read as bytes.
+ *
+ * <p>A message is an Avro record in the single-object encoding: a two-byte marker, the 8-byte
+ * fingerprint of the schema it was written with, then the record. There is no schema registry:
+ * the producer and the consumer must hold the same schema (the {@code .avsc} files under
+ * {@code src/main/avro}), and a change to one must be made on both sides. A consumer that has to
+ * read an older version too can add it to the decoder ({@code Type.getDecoder()} is built from
+ * the current schema; {@code new BinaryMessageDecoder<>(SpecificData.get(), schema)} plus
+ * {@code addSchema(old)} reads both).
+ */
+@Configuration
+public class AvroKafkaConfig {
+
+    public static final String TEMPLATE = "avroKafkaTemplate";
+    public static final String LISTENER_FACTORY = "avroListenerContainerFactory";
+
+    @Bean(TEMPLATE)
+    public KafkaTemplate<String, byte[]> avroKafkaTemplate(ProducerFactory<?, ?> producerFactory) {
+        Map<String, Object> props = new HashMap<>(producerFactory.getConfigurationProperties());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+        return new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(props));
+    }
+
+    @Bean(LISTENER_FACTORY)
+    public ConcurrentKafkaListenerContainerFactory<String, byte[]> avroListenerContainerFactory(
+            ConsumerFactory<?, ?> consumerFactory) {
+        Map<String, Object> props = new HashMap<>(consumerFactory.getConfigurationProperties());
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
+        ConcurrentKafkaListenerContainerFactory<String, byte[]> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(props));
+        return factory;
+    }
+}

@@ -1271,6 +1271,45 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void eventsWizardWithAvroPayloadsAddsTheSchemasAndThePlugin() throws Exception {
+        String document;
+        try (var in = new org.springframework.core.io.ClassPathResource("wizard-fixtures/orders-avro-asyncapi.yaml").getInputStream()) {
+            document = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        Map<String, Object> body = openApiBaseBody();
+        body.put("dependencies", List.of("kafka"));
+        body.put("asyncApiByDep", Map.of("kafka", document));
+        ResponseEntity<byte[]> response = restTemplate.postForEntity("/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> files = unzip(response.getBody());
+        assertThat(files).containsKeys(
+                "demo/src/main/avro/com.acme.orders.OrderPlaced.avsc",
+                "demo/src/main/avro/com.acme.common.Address.avsc",
+                "demo/src/main/java/com/menora/demo/events/AvroKafkaConfig.java",
+                "demo/src/main/java/com/menora/demo/events/OrderPlacedProducer.java",
+                // The catalog's String configuration stays for the JSON channels.
+                "demo/src/main/java/com/menora/demo/config/KafkaConfig.java");
+        assertThat(files.get("demo/pom.xml"))
+                .contains("<avro.version>" + com.menora.initializr.events.EventsCodeGenerator.AVRO_VERSION + "</avro.version>")
+                .contains("<groupId>org.apache.avro</groupId>")
+                .contains("<artifactId>avro-maven-plugin</artifactId>")
+                .contains("<goal>schema</goal>")
+                .contains("<stringType>String</stringType>")
+                .contains("<import>${project.basedir}/src/main/avro/com.acme.common.Address.avsc</import>")
+                .contains("<import>${project.basedir}/src/main/avro/com.menora.demo.events.model.CustomerCreated.avsc</import>");
+        // The drawer is told which channels are Avro.
+        ResponseEntity<String> detected = restTemplate.postForEntity("/starter-wizard.detect-channels",
+                Map.of("spec", document), String.class);
+        assertThat(detected.getBody()).contains("\"name\":\"orderPlaced\"").contains("\"format\":\"avro\"")
+                .contains("\"format\":\"json\"");
+
+        // Without Avro in the document, neither Avro nor the plugin.
+        body.put("asyncApiByDep", Map.of("kafka", EVENTS_DOCUMENT));
+        Map<String, String> plain = unzip(restTemplate.postForEntity("/starter-wizard.zip", body, byte[].class).getBody());
+        assertThat(plain.get("demo/pom.xml")).doesNotContain("avro");
+    }
+
+    @Test
     void eventsWizardEndpointsSayWhatADocumentHasAndWhyOneIsRefused() {
         assertThat(restTemplate.getForEntity("/metadata/events-capable-deps", String.class).getBody()).contains("kafka");
 

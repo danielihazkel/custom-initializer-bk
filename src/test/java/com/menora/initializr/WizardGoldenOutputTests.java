@@ -107,6 +107,9 @@ class WizardGoldenOutputTests {
                 Map.of("name", "inventory.stock-levels", "produce", true, "consume", true)));
         golden.pin("events__asyncapi2__chosen-channels__tests", wizard(eventsBody("orders-asyncapi-v2.yaml",
                 List.of("kafka", "validation"), otherParty)));
+        // Avro payloads: .avsc files, the plugin in the pom, byte[] producers and listeners, a JSON channel beside them.
+        golden.pin("events__avro__tests", wizard(eventsBody("orders-avro-asyncapi.yaml", List.of("kafka"),
+                Map.of("generateTests", true))));
 
         // The SOAP wizard: endpoints, a client, both.
         golden.pin("soap__endpoints", wizard(soapBody("ENDPOINTS", null)));
