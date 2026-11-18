@@ -57,17 +57,17 @@ class TemplateSpliceGuardTest {
     @Test
     void escapesForEachPlaceATemplateSplicesText() {
         // A single-quoted TS literal: backslash, apostrophe and line breaks.
-        assertThat(EntityScaffoldContext.tsLiteralBody("מס' \\ a\r\nb")).isEqualTo("מס\\' \\\\ a\\nb");
-        assertThat(EntityScaffoldContext.tsLiteralBody("מע\"מ")).isEqualTo("מע\"מ");
+        assertThat(TemplateText.tsLiteralBody("מס' \\ a\r\nb")).isEqualTo("מס\\' \\\\ a\\nb");
+        assertThat(TemplateText.tsLiteralBody("מע\"מ")).isEqualTo("מע\"מ");
         // A JSX attribute reads character references, not backslash escapes.
-        assertThat(EntityScaffoldContext.escapeJsxAttr("מע\"מ")).isEqualTo("מע&quot;מ");
-        assertThat(EntityScaffoldContext.escapeJsxAttr("it's a \\ <b> {c}")).isEqualTo("it's a \\ <b> {c}");
+        assertThat(TemplateText.escapeJsxAttr("מע\"מ")).isEqualTo("מע&quot;מ");
+        assertThat(TemplateText.escapeJsxAttr("it's a \\ <b> {c}")).isEqualTo("it's a \\ <b> {c}");
         // Only an ampersand that would start a reference is escaped: plain text keeps its bytes.
-        assertThat(EntityScaffoldContext.escapeJsxAttr("Terms & Conditions")).isEqualTo("Terms & Conditions");
-        assertThat(EntityScaffoldContext.escapeJsxAttr("a &amp; b &#39; c")).isEqualTo("a &amp;amp; b &amp;#39; c");
+        assertThat(TemplateText.escapeJsxAttr("Terms & Conditions")).isEqualTo("Terms & Conditions");
+        assertThat(TemplateText.escapeJsxAttr("a &amp; b &#39; c")).isEqualTo("a &amp;amp; b &amp;#39; c");
         // JSX children: braces start an expression, angle brackets a tag.
-        assertThat(EntityScaffoldContext.escapeJsxText("a {b} <c> 'd' \"e\""))
+        assertThat(TemplateText.escapeJsxText("a {b} <c> 'd' \"e\""))
                 .isEqualTo("a &#123;b&#125; &lt;c&gt; 'd' \"e\"");
-        assertThat(EntityScaffoldContext.escapeJsxText("R&D &lt;")).isEqualTo("R&D &amp;lt;");
+        assertThat(TemplateText.escapeJsxText("R&D &lt;")).isEqualTo("R&D &amp;lt;");
     }
 }

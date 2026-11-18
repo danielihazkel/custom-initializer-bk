@@ -16,6 +16,9 @@ import com.menora.initializr.extension.frontend.FrontendProjectDescription;
 import com.menora.initializr.extension.frontend.FrontendProjectGenerator;
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
+import com.menora.initializr.fullstack.FeatureContext;
+import com.menora.initializr.fullstack.PageContext;
+import com.menora.initializr.fullstack.TemplateText;
 import com.menora.initializr.fullstack.FullstackRenderer;
 import com.menora.initializr.fullstack.GeneratedTests;
 import com.menora.initializr.fullstack.FullstackPageValidator;
@@ -374,8 +377,8 @@ public class FullstackStarterController {
         Files.writeString(tempDir.resolve(LocalRun.COMPOSE_FILE),
                 LocalRun.compose(request.getArtifactId(), backendDeps, containerImages, true));
         boolean eventsOpt = optionsContext.hasOption("scaffold", ScaffoldOption.EVENTS.key());
-        boolean events = entities.stream().anyMatch(e -> EntityScaffoldContext.eventsApply(e, eventsOpt));
-        boolean mails = entities.stream().anyMatch(EntityScaffoldContext::notifies);
+        boolean events = entities.stream().anyMatch(e -> FeatureContext.eventsApply(e, eventsOpt));
+        boolean mails = entities.stream().anyMatch(FeatureContext::notifies);
         Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId(), ldap, tested, backendDeps)
                 .replace(REOPEN_HEADING, eventsReadme(events, mails, backendDeps) + REOPEN_HEADING));
         Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
@@ -632,28 +635,28 @@ public class FullstackStarterController {
         // CSV export button + bulk-delete selection UI. Mirrors the backend config — the FE per-entity
         // page gates the Export button on optScaffoldCsvExport and the row checkboxes on the per-entity
         // bulkDeleteApplicable (derived in EntityScaffoldContext from optScaffoldBulkDelete).
-        EntityScaffoldContext.putCsvImport(projectCtx, entities);
+        FeatureContext.putCsvImport(projectCtx, entities);
         // Bulk field-edit selection UI. Like bulkDelete, narrowed per entity in EntityScaffoldContext
         // (bulkUpdateApplicable) to writable, single-PK entities that have ≥1 editable non-PK field.
         // The record's version rides along in the DTO; the page turns a stale 409 into the
         // conflict dialog. Mirrors the backend config.
-        EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
-        EntityScaffoldContext.putUniqueKeys(projectCtx, entities);
-        EntityScaffoldContext.putRules(projectCtx, entities);
-        EntityScaffoldContext.putXlsxExport(projectCtx, entities);
-        EntityScaffoldContext.putSavedViews(projectCtx, entities);
+        FeatureContext.putOptimisticLocking(projectCtx, entities);
+        FeatureContext.putUniqueKeys(projectCtx, entities);
+        FeatureContext.putRules(projectCtx, entities);
+        FeatureContext.putXlsxExport(projectCtx, entities);
+        FeatureContext.putSavedViews(projectCtx, entities);
         // Who changed a row (audit) and the change history: the strings, the shared history panel.
-        EntityScaffoldContext.putAudit(projectCtx, entities);
-        EntityScaffoldContext.putHistory(projectCtx, entities);
+        FeatureContext.putAudit(projectCtx, entities);
+        FeatureContext.putHistory(projectCtx, entities);
         // Entity events: the live stream the lists and the bell listen to.
-        EntityScaffoldContext.putEvents(projectCtx, entities,
+        FeatureContext.putEvents(projectCtx, entities,
                 request.getDependencies() == null ? List.of() : request.getDependencies());
         // A change is recorded under the caller's name: the dev user travels with the calls.
         if (Boolean.TRUE.equals(projectCtx.get("usesRequestUser"))) projectCtx.put("sendsDevUser", true);
         // A view belongs to the user who saved it: the dev user travels with the calls.
         if (Boolean.TRUE.equals(projectCtx.get("hasSavedViews"))) projectCtx.put("sendsDevUser", true);
         // Table cells edited in place (frontend only — saved through the existing PUT).
-        EntityScaffoldContext.putInlineEdit(projectCtx, entities);
+        FeatureContext.putInlineEdit(projectCtx, entities);
         // Optional dashboard header overrides — blank/absent leaves the template's built-in fallback.
         putIfPresent(projectCtx, "dashboardTitle", dashboardTitle);
         putIfPresent(projectCtx, "dashboardOverview", dashboardOverview);
@@ -665,7 +668,7 @@ public class FullstackStarterController {
         // Page layout (dashboards / list pages / tabs / master-detail / record / report). No pages
         // → hasPages=false, the classic shell. Runs last: a report screen resolves its Export
         // button from optScaffoldCsvExport, which is only in the context by this point.
-        EntityScaffoldContext.putPageContext(projectCtx, pages, nav);
+        PageContext.putPageContext(projectCtx, pages, nav);
         // The tests option: Vitest, a test of each entity's validator and list page, and of the
         // shared CSV reader and route parsing where the app has them.
         GeneratedTests.putFrontend(projectCtx, entities);
@@ -910,7 +913,7 @@ public class FullstackStarterController {
     private static void putIfPresent(Map<String, Object> ctx, String key, String value) {
         if (value != null && !value.isBlank()) {
             // Raw under the key (the section test), escaped for where the templates splice it.
-            EntityScaffoldContext.putText(ctx, key, value.trim());
+            TemplateText.putText(ctx, key, value.trim());
         }
     }
 

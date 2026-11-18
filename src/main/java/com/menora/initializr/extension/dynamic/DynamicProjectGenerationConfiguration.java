@@ -1,12 +1,12 @@
 package com.menora.initializr.extension.dynamic;
 
-import com.menora.initializr.config.EntityDefinitionContext;
-import com.menora.initializr.config.EventsSpecContext;
-import com.menora.initializr.config.OpenApiSpecContext;
 import com.menora.initializr.config.BackendModel;
 import com.menora.initializr.config.CompiledTemplates;
-import com.menora.initializr.config.GeneratedProjectFiles;
 import com.menora.initializr.config.DepartmentResolver;
+import com.menora.initializr.config.EntityDefinitionContext;
+import com.menora.initializr.config.EventsSpecContext;
+import com.menora.initializr.config.GeneratedProjectFiles;
+import com.menora.initializr.config.OpenApiSpecContext;
 import com.menora.initializr.config.ProjectOptionsContext;
 import com.menora.initializr.config.SoapSpecContext;
 import com.menora.initializr.config.SqlScriptsContext;
@@ -772,7 +772,7 @@ public class DynamicProjectGenerationConfiguration {
         List<String> dsExtraPackages = List.of();
         boolean hasScaffold = false;
         if (!entityContext.isEmpty()) {                       // fullstack
-            dsExtraPackages = com.menora.initializr.fullstack.EntityScaffoldContext.supportPackages(description.getPackageName(), entityContext.all(),
+            dsExtraPackages = com.menora.initializr.fullstack.FeatureContext.supportPackages(description.getPackageName(), entityContext.all(),
                     optionsContext.hasOption("scaffold", com.menora.initializr.fullstack.ScaffoldOption.SAVED_VIEWS.key()),
                     optionsContext.hasOption("scaffold", com.menora.initializr.fullstack.ScaffoldOption.HISTORY.key()),
                     optionsContext.hasOption("scaffold", com.menora.initializr.fullstack.ScaffoldOption.EVENTS.key()));

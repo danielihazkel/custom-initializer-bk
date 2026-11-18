@@ -79,22 +79,22 @@ class EntityScaffoldContextTest {
 
         EntityDefinition full = new EntityDefinition("Task", null, null, List.of(id, status, dueOn), List.of(),
                 false, null, null, all, null, null, Map.of());
-        assertThat(EntityScaffoldContext.emittedListViews(full)).containsExactly("table", "cards", "kanban", "calendar");
+        assertThat(EntityViewModel.emittedListViews(full)).containsExactly("table", "cards", "kanban", "calendar");
         // Kanban writes the lane back, so a read-only entity loses it; calendar only reads.
         EntityDefinition readOnly = new EntityDefinition("Task", null, null, List.of(id, status, dueOn), List.of(),
                 true, null, null, all, null, null, Map.of());
-        assertThat(EntityScaffoldContext.emittedListViews(readOnly)).containsExactly("table", "cards", "calendar");
+        assertThat(EntityViewModel.emittedListViews(readOnly)).containsExactly("table", "cards", "calendar");
         // No date: no calendar. No enum/boolean: no kanban.
         EntityDefinition noDate = new EntityDefinition("Task", null, null, List.of(id, status), List.of(),
                 false, null, null, all, null, null, Map.of());
-        assertThat(EntityScaffoldContext.emittedListViews(noDate)).containsExactly("table", "cards", "kanban");
+        assertThat(EntityViewModel.emittedListViews(noDate)).containsExactly("table", "cards", "kanban");
         EntityDefinition plain = new EntityDefinition("Task", null, null, List.of(id, name), List.of(),
                 false, null, null, List.of("kanban", "calendar"), null, null, Map.of());
-        assertThat(EntityScaffoldContext.emittedListViews(plain)).containsExactly("table");
+        assertThat(EntityViewModel.emittedListViews(plain)).containsExactly("table");
         // Only the requested views, in the fixed order.
         EntityDefinition some = new EntityDefinition("Task", null, null, List.of(id, status, dueOn), List.of(),
                 false, null, null, List.of("calendar", "table"), null, null, Map.of());
-        assertThat(EntityScaffoldContext.emittedListViews(some)).containsExactly("table", "calendar");
+        assertThat(EntityViewModel.emittedListViews(some)).containsExactly("table", "calendar");
         // The entity view-model agrees with it.
         Map<String, Object> project = EntityScaffoldContext.buildProjectContext(
                 "demo", "com.menora", "0.0.1", "com.menora.demo", "com.menora.demo", "21", "jar", List.of(readOnly));
@@ -122,7 +122,7 @@ class EntityScaffoldContextTest {
                 .withListPresentation(List.of("name"), new PageDefinition.ListSort("name", true), null, 50);
         assertThat(plain.hasListPresentation()).isFalse();
         assertThat(configured.hasListPresentation()).isTrue();
-        EntityScaffoldContext.putPageContext(project, List.of(plain, configured));
+        PageContext.putPageContext(project, List.of(plain, configured));
 
         assertThat(EntityScaffoldContext.buildEntityContext(project, order)).containsEntry("listConfigurable", true);
         assertThat(EntityScaffoldContext.buildEntityContext(project, customer)).containsEntry("listConfigurable", false);
@@ -616,9 +616,9 @@ class EntityScaffoldContextTest {
 
     @Test
     void enumLabels_fallBackToHumanizedConstants_andEscapeForTs() {
-        assertThat(EntityScaffoldContext.humanizeConstant("IN_PROGRESS")).isEqualTo("In progress");
-        assertThat(EntityScaffoldContext.humanizeConstant("DONE")).isEqualTo("Done");
-        assertThat(EntityScaffoldContext.escapeTsSingleQuoted("Won't \\ fix")).isEqualTo("Won\\'t \\\\ fix");
+        assertThat(TemplateText.humanizeConstant("IN_PROGRESS")).isEqualTo("In progress");
+        assertThat(TemplateText.humanizeConstant("DONE")).isEqualTo("Done");
+        assertThat(TemplateText.escapeTsSingleQuoted("Won't \\ fix")).isEqualTo("Won\\'t \\\\ fix");
 
         FieldDefinition status = new FieldDefinition("status", FieldType.ENUM, false, false, false, false,
                 null, null, null, null, false, List.of("OPEN", "IN_REVIEW"), true, true, null, false, null,

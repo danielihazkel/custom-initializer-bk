@@ -81,13 +81,13 @@ class EntityScaffoldSeedOrderTest {
         FieldDefinition status = new FieldDefinition("status", FieldType.ENUM, false, false, false, false,
                 null, null, null, null, false, List.of("OPEN"), true, true);
 
-        assertThat(EntityScaffoldContext.seedExpression("Coupon", code, "Code", null))
+        assertThat(FieldViewModel.seedExpression("Coupon", code, "Code", null))
                 .isEqualTo("label(\"Code\", i, 5)");
-        assertThat(EntityScaffoldContext.seedExpression("Customer", email, "Email", null))
+        assertThat(FieldViewModel.seedExpression("Customer", email, "Email", null))
                 .isEqualTo("\"user\" + i + \"@example.com\"");
-        assertThat(EntityScaffoldContext.seedExpression("Order", qty, "Qty", null))
+        assertThat(FieldViewModel.seedExpression("Order", qty, "Qty", null))
                 .isEqualTo("(int) bounded(i, 1L, 9L)");
-        assertThat(EntityScaffoldContext.seedExpression("Order", status, "Status", "OrderStatusType"))
+        assertThat(FieldViewModel.seedExpression("Order", status, "Status", "OrderStatusType"))
                 .isEqualTo("Order.OrderStatusType.values()[(i - 1) % Order.OrderStatusType.values().length]");
     }
 }

@@ -9,9 +9,11 @@ import com.menora.initializr.db.repository.EntityTemplateFileRepository;
 import com.menora.initializr.db.repository.EntityTemplateSetRepository;
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
+import com.menora.initializr.fullstack.FeatureContext;
 import com.menora.initializr.fullstack.FullstackRenderer;
 import com.menora.initializr.fullstack.GeneratedTests;
 import com.menora.initializr.fullstack.ScaffoldOption;
+import com.menora.initializr.fullstack.SchemaNames;
 import com.menora.initializr.fullstack.schema.SchemaMigrations;
 import com.menora.initializr.localrun.ContainerImages;
 import com.menora.initializr.localrun.LocalRun;
@@ -120,19 +122,19 @@ public class FullstackProjectGenerationConfiguration {
             // to writable, single-PK entities with ≥1 editable non-PK field. No extra dependency.
             // @Version + a 409 for a stale update. Narrowed per entity (lockingApplicable);
             // hasOptimisticLocking gates the shared stale-update handler.
-            EntityScaffoldContext.putOptimisticLocking(projectCtx, entities);
-            EntityScaffoldContext.putUniqueKeys(projectCtx, entities);
-            EntityScaffoldContext.putRules(projectCtx, entities);
-            EntityScaffoldContext.putXlsxExport(projectCtx, entities);
-            EntityScaffoldContext.putSavedViews(projectCtx, entities);
+            FeatureContext.putOptimisticLocking(projectCtx, entities);
+            FeatureContext.putUniqueKeys(projectCtx, entities);
+            FeatureContext.putRules(projectCtx, entities);
+            FeatureContext.putXlsxExport(projectCtx, entities);
+            FeatureContext.putSavedViews(projectCtx, entities);
             // CurrentUser and GET /api/me: for a workflow, or for a shell that shows who is signed in.
             projectCtx.put("usesCurrentUser", Boolean.TRUE.equals(projectCtx.get("hasWorkflows")) || entityContext.shellUser());
             // @EnableJpaAuditing ships when any entity is audited, not only with the project option.
-            EntityScaffoldContext.putAudit(projectCtx, entities);
+            FeatureContext.putAudit(projectCtx, entities);
             // The change log (history option) and who makes a change (audit columns and the log).
-            EntityScaffoldContext.putHistory(projectCtx, entities);
+            FeatureContext.putHistory(projectCtx, entities);
             // Entity events (Kafka, webhooks, the browser) and transition e-mails, through one outbox.
-            EntityScaffoldContext.putEvents(projectCtx, entities, description.getRequestedDependencies().keySet());
+            FeatureContext.putEvents(projectCtx, entities, description.getRequestedDependencies().keySet());
             // Demo rows on first start (config/DemoDataLoader, a CommandLineRunner). Backend-only;
             // the seeding order/expressions come from EntityScaffoldContext (seedEntities/seedExpr).
             // Boot 3.4 deprecated @MockBean in favour of Spring Framework 6.2's @MockitoBean and
@@ -145,7 +147,7 @@ public class FullstackProjectGenerationConfiguration {
             FullstackRenderer.render(files, projectCtx, entities, projectRoot);
             // A quoted table/column name (exact case from the DDL) only survives Boot's naming
             // strategy with this one; written from Java, not a template row, so upgraded DBs get it.
-            if (EntityScaffoldContext.rendersQuotedName(entities)) {
+            if (SchemaNames.rendersQuotedName(entities)) {
                 Path target = projectRoot.resolve(SqlNames.NAMING_STRATEGY_PATH.replace(
                         "{{packagePath}}", description.getPackageName().replace('.', '/')));
                 Files.createDirectories(target.getParent());
@@ -183,7 +185,7 @@ public class FullstackProjectGenerationConfiguration {
     @Bean
     BuildCustomizer<MavenBuild> notificationMailCustomizer(EntityDefinitionContext entityContext) {
         return build -> {
-            if (entityContext.isEmpty() || entityContext.all().stream().noneMatch(EntityScaffoldContext::notifies)) return;
+            if (entityContext.isEmpty() || entityContext.all().stream().noneMatch(FeatureContext::notifies)) return;
             build.dependencies().add("mail", Dependency.withCoordinates("org.springframework.boot", "spring-boot-starter-mail"));
         };
     }

@@ -75,7 +75,7 @@ class ContentMarkdownTest {
 
     @Test
     void rendersTextAsQuotedStringsOnly() {
-        String jsx = EntityScaffoldContext.contentJsx(ContentMarkdown.parse("Say <b>hi</b> & 'bye' {x}"));
+        String jsx = PageContext.contentJsx(ContentMarkdown.parse("Say <b>hi</b> & 'bye' {x}"));
         assertThat(jsx).isEqualTo("        <p className=\"text-sm leading-relaxed text-fg\">{'Say <b>hi</b> & \\'bye\\' {x}'}</p>\n");
     }
 }

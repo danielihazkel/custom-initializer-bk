@@ -714,7 +714,7 @@ public final class FullstackPageValidator {
         if (!LIST_VIEWS.contains(lower)) {
             throw new WizardArgumentException(prefix + ": unknown view '" + v + "' (expected table, cards, kanban or calendar)");
         }
-        List<String> emitted = EntityScaffoldContext.emittedListViews(entity);
+        List<String> emitted = EntityViewModel.emittedListViews(entity);
         if (!emitted.contains(lower)) {
             throw new WizardArgumentException(prefix + ": view '" + lower + "' is not enabled on " + entity.name()
                     + " (its list views are " + emitted + "; enable it on the entity — kanban needs an enum or"

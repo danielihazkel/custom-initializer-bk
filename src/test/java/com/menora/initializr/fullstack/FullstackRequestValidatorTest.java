@@ -599,7 +599,7 @@ class FullstackRequestValidatorTest {
                 entityWithRelations("Transfer", List.of(pk()),
                         List.of(link("source", "Account"), link("target", "Account"))),
                 entityWithRelations("Note", List.of(pk()), List.of(link("account", "Account"))))));
-        assertThat(EntityScaffoldContext.inverseCollectionNames(entities).get("account"))
+        assertThat(RelationViews.inverseCollectionNames(entities).get("account"))
                 .containsExactly("transfersBySource", "transfersByTarget", "notes");
     }
 

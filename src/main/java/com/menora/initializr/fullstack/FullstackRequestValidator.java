@@ -592,7 +592,7 @@ public final class FullstackRequestValidator {
         List<String> scaffold = body.opts() == null ? null : body.opts().get("scaffold");
         boolean inverse = scaffold != null && scaffold.contains("inverseCollections");
         Map<String, List<String>> collections = inverse
-                ? EntityScaffoldContext.inverseCollectionNames(entities) : Map.of();
+                ? RelationViews.inverseCollectionNames(entities) : Map.of();
 
         for (EntityDefinition e : entities) {
             // Lower-cased member → what it is, in the words of the error.
@@ -1468,10 +1468,10 @@ public final class FullstackRequestValidator {
         record Member(String name, String column, boolean explicit) {}
         List<Member> members = new ArrayList<>();
         for (FieldDefinition f : fields) {
-            members.add(new Member(f.name(), EntityScaffoldContext.columnOf(f), f.column() != null));
+            members.add(new Member(f.name(), SchemaNames.columnOf(f), f.column() != null));
         }
         for (RelationDefinition r : relations) {
-            members.add(new Member(r.fieldName(), EntityScaffoldContext.joinColumnOf(r), r.joinColumn() != null));
+            members.add(new Member(r.fieldName(), SchemaNames.joinColumnOf(r), r.joinColumn() != null));
         }
         Map<String, List<Member>> byColumn = new LinkedHashMap<>();
         for (Member m : members) {

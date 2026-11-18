@@ -2,9 +2,11 @@ package com.menora.initializr.fullstack.schema;
 
 import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.EntityScaffoldContext;
+import com.menora.initializr.fullstack.FeatureContext;
 import com.menora.initializr.fullstack.FieldDefinition;
 import com.menora.initializr.fullstack.FieldType;
 import com.menora.initializr.fullstack.RelationDefinition;
+import com.menora.initializr.fullstack.SchemaNames;
 import com.menora.initializr.fullstack.schema.Schema.Column;
 import com.menora.initializr.fullstack.schema.Schema.ColumnType;
 import com.menora.initializr.fullstack.schema.Schema.ForeignKey;
@@ -67,8 +69,8 @@ public final class SchemaBuilder {
     }
 
     private static Table tableOf(EntityDefinition entity, Map<String, Object> ctx, Map<String, EntityDefinition> byName) {
-        String schema = name(EntityScaffoldContext.schemaOf(entity));
-        String table = name(EntityScaffoldContext.tableOf(entity));
+        String schema = name(SchemaNames.schemaOf(entity));
+        String table = name(SchemaNames.tableOf(entity));
         List<Column> columns = new ArrayList<>();
         List<String> primaryKey = new ArrayList<>();
         List<ForeignKey> foreignKeys = new ArrayList<>();
@@ -76,7 +78,7 @@ public final class SchemaBuilder {
         List<Index> indexes = new ArrayList<>();
 
         for (FieldDefinition f : entity.fields()) {
-            String column = name(EntityScaffoldContext.columnOf(f));
+            String column = name(SchemaNames.columnOf(f));
             ColumnType type = typeOf(f.type());
             Integer length = type == ColumnType.VARCHAR ? (f.length() != null ? f.length() : 255) : null;
             boolean identity = f.primaryKey() && f.generated() && !f.type().isUuid();
@@ -87,18 +89,18 @@ public final class SchemaBuilder {
         // Unique keys over several fields and links, in the order the model gives them.
         for (EntityDefinition.UniqueKey key : entity.uniqueKeys()) {
             List<String> keyColumns = new ArrayList<>();
-            for (String member : key.fields()) keyColumns.add(name(EntityScaffoldContext.uniqueKeyColumnOf(entity, member)));
+            for (String member : key.fields()) keyColumns.add(name(FeatureContext.uniqueKeyColumnOf(entity, member)));
             uniques.add(new Unique(uniqueKeyName(table, keyColumns), keyColumns));
         }
         for (RelationDefinition rel : entity.relations()) {
             EntityDefinition target = byName.get(rel.targetEntity());
             if (target == null) continue;
             FieldDefinition targetKey = keyOf(target);
-            String column = name(EntityScaffoldContext.joinColumnOf(rel));
+            String column = name(SchemaNames.joinColumnOf(rel));
             columns.add(referencing(column, targetKey, !rel.required()));
             foreignKeys.add(new ForeignKey(constraint("fk", table, column), List.of(column),
-                    name(EntityScaffoldContext.schemaOf(target)), name(EntityScaffoldContext.tableOf(target)),
-                    List.of(name(EntityScaffoldContext.columnOf(targetKey)))));
+                    name(SchemaNames.schemaOf(target)), name(SchemaNames.tableOf(target)),
+                    List.of(name(SchemaNames.columnOf(targetKey)))));
             indexes.add(new Index(constraint("ix", table, column), List.of(column)));
         }
         if (Boolean.TRUE.equals(ctx.get("auditApplicable"))) {
@@ -119,7 +121,7 @@ public final class SchemaBuilder {
                 FieldDefinition field = fieldName == null ? null : entity.fields().stream()
                         .filter(f -> f.name().equals(fieldName)).findFirst().orElse(null);
                 if (field == null) continue;
-                String column = name(EntityScaffoldContext.columnOf(field));
+                String column = name(SchemaNames.columnOf(field));
                 indexes.add(new Index(constraint("ix", table, column), List.of(column)));
             }
         }
@@ -130,19 +132,19 @@ public final class SchemaBuilder {
     private static Table joinTableOf(EntityDefinition owner, RelationDefinition collection,
                                      Map<String, EntityDefinition> byName) {
         EntityDefinition target = byName.get(collection.targetEntity());
-        String table = name(EntityScaffoldContext.joinTableOf(owner, collection));
-        String ownerColumn = name(EntityScaffoldContext.ownerJoinColumnOf(owner, collection));
-        String targetColumn = name(EntityScaffoldContext.inverseJoinColumnOf(collection));
+        String table = name(SchemaNames.joinTableOf(owner, collection));
+        String ownerColumn = name(SchemaNames.ownerJoinColumnOf(owner, collection));
+        String targetColumn = name(SchemaNames.inverseJoinColumnOf(collection));
         FieldDefinition ownerKey = keyOf(owner);
         FieldDefinition targetKey = keyOf(target);
         List<Column> columns = List.of(referencing(ownerColumn, ownerKey, false), referencing(targetColumn, targetKey, false));
         List<ForeignKey> foreignKeys = List.of(
                 new ForeignKey(constraint("fk", table, ownerColumn), List.of(ownerColumn),
-                        name(EntityScaffoldContext.schemaOf(owner)), name(EntityScaffoldContext.tableOf(owner)),
-                        List.of(name(EntityScaffoldContext.columnOf(ownerKey)))),
+                        name(SchemaNames.schemaOf(owner)), name(SchemaNames.tableOf(owner)),
+                        List.of(name(SchemaNames.columnOf(ownerKey)))),
                 new ForeignKey(constraint("fk", table, targetColumn), List.of(targetColumn),
-                        name(EntityScaffoldContext.schemaOf(target)), name(EntityScaffoldContext.tableOf(target)),
-                        List.of(name(EntityScaffoldContext.columnOf(targetKey)))));
+                        name(SchemaNames.schemaOf(target)), name(SchemaNames.tableOf(target)),
+                        List.of(name(SchemaNames.columnOf(targetKey)))));
         // The key starts with the owner's column; the other side needs an index of its own.
         return new Table(null, table, columns, List.of(ownerColumn, targetColumn), foreignKeys, List.of(),
                 List.of(new Index(constraint("ix", table, targetColumn), List.of(targetColumn))));
