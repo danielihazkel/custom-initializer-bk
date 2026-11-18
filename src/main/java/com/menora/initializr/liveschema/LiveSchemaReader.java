@@ -33,8 +33,8 @@ import java.util.TreeSet;
  * Oracle's identity columns, PostgreSQL's enum types). Every connection is read-only, opened for
  * one call and closed at its end; every statement has a timeout.
  *
- * <p>Only {@code java.sql} is used, so a driver missing from the classpath (jt400 without the
- * {@code db2-driver} build profile) is a 400 naming it, not a startup failure.
+ * <p>Only {@code java.sql} is used, so a driver missing from the classpath (one a build left out)
+ * is a 400 naming it, not a startup failure.
  */
 public class LiveSchemaReader {
 

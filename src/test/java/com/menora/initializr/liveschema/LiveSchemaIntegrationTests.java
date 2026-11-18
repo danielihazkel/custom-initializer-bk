@@ -114,7 +114,7 @@ class LiveSchemaIntegrationTests {
         assertThat(o.path("drivers").path("MSSQL").asBoolean()).isTrue();
         assertThat(o.path("drivers").path("ORACLE").asBoolean()).isTrue();
         assertThat(o.path("drivers").path("H2").asBoolean()).isTrue();
-        assertThat(o.path("drivers").has("DB2")).isTrue();
+        assertThat(o.path("drivers").path("DB2").asBoolean()).as("jt400 ships with the application").isTrue();
         assertThat(o.path("defaultPorts").path("POSTGRESQL").asInt()).isEqualTo(5432);
     }
 
