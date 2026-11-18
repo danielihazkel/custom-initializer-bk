@@ -70,14 +70,6 @@ class SchemaDialectTest {
             SchemaDialect.MSSQL, new Target("org.hibernate.dialect.SQLServerDialect", "Microsoft SQL Server", 15, 0),
             SchemaDialect.DB2, new Target("org.hibernate.dialect.DB2Dialect", "DB2/LINUXX8664", 11, 5));
 
-    /**
-     * Where Hibernate's identity column is not the table's type followed by the table's clause.
-     * PostgreSQL: this Hibernate writes the pre-10 shorthand; the migration writes the standard
-     * identity column, which {@code GenerationType.IDENTITY} inserts into the same way.
-     */
-    private static final Map<SchemaDialect, String> IDENTITY_SPELLED_OTHERWISE = Map.of(
-            SchemaDialect.POSTGRESQL, "bigserial not null");
-
     @TempDir
     Path temp;
 
@@ -88,12 +80,17 @@ class SchemaDialectTest {
             Map<String, String> exported = exportedColumns(dialect);
             assertThat(exported.keySet()).as(dialect + " columns").containsExactlyElementsOf(COLUMNS.keySet());
             for (Map.Entry<String, Column> entry : COLUMNS.entrySet()) {
-                if (entry.getKey().equals("id") && IDENTITY_SPELLED_OTHERWISE.containsKey(dialect)) continue;
                 String hibernate = typeOnly(exported.get(entry.getKey()), dialect);
                 // H2's TEXT is its CLOB under another name, and TEXT is what the entity template
                 // itself declares (columnDefinition = "TEXT") — so that is what the migration says.
                 if (dialect == SchemaDialect.H2 && entry.getKey().equals("c_text") && hibernate.equals("clob")) {
                     hibernate = "text";
+                }
+                // Hibernate 6.6 (Boot 3.5) writes H2's native ENUM for an @Enumerated(STRING)
+                // column; 6.4 (Boot 3.2) wrote VARCHAR. The migration keeps the VARCHAR (with its
+                // CHECK), which 6.6's schema validation accepts — so one script fits both lines.
+                if (dialect == SchemaDialect.H2 && entry.getKey().equals("c_enum") && hibernate.startsWith("enum (")) {
+                    hibernate = "varchar(255)";
                 }
                 String ours = dialect.typeOf(entry.getValue());
                 if (!hibernate.equals(ours)) {
@@ -101,14 +98,13 @@ class SchemaDialectTest {
                             + "', the table says '" + ours + "'");
                 }
             }
-            // The identity clause, as Hibernate writes it after the type.
+            // The identity clause, as Hibernate writes it after the type. (Hibernate before 6.6
+            // wrote PostgreSQL's pre-10 `bigserial`; the tool's own Hibernate is 6.6 since it moved
+            // to Boot 3.5, so PostgreSQL is held to the standard clause like the others.)
             String identity = exported.get("id").toLowerCase(Locale.ROOT);
-            if (!identity.contains(dialect.identityClause()) && !IDENTITY_SPELLED_OTHERWISE.containsKey(dialect)) {
+            if (!identity.contains(dialect.identityClause())) {
                 mismatches.add(dialect + " id: Hibernate writes '" + identity + "', the table's identity clause is '"
                         + dialect.identityClause() + "'");
-            }
-            if (IDENTITY_SPELLED_OTHERWISE.containsKey(dialect)) {
-                assertThat(identity).as(dialect + " identity").isEqualTo(IDENTITY_SPELLED_OTHERWISE.get(dialect));
             }
         }
         assertThat(mismatches).isEmpty();
