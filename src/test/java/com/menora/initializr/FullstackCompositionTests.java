@@ -172,13 +172,13 @@ class FullstackCompositionTests {
                     .contains("export function validateOrderLine(value: Partial<OrderLine>, nested = false): Record<string, string> {")
                     .contains("  if (!nested && blank(value.orderId)) errors.orderId = t('required')");
             // A row of the list has no rows of its own: the page reads the record before editing them.
-            assertThat(files.get(FE + "pages/order/ui/OrderPage.tsx")).as(set)
+            assertThat(ListPages.of(files, FE + "pages/order/ui/OrderPage.tsx")).as(set)
                     .contains("import { api as rowsApi } from '@shared/api'")
                     .contains("rowsApi.get<Order>(`/api/orders/${encodeURIComponent(String(row.id))}`)")
                     .contains("const rows = { lines: full.lines, }");
             assertThat(files.get(FE + "shared/i18n/strings.ts")).as(set).contains("  addRow: 'Add row',").contains("  noRows: 'אין שורות עדיין.',");
             // The customer's page has no rows to fetch.
-            assertThat(files.get(FE + "pages/customer/ui/CustomerPage.tsx")).as(set).doesNotContain("rowsApi");
+            assertThat(ListPages.of(files, FE + "pages/customer/ui/CustomerPage.tsx")).as(set).doesNotContain("rowsApi");
         }
         // Without a composition none of it is there.
         Map<String, String> plain = generate(FullstackExampleRequests.oneToManyBody("react-tailwind-crud"));

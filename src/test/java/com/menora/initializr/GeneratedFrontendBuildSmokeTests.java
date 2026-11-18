@@ -543,7 +543,7 @@ class GeneratedFrontendBuildSmokeTests {
         body.put("opts", Map.of("scaffold", List.of("xlsxExport")));
         Path project = postAndExtractFrontend(workDir, body);
         assertThat(project.resolve("src/features/order-line-form/ui/OrderLineRows.tsx")).isRegularFile();
-        assertThat(Files.readString(project.resolve("src/pages/order/ui/OrderPage.tsx"))).contains("download.run(exportXlsx)");
+        assertThat(Files.readString(project.resolve("src/pages/order/ui/OrderPage.tsx"))).contains("list.download.run(list.exportXlsx)");
         assertThat(Files.readString(project.resolve("src/app/screens/NewOrderScreen.tsx"))).contains("fields: ['lines'], keys: ['lines']");
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);

@@ -219,7 +219,7 @@ class FullstackStarterIntegrationTests {
         assertThat(table).contains("pagination");
         assertThat(table).contains("onSearchChange");
 
-        String userPage = entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx");
+        String userPage = ListPages.of(entries, "shop/frontend/src/pages/user/ui/UserPage.tsx");
         assertThat(userPage).contains("const [page, setPage]");
         assertThat(userPage).contains("const [size, setSize]");
         assertThat(userPage).contains("q: debouncedSearch");
@@ -269,7 +269,7 @@ class FullstackStarterIntegrationTests {
         // Every list view keys rows by primary key, never by array index.
         assertThat(userPage)
                 .contains("const rowKey = (row: User) => row.id as string | number")
-                .contains("rowKey={rowKey}");
+                .contains("rowKey={list.rowKey}");
         // The standalone landing page is replaced by the per-entity pages — its dir is removed.
         assertThat(entries.keySet()).noneMatch(p -> p.startsWith("shop/frontend/src/pages/home/"));
     }
@@ -651,8 +651,8 @@ class FullstackStarterIntegrationTests {
                 .contains("label=\"Email\" required error={errors?.email}");
 
         // Frontend search box is gated on the entity having a string field.
-        assertThat(entries.get("bank/frontend/src/pages/account/ui/AccountPage.tsx")).contains("searchable={true}");
-        assertThat(entries.get("bank/frontend/src/pages/ledger/ui/LedgerPage.tsx")).contains("searchable={false}");
+        assertThat(ListPages.of(entries, "bank/frontend/src/pages/account/ui/AccountPage.tsx")).contains("searchable={true}");
+        assertThat(ListPages.of(entries, "bank/frontend/src/pages/ledger/ui/LedgerPage.tsx")).contains("searchable={false}");
         assertThat(entries.get("bank/frontend/src/shared/ui/Table.tsx"))
                 .contains("searchable")
                 .contains("{searchable ? (");
@@ -684,7 +684,7 @@ class FullstackStarterIntegrationTests {
                 .contains("findAll(String q, Pageable pageable)")
                 .doesNotContain("record Filters(")
                 .doesNotContain("priorityMin");
-        String widgetPage = entries.get("tools/frontend/src/pages/widget/ui/WidgetPage.tsx");
+        String widgetPage = ListPages.of(entries, "tools/frontend/src/pages/widget/ui/WidgetPage.tsx");
         assertThat(widgetPage).contains("searchable={false}").doesNotContain("filterDescriptors");
 
         // Gadget: defaults preserved → Filters carrier with the numeric bounds, search box shown.
@@ -693,7 +693,7 @@ class FullstackStarterIntegrationTests {
                 .contains("findAll(String q, Filters filters, Pageable pageable)")
                 .contains("record Filters(")
                 .contains("priorityMin");
-        String gadgetPage = entries.get("tools/frontend/src/pages/gadget/ui/GadgetPage.tsx");
+        String gadgetPage = ListPages.of(entries, "tools/frontend/src/pages/gadget/ui/GadgetPage.tsx");
         assertThat(gadgetPage).contains("searchable={true}").contains("filterDescriptors");
     }
 
@@ -766,7 +766,7 @@ class FullstackStarterIntegrationTests {
         Map<String, String> entries = generateZip(body);
 
         // Frontend column uses the custom label, but the data/sort key stays the field name.
-        String taskPage = entries.get("tasks/frontend/src/pages/task/ui/TaskPage.tsx");
+        String taskPage = ListPages.of(entries, "tasks/frontend/src/pages/task/ui/TaskPage.tsx");
         assertThat(taskPage).contains("label: 'כותרת', sortKey: 'title'");
 
         // Frontend form: the read-only field is locked after create (disabled on edit); the
@@ -919,7 +919,7 @@ class FullstackStarterIntegrationTests {
                 .contains("label=\"Customer\" required")
                 .contains("set('customerId'");
         // Table column shows the label (falling back to #id), and the filter bar gets a relation select.
-        assertThat(entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx"))
+        assertThat(ListPages.of(entries, "shop/frontend/src/pages/order/ui/OrderPage.tsx"))
                 .contains("label: 'Customer', render: r => r.customerLabel ?? (r.customerId == null ? '—' : '#' + String(r.customerId))")
                 .contains("kind: 'relation', optionsPath: '/api/customers', optionValue: 'id', optionLabel: 'name'");
         assertThat(entries.get("shop/frontend/src/features/order-form/ui/OrderDetail.tsx"))
@@ -1073,7 +1073,7 @@ class FullstackStarterIntegrationTests {
         assertThat(app).doesNotContain("emerald");
         // Primary actions use the semantic action tokens (aliased to brand + white text in this set).
         assertThat(css).contains("--color-primary:").contains("--color-on-primary:   #ffffff");
-        assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx")).contains("bg-primary").contains("text-on-primary");
+        assertThat(ListPages.of(entries, "shop/frontend/src/pages/user/ui/UserPage.tsx")).contains("bg-primary").contains("text-on-primary");
         assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("bg-primary");
         // The default set does not pull in the Menora Digital design-system dep.
         assertThat(entries).doesNotContainKey("shop/frontend/public/menora-mivtachim-logo.png");
@@ -1144,7 +1144,7 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
                 .contains("onSortChange").contains("MenoraTable").contains("caption");
         assertThat(entries).containsKey("shop/frontend/src/shared/api/useResource.ts");
-        assertThat(entries.get("shop/frontend/src/pages/user/ui/UserPage.tsx"))
+        assertThat(ListPages.of(entries, "shop/frontend/src/pages/user/ui/UserPage.tsx"))
                 .contains("<SectionHeader title=\"Users\"").contains("caption=\"Users\"").contains("variant=\"primary\"");
         assertThat(entries.get("shop/frontend/src/shared/ui/FormDrawer.tsx")).contains("mn-btn--primary");
         // vite.config.ts is borrowed as a mustache row (sourceSet) and rendered, not copied raw.
@@ -1909,9 +1909,9 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.get("shop/frontend/src/shared/api/useResource.ts"))
                 .contains("Array.isArray(id)");
         // The page's React row key joins the key parts (no `id` property to fall back on).
-        assertThat(entries.get("shop/frontend/src/pages/order-line/ui/OrderLinePage.tsx"))
+        assertThat(ListPages.of(entries, "shop/frontend/src/pages/order-line/ui/OrderLinePage.tsx"))
                 .contains("const rowKey = (row: OrderLine) => [String(row.orderId), String(row.lineNo)].join('/')")
-                .contains("rowKey={rowKey}");
+                .contains("rowKey={list.rowKey}");
         assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
                 .contains("key={rowKey(row)}")
                 .doesNotContain(".id ?? idx");
@@ -2017,7 +2017,7 @@ class FullstackStarterIntegrationTests {
         assertThat(contentEndingWith(entries, "/controller/WidgetController.java"))
                 .contains("@PostMapping(\"/{id}/restore\")")
                 .contains("service.restore(id)");
-        assertThat(entries.get("shop/frontend/src/pages/widget/ui/WidgetPage.tsx"))
+        assertThat(ListPages.of(entries, "shop/frontend/src/pages/widget/ui/WidgetPage.tsx"))
                 .contains("restore(removed.id as number | string)")
                 .contains("label: t('undo')")
                 .doesNotContain("create(removed");
@@ -2053,13 +2053,13 @@ class FullstackStarterIntegrationTests {
         assertThat(controller.substring(from, controller.indexOf("});", from)))
                 .contains("\"title\",").contains("\"startsAt\",").contains("\"createdAt\",")
                 .doesNotContain("\"notes\"").doesNotContain("\"contract\"").doesNotContain("\"photo\"");
-        assertThat(classic.get("rota/frontend/src/pages/shift/ui/ShiftPage.tsx"))
+        assertThat(ListPages.of(classic, "rota/frontend/src/pages/shift/ui/ShiftPage.tsx"))
                 .contains("label: 'Title', sortKey: 'title', render:")
                 .contains("label: 'Notes', render:")
                 .contains("label: 'Contract', render:")
                 .doesNotContain("sortKey: 'notes'").doesNotContain("sortKey: 'photo'");
         body.put("frontendTemplateSet", "react-menora-digital-crud");
-        assertThat(generateZip(body).get("rota/frontend/src/pages/shift/ui/ShiftPage.tsx"))
+        assertThat(ListPages.of(generateZip(body), "rota/frontend/src/pages/shift/ui/ShiftPage.tsx"))
                 .contains("label: 'Title', sortKey: 'title'").contains("label: 'Notes', render:").doesNotContain("sortKey: 'notes'");
         body.put("frontendTemplateSet", "react-tailwind-crud");
 
@@ -2224,10 +2224,11 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.get("shop/frontend/src/features/contact-form/index.ts"))
                 .contains("export { validateContact } from './model/validate'");
         // The page validates before calling the API, and — with no soft delete — offers no Undo.
-        assertThat(entries.get("shop/frontend/src/pages/contact/ui/ContactPage.tsx"))
-                .contains("import { ContactForm, validateContact } from '@features/contact-form'")
+        assertThat(ListPages.of(entries, "shop/frontend/src/pages/contact/ui/ContactPage.tsx"))
+                .contains("import { ContactDetail, ContactForm } from '@features/contact-form'")
+                .contains("import { validateContact } from '@features/contact-form'")
                 .contains("const clientErrors = validateContact(editing)")
-                .contains("k in formErrors")
+                .contains("k in list.formErrors")
                 .doesNotContain("label: t('undo')")
                 .doesNotContain("create(removed");
         // The drawer is a real form (Enter submits, Save is type=submit, browser bubbles off).
@@ -2318,7 +2319,7 @@ class FullstackStarterIntegrationTests {
         // Frontend: the shared formatters and the Markdown renderer ship because a field needs them.
         assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/format.ts"))
                 .anyMatch(p -> p.endsWith("frontend/src/shared/ui/Markdown.tsx"));
-        assertThat(contentEndingWith(entries, "/ui/ShiftPage.tsx"))
+        assertThat(ListPages.of(entries, "/ui/ShiftPage.tsx"))
                 .contains("import { attachmentUrl, formatInstant, formatMoney } from '@shared/ui/format'")
                 // The currency is upper-cased, and ILS when a money field names none.
                 .contains("render: r => r.rate == null ? '—' : formatMoney(r.rate, 'USD')")
@@ -2409,7 +2410,7 @@ class FullstackStarterIntegrationTests {
                 .contains("import { AttachmentField } from '@shared/ui/AttachmentField'")
                 .contains("name={value.contractName}")
                 .contains("onChange={(id, name) => onChange({ ...value, photo: id, photoName: name })}");
-        assertThat(contentEndingWith(entries, "/ui/ShiftPage.tsx"))
+        assertThat(ListPages.of(entries, "/ui/ShiftPage.tsx"))
                 .contains("<a href={attachmentUrl(r.contract)}")
                 .contains("<img src={attachmentUrl(r.photo)} alt={r.photoName ?? ''}");
         assertThat(contentEndingWith(entries, "/model/types.ts"))
@@ -2470,7 +2471,7 @@ class FullstackStarterIntegrationTests {
                 .contains("path=\"/api/tags\"")
                 .contains("labelKey=\"name\"")
                 .contains("onChange={(ids, labels) => onChange({ ...value, tagsIds: ids as number[], tagsLabels: labels })}");
-        assertThat(contentEndingWith(entries, "/ui/PostPage.tsx"))
+        assertThat(ListPages.of(entries, "/ui/PostPage.tsx"))
                 .contains("label: 'Tags', render: r => r.tagsLabels == null || r.tagsLabels.length === 0 ? '—' : r.tagsLabels.join(', ')")
                 .contains("name: 'tagsId'")
                 // A new record is pre-filled from a filter on a foreign key, never from one on a set.
@@ -2513,7 +2514,7 @@ class FullstackStarterIntegrationTests {
         // Frontend: the count on the type and the list, and the child rows as a table in the details.
         assertThat(entries.keySet()).anyMatch(p -> p.endsWith("frontend/src/shared/ui/RelatedRows.tsx"));
         assertThat(contentEndingWith(entries, "/order/model/types.ts")).contains("linesCount?: number | null");
-        assertThat(contentEndingWith(entries, "/ui/OrderPage.tsx")).contains("label: 'Lines', render: r => r.linesCount");
+        assertThat(ListPages.of(entries, "/ui/OrderPage.tsx")).contains("label: 'Lines', render: r => r.linesCount");
         assertThat(contentEndingWith(entries, "/ui/OrderDetail.tsx"))
                 .contains("import { RelatedRows } from '@shared/ui/RelatedRows'")
                 .contains("title={ 'Lines' }")
@@ -2641,7 +2642,7 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.keySet()).noneMatch(p -> p.endsWith("/format.ts") || p.endsWith("/Markdown.tsx")
                 || p.endsWith("/AttachmentField.tsx") || p.contains("/attachment/"));
         assertThat(contentEndingWith(entries, "/shared/api/client.ts")).doesNotContain("upload");
-        assertThat(contentEndingWith(entries, "/ui/NotePage.tsx")).doesNotContain("@shared/ui/format");
+        assertThat(ListPages.of(entries, "/ui/NotePage.tsx")).doesNotContain("@shared/ui/format");
     }
 
     @Test
@@ -2938,17 +2939,17 @@ class FullstackStarterIntegrationTests {
         assertThat(entries.get("shop/frontend/src/vite-env.d.ts")).contains("vite/client");
 
         // Cards-only: the page generates the CardGrid and nothing else — no Table, no toggle bar.
-        String productPage = entries.get("shop/frontend/src/pages/product/ui/ProductPage.tsx");
+        String productPage = ListPages.of(entries, "shop/frontend/src/pages/product/ui/ProductPage.tsx");
         assertThat(productPage)
                 .contains("useState<'cards'>((prefs.view as 'cards' | undefined) ?? openingView)")
                 .contains("<CardGrid")
                 .doesNotContain("<Table")
-                .doesNotContain("aria-pressed={viewMode === 'cards'}")   // no toggle button
-                .contains("onView={setDetailRow}")
-                .contains("<ProductDetail value={detailRow} />");
+                .doesNotContain("aria-pressed={list.viewMode === 'cards'}")   // no toggle button
+                .contains("onView={list.setDetailRow}")
+                .contains("<ProductDetail value={list.detailRow} />");
         assertThat(entries).containsKey("shop/frontend/src/features/product-form/ui/ProductDetail.tsx");
         // An entity with no listViews defaults to table-only (no Cards, no toggle).
-        assertThat(entries.get("shop/frontend/src/pages/plain/ui/PlainPage.tsx"))
+        assertThat(ListPages.of(entries, "shop/frontend/src/pages/plain/ui/PlainPage.tsx"))
                 .contains("useState<'table'>((prefs.view as 'table' | undefined) ?? openingView)")
                 .doesNotContain("<CardGrid");
 
@@ -3014,7 +3015,7 @@ class FullstackStarterIntegrationTests {
         // Task page: only the selected Table + Kanban views, a toggle across just those, plus the
         // (view-independent) filter bar, CSV export, and bulk-select table. No Cards/Calendar code.
         // CRLF templates on a Windows checkout render CRLF; the multi-line checks below expect LF.
-        String taskPage = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx").replace("\r\n", "\n");
+        String taskPage = ListPages.of(entries, "ops/frontend/src/pages/task/ui/TaskPage.tsx").replace("\r\n", "\n");
         assertThat(taskPage)
                 .contains("const [viewMode, setViewMode] = useState<'table' | 'kanban'>((prefs.view as 'table' | 'kanban' | undefined) ?? openingView)")
                 .contains("const openingView = 'table'")  // initial = first selected (canonical order)
@@ -3026,16 +3027,16 @@ class FullstackStarterIntegrationTests {
                 .doesNotContain("aria-label={t('cardView')}")       // cards not selected
                 .doesNotContain("<CardGrid")
                 .doesNotContain("<CalendarView")
-                .contains("<FilterBar filters={filterDescriptors}")
+                .contains("<FilterBar filters={list.filterDescriptors}")
                 .contains("options: [{ value: 'OPEN', label: 'Open' }, { value: 'DONE', label: 'Done' }]")
                 .contains("exportCsv('tasks.csv')")
                 // The selection bar is for those who may write (ldap-auth is a set default).
-                .contains("selectable={can('bulk')}")
-                .contains("isRowSelected={isRowSelected}")
+                .contains("selectable={list.can('bulk')}")
+                .contains("isRowSelected={list.isRowSelected}")
                 // A failed drag-and-drop is toasted and the board reloaded, never a dropped promise.
                 .contains("async function onKanbanMove(row: Task, value: string)")
                 // Dragging a card saves the row: for those who may write.
-                .contains("onMove={can('edit') ? onKanbanMove : undefined}")
+                .contains("onMove={list.can('edit') ? list.onKanbanMove : undefined}")
                 .contains("await reload()")
                 .contains(" reload,")
                 // The board loads every matching row (not one page) and takes its lane totals from
@@ -3045,8 +3046,8 @@ class FullstackStarterIntegrationTests {
                 .doesNotContain("calendarRange")
                 .contains("useTask({ page: wholeView ? 0 : page, size: wholeView ? WHOLE_VIEW_LIMIT : size, sort,")
                 .contains("countBy('status')")
-                .contains("totals={laneTotals}")
-                .contains("onShowLane={value => { setFilters(f => ({ ...f, status: value })); setViewMode('table') }}")
+                .contains("totals={list.laneTotals}")
+                .contains("onShowLane={value => { list.setFilters(f => ({ ...f, status: value })); list.setViewMode('table') }}")
                 // Hard delete: the confirm promises no undo.
                 .contains("message={t('cannotUndo')}")
                 .doesNotContain("undoHint")
@@ -3056,12 +3057,12 @@ class FullstackStarterIntegrationTests {
                 .contains("if (selectionKey !== selectionFor) {");
         assertThat(taskPage)
                 // A filtered board says nothing matches; an unfiltered one offers the first record.
-                .contains("          filtered={filtered}\n          emptyAction={emptyAction}\n")
+                .contains("          filtered={list.filtered}\n          emptyAction={list.emptyAction}\n")
                 // A failed load can be retried in place.
                 .contains("{t('retry')}</button>")
                 // A failed export is told, and the button says it is busy meanwhile.
                 .contains("  const download = useDownload()")
-                .contains("onClick={() => download.run(() => exportCsv('tasks.csv'))}");
+                .contains("onClick={() => list.download.run(() => list.exportCsv('tasks.csv'))}");
         assertThat(entries.get("ops/frontend/src/shared/ui/KanbanBoard.tsx"))
                 .contains("if (loading && rows.length === 0) {")
                 .contains("t('nMoreShowInList', { n: hidden })")
@@ -3084,7 +3085,7 @@ class FullstackStarterIntegrationTests {
                 .contains("`${basePath}/stats?groupBy=${encodeURIComponent(field)}${where ? `&${where}` : ''}`");
 
         // Event page: calendar-only — no toggle bar, no Table/CardGrid/KanbanBoard.
-        String eventPage = entries.get("ops/frontend/src/pages/event/ui/EventPage.tsx");
+        String eventPage = ListPages.of(entries, "ops/frontend/src/pages/event/ui/EventPage.tsx");
         assertThat(eventPage)
                 .contains("useState<'calendar'>((prefs.view as 'calendar' | undefined) ?? openingView)")
                 .contains("<CalendarView")
@@ -3093,13 +3094,13 @@ class FullstackStarterIntegrationTests {
                 .contains("startsAtFrom: from + 'T00:00:00',")
                 .contains("startsAtTo: to + 'T23:59:59',")
                 .contains("filters: listFilters })")
-                .contains("onRangeChange={onCalendarRange}")
+                .contains("onRangeChange={list.onCalendarRange}")
                 .contains("const wholeView = (viewMode === 'calendar' && calendarRange != null)")
                 .doesNotContain("<Table")
                 .doesNotContain("aria-label={t('calendarView')}");   // single view → no toggle
 
         // Plain page: legacy listView="kanban" down-grades to table-only, no filter bar.
-        String plainPage = entries.get("ops/frontend/src/pages/plain/ui/PlainPage.tsx");
+        String plainPage = ListPages.of(entries, "ops/frontend/src/pages/plain/ui/PlainPage.tsx");
         assertThat(plainPage)
                 .contains("const [viewMode] = useState<'table'>((prefs.view as 'table' | undefined) ?? openingView)")   // no toggle → no unused setter
                 .doesNotContain("KanbanBoard")
@@ -3179,7 +3180,7 @@ class FullstackStarterIntegrationTests {
                 .contains("@RestController")
                 .contains("@RequestMapping(\"/api/users\")");
         assertThat(byPath).containsKey("frontend/src/pages/order/ui/OrderPage.tsx");
-        assertThat(byPath.get("frontend/src/pages/order/ui/OrderPage.tsx"))
+        assertThat(ListPages.of(byPath, "frontend/src/pages/order/ui/OrderPage.tsx"))
                 .isNotBlank()
                 .contains("export function OrderPage");
         assertThat(byPath).containsKey("README.md");
@@ -3233,7 +3234,7 @@ class FullstackStarterIntegrationTests {
                 .contains("@EntityListeners(AuditingEntityListener.class)");
         assertThat(contentEndingWith(entries, "/controller/InvoiceController.java"))
                 .contains("@GetMapping(\"/export.csv\")");
-        assertThat(entries.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx"))
+        assertThat(ListPages.of(entries, "books/frontend/src/pages/invoice/ui/InvoicePage.tsx"))
                 .contains("exportCsv('invoices.csv')");
         assertThat(entries.get("books/frontend/src/entities/note/model/types.ts")).isNotNull();
 
@@ -3243,7 +3244,7 @@ class FullstackStarterIntegrationTests {
                 .doesNotContain("AuditingEntityListener");
         assertThat(contentEndingWith(entries, "/controller/NoteController.java"))
                 .doesNotContain("export.csv");
-        assertThat(entries.get("books/frontend/src/pages/note/ui/NotePage.tsx"))
+        assertThat(ListPages.of(entries, "books/frontend/src/pages/note/ui/NotePage.tsx"))
                 .doesNotContain("exportCsv");
         assertThat(entries.get("books/frontend/src/entities/note/model/types.ts"))
                 .doesNotContain("createdAt");
@@ -3357,19 +3358,19 @@ class FullstackStarterIntegrationTests {
 
         String types = entries.get("books/frontend/src/entities/invoice/model/types.ts");
         assertThat(types).contains("version?: number | null");
-        String page = entries.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx");
+        String page = ListPages.of(entries, "books/frontend/src/pages/invoice/ui/InvoicePage.tsx");
         assertThat(page).contains("import { StaleNotice } from '@shared/ui/StaleNotice'")
                 .contains("const isStale = (e: unknown) =>")
                 .contains("} else if (isStale(e)) {")
                 .contains("{ ...editing, version: current.version }")
-                .contains("<StaleNotice busy={saving} onReload={loadTheirs} onOverwrite={saveMineAnyway} />");
+                .contains("<StaleNotice busy={list.saving} onReload={list.loadTheirs} onOverwrite={list.saveMineAnyway} />");
         assertThat(entries).containsKey("books/frontend/src/shared/ui/StaleNotice.tsx");
         assertThat(entries.get("books/frontend/src/shared/i18n/strings.ts")).contains("saveMineAnyway: 'Save mine anyway'");
 
         // Opted out, and the read-only view: no version anywhere.
         assertThat(contentEndingWith(entries, "/entity/Note.java")).doesNotContain("@Version");
         assertThat(contentEndingWith(entries, "/service/NoteService.java")).doesNotContain("ObjectOptimisticLockingFailureException");
-        assertThat(entries.get("books/frontend/src/pages/note/ui/NotePage.tsx")).doesNotContain("StaleNotice").doesNotContain("isStale");
+        assertThat(ListPages.of(entries, "books/frontend/src/pages/note/ui/NotePage.tsx")).doesNotContain("StaleNotice").doesNotContain("isStale");
         assertThat(contentEndingWith(entries, "/entity/Summary.java")).doesNotContain("@Version");
         assertThat(entries.get("books/frontend/src/entities/summary/model/types.ts")).doesNotContain("version");
 
@@ -3418,7 +3419,7 @@ class FullstackStarterIntegrationTests {
             body.put("opts", Map.of("scaffold", List.of("inlineEdit", "optimisticLocking")));
             Map<String, String> entries = generateZip(body);
 
-            String page = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+            String page = ListPages.of(entries, "ops/frontend/src/pages/task/ui/TaskPage.tsx");
             assertThat(page).as(set)
                     .contains("import { InlineCell, type InlineKind } from '@shared/ui/InlineCell'")
                     .contains("  'title': { kind: 'text' },")
@@ -3429,10 +3430,10 @@ class FullstackStarterIntegrationTests {
                     // With locking on, a stale cell save reloads the list instead of keeping the editor.
                     .contains("if (isStale(e)) {\n        await reload()".replace("\n", page.contains("\r\n") ? "\r\n" : "\n"))
                     // In place for those who may write (ldap-auth is a set default); plain cells otherwise.
-                    .contains("columns={can('edit') ? inline(columns) : columns}");
+                    .contains("columns={list.can('edit') ? list.inline(list.columns) : list.columns}");
             assertThat(entries).containsKey("ops/frontend/src/shared/ui/InlineCell.tsx");
-            assertThat(entries.get("ops/frontend/src/pages/note/ui/NotePage.tsx")).as(set)
-                    .doesNotContain("InlineCell").contains("columns={columns}");
+            assertThat(ListPages.of(entries, "ops/frontend/src/pages/note/ui/NotePage.tsx")).as(set)
+                    .doesNotContain("InlineCell").contains("columns={list.columns}");
         }
 
         // Without the opt the page and the shared UI are as they were.
@@ -3442,7 +3443,7 @@ class FullstackStarterIntegrationTests {
         plain.put("entities", List.of(task));
         Map<String, String> entries = generateZip(plain);
         assertThat(entries).doesNotContainKey("ops/frontend/src/shared/ui/InlineCell.tsx");
-        assertThat(entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx")).doesNotContain("INLINE_FIELDS");
+        assertThat(ListPages.of(entries, "ops/frontend/src/pages/task/ui/TaskPage.tsx")).doesNotContain("INLINE_FIELDS");
     }
 
     @Test
@@ -3463,7 +3464,7 @@ class FullstackStarterIntegrationTests {
             body.put("pages", List.of(Map.of("id", "tasks", "type", "entity-list", "entity", "Task")));
             Map<String, String> entries = generateZip(body);
 
-            String page = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+            String page = ListPages.of(entries, "ops/frontend/src/pages/task/ui/TaskPage.tsx");
             assertThat(page).as(set)
                     // The list opens with this browser's saved settings, keeps them as they change...
                     .contains("const [prefs] = useState(() => readListPrefs('task', columns.flatMap(c => c.sortKey ? [c.sortKey] : []), ['table', 'kanban']))")
@@ -3471,7 +3472,7 @@ class FullstackStarterIntegrationTests {
                     .contains("useState<'table' | 'kanban'>(routeView ?? (prefs.view as 'table' | 'kanban' | undefined) ?? openingView)")
                     .contains("writeListPrefs('task', {")
                     // ...and its table offers the Columns menu (hide columns, reset the saved view).
-                    .contains("columnMenu={columnMenu}")
+                    .contains("columnMenu={list.columnMenu}")
                     .contains("      setViewMode(openingView)");
             String table = entries.get("ops/frontend/src/shared/ui/Table.tsx");
             assertThat(table).as(set)
@@ -3595,11 +3596,11 @@ class FullstackStarterIntegrationTests {
 
         Map<String, String> entries = generateZip(body);
 
-        assertThat(entries.get("desk/frontend/src/pages/ticket/ui/TicketPage.tsx"))
+        assertThat(ListPages.of(entries, "desk/frontend/src/pages/ticket/ui/TicketPage.tsx"))
                 .contains("const filtered = debouncedSearch !== '' || Object.values(filters).some(v => v !== '')")
                 .contains("const emptyAction = { label: t('newX', { x: 'Ticket' }), onClick: openNew }")
-                .contains("filtered={filtered}")
-                .contains("emptyAction={emptyAction}");
+                .contains("filtered={list.filtered}")
+                .contains("emptyAction={list.emptyAction}");
         assertThat(entries.get("desk/frontend/src/shared/ui/Table.tsx"))
                 .contains("<EmptyState title={t('noMatchingRecords')} />")
                 .contains("action={emptyAction}");
@@ -3613,7 +3614,7 @@ class FullstackStarterIntegrationTests {
                 .contains("formatDate(value.due)")
                 .contains("formatDateTime(value.closedAt)")
                 .contains("String(value.title)");
-        assertThat(entries.get("desk/frontend/src/pages/ticket/ui/TicketPage.tsx"))
+        assertThat(ListPages.of(entries, "desk/frontend/src/pages/ticket/ui/TicketPage.tsx"))
                 .contains("import { formatDate, formatDateTime } from '@shared/ui/format'")
                 .contains("render: r => r.open == null ? '—' : (r.open ? t('trueLabel') : t('falseLabel')) }")
                 .contains("render: r => r.due == null ? '—' : formatDate(r.due) }")
@@ -3693,7 +3694,7 @@ class FullstackStarterIntegrationTests {
                 .contains("onChange={v => set('customerId', v == null ? null : Number(v))}")
                 .contains("const regionOptions = useOptions<Record<string, unknown>>('/api/regions')")
                 .doesNotContain("customerOptions");
-        assertThat(entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx"))
+        assertThat(ListPages.of(entries, "shop/frontend/src/pages/order/ui/OrderPage.tsx"))
                 .contains("optionsPath: '/api/customers', optionValue: 'id', optionLabel: 'name', searchable: true }")
                 .contains("optionsPath: '/api/regions', optionValue: 'id' }");
         assertThat(entries.get("shop/frontend/src/shared/ui/FilterBar.tsx"))
@@ -3750,7 +3751,7 @@ class FullstackStarterIntegrationTests {
                 .contains("row.setStage(Ticket.TicketStageType.ACTIVE);")
                 .contains("row.setCode(label(\"Code\", i, Integer.MAX_VALUE));");
         // The page seeds a new record with the defaults.
-        String page = entries.get("desk/frontend/src/pages/ticket/ui/TicketPage.tsx");
+        String page = ListPages.of(entries, "desk/frontend/src/pages/ticket/ui/TicketPage.tsx");
         assertThat(page)
                 .contains("const newDefaults = (): Partial<Ticket> => ({ status: 'draft', priority: 1, open: true, stage: 'ACTIVE', due: '2024-01-01', code: 'X', })")
                 // ...and with the list's one-value filters on top (an ACTIVE-filtered list makes ACTIVE rows).
@@ -3805,9 +3806,9 @@ class FullstackStarterIntegrationTests {
                 .contains("import { t } from '@shared/i18n'")
                 .contains("label: t('dashboard')")
                 .doesNotContain("'Dashboard'");
-        assertThat(entries.get("shop/frontend/src/pages/task/ui/TaskPage.tsx"))
+        assertThat(ListPages.of(entries, "shop/frontend/src/pages/task/ui/TaskPage.tsx"))
                 .contains("t('newX', { x: 'Task' })")
-                .contains("t(totalElements === 1 ? 'record' : 'records')")
+                .contains("t(list.totalElements === 1 ? 'record' : 'records')")
                 .doesNotContain("New Task");
         assertThat(entries.get("shop/frontend/src/shared/ui/Table.tsx"))
                 .contains("import { t } from '../i18n'")
@@ -3985,7 +3986,7 @@ class FullstackStarterIntegrationTests {
                 .contains("{ TaskStatusTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>) }");
 
         // List page: the table cell, the filter options, the bulk-edit options and the kanban lanes.
-        String taskPage = entries.get("ops/frontend/src/pages/task/ui/TaskPage.tsx");
+        String taskPage = ListPages.of(entries, "ops/frontend/src/pages/task/ui/TaskPage.tsx");
         assertThat(taskPage)
                 .contains("import { TaskStatusTypeLabels, } from '@entities/task'")
                 .contains("render: r => r.status == null ? '—' : TaskStatusTypeLabels[r.status] }")
@@ -3994,7 +3995,7 @@ class FullstackStarterIntegrationTests {
                 .contains("<option key={o.value} value={o.value}>{o.label}</option>")
                 .contains("groupValues={[{ value: 'OPEN', label: 'Open' }, { value: 'IN_REVIEW', label: 'In review' }, { value: 'DONE', label: 'Won\\'t fix' }]}");
         // Boolean lanes go through i18n, never a hardcoded True/False.
-        assertThat(entries.get("ops/frontend/src/pages/flag/ui/FlagPage.tsx"))
+        assertThat(ListPages.of(entries, "ops/frontend/src/pages/flag/ui/FlagPage.tsx"))
                 .contains("groupValues={[{ value: 'true', label: t('trueLabel') }, { value: 'false', label: t('falseLabel') }]}")
                 .doesNotContain("Labels");
 
@@ -4051,7 +4052,7 @@ class FullstackStarterIntegrationTests {
         Map<String, String> entries = generateZip(body);
 
         // Single-quoted TS literals: apostrophe and backslash escaped, a double quote left alone.
-        String page = entries.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx");
+        String page = ListPages.of(entries, "books/frontend/src/pages/invoice/ui/InvoicePage.tsx");
         assertThat(page)
                 .contains("label: 'מס\\' חשבונית', sortKey: 'number'")
                 .contains("label: 'מע\"מ', sortKey: 'vat'")
@@ -4079,7 +4080,7 @@ class FullstackStarterIntegrationTests {
         // The Menora set authors its own page and dashboard: same rules.
         body.put("frontendTemplateSet", "react-menora-digital-crud");
         Map<String, String> menora = generateZip(body);
-        assertThat(menora.get("books/frontend/src/pages/invoice/ui/InvoicePage.tsx"))
+        assertThat(ListPages.of(menora, "books/frontend/src/pages/invoice/ui/InvoicePage.tsx"))
                 .contains("label: 'מס\\' חשבונית', sortKey: 'number'")
                 .contains("<SectionHeader title=\"חשבוניות &quot;מס&quot; <1>\" align=\"start\" />")
                 .contains("caption=\"חשבוניות &quot;מס&quot; <1>\"");
@@ -4119,7 +4120,7 @@ class FullstackStarterIntegrationTests {
 
         Map<String, String> entries = generateZip(body);
 
-        String page = entries.get("shop/frontend/src/pages/order/ui/OrderPage.tsx");
+        String page = ListPages.of(entries, "shop/frontend/src/pages/order/ui/OrderPage.tsx");
         assertThat(page)
                 // Column headings: the label (trimmed, escaped for a TS literal); unlabelled as before.
                 .contains("label: 'לקוח מס\\' \"1\"', render: r =>")
@@ -4139,7 +4140,7 @@ class FullstackStarterIntegrationTests {
         assertThat(contentEndingWith(entries, "order-form/model/importFields.ts"))
                 .contains("{ name: 'customerId', label: 'לקוח מס\\' \"1\"', kind: 'relation'");
         // A ONE_TO_MANY's label names its count column and the table of child rows in the details.
-        assertThat(entries.get("shop/frontend/src/pages/customer/ui/CustomerPage.tsx"))
+        assertThat(ListPages.of(entries, "shop/frontend/src/pages/customer/ui/CustomerPage.tsx"))
                 .contains("label: 'הזמנות של \"לקוח\"', render: r => r.ordersCount == null");
         assertThat(contentEndingWith(entries, "/CustomerDetail.tsx"))
                 .contains("title={ 'הזמנות של \"לקוח\"' }");

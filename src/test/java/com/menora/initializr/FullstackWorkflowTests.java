@@ -109,13 +109,13 @@ class FullstackWorkflowTests {
                 .doesNotContain("set('status'")
                 .doesNotContain("ExpenseClaimStatusTypeOptions")
                 .contains("only?: readonly string[]");
-        String page = files.get(FE + "src/pages/expense-claim/ui/ExpenseClaimPage.tsx");
+        String page = ListPages.of(files, FE + "src/pages/expense-claim/ui/ExpenseClaimPage.tsx");
         assertThat(page)
                 .contains("const step = ExpenseClaimWorkflow.between(String(row.status), value, me.roles)")
                 .contains("      await ExpenseClaimWorkflow.run(row, step.transition.name)\n")
                 .doesNotContain("{ ...row, status: value }")
-                .contains("<ExpenseClaimTransitions row={selectedRow} onDone={next => { setFetchedRow(next); void reload() }} />")
-                .contains("<ExpenseClaimTransitions row={detailRow} onDone={next => { setDetailRow(next); void reload() }} />");
+                .contains("<ExpenseClaimTransitions row={selectedRow} onDone={next => { list.setFetchedRow(next); void list.reload() }} />")
+                .contains("<ExpenseClaimTransitions row={list.detailRow} onDone={next => { list.setDetailRow(next); void list.reload() }} />");
         assertThat(files.get(FE + "src/app/screens/ClaimScreen.tsx")).contains("<ExpenseClaimTransitions row={record} onDone={setRecord} />");
         assertThat(files.get(FE + "src/app/screens/BoardScreen.tsx"))
                 .contains("const step = ExpenseClaimWorkflow.between(from, to, me.roles)")
@@ -132,7 +132,8 @@ class FullstackWorkflowTests {
         claim.remove("workflow");
         ((List<Map<String, Object>>) plain.get("pages")).removeIf(p -> "inbox".equals(p.get("type")));
         Map<String, String> without = generate(plain);
-        for (String path : List.of("src/pages/cost-center/ui/CostCenterPage.tsx", "src/features/cost-center-form/ui/CostCenterForm.tsx",
+        for (String path : List.of("src/pages/cost-center/ui/CostCenterPage.tsx", "src/pages/cost-center/model/useCostCenterList.tsx",
+                "src/features/cost-center-form/ui/CostCenterForm.tsx",
                 "src/features/cost-center-form/index.ts", "src/app/screens/CentersScreen.tsx")) {
             assertThat(files.get(FE + path)).as(path).isNotNull().isEqualTo(without.get(FE + path));
         }
@@ -259,7 +260,7 @@ class FullstackWorkflowTests {
         String feature = FE + "src/features/expense-claim-form/";
         assertThat(files.get(feature + "ui/ExpenseClaimForm.tsx")).doesNotContain("set('assignee'").contains("set('title'");
         assertThat(files.get(feature + "model/importFields.ts")).doesNotContain("'assignee'").contains("'title'");
-        assertThat(files.get(FE + "src/pages/expense-claim/ui/ExpenseClaimPage.tsx")).doesNotContain("'assignee': { label:");
+        assertThat(ListPages.of(files, FE + "src/pages/expense-claim/ui/ExpenseClaimPage.tsx")).doesNotContain("'assignee': { label:");
         assertThat(files.get(feature + "model/workflow.ts"))
                 .contains("assign: (row: ExpenseClaim, assignee: string) => api.post<ExpenseClaim>(`${rowPath(row)}/assign`, { assignee }),");
         assertThat(files.get(feature + "ui/ExpenseClaimTransitions.tsx"))

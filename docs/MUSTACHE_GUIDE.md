@@ -172,7 +172,9 @@ with a `{{^hasScaffoldedEntities}}` fallback** — see the walkthrough in §7.
 
 ## 4. Fullstack entity context (`EntityScaffoldContext`)
 
-Source: `src/main/java/com/menora/initializr/fullstack/EntityScaffoldContext.java`. Built in two stages:
+Source: `src/main/java/com/menora/initializr/fullstack/EntityScaffoldContext.java` and the classes
+beside it that hold its parts by area (`EntityViewModel`, `FieldViewModel`, `RelationViews`,
+`FeatureContext`, `PageContext`, `DashboardContext`, `TemplateText`, `SchemaNames`). Built in two stages:
 `buildProjectContext(...)` (project-wide) and `buildEntityContext(...)` (project-wide **plus** one
 entity's view-model). A `perEntity: true` template file is rendered once per user entity with the
 per-entity context; a `perEntity: false` file is rendered once with the project context.
@@ -286,7 +288,7 @@ Per-entity derived flag (set in `buildEntityContext`):
 | `needsSpecification` | boolean | `hasStringFields || hasFilters` — gates the JPA `Specification` import/machinery in the Service template |
 
 Per-field (§4c) there is also `seedExpr`: the Java expression the demo-data loader assigns for row `i`
-(see `EntityScaffoldContext.seedExpression`).
+(see `FieldViewModel.seedExpression`).
 
 ### 4c. Per-field variables (inside `{{#fields}}`, `{{#pkFields}}`, …)
 
@@ -659,7 +661,8 @@ row.
   arbitrary content variables in a backend/frontend target path.
 - **`__`-prefixed keys are internal** (`__entitySummaries`, `__inverseRelations`) — not for templates.
 - **New entity variables go in `EntityScaffoldContext` only** — `buildProjectContext`,
-  `buildEntityContext`, or the per-field/-relation view-model builders. Adding a `view.put(...)` /
+  `buildEntityContext`, or the per-field/-relation view-model builders (`EntityViewModel.of`,
+  `FieldViewModel.of`, `RelationViews`) and the area classes beside them. Adding a `view.put(...)` /
   `ctx.put(...)` there is what makes a new `{{name}}` usable; there's nowhere else to wire it.
 - **`optScaffold*` must be set on both render paths** — backend
   (`FullstackProjectGenerationConfiguration`) and frontend (`FullstackStarterController.renderFrontend`).

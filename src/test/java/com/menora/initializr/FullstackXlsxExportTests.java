@@ -100,19 +100,19 @@ class FullstackXlsxExportTests {
     @Test
     void theListPageOffersIt() throws Exception {
         Map<String, String> files = generate(body("react-tailwind-crud", "xlsxExport"));
-        assertThat(files.get(FE + "pages/order/ui/OrderPage.tsx"))
+        assertThat(ListPages.of(files, FE + "pages/order/ui/OrderPage.tsx"))
                 .contains("import { useDownload } from '@shared/api'")
                 .contains("import { api as sheetApi } from '@shared/api'")
                 .contains("    if (sort) params.set('sort', `${sort.field},${sort.direction}`)\n"
                         + "    return sheetApi.download(`/api/orders/export.xlsx?${params}`, 'orders.xlsx')")
-                .contains("            onClick={() => download.run(exportXlsx)}")
+                .contains("            onClick={() => list.download.run(list.exportXlsx)}")
                 .contains("<FileSpreadsheet className=\"h-4 w-4\" />")
                 .doesNotContain("exportCsv(");
         assertThat(files.get(FE + "shared/i18n/strings.ts")).contains("  exportXlsx: 'Export to Excel',").contains("  exportXlsx: 'ייצוא ל-Excel',");
 
         Map<String, String> menora = generate(body("react-menora-digital-crud", "xlsxExport", "csvExport"));
-        assertThat(menora.get(FE + "pages/order/ui/OrderPage.tsx"))
-                .contains("label={t('excel')} onClick={() => download.run(exportXlsx)} />")
+        assertThat(ListPages.of(menora, FE + "pages/order/ui/OrderPage.tsx"))
+                .contains("label={t('excel')} onClick={() => list.download.run(list.exportXlsx)} />")
                 .contains("exportCsv('orders.csv')");
     }
 
@@ -123,7 +123,7 @@ class FullstackXlsxExportTests {
         opt(off, "Product", "xlsxExport", false);
         Map<String, String> files = generate(off);
         assertThat(files.get(BE + "controller/ProductController.java")).doesNotContain("export.xlsx");
-        assertThat(files.get(FE + "pages/product/ui/ProductPage.tsx")).doesNotContain("exportXlsx").doesNotContain("useDownload");
+        assertThat(ListPages.of(files, FE + "pages/product/ui/ProductPage.tsx")).doesNotContain("exportXlsx").doesNotContain("useDownload");
         assertThat(files.get(BE + "controller/OrderController.java")).contains("export.xlsx");
 
         // Off for the project, on for one entity: the writer still ships.
@@ -138,6 +138,6 @@ class FullstackXlsxExportTests {
         files = generate(body("react-tailwind-crud", "csvExport"));
         assertThat(files).doesNotContainKey(BE + "web/XlsxWriter.java");
         assertThat(files.get(FE + "shared/i18n/strings.ts")).doesNotContain("exportXlsx");
-        assertThat(files.get(FE + "pages/order/ui/OrderPage.tsx")).doesNotContain("sheetApi");
+        assertThat(ListPages.of(files, FE + "pages/order/ui/OrderPage.tsx")).doesNotContain("sheetApi");
     }
 }

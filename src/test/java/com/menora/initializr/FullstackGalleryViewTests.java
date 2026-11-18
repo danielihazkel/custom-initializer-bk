@@ -51,10 +51,10 @@ class FullstackGalleryViewTests {
     void anEntityWithAPictureCanBeListedAsAGallery() throws Exception {
         Map<String, String> files = generate(withViews("react-tailwind-crud", "table", "gallery"));
         assertThat(files).containsKey(FE + "shared/ui/GalleryView.tsx");
-        assertThat(files.get(FE + "pages/shift/ui/ShiftPage.tsx"))
+        assertThat(ListPages.of(files, FE + "pages/shift/ui/ShiftPage.tsx"))
                 .contains("import { GalleryView } from '@shared/ui/GalleryView'")
                 // A switch between the two views, and the gallery drawn from the first image field.
-                .contains("              onClick={() => setViewMode('gallery')}")
+                .contains("              onClick={() => list.setViewMode('gallery')}")
                 .contains("viewMode === 'gallery' ? (\n"
                         + "        <GalleryView\n")
                 .contains("          imageField=\"photo\"\n"
@@ -64,7 +64,7 @@ class FullstackGalleryViewTests {
 
         // The Menora set lists it among its view tabs and borrows the view.
         Map<String, String> menora = generate(withViews("react-menora-digital-crud", "gallery", "table"));
-        assertThat(menora.get(FE + "pages/shift/ui/ShiftPage.tsx"))
+        assertThat(ListPages.of(menora, FE + "pages/shift/ui/ShiftPage.tsx"))
                 .contains("{ id: 'gallery', label: t('galleryView') }")
                 .contains("        <GalleryView\n");
         assertThat(menora.get(FE + "shared/ui/GalleryView.tsx")).isEqualTo(files.get(FE + "shared/ui/GalleryView.tsx"));
@@ -85,13 +85,13 @@ class FullstackGalleryViewTests {
         body.put("entities", entities);
         Map<String, String> files = generate(body);
         assertThat(files.keySet()).noneMatch(path -> path.endsWith("GalleryView.tsx"));
-        assertThat(files.get("shop/frontend/src/pages/order/ui/OrderPage.tsx")).doesNotContain("gallery");
+        assertThat(ListPages.of(files, "shop/frontend/src/pages/order/ui/OrderPage.tsx")).doesNotContain("gallery");
         assertThat(files.get("shop/frontend/src/shared/i18n/strings.ts")).doesNotContain("galleryView");
 
         // Not asked for: an entity with a picture keeps the page it had.
         Map<String, String> plain = generate(FullstackExampleRequests.fieldTypesBody("react-tailwind-crud"));
         assertThat(plain.keySet()).noneMatch(path -> path.endsWith("GalleryView.tsx"));
-        assertThat(plain.get(FE + "pages/shift/ui/ShiftPage.tsx")).doesNotContain("gallery");
+        assertThat(ListPages.of(plain, FE + "pages/shift/ui/ShiftPage.tsx")).doesNotContain("gallery");
     }
 
     @Test

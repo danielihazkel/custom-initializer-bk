@@ -83,19 +83,19 @@ class FullstackSavedViewsTests {
     void theListPageOffersItsViews() throws Exception {
         Map<String, String> files = generate(body("react-tailwind-crud", "savedViews"));
         assertThat(files).containsKeys(FE + "shared/ui/savedViews.ts", FE + "shared/ui/ViewsMenu.tsx");
-        assertThat(files.get(FE + "pages/order/ui/OrderPage.tsx"))
+        assertThat(ListPages.of(files, FE + "pages/order/ui/OrderPage.tsx"))
                 .contains("import { ViewsMenu } from '@shared/ui/ViewsMenu'")
                 .contains("import type { ViewState } from '@shared/ui/savedViews'")
                 .contains("  const applyView = (state: ViewState) => {")
-                .contains("<ViewsMenu list=\"order\" current={viewState} ")
+                .contains("<ViewsMenu list=\"order\" current={list.viewState} ")
                 // The classic shell's list always opens plain: the user's default view applies.
                 .contains("opensPlain={ true } />");
         // The dev user travels with the calls, so a view has an owner in development too.
         assertThat(files.get(FE + "shared/i18n/strings.ts")).contains("  views: 'Views',").contains("  views: 'תצוגות',");
 
         Map<String, String> menora = generate(body("react-menora-digital-crud", "savedViews", "csvExport"));
-        assertThat(menora.get(FE + "pages/order/ui/OrderPage.tsx"))
-                .contains("<ViewsMenu list=\"order\" current={viewState} ")
+        assertThat(ListPages.of(menora, FE + "pages/order/ui/OrderPage.tsx"))
+                .contains("<ViewsMenu list=\"order\" current={list.viewState} ")
                 .contains("exportCsv('orders.csv')");
         assertThat(menora.get(FE + "shared/ui/ViewsMenu.tsx")).isEqualTo(files.get(FE + "shared/ui/ViewsMenu.tsx"));
     }
@@ -105,15 +105,15 @@ class FullstackSavedViewsTests {
         Map<String, Object> off = body("react-tailwind-crud", "savedViews");
         opt(off, "Product", "savedViews", false);
         Map<String, String> files = generate(off);
-        assertThat(files.get(FE + "pages/product/ui/ProductPage.tsx")).doesNotContain("ViewsMenu").doesNotContain("applyView");
+        assertThat(ListPages.of(files, FE + "pages/product/ui/ProductPage.tsx")).doesNotContain("ViewsMenu").doesNotContain("applyView");
         assertThat(files.get(BE + "views/SavedViewService.java")).contains("Set.of(\"customer\", \"order\", \"order-line\", \"account\", \"transfer\", \"employee\");");
 
         Map<String, Object> on = body("react-tailwind-crud");
         opt(on, "Product", "savedViews", true);
         files = generate(on);
         assertThat(files.get(BE + "views/SavedViewService.java")).contains("Set.of(\"product\");");
-        assertThat(files.get(FE + "pages/product/ui/ProductPage.tsx")).contains("ViewsMenu");
-        assertThat(files.get(FE + "pages/order/ui/OrderPage.tsx")).doesNotContain("ViewsMenu");
+        assertThat(ListPages.of(files, FE + "pages/product/ui/ProductPage.tsx")).contains("ViewsMenu");
+        assertThat(ListPages.of(files, FE + "pages/order/ui/OrderPage.tsx")).doesNotContain("ViewsMenu");
 
         // Not asked for at all: nothing of it.
         files = generate(body("react-tailwind-crud", "csvExport"));

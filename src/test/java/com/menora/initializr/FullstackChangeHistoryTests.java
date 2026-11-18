@@ -84,7 +84,7 @@ class FullstackChangeHistoryTests {
         // The frontend shows them in the details, offers them as (hidden) columns and filters by them.
         assertThat(file(files, "entities/expense-claim/model/types.ts")).contains("createdBy?: string | null");
         assertThat(file(files, "features/expense-claim-form/ui/ExpenseClaimDetail.tsx")).contains("<Row label={t('createdBy')}>");
-        assertThat(file(files, "pages/expense-claim/ui/ExpenseClaimPage.tsx"))
+        assertThat(ListPages.of(files, "pages/expense-claim/ui/ExpenseClaimPage.tsx"))
                 .contains("const WHO_HIDDEN = ['createdBy', 'updatedBy']")
                 .contains("filters: withMine(")
                 .contains("{t('changedByMe')}");
@@ -115,7 +115,7 @@ class FullstackChangeHistoryTests {
         assertThat(file(files, "features/expense-claim-form/ui/ExpenseClaimHistory.tsx"))
                 .contains("const mayRestore = useCallerMay('ADMIN')")
                 .contains("'status': { label: 'Status', values: {");
-        assertThat(file(files, "pages/expense-claim/ui/ExpenseClaimPage.tsx")).contains("<ExpenseClaimHistory id={String(rowKey(detailRow))}");
+        assertThat(ListPages.of(files, "pages/expense-claim/ui/ExpenseClaimPage.tsx")).contains("<ExpenseClaimHistory id={String(list.rowKey(list.detailRow))}");
         assertThat(files.entrySet().stream().filter(e -> e.getKey().contains("app/screens/") && e.getValue().contains("ExpenseClaimHistory")))
                 .isNotEmpty();
         assertThat(file(files, "shared/i18n/strings.ts")).contains("changeHistory: 'Change history',").contains("restoreVersion:");

@@ -111,6 +111,7 @@
     {"source": "EntityTransitions.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Transitions.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 228, "gatedBy": "hasWorkflow", "sourceSet": "react-tailwind-crud"},
     {"source": "EntityRows.tsx.mustache", "path": "src/features/{{entityNameKebab}}-form/ui/{{EntityName}}Rows.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 229, "gatedBy": "isComposedChild", "sourceSet": "react-tailwind-crud"},
     {"source": "EntityPage.tsx.mustache", "path": "src/pages/{{entityNameKebab}}/ui/{{EntityName}}Page.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 230},
+    {"source": "EntityList.tsx.mustache", "path": "src/pages/{{entityNameKebab}}/model/use{{EntityName}}List.tsx", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 231, "sourceSet": "react-tailwind-crud"},
     {"source": "page-barrel.ts.mustache", "path": "src/pages/{{entityNameKebab}}/index.ts", "perEntity": true, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 235, "sourceSet": "react-tailwind-crud"}
   ]
 }

@@ -123,11 +123,11 @@ class FullstackNewPageTypesTests {
                 .doesNotContain("name: 'id'");
         assertThat(files).doesNotContainKey(FE + "src/features/project-form/model/importFields.ts");
         // The list page's Import goes to the import page; elsewhere (a tab, a related list) a drawer.
-        assertThat(files.get(FE + "src/pages/task/ui/TaskPage.tsx"))
-                .contains("onClick={ onImport ?? (() => setImporting(true)) }")
+        assertThat(ListPages.of(files, FE + "src/pages/task/ui/TaskPage.tsx"))
+                .contains("onClick={ props.onImport ?? (() => list.setImporting(true)) }")
                 .contains("<CsvImport");
         assertThat(files.get(FE + "src/app/screens/TasksScreen.tsx")).contains("onImport={() => onNavigate('import-tasks')}");
-        assertThat(files.get(FE + "src/pages/project/ui/ProjectPage.tsx")).doesNotContain("CsvImport");
+        assertThat(ListPages.of(files, FE + "src/pages/project/ui/ProjectPage.tsx")).doesNotContain("CsvImport");
 
         String service = files.get(BE + "service/TaskService.java");
         assertThat(service)
@@ -155,10 +155,10 @@ class FullstackNewPageTypesTests {
         Map<String, String> files = generate(body);
         assertThat(files).containsKeys(FE + "src/shared/ui/csv.ts", FE + "src/shared/ui/CsvImport.tsx",
                 FE + "src/features/project-form/model/importFields.ts");
-        assertThat(files.get(FE + "src/pages/project/ui/ProjectPage.tsx"))
-                .contains("onClick={ (() => setImporting(true)) }")
+        assertThat(ListPages.of(files, FE + "src/pages/project/ui/ProjectPage.tsx"))
+                .contains("onClick={ (() => list.setImporting(true)) }")
                 .contains("toast.success(t('importDone', { n, x: 'Projects' }))");
-        assertThat(files.get(FE + "src/pages/person/ui/PersonPage.tsx")).doesNotContain("CsvImport");
+        assertThat(ListPages.of(files, FE + "src/pages/person/ui/PersonPage.tsx")).doesNotContain("CsvImport");
         assertThat(files.get(BE + "controller/PersonController.java")).doesNotContain("/import");
         assertThat(files.get(BE + "controller/ProjectController.java")).contains("@PostMapping(\"/import\")");
     }
@@ -218,10 +218,11 @@ class FullstackNewPageTypesTests {
         // The entity's own form keeps its bytes (no wizard steps), and so do the other entities.
         Map<String, String> without = generate(planning("react-tailwind-crud"));
         for (String path : List.of("src/features/task-form/ui/TaskForm.tsx", "src/pages/project/ui/ProjectPage.tsx",
-                "src/pages/person/ui/PersonPage.tsx", "src/app/screens/ProjectsScreen.tsx")) {
+                "src/pages/person/ui/PersonPage.tsx", "src/pages/project/model/useProjectList.tsx",
+                "src/pages/person/model/usePersonList.tsx", "src/app/screens/ProjectsScreen.tsx")) {
             assertThat(files.get(FE + path)).as(path).isNotNull().isEqualTo(without.get(FE + path));
         }
-        assertThat(files.get(FE + "src/pages/task/ui/TaskPage.tsx")).isNotEqualTo(without.get(FE + "src/pages/task/ui/TaskPage.tsx"));
+        assertThat(ListPages.of(files, FE + "src/pages/task/ui/TaskPage.tsx")).isNotEqualTo(ListPages.of(without, FE + "src/pages/task/ui/TaskPage.tsx"));
     }
 
     @Test
