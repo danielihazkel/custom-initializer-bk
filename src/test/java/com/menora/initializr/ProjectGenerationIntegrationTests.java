@@ -303,6 +303,49 @@ class ProjectGenerationIntegrationTests {
                 .contains("src/main/java/com/menora/demo/config/KafkaConfig.java");
     }
 
+    /**
+     * An entry without Maven coordinates that is not file-only becomes
+     * {@code spring-boot-starter-<depId>} in the pom (the framework's rule). mongodb and
+     * mail-sampler were such entries, naming starters that do not exist, so their projects did
+     * not build.
+     */
+    @Test
+    void mongodbAndMailSamplerNameArtifactsThatExist() throws Exception {
+        WebProjectRequest request = createBaseRequest();
+        request.getDependencies().add("mongodb");
+        request.getDependencies().add("mail-sampler");
+
+        Path projectDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        String pom = Files.readString(projectDir.resolve("pom.xml"));
+
+        assertThat(pom)
+                .contains("<artifactId>spring-boot-starter-data-mongodb</artifactId>")
+                .contains("<artifactId>spring-boot-starter-mail</artifactId>")
+                .doesNotContain("<artifactId>spring-boot-starter-mongodb</artifactId>")
+                .doesNotContain("<artifactId>spring-boot-starter-mail-sampler</artifactId>");
+    }
+
+    /** The guard for the next one: every coordinate-less starter entry is a starter Boot has. */
+    @Test
+    void catalogEntriesWithoutCoordinatesAreRealBootStarters() throws Exception {
+        // The spring-boot-starter-<id> artifacts Boot 3.2 – 3.5 publish that the catalog uses by id.
+        // Add an id here only after checking the starter exists.
+        List<String> bootStarters = List.of("web", "webflux", "data-jpa", "security", "actuator");
+        com.fasterxml.jackson.databind.JsonNode catalog;
+        try (var in = new org.springframework.core.io.ClassPathResource("catalog/dependencies.json").getInputStream()) {
+            catalog = new com.fasterxml.jackson.databind.ObjectMapper().readTree(in);
+        }
+        List<String> byId = new ArrayList<>();
+        for (var group : catalog.get("groups")) {
+            for (var entry : group.get("entries")) {
+                boolean starter = !entry.has("starter") || entry.get("starter").asBoolean();
+                boolean coordinates = entry.hasNonNull("mavenArtifactId") && !entry.get("mavenArtifactId").asText().isBlank();
+                if (starter && !coordinates) byId.add(entry.get("depId").asText());
+            }
+        }
+        assertThat(byId).isNotEmpty().allMatch(bootStarters::contains);
+    }
+
     @Test
     void securityDependencyInjectsSecurityConfig() throws Exception {
         WebProjectRequest request = createBaseRequest();

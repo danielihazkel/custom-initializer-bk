@@ -1301,12 +1301,25 @@ public class SqlEntityGenerator {
         imports.add("jakarta.persistence.JoinColumn");
         imports.add("jakarta.persistence.FetchType");
 
-        List<String> lines = new ArrayList<>();
+        List<String> lines = new ArrayList<>(lombokExcluded(imports));
         if (body.validated && !c.nullable()) lines.add("@NotNull");
         lines.add("@ManyToOne(fetch = FetchType.LAZY)");
         lines.add("@JoinColumn(name = \"" + sqlName(table, c.name(), dialect) + '"'
                 + (c.nullable() ? "" : ", nullable = false") + ")");
         body.add(lines, refEntity, fieldName);
+    }
+
+    /**
+     * The entity is Lombok {@code @Data}, whose equals, hashCode and toString read every field: an
+     * association there loads the lazy row it points at (a query each, or a
+     * {@code LazyInitializationException} outside a transaction), and two entities that point at
+     * each other recurse. An association is therefore left out of all three — as the fullstack
+     * Lombok set does.
+     */
+    private static List<String> lombokExcluded(Set<String> imports) {
+        imports.add("lombok.EqualsAndHashCode");
+        imports.add("lombok.ToString");
+        return List.of("@EqualsAndHashCode.Exclude", "@ToString.Exclude");
     }
 
     /**
@@ -1342,10 +1355,10 @@ public class SqlEntityGenerator {
         imports.add("jakarta.persistence." + kind);
         imports.add("jakarta.persistence.JoinColumn");
         imports.add("jakarta.persistence.FetchType");
-        body.add(List.of(
-                "@" + kind + "(fetch = FetchType.LAZY)",
-                "@JoinColumn(name = \"" + sqlName(table, c.name(), dialect) + "\", insertable = false, updatable = false)"),
-                refEntity, fieldName);
+        List<String> lines = new ArrayList<>(lombokExcluded(imports));
+        lines.add("@" + kind + "(fetch = FetchType.LAZY)");
+        lines.add("@JoinColumn(name = \"" + sqlName(table, c.name(), dialect) + "\", insertable = false, updatable = false)");
+        body.add(lines, refEntity, fieldName);
     }
 
     private void appendCompositeAssociation(Members body, ForeignKey fk, TableModel table, SqlDialect dialect,
@@ -1358,7 +1371,7 @@ public class SqlEntityGenerator {
         imports.add("jakarta.persistence.JoinColumns");
         imports.add("jakarta.persistence.FetchType");
 
-        List<String> lines = new ArrayList<>();
+        List<String> lines = new ArrayList<>(lombokExcluded(imports));
         lines.add("@ManyToOne(fetch = FetchType.LAZY)");
         lines.add("@JoinColumns({");
         for (int i = 0; i < fk.columns().size(); i++) {

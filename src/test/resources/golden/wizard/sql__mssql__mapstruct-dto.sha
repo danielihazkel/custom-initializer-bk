@@ -22,7 +22,7 @@ a18b64693b58a905d81af1a862c109588b0e4f6797e9284941a1d713c6740e29  golden/src/mai
 cda335e505cc0b96bb8af8147f4fb4fb73678d4d99f3240cfcb5fce7b6863601  golden/src/main/java/com/menora/golden/dto/CustomersDto.java
 9e905ebddfbd1ed8133b35db3a4984e0256bcc770a0a1e387c69b988966ff918  golden/src/main/java/com/menora/golden/dto/InvoicesDto.java
 92985a084a9b90f233288811d9f3552ad84156fcf1844e2b81a5b07364374cbd  golden/src/main/java/com/menora/golden/entity/Customers.java
-03fa837e1ce8aa04e7ea5052bd6c57425d5cf31487d1a6b6bc917ef51033f6b5  golden/src/main/java/com/menora/golden/entity/Invoices.java
+c25fe52bfe5228dcbe51aedea95fb0def444ea362e83c65d024da2547910e9e7  golden/src/main/java/com/menora/golden/entity/Invoices.java
 05bab202fff30c183b183fbf0a98ce0436d27fa4f705f00d0c77552cee15792f  golden/src/main/java/com/menora/golden/mapper/CustomersMapper.java
 daa50ea6ac0753a820fa2b22958c10f9fed5fa28a0a3f1c31226ef93b86e2621  golden/src/main/java/com/menora/golden/mapper/InvoicesMapper.java
 0e209d54187f0938e5bd81c912790d3146688149e83f7e812fc2e6b9751fffff  golden/src/main/java/com/menora/golden/repository/CustomersRepository.java

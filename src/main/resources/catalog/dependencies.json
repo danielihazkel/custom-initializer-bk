@@ -29,7 +29,7 @@
         { "depId": "db2", "name": "IBM DB2 Driver", "description": "IBM DB2 JDBC driver", "mavenGroupId": "net.sf.jt400", "mavenArtifactId": "jt400", "version": "20.0.6", "scope": "runtime", "sortOrder": 3 },
         { "depId": "oracle", "name": "Oracle Database Driver", "description": "Oracle JDBC driver", "mavenGroupId": "com.oracle.database.jdbc", "mavenArtifactId": "ojdbc11", "scope": "runtime", "sortOrder": 4 },
         { "depId": "h2", "name": "H2 Database", "description": "Embedded relational database — ideal for development and testing", "mavenGroupId": "com.h2database", "mavenArtifactId": "h2", "scope": "runtime", "sortOrder": 5 },
-        { "depId": "mongodb", "name": "MongoDB", "description": "Spring Data MongoDB — document database driver", "sortOrder": 6 },
+        { "depId": "mongodb", "name": "MongoDB", "description": "Spring Data MongoDB — document database driver", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-data-mongodb", "sortOrder": 6 },
         { "depId": "flyway", "name": "Flyway Migration", "description": "Database schema migrations with Flyway — drop SQL files under db/migration/", "mavenGroupId": "org.flywaydb", "mavenArtifactId": "flyway-core", "sortOrder": 7 },
         { "depId": "liquibase", "name": "Liquibase Migration", "description": "Database schema migrations with Liquibase — XML changelogs under db/changelog/", "mavenGroupId": "org.liquibase", "mavenArtifactId": "liquibase-core", "sortOrder": 8 },
         { "depId": "redis", "name": "Spring Data Redis", "description": "Spring Data Redis — Lettuce client + RedisTemplate for cache and ops", "mavenGroupId": "org.springframework.boot", "mavenArtifactId": "spring-boot-starter-data-redis", "sortOrder": 9 },
@@ -65,7 +65,7 @@
       "name": "Communication",
       "sortOrder": 7,
       "entries": [
-        { "depId": "mail-sampler", "name": "Mail Sampler", "description": "Outlook mail integration for internal organization", "sortOrder": 0 }
+        { "depId": "mail-sampler", "name": "Mail Sampler", "description": "Outlook mail integration for internal organization", "sortOrder": 0, "starter": false }
       ]
     },
     {

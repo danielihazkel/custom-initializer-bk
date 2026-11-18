@@ -162,10 +162,14 @@ generated entities actually live** instead of a hardcoded `<packageName>.<driver
 | `hasScaffoldedEntities` | boolean | true when the request scaffolds entities (fullstack **or** SQL wizard); false otherwise | — |
 | `dsEntityPackage` | String | non-null only when `hasScaffoldedEntities` | Fullstack: `<domainPackage>.entity`. SQL wizard: `<packageName>.<subPackage>` (default `entity`). |
 | `dsRepositoryPackage` | String | non-null only when `hasScaffoldedEntities` | Fullstack: `<domainPackage>.repository`. SQL wizard: `<packageName>.repository`. |
+| `dsExtraPackages` | List&lt;String&gt; | non-empty only for fullstack | The further packages the scaffold puts an entity and its repository in — attachments, saved views, change history, the events outbox (`FeatureContext.supportPackages`). |
+| `dsHasExtraPackages` | boolean | true when `dsExtraPackages` is non-empty | — |
 
-The two branches (`:455` fullstack via `EntityDefinitionContext`, `:463` SQL wizard via
-`SqlScriptsContext`) both set `hasScaffold = true`; if neither applies, all three stay at
-`false`/`null`. **This is exactly why the H2Config template pairs a `{{#hasScaffoldedEntities}}` branch
+The two branches (fullstack via `EntityDefinitionContext`, SQL wizard via `SqlScriptsContext`, in
+`DynamicProjectGenerationConfiguration.buildBaseContext`) both set `hasScaffold = true`; if neither
+applies, the flags stay `false`, the packages `null` and `dsExtraPackages` empty. Every
+`*-config-primary` datasource template must scan `dsExtraPackages` too, or a fullstack application with
+one of those features does not start (`No qualifying bean of type AttachmentRepository`). **This is exactly why the H2Config template pairs a `{{#hasScaffoldedEntities}}` branch
 with a `{{^hasScaffoldedEntities}}` fallback** — see the walkthrough in §7.
 
 ---
@@ -360,29 +364,40 @@ Inverse-collection variables (inside `{{#inverseRelations}}`, `:95–118`): `chi
 ### 4e. Opt-in scaffold flags
 
 Driven by the request `opts` map (`{ "scaffold": ["tests","audit",…] }`) and exposed as
-`optScaffold<Option>`. **Set in both render paths** —
-`FullstackProjectGenerationConfiguration` (backend) **and** `FullstackStarterController.renderFrontend`
-(frontend) — because the two paths don't share a context. A frontend-only opt set on just the backend
-silently never fires.
+`optScaffold<Option>`. The two render paths do not share a context, but they no longer need wiring
+one by one: `fullstack/ScaffoldOption` is the single list (key, flag, which path reads it, per entity
+or not), and both `FullstackProjectGenerationConfiguration` (backend) and
+`FullstackStarterController.renderFrontend` (frontend) call `ScaffoldOption.putFlags(ctx, options, side)`,
+which sets every flag that path reads. **A new option is one `ScaffoldOption` constant** — then the
+templates, a re-pin of the schema (`GET /metadata/fullstack/schema`), `npm run sync:schema` in `ui/`
+and a label in the UI's `scaffoldOptions.ts` (its parity test names what is missing). An unknown key is
+a 400.
 
-| Flag | `opts.scaffold` value |
-|---|---|
-| `optScaffoldTests` | `tests` |
-| `optScaffoldAudit` | `audit` |
-| `optScaffoldSoftDelete` | `softDelete` |
-| `optScaffoldInverse` | `inverseCollections` |
-| `optScaffoldOpenApi` | `openapi` (backend-only) |
-| `optScaffoldSecured` | `secured` (backend-only) |
-| `optScaffoldCsvExport` | `csvExport` |
-| `optScaffoldBulkDelete` | `bulkDelete` (→ per-entity `bulkDeleteApplicable`) |
-| `optScaffoldBulkUpdate` | `bulkUpdate` (→ per-entity `bulkUpdateApplicable`) |
-| *(none)* | `rtl` — not a flag: sets `FrontendProjectDescription.rtl`, so FE templates read `isRtl` (§5) |
-| `locale` / `isHebrew` | request field `locale` (`en`/`he`), not an opt — frontend context only; `i18n-strings.ts.mustache` picks the string table on `isHebrew`, `LOCALE` = `locale` |
+| Flag | `opts.scaffold` value | Read by | Per entity |
+|---|---|---|---|
+| `optScaffoldAudit` | `audit` | both | yes (→ `auditApplicable`) |
+| `optScaffoldSoftDelete` | `softDelete` | both | yes (→ `softDeleteApplicable`) |
+| `optScaffoldCsvExport` | `csvExport` | both | yes |
+| `optScaffoldBulkDelete` | `bulkDelete` | both | yes (→ `bulkDeleteApplicable`) |
+| `optScaffoldBulkUpdate` | `bulkUpdate` | both | yes (→ `bulkUpdateApplicable`) |
+| `optScaffoldTests` | `tests` | both | yes (→ `apiTestApplicable`) |
+| `optScaffoldCsvImport` | `csvImport` | both | yes (→ `importApplicable`) |
+| `optScaffoldOptimisticLocking` | `optimisticLocking` | both | yes (→ `lockingApplicable`) |
+| `optScaffoldInlineEdit` | `inlineEdit` | frontend | yes (→ `inlineEditApplicable`) |
+| `optScaffoldXlsxExport` | `xlsxExport` | both | yes |
+| `optScaffoldSavedViews` | `savedViews` | both | yes |
+| `optScaffoldHistory` | `history` | both | yes (→ `historyApplicable`) |
+| `optScaffoldEvents` | `events` | both | yes (→ `eventsApplicable`) |
+| `optScaffoldInverse` | `inverseCollections` | both | no |
+| `optScaffoldOpenApi` | `openapi` | backend | no |
+| `optScaffoldSecured` | `secured` — **retired**: no template reads it; access is each entity's `access` levels, enforced whenever an ldap-auth dependency is on the build. Kept so a model that names it still validates | backend | no |
+| `optScaffoldSeedData` | `seedData` | backend | no |
+| *(none)* | `rtl` — not a flag: sets `FrontendProjectDescription.rtl`, so FE templates read `isRtl` (§5) | — | — |
+| `locale` / `isHebrew` | request field `locale` (`en`/`he`), not an opt — frontend context only; `i18n-strings.ts.mustache` picks the string table on `isHebrew`, `LOCALE` = `locale` | — | — |
 
-`optScaffoldOpenApi` and `optScaffoldSecured` affect only the backend `Controller.java.mustache`, so —
-unlike the audit/inverse flags — they are set **only** in `FullstackProjectGenerationConfiguration`, not
-in `renderFrontend`. `optScaffoldSecured` is additionally ANDed with `ldap-auth` being on the build
-(its `security.*` imports come from that library), so it no-ops cleanly when ldap-auth is deselected.
+A per-entity option is resolved against the entity's own `opts` override in `buildEntityContext`, and
+templates mostly read the derived `*Applicable` flag, which also accounts for read-only entities, views
+and composite keys.
 
 Also on the backend fullstack path: `hasValidation` (true when the `validation` starter is selected) —
 gate generated Bean Validation annotations on it so imports resolve — `useMockitoBean` (true for
@@ -395,10 +410,10 @@ Only on the frontend fullstack path (`renderFrontend`): `hasLdapAuth` (an `ldap-
 on the backend build — gates the dev-only `userinfo` header in `client.ts`), `dashboardTitle` /
 `dashboardOverview` (request overrides, absent when blank so `{{^dashboardTitle}}` falls back), the whole
 §5 frontend context (`isRtl`, versions, `palette.*` with HSL forms, `has<Dep>` flags), and every
-`optScaffold*` above except `optScaffoldOpenApi`/`optScaffoldSecured`.
+`optScaffold*` flag the table above marks as read by the frontend.
 
-The UI's `SCAFFOLD_OPTIONS` list (`ui/src/components/fullstack/FullstackView.tsx`) must name every opt
-too, or it is unreachable from the editor.
+The UI's `SCAFFOLD_OPTIONS` (`ui/src/components/fullstack/scaffoldOptions.ts`) labels every option; a
+parity test fails when one is missing.
 
 ### 4f. Page-layout variables (frontend, `putPageContext`)
 
@@ -534,11 +549,11 @@ sets), `hasCompositePk` or `apiTestApplicable` (derived per-entity flags).
 
 ```mustache
 @EnableJpaRepositories(
-        basePackages = "{{#hasScaffoldedEntities}}{{dsRepositoryPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.h2.repository{{/hasScaffoldedEntities}}",
+        basePackages = {{#dsHasExtraPackages}}{ {{/dsHasExtraPackages}}"{{#hasScaffoldedEntities}}{{dsRepositoryPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.h2.repository{{/hasScaffoldedEntities}}"{{#dsExtraPackages}}, "{{.}}"{{/dsExtraPackages}}{{#dsHasExtraPackages}} }{{/dsHasExtraPackages}},
         ...
 )
 ...
-em.setPackagesToScan("{{#hasScaffoldedEntities}}{{dsEntityPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.h2{{/hasScaffoldedEntities}}");
+em.setPackagesToScan("{{#hasScaffoldedEntities}}{{dsEntityPackage}}{{/hasScaffoldedEntities}}{{^hasScaffoldedEntities}}{{packageName}}.h2{{/hasScaffoldedEntities}}"{{#dsExtraPackages}}, "{{.}}"{{/dsExtraPackages}});
 ```
 
 Reading it against §3:
@@ -552,9 +567,14 @@ Reading it against §3:
   when no entities were scaffolded, `dsRepositoryPackage`/`dsEntityPackage` are null, so the template
   falls back to the legacy convention `{{packageName}}.h2.repository` / `{{packageName}}.h2`.
 
+- `{{#dsExtraPackages}}, "{{.}}"{{/dsExtraPackages}}` — a **list section**: once per further package a
+  fullstack project keeps entities in, it appends that package. `basePackages` turns into an array
+  (`{ … }`) only when there are any (`dsHasExtraPackages`), so a plain project keeps its single string.
+
 So a plain (non-fullstack) project gets `com.menora.demo.h2.repository`; a fullstack project gets the
-real scaffolded package. The three keys are set together at
-`DynamicProjectGenerationConfiguration.java:479–481`.
+real scaffolded package plus its support packages. The keys are set together in
+`DynamicProjectGenerationConfiguration.buildBaseContext`; the Oracle, PostgreSQL, SQL Server and DB2
+configs follow the same pattern.
 
 ---
 
@@ -627,8 +647,8 @@ Three levers, from coarsest to finest:
    Block-gating lets one template replace what used to need several near-duplicate rows.
 
 For **fullstack entity templates**, the file-level gate is the manifest's `gatedBy` flag (§6) — e.g.
-`gatedBy: "optScaffoldTests"`. Remember the both-paths rule (§4e): an `optScaffold*` flag that affects
-the frontend must be set in both render configs or it silently never fires.
+`gatedBy: "optScaffoldTests"`. A new `optScaffold*` flag comes from a `ScaffoldOption` constant, which
+sets it on every render path that reads it (§4e).
 
 ---
 
@@ -664,8 +684,11 @@ row.
   `buildEntityContext`, or the per-field/-relation view-model builders (`EntityViewModel.of`,
   `FieldViewModel.of`, `RelationViews`) and the area classes beside them. Adding a `view.put(...)` /
   `ctx.put(...)` there is what makes a new `{{name}}` usable; there's nowhere else to wire it.
-- **`optScaffold*` must be set on both render paths** — backend
-  (`FullstackProjectGenerationConfiguration`) and frontend (`FullstackStarterController.renderFrontend`).
+- **A new scaffold option is a `ScaffoldOption` constant** — `ScaffoldOption.putFlags` sets its flag on
+  both render paths (backend `FullstackProjectGenerationConfiguration`, frontend
+  `FullstackStarterController.renderFrontend`); don't put an `optScaffold*` flag into a context by hand.
+- **A new generated package holding a JPA entity** goes into `FeatureContext.supportPackages`, which
+  feeds `dsExtraPackages`; otherwise the hand-written datasource configs do not scan it.
 - **`YAML_MERGE` rows honour `substitutionType`** — a `MUSTACHE` YAML_MERGE row is rendered with the
   same context before the merge (the ldap-auth `application.yaml` fragments use this for
   `{{departmentUpper}}`); `NONE` merges the content verbatim.
