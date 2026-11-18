@@ -320,6 +320,28 @@ class FullstackWorkflowTests {
                 .doesNotContain("value.status");
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void aMoveThatAsksForAFile_checksItLikeASave() throws Exception {
+        // A transition may ask for a file (attach the receipt when submitting). The file is held to
+        // what a save holds it to — there, free, the caller's — and the one it replaces goes.
+        Map<String, Object> body = claims(true);
+        Map<String, Object> claim = ((List<Map<String, Object>>) body.get("entities")).get(1);
+        List<Map<String, Object>> fields = new ArrayList<>((List<Map<String, Object>>) claim.get("fields"));
+        fields.add(Map.of("name", "receipt", "type", "FILE"));
+        claim.put("fields", fields);
+        transitions(body).get(0).put("requires", List.of("receipt"));
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "ldap-auth-rest"));
+        assertThat(generate(body).get(BE + "service/ExpenseClaimService.java"))
+                .contains("""
+                                        if (!java.util.Objects.equals(existing.getReceipt(), given.getReceipt())) {
+                                            attachments.requireAttachable(given.getReceipt(), "receipt");
+                                            attachments.delete(existing.getReceipt());
+                                        }
+                                        existing.setReceipt(given.getReceipt());
+                        """);
+    }
+
     @SuppressWarnings("unchecked")
     private static void replaceField(Map<String, Object> body, String name, Map<String, Object> field) {
         Map<String, Object> claim = ((List<Map<String, Object>>) body.get("entities")).get(1);

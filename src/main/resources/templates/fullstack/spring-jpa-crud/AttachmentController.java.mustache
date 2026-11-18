@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,9 +25,16 @@ import java.util.UUID;
  * Uploads and serves the files a record's file and image fields point at.
  *
  * <p>A file is uploaded first ({@code POST /api/attachments}, multipart part {@code file}) and the
- * id that comes back is saved on the record like any other value. Reading one needs only its id,
- * which is a random UUID: anyone who can call the API and knows the id can read the file — put
- * the same access rule here as on the records that carry it if that is not enough.
+ * id that comes back is saved on the record like any other value; a file no record takes is
+ * deleted a day later ({@link Attachments}).
+{{#hasLdapAuth}}
+ * Reading one takes what reading its record takes — the record's entity's read level — and a file
+ * on no record yet is its uploader's alone.
+{{/hasLdapAuth}}
+{{^hasLdapAuth}}
+ * Without an ldap-auth dependency the project knows no users or roles, so anyone who can call the
+ * API and knows a file's id (a random UUID) can read it.
+{{/hasLdapAuth}}
  *
  * <p>What is uploaded is somebody's file, so it is never served as a page: every response says
  * {@code nosniff}, and only a real PNG, JPEG, GIF or WebP — told by its first bytes, not by what
@@ -36,10 +44,10 @@ import java.util.UUID;
 @RequestMapping("/api/attachments")
 public class AttachmentController {
 
-    private final AttachmentStorage storage;
+    private final Attachments attachments;
 
-    public AttachmentController(AttachmentStorage storage) {
-        this.storage = storage;
+    public AttachmentController(Attachments attachments) {
+        this.attachments = attachments;
     }
 
     /**
@@ -48,8 +56,9 @@ public class AttachmentController {
      */
 {{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
 {{/hasLdapAuth}}    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<AttachmentStorage.Info> upload(@RequestParam("file") MultipartFile file,
-                                                        @RequestParam(value = "kind", required = false) String kind)
+    public ResponseEntity<Attachments.Info> upload(@RequestParam("file") MultipartFile file,
+                                                   @RequestParam(value = "kind", required = false) String kind,
+                                                   @RequestHeader(value = "userinfo", required = false) String user)
             throws IOException {
         if (file.isEmpty()) throw new IllegalArgumentException("The file is empty");
         byte[] content = file.getBytes();
@@ -59,20 +68,23 @@ public class AttachmentController {
         }
         String contentType = image != null ? image
                 : file.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : file.getContentType();
-        AttachmentStorage.Info stored = storage.store(cleanName(file.getOriginalFilename()), contentType, content);
+        Attachments.Info stored = attachments.store(cleanName(file.getOriginalFilename()), contentType, content,
+                user == null || user.isBlank() ? null : user.trim());
         return ResponseEntity.status(HttpStatus.CREATED).body(stored);
     }
 
 {{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
 {{/hasLdapAuth}}    @GetMapping("/{id}/info")
-    public AttachmentStorage.Info info(@PathVariable UUID id) {
-        return storage.describe(id).orElseThrow(() -> new ResourceNotFoundException("Attachment " + id + " not found"));
+    public Attachments.Info info(@PathVariable UUID id, @RequestHeader(value = "userinfo", required = false) String user) {
+{{#hasLdapAuth}}        attachments.requireReadable(id, user);
+{{/hasLdapAuth}}        return attachments.describe(id).orElseThrow(() -> new ResourceNotFoundException("Attachment " + id + " not found"));
     }
 
 {{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
 {{/hasLdapAuth}}    @GetMapping("/{id}")
-    public ResponseEntity<byte[]> download(@PathVariable UUID id) {
-        AttachmentStorage.Stored stored = storage.load(id)
+    public ResponseEntity<byte[]> download(@PathVariable UUID id, @RequestHeader(value = "userinfo", required = false) String user) {
+{{#hasLdapAuth}}        attachments.requireReadable(id, user);
+{{/hasLdapAuth}}        Attachments.Stored stored = attachments.load(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Attachment " + id + " not found"));
         String image = imageType(stored.content());
         ContentDisposition disposition = (image != null ? ContentDisposition.inline() : ContentDisposition.attachment())
@@ -80,6 +92,8 @@ public class AttachmentController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
                 .header("X-Content-Type-Options", "nosniff")
+                // Each caller's own answer: a shared cache must not hand it to somebody else.
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
                 .contentType(MediaType.parseMediaType(image != null ? image : MediaType.APPLICATION_OCTET_STREAM_VALUE))
                 .body(stored.content());
     }

@@ -1,0 +1,191 @@
+package {{packageName}}.attachment;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.HexFormat;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Keeps uploaded files in an S3-compatible object store ({@code app.attachments.storage: s3}) —
+ * MinIO, Ceph, or AWS S3 itself — one object per upload, named by its id under
+ * {@code app.attachments.s3.prefix}. Every instance of the application sees the same files.
+ *
+ * <p>It speaks the S3 REST API itself (PUT, GET and DELETE of an object, signed with AWS
+ * Signature Version 4) over the JDK's HTTP client, so the project needs no AWS SDK. The bucket
+ * must exist; the keys need {@code s3:PutObject}, {@code s3:GetObject} and {@code s3:DeleteObject}
+ * on it. Settings under {@code app.attachments.s3}: {@code endpoint} (e.g.
+ * {@code https://minio.example:9000}), {@code region} ({@code us-east-1} unless set), {@code bucket},
+ * {@code access-key}, {@code secret-key}, {@code prefix}, and {@code path-style} — true (the
+ * default, what MinIO expects) puts the bucket in the path, false in the host name as AWS does.
+ */
+@Component
+@ConditionalOnProperty(prefix = "app.attachments", name = "storage", havingValue = "s3")
+public class S3AttachmentStorage implements AttachmentStorage {
+
+    private static final DateTimeFormatter AMZ_DATE =
+            DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
+    private static final String SIGNED_HEADERS = "host;x-amz-content-sha256;x-amz-date";
+
+    private final AttachmentProperties.S3 s3;
+    private final URI endpoint;
+    private final HttpClient http = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+
+    public S3AttachmentStorage(AttachmentProperties properties) {
+        this.s3 = properties.getS3();
+        require(s3.getEndpoint(), "endpoint");
+        require(s3.getBucket(), "bucket");
+        require(s3.getAccessKey(), "access-key");
+        require(s3.getSecretKey(), "secret-key");
+        String e = s3.getEndpoint().trim();
+        this.endpoint = URI.create(e.endsWith("/") ? e.substring(0, e.length() - 1) : e);
+        if (endpoint.getHost() == null || !(endpoint.getScheme().equals("http") || endpoint.getScheme().equals("https"))) {
+            throw new IllegalStateException("app.attachments.s3.endpoint must be an http(s) URL: " + e);
+        }
+    }
+
+    @Override
+    public void put(UUID id, byte[] content) {
+        HttpResponse<byte[]> response = send("PUT", id, content);
+        if (response.statusCode() / 100 != 2) throw failure("store", id, response);
+    }
+
+    @Override
+    public Optional<byte[]> get(UUID id) {
+        HttpResponse<byte[]> response = send("GET", id, null);
+        if (response.statusCode() == 404) return Optional.empty();
+        if (response.statusCode() / 100 != 2) throw failure("read", id, response);
+        return Optional.of(response.body());
+    }
+
+    @Override
+    public void remove(UUID id) {
+        HttpResponse<byte[]> response = send("DELETE", id, null);
+        if (response.statusCode() / 100 != 2 && response.statusCode() != 404) throw failure("delete", id, response);
+    }
+
+    private HttpResponse<byte[]> send(String method, UUID id, byte[] body) {
+        String key = s3.getPrefix() + id;
+        String path;
+        String host;
+        if (s3.isPathStyle()) {
+            path = endpoint.getRawPath() + "/" + encode(s3.getBucket()) + "/" + encode(key);
+            host = hostOf(endpoint.getHost(), endpoint);
+        } else {
+            path = endpoint.getRawPath() + "/" + encode(key);
+            host = hostOf(s3.getBucket() + "." + endpoint.getHost(), endpoint);
+        }
+        URI uri = URI.create(endpoint.getScheme() + "://" + host + path);
+        byte[] payload = body == null ? new byte[0] : body;
+        String payloadHash = hex(sha256(payload));
+        Instant now = Instant.now();
+        String amzDate = AMZ_DATE.format(now);
+        String day = amzDate.substring(0, 8);
+        String scope = day + "/" + s3.getRegion() + "/s3/aws4_request";
+        String canonicalRequest = method + "\n" + path + "\n\n"
+                + "host:" + host + "\n" + "x-amz-content-sha256:" + payloadHash + "\n" + "x-amz-date:" + amzDate + "\n\n"
+                + SIGNED_HEADERS + "\n" + payloadHash;
+        String stringToSign = "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scope + "\n"
+                + hex(sha256(canonicalRequest.getBytes(StandardCharsets.UTF_8)));
+        byte[] signingKey = hmac(hmac(hmac(hmac(("AWS4" + s3.getSecretKey()).getBytes(StandardCharsets.UTF_8), day),
+                s3.getRegion()), "s3"), "aws4_request");
+        String signature = hex(hmac(signingKey, stringToSign));
+
+        HttpRequest.Builder request = HttpRequest.newBuilder(uri)
+                .timeout(Duration.ofSeconds(60))
+                .header("x-amz-date", amzDate)
+                .header("x-amz-content-sha256", payloadHash)
+                .header("Authorization", "AWS4-HMAC-SHA256 Credential=" + s3.getAccessKey() + "/" + scope
+                        + ", SignedHeaders=" + SIGNED_HEADERS + ", Signature=" + signature);
+        switch (method) {
+            case "PUT" -> request.header("Content-Type", "application/octet-stream")
+                    .PUT(HttpRequest.BodyPublishers.ofByteArray(payload));
+            case "GET" -> request.GET();
+            default -> request.DELETE();
+        }
+        try {
+            return http.send(request.build(), HttpResponse.BodyHandlers.ofByteArray());
+        } catch (IOException e) {
+            throw new UncheckedIOException("Object store " + endpoint + " could not be reached", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while calling the object store", e);
+        }
+    }
+
+    /** The Host header as the JDK's client sends it: the port only when it is not the scheme's own. */
+    private static String hostOf(String name, URI endpoint) {
+        int port = endpoint.getPort();
+        boolean standard = port == -1 || (endpoint.getScheme().equals("https") ? port == 443 : port == 80);
+        return standard ? name : name + ":" + port;
+    }
+
+    /** S3's URI encoding: unreserved characters as they are, '/' kept between path segments. */
+    private static String encode(String s) {
+        StringBuilder out = new StringBuilder();
+        for (byte b : s.getBytes(StandardCharsets.UTF_8)) {
+            char c = (char) (b & 0xFF);
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == '-' || c == '_' || c == '.' || c == '~' || c == '/') {
+                out.append(c);
+            } else {
+                out.append('%').append(String.format("%02X", b & 0xFF));
+            }
+        }
+        return out.toString();
+    }
+
+    private static byte[] sha256(byte[] data) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(data);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static byte[] hmac(byte[] key, String data) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(key, "HmacSHA256"));
+            return mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static String hex(byte[] bytes) {
+        return HexFormat.of().formatHex(bytes);
+    }
+
+    private static void require(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("app.attachments.storage is s3, but app.attachments.s3." + name + " is not set");
+        }
+    }
+
+    private IllegalStateException failure(String what, UUID id, HttpResponse<byte[]> response) {
+        String detail = new String(response.body(), StandardCharsets.UTF_8);
+        if (detail.length() > 300) detail = detail.substring(0, 300);
+        return new IllegalStateException("Could not " + what + " attachment " + id + " in bucket " + s3.getBucket()
+                + ": HTTP " + response.statusCode() + " " + detail);
+    }
+}

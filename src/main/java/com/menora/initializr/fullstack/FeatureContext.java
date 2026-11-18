@@ -439,6 +439,41 @@ public final class FeatureContext {
         ctx.put("xlsxSheetName", javaText(ctx.get("entityLabelPlural")));
     }
 
+    /**
+     * {@code attachmentOwners} on a backend project context: every table column that can hold an
+     * attachment id — one entry per FILE or IMAGE field, with its entity's read level and the
+     * native SQL that counts the rows pointing at an id. The generated {@code attachment/Attachments}
+     * reads it to decide who may download a file (whoever may read a record that holds it) and
+     * which uploads no record holds any more (the clean-up). Native SQL, so a soft-deleted row —
+     * which a restore brings back — still holds its file. Names are the ones the entity's own
+     * {@code @SQLDelete} and file-name {@code @Formula} use, Java-escaped. {@code unattachedSqlJava}
+     * is the clean-up's query: the uploads older than {@code :before} that no such column holds.
+     * Backend render path only.
+     */
+    public static void putAttachments(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        List<Map<String, Object>> owners = new ArrayList<>();
+        StringBuilder unattached = new StringBuilder("select a.id from app_attachment a where a.created_at < :before");
+        for (EntityDefinition e : entities) {
+            if (e.viewQuery() != null) continue; // the validator refuses an attachment on a view
+            String table = SqlNames.javaLiteral(SchemaNames.tableRefOf(e));
+            for (FieldDefinition f : e.fields()) {
+                if (!f.type().isAttachment()) continue;
+                String column = SqlNames.javaLiteral(SchemaNames.columnOf(f));
+                Map<String, Object> o = new LinkedHashMap<>();
+                o.put("EntityName", e.name());
+                o.put("field", f.name());
+                o.put("readLevel", e.access().read());
+                o.put("countSqlJava", "select count(*) from " + table + " where " + column + " = :id");
+                owners.add(o);
+                unattached.append(" and not exists (select 1 from ").append(table).append(" o where o.")
+                        .append(column).append(" = a.id)");
+            }
+        }
+        if (!owners.isEmpty()) owners.get(owners.size() - 1).put("last", true);
+        ctx.put("attachmentOwners", owners);
+        ctx.put("unattachedSqlJava", unattached.toString());
+    }
+
     public static void putCsvImport(Map<String, Object> ctx, List<EntityDefinition> entities) {
         boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldCsvImport"));
         ctx.put("hasCsvImport", entities.stream().anyMatch(e -> !e.readOnly()

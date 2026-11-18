@@ -467,6 +467,235 @@ class GeneratedBackendBuildSmokeTests {
             """;
 
     /**
+     * Uploaded files over a real API with ldap-auth-rest: a file is read with its record's read
+     * level, a record takes only a free file its caller uploaded, a replaced file is gone, the
+     * clean-up deletes what no record holds — once with the files in the database and once in a
+     * folder, where the bytes on disk are checked too. The project's own API tests run alongside
+     * (their rows upload files and attach them, through the same checks).
+     */
+    @org.junit.jupiter.api.Test
+    void attachmentsFollowTheirRecordsOverTheRealApi(@TempDir Path workDir) throws Exception {
+        Map<String, Object> id = Map.of("name", "id", "type", "LONG", "primaryKey", true, "generated", true);
+        Map<String, Object> payslip = new LinkedHashMap<>();
+        payslip.put("name", "Payslip");
+        payslip.put("fields", List.of(id, Map.of("name", "title", "type", "STRING", "required", true),
+                Map.of("name", "slip", "type", "FILE")));
+        payslip.put("access", Map.of("read", "ADMIN", "write", "ADMIN"));
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("name", "Note");
+        note.put("fields", List.of(id, Map.of("name", "text", "type", "STRING"), Map.of("name", "picture", "type", "IMAGE")));
+        note.put("access", Map.of("read", "SIGNED_IN", "write", "USER"));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "files");
+        body.put("packageName", "com.menora.files");
+        body.put("bootVersion", "3.2.1");
+        body.put("frontendTemplateSet", "react-tailwind-crud");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "ldap-auth-rest"));
+        body.put("opts", Map.of("scaffold", List.of("seedData", "tests", "softDelete")));
+        body.put("entities", List.of(payslip, note));
+
+        Path backend = postAndExtractBackend(workDir, body);
+        writeProjectTest(backend, "com.menora.files", "AttachmentAccessTests", ATTACHMENT_TESTS);
+        writeProjectTest(backend, "com.menora.files", "AttachmentFolderTests", ATTACHMENT_FOLDER_TESTS);
+        runMvn(backend, "-B", "package");
+        try (var reports = Files.list(backend.resolve("target/surefire-reports"))) {
+            List<String> ran = reports.map(p -> p.getFileName().toString()).toList();
+            assertThat(ran).as("the tests that ran in the generated build")
+                    .contains("com.menora.files.AttachmentAccessTests.txt", "com.menora.files.AttachmentFolderTests.txt")
+                    .anyMatch(name -> name.endsWith("PayslipApiTest.txt"));
+        }
+    }
+
+    /** Run inside the generated backend, files in the database (the default storage). */
+    private static final String ATTACHMENT_TESTS = """
+            package com.menora.files;
+
+            import com.fasterxml.jackson.databind.ObjectMapper;
+            import com.menora.files.attachment.Attachments;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.http.MediaType;
+            import org.springframework.mock.web.MockMultipartFile;
+            import org.springframework.test.web.servlet.MockMvc;
+            import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+            @SpringBootTest(properties = {
+                    "app.security.dev-roles.boss=ADMIN",
+                    "app.security.dev-roles.clerk=USER",
+                    "app.security.dev-roles.guest=",
+                    // Every upload no record holds is old enough for the clean-up at once.
+                    "app.attachments.keep-unattached=1ms"})
+            @AutoConfigureMockMvc
+            class AttachmentAccessTests {
+
+                @Autowired MockMvc mvc;
+                @Autowired Attachments attachments;
+                private final ObjectMapper json = new ObjectMapper();
+
+                private static MockHttpServletRequestBuilder as(String user, MockHttpServletRequestBuilder request) {
+                    return request.header("userinfo", user);
+                }
+
+                private String upload(String user, String name) throws Exception {
+                    MockMultipartFile file = new MockMultipartFile("file", name, "text/plain", ("bytes of " + name).getBytes());
+                    String body = mvc.perform(as(user, multipart("/api/attachments").file(file)))
+                            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+                    return json.readTree(body).get("id").asText();
+                }
+
+                private long create(String user, String path, String body) throws Exception {
+                    String answer = mvc.perform(as(user, post(path).contentType(MediaType.APPLICATION_JSON).content(body)))
+                            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+                    return json.readTree(answer).get("id").asLong();
+                }
+
+                @Test
+                void aFileOnNoRecordIsItsUploadersAlone() throws Exception {
+                    String file = upload("clerk", "draft.txt");
+                    mvc.perform(as("clerk", get("/api/attachments/" + file))).andExpect(status().isOk());
+                    mvc.perform(as("boss", get("/api/attachments/" + file))).andExpect(status().isNotFound());
+                    mvc.perform(get("/api/attachments/" + file)).andExpect(status().isUnauthorized());
+                }
+
+                @Test
+                void aFileOnARecordTakesTheRecordsReadLevel() throws Exception {
+                    String slip = upload("boss", "slip.txt");
+                    long payslip = create("boss", "/api/payslips", "{\\"title\\":\\"March\\",\\"slip\\":\\"" + slip + "\\"}");
+                    mvc.perform(as("boss", get("/api/attachments/" + slip))).andExpect(status().isOk());
+                    mvc.perform(as("clerk", get("/api/attachments/" + slip))).andExpect(status().isForbidden());
+                    mvc.perform(as("clerk", get("/api/attachments/" + slip + "/info"))).andExpect(status().isForbidden());
+
+                    // Notes are read by anyone signed in, so their pictures are too.
+                    String picture = upload("clerk", "pic.txt");
+                    create("clerk", "/api/notes", "{\\"text\\":\\"hi\\",\\"picture\\":\\"" + picture + "\\"}");
+                    mvc.perform(as("guest", get("/api/attachments/" + picture))).andExpect(status().isOk());
+
+                    // A soft-deleted payslip still holds its file, for a restore.
+                    mvc.perform(as("boss", delete("/api/payslips/" + payslip))).andExpect(status().is2xxSuccessful());
+                    attachments.removeUnattached();
+                    mvc.perform(as("boss", get("/api/attachments/" + slip))).andExpect(status().isOk());
+                }
+
+                @Test
+                void aRecordTakesOnlyAFreeFileItsCallerUploaded() throws Exception {
+                    String bosses = upload("boss", "boss.txt");
+                    mvc.perform(as("clerk", post("/api/notes").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"text\\":\\"mine\\",\\"picture\\":\\"" + bosses + "\\"}")))
+                            .andExpect(status().isBadRequest())
+                            .andExpect(jsonPath("$.errors.picture").value("Upload the file yourself to attach it"));
+
+                    String slip = upload("boss", "april.txt");
+                    create("boss", "/api/payslips", "{\\"title\\":\\"April\\",\\"slip\\":\\"" + slip + "\\"}");
+                    mvc.perform(as("boss", post("/api/payslips").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"title\\":\\"Copy\\",\\"slip\\":\\"" + slip + "\\"}")))
+                            .andExpect(status().isBadRequest())
+                            .andExpect(jsonPath("$.errors.slip").value("This file belongs to another record: upload a copy of it"));
+
+                    mvc.perform(as("boss", post("/api/payslips").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"title\\":\\"Gone\\",\\"slip\\":\\"00000000-0000-0000-0000-000000000001\\"}")))
+                            .andExpect(status().isBadRequest())
+                            .andExpect(jsonPath("$.errors.slip").value("The file is no longer there: upload it again"));
+                }
+
+                @Test
+                void aReplacedFileIsGoneAndTheCleanUpTakesWhatNoRecordHolds() throws Exception {
+                    String first = upload("boss", "first.txt");
+                    long id = create("boss", "/api/payslips", "{\\"title\\":\\"May\\",\\"slip\\":\\"" + first + "\\"}");
+                    String second = upload("boss", "second.txt");
+                    mvc.perform(as("boss", put("/api/payslips/" + id).contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"id\\":" + id + ",\\"title\\":\\"May\\",\\"slip\\":\\"" + second + "\\"}")))
+                            .andExpect(status().isOk());
+                    mvc.perform(as("boss", get("/api/attachments/" + first))).andExpect(status().isNotFound());
+                    mvc.perform(as("boss", get("/api/attachments/" + second))).andExpect(status().isOk());
+
+                    String abandoned = upload("boss", "abandoned.txt");
+                    Thread.sleep(20);
+                    assertThat(attachments.removeUnattached()).isGreaterThanOrEqualTo(1);
+                    mvc.perform(as("boss", get("/api/attachments/" + abandoned))).andExpect(status().isNotFound());
+                    mvc.perform(as("boss", get("/api/attachments/" + second))).andExpect(status().isOk());
+                }
+            }
+            """;
+
+    /** Run inside the generated backend, files in a folder: the bytes on disk come and go with them. */
+    private static final String ATTACHMENT_FOLDER_TESTS = """
+            package com.menora.files;
+
+            import com.fasterxml.jackson.databind.ObjectMapper;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.http.MediaType;
+            import org.springframework.mock.web.MockMultipartFile;
+            import org.springframework.test.web.servlet.MockMvc;
+
+            import java.nio.file.Files;
+            import java.nio.file.Path;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+            @SpringBootTest(properties = {
+                    "app.security.dev-roles.boss=ADMIN",
+                    "app.attachments.storage=filesystem",
+                    "app.attachments.directory=target/attachment-folder"})
+            @AutoConfigureMockMvc
+            class AttachmentFolderTests {
+
+                @Autowired MockMvc mvc;
+                private final ObjectMapper json = new ObjectMapper();
+
+                private String upload(String name, String text) throws Exception {
+                    MockMultipartFile file = new MockMultipartFile("file", name, "text/plain", text.getBytes());
+                    String body = mvc.perform(multipart("/api/attachments").file(file).header("userinfo", "boss"))
+                            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+                    return json.readTree(body).get("id").asText();
+                }
+
+                private static Path onDisk(String id) {
+                    return Path.of("target/attachment-folder", id.substring(0, 2), id);
+                }
+
+                @Test
+                void theBytesLiveInTheFolderAndGoWithTheFile() throws Exception {
+                    String first = upload("one.txt", "first version");
+                    assertThat(onDisk(first)).hasContent("first version");
+                    String answer = mvc.perform(post("/api/payslips").header("userinfo", "boss").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"title\\":\\"June\\",\\"slip\\":\\"" + first + "\\"}"))
+                            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+                    long id = json.readTree(answer).get("id").asLong();
+                    mvc.perform(get("/api/attachments/" + first).header("userinfo", "boss"))
+                            .andExpect(status().isOk()).andExpect(content().string("first version"));
+
+                    // Replaced: the old bytes are deleted once the save commits.
+                    String second = upload("two.txt", "second version");
+                    mvc.perform(put("/api/payslips/" + id).header("userinfo", "boss").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"id\\":" + id + ",\\"title\\":\\"June\\",\\"slip\\":\\"" + second + "\\"}"))
+                            .andExpect(status().isOk());
+                    assertThat(Files.exists(onDisk(first))).isFalse();
+                    assertThat(onDisk(second)).hasContent("second version");
+                }
+            }
+            """;
+
+    /**
      * With Flyway on the build, the entity model is written as the first migration and Hibernate
      * only validates. These builds start each backend on the schema the migration made — the
      * context-load test, the demo rows and, for Orders and Approvals, the live API tests — so a

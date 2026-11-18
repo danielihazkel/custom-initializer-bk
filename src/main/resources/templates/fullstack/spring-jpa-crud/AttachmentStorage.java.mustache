@@ -4,26 +4,24 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Where uploaded files are kept. The application talks to this, never to a table or a disk, so
- * moving the files is one class: implement it, mark the implementation {@code @Primary}.
+ * Where the bytes of uploaded files are kept. What a file is — its name, type, size and uploader —
+ * is always a row of {@code app_attachment}; {@link Attachments} keeps that and hands the bytes to
+ * this.
+ *
+ * <p>{@code app.attachments.storage} picks one: {@code database} (the default,
+ * {@link DbAttachmentStorage}), {@code filesystem} ({@link FileSystemAttachmentStorage}) or
+ * {@code s3} ({@link S3AttachmentStorage}). To keep files somewhere else, implement this and mark
+ * the implementation {@code @Primary}. Changing the setting does not move files already stored.
  */
 public interface AttachmentStorage {
 
-    /** What a stored file is. */
-    record Info(UUID id, String fileName, String contentType, long size) {
-    }
+    /** Keeps a file's bytes under its id. Called inside the transaction that adds its row, so a
+     *  failure here leaves no row behind. */
+    void put(UUID id, byte[] content);
 
-    /** A stored file with its bytes. */
-    record Stored(Info info, byte[] content) {
-    }
+    /** A file's bytes, or empty when they are not there. */
+    Optional<byte[]> get(UUID id);
 
-    /** Keeps a file and answers what it was stored as. */
-    Info store(String fileName, String contentType, byte[] content);
-
-    Optional<Info> describe(UUID id);
-
-    Optional<Stored> load(UUID id);
-
-    /** Forgets a file. Unknown ids are ignored: the record that named it is going anyway. */
-    void delete(UUID id);
+    /** Forgets a file's bytes. Called once its row is gone; unknown ids are ignored. */
+    void remove(UUID id);
 }

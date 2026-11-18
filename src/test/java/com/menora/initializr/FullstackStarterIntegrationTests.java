@@ -2347,13 +2347,14 @@ class FullstackStarterIntegrationTests {
         Map<String, String> entries = generateZip(FullstackExampleRequests.fieldTypesBody("react-tailwind-crud"));
 
         // The attachment package ships because a field needs it: a table behind a storage interface.
-        for (String file : List.of("Attachment", "AttachmentRepository", "AttachmentStorage", "DbAttachmentStorage",
-                "AttachmentController", "AttachmentConfig")) {
+        for (String file : List.of("Attachment", "AttachmentRepository", "Attachments", "AttachmentStorage",
+                "DbAttachmentStorage", "FileSystemAttachmentStorage", "S3AttachmentStorage", "AttachmentProperties",
+                "AttachmentException", "AttachmentController", "AttachmentConfig")) {
             assertThat(entries.keySet()).as(file)
                     .anyMatch(p -> p.endsWith("backend/src/main/java/com/menora/rota/attachment/" + file + ".java"));
         }
         assertThat(contentEndingWith(entries, "/attachment/Attachment.java"))
-                .contains("@Table(name = \"app_attachment\")")
+                .contains("@Table(name = \"app_attachment\", indexes = @Index(name = \"ix_app_attachment_created\", columnList = \"created_at\"))")
                 // A binary column, not a large object (which is an oid on PostgreSQL).
                 .contains("@JdbcTypeCode(SqlTypes.LONG32VARBINARY)")
                 .doesNotContain("@Lob");
@@ -2378,8 +2379,10 @@ class FullstackStarterIntegrationTests {
                 .contains("entity.getPhotoName()");
         // A replaced or deleted record's files go with it; bulk edit and demo data leave files alone.
         assertThat(contentEndingWith(entries, "/service/ShiftService.java"))
-                .contains("com.menora.rota.attachment.AttachmentStorage attachments")
-                .contains("if (existing.getContract() != null && !existing.getContract().equals(updated.getContract())) {")
+                .contains("com.menora.rota.attachment.Attachments attachments")
+                .contains("if (!java.util.Objects.equals(existing.getContract(), updated.getContract())) {")
+                .contains("attachments.requireAttachable(updated.getContract(), \"contract\");")
+                .contains("attachments.requireAttachable(entity.getPhoto(), \"photo\"); // a file no other record holds")
                 .contains("attachments.delete(existing.getPhoto());")
                 .doesNotContain("case \"contract\"").doesNotContain("case \"photo\"");
         assertThat(contentEndingWith(entries, "/web/ApiExceptionHandler.java"))

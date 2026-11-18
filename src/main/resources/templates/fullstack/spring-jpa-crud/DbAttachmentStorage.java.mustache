@@ -1,13 +1,19 @@
 package {{packageName}}.attachment;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.UUID;
 
-/** Keeps uploaded files in the application's own database ({@code app_attachment}). */
+/**
+ * Keeps uploaded files in the application's own database, in the {@code content} column of
+ * {@code app_attachment} — the default ({@code app.attachments.storage: database}). Nothing else
+ * to run or back up, but the files make the database larger, and its backups with it.
+ */
 @Component
+@ConditionalOnProperty(prefix = "app.attachments", name = "storage", havingValue = "database", matchIfMissing = true)
 public class DbAttachmentStorage implements AttachmentStorage {
 
     private final AttachmentRepository repository;
@@ -18,27 +24,20 @@ public class DbAttachmentStorage implements AttachmentStorage {
 
     @Override
     @Transactional
-    public Info store(String fileName, String contentType, byte[] content) {
-        Attachment saved = repository.save(new Attachment(UUID.randomUUID(), fileName, contentType, content));
-        return new Info(saved.getId(), saved.getFileName(), saved.getContentType(), saved.getSize());
+    public void put(UUID id, byte[] content) {
+        Attachment row = repository.findById(id)
+                .orElseThrow(() -> new IllegalStateException("No attachment row " + id));
+        row.setContent(content);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<Info> describe(UUID id) {
-        return repository.describe(id);
+    public Optional<byte[]> get(UUID id) {
+        return repository.findById(id).map(Attachment::getContent);
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public Optional<Stored> load(UUID id) {
-        return repository.findById(id).map(a -> new Stored(
-                new Info(a.getId(), a.getFileName(), a.getContentType(), a.getSize()), a.getContent()));
-    }
-
-    @Override
-    @Transactional
-    public void delete(UUID id) {
-        if (id != null && repository.existsById(id)) repository.deleteById(id);
+    public void remove(UUID id) {
+        // The bytes were in the row, which is already gone.
     }
 }

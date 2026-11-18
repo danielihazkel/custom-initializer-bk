@@ -256,6 +256,51 @@
       "gatedBy": "hasAttachments"
     },
     {
+      "source": "Attachments.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/Attachments.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "AttachmentProperties.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachmentProperties.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "AttachmentException.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachmentException.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "FileSystemAttachmentStorage.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/FileSystemAttachmentStorage.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
+      "source": "S3AttachmentStorage.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/S3AttachmentStorage.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
       "source": "SavedView.java.mustache",
       "path": "src/main/java/{{packagePath}}/views/SavedView.java",
       "perEntity": false,

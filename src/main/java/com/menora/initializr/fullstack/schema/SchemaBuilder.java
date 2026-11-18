@@ -189,8 +189,12 @@ public final class SchemaBuilder {
                 Column.varchar("content_type", 150, false),
                 Column.of("size_bytes", ColumnType.BIGINT, false),
                 Column.of("created_at", ColumnType.INSTANT, false),
-                Column.of("content", ColumnType.BLOB, false)),
-                List.of("id"), List.of(), List.of(), List.of());
+                Column.varchar("created_by", 255, true),
+                // Only the database storage fills it; a folder or an object store keeps the bytes instead.
+                Column.of("content", ColumnType.BLOB, true)),
+                List.of("id"), List.of(), List.of(),
+                // The clean-up looks for old uploads (Attachments.removeUnattached).
+                List.of(new Index("ix_app_attachment_created", List.of("created_at"))));
     }
 
     private static Table savedViews() {

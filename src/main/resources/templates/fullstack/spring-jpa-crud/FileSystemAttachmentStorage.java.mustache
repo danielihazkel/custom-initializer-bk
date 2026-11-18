@@ -1,0 +1,79 @@
+package {{packageName}}.attachment;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Keeps uploaded files in a folder ({@code app.attachments.storage: filesystem}), one file per
+ * upload named by its id, under {@code app.attachments.directory} — in a container, a mounted
+ * volume, so the files outlive the container. With more than one instance of the application
+ * every instance needs the same folder (a shared volume); otherwise use {@code s3}.
+ */
+@Component
+@ConditionalOnProperty(prefix = "app.attachments", name = "storage", havingValue = "filesystem")
+public class FileSystemAttachmentStorage implements AttachmentStorage {
+
+    private final Path root;
+
+    public FileSystemAttachmentStorage(AttachmentProperties properties) {
+        this.root = properties.getDirectory().toAbsolutePath().normalize();
+        try {
+            Files.createDirectories(root);
+        } catch (IOException e) {
+            throw new IllegalStateException("app.attachments.directory: cannot create " + root, e);
+        }
+        if (!Files.isWritable(root)) {
+            throw new IllegalStateException("app.attachments.directory: " + root + " is not writable");
+        }
+    }
+
+    @Override
+    public void put(UUID id, byte[] content) {
+        Path target = pathOf(id);
+        try {
+            Files.createDirectories(target.getParent());
+            // Written beside it and moved into place, so a reader never sees half a file.
+            Path partial = Files.createTempFile(target.getParent(), id.toString(), ".part");
+            Files.write(partial, content);
+            Files.move(partial, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not store attachment " + id, e);
+        }
+    }
+
+    @Override
+    public Optional<byte[]> get(UUID id) {
+        try {
+            return Optional.of(Files.readAllBytes(pathOf(id)));
+        } catch (NoSuchFileException e) {
+            return Optional.empty();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read attachment " + id, e);
+        }
+    }
+
+    @Override
+    public void remove(UUID id) {
+        try {
+            Files.deleteIfExists(pathOf(id));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not delete attachment " + id, e);
+        }
+    }
+
+    /** {@code <directory>/<first two characters of the id>/<id>}: no folder holds every file. The
+     *  name is a UUID's own text, so it never leaves the folder. */
+    private Path pathOf(UUID id) {
+        String name = id.toString();
+        return root.resolve(name.substring(0, 2)).resolve(name);
+    }
+}

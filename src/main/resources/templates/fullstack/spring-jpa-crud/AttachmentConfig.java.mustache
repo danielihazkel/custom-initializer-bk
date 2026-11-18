@@ -1,21 +1,27 @@
 package {{packageName}}.attachment;
 
 import jakarta.servlet.MultipartConfigElement;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.MultipartConfigFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.util.unit.DataSize;
 
 /**
- * How large an upload may be: {@code app.attachments.max-size} (10MB unless set). Spring Boot's
- * own default is 1MB, which a phone's photo already exceeds; a larger file is answered with 413.
+ * Uploads: how large one may be ({@code app.attachments.max-size}, 10MB unless set — Spring Boot's
+ * own default is 1MB, which a phone's photo already exceeds; a larger file is answered with 413),
+ * the settings in {@link AttachmentProperties}, and the schedule that clears uploads no record
+ * holds ({@link Attachments#removeUnattached()}).
  */
 @Configuration
+@EnableScheduling
+@EnableConfigurationProperties(AttachmentProperties.class)
 public class AttachmentConfig {
 
     @Bean
-    MultipartConfigElement multipartConfigElement(@Value("${app.attachments.max-size:10MB}") DataSize maxSize) {
+    MultipartConfigElement multipartConfigElement(AttachmentProperties properties) {
+        DataSize maxSize = properties.getMaxSize();
         MultipartConfigFactory factory = new MultipartConfigFactory();
         factory.setMaxFileSize(maxSize);
         // One file per request, plus the form's own overhead.

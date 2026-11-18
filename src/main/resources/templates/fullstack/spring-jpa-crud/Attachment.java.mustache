@@ -3,6 +3,7 @@ package {{packageName}}.attachment;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import org.hibernate.Length;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -12,16 +13,16 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * An uploaded file: what {@link DbAttachmentStorage} keeps. A record's file or image field holds
- * this row's id, so the file is fetched only when someone opens it.
+ * An uploaded file: its name, type, size, who uploaded it and when. A record's file or image field
+ * holds this row's id, so the file is fetched only when someone opens it.
  *
- * <p>The bytes live in this table. That needs nothing but the database the application already
- * has — and it means files are backed up with the data and grow it. To keep them elsewhere
- * (a volume, an object store) write another {@link AttachmentStorage} and mark it
- * {@code @Primary}; nothing else here changes.
+ * <p>The row is kept whatever the storage ({@code app.attachments.storage}); the bytes are in its
+ * {@code content} column only with the {@code database} storage — {@link DbAttachmentStorage} — and
+ * in a folder or an object store otherwise.
  */
 @Entity
-@Table(name = "app_attachment")
+// The index serves the clean-up of old uploads (Attachments.removeUnattached).
+@Table(name = "app_attachment", indexes = @Index(name = "ix_app_attachment_created", columnList = "created_at"))
 public class Attachment {
 
     @Id
@@ -39,20 +40,25 @@ public class Attachment {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    /** A binary column sized for whole files (bytea / blob / varbinary(max)), not a large object. */
+    /** Who uploaded it (the {@code userinfo} header), or {@code system} for the demo rows. */
+    @Column(name = "created_by", length = 255)
+    private String createdBy;
+
+    /** A binary column sized for whole files (bytea / blob / varbinary(max)), not a large object.
+     *  Empty unless the files are kept in the database. */
     @JdbcTypeCode(SqlTypes.LONG32VARBINARY)
-    @Column(name = "content", nullable = false, length = Length.LONG32)
+    @Column(name = "content", length = Length.LONG32)
     private byte[] content;
 
     protected Attachment() {
     }
 
-    Attachment(UUID id, String fileName, String contentType, byte[] content) {
+    Attachment(UUID id, String fileName, String contentType, long size, String createdBy) {
         this.id = id;
         this.fileName = fileName;
         this.contentType = contentType;
-        this.content = content;
-        this.size = content.length;
+        this.size = size;
+        this.createdBy = createdBy;
         this.createdAt = Instant.now();
     }
 
@@ -76,7 +82,15 @@ public class Attachment {
         return createdAt;
     }
 
-    public byte[] getContent() {
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    byte[] getContent() {
         return content;
+    }
+
+    void setContent(byte[] content) {
+        this.content = content;
     }
 }

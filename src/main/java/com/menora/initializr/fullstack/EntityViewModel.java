@@ -89,6 +89,9 @@ final class EntityViewModel {
                 rv.put("Name", Naming.toPascalCase(name));
                 // The key a 400 reports it under: the form's own (a relation's picker is `<name>Id`).
                 rv.put("key", relation ? relationIds.get(name) : name);
+                // A file the move asks for is checked like a save's (Attachments.requireAttachable).
+                rv.put("isAttachment", !relation && entity.fields().stream()
+                        .anyMatch(f -> f.name().equals(name) && f.type().isAttachment()));
                 requires.add(rv);
             }
             tv.put("requires", requires);

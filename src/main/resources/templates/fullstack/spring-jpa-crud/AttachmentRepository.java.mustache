@@ -1,16 +1,33 @@
 package {{packageName}}.attachment;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 interface AttachmentRepository extends JpaRepository<Attachment, UUID> {
 
     /** What a file is, without reading the file. */
-    @Query("select new {{packageName}}.attachment.AttachmentStorage$Info(a.id, a.fileName, a.contentType, a.size) "
+    @Query("select new {{packageName}}.attachment.Attachments$Info(a.id, a.fileName, a.contentType, a.size) "
             + "from Attachment a where a.id = :id")
-    Optional<AttachmentStorage.Info> describe(@Param("id") UUID id);
+    Optional<Attachments.Info> describe(@Param("id") UUID id);
+
+    /** Who uploaded a file (empty when there is no such file). */
+    @Query("select coalesce(a.createdBy, '') from Attachment a where a.id = :id")
+    Optional<String> uploaderOf(@Param("id") UUID id);
+
+    /** Files uploaded before {@code before}, oldest first: those the clean-up looks at. */
+    @Query("select a.id from Attachment a where a.createdAt < :before order by a.createdAt")
+    List<UUID> uploadedBefore(@Param("before") Instant before, Pageable page);
+
+    /** Forgets a file's row; 0 when it was already gone (another instance's clean-up). */
+    @Modifying
+    @Query("delete from Attachment a where a.id = :id")
+    int forget(@Param("id") UUID id);
 }

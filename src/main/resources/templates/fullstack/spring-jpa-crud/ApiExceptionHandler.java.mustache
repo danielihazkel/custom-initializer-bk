@@ -71,6 +71,14 @@ public class ApiExceptionHandler {
         return problem(HttpStatus.PAYLOAD_TOO_LARGE, "The file is larger than this application accepts");
     }
 
+    /** A record refused a file for one of its fields: 400 with the field's message, which the form shows under it. */
+    @ExceptionHandler({{packageName}}.attachment.AttachmentException.class)
+    public ProblemDetail handleAttachment({{packageName}}.attachment.AttachmentException ex) {
+        ProblemDetail pd = problem(HttpStatus.BAD_REQUEST, ex.getMessage());
+        pd.setProperty("errors", Map.of(ex.field(), ex.getMessage()));
+        return pd;
+    }
+
 {{/hasAttachments}}    @ExceptionHandler(ResourceNotFoundException.class)
     public ProblemDetail handleNotFound(ResourceNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage());

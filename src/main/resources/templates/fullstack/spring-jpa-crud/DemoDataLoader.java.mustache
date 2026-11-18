@@ -28,10 +28,10 @@ public class DemoDataLoader implements CommandLineRunner {
 
 {{#hasWorkflowMoves}}    private final {{packageName}}.workflow.WorkflowMoveLog moves;
 {{/hasWorkflowMoves}}{{#seedEntities}}    private final {{EntityName}}Repository {{entityName}}Repository;
-{{/seedEntities}}{{#hasAttachments}}    private final {{packageName}}.attachment.AttachmentStorage attachments;
+{{/seedEntities}}{{#hasAttachments}}    private final {{packageName}}.attachment.Attachments attachments;
 {{/hasAttachments}}
     public DemoDataLoader({{#seedEntities}}{{EntityName}}Repository {{entityName}}Repository{{^seedLast}}, {{/seedLast}}{{/seedEntities}}{{#hasAttachments}},
-                          {{packageName}}.attachment.AttachmentStorage attachments{{/hasAttachments}}{{#hasWorkflowMoves}},
+                          {{packageName}}.attachment.Attachments attachments{{/hasAttachments}}{{#hasWorkflowMoves}},
                           {{packageName}}.workflow.WorkflowMoveLog moves{{/hasWorkflowMoves}}) {
 {{#seedEntities}}        this.{{entityName}}Repository = {{entityName}}Repository;
 {{/seedEntities}}{{#hasAttachments}}        this.attachments = attachments;
@@ -73,13 +73,13 @@ public class DemoDataLoader implements CommandLineRunner {
 
     /** Stores a placeholder picture for a required image field and answers its id. */
     private java.util.UUID sampleImage(int i) {
-        return attachments.store("sample-" + i + ".png", "image/png", SAMPLE_IMAGE).id();
+        return attachments.store("sample-" + i + ".png", "image/png", SAMPLE_IMAGE, {{packageName}}.attachment.Attachments.SYSTEM).id();
     }
 
     /** Stores a placeholder file for a required file field and answers its id. */
     private java.util.UUID sampleFile(int i) {
         byte[] content = ("Demo file " + i + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        return attachments.store("sample-" + i + ".txt", "text/plain", content).id();
+        return attachments.store("sample-" + i + ".txt", "text/plain", content, {{packageName}}.attachment.Attachments.SYSTEM).id();
     }
 
 {{/hasAttachments}}    /** "{base} {i}", truncated to {max} characters while keeping the row number so values stay unique. */

@@ -1,0 +1,20 @@
+package {{packageName}}.attachment;
+
+/**
+ * A record refused a file for one of its fields — gone, held by another record{{#hasLdapAuth}}, or uploaded by
+ * somebody else{{/hasLdapAuth}}. Answered as a 400 whose {@code errors} name the field, so the form shows the
+ * message under it.
+ */
+public class AttachmentException extends RuntimeException {
+
+    private final String field;
+
+    public AttachmentException(String field, String message) {
+        super(message);
+        this.field = field;
+    }
+
+    public String field() {
+        return field;
+    }
+}

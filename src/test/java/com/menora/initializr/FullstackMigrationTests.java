@@ -118,7 +118,9 @@ class FullstackMigrationTests {
         String sql = text(generate(body), "rota/backend/src/main/resources/db/migration/V1__init.sql");
         assertThat(sql)
                 .contains("create table app_attachment (\n    id uuid not null,\n    file_name varchar(255) not null,")
-                .contains("    content blob not null,")
+                // Who uploaded it; the bytes only with the database storage (a folder or S3 otherwise).
+                .contains("    created_by varchar(255),\n    content blob,")
+                .contains("ix_app_attachment_created")
                 // One column per field type of the model.
                 .contains("    starts_at time(6),")
                 .contains("    clocked_in timestamp(6) with time zone,")

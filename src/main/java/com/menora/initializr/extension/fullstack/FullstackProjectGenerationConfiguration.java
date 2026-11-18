@@ -135,6 +135,8 @@ public class FullstackProjectGenerationConfiguration {
             FeatureContext.putHistory(projectCtx, entities);
             // Entity events (Kafka, webhooks, the browser) and transition e-mails, through one outbox.
             FeatureContext.putEvents(projectCtx, entities, description.getRequestedDependencies().keySet());
+            // Which columns hold attachment ids: who may download a file, and which uploads no row holds.
+            FeatureContext.putAttachments(projectCtx, entities);
             // Demo rows on first start (config/DemoDataLoader, a CommandLineRunner). Backend-only;
             // the seeding order/expressions come from EntityScaffoldContext (seedEntities/seedExpr).
             // Boot 3.4 deprecated @MockBean in favour of Spring Framework 6.2's @MockitoBean and

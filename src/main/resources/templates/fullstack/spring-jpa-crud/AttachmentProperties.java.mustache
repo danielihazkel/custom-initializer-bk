@@ -1,0 +1,77 @@
+package {{packageName}}.attachment;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.unit.DataSize;
+
+import java.nio.file.Path;
+import java.time.Duration;
+
+/**
+ * Uploaded files, under {@code app.attachments} in {@code application.yaml}. Everything has a
+ * default, so nothing needs setting to start:
+ *
+ * <pre>
+ * app:
+ *   attachments:
+ *     max-size: 10MB                  # a larger upload is a 413
+ *     storage: database               # database | filesystem | s3
+ *     directory: data/attachments     # filesystem: where the files go (a volume, in a container)
+ *     keep-unattached: 24h            # an upload no record holds is deleted after this; 0 keeps it
+ *     s3:
+ *       endpoint: https://minio.example:9000
+ *       region: us-east-1
+ *       bucket: {{artifactId}}-attachments
+ *       access-key: ${S3_ACCESS_KEY:}
+ *       secret-key: ${S3_SECRET_KEY:}
+ *       prefix: ""                    # put before each object's name, e.g. "{{artifactId}}/"
+ *       path-style: true              # false: the bucket in the host name, as AWS S3 does
+ * </pre>
+ *
+ * Each is also an environment variable: {@code APP_ATTACHMENTS_STORAGE=filesystem},
+ * {@code APP_ATTACHMENTS_S3_BUCKET=…}.
+ */
+@ConfigurationProperties("app.attachments")
+public class AttachmentProperties {
+
+    private DataSize maxSize = DataSize.ofMegabytes(10);
+    private String storage = "database";
+    private Path directory = Path.of("data", "attachments");
+    private Duration keepUnattached = Duration.ofHours(24);
+    private final S3 s3 = new S3();
+
+    public DataSize getMaxSize() { return maxSize; }
+    public void setMaxSize(DataSize maxSize) { this.maxSize = maxSize; }
+    public String getStorage() { return storage; }
+    public void setStorage(String storage) { this.storage = storage; }
+    public Path getDirectory() { return directory; }
+    public void setDirectory(Path directory) { this.directory = directory; }
+    public Duration getKeepUnattached() { return keepUnattached; }
+    public void setKeepUnattached(Duration keepUnattached) { this.keepUnattached = keepUnattached; }
+    public S3 getS3() { return s3; }
+
+    /** The object store, for {@code storage: s3}. */
+    public static class S3 {
+        private String endpoint;
+        private String region = "us-east-1";
+        private String bucket;
+        private String accessKey;
+        private String secretKey;
+        private String prefix = "";
+        private boolean pathStyle = true;
+
+        public String getEndpoint() { return endpoint; }
+        public void setEndpoint(String endpoint) { this.endpoint = endpoint; }
+        public String getRegion() { return region; }
+        public void setRegion(String region) { this.region = region; }
+        public String getBucket() { return bucket; }
+        public void setBucket(String bucket) { this.bucket = bucket; }
+        public String getAccessKey() { return accessKey; }
+        public void setAccessKey(String accessKey) { this.accessKey = accessKey; }
+        public String getSecretKey() { return secretKey; }
+        public void setSecretKey(String secretKey) { this.secretKey = secretKey; }
+        public String getPrefix() { return prefix == null ? "" : prefix; }
+        public void setPrefix(String prefix) { this.prefix = prefix; }
+        public boolean isPathStyle() { return pathStyle; }
+        public void setPathStyle(boolean pathStyle) { this.pathStyle = pathStyle; }
+    }
+}

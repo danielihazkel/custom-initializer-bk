@@ -379,8 +379,10 @@ public class FullstackStarterController {
         boolean eventsOpt = optionsContext.hasOption("scaffold", ScaffoldOption.EVENTS.key());
         boolean events = entities.stream().anyMatch(e -> FeatureContext.eventsApply(e, eventsOpt));
         boolean mails = entities.stream().anyMatch(FeatureContext::notifies);
+        boolean files = entities.stream().anyMatch(e -> e.fields().stream().anyMatch(f -> f.type().isAttachment()));
         Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId(), ldap, tested, backendDeps)
-                .replace(REOPEN_HEADING, eventsReadme(events, mails, backendDeps) + REOPEN_HEADING));
+                .replace(REOPEN_HEADING, eventsReadme(events, mails, backendDeps) + attachmentsReadme(files, ldap)
+                        + REOPEN_HEADING));
         Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
         Files.writeString(tempDir.resolve(".gitattributes"), ROOT_GITATTRIBUTES);
         Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body, templatesHash(backendSet, frontendSet)));
@@ -810,6 +812,48 @@ public class FullstackStarterController {
                     .append("  a role's from `app.events.mail.roles`.\n");
         }
         return s.append("\nEvery setting is described in `backend/.../events/EventsProperties.java`.\n\n").toString();
+    }
+
+    /** The README's section on uploaded files (empty without a file or image field). */
+    static String attachmentsReadme(boolean files, boolean ldap) {
+        if (!files) return "";
+        String access = ldap
+                ? """
+                  Reading a file takes what reading its record takes (the entity's read level); a file on no
+                  record yet is its uploader's alone, and a record takes only a file its caller uploaded.
+
+                  """
+                : """
+                  Without an ldap-auth dependency there are no users or roles: anyone who can call the API
+                  and knows a file's id can read it.
+
+                  """;
+        return """
+                ## Uploaded files
+
+                File and image fields hold the id of an upload (`POST /api/attachments`). Its name, type,
+                size and uploader are a row of `app_attachment`; where its bytes go is
+                `app.attachments.storage` (`backend/.../attachment/AttachmentProperties.java` lists every setting):
+
+                - `database` (the default) — in that row. Nothing more to run, but the files make the
+                  database and its backups larger.
+                - `filesystem` — one file per upload under `app.attachments.directory`
+                  (`data/attachments` unless set). In a container, mount a volume there
+                  (`-e APP_ATTACHMENTS_STORAGE=filesystem -e APP_ATTACHMENTS_DIRECTORY=/data/attachments
+                  -v attachments:/data/attachments`); every instance of the backend needs the same folder.
+                - `s3` — an S3-compatible object store (MinIO, AWS S3): `app.attachments.s3.endpoint`,
+                  `bucket`, `access-key` and `secret-key` (from the environment, e.g.
+                  `APP_ATTACHMENTS_S3_SECRET_KEY`), and `path-style: false` for AWS. The bucket must exist.
+                  No AWS SDK is needed.
+
+                Changing the setting does not move the files already stored.
+
+                """ + access + """
+                An upload that no record holds — a form that was abandoned, a file that was replaced — is
+                deleted after `app.attachments.keep-unattached` (24 hours; `0` keeps them), by a sweep
+                every hour.
+
+                """;
     }
 
     /** The README's section on who may call the API — only with an ldap-auth dependency. */

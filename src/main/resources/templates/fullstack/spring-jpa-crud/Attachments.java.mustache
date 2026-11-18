@@ -1,0 +1,270 @@
+package {{packageName}}.attachment;
+
+{{#hasLdapAuth}}import {{packageName}}.security.PermissionService;
+import {{packageName}}.security.UnauthorizedException;
+{{/hasLdapAuth}}import jakarta.persistence.EntityManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+{{#hasLdapAuth}}import org.springframework.http.HttpStatus;
+{{/hasLdapAuth}}import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+{{#hasLdapAuth}}import org.springframework.web.server.ResponseStatusException;
+{{/hasLdapAuth}}
+
+import java.nio.ByteBuffer;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Uploaded files: the one place the application keeps, reads and forgets them. A file's row
+ * ({@code app_attachment}: name, type, size, uploader) is kept here, its bytes in the
+ * {@link AttachmentStorage} {@code app.attachments.storage} picks.
+ *
+ * <p>A file belongs to the record whose file or image field holds its id — found by asking each
+ * such column, so nothing has to be kept in step when a record changes.
+ * <ul>
+ *   <li>A record takes only a file that exists and no other record holds{{#hasLdapAuth}}, uploaded by the
+ *       caller{{/hasLdapAuth}} ({@link #requireAttachable}).</li>
+{{#hasLdapAuth}}
+ *   <li>A file on a record is read by whoever may read that record (its entity's read level); a
+ *       file on no record yet only by whoever uploaded it ({@link #requireReadable}).</li>
+{{/hasLdapAuth}}
+ *   <li>A file no record holds — a form that was abandoned, a file that was replaced — is deleted
+ *       once it is older than {@code app.attachments.keep-unattached} (24 hours unless set), by a
+ *       sweep every hour ({@link #removeUnattached()}). A soft-deleted record still holds its files,
+ *       for a restore.</li>
+ * </ul>
+ */
+@Service
+public class Attachments {
+
+    private static final Logger log = LoggerFactory.getLogger(Attachments.class);
+
+    /** What a stored file is. */
+    public record Info(UUID id, String fileName, String contentType, long size) {
+    }
+
+    /** A stored file with its bytes. */
+    public record Stored(Info info, byte[] content) {
+    }
+
+    /** A column that holds attachment ids: the entity and field, who may read its rows, and the
+     *  native SQL that counts the rows holding an id (soft-deleted rows included). */
+    private record Owner(String entity, String field, String readLevel, String countSql) {
+    }
+
+    private static final List<Owner> OWNERS = List.of(
+{{#attachmentOwners}}            new Owner("{{EntityName}}", "{{field}}", "{{readLevel}}", "{{{countSqlJava}}}"){{^last}},{{/last}}
+{{/attachmentOwners}}    );
+
+    /** The files uploaded before {@code :before} that no column holds. */
+    private static final String UNATTACHED_SQL = "{{{unattachedSqlJava}}}";
+
+    /** The uploader of the files the application makes itself (the demo rows). */
+    public static final String SYSTEM = "system";
+
+    /** Files looked at per round of the sweep, and rounds per sweep. */
+    private static final int SWEEP_BATCH = 200;
+    private static final int SWEEP_ROUNDS = 50;
+
+    private final AttachmentRepository repository;
+    private final AttachmentStorage storage;
+    private final AttachmentProperties properties;
+    private final EntityManager entityManager;
+{{#hasLdapAuth}}    private final PermissionService permissions;
+{{/hasLdapAuth}}
+
+    public Attachments(AttachmentRepository repository, AttachmentStorage storage, AttachmentProperties properties,
+                       EntityManager entityManager{{#hasLdapAuth}}, PermissionService permissions{{/hasLdapAuth}}) {
+        this.repository = repository;
+        this.storage = storage;
+        this.properties = properties;
+        this.entityManager = entityManager;
+{{#hasLdapAuth}}        this.permissions = permissions;
+{{/hasLdapAuth}}    }
+
+    /** Keeps a file for {@code uploader} and answers what it was stored as. */
+    @Transactional
+    public Info store(String fileName, String contentType, byte[] content, String uploader) {
+        UUID id = UUID.randomUUID();
+        repository.save(new Attachment(id, fileName, contentType, content.length, uploader));
+        // Inside the same transaction: if the bytes cannot be kept, the row goes too.
+        storage.put(id, content);
+        return new Info(id, fileName, contentType, content.length);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Info> describe(UUID id) {
+        return repository.describe(id);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Stored> load(UUID id) {
+        Optional<Info> info = repository.describe(id);
+        if (info.isEmpty()) return Optional.empty();
+        Optional<byte[]> content = storage.get(id);
+        if (content.isEmpty()) {
+            log.warn("Attachment {} has a row but no bytes in the {} storage", id, properties.getStorage());
+            return Optional.empty();
+        }
+        return Optional.of(new Stored(info.get(), content.get()));
+    }
+
+    /** Forgets a file: its row now, its bytes once the transaction commits (a rolled-back delete
+     *  keeps them). Unknown and null ids are ignored: the record that named it is going anyway. */
+    @Transactional
+    public void delete(UUID id) {
+        if (id == null || repository.forget(id) == 0) return;
+        afterCommit(id);
+    }
+
+    /**
+     * Whether a record may take file {@code id} into {@code field}: the file is there, no record
+     * holds it{{#hasLdapAuth}} and the caller uploaded it{{/hasLdapAuth}} — a 400 on the field otherwise. A record that
+     * keeps the file it had is not asked.
+     */
+    public void requireAttachable(UUID id, String field) {
+        if (id == null) return;
+        Optional<String> uploader = repository.uploaderOf(id);
+        if (uploader.isEmpty()) {
+            throw new AttachmentException(field, "The file is no longer there: upload it again");
+        }
+        if (!ownersOf(id).isEmpty()) {
+            throw new AttachmentException(field, "This file belongs to another record: upload a copy of it");
+        }
+{{#hasLdapAuth}}
+        String caller = caller();
+        if (caller != null && !caller.equals(uploader.get())) {
+            throw new AttachmentException(field, "Upload the file yourself to attach it");
+        }
+{{/hasLdapAuth}}
+    }
+{{#hasLdapAuth}}
+
+    /**
+     * Whether {@code user} may read file {@code id}: on a record, when they may read that record's
+     * entity (403 otherwise); on no record yet, when they uploaded it (404 otherwise — the file is
+     * not theirs to know of). An unknown id is a 404.
+     */
+    public void requireReadable(UUID id, String user) {
+        List<Owner> owners = ownersOf(id);
+        if (owners.isEmpty()) {
+            String uploader = repository.uploaderOf(id).orElse(null);
+            if (uploader == null || user == null || !uploader.equals(user.trim())) {
+                throw new {{packageName}}.web.ResourceNotFoundException("Attachment " + id + " not found");
+            }
+            return;
+        }
+        for (Owner owner : owners) {
+            if (holds(user, owner.readLevel())) return;
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You may not read the record this file belongs to");
+    }
+
+    private boolean holds(String user, String level) {
+        try {
+            return user != null && permissions.holds(user.trim(), level);
+        } catch (UnauthorizedException e) {
+            return false;
+        }
+    }
+{{/hasLdapAuth}}
+
+    /** The sweep: every hour, starting five minutes after start-up. (Transactional itself: a call to
+     *  {@link #removeUnattached()} from inside the class does not pass through the proxy.) */
+    @Scheduled(initialDelayString = "PT5M", fixedDelayString = "PT1H")
+    @Transactional
+    public void sweep() {
+        int removed = removeUnattached();
+        if (removed > 0) log.info("Deleted {} uploads no record holds", removed);
+    }
+
+    /**
+     * Deletes the files no record holds that are older than {@code app.attachments.keep-unattached}
+     * (none when it is 0) and answers how many. More than one instance may run it at once: a file
+     * another instance deleted first is skipped.
+     */
+    @Transactional
+    public int removeUnattached() {
+        Duration keep = properties.getKeepUnattached();
+        if (keep == null || keep.isZero() || keep.isNegative()) return 0;
+        Instant before = Instant.now().minus(keep);
+        int removed = 0;
+        for (int round = 0; round < SWEEP_ROUNDS; round++) {
+            List<?> ids = entityManager.createNativeQuery(UNATTACHED_SQL)
+                    .setParameter("before", before)
+                    .setMaxResults(SWEEP_BATCH)
+                    .getResultList();
+            for (Object raw : ids) {
+                UUID id = uuidOf(raw);
+                if (repository.forget(id) > 0) {
+                    afterCommit(id);
+                    removed++;
+                }
+            }
+            if (ids.size() < SWEEP_BATCH) break;
+        }
+        return removed;
+    }
+
+    /** The columns holding {@code id}. */
+    private List<Owner> ownersOf(UUID id) {
+        List<Owner> owners = new ArrayList<>();
+        for (Owner owner : OWNERS) {
+            Object count = entityManager.createNativeQuery(owner.countSql()).setParameter("id", id).getSingleResult();
+            if (((Number) count).longValue() > 0) owners.add(owner);
+        }
+        return owners;
+    }
+
+    /** Removes a file's bytes once the row's deletion is committed (at once outside a transaction). */
+    private void afterCommit(UUID id) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            removeBytes(id);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                removeBytes(id);
+            }
+        });
+    }
+
+    private void removeBytes(UUID id) {
+        try {
+            storage.remove(id);
+        } catch (RuntimeException e) {
+            // The row is gone, so nothing points at the bytes any more; they are only space.
+            log.warn("Could not delete the bytes of attachment {}: {}", id, e.getMessage());
+        }
+    }
+
+    /** An id as the database's driver hands it back from native SQL: a UUID, 16 bytes or text. */
+    private static UUID uuidOf(Object raw) {
+        if (raw instanceof UUID uuid) return uuid;
+        if (raw instanceof byte[] bytes && bytes.length == 16) {
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            return new UUID(buffer.getLong(), buffer.getLong());
+        }
+        return UUID.fromString(raw.toString().trim());
+    }
+
+    /** The {@code userinfo} header of the request being served; null outside a request or without one. */
+    static String caller() {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes servlet) {
+            String user = servlet.getRequest().getHeader("userinfo");
+            return user == null || user.isBlank() ? null : user.trim();
+        }
+        return null;
+    }
+}
