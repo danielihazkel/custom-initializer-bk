@@ -30,9 +30,11 @@ import java.util.Collection;
 public class ProjectRequestFactory {
 
     private final InitializrMetadataProvider metadataProvider;
+    private final BackendCompatibility compatibility;
 
-    public ProjectRequestFactory(InitializrMetadataProvider metadataProvider) {
+    public ProjectRequestFactory(InitializrMetadataProvider metadataProvider, BackendCompatibility compatibility) {
         this.metadataProvider = metadataProvider;
+        this.compatibility = compatibility;
     }
 
     /**
@@ -45,19 +47,33 @@ public class ProjectRequestFactory {
                        String version, String configurationFileFormat) {
     }
 
-    /**
-     * The request for {@code base} with {@code dependencies} (null: none named).
-     *
-     * @throws WizardArgumentException for a Spring Boot or Java version the metadata does not
-     *         offer — a clean 400 here instead of an opaque failure deep in generation — and for
-     *         an artifact id that is not a plain name
-     */
     /** Whether the catalog has a dependency with this id — before adding one a caller did not name. */
     public boolean offers(String dependencyId) {
         return metadataProvider.get().getDependencies().get(dependencyId) != null;
     }
 
+    /**
+     * The request for {@code base} with {@code dependencies} (null: none named), which follow the
+     * catalog's compatibility rules ({@link BackendCompatibility}): what they require is added.
+     *
+     * @throws WizardArgumentException for a Spring Boot or Java version the metadata does not
+     *         offer — a clean 400 here instead of an opaque failure deep in generation — for
+     *         an artifact id that is not a plain name, and for two dependencies that conflict
+     */
     public WebProjectRequest create(Base base, Collection<String> dependencies) {
+        WebProjectRequest r = createModule(base, null);
+        if (dependencies != null) {
+            r.setDependencies(new ArrayList<>(compatibility.apply(dependencies, r.getBootVersion())));
+        }
+        return r;
+    }
+
+    /**
+     * {@link #create}, with the dependencies taken as they are: one module of a multi-module
+     * project, whose dependencies are the module template's plus the project's selection — the
+     * selection has been through the rules already, and the template's are the catalog's own.
+     */
+    public WebProjectRequest createModule(Base base, Collection<String> dependencies) {
         InitializrMetadata metadata = metadataProvider.get();
         WebProjectRequest r = new WebProjectRequest();
         r.setType(orDefault(base.type(), defaultOf(metadata.getTypes())));

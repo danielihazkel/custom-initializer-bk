@@ -144,5 +144,6 @@
   { "depId": "web-services", "fileType": "STATIC_COPY", "contentResource": "static-configs/web-services/ping.xsd", "targetPath": "src/main/resources/xsd/ping.xsd", "substitutionType": "NONE", "subOptionId": "example-endpoint", "sortOrder": 0 },
   { "depId": "web-services", "fileType": "TEMPLATE", "contentResource": "templates/ws-ping-endpoint.mustache", "targetPath": "src/main/java/{{packagePath}}/endpoint/PingEndpoint.java", "substitutionType": "MUSTACHE", "subOptionId": "example-endpoint", "sortOrder": 1 },
 
+  { "depId": "tracing", "fileType": "YAML_MERGE", "contentResource": "static-configs/tracing/application-tracing.yml", "targetPath": "src/main/resources/application.yaml", "substitutionType": "NONE", "sortOrder": 0 },
   { "depId": "prometheus", "fileType": "STATIC_COPY", "contentResource": "static-configs/prometheus/grafana-dashboard.json", "targetPath": "k8s/grafana-dashboard.json", "substitutionType": "NONE", "subOptionId": "grafana-dashboard", "sortOrder": 0 }
 ]

@@ -77,7 +77,7 @@ class DataSeederTest {
 
     @Test
     void seedsAllBackendDependencyEntries() {
-        assertThat(entryRepo.findAllByProjectKind(ProjectKind.BACKEND)).hasSize(30);
+        assertThat(entryRepo.findAllByProjectKind(ProjectKind.BACKEND)).hasSize(31);
     }
 
     @Test
@@ -265,7 +265,7 @@ class DataSeederTest {
         long backendRules = compatibilityRepo.findAll().stream()
                 .filter(c -> c.getProjectKind() == ProjectKind.BACKEND)
                 .count();
-        assertThat(backendRules).isEqualTo(13);
+        assertThat(backendRules).isEqualTo(14);
     }
 
     @Test

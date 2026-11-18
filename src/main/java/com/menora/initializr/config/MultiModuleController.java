@@ -57,6 +57,7 @@ public class MultiModuleController {
     private final ProjectOptionsContext optionsContext;
     private final com.menora.initializr.db.DependencyConfigService configService;
     private final com.menora.initializr.localrun.ContainerImages containerImages;
+    private final BackendCompatibility compatibility;
 
     public MultiModuleController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                  ProjectRequestFactory requestFactory,
@@ -64,7 +65,8 @@ public class MultiModuleController {
                                  ModuleDependencyMappingRepository moduleMappingRepo,
                                  ProjectOptionsContext optionsContext,
                                  com.menora.initializr.db.DependencyConfigService configService,
-                                 com.menora.initializr.localrun.ContainerImages containerImages) {
+                                 com.menora.initializr.localrun.ContainerImages containerImages,
+                                 BackendCompatibility compatibility) {
         this.invoker = invoker;
         this.requestFactory = requestFactory;
         this.moduleRepo = moduleRepo;
@@ -72,6 +74,7 @@ public class MultiModuleController {
         this.optionsContext = optionsContext;
         this.configService = configService;
         this.containerImages = containerImages;
+        this.compatibility = compatibility;
     }
 
     /**
@@ -184,7 +187,10 @@ public class MultiModuleController {
      * {@code <artifact><suffix>}, with the module template's packaging and mapped dependencies
      * plus {@code extraDeps}) and writes the parent POM that lists them.
      */
-    private void assemble(Path dir, WebProjectRequest root, Set<String> moduleIds, Set<String> extraDeps) throws IOException {
+    private void assemble(Path dir, WebProjectRequest root, Set<String> moduleIds, Set<String> selection) throws IOException {
+        // The compatibility rules hold for what was asked for, once — every module gets it — not
+        // for each module's list, which also holds the module template's own dependencies.
+        Set<String> extraDeps = new LinkedHashSet<>(compatibility.apply(selection, root.getBootVersion()));
         List<ModuleTemplateEntity> moduleTemplates = moduleRepo.findByModuleIdInOrderBySortOrderAsc(moduleIds);
         if (moduleTemplates.isEmpty()) {
             throw new WizardArgumentException("modules: none of " + moduleIds + " is a module template", "modules");
@@ -212,7 +218,7 @@ public class MultiModuleController {
             moduleDeps.addAll(extraDeps);
             everyDependency.addAll(moduleDeps);
 
-            WebProjectRequest request = requestFactory.create(new ProjectRequestFactory.Base(
+            WebProjectRequest request = requestFactory.createModule(new ProjectRequestFactory.Base(
                     root.getGroupId(), moduleArtifactId, moduleArtifactId, root.getDescription(), root.getPackageName(),
                     root.getType(), root.getLanguage(), root.getBootVersion(), module.getPackaging(),
                     root.getJavaVersion(), root.getVersion(), root.getConfigurationFileFormat()),

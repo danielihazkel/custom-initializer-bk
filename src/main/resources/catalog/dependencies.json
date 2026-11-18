@@ -57,7 +57,8 @@
       "sortOrder": 5,
       "entries": [
         { "depId": "actuator", "name": "Spring Boot Actuator", "description": "Production-ready features", "sortOrder": 0 },
-        { "depId": "prometheus", "name": "Micrometer Prometheus", "mavenGroupId": "io.micrometer", "mavenArtifactId": "micrometer-registry-prometheus", "scope": "runtime", "sortOrder": 1 }
+        { "depId": "prometheus", "name": "Micrometer Prometheus", "mavenGroupId": "io.micrometer", "mavenArtifactId": "micrometer-registry-prometheus", "scope": "runtime", "sortOrder": 1 },
+        { "depId": "tracing", "name": "Distributed Tracing (OpenTelemetry)", "description": "Trace requests across services with Micrometer Tracing and OpenTelemetry; trace ids in every log line. Spans are sent over OTLP once MANAGEMENT_OTLP_TRACING_ENDPOINT is set", "mavenGroupId": "io.micrometer", "mavenArtifactId": "micrometer-tracing-bridge-otel", "sortOrder": 2 }
       ]
     },
     {
