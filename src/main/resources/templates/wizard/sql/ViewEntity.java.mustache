@@ -1,5 +1,8 @@
 package {{package}};
 
+{{#typeImports}}
+import {{.}};
+{{/typeImports}}
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -24,8 +27,10 @@ public class {{className}} {
     @Id
 {{/isPk}}
     @Column(name = "{{column}}")
+{{#untyped}}
     // TODO: SELECT has no column types — set the real type
-    private String {{name}};
+{{/untyped}}
+    private {{type}} {{name}};
 
 {{/columns}}
 }

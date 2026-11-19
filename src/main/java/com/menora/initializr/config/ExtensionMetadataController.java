@@ -253,7 +253,11 @@ public class ExtensionMetadataController {
         SqlDialect dialect = parseDialect(req == null ? null : req.dialect());
         String sql = req == null ? null : req.sql();
         documentLimit.check(sql);
-        return new ImportDdlResponse(toWire(sqlToEntityConverter.convert(sql, dialect)), null);
+        List<EntityDefinition> entities = sqlToEntityConverter.convert(sql, dialect);
+        // A view has no key of its own; the import takes its first column.
+        String note = entities.stream().anyMatch(EntityDefinition::isView)
+                ? "A view has no key: its first column was made the key — check it in the editor." : null;
+        return new ImportDdlResponse(toWire(entities), note);
     }
 
     /**

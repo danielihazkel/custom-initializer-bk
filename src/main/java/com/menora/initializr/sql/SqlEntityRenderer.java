@@ -91,6 +91,14 @@ final class SqlEntityRenderer {
                         .map(col -> "\"" + sqlName(table, col, dialect) + "\"").collect(Collectors.joining(", ")) + "})")
                 .collect(Collectors.joining(", "));
         if (!uniqueConstraints.isEmpty()) imports.add("jakarta.persistence.UniqueConstraint");
+        // A plain CREATE INDEX: what Hibernate creates with the table, and what a reader of the entity sees.
+        String indexes = table.indexes().stream()
+                .map(ix -> "@Index(" + (ix.name() == null ? "" : "name = \"" + SqlNames.javaLiteral(ix.name()) + "\", ")
+                        + "columnList = \"" + ix.columns().stream()
+                        .map(col -> sqlName(table, col.name(), dialect) + (col.descending() ? " DESC" : ""))
+                        .collect(Collectors.joining(", ")) + "\")")
+                .collect(Collectors.joining(", "));
+        if (!indexes.isEmpty()) imports.add("jakarta.persistence.Index");
 
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("package", fullPkg);
@@ -104,6 +112,10 @@ final class SqlEntityRenderer {
         view.put("tableComment", table.name().replace("*/", "* /"));
         view.put("hasUniqueConstraints", !uniqueConstraints.isEmpty());
         view.put("uniqueConstraints", "{" + uniqueConstraints + "}");
+        view.put("hasIndexes", !indexes.isEmpty());
+        view.put("indexes", "{" + indexes + "}");
+        // What the script says of the table that the entity does not carry (a partial index…).
+        view.put("notes", table.notes().stream().map(n -> n.replaceAll("\\s+", " ")).toList());
         view.put("hasCompositePk", table.hasCompositePk());
         view.put("className", className);
         view.put("members", body.list);
@@ -145,11 +157,13 @@ final class SqlEntityRenderer {
     }
 
     /**
-     * Renders a read-only {@code @Immutable}/{@code @Subselect} view entity from a SELECT.
-     * A SELECT carries no column types, so every field is a {@code String} with a TODO for
-     * the user to fix in source; the {@code @Column(name=…)} uses the projected label
-     * <em>verbatim</em> so it matches the column the query actually returns. The first
-     * projected column is the {@code @Id}. The raw query goes into a Java text block.
+     * Renders a read-only {@code @Immutable}/{@code @Subselect} view entity from a SELECT or a
+     * {@code CREATE VIEW}. A field takes the type the script gives its column
+     * ({@link SqlScriptParser}: the table column it selects, a {@code CAST}); one the script
+     * does not type is a {@code String} with a TODO for the user to fix in source. The
+     * {@code @Column(name=…)} uses the projected label <em>verbatim</em> so it matches the
+     * column the query actually returns. The first projected column is the {@code @Id}. The
+     * query goes into a Java text block.
      */
     private static GeneratedJavaFile renderViewEntity(TableModel table, SqlDialect dialect, String packageName,
                                                       SqlDepOptions opts) {
@@ -159,7 +173,10 @@ final class SqlEntityRenderer {
 
         List<Map<String, Object>> columns = new ArrayList<>();
         Set<String> usedFieldNames = new HashSet<>();
+        Set<String> typeImports = new TreeSet<>();
         for (ColumnModel c : table.columns()) {
+            JavaType jt = TypeMappers.map(dialect, c.rawType(), c.precision(), c.scale());
+            typeImports.addAll(jt.imports());
             String fieldName = toCamelCase(c.name());
             if (usedFieldNames.contains(fieldName)) {
                 int n = 2;
@@ -174,6 +191,8 @@ final class SqlEntityRenderer {
             // naming strategy would look for full_name instead of fullName.
             cv.put("column", sqlName(table, c.name(), dialect));
             cv.put("name", fieldName);
+            cv.put("type", jt.simpleName());
+            cv.put("untyped", c.rawType() == null);
             columns.add(cv);
         }
 
@@ -181,6 +200,7 @@ final class SqlEntityRenderer {
         view.put("package", fullPkg);
         view.put("viewQuery", table.viewQuery());
         view.put("className", className);
+        view.put("typeImports", typeImports);
         view.put("columns", columns);
 
         String path = "src/main/java/{{packagePath}}/" + subPkg + "/" + className + ".java";

@@ -23,10 +23,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The live schema reader against real PostgreSQL, SQL Server and Oracle servers in Docker: a
- * small schema (identity keys, a foreign key, a unique pair, a {@code CHECK … IN}, a view) is
- * created, read, written as DDL, and imported — and, on PostgreSQL, the DDL is run into a second
- * schema to show it works as a Flyway baseline. Opt in with {@code -Dsmoke.docker=true}; needs
- * Docker running and the images reachable (Docker Hub and mcr.microsoft.com).
+ * small schema (identity keys, a foreign key, a unique pair, a {@code CHECK … IN}, a view, and
+ * since Round 14 indexes — plain, descending, partial, over an expression — column defaults and
+ * comments) is created, read, written as DDL, and imported — and, on PostgreSQL, the DDL is run
+ * into a second schema to show it works as a Flyway baseline. Each database's catalog queries
+ * (keys, foreign keys, indexes, comments) have to run — none may fall back to the driver — and
+ * have to agree with the driver asked table by table. Opt in with {@code -Dsmoke.docker=true};
+ * needs Docker running and the images reachable (Docker Hub and mcr.microsoft.com).
  *
  * <p>DB2 for IBM i has no container image; its reading is untested against a server.
  */
@@ -42,7 +45,22 @@ class LiveSchemaDockerTests {
                                 + "budget NUMERIC(12,2), created_at TIMESTAMPTZ)",
                         "CREATE TABLE hr.employees (id BIGSERIAL PRIMARY KEY, dept_id BIGINT NOT NULL REFERENCES hr.departments(id), "
                                 + "email VARCHAR(200) NOT NULL, UNIQUE (email, dept_id))",
-                        "CREATE VIEW hr.active_staff AS SELECT id, email FROM hr.employees")),
+                        "CREATE VIEW hr.active_staff AS SELECT id, email FROM hr.employees",
+                        "CREATE INDEX idx_emp_dept ON hr.employees (dept_id, email DESC)",
+                        "CREATE INDEX idx_emp_lower ON hr.employees (lower(email))",
+                        "CREATE UNIQUE INDEX uq_dept_open ON hr.departments (name) WHERE status = 'OPEN'",
+                        "ALTER TABLE hr.departments ALTER COLUMN status SET DEFAULT 'OPEN'",
+                        "ALTER TABLE hr.departments ALTER COLUMN created_at SET DEFAULT now()",
+                        "COMMENT ON TABLE hr.departments IS 'Who works where'",
+                        "COMMENT ON COLUMN hr.employees.email IS 'Work address'"),
+                List.of("CREATE INDEX idx_emp_dept ON hr.employees (dept_id, email DESC);",
+                        "-- Index idx_emp_lower on employees is not in this script: it is over an expression.",
+                        "-- Unique index uq_dept_open on departments is not in this script: it is partial.",
+                        "status VARCHAR(10) DEFAULT 'OPEN',",
+                        "created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,",
+                        "COMMENT ON TABLE hr.departments IS 'Who works where';",
+                        "COMMENT ON COLUMN hr.employees.email IS 'Work address';",
+                        "SELECT CAST(id AS BIGINT) AS id, CAST(email AS VARCHAR(200)) AS email FROM hr.active_staff;")),
         MSSQL("mcr.microsoft.com/mssql/server:2022-latest", 1433, "sa", "Read3r-pw!", "master", "hr",
                 List.of("-e", "ACCEPT_EULA=Y", "-e", "MSSQL_SA_PASSWORD=Read3r-pw!"),
                 List.of("CREATE SCHEMA hr",
@@ -50,7 +68,23 @@ class LiveSchemaDockerTests {
                                 + "Status VARCHAR(10) CHECK (Status IN ('OPEN','CLOSED')), Budget DECIMAL(12,2), CreatedAt DATETIMEOFFSET)",
                         "CREATE TABLE hr.Employees (Id BIGINT IDENTITY(1,1) PRIMARY KEY, DeptId BIGINT NOT NULL REFERENCES hr.Departments(Id), "
                                 + "Email NVARCHAR(200) NOT NULL, CONSTRAINT UQ_Emp UNIQUE (Email, DeptId))",
-                        "CREATE VIEW hr.ActiveStaff AS SELECT Id, Email FROM hr.Employees")),
+                        "CREATE VIEW hr.ActiveStaff AS SELECT Id, Email FROM hr.Employees",
+                        "CREATE INDEX IdxEmpDept ON hr.Employees (DeptId, Email DESC)",
+                        "CREATE UNIQUE INDEX UqDeptOpen ON hr.Departments (Name) WHERE Status = 'OPEN'",
+                        "ALTER TABLE hr.Departments ADD CONSTRAINT DfStatus DEFAULT 'OPEN' FOR Status",
+                        "ALTER TABLE hr.Departments ADD CONSTRAINT DfCreated DEFAULT getdate() FOR CreatedAt",
+                        "EXEC sys.sp_addextendedproperty @name = N'MS_Description', @value = N'Who works where', "
+                                + "@level0type = N'SCHEMA', @level0name = N'hr', @level1type = N'TABLE', @level1name = N'Departments'",
+                        "EXEC sys.sp_addextendedproperty @name = N'MS_Description', @value = N'Work address', "
+                                + "@level0type = N'SCHEMA', @level0name = N'hr', @level1type = N'TABLE', @level1name = N'Employees', "
+                                + "@level2type = N'COLUMN', @level2name = N'Email'"),
+                List.of("CREATE INDEX IdxEmpDept ON hr.Employees (DeptId, Email DESC);",
+                        "-- Unique index UqDeptOpen on Departments is not in this script: it is partial.",
+                        "Status VARCHAR(10) DEFAULT 'OPEN',",
+                        "CreatedAt DATETIMEOFFSET DEFAULT CURRENT_TIMESTAMP,",
+                        "-- hr.Departments: Who works where",
+                        "-- hr.Employees.Email: Work address",
+                        "SELECT CAST(Id AS BIGINT) AS Id, CAST(Email AS NVARCHAR(200)) AS Email FROM hr.ActiveStaff;")),
         ORACLE("gvenzl/oracle-free:23-slim-faststart", 1521, "HR", "Read3r_pw", "FREEPDB1", "HR",
                 List.of("-e", "ORACLE_PASSWORD=Read3r_pw", "-e", "APP_USER=HR", "-e", "APP_USER_PASSWORD=Read3r_pw"),
                 List.of("CREATE TABLE DEPARTMENTS (ID NUMBER(18) GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, "
@@ -59,7 +93,19 @@ class LiveSchemaDockerTests {
                         "CREATE TABLE EMPLOYEES (ID NUMBER(18) GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, "
                                 + "DEPT_ID NUMBER(18) NOT NULL REFERENCES DEPARTMENTS(ID), EMAIL VARCHAR2(200) NOT NULL, "
                                 + "CONSTRAINT UQ_EMP UNIQUE (EMAIL, DEPT_ID))",
-                        "CREATE VIEW ACTIVE_STAFF AS SELECT ID, EMAIL FROM EMPLOYEES"));
+                        "CREATE VIEW ACTIVE_STAFF AS SELECT ID, EMAIL FROM EMPLOYEES",
+                        // No DESC here: Oracle keeps a descending key as a hidden expression column.
+                        "CREATE INDEX IDX_EMP_DEPT ON EMPLOYEES (DEPT_ID, EMAIL)",
+                        "CREATE INDEX IDX_EMP_LOWER ON EMPLOYEES (LOWER(EMAIL))",
+                        "ALTER TABLE DEPARTMENTS MODIFY (STATUS DEFAULT 'OPEN')",
+                        "COMMENT ON TABLE DEPARTMENTS IS 'Who works where'",
+                        "COMMENT ON COLUMN EMPLOYEES.EMAIL IS 'Work address'"),
+                List.of("CREATE INDEX IDX_EMP_DEPT ON HR.EMPLOYEES (DEPT_ID, EMAIL);",
+                        "-- Index IDX_EMP_LOWER on EMPLOYEES is not in this script: it is over an expression.",
+                        "STATUS VARCHAR2(10) DEFAULT 'OPEN',",
+                        "COMMENT ON TABLE HR.DEPARTMENTS IS 'Who works where';",
+                        "COMMENT ON COLUMN HR.EMPLOYEES.EMAIL IS 'Work address';",
+                        "SELECT CAST(ID AS NUMBER(18)) AS ID, CAST(EMAIL AS VARCHAR2(200)) AS EMAIL FROM HR.ACTIVE_STAFF;"));
 
         final String image;
         final int port;
@@ -69,9 +115,11 @@ class LiveSchemaDockerTests {
         final String schema;
         final List<String> env;
         final List<String> setup;
+        /** What the script written from the catalog has to say. */
+        final List<String> script;
 
         Db(String image, int port, String user, String password, String database, String schema,
-           List<String> env, List<String> setup) {
+           List<String> env, List<String> setup, List<String> script) {
             this.image = image;
             this.port = port;
             this.user = user;
@@ -80,6 +128,7 @@ class LiveSchemaDockerTests {
             this.schema = schema;
             this.env = env;
             this.setup = setup;
+            this.script = script;
         }
     }
 
@@ -113,7 +162,24 @@ class LiveSchemaDockerTests {
                 assertThat(names).hasSize(3);
                 LiveSchemaModel.Schema read = reader.read(c, schema, names);
                 assertThat(read.warnings()).isEmpty();
+                // Every catalog query ran: none was answered by the driver instead.
+                assertThat(reader.refusedQueries()).isEmpty();
                 ddl = LiveDdlWriter.write(reader.support(), read, "docker", true);
+                for (String line : db.script) assertThat(ddl).contains(line);
+
+                // And the driver, asked table by table, says the same of keys and unique constraints.
+                LiveSchemaModel.Schema byDriver = new LiveSchemaReader(DialectSupport.of(dialect), false).read(c, schema, names);
+                for (LiveSchemaModel.Table table : read.tables()) {
+                    LiveSchemaModel.Table other = byDriver.tables().stream()
+                            .filter(t -> t.name().equals(table.name())).findFirst().orElseThrow();
+                    assertThat(other.primaryKey()).as(table.name()).isEqualTo(table.primaryKey());
+                    assertThat(other.foreignKeys()).as(table.name()).containsExactlyInAnyOrderElementsOf(table.foreignKeys());
+                    assertThat(other.uniqueKeys().stream().map(java.util.TreeSet::new).toList()).as(table.name())
+                            .containsExactlyInAnyOrderElementsOf(table.uniqueKeys().stream().map(java.util.TreeSet::new).toList());
+                    assertThat(other.indexes().stream().filter(i -> i.skipped() == null).map(LiveSchemaModel.Index::name).toList())
+                            .as(table.name()).containsAll(table.indexes().stream().filter(i -> i.skipped() == null)
+                                    .map(LiveSchemaModel.Index::name).toList());
+                }
             }
             SqlEntityGenerator generator = new SqlEntityGenerator();
             List<EntityDefinition> entities = new SqlToEntityDefinitionConverter(generator).convert(ddl, dialect);
@@ -123,6 +189,13 @@ class LiveSchemaDockerTests {
             assertThat(entities.stream().filter(e -> e.name().equals("Employee")).findFirst().orElseThrow().relations())
                     .as(ddl).hasSize(1);
             assertThat(generator.parseTablesForImport(ddl, dialect).stream().filter(t -> t.isView())).hasSize(1);
+            // The wizard reads the index, and types the view's fields by their casts.
+            List<com.menora.initializr.sql.GeneratedJavaFile> files = generator.generate(ddl, dialect, "com.menora.demo",
+                    new com.menora.initializr.sql.SqlDepOptions("entity", List.of()));
+            assertThat(files.stream().filter(f -> f.relativePath().endsWith("/Employees.java")).findFirst().orElseThrow().content())
+                    .as(ddl).contains("@Index(name = ");
+            assertThat(files.stream().filter(f -> f.relativePath().endsWith("/ActiveStaff.java")).findFirst().orElseThrow().content())
+                    .as(ddl).contains("private Long id;").contains("private String email;").doesNotContain("TODO");
 
             if (db == Db.POSTGRESQL) {
                 // The script is a baseline: it creates the same tables in an empty schema.

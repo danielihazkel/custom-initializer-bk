@@ -43,6 +43,10 @@ import java.util.Set;
  *       ({@link FieldDefinition#column()}, {@link RelationDefinition#joinColumn()}), because the
  *       camelCase field name can't be turned back into it ({@code USE_8} and {@code USE8} both
  *       become {@code use8}).</li>
+ *   <li>A {@code CREATE VIEW}, or a SELECT among the statements, becomes a read-only view entity
+ *       ({@code viewQuery}): its fields keep the query's own column names and take the types the
+ *       script gives them — the table columns the view selects, a {@code CAST} — with the first
+ *       column as the key. A column the script does not type is a string.</li>
  *   <li>{@code CHECK (col IN ('A','B'))} — column-level, table-level or added by an
  *       {@code ALTER TABLE} — turns the column into an {@link FieldType#ENUM} with those values as
  *       its constants, when each already is a Java identifier ({@link SqlConstraintReader}, the
@@ -135,7 +139,26 @@ public class SqlToEntityDefinitionConverter {
         return new SelectImportResult(List.of(view), note);
     }
 
+    /**
+     * A view of the script as a read-only entity over its query. The fields are named exactly as
+     * the query's columns are — a view's {@code @Column} is the field name itself — and typed
+     * where the script says ({@code rawType} is null where it does not).
+     */
+    private EntityDefinition toViewEntity(TableModel view, SqlDialect dialect) {
+        List<FieldDefinition> fields = new ArrayList<>(view.columns().size());
+        for (ColumnModel col : view.columns()) {
+            FieldType type = col.rawType() == null ? FieldType.STRING
+                    : mapType(TypeMappers.map(dialect, col.rawType(), col.precision(), col.scale()), col.isPk());
+            fields.add(new FieldDefinition(col.name(), type, col.isPk(), false,
+                    false, false, null, null, null, null, false, List.of(),
+                    true, true, null, false));
+        }
+        return new EntityDefinition(singularize(toPascalFromSnake(view.name())), null, null, fields, List.of(),
+                true, view.viewQuery());
+    }
+
     private EntityDefinition toEntity(TableModel table, SqlDialect dialect, Map<String, ImportedTable> imported) {
+        if (table.isView()) return toViewEntity(table, dialect);
         String entityName = singularize(toPascalFromSnake(table.name()));
 
         // Which FK columns become relations: single-column FKs to an imported, single-key table.

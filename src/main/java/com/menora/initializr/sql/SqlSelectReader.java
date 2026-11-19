@@ -6,7 +6,13 @@ import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.FromItem;
 import net.sf.jsqlparser.expression.Alias;
+import net.sf.jsqlparser.expression.CastExpression;
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.Function;
+import net.sf.jsqlparser.expression.Parenthesis;
+import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList;
+import net.sf.jsqlparser.statement.create.table.ColDataType;
+import net.sf.jsqlparser.statement.select.Join;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.create.table.Index;
 import net.sf.jsqlparser.statement.select.AllColumns;
@@ -18,7 +24,10 @@ import net.sf.jsqlparser.statement.select.SelectItem;
 import net.sf.jsqlparser.statement.select.SetOperationList;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -101,6 +110,16 @@ final class SqlSelectReader {
      * skipped. Package-private for direct unit testing.
      */
     static List<String> extractProjectedColumns(String sql) {
+        List<String> out = new ArrayList<>();
+        for (String item : projectionItems(sql)) {
+            String name = projectedItemName(item);
+            if (name != null && isPlainIdentifier(name)) out.add(name);
+        }
+        return out;
+    }
+
+    /** The items of the outer {@code SELECT … FROM} projection, as text. */
+    private static List<String> projectionItems(String sql) {
         String s = stripComments(sql);
         int selectStart = lastTopLevelKeyword(s, "SELECT");
         if (selectStart < 0) return List.of();
@@ -109,12 +128,164 @@ final class SqlSelectReader {
         String afterSelect = s.substring(projStart);
         int fromRel = topLevelKeyword(afterSelect, "FROM");
         String projection = fromRel < 0 ? afterSelect : afterSelect.substring(0, fromRel);
-        projection = stripLeadingQuantifier(projection);
+        return splitTopLevelCommas(stripLeadingQuantifier(projection));
+    }
 
-        List<String> out = new ArrayList<>();
-        for (String item : splitTopLevelCommas(projection)) {
-            String name = projectedItemName(item);
-            if (name != null && isPlainIdentifier(name)) out.add(name);
+    // ── What a view's columns are typed as ────────────────────────────────────
+
+    /** A SQL type as a script writes it: {@code NUMERIC}, 10, 2. */
+    record SqlType(String rawType, Integer precision, Integer scale) {}
+
+    /**
+     * One column of a query's result: its label ({@code null}: an expression the query gave no
+     * name), whether the query quoted the label, and the type the script gives it ({@code null}:
+     * it does not say). {@code star} marks a {@code *} over a table the script does not have.
+     */
+    record Projected(String name, boolean quoted, SqlType type, boolean star) {}
+
+    /** A table a query reads, by the name the query uses for it. */
+    private record Source(String alias, String name, TableModel table) {
+
+        boolean is(String qualifier) {
+            return qualifier.equalsIgnoreCase(alias) || (alias == null && qualifier.equalsIgnoreCase(name));
+        }
+    }
+
+    /**
+     * The columns of {@code select}'s result with the types the script gives them: a column takes
+     * the type of the table column it reads (a table or an earlier view of the same script, by
+     * bare lower-case name in {@code tables}), a {@code CAST(x AS type)} the type it names,
+     * {@code count(…)} a {@code BIGINT}, and {@code min}/{@code max} the type of what they are
+     * taken over. {@code *} and {@code t.*} become the columns of the tables they stand for.
+     * Null when JSqlParser cannot read the query (vendor SQL): the caller falls back to
+     * {@link #heuristicProjection} and {@link #castTypes}.
+     */
+    static List<Projected> project(String select, Map<String, TableModel> tables) {
+        Statement parsed;
+        try {
+            parsed = CCJSqlParserUtil.parse(select.trim());
+        } catch (JSQLParserException e) {
+            return null;
+        }
+        if (!(parsed instanceof Select query)) return null;
+        PlainSelect ps;
+        try {
+            ps = asPlainSelect(query, select);
+        } catch (SqlParseException e) {
+            return null;
+        }
+        List<Source> sources = new ArrayList<>();
+        addSource(sources, ps.getFromItem(), tables);
+        if (ps.getJoins() != null) {
+            for (Join join : ps.getJoins()) addSource(sources, join.getFromItem(), tables);
+        }
+        List<Projected> out = new ArrayList<>();
+        for (SelectItem<?> item : ps.getSelectItems()) {
+            Expression expr = item.getExpression();
+            if (expr instanceof AllTableColumns all) {
+                String qualifier = stripQuotes(all.getTable().getName());
+                Source source = sources.stream().filter(s -> s.is(qualifier)).findFirst().orElse(null);
+                if (source == null || source.table() == null) out.add(new Projected(null, false, null, true));
+                else addColumns(out, source.table());
+            } else if (expr instanceof AllColumns) {
+                if (sources.isEmpty() || sources.stream().anyMatch(s -> s.table() == null)) {
+                    out.add(new Projected(null, false, null, true));
+                } else {
+                    for (Source source : sources) addColumns(out, source.table());
+                }
+            } else {
+                Alias alias = item.getAlias();
+                String raw = alias != null && alias.getName() != null && !alias.getName().isBlank() ? alias.getName()
+                        : expr instanceof Column col ? col.getColumnName() : null;
+                String name = stripQuotes(raw);
+                out.add(new Projected(name, raw != null && !raw.equals(name), typeOf(expr, sources), false));
+            }
+        }
+        return out;
+    }
+
+    private static void addSource(List<Source> sources, FromItem from, Map<String, TableModel> tables) {
+        if (from == null) return;
+        String alias = from.getAlias() == null ? null : stripQuotes(from.getAlias().getName());
+        if (from instanceof Table t) {
+            String name = stripQuotes(t.getName());
+            sources.add(new Source(alias, name, tables.get(name.toLowerCase(Locale.ROOT))));
+        } else {
+            // A sub-query in FROM: its columns are not followed.
+            sources.add(new Source(alias, null, null));
+        }
+    }
+
+    private static void addColumns(List<Projected> out, TableModel table) {
+        for (ColumnModel c : table.columns()) {
+            out.add(new Projected(c.name(), table.quotedNames().contains(c.name()),
+                    c.rawType() == null ? null : new SqlType(c.rawType(), c.precision(), c.scale()), false));
+        }
+    }
+
+    private static SqlType typeOf(Expression expr, List<Source> sources) {
+        if (expr instanceof Parenthesis p) return typeOf(p.getExpression(), sources);
+        if (expr instanceof ParenthesedExpressionList<?> list && list.size() == 1) return typeOf(list.get(0), sources);
+        if (expr instanceof CastExpression cast && cast.getColDataType() != null) {
+            ColDataType type = cast.getColDataType();
+            List<String> args = type.getArgumentsStringList();
+            return new SqlType(type.getDataType(), intOrNull(args, 0), intOrNull(args, 1));
+        }
+        if (expr instanceof Column col) {
+            String qualifier = col.getTable() == null || col.getTable().getName() == null ? null
+                    : stripQuotes(col.getTable().getName());
+            String name = stripQuotes(col.getColumnName());
+            ColumnModel found = null;
+            int hits = 0;
+            for (Source source : sources) {
+                if (source.table() == null || (qualifier != null && !source.is(qualifier))) continue;
+                for (ColumnModel c : source.table().columns()) {
+                    if (c.name().equalsIgnoreCase(name)) {
+                        found = c;
+                        hits++;
+                    }
+                }
+            }
+            return hits == 1 && found.rawType() != null
+                    ? new SqlType(found.rawType(), found.precision(), found.scale()) : null;
+        }
+        if (expr instanceof Function f && f.getName() != null) {
+            String name = f.getName().toLowerCase(Locale.ROOT);
+            if (name.equals("count")) return new SqlType("BIGINT", null, null);
+            if ((name.equals("min") || name.equals("max")) && f.getParameters() != null && f.getParameters().size() == 1) {
+                return typeOf(f.getParameters().get(0), sources);
+            }
+        }
+        return null;
+    }
+
+    private static Integer intOrNull(List<String> args, int i) {
+        if (args == null || args.size() <= i) return null;
+        try {
+            return Integer.parseInt(args.get(i).trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** {@code CAST(… AS type[(p[,s])]) [AS] label}, one item of a projection. */
+    private static final Pattern CAST_ITEM = Pattern.compile(
+            "^\\s*CAST\\s*\\(.*\\bAS\\s+([A-Za-z][A-Za-z0-9_ ]*?)\\s*(?:\\(\\s*(\\d+)\\s*(?:,\\s*(\\d+)\\s*)?\\))?\\s*\\)"
+                    + "\\s*(?:AS\\s+)?([\\w$\"`\\[\\]]+)\\s*$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    /**
+     * For a query JSqlParser cannot read: the types its {@code CAST(x AS type) AS label} items
+     * name, by lower-case label — read from the text, like {@link #extractProjectedColumns}.
+     */
+    static Map<String, SqlType> castTypes(String select) {
+        Map<String, SqlType> out = new LinkedHashMap<>();
+        for (String item : projectionItems(select)) {
+            Matcher m = CAST_ITEM.matcher(item);
+            if (!m.matches()) continue;
+            out.put(stripQuotes(m.group(4)).toLowerCase(Locale.ROOT), new SqlType(m.group(1).trim(),
+                    m.group(2) == null ? null : Integer.valueOf(m.group(2)),
+                    m.group(3) == null ? null : Integer.valueOf(m.group(3))));
         }
         return out;
     }

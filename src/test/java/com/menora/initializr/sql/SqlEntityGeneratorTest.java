@@ -1365,6 +1365,184 @@ class SqlEntityGeneratorTest {
                 .hasMessageContaining("Unknown SQL wizard apiMode: 'DTO'");
     }
 
+    // ── Views and indexes (Round 14, phase 5) ────────────────────────────────
+
+    private static final String SHOP_SQL = """
+            CREATE TABLE customers (
+                id BIGINT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                joined DATE,
+                credit NUMERIC(10,2)
+            );
+            CREATE TABLE orders (
+                id BIGINT PRIMARY KEY,
+                customer_id BIGINT NOT NULL REFERENCES customers(id),
+                placed_at TIMESTAMP,
+                total NUMERIC(12,2),
+                ref UUID
+            );
+            """;
+
+    private List<GeneratedJavaFile> shop(String more) {
+        return generator.generate(SHOP_SQL + more, SqlDialect.POSTGRESQL, "com.menora.demo", null);
+    }
+
+    @Test
+    void createView_isAReadOnlyEntityOverTheViewTypedByWhatItSelects() {
+        // CREATE VIEW used to be dropped (or, where JSqlParser could not read it, a parse error).
+        // The entity reads the view by its name; a field takes the type of the table column it
+        // selects, of a CAST, of count / min / max — and stays a String with the TODO otherwise.
+        String view = findFile(shop("""
+                CREATE OR REPLACE VIEW sales.customer_orders AS
+                SELECT c.id AS customer_id, c.name, c.joined, count(o.id) AS orders, max(o.total) AS biggest,
+                       CAST(sum(o.total) AS NUMERIC(14,2)) AS spent, upper(c.name) AS shout, o.ref
+                FROM customers c LEFT JOIN orders o ON o.customer_id = c.id
+                GROUP BY c.id, c.name, c.joined, o.ref
+                WITH CHECK OPTION;
+                """), "entity/CustomerOrders.java").content();
+        assertThat(view)
+                .contains("@Immutable")
+                .contains("@Subselect(\"\"\"\nSELECT * FROM sales.customer_orders\n\"\"\")")
+                .contains("import java.math.BigDecimal;\nimport java.time.LocalDate;\nimport java.util.UUID;\nimport jakarta.persistence.Column;")
+                .contains("    @Id\n    @Column(name = \"customer_id\")\n    private Long customerId;")
+                .contains("    @Column(name = \"name\")\n    private String name;")
+                .contains("    private LocalDate joined;")
+                .contains("    private Long orders;")
+                .contains("    private BigDecimal biggest;")
+                .contains("    private BigDecimal spent;")
+                .contains("    private UUID ref;")
+                .contains("    @Column(name = \"shout\")\n    // TODO: SELECT has no column types — set the real type\n    private String shout;");
+        // One TODO: the expression nothing types.
+        assertThat(view.split("TODO: SELECT has no column types", -1)).hasSize(2);
+    }
+
+    @Test
+    void createView_namesItsColumnsByItsListAndStandsInForAStar() {
+        List<GeneratedJavaFile> files = shop("""
+                CREATE VIEW customer_codes (code, label) AS SELECT id, name FROM customers;
+                CREATE VIEW all_customers AS SELECT * FROM customers;
+                CREATE MATERIALIZED VIEW IF NOT EXISTS order_copies AS SELECT o.* FROM orders o WITH NO DATA;
+                -- a view over a view of the same script
+                CREATE VIEW codes_again AS SELECT code FROM customer_codes;
+                """);
+        assertThat(findFile(files, "entity/CustomerCodes.java").content())
+                .contains("SELECT * FROM customer_codes")
+                .contains("    @Id\n    @Column(name = \"code\")\n    private Long code;")
+                .contains("    @Column(name = \"label\")\n    private String label;");
+        assertThat(findFile(files, "entity/AllCustomers.java").content())
+                .contains("private Long id;").contains("private String name;")
+                .contains("private LocalDate joined;").contains("private BigDecimal credit;")
+                .doesNotContain("TODO");
+        assertThat(findFile(files, "entity/OrderCopies.java").content())
+                .contains("SELECT * FROM order_copies")
+                .contains("private Long customerId;").contains("private LocalDateTime placedAt;").contains("private UUID ref;");
+        assertThat(findFile(files, "entity/CodesAgain.java").content()).contains("private Long code;");
+    }
+
+    @Test
+    void createView_mayComeBeforeTheTablesItReads() {
+        // A dump orders its statements its own way: the types are read once the script is.
+        List<GeneratedJavaFile> files = generator.generate("""
+                CREATE VIEW recent AS SELECT o.id, o.placed_at FROM orders o;
+                """ + SHOP_SQL, SqlDialect.POSTGRESQL, "com.menora.demo", null);
+        assertThat(findFile(files, "entity/Recent.java").content())
+                .contains("private Long id;").contains("private LocalDateTime placedAt;");
+    }
+
+    @Test
+    void createView_withColumnsNobodyCanNameIsRefusedSayingWhatToDo() {
+        assertThatThrownBy(() -> shop("CREATE VIEW stock AS SELECT * FROM warehouse_stock;"))
+                .isInstanceOf(SqlEntityGenerator.SqlParseException.class)
+                .hasMessageContaining("View stock selects * from a table this script does not create")
+                .hasMessageContaining("CREATE VIEW stock (a, b) AS");
+        assertThatThrownBy(() -> shop("CREATE VIEW totals AS SELECT count(*) FROM orders;"))
+                .isInstanceOf(SqlEntityGenerator.SqlParseException.class)
+                .hasMessageContaining("View totals selects an expression without a name");
+        // With a column list the same views are fine: the list names the columns.
+        assertThat(findFile(shop("CREATE VIEW stock (sku, on_hand) AS SELECT * FROM warehouse_stock;"), "entity/Stock.java").content())
+                .contains("private String sku;").contains("private String onHand;");
+    }
+
+    @Test
+    void createView_staysInTheFlywayBaseline() {
+        // The view is part of the schema the project was generated from; a bare SELECT is not.
+        List<GeneratedJavaFile> files = generator.generate(SHOP_SQL + """
+                CREATE VIEW big_orders AS SELECT id, total FROM orders WHERE total > 1000;
+                SELECT id AS id, name AS name FROM customers;
+                """, SqlDialect.POSTGRESQL, "com.menora.demo", null, new SqlProjectFacts(false, true, false));
+        assertThat(findFile(files, "db/migration/V1__init.sql").content())
+                .contains("CREATE VIEW big_orders AS SELECT id, total FROM orders WHERE total > 1000;")
+                .doesNotContain("SELECT id AS id, name AS name");
+    }
+
+    @Test
+    void aBareSelectIsTypedTheSameWay() {
+        // Every field of a SELECT used to be a String with a TODO.
+        String view = findFile(shop("""
+                SELECT c.id AS id, c.joined AS since, count(*) AS n, CAST(c.credit AS INTEGER) AS whole, c.name || '!' AS loud
+                FROM customers c GROUP BY c.id, c.joined, c.credit, c.name;
+                """), "entity/Customers2.java").content();
+        assertThat(view)
+                .contains("    @Id\n    @Column(name = \"id\")\n    private Long id;")
+                .contains("    private LocalDate since;")
+                .contains("    private Long n;")
+                .contains("    private Integer whole;")
+                .contains("    // TODO: SELECT has no column types — set the real type\n    private String loud;");
+        // A SELECT over tables the script does not have: nothing to type by, as before.
+        assertThat(findFile(generator.generate("SELECT u.id AS id, u.email AS email FROM users u", SqlDialect.H2, "p", null),
+                "entity/Users.java").content())
+                .contains("    // TODO: SELECT has no column types — set the real type\n    private String id;")
+                .contains("    // TODO: SELECT has no column types — set the real type\n    private String email;")
+                .doesNotContain("import java.");
+    }
+
+    @Test
+    void aSelectJSqlParserCannotReadIsStillTypedByItsCasts() {
+        // Native SQL (Oracle's MODEL clause): the labels come from the text, and so do the casts.
+        String view = findFile(generator.generate(
+                "SELECT CAST(id AS NUMBER(12)) AS id, name AS name, CAST(d AS DATE) hired "
+                        + "FROM t MODEL DIMENSION BY (id) MEASURES (name) RULES ()",
+                SqlDialect.ORACLE, "p", null), "entity/T.java").content();
+        assertThat(view)
+                .contains("private Long id;")
+                .contains("    // TODO: SELECT has no column types — set the real type\n    private String name;")
+                .contains("private LocalDate hired;");
+    }
+
+    @Test
+    void createIndex_isTheTablesIndexAndWhatJpaCannotSayIsANote() {
+        // CREATE INDEX was skipped whole. A plain one is @Table(indexes = …); a partial one, one
+        // over an expression and one of another kind are said in a comment instead of dropped.
+        List<GeneratedJavaFile> files = shop("""
+                CREATE INDEX idx_orders_customer ON orders (customer_id);
+                CREATE INDEX IF NOT EXISTS idx_orders_recent ON public.orders USING btree (placed_at DESC NULLS LAST, id);
+                CREATE INDEX ON customers (name);
+                CREATE UNIQUE INDEX uq_orders_ref ON orders (ref);
+                CREATE INDEX idx_customers_lower ON customers (lower(name));
+                CREATE INDEX idx_orders_open ON orders (customer_id) WHERE total IS NULL;
+                CREATE INDEX idx_orders_ref_hash ON orders USING hash (ref);
+                CREATE UNIQUE INDEX uq_customers_lower ON customers (lower(name), joined);
+                CREATE INDEX idx_elsewhere ON warehouses (id);
+                """);
+        String orders = findFile(files, "entity/Orders.java").content();
+        assertThat(orders)
+                .contains("import jakarta.persistence.Index;")
+                .contains("@Table(name = \"orders\", indexes = {@Index(name = \"idx_orders_customer\", columnList = \"customer_id\"), "
+                        + "@Index(name = \"idx_orders_recent\", columnList = \"placed_at DESC, id\")})")
+                .contains("// Index idx_orders_open (customer_id) is not mapped: it is partial (it covers only the rows its WHERE picks).\n"
+                        + "// Index idx_orders_ref_hash (ref) is not mapped: it is a hash index.\n@Entity")
+                // A unique index over plain columns is still the column's own UNIQUE.
+                .contains("@Column(unique = true)\n    private UUID ref;");
+        String customers = findFile(files, "entity/Customers.java").content();
+        assertThat(customers)
+                .contains("@Table(name = \"customers\", indexes = {@Index(columnList = \"name\")})")
+                .contains("// Index idx_customers_lower (lower(name)) is not mapped: it is over an expression, not plain columns.\n"
+                        + "// Unique index uq_customers_lower (lower(name), joined) is not mapped: it is over an expression, not plain columns.\n@Entity");
+        // A table without an index keeps its annotation, and none of the script's statements is lost on a table it does not have.
+        assertThat(findFile(shop(""), "entity/Orders.java").content())
+                .contains("@Table(name = \"orders\")").doesNotContain("Index");
+    }
+
     // ── Helper ───────────────────────────────────────────────────────────────
 
     private GeneratedJavaFile findFile(List<GeneratedJavaFile> files, String suffix) {

@@ -2394,7 +2394,9 @@ class GeneratedBackendBuildSmokeTests {
         // dependency: the project compiles, and its context-load test starts Hibernate, which
         // creates the schema from the generated entities (ddl-auto is create-drop on H2) — so the
         // mappings are real: composite keys and foreign keys, a shared-key one-to-one, unique
-        // constraints, the enum behind a CHECK, constraints added by ALTER TABLE, a view.
+        // constraints, the enum behind a CHECK, constraints added by ALTER TABLE, a view — and
+        // since Round 14 the indexes of @Table(indexes = …), one of them on a quoted mixed-case
+        // column, which Hibernate creates with the tables, and the typed fields of the views.
         Map<String, Object> body = new java.util.LinkedHashMap<>();
         body.put("groupId", "com.menora");
         body.put("artifactId", "library");
@@ -2436,6 +2438,58 @@ class GeneratedBackendBuildSmokeTests {
             );
             ALTER TABLE fixtures ADD CONSTRAINT fixtures_home FOREIGN KEY (home_id) REFERENCES teams(id);
             CREATE TABLE match_log (message VARCHAR(500), logged_at TIMESTAMP);
+            CREATE INDEX idx_players_team ON players (team_id, shirt DESC);
+            CREATE VIEW team_sizes AS
+            SELECT t.id AS team_id, t.name, t.founded, count(p.id) AS players, max(p.joined_at) AS last_joined,
+                   CAST(avg(p.shirt) AS DECIMAL(6, 2)) AS average_shirt
+            FROM teams t LEFT JOIN players p ON p.team_id = t.id
+            GROUP BY t.id, t.name, t.founded;
+            """;
+
+    /** Reads the view of {@link #CLUB_SQL} through its generated entity: the field types have to fit the view's columns. */
+    private static final String CLUB_VIEW_TESTS = """
+            package com.menora.club;
+
+            import com.menora.club.entity.TeamSizes;
+            import com.menora.club.repository.TeamSizesRepository;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.jdbc.core.JdbcTemplate;
+
+            import java.math.BigDecimal;
+            import java.time.LocalDate;
+            import java.time.LocalDateTime;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+
+            @SpringBootTest
+            class ViewReadTests {
+
+                @Autowired
+                private TeamSizesRepository sizes;
+
+                @Autowired
+                private JdbcTemplate jdbc;
+
+                @Test
+                void theViewIsReadThroughItsEntityWithTheTypesTheScriptGivesIt() {
+                    jdbc.update("INSERT INTO teams (name, city, founded, budget) VALUES ('Reds', 'Haifa', DATE '1990-05-01', 10.50)");
+                    Long team = jdbc.queryForObject("SELECT id FROM teams WHERE name = 'Reds'", Long.class);
+                    jdbc.update("INSERT INTO players (team_id, nickname, position, shirt, active, joined_at) "
+                            + "VALUES (?, 'ace', 'GOAL', 1, TRUE, TIMESTAMP '2024-01-02 03:04:05')", team);
+                    jdbc.update("INSERT INTO players (team_id, nickname, position, shirt, active, joined_at) "
+                            + "VALUES (?, 'bee', 'FIELD', 4, TRUE, TIMESTAMP '2025-06-07 08:09:10')", team);
+
+                    TeamSizes row = sizes.findById(team).orElseThrow();
+                    assertThat(row.getName()).isEqualTo("Reds");
+                    assertThat(row.getFounded()).isEqualTo(LocalDate.of(1990, 5, 1));
+                    assertThat(row.getPlayers()).isEqualTo(2L);
+                    assertThat(row.getLastJoined()).isEqualTo(LocalDateTime.of(2025, 6, 7, 8, 9, 10));
+                    assertThat(row.getAverageShirt()).isEqualByComparingTo(new BigDecimal("2.50"));
+                    assertThat(sizes.count()).isEqualTo(1);
+                }
+            }
             """;
 
     @org.junit.jupiter.api.Test
@@ -2457,7 +2511,17 @@ class GeneratedBackendBuildSmokeTests {
 
         String baseline = Files.readString(project.resolve("src/main/resources/db/migration/V1__init.sql"));
         assertThat(baseline).contains("CREATE TABLE players (").contains("ALTER TABLE fixtures ADD CONSTRAINT fixtures_home")
+                // The view and the index are part of the schema: the migration makes them.
+                .contains("CREATE INDEX idx_players_team ON players (team_id, shirt DESC);")
+                .contains("CREATE VIEW team_sizes AS")
                 .doesNotContain("app_metadata");
+        String teamSizes = Files.readString(project.resolve("src/main/java/com/menora/club/entity/TeamSizes.java"));
+        assertThat(teamSizes).contains("SELECT * FROM team_sizes").contains("private Long teamId;")
+                .contains("private LocalDateTime lastJoined;").contains("private BigDecimal averageShirt;").doesNotContain("TODO");
+        assertThat(Files.readString(project.resolve("src/main/java/com/menora/club/entity/Players.java")))
+                .contains("indexes = {@Index(name = \"idx_players_team\", columnList = \"team_id, shirt DESC\")}");
+        // The view is read for real, on the schema the migration made.
+        writeProjectTest(project, "com.menora.club", "ViewReadTests", CLUB_VIEW_TESTS);
         assertThat(project.resolve("src/test/java/com/menora/club/controller/PlayersControllerTest.java")).isRegularFile();
         // classpath:/config/ outranks the application.yaml at the root: only the tests validate.
         Path override = project.resolve("src/test/resources/config/application.yaml");

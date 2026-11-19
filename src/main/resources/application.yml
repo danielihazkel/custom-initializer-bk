@@ -150,6 +150,10 @@ menora:
     # Tables and views one read may take, and reads running at once (the rest wait 5 s, then 429).
     max-tables: 300
     max-concurrent-reads: 4
+    # Keys and indexes are read with one catalog query per schema; false asks the JDBC driver table
+    # by table instead (slower on a large schema — what every read did before, and the fallback
+    # when a database refuses one of the queries).
+    catalog-queries: true
     # Source passwords: an admin source names one of these (or an env var SCHEMA_SOURCE_...).
     # secrets:
     #   hr: ${HR_DB_PASSWORD}

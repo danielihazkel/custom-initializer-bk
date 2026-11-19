@@ -64,6 +64,8 @@ class LiveSchemaIntegrationTests {
                     + "DEPT_ID BIGINT NOT NULL REFERENCES HR.DEPARTMENTS(ID), EMAIL VARCHAR(200) NOT NULL, "
                     + "HIRED DATE, CONSTRAINT UQ_EMP UNIQUE (EMAIL, DEPT_ID))");
             s.execute("CREATE VIEW HR.ACTIVE_STAFF AS SELECT ID, EMAIL, HIRED FROM HR.EMPLOYEES");
+            s.execute("CREATE INDEX IDX_EMP_HIRED ON HR.EMPLOYEES (HIRED DESC)");
+            s.execute("COMMENT ON COLUMN HR.EMPLOYEES.EMAIL IS 'Work address'");
         }
     }
 
@@ -150,7 +152,11 @@ class LiveSchemaIntegrationTests {
                 .contains("CHECK (STATUS IN ('OPEN', 'CLOSED'))")
                 .contains("UNIQUE (EMAIL, DEPT_ID)")
                 .contains("ALTER TABLE HR.EMPLOYEES ADD FOREIGN KEY (DEPT_ID) REFERENCES HR.DEPARTMENTS (ID);")
-                .contains("SELECT ID, EMAIL, HIRED FROM HR.ACTIVE_STAFF;")
+                .contains("CREATE INDEX IDX_EMP_HIRED ON HR.EMPLOYEES (HIRED DESC);")
+                .contains("COMMENT ON COLUMN HR.EMPLOYEES.EMAIL IS 'Work address';")
+                // A view's columns, cast to their types: how the wizard knows them.
+                .contains("SELECT CAST(ID AS BIGINT) AS ID, CAST(EMAIL AS VARCHAR(200)) AS EMAIL, CAST(HIRED AS DATE) AS HIRED "
+                        + "FROM HR.ACTIVE_STAFF;")
                 .doesNotContain("sa");
 
         Map<String, Object> wizard = new LinkedHashMap<>();
@@ -166,7 +172,12 @@ class LiveSchemaIntegrationTests {
         Map<String, String> files = unzip(zip.getBody());
         String employees = files.entrySet().stream().filter(e -> e.getKey().endsWith("/entity/Employees.java"))
                 .map(Map.Entry::getValue).findFirst().orElseThrow();
-        assertThat(employees).contains("@ManyToOne").contains("@Table(name = \"EMPLOYEES\", schema = \"HR\"");
+        assertThat(employees).contains("@ManyToOne").contains("@Table(name = \"EMPLOYEES\", schema = \"HR\"")
+                .contains("indexes = {@Index(name = \"IDX_EMP_HIRED\", columnList = \"HIRED DESC\")}");
+        String staff = files.entrySet().stream().filter(e -> e.getKey().endsWith("/entity/ActiveStaff.java"))
+                .map(Map.Entry::getValue).findFirst().orElseThrow();
+        assertThat(staff).contains("private Long id;").contains("private String email;").contains("private LocalDate hired;")
+                .doesNotContain("TODO");
         assertThat(files.keySet()).anyMatch(p -> p.endsWith("/entity/ActiveStaff.java"))
                 .anyMatch(p -> p.endsWith("/entity/DepartmentsStatus.java"));
     }

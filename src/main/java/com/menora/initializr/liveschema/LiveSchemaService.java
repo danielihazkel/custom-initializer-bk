@@ -41,6 +41,14 @@ public class LiveSchemaService {
     private final boolean allowH2;
     private final Semaphore reads;
 
+    /**
+     * Keys and indexes through one catalog query per schema (false: through the driver, table by
+     * table — the way out should a database answer one of the queries with something else than
+     * its driver does).
+     */
+    @Value("${menora.live-schema.catalog-queries:true}")
+    private boolean catalogQueries = true;
+
     public LiveSchemaService(SchemaSourceRepository sources, Environment environment,
                              @Value("${menora.live-schema.typed-connections:true}") boolean typedConnections,
                              @Value("${menora.live-schema.allowed-hosts:}") String allowedHosts,
@@ -216,7 +224,7 @@ public class LiveSchemaService {
                     "Too many schema reads are running. Try again in a moment.");
         }
         try {
-            LiveSchemaReader reader = new LiveSchemaReader(DialectSupport.of(spec.dialect()));
+            LiveSchemaReader reader = new LiveSchemaReader(DialectSupport.of(spec.dialect()), catalogQueries);
             try (Connection c = reader.connect(spec, readOnly)) {
                 return work.run(reader, c);
             } catch (SQLException e) {

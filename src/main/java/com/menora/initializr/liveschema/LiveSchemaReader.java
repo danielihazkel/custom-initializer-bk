@@ -3,10 +3,14 @@ package com.menora.initializr.liveschema;
 import com.menora.initializr.liveschema.LiveSchemaModel.CheckIn;
 import com.menora.initializr.liveschema.LiveSchemaModel.Column;
 import com.menora.initializr.liveschema.LiveSchemaModel.ForeignKey;
+import com.menora.initializr.liveschema.LiveSchemaModel.Index;
+import com.menora.initializr.liveschema.LiveSchemaModel.IndexColumn;
 import com.menora.initializr.liveschema.LiveSchemaModel.Kind;
 import com.menora.initializr.liveschema.LiveSchemaModel.Table;
 import com.menora.initializr.liveschema.LiveSchemaModel.TableRef;
 import com.menora.initializr.sql.SqlDialect;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 
 import java.sql.Connection;
@@ -28,10 +32,13 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * Reads a schema through JDBC: the driver's {@link DatabaseMetaData} for tables, columns, keys,
- * foreign keys and unique indexes, and one catalog query per dialect for CHECK constraints (and
- * Oracle's identity columns, PostgreSQL's enum types). Every connection is read-only, opened for
- * one call and closed at its end; every statement has a timeout.
+ * Reads a schema through JDBC: the driver's {@link DatabaseMetaData} for tables and columns
+ * (type, default, comment), and the dialect's catalog queries — one per schema — for primary
+ * keys, foreign keys, indexes, CHECK constraints and comments the driver does not report (and
+ * Oracle's identity columns, PostgreSQL's enum types). A dialect without such a query, or a
+ * database that refuses it, is asked through the driver table by table, as every read used to
+ * be. Every connection is read-only, opened for one call and closed at its end; every statement
+ * has a timeout.
  *
  * <p>Only {@code java.sql} is used, so a driver missing from the classpath (one a build left out)
  * is a 400 naming it, not a startup failure.
@@ -41,13 +48,27 @@ public class LiveSchemaReader {
     /** At most this many names in a schema's table list. */
     public static final int MAX_LISTED = 5000;
 
+    private static final Logger log = LoggerFactory.getLogger(LiveSchemaReader.class);
+
     private final DialectSupport support;
+    private final boolean catalogQueries;
+    /** The catalog queries a database refused in this reader's reads (each was answered by the driver instead). */
+    private final List<String> refused = new ArrayList<>();
 
     public LiveSchemaReader(DialectSupport support) {
+        this(support, true);
+    }
+
+    /** @param catalogQueries false reads keys and indexes through the driver only ({@code menora.live-schema.catalog-queries}) */
+    public LiveSchemaReader(DialectSupport support, boolean catalogQueries) {
         this.support = support;
+        this.catalogQueries = catalogQueries;
     }
 
     public DialectSupport support() { return support; }
+
+    /** What a read fell back to the driver for, and why: empty when every catalog query ran. */
+    public List<String> refusedQueries() { return List.copyOf(refused); }
 
     /** Opens a read-only connection; a failure is a 400 in the driver's words, without the password. */
     public Connection connect(ConnectionSpec spec) {
@@ -125,6 +146,11 @@ public class LiveSchemaReader {
     public record Tables(List<TableRef> tables, boolean truncated) {}
 
     public Tables tables(Connection c, String schema) throws SQLException {
+        return tables(c, schema, null);
+    }
+
+    /** {@link #tables(Connection, String)}, also putting each table's comment in {@code remarks} when given. */
+    private Tables tables(Connection c, String schema, Map<String, String> remarks) throws SQLException {
         List<TableRef> out = new ArrayList<>();
         boolean truncated = false;
         try (ResultSet rs = c.getMetaData().getTables(null, schema, "%", new String[]{"TABLE", "VIEW"})) {
@@ -134,8 +160,11 @@ public class LiveSchemaReader {
                     break;
                 }
                 String type = rs.getString("TABLE_TYPE");
-                out.add(new TableRef(rs.getString("TABLE_NAME"),
+                String name = rs.getString("TABLE_NAME");
+                out.add(new TableRef(name,
                         type != null && type.toUpperCase(Locale.ROOT).contains("VIEW") ? Kind.VIEW : Kind.TABLE));
+                String remark = remarks == null ? null : optionalString(rs, "REMARKS");
+                if (remark != null && !remark.isBlank()) remarks.put(name, remark);
             }
         }
         out.sort((a, b) -> a.name().compareToIgnoreCase(b.name()));
@@ -145,7 +174,8 @@ public class LiveSchemaReader {
     /** Reads the named tables and views of {@code schema}; a name the schema does not have is a 400. */
     public LiveSchemaModel.Schema read(Connection c, String schema, Collection<String> names) throws SQLException {
         Map<String, TableRef> available = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        for (TableRef t : tables(c, schema).tables()) available.put(t.name(), t);
+        Map<String, String> tableComments = new HashMap<>();
+        for (TableRef t : tables(c, schema, tableComments).tables()) available.put(t.name(), t);
         List<TableRef> wanted = new ArrayList<>();
         for (String name : names) {
             TableRef ref = available.get(name);
@@ -158,17 +188,30 @@ public class LiveSchemaReader {
         Map<String, Set<String>> identity = identityColumns(c, schema, warnings);
         Map<String, List<String>> pgEnums = support.dialect() == SqlDialect.POSTGRESQL ? postgresEnums(c, warnings) : Map.of();
         Map<String, List<String>> checkClauses = checkClauses(c, schema, warnings);
+        // One query per schema where the dialect has one; null where it has none or the database refused it.
+        Map<String, List<String>> allKeys = catalogQueries ? primaryKeys(c, schema) : null;
+        Map<String, List<ForeignKey>> allForeignKeys = catalogQueries ? foreignKeys(c, schema) : null;
+        Map<String, List<RawIndex>> allIndexes = catalogQueries ? indexes(c, schema) : null;
+        Map<String, Map<String, String>> comments = comments(c, schema, tableComments);
 
         List<Table> tables = new ArrayList<>();
         for (TableRef ref : wanted) {
-            List<Column> columns = columns(md, schema, ref.name(), identity.getOrDefault(ref.name(), Set.of()));
+            Map<String, String> columnComments = comments.getOrDefault(ref.name(), Map.of());
+            List<Column> columns = columns(md, schema, ref.name(), identity.getOrDefault(ref.name(), Set.of()), columnComments);
+            String comment = tableComments.get(ref.name());
             if (ref.kind() == Kind.VIEW) {
-                tables.add(new Table(schema, ref.name(), Kind.VIEW, columns, List.of(), List.of(), List.of(), List.of()));
+                tables.add(new Table(schema, ref.name(), Kind.VIEW, columns, List.of(), List.of(), List.of(), List.of(),
+                        List.of(), comment));
                 continue;
             }
-            List<String> pk = primaryKey(md, schema, ref.name());
-            List<ForeignKey> fks = foreignKeys(md, schema, ref.name());
-            List<List<String>> uniques = uniqueKeys(md, schema, ref.name(), pk, warnings);
+            List<String> pk = allKeys != null ? allKeys.getOrDefault(ref.name(), List.of()) : primaryKey(md, schema, ref.name());
+            List<ForeignKey> fks = allForeignKeys != null ? allForeignKeys.getOrDefault(ref.name(), List.of())
+                    : foreignKeys(md, schema, ref.name());
+            List<RawIndex> raw = allIndexes != null ? allIndexes.getOrDefault(ref.name(), List.of())
+                    : indexInfo(md, schema, ref.name(), warnings);
+            List<List<String>> uniques = new ArrayList<>();
+            List<Index> indexes = new ArrayList<>();
+            sortIndexes(raw, columns, pk, uniques, indexes);
             List<CheckIn> checks = new ArrayList<>();
             Map<String, String> byLower = new HashMap<>();
             for (Column col : columns) byLower.put(col.name().toLowerCase(Locale.ROOT), col.name());
@@ -183,12 +226,17 @@ public class LiveSchemaReader {
                     checks.add(new CheckIn(col.name(), labels));
                 }
             }
-            tables.add(new Table(schema, ref.name(), Kind.TABLE, columns, pk, fks, uniques, checks));
+            tables.add(new Table(schema, ref.name(), Kind.TABLE, columns, pk, fks, uniques, checks, indexes, comment));
         }
         return new LiveSchemaModel.Schema(schema, tables, warnings);
     }
 
-    private List<Column> columns(DatabaseMetaData md, String schema, String table, Set<String> identity) throws SQLException {
+    /**
+     * Columns in the order the driver's result has them: Oracle streams COLUMN_DEF (a LONG), and a
+     * column read after one further along is gone.
+     */
+    private List<Column> columns(DatabaseMetaData md, String schema, String table, Set<String> identity,
+                                 Map<String, String> comments) throws SQLException {
         List<Column> out = new ArrayList<>();
         try (ResultSet rs = md.getColumns(null, schema, escape(md, table), "%")) {
             while (rs.next()) {
@@ -198,12 +246,196 @@ public class LiveSchemaReader {
                 Integer size = intOrNull(rs, "COLUMN_SIZE");
                 Integer digits = intOrNull(rs, "DECIMAL_DIGITS");
                 boolean nullable = rs.getInt("NULLABLE") != DatabaseMetaData.columnNoNulls;
+                String remark = optionalString(rs, "REMARKS");
+                String defaultValue = optionalString(rs, "COLUMN_DEF");
                 String auto = optionalString(rs, "IS_AUTOINCREMENT");
                 boolean autoIncrement = "YES".equalsIgnoreCase(auto) || identity.contains(name)
                         || support.identityInTypeName(type)
                         || (type != null && type.toLowerCase(Locale.ROOT).endsWith("serial"));
-                out.add(new Column(name, type, size, digits, nullable, autoIncrement));
+                String comment = comments.containsKey(name) ? comments.get(name) : remark;
+                out.add(new Column(name, type, size, digits, nullable, autoIncrement,
+                        defaultValue == null || defaultValue.isBlank() ? null : defaultValue.trim(),
+                        comment == null || comment.isBlank() ? null : comment.trim()));
             }
+        }
+        return out;
+    }
+
+    // ── Keys and indexes of a whole schema ─────────────────────────────────
+
+    private Map<String, List<String>> primaryKeys(Connection c, String schema) {
+        String query = support.primaryKeysQuery();
+        if (query == null) return null;
+        Map<String, TreeMap<Integer, String>> byTable = new HashMap<>();
+        try (PreparedStatement ps = prepare(c, query, schema); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                byTable.computeIfAbsent(rs.getString(1), k -> new TreeMap<>()).put(rs.getInt(3), rs.getString(2));
+            }
+        } catch (SQLException e) {
+            log.warn("Primary keys of {} are read table by table: the catalog query failed: {}", schema, e.getMessage());
+            refused.add("primary keys: " + e.getMessage());
+            return null;
+        }
+        Map<String, List<String>> out = new HashMap<>();
+        byTable.forEach((table, columns) -> out.put(table, new ArrayList<>(columns.values())));
+        return out;
+    }
+
+    private Map<String, List<ForeignKey>> foreignKeys(Connection c, String schema) {
+        String query = support.foreignKeysQuery();
+        if (query == null) return null;
+        // By table, then by constraint in the order met; columns in key order.
+        Map<String, Map<String, TreeMap<Integer, String[]>>> byTable = new HashMap<>();
+        Map<String, String[]> target = new HashMap<>();
+        try (PreparedStatement ps = prepare(c, query, schema); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String table = rs.getString(1);
+                String constraint = rs.getString(2);
+                byTable.computeIfAbsent(table, k -> new LinkedHashMap<>())
+                        .computeIfAbsent(constraint, k -> new TreeMap<>())
+                        .put(rs.getInt(4), new String[]{rs.getString(3), rs.getString(7)});
+                target.put(table + "|" + constraint, new String[]{rs.getString(5), rs.getString(6)});
+            }
+        } catch (SQLException e) {
+            log.warn("Foreign keys of {} are read table by table: the catalog query failed: {}", schema, e.getMessage());
+            refused.add("foreign keys: " + e.getMessage());
+            return null;
+        }
+        Map<String, List<ForeignKey>> out = new HashMap<>();
+        byTable.forEach((table, constraints) -> {
+            List<ForeignKey> list = new ArrayList<>();
+            constraints.forEach((constraint, pairs) -> {
+                List<String> cols = new ArrayList<>();
+                List<String> refCols = new ArrayList<>();
+                for (String[] pair : pairs.values()) {
+                    cols.add(pair[0]);
+                    refCols.add(pair[1]);
+                }
+                String[] t = target.get(table + "|" + constraint);
+                list.add(new ForeignKey(cols, t[0], t[1], refCols));
+            });
+            out.put(table, list);
+        });
+        return out;
+    }
+
+    /** An index as a catalog describes it, before it is known to be a key, a constraint or an index of its own. */
+    private static final class RawIndex {
+        final String name;
+        final boolean unique;
+        final TreeMap<Integer, IndexColumn> columns = new TreeMap<>();
+        boolean partial;
+        boolean expression;
+        String method;
+
+        RawIndex(String name, boolean unique) {
+            this.name = name;
+            this.unique = unique;
+        }
+    }
+
+    private Map<String, List<RawIndex>> indexes(Connection c, String schema) {
+        String query = support.indexesQuery();
+        if (query == null) return null;
+        Map<String, Map<String, RawIndex>> byTable = new HashMap<>();
+        try (PreparedStatement ps = prepare(c, query, schema); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String name = rs.getString(2);
+                if (name == null) continue;
+                boolean unique = rs.getBoolean(3);
+                RawIndex index = byTable.computeIfAbsent(rs.getString(1), k -> new LinkedHashMap<>())
+                        .computeIfAbsent(name, k -> new RawIndex(name, unique));
+                String column = rs.getString(4);
+                int position = rs.getInt(5);
+                boolean descending = rs.getBoolean(6);
+                if (column == null) index.expression = true;
+                else index.columns.put(position, new IndexColumn(column, descending));
+                if (rs.getBoolean(7)) index.partial = true;
+                String method = rs.getString(8);
+                if (method != null && !method.isBlank()) index.method = method.trim();
+            }
+        } catch (SQLException e) {
+            log.warn("Indexes of {} are read table by table: the catalog query failed: {}", schema, e.getMessage());
+            refused.add("indexes: " + e.getMessage());
+            return null;
+        }
+        Map<String, List<RawIndex>> out = new HashMap<>();
+        byTable.forEach((table, indexes) -> out.put(table, new ArrayList<>(indexes.values())));
+        return out;
+    }
+
+    /** The driver's own list of a table's indexes: what {@link #indexes} gives where a dialect has no query. */
+    private static List<RawIndex> indexInfo(DatabaseMetaData md, String schema, String table, List<String> warnings) {
+        Map<String, RawIndex> byIndex = new LinkedHashMap<>();
+        try (ResultSet rs = md.getIndexInfo(null, schema, table, false, true)) {
+            while (rs.next()) {
+                if (rs.getShort("TYPE") == DatabaseMetaData.tableIndexStatistic) continue;
+                String name = rs.getString("INDEX_NAME");
+                if (name == null) continue;
+                boolean unique = !rs.getBoolean("NON_UNIQUE");
+                RawIndex index = byIndex.computeIfAbsent(name, k -> new RawIndex(name, unique));
+                String column = rs.getString("COLUMN_NAME");
+                if (column == null) index.expression = true;
+                else index.columns.put((int) rs.getShort("ORDINAL_POSITION"),
+                        new IndexColumn(column, "D".equalsIgnoreCase(optionalString(rs, "ASC_OR_DESC"))));
+                String filter = optionalString(rs, "FILTER_CONDITION");
+                if (filter != null && !filter.isBlank()) index.partial = true;
+            }
+        } catch (SQLException e) {
+            warnings.add("Unique constraints and indexes of " + table + " could not be read: " + e.getMessage());
+            return List.of();
+        }
+        return new ArrayList<>(byIndex.values());
+    }
+
+    /**
+     * Sorts a table's indexes into what they are to the script: the primary key's own (dropped),
+     * a unique constraint (a list of columns), or an index — plain, or one the script cannot
+     * carry, with the reason. A partial unique index is not a unique constraint: it allows
+     * duplicates outside its condition. A key column the table does not have is an expression
+     * (PostgreSQL's driver reports the expression's text, Oracle a hidden column).
+     */
+    private static void sortIndexes(List<RawIndex> raw, List<Column> columns, List<String> pk,
+                                    List<List<String>> uniques, List<Index> indexes) {
+        Set<String> known = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (Column col : columns) known.add(col.name());
+        for (RawIndex index : raw) {
+            List<IndexColumn> keys = new ArrayList<>(index.columns.values());
+            List<String> names = keys.stream().map(IndexColumn::name).toList();
+            boolean expression = index.expression || keys.isEmpty() || !known.containsAll(names);
+            if (index.unique && !expression && !index.partial && sameColumns(names, pk)) continue;
+            String skipped = expression ? "it is over an expression"
+                    : index.partial ? "it is partial"
+                    : index.method != null ? "it is a " + index.method.toLowerCase(Locale.ROOT) + " index" : null;
+            // A unique index of another kind still keeps its columns unique.
+            if (index.unique && !expression && !index.partial) {
+                if (uniques.stream().noneMatch(u -> sameColumns(u, names))) uniques.add(names);
+                continue;
+            }
+            indexes.add(new Index(index.name, index.unique, expression ? List.of() : keys, skipped));
+        }
+    }
+
+    /**
+     * Comments by table then column, from the dialect's query where the driver's REMARKS are
+     * empty; a table's own comment goes to {@code tableComments}.
+     */
+    private Map<String, Map<String, String>> comments(Connection c, String schema, Map<String, String> tableComments) {
+        Map<String, Map<String, String>> out = new HashMap<>();
+        String query = support.commentsQuery();
+        if (query == null) return out;
+        try (PreparedStatement ps = prepare(c, query, schema); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String table = rs.getString(1);
+                String column = rs.getString(2);
+                String text = rs.getString(3);
+                if (table == null || text == null || text.isBlank()) continue;
+                if (column == null) tableComments.put(table, text);
+                else out.computeIfAbsent(table, k -> new HashMap<>()).put(column, text);
+            }
+        } catch (SQLException e) {
+            log.warn("Comments of {} could not be read: {}", schema, e.getMessage());
+            refused.add("comments: " + e.getMessage());
         }
         return out;
     }
@@ -241,31 +473,6 @@ public class LiveSchemaReader {
             }
             String[] t = target.get(e.getKey());
             out.add(new ForeignKey(cols, t[0], t[1], refCols));
-        }
-        return out;
-    }
-
-    /** Unique indexes and constraints other than the primary key, each a list of columns. */
-    private static List<List<String>> uniqueKeys(DatabaseMetaData md, String schema, String table, List<String> pk,
-                                                 List<String> warnings) {
-        Map<String, TreeMap<Integer, String>> byIndex = new LinkedHashMap<>();
-        try (ResultSet rs = md.getIndexInfo(null, schema, table, true, true)) {
-            while (rs.next()) {
-                if (rs.getShort("TYPE") == DatabaseMetaData.tableIndexStatistic) continue;
-                String column = rs.getString("COLUMN_NAME");
-                String index = rs.getString("INDEX_NAME");
-                if (column == null || index == null) continue; // an expression index
-                byIndex.computeIfAbsent(index, k -> new TreeMap<>()).put((int) rs.getShort("ORDINAL_POSITION"), column);
-            }
-        } catch (SQLException e) {
-            warnings.add("Unique constraints of " + table + " could not be read: " + e.getMessage());
-            return List.of();
-        }
-        List<List<String>> out = new ArrayList<>();
-        for (TreeMap<Integer, String> cols : byIndex.values()) {
-            List<String> list = new ArrayList<>(cols.values());
-            if (sameColumns(list, pk)) continue;
-            if (out.stream().noneMatch(u -> sameColumns(u, list))) out.add(list);
         }
         return out;
     }
@@ -325,6 +532,19 @@ public class LiveSchemaReader {
         PreparedStatement ps = c.prepareStatement(sql);
         ps.setQueryTimeout(DialectSupport.QUERY_TIMEOUT_SECONDS);
         return ps;
+    }
+
+    /** {@link #prepare(Connection, String)} with the schema at every {@code ?} of the query. */
+    private static PreparedStatement prepare(Connection c, String sql, String schema) throws SQLException {
+        PreparedStatement ps = prepare(c, sql);
+        try {
+            int n = (int) sql.chars().filter(ch -> ch == '?').count();
+            for (int i = 1; i <= n; i++) ps.setString(i, schema);
+            return ps;
+        } catch (SQLException e) {
+            ps.close();
+            throw e;
+        }
     }
 
     /** A table name as a metadata pattern: {@code _} and {@code %} are wildcards there. */

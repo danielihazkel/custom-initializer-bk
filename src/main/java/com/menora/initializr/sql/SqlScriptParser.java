@@ -10,9 +10,11 @@ import net.sf.jsqlparser.statement.create.table.Index;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
@@ -108,6 +110,34 @@ final class SqlScriptParser {
             "^\\s*CREATE\\s+(?:GLOBAL\\s+TEMPORARY\\s+|TEMPORARY\\s+|TEMP\\s+)?TABLE\\b",
             Pattern.CASE_INSENSITIVE);
 
+    private static final String NAME_PART = "(?:\"[^\"]+\"|`[^`]+`|[\\w$#@]+)";
+
+    /**
+     * {@code CREATE [OR REPLACE] [MATERIALIZED | FORCE | …] VIEW [IF NOT EXISTS] name [(columns)]}: the
+     * name and the column list. What follows — options, then {@code AS} and the query — is read
+     * by {@link #AS_QUERY}.
+     */
+    static final Pattern CREATE_VIEW_LEAD = Pattern.compile(
+            "^\\s*CREATE\\s+(?:OR\\s+(?:REPLACE|ALTER)\\s+)?"
+                    + "(?:(?:NO\\s+FORCE|FORCE|NOFORCE|EDITIONABLE|NONEDITIONABLE|MATERIALIZED|TEMPORARY|TEMP|RECURSIVE|SECURE)\\s+)*"
+                    + "VIEW\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(" + NAME_PART + "(?:\\s*\\.\\s*" + NAME_PART + ")*)\\s*(?:\\(([^()]*)\\))?",
+            Pattern.CASE_INSENSITIVE);
+
+    /** The {@code AS} a view's query follows. */
+    private static final Pattern AS_QUERY = Pattern.compile("\\bAS\\s+(?=WITH\\b|SELECT\\b|\\()", Pattern.CASE_INSENSITIVE);
+
+    /** What may follow a view's query: {@code WITH CHECK OPTION}, {@code WITH READ ONLY}, {@code WITH [NO] DATA}. */
+    private static final Pattern VIEW_TAIL = Pattern.compile(
+            "\\s+WITH\\s+(?:(?:(?:CASCADED|LOCAL)\\s+)?CHECK\\s+OPTION|READ\\s+ONLY|(?:NO\\s+)?DATA)\\b[^)]*$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    /**
+     * A view whose columns wait for the end of the script: their types come from the tables its
+     * query reads, which a script may declare after it. {@code viewName} and {@code columnList}
+     * are a {@code CREATE VIEW}'s; a bare SELECT has neither.
+     */
+    private record PendingView(int index, int statement, String select, String viewName, List<String> columnList) {}
+
     static List<TableModel> parseTables(String sql, SqlDialect dialect) {
         String prepared = sql;
         if (dialect == SqlDialect.ORACLE)   prepared = normalizeOracle(prepared);
@@ -124,6 +154,7 @@ final class SqlScriptParser {
         // PascalCase class names already used (lower-cased), so a SELECT-derived view name
         // can be deduped against table entities and other views.
         Set<String> usedClassNames = new HashSet<>();
+        List<PendingView> views = new ArrayList<>();
         List<String> statements = splitStatements(prepared);
         int idx = 0;
         for (String raw : statements) {
@@ -157,9 +188,33 @@ final class SqlScriptParser {
                 continue;
             }
 
-            // A unique index over plain columns is a unique constraint to the application.
-            if (SqlConstraintReader.isCreateUniqueIndex(stmt)) {
-                SqlConstraintReader.applyUniqueIndex(result, stmt);
+            // An index over plain columns: a unique one is a unique constraint to the application,
+            // any other one of the table's indexes. One the entity cannot carry is a note on it.
+            if (SqlConstraintReader.isCreateIndex(stmt)) {
+                SqlConstraintReader.applyIndex(result, stmt);
+                continue;
+            }
+
+            // CREATE VIEW v AS SELECT …: a read-only entity over the view, by its name.
+            Matcher view = CREATE_VIEW_LEAD.matcher(stmt);
+            if (view.find()) {
+                Matcher as = AS_QUERY.matcher(stmt);
+                if (!as.find(view.end())) {
+                    log.debug("Skipping a view without a query, statement #{}: {}", idx, snippet(stmt));
+                    continue;
+                }
+                String rawName = view.group(1).replaceAll("\\s*\\.\\s*", ".");
+                String select = VIEW_TAIL.matcher(stmt.substring(as.end())).replaceFirst("").trim();
+                List<String> columnList = null;
+                if (view.group(2) != null && !view.group(2).isBlank()) {
+                    columnList = new ArrayList<>();
+                    for (String part : view.group(2).split(",")) columnList.add(part.trim().split("\\s+")[0]);
+                }
+                String name = uniqueViewName(SqlConstraintReader.bareName(rawName), usedClassNames);
+                views.add(new PendingView(result.size(), idx, select, name, columnList));
+                // The entity reads the view itself — whatever its query becomes, and with the
+                // names the database gives its columns.
+                result.add(new TableModel(name, null, List.of(), List.of(), List.of(), "SELECT * FROM " + rawName, stmt));
                 continue;
             }
 
@@ -170,6 +225,7 @@ final class SqlScriptParser {
 
             // A SELECT becomes a read-only @Immutable/@Subselect view entity.
             if (SELECT_LEAD.matcher(stmt).find()) {
+                views.add(new PendingView(result.size(), idx, stmt, null, null));
                 result.add(toViewTableModel(stmt, dialect, usedClassNames));
                 continue;
             }
@@ -187,7 +243,102 @@ final class SqlScriptParser {
                         "Could not parse statement #" + idx + ": " + e.getMessage(), e);
             }
         }
+        typeViews(result, views, dialect);
         return result;
+    }
+
+    /** The name of a view's entity: the view's own, or with a number when a class already has it. */
+    private static String uniqueViewName(String bare, Set<String> usedClassNames) {
+        String base = toPascalCase(bare);
+        String name = bare;
+        if (usedClassNames.contains(base.toLowerCase(Locale.ROOT))) {
+            int n = 2;
+            while (usedClassNames.contains((base + n).toLowerCase(Locale.ROOT))) n++;
+            name = base + n;
+        }
+        usedClassNames.add(toPascalCase(name).toLowerCase(Locale.ROOT));
+        return name;
+    }
+
+    /**
+     * Gives every view its columns, now that the whole script is read: a column's type is the
+     * type of what it selects ({@link SqlSelectReader#project}) — a column of a table or of an
+     * earlier view of the script, a {@code CAST} — and stays unknown (a {@code String} with a
+     * TODO) otherwise. The first column is the key: a view has none of its own.
+     */
+    private static void typeViews(List<TableModel> result, List<PendingView> views, SqlDialect dialect) {
+        if (views.isEmpty()) return;
+        Map<String, TableModel> byName = new HashMap<>();
+        for (TableModel t : result) {
+            if (!t.isView()) byName.put(t.name().toLowerCase(Locale.ROOT), t);
+        }
+        for (PendingView view : views) {
+            TableModel model = result.get(view.index());
+            List<Projected> projected = project(view.select(), byName);
+            boolean resolved = projected != null && projected.stream().noneMatch(Projected::star);
+            Map<String, SqlType> casts = projected == null ? castTypes(view.select()) : Map.of();
+
+            // Each column: its name, whether the script quoted it, its type when known.
+            List<Projected> columns = new ArrayList<>();
+            if (view.viewName() == null) {
+                // A bare SELECT: the labels are read where the statement is (toViewTableModel).
+                List<ColumnModel> labels = model.columns();
+                boolean aligned = resolved && projected.size() == labels.size();
+                for (int i = 0; i < labels.size(); i++) {
+                    String label = labels.get(i).name();
+                    columns.add(new Projected(label, false,
+                            aligned ? projected.get(i).type() : casts.get(label.toLowerCase(Locale.ROOT)), false));
+                }
+            } else if (view.columnList() != null) {
+                boolean aligned = resolved && projected.size() == view.columnList().size();
+                for (int i = 0; i < view.columnList().size(); i++) {
+                    String raw = view.columnList().get(i);
+                    String label = unquote(raw);
+                    columns.add(new Projected(label, !label.equals(raw), aligned ? projected.get(i).type() : null, false));
+                }
+            } else if (projected != null) {
+                for (Projected p : projected) {
+                    if (p.star()) {
+                        throw new SqlParseException(null, view.statement(), snippet(model.sourceSql()),
+                                "View " + model.name() + " selects * from a table this script does not create, so its "
+                                        + "columns are unknown — name them: CREATE VIEW " + model.name() + " (a, b) AS …", null);
+                    }
+                    if (p.name() == null) {
+                        throw new SqlParseException(null, view.statement(), snippet(model.sourceSql()),
+                                "View " + model.name() + " selects an expression without a name — give it an AS alias", null);
+                    }
+                    columns.add(p);
+                }
+            } else {
+                for (String label : heuristicProjection(view.select()).columns()) {
+                    columns.add(new Projected(label, false, casts.get(label.toLowerCase(Locale.ROOT)), false));
+                }
+                if (columns.isEmpty()) {
+                    throw new SqlParseException(null, view.statement(), snippet(model.sourceSql()),
+                            "Couldn't detect the columns of view " + model.name() + " — name them: CREATE VIEW "
+                                    + model.name() + " (a, b) AS …", null);
+                }
+            }
+
+            List<ColumnModel> typed = new ArrayList<>();
+            List<String> pk = new ArrayList<>();
+            Set<String> quoted = new HashSet<>();
+            for (int i = 0; i < columns.size(); i++) {
+                Projected p = columns.get(i);
+                SqlType type = p.type();
+                // A text column's length says nothing a read-only field needs.
+                boolean text = type != null && isStringType(TypeMappers.map(dialect, type.rawType(), type.precision(), type.scale()));
+                typed.add(new ColumnModel(p.name(), type == null ? null : type.rawType(),
+                        type == null || text ? null : type.precision(), type == null || text ? null : type.scale(),
+                        true, i == 0, false, false, false));
+                if (i == 0) pk.add(p.name());
+                if (p.quoted()) quoted.add(p.name());
+            }
+            TableModel done = new TableModel(model.name(), null, typed, pk, List.of(), model.viewQuery(), model.sourceSql(), quoted);
+            result.set(view.index(), done);
+            // A later view may select from this one, by the view's own name.
+            if (view.viewName() != null) byName.put(view.viewName().toLowerCase(Locale.ROOT), done);
+        }
     }
 
     private static String normalizeOracle(String sql) {
@@ -463,8 +614,9 @@ final class SqlScriptParser {
     /**
      * Builds a read-only view {@link TableModel} from a single SELECT statement: reuses
      * {@link SqlEntityGenerator#parseSelectForImport} for the projected column labels (incl. the native-SQL
-     * heuristic fallback), defaults every field to {@code String} (a SELECT has no column
-     * types, and the wizard has no editing step), and makes the first column the PK.
+     * heuristic fallback) and makes the first column the PK. The columns get their types at the
+     * end of the script ({@link #typeViews}); one whose type the script does not say is a
+     * {@code String} for the user to fix in source.
      *
      * <p>Unlike the fullstack import flow, the wizard has no editor to add fields manually,
      * so a query whose columns can't be auto-named is a hard error rather than an empty view.

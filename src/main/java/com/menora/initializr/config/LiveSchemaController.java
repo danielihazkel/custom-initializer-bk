@@ -30,7 +30,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Reading a live database's schema for the SQL wizard (as a script for its SQL box) and the
@@ -142,7 +141,7 @@ public class LiveSchemaController {
                 fields.add(f);
                 continue;
             }
-            Matcher m = TYPE.matcher(support.typeOf(col));
+            Matcher m = LiveDdlWriter.TYPE.matcher(support.typeOf(col));
             String raw = m.matches() ? m.group(1).trim() : support.typeOf(col);
             Integer precision = m.matches() && m.group(2) != null && !m.group(2).equals("MAX") ? Integer.valueOf(m.group(2)) : null;
             Integer scale = m.matches() && m.group(3) != null ? Integer.valueOf(m.group(3)) : null;
@@ -153,8 +152,6 @@ public class LiveSchemaController {
         return new EntityWire(e.name(), e.tableName(), e.schema(), fields, e.readOnly(), e.viewQuery(), e.sourceSql(),
                 e.relations(), e.uniqueKeys());
     }
-
-    private static final Pattern TYPE = Pattern.compile("([A-Z][A-Z0-9_ ]*?)\\s*(?:\\((\\d+|MAX)(?:,(\\d+))?\\))?(?:\\s.*)?");
 
     private static int count(LiveSchemaService.Read read, Kind kind) {
         return (int) read.schema().tables().stream().filter(t -> t.kind() == kind).count();

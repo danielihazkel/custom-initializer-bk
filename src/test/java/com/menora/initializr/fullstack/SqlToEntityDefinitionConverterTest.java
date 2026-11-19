@@ -278,6 +278,42 @@ class SqlToEntityDefinitionConverterTest {
     }
 
     @Test
+    void aViewInTheScriptIsAReadOnlyEntityWithTypedFields() {
+        // A CREATE VIEW used to be dropped, and a SELECT among the statements became an ordinary
+        // (writable) entity of strings. Both are views now, typed by the tables they read.
+        String sql = """
+                CREATE TABLE customers (id BIGINT PRIMARY KEY, name VARCHAR(100) NOT NULL, joined DATE);
+                CREATE TABLE orders (id BIGINT PRIMARY KEY, customer_id BIGINT REFERENCES customers(id), total NUMERIC(12,2));
+                CREATE VIEW customer_totals AS
+                    SELECT c.id AS customer_id, c.name, c.joined, count(o.id) AS orders, upper(c.name) AS shout
+                    FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.name, c.joined;
+                SELECT o.id AS id, o.total AS total FROM orders o;
+                """;
+        List<EntityDefinition> entities = converter.convert(sql, SqlDialect.POSTGRESQL);
+        assertThat(entities).extracting(EntityDefinition::name)
+                .containsExactly("Customer", "Order", "CustomerTotal", "Orders2");
+
+        EntityDefinition view = entities.get(2);
+        assertThat(view.readOnly()).isTrue();
+        assertThat(view.isView()).isTrue();
+        assertThat(view.viewQuery()).isEqualTo("SELECT * FROM customer_totals");
+        assertThat(view.tableName()).isNull();
+        assertThat(view.relations()).isEmpty();
+        // The query's own column names, verbatim: a view's @Column is the field name.
+        assertThat(view.fields()).extracting(FieldDefinition::name)
+                .containsExactly("customer_id", "name", "joined", "orders", "shout");
+        assertThat(view.fields()).extracting(FieldDefinition::type)
+                .containsExactly(FieldType.LONG, FieldType.STRING, FieldType.LOCAL_DATE, FieldType.LONG, FieldType.STRING);
+        assertThat(view.fields().get(0).primaryKey()).isTrue();
+        assertThat(view.fields()).allSatisfy(f -> assertThat(f.column()).isNull());
+
+        EntityDefinition select = entities.get(3);
+        assertThat(select.readOnly()).isTrue();
+        assertThat(select.viewQuery()).isEqualTo("SELECT o.id AS id, o.total AS total FROM orders o");
+        assertThat(select.fields()).extracting(FieldDefinition::type).containsExactly(FieldType.LONG, FieldType.BIG_DECIMAL);
+    }
+
+    @Test
     void mapTypeFallbacks() {
         assertThat(SqlToEntityDefinitionConverter.mapType(
                 com.menora.initializr.sql.JavaType.langType("Short"))).isEqualTo(FieldType.INTEGER);

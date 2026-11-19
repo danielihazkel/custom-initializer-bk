@@ -11,7 +11,7 @@ import java.util.Set;
  * What differs per database when reading its schema: the driver and URL, the connection
  * properties that keep a read short and read-only, which schemas are the system's own, how a
  * column's type is written back as DDL the SQL wizard's parser reads, and where CHECK
- * constraints live.
+ * constraints, keys, indexes and comments live in its catalog.
  *
  * <p>Written against each driver's documentation; only H2 runs in the default build. PostgreSQL,
  * SQL Server and Oracle are exercised by {@code LiveSchemaDockerTests} ({@code -Dsmoke.docker=true});
@@ -65,6 +65,33 @@ public abstract class DialectSupport {
      * {@code ?} for the schema; null when the dialect has none to offer.
      */
     abstract String checkQuery();
+
+    // Keys and indexes of a whole schema, one query each instead of three driver calls per table
+    // (300 tables used to be 900 round trips, and Oracle's getIndexInfo is slow). Each takes the
+    // schema wherever it has a ?; null — or a query the database refuses — and LiveSchemaReader
+    // asks the driver table by table, as it always did.
+
+    /** Primary keys as {@code (table, column, position)} rows. */
+    String primaryKeysQuery() { return null; }
+
+    /** Foreign keys as {@code (table, constraint, column, position, referenced schema, referenced table, referenced column)}. */
+    String foreignKeysQuery() { return null; }
+
+    /**
+     * Indexes other than the primary key's as {@code (table, index, unique, column, position,
+     * descending, partial, method)}: {@code column} null for a key that is an expression,
+     * {@code method} null for the database's ordinary (b-tree) index.
+     */
+    String indexesQuery() { return null; }
+
+    /**
+     * Comments as {@code (table, column, text)}, {@code column} null for the table's own; null
+     * when the driver's {@code REMARKS} already carry them.
+     */
+    String commentsQuery() { return null; }
+
+    /** False where a comment is not a statement ({@code COMMENT ON}) — SQL Server keeps descriptions as properties. */
+    boolean commentOnStatements() { return true; }
 
     /** A query listing the schema's identity columns as {@code (table, column)}; null when the driver says so itself. */
     String identityQuery() { return null; }
@@ -178,6 +205,38 @@ public abstract class DialectSupport {
                     + "WHERE k.contype = 'c' AND n.nspname = ?";
         }
 
+        @Override String primaryKeysQuery() {
+            return "SELECT c.relname, a.attname, k.ord FROM pg_constraint con "
+                    + "JOIN pg_class c ON c.oid = con.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    + "JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord) ON true "
+                    + "JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum "
+                    + "WHERE con.contype = 'p' AND n.nspname = ?";
+        }
+
+        @Override String foreignKeysQuery() {
+            return "SELECT c.relname, con.conname, a.attname, k.ord, fn.nspname, fc.relname, fa.attname "
+                    + "FROM pg_constraint con "
+                    + "JOIN pg_class c ON c.oid = con.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    + "JOIN pg_class fc ON fc.oid = con.confrelid JOIN pg_namespace fn ON fn.oid = fc.relnamespace "
+                    + "JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS k(attnum, fattnum, ord) ON true "
+                    + "JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum "
+                    + "JOIN pg_attribute fa ON fa.attrelid = fc.oid AND fa.attnum = k.fattnum "
+                    + "WHERE con.contype = 'f' AND n.nspname = ?";
+        }
+
+        /** Key columns only (not INCLUDE's); attnum 0 is an expression; indoption bit 1 is DESC. */
+        @Override String indexesQuery() {
+            return "SELECT c.relname, ic.relname, i.indisunique, a.attname, k.ord, "
+                    + "(i.indoption[(k.ord - 1)::int] & 1) = 1, i.indpred IS NOT NULL, "
+                    + "CASE WHEN am.amname = 'btree' THEN NULL ELSE am.amname END "
+                    + "FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid "
+                    + "JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_class ic ON ic.oid = i.indexrelid "
+                    + "JOIN pg_am am ON am.oid = ic.relam "
+                    + "JOIN LATERAL unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord) ON true "
+                    + "LEFT JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum AND k.attnum > 0 "
+                    + "WHERE n.nspname = ? AND NOT i.indisprimary AND k.ord <= i.indnkeyatts";
+        }
+
         /** An enum type's labels in order, so a column of that type reads as an enum. */
         static final String ENUM_QUERY = "SELECT t.typname, e.enumlabel FROM pg_type t "
                 + "JOIN pg_enum e ON e.enumtypid = t.oid ORDER BY t.typname, e.enumsortorder";
@@ -239,6 +298,48 @@ public abstract class DialectSupport {
                     + "JOIN sys.tables t ON t.object_id = cc.parent_object_id "
                     + "JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = ?";
         }
+
+        @Override String primaryKeysQuery() {
+            return "SELECT t.name, c.name, ic.key_ordinal FROM sys.indexes i "
+                    + "JOIN sys.tables t ON t.object_id = i.object_id JOIN sys.schemas s ON s.schema_id = t.schema_id "
+                    + "JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id "
+                    + "JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id "
+                    + "WHERE i.is_primary_key = 1 AND s.name = ?";
+        }
+
+        @Override String foreignKeysQuery() {
+            return "SELECT t.name, fk.name, c.name, fkc.constraint_column_id, rs.name, rt.name, rc.name "
+                    + "FROM sys.foreign_keys fk "
+                    + "JOIN sys.tables t ON t.object_id = fk.parent_object_id JOIN sys.schemas s ON s.schema_id = t.schema_id "
+                    + "JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id "
+                    + "JOIN sys.columns c ON c.object_id = fkc.parent_object_id AND c.column_id = fkc.parent_column_id "
+                    + "JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id "
+                    + "JOIN sys.schemas rs ON rs.schema_id = rt.schema_id "
+                    + "JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id "
+                    + "WHERE s.name = ?";
+        }
+
+        /** Rowstore indexes (clustered or not), their key columns; a filtered index is a partial one. */
+        @Override String indexesQuery() {
+            return "SELECT t.name, i.name, i.is_unique, c.name, ic.key_ordinal, ic.is_descending_key, i.has_filter, "
+                    + "CAST(NULL AS VARCHAR(20)) FROM sys.indexes i "
+                    + "JOIN sys.tables t ON t.object_id = i.object_id JOIN sys.schemas s ON s.schema_id = t.schema_id "
+                    + "JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id "
+                    + "JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id "
+                    + "WHERE s.name = ? AND i.is_primary_key = 0 AND i.type IN (1, 2) AND i.is_hypothetical = 0 "
+                    + "AND ic.is_included_column = 0";
+        }
+
+        /** The MS_Description property SSMS writes; the driver's REMARKS are always empty. */
+        @Override String commentsQuery() {
+            return "SELECT o.name, c.name, CAST(ep.value AS NVARCHAR(4000)) FROM sys.extended_properties ep "
+                    + "JOIN sys.objects o ON o.object_id = ep.major_id JOIN sys.schemas s ON s.schema_id = o.schema_id "
+                    + "LEFT JOIN sys.columns c ON c.object_id = ep.major_id AND c.column_id = ep.minor_id AND ep.minor_id > 0 "
+                    + "WHERE ep.class = 1 AND ep.name = 'MS_Description' AND o.type IN ('U', 'V') AND s.name = ? "
+                    + "AND (ep.minor_id = 0 OR c.name IS NOT NULL)";
+        }
+
+        @Override boolean commentOnStatements() { return false; }
 
         @Override boolean identityInTypeName(String typeName) {
             return typeName != null && typeName.toLowerCase(Locale.ROOT).endsWith(" identity");
@@ -308,6 +409,42 @@ public abstract class DialectSupport {
             return "SELECT table_name, column_name FROM all_tab_identity_cols WHERE owner = ?";
         }
 
+        @Override String primaryKeysQuery() {
+            return "SELECT c.table_name, cc.column_name, cc.position FROM all_constraints c "
+                    + "JOIN all_cons_columns cc ON cc.owner = c.owner AND cc.constraint_name = c.constraint_name "
+                    + "WHERE c.owner = ? AND c.constraint_type = 'P'";
+        }
+
+        @Override String foreignKeysQuery() {
+            return "SELECT c.table_name, c.constraint_name, cc.column_name, cc.position, r.owner, r.table_name, rc.column_name "
+                    + "FROM all_constraints c "
+                    + "JOIN all_cons_columns cc ON cc.owner = c.owner AND cc.constraint_name = c.constraint_name "
+                    + "JOIN all_constraints r ON r.owner = c.r_owner AND r.constraint_name = c.r_constraint_name "
+                    + "JOIN all_cons_columns rc ON rc.owner = r.owner AND rc.constraint_name = r.constraint_name "
+                    + "AND rc.position = cc.position "
+                    + "WHERE c.owner = ? AND c.constraint_type = 'R'";
+        }
+
+        /**
+         * A function-based index names its expression columns SYS_NC…$ (a DESC key is one too):
+         * the reader finds no such column in the table and takes the index for one over an expression.
+         */
+        @Override String indexesQuery() {
+            return "SELECT i.table_name, i.index_name, CASE WHEN i.uniqueness = 'UNIQUE' THEN 1 ELSE 0 END, "
+                    + "ic.column_name, ic.column_position, CASE WHEN ic.descend = 'DESC' THEN 1 ELSE 0 END, 0, "
+                    + "CASE WHEN i.index_type IN ('NORMAL', 'NORMAL/REV', 'FUNCTION-BASED NORMAL') THEN NULL "
+                    + "ELSE LOWER(i.index_type) END "
+                    + "FROM all_indexes i JOIN all_ind_columns ic ON ic.index_owner = i.owner AND ic.index_name = i.index_name "
+                    + "WHERE i.table_owner = ? AND i.index_type <> 'LOB'";
+        }
+
+        /** The driver leaves REMARKS empty unless remarksReporting is on, which slows every column read. */
+        @Override String commentsQuery() {
+            return "SELECT table_name, NULL, comments FROM all_tab_comments WHERE owner = ? AND comments IS NOT NULL "
+                    + "UNION ALL SELECT table_name, column_name, comments FROM all_col_comments "
+                    + "WHERE owner = ? AND comments IS NOT NULL";
+        }
+
         @Override public String typeOf(LiveSchemaModel.Column c) {
             String t = c.typeName() == null ? "" : c.typeName().toUpperCase(Locale.ROOT)
                     .replaceAll("\\(\\d+\\)", "").trim();
@@ -364,6 +501,36 @@ public abstract class DialectSupport {
                     + "WHERE c.TABLE_SCHEMA = ? AND c.CONSTRAINT_TYPE = 'CHECK'";
         }
 
+        @Override String primaryKeysQuery() {
+            return "SELECT c.TABLE_NAME, k.COLUMN_NAME, k.ORDINAL_POSITION FROM QSYS2.SYSCST c "
+                    + "JOIN QSYS2.SYSKEYCST k ON k.CONSTRAINT_SCHEMA = c.CONSTRAINT_SCHEMA AND k.CONSTRAINT_NAME = c.CONSTRAINT_NAME "
+                    + "WHERE c.TABLE_SCHEMA = ? AND c.CONSTRAINT_TYPE = 'PRIMARY KEY'";
+        }
+
+        @Override String foreignKeysQuery() {
+            return "SELECT c.TABLE_NAME, c.CONSTRAINT_NAME, k.COLUMN_NAME, k.ORDINAL_POSITION, pc.TABLE_SCHEMA, pc.TABLE_NAME, "
+                    + "pk.COLUMN_NAME FROM QSYS2.SYSCST c "
+                    + "JOIN QSYS2.SYSKEYCST k ON k.CONSTRAINT_SCHEMA = c.CONSTRAINT_SCHEMA AND k.CONSTRAINT_NAME = c.CONSTRAINT_NAME "
+                    + "JOIN QSYS2.SYSREFCST r ON r.CONSTRAINT_SCHEMA = c.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = c.CONSTRAINT_NAME "
+                    + "JOIN QSYS2.SYSCST pc ON pc.CONSTRAINT_SCHEMA = r.UNIQUE_CONSTRAINT_SCHEMA "
+                    + "AND pc.CONSTRAINT_NAME = r.UNIQUE_CONSTRAINT_NAME "
+                    + "JOIN QSYS2.SYSKEYCST pk ON pk.CONSTRAINT_SCHEMA = pc.CONSTRAINT_SCHEMA AND pk.CONSTRAINT_NAME = pc.CONSTRAINT_NAME "
+                    + "AND pk.ORDINAL_POSITION = k.ORDINAL_POSITION "
+                    + "WHERE c.TABLE_SCHEMA = ? AND c.CONSTRAINT_TYPE = 'FOREIGN KEY'";
+        }
+
+        /** SQL indexes, and the UNIQUE constraints — which IBM i keeps as constraints, not as indexes. */
+        @Override String indexesQuery() {
+            return "SELECT i.TABLE_NAME, i.INDEX_NAME, CASE WHEN i.IS_UNIQUE IN ('U', 'V') THEN 1 ELSE 0 END, k.COLUMN_NAME, "
+                    + "k.ORDINAL_POSITION, CASE WHEN k.ORDERING = 'D' THEN 1 ELSE 0 END, 0, CAST(NULL AS VARCHAR(20)) "
+                    + "FROM QSYS2.SYSINDEXES i JOIN QSYS2.SYSKEYS k ON k.INDEX_SCHEMA = i.INDEX_SCHEMA AND k.INDEX_NAME = i.INDEX_NAME "
+                    + "WHERE i.TABLE_SCHEMA = ? "
+                    + "UNION ALL SELECT c.TABLE_NAME, c.CONSTRAINT_NAME, 1, k.COLUMN_NAME, k.ORDINAL_POSITION, 0, 0, "
+                    + "CAST(NULL AS VARCHAR(20)) FROM QSYS2.SYSCST c "
+                    + "JOIN QSYS2.SYSKEYCST k ON k.CONSTRAINT_SCHEMA = c.CONSTRAINT_SCHEMA AND k.CONSTRAINT_NAME = c.CONSTRAINT_NAME "
+                    + "WHERE c.TABLE_SCHEMA = ? AND c.CONSTRAINT_TYPE = 'UNIQUE'";
+        }
+
         @Override public String typeOf(LiveSchemaModel.Column c) {
             String t = c.typeName() == null ? "" : c.typeName().toUpperCase(Locale.ROOT).trim();
             if (t.contains("FOR BIT DATA")) {
@@ -401,6 +568,35 @@ public abstract class DialectSupport {
                     + "JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc ON cc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA "
                     + "AND cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME "
                     + "WHERE tc.TABLE_SCHEMA = ? AND tc.CONSTRAINT_TYPE = 'CHECK'";
+        }
+
+        @Override String primaryKeysQuery() {
+            return "SELECT tc.TABLE_NAME, k.COLUMN_NAME, k.ORDINAL_POSITION FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
+                    + "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k ON k.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA "
+                    + "AND k.CONSTRAINT_NAME = tc.CONSTRAINT_NAME "
+                    + "WHERE tc.TABLE_SCHEMA = ? AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'";
+        }
+
+        @Override String foreignKeysQuery() {
+            return "SELECT tc.TABLE_NAME, tc.CONSTRAINT_NAME, k.COLUMN_NAME, k.ORDINAL_POSITION, pk.TABLE_SCHEMA, pk.TABLE_NAME, "
+                    + "pk.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
+                    + "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k ON k.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA "
+                    + "AND k.CONSTRAINT_NAME = tc.CONSTRAINT_NAME "
+                    + "JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON rc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA "
+                    + "AND rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME "
+                    + "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE pk ON pk.CONSTRAINT_SCHEMA = rc.UNIQUE_CONSTRAINT_SCHEMA "
+                    + "AND pk.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME AND pk.ORDINAL_POSITION = k.POSITION_IN_UNIQUE_CONSTRAINT "
+                    + "WHERE tc.TABLE_SCHEMA = ? AND tc.CONSTRAINT_TYPE = 'FOREIGN KEY'";
+        }
+
+        /** Without the indexes H2 makes for itself behind a foreign key (a unique one is still a constraint). */
+        @Override String indexesQuery() {
+            return "SELECT i.TABLE_NAME, i.INDEX_NAME, i.INDEX_TYPE_NAME LIKE 'UNIQUE%', c.COLUMN_NAME, c.ORDINAL_POSITION, "
+                    + "c.ORDERING_SPECIFICATION = 'DESC', FALSE, CAST(NULL AS VARCHAR) "
+                    + "FROM INFORMATION_SCHEMA.INDEXES i JOIN INFORMATION_SCHEMA.INDEX_COLUMNS c "
+                    + "ON c.INDEX_SCHEMA = i.INDEX_SCHEMA AND c.INDEX_NAME = i.INDEX_NAME AND c.TABLE_NAME = i.TABLE_NAME "
+                    + "WHERE i.TABLE_SCHEMA = ? AND i.INDEX_TYPE_NAME <> 'PRIMARY KEY' "
+                    + "AND (i.INDEX_TYPE_NAME LIKE 'UNIQUE%' OR NOT i.IS_GENERATED)";
         }
 
         @Override public String typeOf(LiveSchemaModel.Column c) {

@@ -18,8 +18,9 @@ import java.util.regex.Pattern;
  *   <li>{@code ALTER TABLE … ADD [CONSTRAINT x] PRIMARY KEY | FOREIGN KEY | UNIQUE (…)} and
  *       {@code … ADD [CONSTRAINT x] CHECK (col IN (…))} — how pg_dump, SSMS and most schema exports
  *       declare a table's constraints;</li>
- *   <li>{@code CREATE UNIQUE INDEX … ON t (cols)} — a unique index is a unique constraint to an
- *       application, unless it is partial ({@code WHERE …}) or over an expression;</li>
+ *   <li>{@code CREATE [UNIQUE] INDEX … ON t (cols)} — a unique index is a unique constraint to an
+ *       application and any other a plain index, unless it is partial ({@code WHERE …}), over an
+ *       expression or of a kind JPA has no word for: those are a note on the table;</li>
  *   <li>a foreign key written on its column ({@code team_id BIGINT REFERENCES teams(id)});</li>
  *   <li>{@code CHECK (col IN ('A', 'B'))}, column- or table-level: only survives JSqlParser as
  *       loose tokens.</li>
@@ -46,11 +47,22 @@ public final class SqlConstraintReader {
     private static final Pattern CHECK_IN = Pattern.compile(
             "(?is)CHECK\\s*\\(\\s*[\"`\\[]?(\\w+)[\"`\\]]?\\s+IN\\s*\\(([^)]*)\\)\\s*\\)");
 
-    /** {@code CREATE UNIQUE [NON]CLUSTERED INDEX [IF NOT EXISTS] name ON [ONLY] table [USING m] (cols) [rest]}. */
-    static final Pattern CREATE_UNIQUE_INDEX = Pattern.compile(
-            "^\\s*CREATE\\s+UNIQUE\\s+(?:(?:NON)?CLUSTERED\\s+)?INDEX\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?\\S+\\s+ON\\s+(?:ONLY\\s+)?"
-                    + "([^\\s(]+)\\s*(?:USING\\s+\\w+\\s*)?\\(([^()]*)\\)(.*)$",
+    /**
+     * {@code CREATE [UNIQUE] [[NON]CLUSTERED] [BITMAP] INDEX [CONCURRENTLY] [IF NOT EXISTS] [name] ON [ONLY] table [USING m] (},
+     * up to the parenthesis that opens the key list (which may nest: {@code (lower(email))}).
+     */
+    static final Pattern CREATE_INDEX = Pattern.compile(
+            "^\\s*CREATE\\s+(UNIQUE\\s+)?(?:(?:NON)?CLUSTERED\\s+)?(BITMAP\\s+)?INDEX\\s+(?:CONCURRENTLY\\s+)?"
+                    + "(?:IF\\s+NOT\\s+EXISTS\\s+)?(?:(\\S+)\\s+)?ON\\s+(?:ONLY\\s+)?([^\\s(]+)\\s*(?:USING\\s+(\\w+)\\s*)?\\(",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    /** One key of an index when it is a plain column: {@code name [COLLATE c] [ASC|DESC] [NULLS FIRST|LAST]}. */
+    private static final Pattern INDEX_COLUMN = Pattern.compile(
+            "^\\s*(\"[^\"]+\"|`[^`]+`|\\[[^\\]]+\\]|[A-Za-z_][\\w$#@]*)(?:\\s+COLLATE\\s+\\S+)?(?:\\s+(ASC|DESC))?"
+                    + "(?:\\s+NULLS\\s+(?:FIRST|LAST))?\\s*$",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern WHERE = Pattern.compile("\\bWHERE\\b", Pattern.CASE_INSENSITIVE);
 
     private static final Pattern JAVA_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
@@ -60,8 +72,8 @@ public final class SqlConstraintReader {
         return ALTER_TABLE_LEAD.matcher(stmt).find();
     }
 
-    static boolean isCreateUniqueIndex(String stmt) {
-        return CREATE_UNIQUE_INDEX.matcher(stmt).find();
+    static boolean isCreateIndex(String stmt) {
+        return CREATE_INDEX.matcher(stmt).find();
     }
 
     /**
@@ -96,19 +108,95 @@ public final class SqlConstraintReader {
     }
 
     /**
-     * A {@code CREATE UNIQUE INDEX} over plain columns of a table in the script: that table with
-     * the UNIQUE. A partial index ({@code WHERE …}) allows duplicates outside its condition, and an
-     * index over an expression ({@code lower(email)}) names no column — both are left alone.
+     * A {@code CREATE INDEX} on a table of the script. Over plain columns, a unique one is that
+     * table's UNIQUE and any other one of its {@link TableModel#indexes()}. A partial index
+     * ({@code WHERE …}) allows duplicates outside its condition and covers only some rows, an index
+     * over an expression ({@code lower(email)}) names no column, and a hash, GIN or bitmap index is
+     * not what JPA would create: each of those is a note on the table instead, so the generated
+     * entity says the database has an index it does not carry.
      */
-    static void applyUniqueIndex(List<TableModel> tables, String stmt) {
-        Matcher m = CREATE_UNIQUE_INDEX.matcher(stmt);
+    static void applyIndex(List<TableModel> tables, String stmt) {
+        Matcher m = CREATE_INDEX.matcher(stmt);
         if (!m.find()) return;
-        if (m.group(3) != null && m.group(3).toUpperCase(Locale.ROOT).contains("WHERE")) return;
-        int index = tableIndex(tables, bareName(m.group(1)));
+        int index = tableIndex(tables, bareName(m.group(4)));
         if (index < 0) return;
-        List<String> columns = canonicalColumns(tables.get(index), m.group(2));
-        if (columns.isEmpty()) return;
-        tables.set(index, tables.get(index).withUnique(columns));
+        TableModel table = tables.get(index);
+        boolean unique = m.group(1) != null;
+        String name = m.group(3) == null ? null : bareName(m.group(3));
+        int open = m.end() - 1;
+        int close = closingParen(stmt, open);
+        if (close < 0) return;
+        String keys = stmt.substring(open + 1, close);
+        String rest = stmt.substring(close + 1);
+
+        List<TableIndex.Column> columns = new ArrayList<>();
+        for (String raw : splitTopLevel(keys)) {
+            Matcher key = INDEX_COLUMN.matcher(raw);
+            ColumnModel column = !key.matches() ? null : table.columns().stream()
+                    .filter(c -> c.name().equalsIgnoreCase(unquote(key.group(1)))).findFirst().orElse(null);
+            if (column == null) {
+                columns = null;
+                break;
+            }
+            columns.add(new TableIndex.Column(column.name(), "DESC".equalsIgnoreCase(key.group(2))));
+        }
+
+        String method = m.group(2) != null ? "bitmap" : m.group(5) == null ? null : m.group(5).toLowerCase(Locale.ROOT);
+        String why = null;
+        if (columns == null || columns.isEmpty()) why = "it is over an expression, not plain columns";
+        else if (WHERE.matcher(rest).find()) why = "it is partial (it covers only the rows its WHERE picks)";
+        else if (method != null && !method.equals("btree")) why = "it is a " + method + " index";
+        if (why != null) {
+            String what = (unique ? "Unique index" : "Index") + (name == null ? "" : " " + name)
+                    + " (" + keys.replaceAll("\\s+", " ").trim() + ")";
+            tables.set(index, table.withNote(what + " is not mapped: " + why + "."));
+            return;
+        }
+        if (unique) {
+            tables.set(index, table.withUnique(columns.stream().map(TableIndex.Column::name).toList()));
+        } else {
+            tables.set(index, table.withIndex(new TableIndex(name, columns)));
+        }
+    }
+
+    /** The index of the {@code )} that closes the {@code (} at {@code open}, quotes skipped; -1 when there is none. */
+    static int closingParen(String s, int open) {
+        int depth = 0;
+        char quote = 0;
+        for (int i = open; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (quote != 0) {
+                if (c == quote) quote = 0;
+                continue;
+            }
+            if (c == '\'' || c == '"' || c == '`') quote = c;
+            else if (c == '(') depth++;
+            else if (c == ')' && --depth == 0) return i;
+        }
+        return -1;
+    }
+
+    /** {@code s} cut at the commas outside parentheses and quotes. */
+    static List<String> splitTopLevel(String s) {
+        List<String> out = new ArrayList<>();
+        int depth = 0, start = 0;
+        char quote = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (quote != 0) {
+                if (c == quote) quote = 0;
+                continue;
+            }
+            if (c == '\'' || c == '"' || c == '`') quote = c;
+            else if (c == '(') depth++;
+            else if (c == ')') depth--;
+            else if (c == ',' && depth == 0) {
+                out.add(s.substring(start, i));
+                start = i + 1;
+            }
+        }
+        if (start < s.length()) out.add(s.substring(start));
+        return out;
     }
 
     private static int tableIndex(List<TableModel> tables, String name) {

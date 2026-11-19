@@ -4,6 +4,9 @@ package {{package}};
 import {{.}};
 {{/imports}}
 
+{{#notes}}
+// {{.}}
+{{/notes}}
 {{#keyless}}
 // TODO: {{tableComment}} has no primary key, and a JPA entity needs an @Id - so this class is not an
 // entity yet (the application would not start with one that has no identifier). Put @Id on the
@@ -13,7 +16,7 @@ import {{.}};
 {{^keyless}}
 @Entity
 {{/keyless}}
-@Table(name = "{{tableName}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}}{{#hasUniqueConstraints}}, uniqueConstraints = {{uniqueConstraints}}{{/hasUniqueConstraints}})
+@Table(name = "{{tableName}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}}{{#hasUniqueConstraints}}, uniqueConstraints = {{uniqueConstraints}}{{/hasUniqueConstraints}}{{#hasIndexes}}, indexes = {{indexes}}{{/hasIndexes}})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

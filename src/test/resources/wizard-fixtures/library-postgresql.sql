@@ -122,7 +122,25 @@ CREATE TABLE "OrderItems" (
 );
 
 COMMENT ON TABLE authors IS 'statements the wizard skips';
+-- A plain index is the table's: one column, several with a descending key, one with no name,
+-- one on a quoted mixed-case column.
 CREATE INDEX idx_books_title ON books(title);
+CREATE INDEX idx_books_author_published ON books USING btree (author_id, published_on DESC);
+CREATE INDEX ON loans (due_on);
+CREATE INDEX idx_order_items_ordered ON "OrderItems" ("orderedOn");
+-- What an entity cannot carry is a note on it: an index over an expression, and one of another kind.
+CREATE INDEX idx_authors_name_lower ON authors (lower(name));
+CREATE INDEX idx_authors_profile ON authors USING gin (profile);
+
+-- A view is a read-only entity over it, its fields typed by the tables it reads: a column, a
+-- count, a max, a cast - and an expression nothing types, which stays a String to fix.
+CREATE VIEW author_stats AS
+SELECT a.id AS author_id, a.name, a.born, count(b.id) AS book_count, max(b.price) AS dearest,
+       CAST(avg(b.pages) AS NUMERIC(8,2)) AS average_pages, upper(a.name) AS shout
+FROM authors a LEFT JOIN books b ON b.author_id = a.id
+GROUP BY a.id, a.name, a.born;
+-- A view that names its columns, over everything of a table.
+CREATE VIEW publisher_list (publisher_code, publisher_name) AS SELECT * FROM publishers;
 
 -- A SELECT becomes a read-only view entity.
 SELECT a.name AS author_name, count(*) AS book_count
