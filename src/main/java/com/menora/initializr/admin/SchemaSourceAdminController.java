@@ -38,7 +38,7 @@ public class SchemaSourceAdminController {
     public record SourceView(Long id, String name, String description, String dialect, String host, Integer port,
                              String databaseName, String library, String username, String passwordRef,
                              boolean trustServerCertificate, String defaultSchema, boolean enabled, int sortOrder,
-                             boolean passwordAvailable) {}
+                             boolean passwordAvailable, boolean allowCreateTables) {}
 
     @GetMapping
     public List<SourceView> list() {
@@ -118,7 +118,8 @@ public class SchemaSourceAdminController {
     private SourceView view(SchemaSourceEntity s) {
         return new SourceView(s.getId(), s.getName(), s.getDescription(), s.getDialect(), s.getHost(), s.getPort(),
                 s.getDatabaseName(), s.getLibrary(), s.getUsername(), s.getPasswordRef(), s.isTrustServerCertificate(),
-                s.getDefaultSchema(), s.isEnabled(), s.getSortOrder(), service.passwordAvailable(s));
+                s.getDefaultSchema(), s.isEnabled(), s.getSortOrder(), service.passwordAvailable(s),
+                s.isAllowCreateTables());
     }
 
     @ExceptionHandler(LiveSchemaException.class)

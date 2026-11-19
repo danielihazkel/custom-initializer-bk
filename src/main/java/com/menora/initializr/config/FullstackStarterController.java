@@ -38,7 +38,16 @@ import org.springframework.util.FileSystemUtils;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import com.menora.initializr.fullstack.patch.ProjectUpdateBuilder;
+import com.menora.initializr.fullstack.schema.SchemaBuilder;
+import com.menora.initializr.fullstack.schema.SchemaDialect;
+import com.menora.initializr.fullstack.schema.SchemaInstaller;
 import com.menora.initializr.fullstack.schema.SchemaMigrations;
+import com.menora.initializr.fullstack.schema.SchemaSql;
+import com.menora.initializr.extension.fullstack.BackendScaffoldContext;
+import io.spring.initializr.generator.version.Version;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.RequestParam;
 import com.menora.initializr.localrun.ContainerImages;
 import com.menora.initializr.localrun.LocalRun;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -94,6 +103,9 @@ public class FullstackStarterController {
     private final DepartmentResolver departmentResolver;
     private final ContainerImages containerImages;
     private final com.menora.initializr.observability.SnapshotStore snapshotStore;
+    private final SchemaInstaller schemaInstaller;
+    /** The header naming the caller (the SSO gateway's), for the create-tables log line. */
+    private final String userHeader;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                       ProjectRequestFactory requestFactory,
@@ -109,8 +121,12 @@ public class FullstackStarterController {
                                       DependencyConfigService configService,
                                       DepartmentResolver departmentResolver,
                                       ContainerImages containerImages,
-                                      com.menora.initializr.observability.SnapshotStore snapshotStore) {
+                                      com.menora.initializr.observability.SnapshotStore snapshotStore,
+                                      SchemaInstaller schemaInstaller,
+                                      @Value("${menora.audit.user-header:userinfo}") String userHeader) {
         this.snapshotStore = snapshotStore;
+        this.schemaInstaller = schemaInstaller;
+        this.userHeader = userHeader;
         this.invoker = invoker;
         this.requestFactory = requestFactory;
         this.optionsContext = optionsContext;
@@ -174,6 +190,141 @@ public class FullstackStarterController {
             entityContext.clear();
             optionsContext.clear();
         }
+    }
+
+    /**
+     * The model's tables as a script for one database.
+     *
+     * @param dialect        the database it is written for ({@code POSTGRESQL}, …)
+     * @param label          that database as people name it
+     * @param sql            the script: exactly the {@code V1__init.sql} a project with Flyway on that
+     *                       database gets
+     * @param tables         the tables it creates, as it names them
+     * @param projectDialect the database the model's own dependencies select
+     * @param flyway         the model has the {@code flyway} dependency
+     */
+    public record DdlResponse(String dialect, String label, String sql, List<String> tables, String projectDialect,
+                              boolean flyway) {}
+
+    /**
+     * {@code POST /starter-fullstack.ddl}: the model's schema as a script, for {@code dialect} (a
+     * name such as {@code POSTGRESQL} or a dependency id such as {@code mssql}) or else for the
+     * database the model's dependencies select. Whether the model has Flyway does not matter.
+     * A model the generator would refuse is the same 400.
+     */
+    @PostMapping("/starter-fullstack.ddl")
+    public DdlResponse ddl(@RequestBody FullstackStarterRequest body,
+                           @RequestParam(name = "dialect", required = false) String dialect) {
+        try {
+            BuiltSchema built = schemaOf(body);
+            SchemaDialect target = dialect == null || dialect.isBlank() ? built.projectDialect() : dialectOf(dialect);
+            return new DdlResponse(target.name(), SchemaSql.label(target), SchemaSql.baseline(built.schema(), target),
+                    built.schema().tables().stream().map(com.menora.initializr.fullstack.schema.Schema.Table::ref).toList(),
+                    built.projectDialect().name(), built.flyway());
+        } finally {
+            entityContext.clear();
+            optionsContext.clear();
+        }
+    }
+
+    /**
+     * @param request the model, as {@code /starter-fullstack.zip} takes it
+     * @param source  the schema source to create the tables on — one an admin allowed it for
+     * @param schema  the schema to create them in, as the source lists it
+     * @param check   plan only: says what would run, creates nothing
+     */
+    public record CreateTablesRequest(FullstackStarterRequest request, String source, String schema, Boolean check) {}
+
+    /**
+     * @param created the tables made; empty for a check
+     * @param transactional a failure rolls back (PostgreSQL, SQL Server); elsewhere the tables a
+     *                      failed run made are dropped again
+     */
+    public record CreateTablesResponse(String dialect, String label, String schema, String sql, List<String> tables,
+                                       int statements, List<String> created, boolean checked, boolean transactional,
+                                       String projectDialect, boolean flyway) {}
+
+    /**
+     * {@code POST /starter-fullstack.create-tables}: the model's tables created on a schema source,
+     * in the source's database dialect and the schema picked (see {@link SchemaInstaller}). A
+     * table already there is a 409 listing them, with nothing run; a source that does not allow it
+     * is a 403. A model problem is the generator's 400, its path under {@code request.}.
+     */
+    @PostMapping("/starter-fullstack.create-tables")
+    public CreateTablesResponse createTables(@RequestBody CreateTablesRequest body, HttpServletRequest http) {
+        if (body == null || body.request() == null) {
+            throw new WizardArgumentException("Send the model as 'request', and the source and schema to create its tables in",
+                    "request");
+        }
+        boolean check = Boolean.TRUE.equals(body.check());
+        String who = http.getHeader(userHeader) == null ? "anonymous" : http.getHeader(userHeader).replaceAll("[\\r\\n\\t]", " ");
+        try {
+            BuiltSchema built;
+            try {
+                built = schemaOf(body.request());
+            } catch (WizardArgumentException e) {
+                throw e.at("request");
+            }
+            SchemaInstaller.Result r;
+            try {
+                r = schemaInstaller.install(body.source(), body.schema(), built.schema(), check);
+            } catch (com.menora.initializr.liveschema.LiveSchemaException e) {
+                log.warn("Create tables ({}) on source {} schema {} refused or failed, by {}: {}", check ? "check" : "run",
+                        body.source(), body.schema(), who, e.getMessage());
+                throw e;
+            }
+            log.info("Create tables ({}) on source {} schema {}: {} tables, {} created, by {}", check ? "check" : "run",
+                    body.source(), r.schema(), r.tables().size(), r.created().size(), who);
+            return new CreateTablesResponse(r.dialect().name(), SchemaSql.label(r.dialect()), r.schema(), r.sql(),
+                    r.tables(), r.statements(), r.created(), check, r.transactional(), built.projectDialect().name(),
+                    built.flyway());
+        } finally {
+            entityContext.clear();
+            optionsContext.clear();
+        }
+    }
+
+    /** The model's schema as its Flyway baseline is built, and what its dependencies say about it. */
+    private record BuiltSchema(com.menora.initializr.fullstack.schema.Schema schema, SchemaDialect projectDialect,
+                               boolean flyway) {}
+
+    /**
+     * The schema {@link SchemaMigrations#writeBaseline} would write for this model, without
+     * rendering it: the request resolved as generation resolves it, the backend context from the
+     * same builder ({@link BackendScaffoldContext}). The caller clears the contexts.
+     */
+    private BuiltSchema schemaOf(FullstackStarterRequest body) {
+        Resolved resolved = resolve(body);
+        WebProjectRequest request = resolved.request();
+        List<String> deps = request.getDependencies() == null ? List.of() : request.getDependencies();
+        Map<String, Object> ctx = BackendScaffoldContext.build(new BackendScaffoldContext.Inputs(
+                request.getArtifactId(), request.getGroupId(), request.getVersion(), request.getPackageName(),
+                resolved.domainPackage(), request.getJavaVersion(), request.getPackaging(),
+                Version.safeParse(request.getBootVersion()), deps, resolved.shellUser()),
+                resolved.entities(), optionsContext, departmentResolver);
+        return new BuiltSchema(SchemaBuilder.build(ctx, resolved.entities()), SchemaDialect.of(deps),
+                deps.contains(SchemaMigrations.FLYWAY));
+    }
+
+    /** {@code POSTGRESQL} or {@code postgresql}: a dialect's name or its dependency id. */
+    private static SchemaDialect dialectOf(String raw) {
+        String value = raw.trim();
+        for (SchemaDialect d : SchemaDialect.values()) {
+            if (d.name().equalsIgnoreCase(value) || d.dependencyId().equalsIgnoreCase(value)) return d;
+        }
+        throw new WizardArgumentException("dialect '" + value + "' is not one of "
+                + java.util.Arrays.stream(SchemaDialect.values()).map(Enum::name).toList(), "dialect");
+    }
+
+    @ExceptionHandler(com.menora.initializr.liveschema.LiveSchemaException.class)
+    public ResponseEntity<Map<String, Object>> handleLiveSchema(com.menora.initializr.liveschema.LiveSchemaException ex) {
+        entityContext.clear();
+        optionsContext.clear();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", ex.error());
+        body.put("detail", ex.getMessage());
+        if (ex.existing() != null) body.put("existing", ex.existing());
+        return ResponseEntity.status(ex.status()).body(body);
     }
 
     /**
@@ -299,6 +450,74 @@ public class FullstackStarterController {
      * thread-local contexts in a {@code finally}.
      */
     private WebProjectRequest buildArtifacts(FullstackStarterRequest body, Path tempDir) throws IOException {
+        Resolved resolved = resolve(body);
+        List<EntityDefinition> entities = resolved.entities();
+        List<PageDefinition> pages = resolved.pages();
+        PageDefinition.Nav nav = resolved.nav();
+        EntityTemplateSetEntity frontendSet = resolved.frontendSet();
+        EntityTemplateSetEntity backendSet = resolved.backendSet();
+        WebProjectRequest request = resolved.request();
+        String domainPackage = resolved.domainPackage();
+        boolean ldap = resolved.ldap();
+        // The audit row: the backend request as resolved.
+        com.menora.initializr.observability.AuditDetails.request(request);
+        com.menora.initializr.observability.AuditDetails.entityCount(entities.size());
+        // The user menu and the bell ask the backend who is signed in.
+        entityContext.populate(entities, resolved.backendSetKey(), resolved.frontendSetKey(), domainPackage,
+                resolved.shellUser());
+
+        // Backend — runs through the standard pipeline. The EntityScaffoldContributor
+        // (registered in spring.factories) picks up the populated context.
+        // The fullstack project keeps its own model at its root: its backend writes none.
+        optionsContext.setEmbedded(true);
+        Path backendDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
+        try {
+            GeneratedProjectFiles.moveDirectory(backendDir, tempDir.resolve("backend"));
+        } finally {
+            // cleanTempFiles drops the invoker's map entry and deletes what the move left behind.
+            invoker.cleanTempFiles(backendDir);
+        }
+
+        // Frontend — rendered inline outside the Initializr pipeline.
+        renderFrontend(frontendSet, request, entities, pages, nav, domainPackage, body.colorPalette(),
+                body.dashboardTitle(), body.dashboardOverview(), resolved.locale(), tempDir.resolve("frontend"));
+
+        // Root files
+        Set<String> backendDeps = new LinkedHashSet<>(request.getDependencies() == null ? List.of() : request.getDependencies());
+        boolean tested = GeneratedTests.anyTested(entities, optionsContext.hasOption("scaffold", ScaffoldOption.TESTS.key()));
+        // The whole application in Docker: its services, its backend and its frontend.
+        Files.writeString(tempDir.resolve(LocalRun.COMPOSE_FILE),
+                LocalRun.compose(request.getArtifactId(), backendDeps, containerImages, true));
+        boolean eventsOpt = optionsContext.hasOption("scaffold", ScaffoldOption.EVENTS.key());
+        boolean events = entities.stream().anyMatch(e -> FeatureContext.eventsApply(e, eventsOpt));
+        boolean mails = entities.stream().anyMatch(FeatureContext::notifies);
+        boolean files = entities.stream().anyMatch(e -> e.fields().stream().anyMatch(f -> f.type().isAttachment()));
+        Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId(), ldap, tested, backendDeps)
+                .replace(REOPEN_HEADING, eventsReadme(events, mails, backendDeps) + attachmentsReadme(files, ldap)
+                        + REOPEN_HEADING));
+        Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
+        Files.writeString(tempDir.resolve(".gitattributes"), ROOT_GITATTRIBUTES);
+        Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body, templatesHash(backendSet, frontendSet)));
+        // One set of bytes whatever machine generated it — see normalizeLineEndings.
+        GeneratedProjectFiles.normalizeLineEndings(tempDir);
+        // Named last, by everything above (an update names its result again, once its migration is in).
+        GeneratedSnapshots.stamp(tempDir);
+        return request;
+    }
+
+    /**
+     * A request checked and resolved as generation needs it — the entities with what their pages
+     * imply, both template sets, the backend request with its dependencies — with the options
+     * context populated. Shared by the generation and the DDL endpoints, so a model the generator
+     * refuses is refused there too, in the same words.
+     */
+    private record Resolved(List<EntityDefinition> entities, List<PageDefinition> pages, PageDefinition.Nav nav,
+                            String backendSetKey, String frontendSetKey, EntityTemplateSetEntity backendSet,
+                            EntityTemplateSetEntity frontendSet, String locale, WebProjectRequest request,
+                            String domainPackage, boolean ldap, boolean shellUser) {
+    }
+
+    private Resolved resolve(FullstackStarterRequest body) {
         List<EntityDefinition> validated = FullstackRequestValidator.validateAndConvert(body);
         List<PageDefinition> pages = FullstackPageValidator.validateAndConvert(body.pages(), validated, scaffoldOptsOf(body));
         // An import page switches on its entity's csvImport option, for both render paths.
@@ -365,9 +584,6 @@ public class FullstackStarterController {
                         "entities[" + entities.indexOf(e) + "].workflow");
             });
         }
-        // The audit row: the backend request as resolved (the dependencies added below count too).
-        com.menora.initializr.observability.AuditDetails.request(request);
-        com.menora.initializr.observability.AuditDetails.entityCount(entities.size());
         // The `openapi` scaffold opt enriches generated controllers with springdoc @Tag/@Operation
         // annotations, which need the springdoc starter on the classpath. Force-add it here (before
         // generation) so the dep lands in the pom — analogous to how the `tests` opt relies on
@@ -384,47 +600,8 @@ public class FullstackStarterController {
         Set<String> depIds = new LinkedHashSet<>(
                 request.getDependencies() == null ? List.of() : request.getDependencies());
         optionsContext.defaultDatasourceRoles(depIds, configService.getAllSubOptions());
-        // The user menu and the bell ask the backend who is signed in.
-        entityContext.populate(entities, backendSetKey, frontendSetKey, domainPackage,
-                nav != null && (nav.userMenu() || nav.notifications()));
-
-        // Backend — runs through the standard pipeline. The EntityScaffoldContributor
-        // (registered in spring.factories) picks up the populated context.
-        // The fullstack project keeps its own model at its root: its backend writes none.
-        optionsContext.setEmbedded(true);
-        Path backendDir = invoker.invokeProjectStructureGeneration(request).getRootDirectory();
-        try {
-            GeneratedProjectFiles.moveDirectory(backendDir, tempDir.resolve("backend"));
-        } finally {
-            // cleanTempFiles drops the invoker's map entry and deletes what the move left behind.
-            invoker.cleanTempFiles(backendDir);
-        }
-
-        // Frontend — rendered inline outside the Initializr pipeline.
-        renderFrontend(frontendSet, request, entities, pages, nav, domainPackage, body.colorPalette(),
-                body.dashboardTitle(), body.dashboardOverview(), locale, tempDir.resolve("frontend"));
-
-        // Root files
-        Set<String> backendDeps = new LinkedHashSet<>(request.getDependencies() == null ? List.of() : request.getDependencies());
-        boolean tested = GeneratedTests.anyTested(entities, optionsContext.hasOption("scaffold", ScaffoldOption.TESTS.key()));
-        // The whole application in Docker: its services, its backend and its frontend.
-        Files.writeString(tempDir.resolve(LocalRun.COMPOSE_FILE),
-                LocalRun.compose(request.getArtifactId(), backendDeps, containerImages, true));
-        boolean eventsOpt = optionsContext.hasOption("scaffold", ScaffoldOption.EVENTS.key());
-        boolean events = entities.stream().anyMatch(e -> FeatureContext.eventsApply(e, eventsOpt));
-        boolean mails = entities.stream().anyMatch(FeatureContext::notifies);
-        boolean files = entities.stream().anyMatch(e -> e.fields().stream().anyMatch(f -> f.type().isAttachment()));
-        Files.writeString(tempDir.resolve("README.md"), buildReadme(request.getArtifactId(), ldap, tested, backendDeps)
-                .replace(REOPEN_HEADING, eventsReadme(events, mails, backendDeps) + attachmentsReadme(files, ldap)
-                        + REOPEN_HEADING));
-        Files.writeString(tempDir.resolve(".gitignore"), ROOT_GITIGNORE);
-        Files.writeString(tempDir.resolve(".gitattributes"), ROOT_GITATTRIBUTES);
-        Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body, templatesHash(backendSet, frontendSet)));
-        // One set of bytes whatever machine generated it — see normalizeLineEndings.
-        GeneratedProjectFiles.normalizeLineEndings(tempDir);
-        // Named last, by everything above (an update names its result again, once its migration is in).
-        GeneratedSnapshots.stamp(tempDir);
-        return request;
+        return new Resolved(entities, pages, nav, backendSetKey, frontendSetKey, backendSet, frontendSet, locale,
+                request, domainPackage, ldap, nav != null && (nav.userMenu() || nav.notifications()));
     }
 
     /** The model the project was generated from, at the zip root, for the editor's Import JSON. */

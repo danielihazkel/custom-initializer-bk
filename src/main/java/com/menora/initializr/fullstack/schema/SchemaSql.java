@@ -53,6 +53,81 @@ public final class SchemaSql {
         return sql.toString();
     }
 
+    /**
+     * The baseline as statements a JDBC driver runs one at a time: no comments and no closing
+     * semicolon (Oracle refuses one). In the order {@link #baseline} writes them: the schemas the
+     * dialect can create (except those in {@code existingSchemas}, compared ignoring case), the
+     * tables, then unique indexes, foreign keys and indexes.
+     *
+     * <p>An index on Oracle and DB2 is made in the session's schema unless its name says
+     * otherwise, so there the name of an index on a qualified table is qualified too.
+     */
+    public static List<String> statements(Schema schema, SchemaDialect dialect, Set<String> existingSchemas) {
+        List<String> out = new ArrayList<>();
+        if (dialect.createsSchemas()) {
+            Set<String> seen = new LinkedHashSet<>();
+            for (Table table : schema.tables()) {
+                String name = table.schema();
+                if (name == null || !seen.add(name)) continue;
+                if (existingSchemas.stream().anyMatch(s -> s.equalsIgnoreCase(unquoted(name)))) continue;
+                out.add("create schema if not exists " + name);
+            }
+        }
+        for (Table table : schema.tables()) out.add(withoutSemicolon(createTable(table, dialect)));
+        boolean qualifyIndexes = dialect == SchemaDialect.ORACLE || dialect == SchemaDialect.DB2;
+        for (Table table : schema.tables()) {
+            for (String statement : constraintsAndIndexes(qualifyIndexes ? withQualifiedIndexes(table) : table, dialect)) {
+                out.add(withoutSemicolon(statement));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The schema with every table that names no schema of its own put in {@code target} — and
+     * the foreign keys to those tables pointing there — so the statements create them in that
+     * schema whatever the session's default is (SQL Server ignores {@code Connection.setSchema}).
+     * {@code target} is written as given: the caller quotes it.
+     */
+    public static Schema inSchema(Schema schema, String target) {
+        Set<String> moved = new LinkedHashSet<>();
+        for (Table table : schema.tables()) if (table.schema() == null) moved.add(table.name());
+        List<Table> tables = new ArrayList<>();
+        for (Table table : schema.tables()) {
+            List<ForeignKey> fks = new ArrayList<>();
+            for (ForeignKey fk : table.foreignKeys()) {
+                fks.add(fk.refSchema() == null && moved.contains(fk.refTable())
+                        ? new ForeignKey(fk.name(), fk.columns(), target, fk.refTable(), fk.refColumns())
+                        : fk);
+            }
+            tables.add(new Table(table.schema() == null ? target : table.schema(), table.name(), table.columns(),
+                    table.primaryKey(), fks, table.uniques(), table.indexes()));
+        }
+        return new Schema(tables);
+    }
+
+    /** {@code "x"} → {@code x}; a bare name as it is. */
+    public static String unquoted(String name) {
+        return name.length() > 1 && name.startsWith("\"") && name.endsWith("\"") ? name.substring(1, name.length() - 1) : name;
+    }
+
+    private static Table withQualifiedIndexes(Table table) {
+        if (table.schema() == null) return table;
+        List<Index> indexes = new ArrayList<>();
+        for (Index index : table.indexes()) indexes.add(new Index(table.schema() + "." + index.name(), index.columns()));
+        List<Unique> uniques = new ArrayList<>();
+        for (Unique unique : table.uniques()) uniques.add(new Unique(table.schema() + "." + unique.name(), unique.columns()));
+        // Only for what follows the tables: createTable has already written the inline unique
+        // constraints under their own names (a constraint belongs to its table).
+        return new Table(table.schema(), table.name(), table.columns(), table.primaryKey(), table.foreignKeys(),
+                uniques, indexes);
+    }
+
+    private static String withoutSemicolon(String statement) {
+        String s = statement.strip();
+        return s.endsWith(";") ? s.substring(0, s.length() - 1).stripTrailing() : s;
+    }
+
     /** {@code create table …;} with the key and the unique constraints, ending in a newline. */
     static String createTable(Table table, SchemaDialect dialect) {
         List<String> lines = new ArrayList<>();
@@ -127,7 +202,7 @@ public final class SchemaSql {
         return "create index " + index.name() + " on " + table.ref() + " (" + String.join(", ", index.columns()) + ");";
     }
 
-    static String label(SchemaDialect dialect) {
+    public static String label(SchemaDialect dialect) {
         return switch (dialect) {
             case H2 -> "H2";
             case POSTGRESQL -> "PostgreSQL";

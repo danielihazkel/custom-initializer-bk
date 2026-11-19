@@ -66,7 +66,9 @@ public class LiveSchemaService {
 
     // ── What the screens may offer ─────────────────────────────────────────
 
-    public record SourceSummary(String name, String dialect, String description, String defaultSchema) {}
+    /** @param createTables an admin allowed creating a fullstack model's tables on this source */
+    public record SourceSummary(String name, String dialect, String description, String defaultSchema,
+                                boolean createTables) {}
 
     public record Options(List<SourceSummary> sources, boolean typedConnections,
                           Map<String, Boolean> drivers, Map<String, Integer> defaultPorts, int maxTables) {}
@@ -74,7 +76,8 @@ public class LiveSchemaService {
     public Options options() {
         List<SourceSummary> list = new ArrayList<>();
         for (SchemaSourceEntity s : sources.findAllByOrderBySortOrderAscNameAsc()) {
-            if (s.isEnabled()) list.add(new SourceSummary(s.getName(), s.getDialect(), s.getDescription(), s.getDefaultSchema()));
+            if (s.isEnabled()) list.add(new SourceSummary(s.getName(), s.getDialect(), s.getDescription(),
+                    s.getDefaultSchema(), s.isAllowCreateTables()));
         }
         Map<String, Boolean> drivers = new LinkedHashMap<>();
         Map<String, Integer> ports = new LinkedHashMap<>();
@@ -121,10 +124,31 @@ public class LiveSchemaService {
         return spec;
     }
 
+    /**
+     * The source a fullstack model's tables may be created on: an enabled admin source that an admin
+     * marked {@code allowCreateTables}. Never a connection typed in by hand — anyone could name one.
+     */
+    public ConnectionSpec writableSource(String name) {
+        if (name == null || name.isBlank()) {
+            throw LiveSchemaException.badRequest("Pick a database source to create the tables on");
+        }
+        SchemaSourceEntity s = sources.findByNameIgnoreCase(name.trim())
+                .filter(SchemaSourceEntity::isEnabled)
+                .orElseThrow(() -> new LiveSchemaException(HttpStatus.NOT_FOUND, "Unknown source",
+                        "There is no database source called " + name.trim()));
+        if (!s.isAllowCreateTables()) {
+            throw new LiveSchemaException(HttpStatus.FORBIDDEN, "Not allowed",
+                    "Source " + s.getName() + " does not allow creating tables. An admin can allow it under"
+                            + " Admin → Schema sources.");
+        }
+        return specOf(s);
+    }
+
     /** An admin source as a connection; its password comes from the environment. */
     public ConnectionSpec specOf(SchemaSourceEntity s) {
         SqlDialect dialect = dialectOf(s.getDialect());
-        if (dialect == SqlDialect.H2) throw LiveSchemaException.badRequest("H2 cannot be a source");
+        // An in-memory H2 source only where the tests turn H2 on (they create tables on one).
+        if (dialect == SqlDialect.H2 && !allowH2) throw LiveSchemaException.badRequest("H2 cannot be a source");
         return new ConnectionSpec(dialect, trim(s.getHost()), s.getPort(), trim(s.getDatabaseName()),
                 trim(s.getLibrary()), trim(s.getUsername()), passwordOf(s), s.isTrustServerCertificate(), s.getName())
                 .validated();
@@ -171,6 +195,15 @@ public class LiveSchemaService {
 
     /** Opens the connection, runs {@code work}, closes it — at most {@code max-concurrent-reads} at a time. */
     public <T> T withConnection(ConnectionSpec spec, Work<T> work) {
+        return withConnection(spec, true, work);
+    }
+
+    /**
+     * {@link #withConnection(ConnectionSpec, Work)}, on a connection that may write when
+     * {@code readOnly} is false — only for a spec from {@link #writableSource}. Shares the limit
+     * on connections at once, the timeouts and the masking of the password.
+     */
+    public <T> T withConnection(ConnectionSpec spec, boolean readOnly, Work<T> work) {
         boolean acquired;
         try {
             acquired = reads.tryAcquire(5, TimeUnit.SECONDS);
@@ -184,7 +217,7 @@ public class LiveSchemaService {
         }
         try {
             LiveSchemaReader reader = new LiveSchemaReader(DialectSupport.of(spec.dialect()));
-            try (Connection c = reader.connect(spec)) {
+            try (Connection c = reader.connect(spec, readOnly)) {
                 return work.run(reader, c);
             } catch (SQLException e) {
                 throw new LiveSchemaException(HttpStatus.BAD_REQUEST, "Could not read the schema",

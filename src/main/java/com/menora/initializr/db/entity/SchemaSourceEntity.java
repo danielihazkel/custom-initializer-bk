@@ -27,9 +27,13 @@ public class SchemaSourceEntity {
     @Column(length = 500)
     private String description;
 
-    /** {@code POSTGRESQL}, {@code MSSQL}, {@code ORACLE} or {@code DB2} (IBM i). */
+    /**
+     * {@code POSTGRESQL}, {@code MSSQL}, {@code ORACLE} or {@code DB2} (IBM i). {@code H2} passes
+     * the pattern for the tests' in-memory sources; outside them {@code LiveSchemaService.specOf}
+     * refuses it, so an admin cannot save one.
+     */
     @NotBlank
-    @Pattern(regexp = "POSTGRESQL|MSSQL|ORACLE|DB2", message = "must be POSTGRESQL, MSSQL, ORACLE or DB2")
+    @Pattern(regexp = "POSTGRESQL|MSSQL|ORACLE|DB2|H2", message = "must be POSTGRESQL, MSSQL, ORACLE or DB2")
     @Column(nullable = false, length = 16)
     private String dialect;
 
@@ -68,6 +72,14 @@ public class SchemaSourceEntity {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    /**
+     * Whether the Fullstack tab may create a model's tables on this database
+     * ({@code /starter-fullstack.create-tables}). Off unless an admin turns it on: the connection
+     * then writes, as the source's user.
+     */
+    @Column(name = "allow_create_tables", nullable = false)
+    private boolean allowCreateTables;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
@@ -97,6 +109,8 @@ public class SchemaSourceEntity {
     public void setDefaultSchema(String defaultSchema) { this.defaultSchema = defaultSchema; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public boolean isAllowCreateTables() { return allowCreateTables; }
+    public void setAllowCreateTables(boolean allowCreateTables) { this.allowCreateTables = allowCreateTables; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
 }

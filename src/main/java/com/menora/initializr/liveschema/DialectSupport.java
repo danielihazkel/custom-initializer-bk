@@ -35,6 +35,25 @@ public abstract class DialectSupport {
     /** User, password and the timeouts — the driver's own names for them. */
     abstract Properties properties(ConnectionSpec c);
 
+    /**
+     * The URL for a connection that may change the schema (creating a model's tables on a source
+     * an admin allowed it for): {@link #url} without SQL Server's read-only intent.
+     */
+    String url(ConnectionSpec c, boolean readOnly) {
+        String url = url(c);
+        return readOnly ? url : url.replace(";applicationIntent=ReadOnly", "");
+    }
+
+    /** {@link #properties} without the drivers' read-only switches, for a connection that may write. */
+    Properties properties(ConnectionSpec c, boolean readOnly) {
+        Properties p = properties(c);
+        if (!readOnly) {
+            p.remove("readOnly");   // PostgreSQL
+            p.remove("access");     // DB2 for IBM i: "read only"
+        }
+        return p;
+    }
+
     /** True for the database's own schemas (catalog, system, sample), left out of the list. */
     abstract boolean systemSchema(String name);
 

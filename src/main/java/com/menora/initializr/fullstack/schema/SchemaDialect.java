@@ -43,6 +43,14 @@ public enum SchemaDialect {
         return H2;
     }
 
+    /** The dialect a catalog dependency id selects ({@code postgresql}, {@code mssql}, …), or null. */
+    public static SchemaDialect ofDependency(String dependencyId) {
+        for (SchemaDialect dialect : values()) {
+            if (dialect.dependencyId.equalsIgnoreCase(dependencyId)) return dialect;
+        }
+        return null;
+    }
+
     /** The column's type as this database spells it, without NOT NULL or identity. */
     public String typeOf(Column column) {
         ColumnType type = column.type();

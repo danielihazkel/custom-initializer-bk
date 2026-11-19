@@ -51,19 +51,29 @@ public class LiveSchemaReader {
 
     /** Opens a read-only connection; a failure is a 400 in the driver's words, without the password. */
     public Connection connect(ConnectionSpec spec) {
+        return connect(spec, true);
+    }
+
+    /**
+     * Opens a connection; {@code readOnly} false only for creating a model's tables on a source an
+     * admin allowed it for ({@link LiveSchemaService#writableSource}).
+     */
+    public Connection connect(ConnectionSpec spec, boolean readOnly) {
         if (!support.driverPresent()) {
             throw new LiveSchemaException(HttpStatus.BAD_REQUEST, "No driver",
                     "The " + label(support.dialect()) + " driver is not installed on this server.");
         }
-        String url = support.url(spec);
+        String url = support.url(spec, readOnly);
         try {
             Driver driver = DriverManager.getDriver(url);
-            Connection c = driver.connect(url, support.properties(spec));
+            Connection c = driver.connect(url, support.properties(spec, readOnly));
             if (c == null) throw new SQLException("The driver did not accept the connection");
-            try {
-                c.setReadOnly(true);
-            } catch (SQLException ignored) {
-                // Some drivers refuse once connected; the connection still only runs queries.
+            if (readOnly) {
+                try {
+                    c.setReadOnly(true);
+                } catch (SQLException ignored) {
+                    // Some drivers refuse once connected; the connection still only runs queries.
+                }
             }
             return c;
         } catch (SQLException e) {
