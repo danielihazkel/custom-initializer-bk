@@ -22,8 +22,11 @@ import java.util.Locale;
  * sum     := product (('+' | '-') product)*
  * product := unary (('*' | '/') unary)*
  * unary   := '-' unary | primary
- * primary := number | 'text' | "text" | true | false | name '(' args ')' | name | '(' expr ')'
+ * primary := number | 'text' | "text" | true | false | name '(' args ')' | name | name '.' name | '(' expr ')'
  * </pre>
+ *
+ * <p>{@code name.name} reads a field of the row a MANY_TO_ONE points at ({@code costCenter.budget}):
+ * one step, kept as one {@link Ref} whose name has the dot.
  */
 public final class Expr {
 
@@ -43,8 +46,14 @@ public final class Expr {
     /** A literal: a {@link BigDecimal}, a String or a Boolean. */
     public record Lit(Object value, int at) implements Node {}
 
-    /** A field of the row. */
-    public record Ref(String name, int at) implements Node {}
+    /** A field of the row, or of the row a link points at ({@code costCenter.budget}). */
+    public record Ref(String name, int at) implements Node {
+
+        /** Whether it reads through a link. */
+        public boolean isPath() {
+            return name.indexOf('.') > 0;
+        }
+    }
 
     /** {@code -} or {@code not}. */
     public record Unary(String op, Node operand, int at) implements Node {}
@@ -118,7 +127,14 @@ public final class Expr {
                 out.add(new Token(Kind.TEXT, s.substring(start, i), sb.toString(), start));
             } else if (Character.isLetter(c) || c == '_') {
                 int start = i;
-                while (i < s.length() && (Character.isLetterOrDigit(s.charAt(i)) || s.charAt(i) == '_')) i++;
+                i = name(s, i);
+                // One step through a link: costCenter.budget.
+                if (i + 1 < s.length() && s.charAt(i) == '.' && (Character.isLetter(s.charAt(i + 1)) || s.charAt(i + 1) == '_')) {
+                    i = name(s, i + 1);
+                    if (i + 1 < s.length() && s.charAt(i) == '.' && (Character.isLetter(s.charAt(i + 1)) || s.charAt(i + 1) == '_')) {
+                        throw new ExprException("A link is followed one step only (like costCenter.budget)", i);
+                    }
+                }
                 out.add(new Token(Kind.NAME, s.substring(start, i), null, start));
             } else {
                 String two = i + 1 < s.length() ? s.substring(i, i + 2) : "";
@@ -135,6 +151,11 @@ public final class Expr {
         }
         out.add(new Token(Kind.END, "the end", null, s.length()));
         return out;
+    }
+
+    private static int name(String s, int i) {
+        while (i < s.length() && (Character.isLetterOrDigit(s.charAt(i)) || s.charAt(i) == '_')) i++;
+        return i;
     }
 
     // ── Parsing ────────────────────────────────────────────────────────────────
@@ -251,6 +272,7 @@ public final class Expr {
                         throw new ExprException("Expected a value but found '" + t.text + "'", t.at);
                     }
                     if (isOp("(")) {
+                        if (t.text.indexOf('.') > 0) throw new ExprException("'" + t.text + "' is not a function", t.at);
                         pos++;
                         List<Node> args = new ArrayList<>();
                         if (!isOp(")")) {

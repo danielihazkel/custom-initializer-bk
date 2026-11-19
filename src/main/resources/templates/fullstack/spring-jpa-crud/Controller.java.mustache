@@ -154,7 +154,7 @@ public class {{EntityName}}Controller {
                         .map({{EntityName}}Dto::from);
                 for ({{EntityName}}Dto dto : chunk) {
                     String[] cells = {
-{{#fields}}                            csv(dto.{{name}}()),
+{{#fields}}                            {{#isMultiFile}}csv(String.join("; ", dto.{{name}}().stream().map(file -> String.valueOf(file.getName())).toList())),{{/isMultiFile}}{{^isMultiFile}}csv(dto.{{name}}()),{{/isMultiFile}}
 {{/fields}}{{#relations}}                            csv(dto.{{fkFieldName}}()),
 {{#hasTargetLabel}}                            csv(dto.{{fieldName}}Label()),
 {{/hasTargetLabel}}{{/relations}}{{#collections}}                            csv(String.join("; ", dto.{{labelsField}}())),

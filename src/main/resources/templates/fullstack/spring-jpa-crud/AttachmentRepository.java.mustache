@@ -26,6 +26,14 @@ interface AttachmentRepository extends JpaRepository<Attachment, UUID> {
     @Query("select a.id from Attachment a where a.createdAt < :before order by a.createdAt")
     List<UUID> uploadedBefore(@Param("before") Instant before, Pageable page);
 
+    /** A picture's small version, when one was made (empty bytes: none can be). */
+    @Query("select a.thumbnail from Attachment a where a.id = :id")
+    Optional<byte[]> thumbnailOf(@Param("id") UUID id);
+
+    @Modifying
+    @Query("update Attachment a set a.thumbnail = :thumbnail where a.id = :id")
+    int keepThumbnail(@Param("id") UUID id, @Param("thumbnail") byte[] thumbnail);
+
     /** Forgets a file's row; 0 when it was already gone (another instance's clean-up). */
     @Modifying
     @Query("delete from Attachment a where a.id = :id")

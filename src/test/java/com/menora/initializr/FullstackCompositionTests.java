@@ -187,6 +187,53 @@ class FullstackCompositionTests {
         assertThat(plain.get(FE + "features/order-line-form/model/validate.ts")).doesNotContain("nested");
     }
 
+    /** Composed rows with a rule, a field shown on a condition and a computed field. */
+    static Map<String, Object> composedWithRowLogic(String frontendSet) {
+        Map<String, Object> body = composed(frontendSet);
+        edit(body, "OrderLine", line -> {
+            List<Object> fields = new ArrayList<>((List<?>) line.get("fields"));
+            fields.add(Map.of("name", "unitPrice", "type", "BIG_DECIMAL"));
+            fields.add(Map.of("name", "lineTotal", "type", "BIG_DECIMAL", "formula", "quantity * unitPrice"));
+            fields.add(Map.of("name", "giftNote", "type", "STRING", "showWhen", "quantity >= 10"));
+            line.put("fields", fields);
+            line.put("rules", List.of(Map.of("check", "unitPrice > 0", "message", "A unit price cannot be zero", "field", "unitPrice")));
+        });
+        return body;
+    }
+
+    @Test
+    void theParentsSaveRunsTheRowsOwnRules() throws Exception {
+        Map<String, String> files = generate(composedWithRowLogic("react-tailwind-crud"));
+        String service = files.get(BE + "service/OrderService.java");
+        assertThat(service)
+                .contains("    private static void checkLinesRows(java.util.List<com.menora.shop.entity.OrderLine> rows) {")
+                .contains("            String at = \"lines[\" + i + \"].\";\n"
+                        + "            com.menora.shop.rules.OrderLineRules.apply(rows.get(i))\n"
+                        + "                    .forEach((field, message) -> errors.put(at + field, message));")
+                .contains("        if (!errors.isEmpty()) throw new com.menora.shop.web.RuleViolationException(errors);")
+                // On a create, after the rows are adopted; on an update, after they are merged.
+                .contains("            adoptLines(entity, row);\n        }\n        checkLinesRows(entity.getLines());")
+                .contains("            mergeLines(existing, updated.getLines());\n            checkLinesRows(existing.getLines());");
+        // A line saved on its own runs them as before.
+        assertThat(files.get(BE + "service/OrderLineService.java")).contains("com.menora.shop.rules.OrderLineRules.check(entity);");
+
+        // The rows editor shows the computed cell as it will be saved, and the conditional one only while it applies.
+        String rows = files.get(FE + "features/order-line-form/ui/OrderLineRows.tsx");
+        assertThat(rows)
+                .contains("import * as rule from '@shared/ui/rules'")
+                .contains("  { key: 'lineTotal', label: 'LineTotal' },")
+                .contains("value={rule.show(rule.mul(rule.num(row.quantity), rule.num(row.unitPrice)))} readOnly aria-readonly />")
+                .contains("            if (!rule.applies(rule.ge(rule.num(row.quantity), 10))) return <span className=\"block px-2 py-1.5 text-muted\">—</span>");
+        // The form's checks of each row already run the line's rules.
+        assertThat(files.get(FE + "features/order-line-form/model/validate.ts"))
+                .contains("errors.unitPrice = ");
+
+        // Without row logic the parent's service and the rows editor keep their bytes.
+        Map<String, String> plain = generate(composed("react-tailwind-crud"));
+        assertThat(plain.get(BE + "service/OrderService.java")).doesNotContain("checkLinesRows");
+        assertThat(plain.get(FE + "features/order-line-form/ui/OrderLineRows.tsx")).doesNotContain("rule");
+    }
+
     @Test
     void aCompositionThatCannotWorkIsRefusedWithItsReason() throws Exception {
         // Not a ONE_TO_MANY.

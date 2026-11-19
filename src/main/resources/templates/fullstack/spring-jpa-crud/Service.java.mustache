@@ -378,6 +378,22 @@ public class {{EntityName}}Service {
         parent.get{{CollectionField}}().addAll(now);
         for ({{entityPackage}}.{{childEntity}} gone : had.values()) entityManager.remove(gone);
     }
+{{#childHasRules}}
+
+    /**
+     * Each row by {{childEntity}}'s own rules, as its own save would run them (hidden fields cleared,
+     * computed ones computed), a broken one refused with its message under {@code {{collectionField}}[i].field}.
+     */
+    private static void check{{CollectionField}}Rows(java.util.List<{{entityPackage}}.{{childEntity}}> rows) {
+        java.util.Map<String, String> errors = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < rows.size(); i++) {
+            String at = "{{collectionField}}[" + i + "].";
+            {{packageName}}.rules.{{childEntity}}Rules.apply(rows.get(i))
+                    .forEach((field, message) -> errors.put(at + field, message));
+        }
+        if (!errors.isEmpty()) throw new {{packageName}}.web.RuleViolationException(errors);
+    }
+{{/childHasRules}}
 {{/compositions}}
 {{/hasCompositions}}
 {{#hasCollections}}
@@ -411,7 +427,19 @@ public class {{EntityName}}Service {
         }
 {{/collections}}    }
 {{/mutable}}{{/hasCollections}}
-{{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
+{{#readsLinks}}{{#mutable}}
+    /**
+     * Loads the rows this {{EntityName}}'s rules read through its links: a row from a request links by
+     * id alone, whose other fields would read as empty (and a rule over one would hold).
+     */
+    private void withLinkedRows({{EntityName}} row) {
+{{#linkedReads}}        if (row.get{{FieldName}}() != null && row.get{{FieldName}}().get{{TargetPkName}}() != null) {
+            {{entityPackage}}.{{targetEntity}} linked = entityManager.find({{entityPackage}}.{{targetEntity}}.class, row.get{{FieldName}}().get{{TargetPkName}}());
+            if (linked != null) row.set{{FieldName}}(linked);
+        }
+{{/linkedReads}}    }
+
+{{/mutable}}{{/readsLinks}}{{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
 {{#compositions}}        if (entity.get{{CollectionField}}() == null) entity.set{{CollectionField}}(new java.util.ArrayList<>());
         if (entity.get{{CollectionField}}().size() > MAX_ROWS) {
             throw new IllegalArgumentException("{{collectionField}}: at most " + MAX_ROWS + " rows in one save");
@@ -420,7 +448,8 @@ public class {{EntityName}}Service {
             row.set{{ChildPkName}}(null);
             adopt{{CollectionField}}(entity, row);
         }
-{{/compositions}}{{#isComposedChild}}        // On its own a row has to say whose it is (inside its parent's form the parent is the link).
+{{#childHasRules}}        check{{CollectionField}}Rows(entity.get{{CollectionField}}());
+{{/childHasRules}}{{/compositions}}{{#isComposedChild}}        // On its own a row has to say whose it is (inside its parent's form the parent is the link).
         if (entity.get{{CompositionLinkName}}() == null) {
             throw new IllegalArgumentException("{{compositionLinkName}}Id is required");
         }
@@ -436,8 +465,11 @@ public class {{EntityName}}Service {
             throw new ResourceConflictException("{{EntityName}} " + id + " already exists");
         }
 {{/pkField.isGenerated}}{{#attachmentFields}}{{^isReadOnly}}        attachments.requireAttachable(entity.get{{Name}}(), "{{name}}"); // a file no other record holds
-{{/isReadOnly}}{{/attachmentFields}}{{#hasLockedRelations}}        withReferences(entity);
-{{/hasLockedRelations}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(entity);
+{{/isReadOnly}}{{/attachmentFields}}{{#multiFileFields}}        // Files no other record holds, at most {{maxFiles}}, named as they were uploaded.
+        entity.set{{Name}}(attachments.attachAll(entity.get{{Name}}(), java.util.List.of(), "{{name}}", {{maxFiles}}, {{isRequired}}));
+{{/multiFileFields}}{{#hasLockedRelations}}        withReferences(entity);
+{{/hasLockedRelations}}{{#readsLinks}}        withLinkedRows(entity);
+{{/readsLinks}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(entity);
 {{/hasRules}}{{^tracksMoves}}        return repository.save(entity);
 {{/tracksMoves}}{{#tracksMoves}}        {{EntityName}} saved = repository.save(entity);
         moves.created("{{entityNameKebab}}", saved.get{{pkField.Name}}(), saved.get{{WorkflowStatusName}}());
@@ -488,7 +520,12 @@ public class {{EntityName}}Service {
             } catch ({{packageName}}.attachment.AttachmentException refused) {
                 errors.add(new ImportError(row, refused.field(), refused.getMessage()));
             }
-{{/isReadOnly}}{{/attachmentFields}}{{#hasLockedRelations}}            withReferences(entity);
+{{/isReadOnly}}{{/attachmentFields}}{{#multiFileFields}}            try {
+                entity.set{{Name}}(attachments.attachAll(entity.get{{Name}}(), java.util.List.of(), "{{name}}", {{maxFiles}}, {{isRequired}}));
+            } catch ({{packageName}}.attachment.AttachmentException refused) {
+                errors.add(new ImportError(row, refused.field(), refused.getMessage()));
+            }
+{{/multiFileFields}}{{#hasLockedRelations}}            withReferences(entity);
 {{/hasLockedRelations}}{{#lockingApplicable}}            entity.setVersion(null);
 {{/lockingApplicable}}{{#hasWorkflow}}            entity.set{{WorkflowStatusName}}({{workflowInitialJava}});
 {{#hasAssignee}}            entity.set{{AssigneeName}}(null);
@@ -499,7 +536,8 @@ public class {{EntityName}}Service {
             } else if (id != null && repository.existsById(id)) {
                 errors.add(new ImportError(row, null, "{{EntityName}} " + id + " already exists"));
             }
-{{/pkField.isGenerated}}{{#hasRules}}            {{packageName}}.rules.{{EntityName}}Rules.apply(entity)
+{{/pkField.isGenerated}}{{#readsLinks}}            withLinkedRows(entity);
+{{/readsLinks}}{{#hasRules}}            {{packageName}}.rules.{{EntityName}}Rules.apply(entity)
                     .forEach((field, message) -> errors.add(new ImportError(row, field, message)));
 {{/hasRules}}            entities.add(entity);
         }
@@ -521,8 +559,17 @@ public class {{EntityName}}Service {
             attachments.requireAttachable(updated.get{{Name}}(), "{{name}}");
             attachments.delete(existing.get{{Name}}());
         }
-{{/isReadOnly}}{{/attachmentFields}}{{#nonPkFields}}{{^isReadOnly}}        existing.set{{Name}}(updated.get{{Name}}());
-{{/isReadOnly}}{{/nonPkFields}}{{#relations}}        existing.set{{FieldName}}(updated.get{{FieldName}}());
+{{/isReadOnly}}{{/attachmentFields}}{{#multiFileFields}}{{^isReadOnly}}        // No list: the files stay. Otherwise the new ones are checked, and the ones left out go.
+        if (updated.get{{Name}}() != null) {
+            java.util.List<{{packageName}}.attachment.AttachedFile> {{name}}Before = new java.util.ArrayList<>(existing.get{{Name}}());
+            java.util.List<{{packageName}}.attachment.AttachedFile> {{name}}After =
+                    attachments.attachAll(updated.get{{Name}}(), {{name}}Before, "{{name}}", {{maxFiles}}, {{isRequired}});
+            existing.get{{Name}}().clear();
+            existing.get{{Name}}().addAll({{name}}After);
+            attachments.detachRemoved({{name}}Before, {{name}}After);
+        }
+{{/isReadOnly}}{{/multiFileFields}}{{#nonPkFields}}{{^isReadOnly}}{{^isMultiFile}}        existing.set{{Name}}(updated.get{{Name}}());
+{{/isMultiFile}}{{/isReadOnly}}{{/nonPkFields}}{{#relations}}        existing.set{{FieldName}}(updated.get{{FieldName}}());
 {{/relations}}{{#hasCollections}}        resolveLinks(updated);
 {{#collections}}        if (updated.get{{FieldName}}() != null) {
             existing.get{{FieldName}}().clear();
@@ -530,10 +577,12 @@ public class {{EntityName}}Service {
         }
 {{/collections}}{{/hasCollections}}{{#compositions}}        if (updated.get{{CollectionField}}() != null) {
             merge{{CollectionField}}(existing, updated.get{{CollectionField}}());
-{{#lockingApplicable}}            // A change to its rows is a change to the {{EntityName}}: its version moves too.
+{{#childHasRules}}            check{{CollectionField}}Rows(existing.get{{CollectionField}}());
+{{/childHasRules}}{{#lockingApplicable}}            // A change to its rows is a change to the {{EntityName}}: its version moves too.
             entityManager.lock(existing, jakarta.persistence.LockModeType.OPTIMISTIC_FORCE_INCREMENT);
 {{/lockingApplicable}}        }
-{{/compositions}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(existing);
+{{/compositions}}{{#readsLinks}}        withLinkedRows(existing);
+{{/readsLinks}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(existing);
 {{/hasRules}}        return repository.save(existing);
     }
 {{#hasWorkflow}}
@@ -707,7 +756,8 @@ public class {{EntityName}}Service {
         repository.delete(existing);
 {{^softDeleteApplicable}}        // The record's files go with it. (A soft-deleted record keeps them, for a restore.)
 {{#attachmentFields}}        attachments.delete(existing.get{{Name}}());
-{{/attachmentFields}}{{/softDeleteApplicable}}{{/hasAttachmentFields}}    }
+{{/attachmentFields}}{{#multiFileFields}}        existing.get{{Name}}().forEach(file -> attachments.delete(file.getId()));
+{{/multiFileFields}}{{/softDeleteApplicable}}{{/hasAttachmentFields}}    }
 {{#softDeleteApplicable}}
     /** Un-deletes a soft-deleted record (the frontend's Undo after delete). 404 when no row has
      *  that id; restoring a live row is a harmless no-op. */
@@ -732,7 +782,8 @@ public class {{EntityName}}Service {
         repository.deleteAllById(ids);
 {{#hasAttachmentFields}}{{^softDeleteApplicable}}        for ({{EntityName}} row : rows) {
 {{#attachmentFields}}            attachments.delete(row.get{{Name}}());
-{{/attachmentFields}}        }
+{{/attachmentFields}}{{#multiFileFields}}            row.get{{Name}}().forEach(file -> attachments.delete(file.getId()));
+{{/multiFileFields}}        }
 {{/softDeleteApplicable}}{{/hasAttachmentFields}}    }
 {{/bulkDeleteApplicable}}{{#bulkUpdateApplicable}}
     /** Sets a single whitelisted {@code field} to {@code value} on every listed record. The raw

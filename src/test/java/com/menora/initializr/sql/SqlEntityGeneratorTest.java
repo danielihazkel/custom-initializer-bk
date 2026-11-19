@@ -1098,6 +1098,40 @@ class SqlEntityGeneratorTest {
                 .contains("        TicketsStatus status,");
     }
 
+    /**
+     * What an export declares after the table: a CHECK added by ALTER TABLE is an enum like one in
+     * the CREATE, and a unique index over plain columns a unique constraint — but not a partial one
+     * (duplicates are allowed outside its WHERE) nor one over an expression.
+     */
+    @Test
+    void anAlterTableCheckAndAUniqueIndexAreRead() {
+        String sql = """
+                CREATE TABLE tickets (
+                    id BIGINT PRIMARY KEY,
+                    kind VARCHAR(10),
+                    code VARCHAR(10),
+                    hall VARCHAR(10),
+                    seat VARCHAR(10),
+                    email VARCHAR(80),
+                    tenant VARCHAR(10)
+                );
+                ALTER TABLE tickets ADD CONSTRAINT tickets_kind CHECK (kind IN ('BUG', 'TASK'));
+                CREATE UNIQUE INDEX tickets_code ON tickets (code);
+                CREATE UNIQUE INDEX IF NOT EXISTS tickets_seat ON public.tickets USING btree (hall, seat);
+                CREATE UNIQUE INDEX tickets_email ON tickets (lower(email));
+                CREATE UNIQUE INDEX tickets_tenant ON tickets (tenant) WHERE tenant IS NOT NULL;
+                """;
+        List<GeneratedJavaFile> files = generator.generate(sql, SqlDialect.POSTGRESQL, "com.menora.demo", null);
+        assertThat(findFile(files, "entity/Tickets.java").content())
+                .contains("    @Enumerated(EnumType.STRING)\n    @Column(length = 10)\n    private TicketsKind kind;")
+                .contains("@Column(unique = true, length = 10)\n    private String code;")
+                .contains("uniqueConstraints = {@UniqueConstraint(columnNames = {\"hall\", \"seat\"})}")
+                .contains("    @Column(length = 80)\n    private String email;")
+                .contains("    @Column(length = 10)\n    private String tenant;");
+        assertThat(findFile(files, "entity/TicketsKind.java").content())
+                .contains("public enum TicketsKind {\n    BUG,\n    TASK\n}");
+    }
+
     @Test
     void aCompositeKeyPartThatIsAForeignKeyStaysAKeyField() {
         // order_items(order_id, line_no) with order_id → orders: the entity replaced the key

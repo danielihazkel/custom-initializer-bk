@@ -15,7 +15,7 @@ class {{stem}}ListenerTest {
     private final {{stem}}Listener listener = new {{stem}}Listener();
 
     private static ConsumerRecord<String, byte[]> record(byte[] value) {
-        return new ConsumerRecord<>("topic-under-test", 0, 0L, "key-1", value);
+        return new ConsumerRecord<>("topic-under-test", 0, 0L, {{listenerTestKey}}, value);
     }
 
 {{#hasListenerSample}}

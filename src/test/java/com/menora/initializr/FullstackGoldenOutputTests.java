@@ -71,6 +71,8 @@ class FullstackGoldenOutputTests {
         return new GoldenManifests("fullstack", Path.of("target", "golden-actual"), (path, text) ->
                 path.endsWith("/menora-model.json")
                         ? text.replaceAll("\"templatesHash\" : \"[0-9a-f]{64}\"", "\"templatesHash\" : \"<templates>\"")
+                                // The id of every other file's bytes: those are pinned one by one.
+                                .replaceAll("\"snapshot\" : \"[0-9a-f]{64}\"", "\"snapshot\" : \"<snapshot>\"")
                         : text);
     }
 

@@ -39,12 +39,24 @@ public final class ProjectUpdateBuilder {
      *
      * @param rootHint what the project's root is, in a few words — where the patch is applied from
      * @param madeWith what the hashes are of, as the notes call it: "templates" (plural) or "catalog"
+     * @param fromSnapshot the "before" side is the files the project was generated with, kept since
+     *                     its download ({@code config/GeneratedSnapshots}) — not the old model
+     *                     generated again now
      */
-    public record Info(String artifactId, String baseTemplatesHash, String templatesHash, String rootHint, String madeWith) {
+    public record Info(String artifactId, String baseTemplatesHash, String templatesHash, String rootHint, String madeWith,
+                       boolean fromSnapshot) {
+
+        public Info(String artifactId, String baseTemplatesHash, String templatesHash, String rootHint, String madeWith) {
+            this(artifactId, baseTemplatesHash, templatesHash, rootHint, madeWith, false);
+        }
 
         /** A fullstack project, made with the generator's templates. */
         public Info(String artifactId, String baseTemplatesHash, String templatesHash) {
             this(artifactId, baseTemplatesHash, templatesHash, "the folder holding `backend/` and `frontend/`", "templates");
+        }
+
+        public Info fromSnapshot(boolean value) {
+            return new Info(artifactId, baseTemplatesHash, templatesHash, rootHint, madeWith, value);
         }
     }
 
@@ -137,7 +149,9 @@ public final class ProjectUpdateBuilder {
             md.append("The two models generate the same project: there is nothing to apply.\n");
             return md.toString();
         }
-        md.append("What changing the model changes in the generated project: ")
+        md.append(info.fromSnapshot()
+                        ? "What changes in the generated project — the model's change and the generator's since: "
+                        : "What changing the model changes in the generated project: ")
                 .append(added.size()).append(" added, ")
                 .append(changed.size()).append(" changed, ")
                 .append(deleted.size()).append(" removed.\n\n");
@@ -188,12 +202,30 @@ public final class ProjectUpdateBuilder {
             md.append('\n');
         }
 
+        if (info.fromSnapshot()) {
+            md.append("## Where it starts\n\n")
+                    .append("The \"before\" side is the files this project was generated with, as the generator kept them\n")
+                    .append("when it was downloaded (`generator.snapshot` in `menora-model.json` names them). So the patch\n")
+                    .append("carries the change of the model *and* everything the generator writes differently since —\n")
+                    .append("fixes to its templates, its catalog and the code behind them. Where such a fix touches a file\n")
+                    .append("you have edited, `--3way` merges it like any other hunk.\n\n");
+            section(md, "Added", added);
+            section(md, "Changed", changed);
+            section(md, "Removed", deleted);
+            if (!deleted.isEmpty()) {
+                md.append("`").append(DELETED_FILE).append("` lists the removed paths, one to a line, for a script.\n");
+            }
+            return md.toString();
+        }
+
         boolean plural = info.madeWith().endsWith("s");
         md.append("## What this is not\n\n")
                 .append("Both sides of the comparison were generated now, from the model the project had and the\n")
                 .append("model it should have. The patch is the difference the *model* makes — it does not bring in\n")
                 .append("changes the generator's ").append(info.madeWith()).append(plural ? " have" : " has")
-                .append(" had since the project was first generated.\n");
+                .append(" had since the project was first generated. (The generator no longer has the files this\n")
+                .append("project was generated with: it keeps them for a while after each download, and projects\n")
+                .append("generated before it kept them have none.)\n");
         if (info.baseTemplatesHash() != null && info.templatesHash() != null) {
             if (info.baseTemplatesHash().equals(info.templatesHash())) {
                 md.append("\nThe ").append(info.madeWith())

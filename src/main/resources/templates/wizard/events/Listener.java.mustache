@@ -29,11 +29,28 @@ public class {{stem}}Listener {
     @KafkaListener(topics = "{{topicPlaceholder}}", groupId = "{{groupId}}")
     public void onMessage(ConsumerRecord<String, String> record) throws JsonProcessingException {
         {{listenerType}} payload = {{listenerRead}};
-        handle(record.key(), payload);
+        handle({{listenerKey}}, payload{{#listenerHeaders}}, headersOf(record){{/listenerHeaders}});
+    }
+{{#listenerHeaders}}
+
+    /** The record's headers; one not sent is null. */
+    static {{listenerHeadersType}} headersOf(ConsumerRecord<?, ?> record) {
+        return new {{listenerHeadersType}}(
+                {{{listenerHeaderArgs}}});
     }
 
+    private static String header(ConsumerRecord<?, ?> record, String name) {
+        org.apache.kafka.common.header.Header header = record.headers().lastHeader(name);
+        return header == null ? null : new String(header.value(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static <T> T parse(String text, java.util.function.Function<String, T> parser) {
+        return text == null ? null : parser.apply(text);
+    }
+{{/listenerHeaders}}
+
     /** What the application does with a message. */
-    void handle(String key, {{listenerType}} payload) {
+    void handle({{listenerKeyType}} key, {{listenerType}} payload{{#listenerHeaders}}, {{listenerHeadersType}} headers{{/listenerHeaders}}) {
         // TODO: implement
         log.info("Received a message from {}: key={}", "{{addressString}}", key);
     }

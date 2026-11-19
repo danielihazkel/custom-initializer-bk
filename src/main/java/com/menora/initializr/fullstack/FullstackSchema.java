@@ -152,6 +152,8 @@ public final class FullstackSchema {
         limits.put("maxFormSections", FullstackRequestValidator.MAX_FORM_SECTIONS);
         limits.put("maxSectionTitle", FullstackRequestValidator.MAX_SECTION_TITLE);
         limits.put("maxHelp", FullstackRequestValidator.MAX_HELP);
+        // A FILE or IMAGE field's maxFiles (several files in one field).
+        limits.put("maxFiles", FullstackRequestValidator.MAX_FILES);
         limits.put("maxUniqueKeys", FullstackRequestValidator.MAX_UNIQUE_KEYS);
         limits.put("maxUniqueKeyFields", FullstackRequestValidator.MAX_UNIQUE_KEY_FIELDS);
         limits.put("maxRules", FullstackRequestValidator.MAX_RULES);

@@ -94,11 +94,17 @@ CREATE TABLE reviews (
     id BIGINT NOT NULL,
     book_id BIGINT NOT NULL,
     reviewer VARCHAR(120) NOT NULL,
-    stars INTEGER
+    stars INTEGER,
+    verdict VARCHAR(10),
+    external_ref VARCHAR(40)
 );
 ALTER TABLE ONLY reviews ADD CONSTRAINT reviews_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY reviews ADD CONSTRAINT reviews_book_fk FOREIGN KEY (book_id) REFERENCES books(id);
 ALTER TABLE reviews ADD CONSTRAINT reviews_once UNIQUE (book_id, reviewer);
+ALTER TABLE reviews ADD CONSTRAINT reviews_verdict CHECK (verdict IN ('UP', 'DOWN'));
+-- A unique index is a unique constraint; a partial one is not (duplicates outside its WHERE).
+CREATE UNIQUE INDEX reviews_external_ref ON reviews (external_ref);
+CREATE UNIQUE INDEX reviews_one_unrated ON reviews (book_id) WHERE stars IS NULL;
 ALTER TABLE memberships ADD CONSTRAINT memberships_author_fk FOREIGN KEY (author_id) REFERENCES public.authors (id);
 ALTER TABLE authors ADD COLUMN an_alter_the_wizard_skips VARCHAR(10);
 

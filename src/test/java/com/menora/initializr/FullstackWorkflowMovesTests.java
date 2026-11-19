@@ -87,7 +87,9 @@ class FullstackWorkflowMovesTests {
                         + "        return saved;")
                 // ...and each move, in the transaction that makes it.
                 .contains("        ExpenseClaim.ExpenseClaimStatusType before = existing.getStatus();")
+                // (Approvals has a rule: a move is checked by it, in the same transaction, before the save.)
                 .contains("        moves.moved(\"expense-claim\", existing.getId(), before, existing.getStatus(), name);\n"
+                        + "        com.menora.support.rules.ExpenseClaimRules.check(existing);\n"
                         + "        return repository.save(existing);");
         assertThat(files.get(BE + "controller/ExpenseClaimController.java"))
                 .contains("    @GetMapping(\"/{id}/moves\")")

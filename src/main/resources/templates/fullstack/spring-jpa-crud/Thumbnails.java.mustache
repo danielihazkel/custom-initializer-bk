@@ -1,0 +1,75 @@
+package {{packageName}}.attachment;
+
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Iterator;
+
+/**
+ * A picture's small version — what a table, a card and a gallery draw instead of the whole file —
+ * made with the JDK's own ImageIO (no library).
+ *
+ * <p>Only PNG, JPEG and GIF: the JDK reads no WebP, so a WebP is served as it is. The picture's
+ * size is read from its header before it is decoded, and one over {@link #MAX_PIXELS} is not
+ * decoded at all: a small file can describe an enormous picture, and decoding it would fill the
+ * server's memory. One already small enough is served as it is too.
+ */
+final class Thumbnails {
+
+    /** The longest side of a thumbnail, in pixels. */
+    static final int SIZE = 320;
+
+    /** The largest picture decoded to make one (40 megapixels — about 160 MB once decoded). */
+    static final long MAX_PIXELS = 40_000_000L;
+
+    private Thumbnails() {
+    }
+
+    /** The small version of {@code content}, or null when none is made (see the class). */
+    static byte[] of(byte[] content) {
+        String type = AttachmentController.imageType(content);
+        if (type == null || type.equals("image/webp")) return null;
+        try (ImageInputStream in = ImageIO.createImageInputStream(new ByteArrayInputStream(content))) {
+            if (in == null) return null;
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(in);
+            if (!readers.hasNext()) return null;
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(in, true, true);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                if (width <= 0 || height <= 0 || (long) width * height > MAX_PIXELS) return null;
+                if (Math.max(width, height) <= SIZE) return null;
+                BufferedImage picture = reader.read(0);
+                double scale = (double) SIZE / Math.max(width, height);
+                int w = Math.max(1, (int) Math.round(width * scale));
+                int h = Math.max(1, (int) Math.round(height * scale));
+                // A photo stays a JPEG; a PNG or a GIF, which may be see-through, becomes a PNG.
+                boolean jpeg = type.equals("image/jpeg");
+                BufferedImage small = new BufferedImage(w, h, jpeg ? BufferedImage.TYPE_INT_RGB : BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g = small.createGraphics();
+                try {
+                    g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                    g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                    g.drawImage(picture, 0, 0, w, h, null);
+                } finally {
+                    g.dispose();
+                }
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                if (!ImageIO.write(small, jpeg ? "jpg" : "png", out)) return null;
+                return out.toByteArray();
+            } finally {
+                reader.dispose();
+            }
+        } catch (IOException | RuntimeException unreadable) {
+            // Not a picture after all, or one the JDK cannot read: the original is served.
+            return null;
+        }
+    }
+}

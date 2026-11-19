@@ -102,7 +102,7 @@ class OpenApiInterfacesTest {
                 .contains("Security: apiKey (API key in header X-API-Key) or basicAuth (HTTP basic).")
                 .doesNotContain("@SecurityRequirement");
         assertThat(files.get("api/PartnersController.java"))
-                .contains("Security: partnerKey (API key in query partner_key) and oauth (OAuth2 access token).");
+                .contains("Security: partnerKey (API key in query partner_key) and oauth (OAuth2 client credentials).");
         // "security: []" — open to anyone.
         assertThat(files.get("api/HealthController.java")).doesNotContain("Security:");
         assertThat(files).doesNotContainKey("api/OpenApiSecuritySchemes.java");
@@ -122,7 +122,12 @@ class OpenApiInterfacesTest {
                 .contains("@SecurityScheme(name = \"bearerAuth\", type = SecuritySchemeType.HTTP, scheme = \"bearer\", bearerFormat = \"JWT\")")
                 .contains("@SecurityScheme(name = \"apiKey\", type = SecuritySchemeType.APIKEY, in = SecuritySchemeIn.HEADER, paramName = \"X-API-Key\")")
                 .contains("@SecurityScheme(name = \"partnerKey\", type = SecuritySchemeType.APIKEY, in = SecuritySchemeIn.QUERY, paramName = \"partner_key\")")
-                .contains("@SecurityScheme(name = \"oauth\", type = SecuritySchemeType.OAUTH2, description = \"The partners' identity provider\")")
+                // The flows, for Swagger UI's Authorize.
+                .contains("@SecurityScheme(name = \"oauth\", type = SecuritySchemeType.OAUTH2, flows = @OAuthFlows(clientCredentials = "
+                        + "@OAuthFlow(tokenUrl = \"https://idp.example.com/token\", scopes = {@OAuthScope(name = \"read\", description = \"read partners\")})), "
+                        + "description = \"The partners' identity provider\")")
+                .contains("import io.swagger.v3.oas.annotations.security.OAuthFlows;")
+                .contains("import io.swagger.v3.oas.annotations.security.OAuthScope;")
                 .contains("public class OpenApiSecuritySchemes {");
     }
 
@@ -144,28 +149,47 @@ class OpenApiInterfacesTest {
                 .contains("        if (details != null) form.add(\"details\", details);\n")
                 .contains("        if (photos != null) photos.forEach(v -> form.add(\"photos\", v));\n")
                 .contains("restTemplate.exchange(uri, HttpMethod.POST, new HttpEntity<>(form, headers), Claim.class);")
-                // The first requirement's scheme: the API key, not basic.
-                .contains("if (OpenApiCredentials.present(credentials.apiKey())) headers.add(\"X-API-Key\", credentials.apiKey());")
+                // Two requirements: the first whose credentials are configured is sent.
+                .contains("        boolean auth0 = OpenApiCredentials.present(credentials.apiKey());\n"
+                        + "        boolean auth1 = !auth0 && OpenApiCredentials.present(credentials.basicAuthUsername());\n")
+                .contains("        if (auth0) headers.add(\"X-API-Key\", credentials.apiKey());\n"
+                        + "        if (auth1) headers.setBasicAuth(credentials.basicAuthUsername(), credentials.basicAuthPassword());\n")
                 .contains("        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();\n"
                         + "        if (text != null) form.add(\"text\", String.valueOf(text));\n"
                         + "        if (visibleTo != null) visibleTo.forEach(v -> form.add(\"visibleTo\", String.valueOf(v)));\n")
-                .doesNotContain("basicAuth").doesNotContain("{{");
+                .doesNotContain("{{");
         assertThat(files.get("client/PartnersClient.java"))
                 .contains("if (OpenApiCredentials.present(credentials.partnerKey())) builder.queryParam(\"partner_key\", credentials.partnerKey());")
-                .contains("if (OpenApiCredentials.present(credentials.oauth())) headers.setBearerAuth(credentials.oauth());");
+                // OAuth2 client credentials: sent when a client id (or a token) is configured.
+                .contains("if (credentials.oauthConfigured()) headers.setBearerAuth(credentials.oauth());");
         // Open to anyone: no credentials asked for.
         assertThat(files.get("client/HealthClient.java")).doesNotContain("OpenApiCredentials");
 
         String credentials = files.get("client/OpenApiCredentials.java");
         assertThat(credentials)
                 .contains("            @Value(\"${openapi.client.security.bearer-auth.token:}\") String bearerAuth,\n")
-                .contains("            @Value(\"${openapi.client.security.oauth.token:}\") String oauth) {\n")
+                .contains("            @Value(\"${openapi.client.security.oauth.token:}\") String oauthToken,\n")
+                .contains("            @Value(\"${openapi.client.security.oauth.scopes:read}\") String oauthScopes,\n")
+                .contains("            @Value(\"${openapi.client.security.oauth.token-url:https://idp.example.com/token}\") String oauthTokenUrl,\n")
+                .contains("            @Value(\"${openapi.client.security.oauth.client-authentication:basic}\") String oauthClientAuthentication,\n"
+                        + "            OpenApiOAuth2Tokens tokens) {\n")
                 .contains("    public String apiKey() {")
-                .doesNotContain("basicAuth").doesNotContain("{{");
+                .contains("        return present(oauthClientId)\n"
+                        + "                ? tokens.token(\"oauth\", new OpenApiOAuth2Tokens.Client(oauthTokenUrl, oauthClientId,\n")
+                .contains("    public boolean oauthConfigured() {")
+                .doesNotContain("{{");
+        assertThat(files.get("client/OpenApiOAuth2Tokens.java"))
+                .contains("public class OpenApiOAuth2Tokens implements ClientHttpRequestInterceptor {")
+                .contains("form.add(\"grant_type\", \"client_credentials\");");
+        assertThat(files.get("client/OpenApiClientConfig.java"))
+                .contains("public RestTemplate openApiRestTemplate(RestTemplateBuilder builder, OpenApiOAuth2Tokens tokens) {\n"
+                        + "        return builder.additionalInterceptors(tokens).build();");
         assertThat(files.get("src/main/resources/application.yaml"))
                 .isEqualTo("openapi:\n  client:\n    base-url: http://localhost:8080\n    security:\n"
                         + "      bearer-auth:\n        token: \"\"\n      api-key:\n        api-key: \"\"\n"
-                        + "      partner-key:\n        api-key: \"\"\n      oauth:\n        token: \"\"\n");
+                        + "      basic-auth:\n        username: \"\"\n        password: \"\"\n"
+                        + "      partner-key:\n        api-key: \"\"\n"
+                        + "      oauth:\n        token: \"\"\n        client-id: \"\"\n        client-secret: \"\"\n");
     }
 
     @Test

@@ -151,7 +151,7 @@ public class LiveSchemaController {
                     false, type == FieldType.STRING ? precision : null, List.of(), f.column()));
         }
         return new EntityWire(e.name(), e.tableName(), e.schema(), fields, e.readOnly(), e.viewQuery(), e.sourceSql(),
-                e.relations());
+                e.relations(), e.uniqueKeys());
     }
 
     private static final Pattern TYPE = Pattern.compile("([A-Z][A-Z0-9_ ]*?)\\s*(?:\\((\\d+|MAX)(?:,(\\d+))?\\))?(?:\\s.*)?");

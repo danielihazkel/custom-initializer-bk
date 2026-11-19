@@ -50,6 +50,12 @@ public class Attachment {
     @Column(name = "content", length = Length.LONG32)
     private byte[] content;
 
+    /** A picture's small version, made on its first request ({@link Thumbnails}); empty when none can
+     *  be made (the original is then served). Kept here whatever the storage: it is small. */
+    @JdbcTypeCode(SqlTypes.LONG32VARBINARY)
+    @Column(name = "thumbnail", length = Length.LONG32)
+    private byte[] thumbnail;
+
     protected Attachment() {
     }
 

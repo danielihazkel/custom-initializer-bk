@@ -67,10 +67,17 @@ final class RuleRows {
     static Set<String> read(EntityDefinition e) {
         Set<String> out = new LinkedHashSet<>();
         for (EntityDefinition.Rule r : e.allRules()) {
-            out.addAll(ExprCheck.check(r.check(), e.fields(), Expr.Type.BOOL).refs());
-            if (r.when() != null) out.addAll(ExprCheck.check(r.when(), e.fields(), Expr.Type.BOOL).refs());
+            out.addAll(read(ExprCheck.check(r.check(), e, Expr.Type.BOOL)));
+            if (r.when() != null) out.addAll(read(ExprCheck.check(r.when(), e, Expr.Type.BOOL)));
         }
         return expand(e, out);
+    }
+
+    /** The row's own fields an expression reads and the linked rows' fields ({@code costCenter.budget}). */
+    private static Set<String> read(ExprCheck.Checked c) {
+        Set<String> out = new LinkedHashSet<>(c.refs());
+        out.addAll(c.paths().keySet());
+        return out;
     }
 
     /**
@@ -86,7 +93,7 @@ final class RuleRows {
                 if (!out.contains(f.name())) continue;
                 String expr = f.computed() ? f.formula() : f.showWhen();
                 if (expr == null) continue;
-                grew |= out.addAll(ExprCheck.check(expr, e.fields(), null).refs());
+                grew |= out.addAll(read(ExprCheck.check(expr, e, null)));
             }
         }
         return out;
@@ -104,11 +111,11 @@ final class RuleRows {
             for (FieldDefinition f : e.fields()) {
                 if (f.showWhen() != null) {
                     hidden.add(f.name());
-                    conditions.add(ExprCheck.check(f.showWhen(), e.fields(), Expr.Type.BOOL));
+                    conditions.add(ExprCheck.check(f.showWhen(), e, Expr.Type.BOOL));
                 }
                 if (f.computed()) {
                     computed.add(f.name());
-                    formulas.add(ExprCheck.check(f.formula(), e.fields(), null));
+                    formulas.add(ExprCheck.check(f.formula(), e, null));
                 }
             }
             return new Derive(hidden, conditions, computed, formulas);
@@ -140,10 +147,10 @@ final class RuleRows {
         List<Checked> rules = new ArrayList<>();
         Set<String> read = new LinkedHashSet<>();
         for (EntityDefinition.Rule r : e.allRules()) {
-            ExprCheck.Checked check = ExprCheck.check(r.check(), e.fields(), Expr.Type.BOOL);
-            ExprCheck.Checked when = r.when() == null ? null : ExprCheck.check(r.when(), e.fields(), Expr.Type.BOOL);
-            Set<String> refs = new LinkedHashSet<>(check.refs());
-            if (when != null) refs.addAll(when.refs());
+            ExprCheck.Checked check = ExprCheck.check(r.check(), e, Expr.Type.BOOL);
+            ExprCheck.Checked when = r.when() == null ? null : ExprCheck.check(r.when(), e, Expr.Type.BOOL);
+            Set<String> refs = read(check);
+            if (when != null) refs.addAll(read(when));
             refs = expand(e, refs);
             rules.add(new Checked(when, check, refs));
             read.addAll(refs);
@@ -160,8 +167,27 @@ final class RuleRows {
         Map<String, List<Pick>> options = new LinkedHashMap<>();
         Map<String, Pick> fixed = new LinkedHashMap<>();
         boolean[] days = {false};
+        for (int ri = 0; ri < rules.size(); ri++) {
+            for (String name : rules.get(ri).refs()) {
+                if (name.indexOf('.') < 0 || vars.contains(name) || fixed.containsKey(name)) continue;
+                // A linked row's field: the test row's parent is created with the value chosen here.
+                ExprCheck.Path path = pathOf(e, name);
+                RelationDefinition link = e.relations().stream()
+                        .filter(r -> r.fieldName().equals(path.relation())).findFirst().orElseThrow();
+                FieldDefinition f = path.field();
+                if (!link.required()) {
+                    fixed.put(name, new Pick(null, null, null, null)); // the test row has no link: unknown
+                } else if (f.primaryKey() || f.unique() || f.pattern() != null || f.computed()) {
+                    throw new Unsolvable(ri); // not the generator's to choose on the parent
+                } else {
+                    vars.add(name);
+                    // Always a value: a parent created without one would carry its usual one.
+                    options.put(name, candidates(e, f, today, new boolean[1]).stream().filter(p -> p.value() != null).toList());
+                }
+            }
+        }
         for (String name : read) {
-            if (name.equals(status) || name.equals(assignee)) continue;
+            if (name.equals(status) || name.equals(assignee) || name.indexOf('.') >= 0) continue;
             FieldDefinition f = e.fields().stream().filter(x -> x.name().equals(name)).findFirst().orElseThrow();
             if (f.computed()) continue; // the server computes it, from fields that are here
             boolean isSent = sent.stream().anyMatch(x -> x.name().equals(name));
@@ -195,6 +221,14 @@ final class RuleRows {
         Map<String, Pick> picks = new LinkedHashMap<>();
         for (String v : vars) picks.put(v, chosen.get(v));
         return new Solution(picks, days[0]);
+    }
+
+    /** How an entity's expressions read {@code name}, a linked row's field. */
+    private static ExprCheck.Path pathOf(EntityDefinition e, String name) {
+        int dot = name.indexOf('.');
+        EntityDefinition.LinkedEntity target = e.links().get(name.substring(0, dot));
+        FieldDefinition f = target.fields().stream().filter(x -> x.name().equals(name.substring(dot + 1))).findFirst().orElseThrow();
+        return new ExprCheck.Path(name.substring(0, dot), target, f);
     }
 
     /** A choice for every variable that the rules hold for, or null. */

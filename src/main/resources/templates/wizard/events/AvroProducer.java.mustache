@@ -25,13 +25,34 @@ public class {{stem}}Producer {
 {{#hasTitle}}
     /** {{titleJavadoc}} */
 {{/hasTitle}}
-    public CompletableFuture<SendResult<String, byte[]>> {{method}}(String key, {{type}} payload) {
+{{^hasHeaders}}
+    public CompletableFuture<SendResult<String, byte[]>> {{method}}({{keyType}} key, {{type}} payload) {
         try {
-            return kafkaTemplate.send(topic, key, bytes(payload.toByteBuffer()));
+            return kafkaTemplate.send(topic, {{keyArg}}, bytes(payload.toByteBuffer()));
         } catch (IOException e) {
             throw new UncheckedIOException("The payload could not be written as Avro", e);
         }
     }
+{{/hasHeaders}}
+{{#hasHeaders}}
+    public CompletableFuture<SendResult<String, byte[]>> {{method}}({{keyType}} key, {{type}} payload) {
+        return {{method}}(key, payload, null);
+    }
+
+    /** With its headers{{#hasCorrelation}}: a correlation id left empty is a new UUID{{/hasCorrelation}}. */
+    public CompletableFuture<SendResult<String, byte[]>> {{method}}({{keyType}} key, {{type}} payload, {{headersType}} headers) {
+        ProducerRecord<String, byte[]> record;
+        try {
+            record = new ProducerRecord<>(topic, {{keyArg}}, bytes(payload.toByteBuffer()));
+        } catch (IOException e) {
+            throw new UncheckedIOException("The payload could not be written as Avro", e);
+        }
+{{#headerLines}}
+        {{{.}}}
+{{/headerLines}}
+        return kafkaTemplate.send(record);
+    }
+{{/hasHeaders}}
 
 {{/sends}}
     private static byte[] bytes(ByteBuffer buffer) {

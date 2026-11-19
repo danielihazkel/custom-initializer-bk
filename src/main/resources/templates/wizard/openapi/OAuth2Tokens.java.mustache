@@ -1,0 +1,108 @@
+package {{package}};
+
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpRequest;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpRequestExecution;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
+import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
+
+import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * OAuth2 client credentials for the generated clients: a token asked of the scheme's token
+ * endpoint ({@code grant_type=client_credentials}), kept until shortly before it expires and
+ * shared by every call. Registered on the clients' HTTP client, it also answers a 401 to a request
+ * that carried one of its tokens by forgetting that token and sending the request once more with a
+ * new one (the server may have revoked it early).
+ */
+@Component
+public class OpenApiOAuth2Tokens implements ClientHttpRequestInterceptor {
+
+    /** A token is renewed this long before it expires. */
+    private static final Duration EARLY = Duration.ofSeconds(30);
+
+    /** Used when the token endpoint does not say how long a token lasts. */
+    private static final Duration DEFAULT_LIFETIME = Duration.ofMinutes(5);
+
+    /** How one scheme gets its token. {@code clientAuthentication}: {@code basic} (the default) or {@code post}. */
+    public record Client(String tokenUrl, String clientId, String clientSecret, String scopes, String clientAuthentication) {}
+
+    private record Token(String value, Instant renewAt, Client client) {}
+
+    private final Map<String, Token> tokens = new ConcurrentHashMap<>();
+    private final Map<String, Object> locks = new ConcurrentHashMap<>();
+    private final RestTemplate tokenEndpoint = new RestTemplate();
+
+    /** A token for {@code scheme}: the one kept, or a new one from its token endpoint. */
+    public String token(String scheme, Client client) {
+        Token kept = tokens.get(scheme);
+        if (kept != null && Instant.now().isBefore(kept.renewAt())) return kept.value();
+        synchronized (locks.computeIfAbsent(scheme, k -> new Object())) {
+            kept = tokens.get(scheme);
+            if (kept != null && Instant.now().isBefore(kept.renewAt())) return kept.value();
+            Token fresh = fetch(client);
+            tokens.put(scheme, fresh);
+            return fresh.value();
+        }
+    }
+
+    /** Forgets {@code scheme}'s token: the next call asks for a new one. */
+    public void forget(String scheme) {
+        tokens.remove(scheme);
+    }
+
+    /** The HTTP client the token endpoint is called with (a test binds a mock server to it). */
+    public RestTemplate tokenEndpoint() {
+        return tokenEndpoint;
+    }
+
+    private Token fetch(Client client) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON));
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("grant_type", "client_credentials");
+        if (client.scopes() != null && !client.scopes().isBlank()) form.add("scope", client.scopes().trim());
+        if ("post".equalsIgnoreCase(client.clientAuthentication())) {
+            form.add("client_id", client.clientId());
+            form.add("client_secret", client.clientSecret() == null ? "" : client.clientSecret());
+        } else {
+            headers.setBasicAuth(client.clientId(), client.clientSecret() == null ? "" : client.clientSecret());
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> answer = tokenEndpoint.postForObject(client.tokenUrl(),
+                new org.springframework.http.HttpEntity<>(form, headers), Map.class);
+        Object value = answer == null ? null : answer.get("access_token");
+        if (value == null) throw new IllegalStateException("The token endpoint " + client.tokenUrl() + " answered no access_token");
+        Duration lifetime = answer.get("expires_in") instanceof Number seconds
+                ? Duration.ofSeconds(seconds.longValue()) : DEFAULT_LIFETIME;
+        Duration early = lifetime.compareTo(EARLY.multipliedBy(2)) > 0 ? EARLY : lifetime.dividedBy(2);
+        return new Token(value.toString(), Instant.now().plus(lifetime).minus(early), client);
+    }
+
+    @Override
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution) throws IOException {
+        ClientHttpResponse response = execution.execute(request, body);
+        if (response.getStatusCode().value() != 401) return response;
+        String sent = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        for (Map.Entry<String, Token> e : tokens.entrySet()) {
+            if (!("Bearer " + e.getValue().value()).equals(sent)) continue;
+            // One of ours, refused: forget it and try once more with a new one.
+            Token refused = e.getValue();
+            tokens.remove(e.getKey(), refused);
+            response.close();
+            request.getHeaders().setBearerAuth(token(e.getKey(), refused.client()));
+            return execution.execute(request, body);
+        }
+        return response;
+    }
+}

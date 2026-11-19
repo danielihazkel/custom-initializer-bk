@@ -79,7 +79,8 @@ export function plusDays(d: string | null, days: number | null): string | null {
   return new Date(utc(d) + Math.trunc(days) * DAY).toISOString().slice(0, 10)
 }
 
-export const isEmpty = (v: unknown): boolean => v == null || (typeof v === 'string' && v.trim() === '')
+export const isEmpty = (v: unknown): boolean =>
+  v == null || (typeof v === 'string' && v.trim() === '') || (Array.isArray(v) && v.length === 0)
 
 export function today(): string {
   const d = new Date()

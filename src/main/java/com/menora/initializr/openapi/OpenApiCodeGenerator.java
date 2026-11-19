@@ -1,6 +1,7 @@
 package com.menora.initializr.openapi;
 
 import com.menora.initializr.config.WizardTemplates;
+import com.menora.initializr.gen.WizardMemo;
 import com.menora.initializr.openapi.SchemaRecordEmitter.JavaTypeRef;
 import com.menora.initializr.openapi.SchemaRecordEmitter.SchemaSet;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -91,9 +92,16 @@ public class OpenApiCodeGenerator {
     public List<GeneratedOpenApiFile> generate(String spec, String packageName, OpenApiWizardOptions options,
                                                boolean hasValidation, boolean springdoc) {
         if (spec == null || spec.isBlank()) return List.of();
-        OpenAPI api = parseOrThrow(spec);
         OpenApiWizardOptions opts = options != null ? options
                 : new OpenApiWizardOptions(null, null, null, null, null);
+        // A wizard request checks its spec by generating it, then writes what the same inputs give.
+        return WizardMemo.get(WizardMemo.Key.of("openapi", spec, packageName, opts, hasValidation, springdoc),
+                () -> render(spec, packageName, opts, hasValidation, springdoc));
+    }
+
+    private List<GeneratedOpenApiFile> render(String spec, String packageName, OpenApiWizardOptions opts,
+                                              boolean hasValidation, boolean springdoc) {
+        OpenAPI api = parseOrThrow(spec);
 
         String dtoPackage = packageName + "." + opts.dtoPackageOrDefault();
         SchemaSet schemas = SchemaRecordEmitter.read(api, hasValidation, dtoPackage);
@@ -126,8 +134,11 @@ public class OpenApiCodeGenerator {
             for (var group : byTag.entrySet()) {
                 out.add(renderClient(group.getKey(), group.getValue(), packageName, opts, restClient, credentials));
             }
-            out.add(renderClientConfig(packageName, opts, restClient));
-            if (!credentials.isEmpty()) out.add(renderCredentials(packageName, opts, credentials));
+            boolean oauth2 = operations.stream().flatMap(op -> op.clientSecurity().stream())
+                    .anyMatch(use -> use.kind() == SecurityUse.Kind.OAUTH2_CLIENT_CREDENTIALS);
+            out.add(renderClientConfig(packageName, opts, restClient, oauth2));
+            if (!credentials.isEmpty()) out.add(renderCredentials(packageName, opts, credentials, operations));
+            if (oauth2) out.add(renderOAuth2Tokens(packageName, opts));
             out.add(renderApplicationYmlStub(opts, credentials));
         }
         return out;
@@ -454,7 +465,15 @@ public class OpenApiCodeGenerator {
                     default -> new SecurityUse(name, javaName, SecurityUse.Kind.OTHER, null, "HTTP " + s);
                 };
             }
-            case OAUTH2 -> new SecurityUse(name, javaName, SecurityUse.Kind.BEARER, null, "OAuth2 access token");
+            case OAUTH2 -> {
+                var flow = scheme.getFlows() == null ? null : scheme.getFlows().getClientCredentials();
+                if (flow != null && flow.getTokenUrl() != null && !flow.getTokenUrl().isBlank()) {
+                    List<String> scopes = flow.getScopes() == null ? List.of() : new ArrayList<>(flow.getScopes().keySet());
+                    yield new SecurityUse(name, javaName, SecurityUse.Kind.OAUTH2_CLIENT_CREDENTIALS, null,
+                            "OAuth2 client credentials", flow.getTokenUrl(), scopes);
+                }
+                yield new SecurityUse(name, javaName, SecurityUse.Kind.BEARER, null, "OAuth2 access token");
+            }
             case OPENIDCONNECT -> new SecurityUse(name, javaName, SecurityUse.Kind.BEARER, null, "OpenID Connect token");
             case MUTUALTLS -> new SecurityUse(name, javaName, SecurityUse.Kind.OTHER, null, "mutual TLS");
         };
@@ -531,6 +550,32 @@ public class OpenApiCodeGenerator {
                 .toList();
     }
 
+    /** An OAuth2 scheme's flows as springdoc's {@code @OAuthFlows} (Swagger UI's Authorize uses them), or null for none. */
+    private static String oauthFlows(io.swagger.v3.oas.models.security.OAuthFlows flows) {
+        if (flows == null) return null;
+        List<String> out = new ArrayList<>();
+        addFlow(out, "implicit", flows.getImplicit());
+        addFlow(out, "password", flows.getPassword());
+        addFlow(out, "clientCredentials", flows.getClientCredentials());
+        addFlow(out, "authorizationCode", flows.getAuthorizationCode());
+        return out.isEmpty() ? null : "@OAuthFlows(" + String.join(", ", out) + ")";
+    }
+
+    private static void addFlow(List<String> out, String name, io.swagger.v3.oas.models.security.OAuthFlow flow) {
+        if (flow == null) return;
+        List<String> attributes = new ArrayList<>();
+        if (flow.getAuthorizationUrl() != null) attributes.add("authorizationUrl = \"" + SchemaRecordEmitter.javaString(flow.getAuthorizationUrl()) + "\"");
+        if (flow.getTokenUrl() != null) attributes.add("tokenUrl = \"" + SchemaRecordEmitter.javaString(flow.getTokenUrl()) + "\"");
+        if (flow.getRefreshUrl() != null) attributes.add("refreshUrl = \"" + SchemaRecordEmitter.javaString(flow.getRefreshUrl()) + "\"");
+        if (flow.getScopes() != null && !flow.getScopes().isEmpty()) {
+            List<String> scopes = new ArrayList<>();
+            flow.getScopes().forEach((scope, description) -> scopes.add("@OAuthScope(name = \"" + SchemaRecordEmitter.javaString(scope)
+                    + "\", description = \"" + SchemaRecordEmitter.javaString(description == null ? "" : description) + "\")"));
+            attributes.add("scopes = {" + String.join(", ", scopes) + "}");
+        }
+        out.add(name + " = @OAuthFlow(" + String.join(", ", attributes) + ")");
+    }
+
     private GeneratedOpenApiFile renderSecuritySchemes(OpenAPI api, String packageName, OpenApiWizardOptions opts) {
         String apiPkg = opts.apiPackageOrDefault();
         Set<String> imports = new TreeSet<>(List.of(
@@ -557,7 +602,16 @@ public class OpenApiCodeGenerator {
                         a.append(", bearerFormat = \"").append(SchemaRecordEmitter.javaString(scheme.getBearerFormat())).append("\"");
                     }
                 }
-                case OAUTH2 -> a.append(", type = SecuritySchemeType.OAUTH2");
+                case OAUTH2 -> {
+                    a.append(", type = SecuritySchemeType.OAUTH2");
+                    String flows = oauthFlows(scheme.getFlows());
+                    if (flows != null) {
+                        imports.add("io.swagger.v3.oas.annotations.security.OAuthFlow");
+                        imports.add("io.swagger.v3.oas.annotations.security.OAuthFlows");
+                        if (flows.contains("@OAuthScope")) imports.add("io.swagger.v3.oas.annotations.security.OAuthScope");
+                        a.append(", flows = ").append(flows);
+                    }
+                }
                 case OPENIDCONNECT -> {
                     a.append(", type = SecuritySchemeType.OPENIDCONNECT");
                     if (scheme.getOpenIdConnectUrl() != null) {
@@ -782,8 +836,18 @@ public class OpenApiCodeGenerator {
 
     // ── Operations → client ───────────────────────────────────────────────────
 
-    /** A value the client reads from a property: an API key, a token, a user name or a password. */
-    private record CredentialField(String field, String property, String label) {}
+    /**
+     * A value the client reads from a property: an API key, a token, a user name or a password —
+     * or an OAuth2 client's id, secret, scopes, token endpoint and how it authenticates.
+     *
+     * @param defaultValue what it is when the property is not set (null: empty)
+     * @param inYaml       whether {@code application.yaml} lists it (empty, for the environment to fill)
+     */
+    private record CredentialField(String field, String property, String label, String defaultValue, boolean inYaml) {
+        CredentialField(String field, String property, String label) {
+            this(field, property, label, null, true);
+        }
+    }
 
     /**
      * The credentials the clients send, by field name, in the order the schemes are first used:
@@ -801,6 +865,19 @@ public class OpenApiCodeGenerator {
                             out.putIfAbsent(use.javaName(), new CredentialField(use.javaName(), prefix + "api-key", use.label()));
                     case BEARER ->
                             out.putIfAbsent(use.javaName(), new CredentialField(use.javaName(), prefix + "token", use.label()));
+                    case OAUTH2_CLIENT_CREDENTIALS -> {
+                        String j = use.javaName();
+                        out.putIfAbsent(j + "Token", new CredentialField(j + "Token", prefix + "token",
+                                "OAuth2 access token, sent as it is when no client id is set"));
+                        out.putIfAbsent(j + "ClientId", new CredentialField(j + "ClientId", prefix + "client-id", "OAuth2 client id"));
+                        out.putIfAbsent(j + "ClientSecret", new CredentialField(j + "ClientSecret", prefix + "client-secret", "OAuth2 client secret"));
+                        out.putIfAbsent(j + "Scopes", new CredentialField(j + "Scopes", prefix + "scopes",
+                                "OAuth2 scopes asked for, separated by spaces", String.join(" ", use.scopes()), false));
+                        out.putIfAbsent(j + "TokenUrl", new CredentialField(j + "TokenUrl", prefix + "token-url",
+                                "OAuth2 token endpoint", use.tokenUrl(), false));
+                        out.putIfAbsent(j + "ClientAuthentication", new CredentialField(j + "ClientAuthentication",
+                                prefix + "client-authentication", "How the client proves itself to the token endpoint: basic or post", "basic", false));
+                    }
                     case BASIC -> {
                         out.putIfAbsent(use.javaName() + "Username",
                                 new CredentialField(use.javaName() + "Username", prefix + "username", "HTTP basic user"));
@@ -934,33 +1011,46 @@ public class OpenApiCodeGenerator {
         m.put("hasPathParams", !pathArguments.isEmpty());
         m.put("pathArguments", String.join(", ", pathArguments));
 
-        // The credentials: a query key with the parameters, the rest as headers.
+        // The credentials: a query key with the parameters, the rest as headers. With several
+        // requirements, the first whose credentials are all configured is sent (authN says which).
         List<String> authQuery = new ArrayList<>();
         List<String> authHeaders = new ArrayList<>();
+        List<String> authChoice = new ArrayList<>();
         String headersVar = restClient ? "httpHeaders" : "headers";
-        for (SecurityUse use : op.clientSecurity()) {
-            String value = "credentials." + use.javaName() + "()";
-            String param = use.paramName() == null ? null : SchemaRecordEmitter.javaString(use.paramName());
-            switch (use.kind()) {
-                case API_KEY_QUERY -> authQuery.add(restClient
-                        ? ".queryParamIfPresent(\"" + param + "\", OpenApiCredentials.optional(" + value + "))"
-                        : "if (OpenApiCredentials.present(" + value + ")) builder.queryParam(\"" + param + "\", " + value + ");");
-                case API_KEY_HEADER -> authHeaders.add("if (OpenApiCredentials.present(" + value + ")) "
-                        + headersVar + ".add(\"" + param + "\", " + value + ");");
-                case API_KEY_COOKIE -> authHeaders.add("if (OpenApiCredentials.present(" + value + ")) "
-                        + headersVar + ".add(HttpHeaders.COOKIE, \"" + param + "=\" + " + value + ");");
-                case BEARER -> authHeaders.add("if (OpenApiCredentials.present(" + value + ")) "
-                        + headersVar + ".setBearerAuth(" + value + ");");
-                case BASIC -> {
-                    String user = "credentials." + use.javaName() + "Username()";
-                    String password = "credentials." + use.javaName() + "Password()";
-                    authHeaders.add("if (OpenApiCredentials.present(" + user + ")) "
-                            + headersVar + ".setBasicAuth(" + user + ", " + password + ");");
+        List<List<SecurityUse>> alternatives = op.clientAlternatives();
+        boolean choose = alternatives.size() > 1;
+        for (int k = 0; k < alternatives.size(); k++) {
+            String chosen = "auth" + k;
+            if (choose) {
+                List<String> earlier = new ArrayList<>();
+                for (int j = 0; j < k; j++) earlier.add("!auth" + j);
+                List<String> configured = new ArrayList<>(earlier);
+                for (SecurityUse use : alternatives.get(k)) configured.add(configuredExpr(use));
+                authChoice.add("boolean " + chosen + " = " + String.join(" && ", configured) + ";");
+            }
+            for (SecurityUse use : alternatives.get(k)) {
+                String value = "credentials." + use.javaName() + "()";
+                String param = use.paramName() == null ? null : SchemaRecordEmitter.javaString(use.paramName());
+                // One requirement: each credential is sent when configured. Several: the chosen one's.
+                String when = choose ? "if (" + chosen + ") " : "if (" + configuredExpr(use) + ") ";
+                switch (use.kind()) {
+                    case API_KEY_QUERY -> authQuery.add(restClient
+                            ? ".queryParamIfPresent(\"" + param + "\", OpenApiCredentials.optional(" + (choose ? chosen + " ? " + value + " : null" : value) + "))"
+                            : when + "builder.queryParam(\"" + param + "\", " + value + ");");
+                    case API_KEY_HEADER -> authHeaders.add(when + headersVar + ".add(\"" + param + "\", " + value + ");");
+                    case API_KEY_COOKIE -> authHeaders.add(when + headersVar + ".add(HttpHeaders.COOKIE, \"" + param + "=\" + " + value + ");");
+                    case BEARER, OAUTH2_CLIENT_CREDENTIALS -> authHeaders.add(when + headersVar + ".setBearerAuth(" + value + ");");
+                    case BASIC -> {
+                        String user = "credentials." + use.javaName() + "Username()";
+                        String password = "credentials." + use.javaName() + "Password()";
+                        authHeaders.add(when + headersVar + ".setBasicAuth(" + user + ", " + password + ");");
+                    }
+                    case OTHER -> { }
                 }
-                case OTHER -> { }
             }
         }
         m.put("authQuery", authQuery);
+        m.put("authChoice", authChoice);
 
         // A form body: its parts, and its content type.
         List<String> formLines = new ArrayList<>();
@@ -1028,11 +1118,20 @@ public class OpenApiCodeGenerator {
         return m;
     }
 
+    /** Whether a scheme's credentials are configured, as the client tests it before sending. */
+    private static String configuredExpr(SecurityUse use) {
+        return switch (use.kind()) {
+            case OAUTH2_CLIENT_CREDENTIALS -> "credentials." + use.javaName() + "Configured()";
+            case BASIC -> "OpenApiCredentials.present(credentials." + use.javaName() + "Username())";
+            default -> "OpenApiCredentials.present(credentials." + use.javaName() + "())";
+        };
+    }
+
     private static boolean isGeneric(String type) {
         return type != null && type.indexOf('<') >= 0;
     }
 
-    private GeneratedOpenApiFile renderClientConfig(String packageName, OpenApiWizardOptions opts, boolean restClient) {
+    private GeneratedOpenApiFile renderClientConfig(String packageName, OpenApiWizardOptions opts, boolean restClient, boolean oauth2) {
         String clientPkg = opts.clientPackageOrDefault();
         String fullPkg = packageName + "." + clientPkg;
         String baseUrlProp = opts.baseUrlPropertyOrDefault();
@@ -1041,6 +1140,7 @@ public class OpenApiCodeGenerator {
         view.put("package", fullPkg);
         view.put("baseUrlProperty", baseUrlProp);
         view.put("baseUrlPlaceholder", "${" + baseUrlProp + "}");
+        view.put("oauth2", oauth2);
 
         return new GeneratedOpenApiFile(
                 "src/main/java/{{packagePath}}/" + clientPkg + "/OpenApiClientConfig.java",
@@ -1049,8 +1149,15 @@ public class OpenApiCodeGenerator {
 
     /** The credentials the clients send, each read from its property (empty: not sent). */
     private GeneratedOpenApiFile renderCredentials(String packageName, OpenApiWizardOptions opts,
-                                                   Map<String, CredentialField> credentials) {
+                                                   Map<String, CredentialField> credentials, List<OperationModel> operations) {
         String clientPkg = opts.clientPackageOrDefault();
+        // The OAuth2 client-credentials schemes: a token the client fetches.
+        Map<String, SecurityUse> oauth = new LinkedHashMap<>();
+        for (OperationModel op : operations) {
+            for (SecurityUse use : op.clientSecurity()) {
+                if (use.kind() == SecurityUse.Kind.OAUTH2_CLIENT_CREDENTIALS) oauth.putIfAbsent(use.scheme(), use);
+            }
+        }
         List<Map<String, Object>> fields = new ArrayList<>();
         List<CredentialField> list = new ArrayList<>(credentials.values());
         for (int i = 0; i < list.size(); i++) {
@@ -1058,18 +1165,37 @@ public class OpenApiCodeGenerator {
             Map<String, Object> f = new LinkedHashMap<>();
             f.put("field", c.field());
             f.put("property", c.property());
-            f.put("placeholder", "${" + c.property() + ":}");
+            f.put("placeholder", "${" + c.property() + ":" + (c.defaultValue() == null ? "" : SchemaRecordEmitter.javaString(c.defaultValue())) + "}");
             f.put("label", SchemaRecordEmitter.escapeJavadoc(c.label()));
-            f.put("separator", i == list.size() - 1 ? ") {" : ",");
+            f.put("separator", i == list.size() - 1 && oauth.isEmpty() ? ") {" : ",");
             fields.add(f);
+        }
+        List<Map<String, Object>> oauthViews = new ArrayList<>();
+        String prefix = securityPrefix(opts.baseUrlPropertyOrDefault());
+        for (SecurityUse use : oauth.values()) {
+            Map<String, Object> o = new LinkedHashMap<>();
+            o.put("java", use.javaName());
+            o.put("scheme", SchemaRecordEmitter.escapeJavadoc(use.scheme()));
+            o.put("schemeJava", SchemaRecordEmitter.javaString(use.scheme()));
+            o.put("tokenProperty", prefix + "." + kebab(use.scheme()) + ".token");
+            oauthViews.add(o);
         }
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("package", packageName + "." + clientPkg);
         view.put("fields", fields);
+        view.put("oauth", oauthViews);
+        view.put("hasTokens", !oauthViews.isEmpty());
         view.put("prefix", securityPrefix(opts.baseUrlPropertyOrDefault()));
         return new GeneratedOpenApiFile(
                 "src/main/java/{{packagePath}}/" + clientPkg + "/OpenApiCredentials.java",
                 WizardTemplates.render("openapi/Credentials.java", view));
+    }
+
+    /** The OAuth2 client-credentials token client, beside the credentials. */
+    private GeneratedOpenApiFile renderOAuth2Tokens(String packageName, OpenApiWizardOptions opts) {
+        String clientPkg = opts.clientPackageOrDefault();
+        return new GeneratedOpenApiFile("src/main/java/{{packagePath}}/" + clientPkg + "/OpenApiOAuth2Tokens.java",
+                WizardTemplates.render("openapi/OAuth2Tokens.java", Map.of("package", packageName + "." + clientPkg)));
     }
 
     private GeneratedOpenApiFile renderApplicationYmlStub(OpenApiWizardOptions opts, Map<String, CredentialField> credentials) {
@@ -1077,7 +1203,9 @@ public class OpenApiCodeGenerator {
         // gives its value (OPENAPI_CLIENT_SECURITY_<SCHEME>_TOKEN and the like).
         Map<String, String> properties = new LinkedHashMap<>();
         properties.put(opts.baseUrlPropertyOrDefault(), "http://localhost:8080");
-        for (CredentialField c : credentials.values()) properties.put(c.property(), "\"\"");
+        for (CredentialField c : credentials.values()) {
+            if (c.inYaml()) properties.put(c.property(), "\"\"");
+        }
         return new GeneratedOpenApiFile("src/main/resources/application.yaml", yaml(properties));
     }
 

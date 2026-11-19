@@ -119,6 +119,24 @@ public class Attachments {
         return Optional.of(new Stored(info.get(), content.get()));
     }
 
+    /**
+     * A picture's small version ({@link Thumbnails}), made the first time it is asked for and kept on
+     * the file's row. Empty when the file is not a picture that can be made smaller — then the
+     * original is served — or when there is no such file.
+     */
+    @Transactional
+    public Optional<byte[]> thumbnail(UUID id) {
+        if (repository.describe(id).isEmpty()) return Optional.empty();
+        Optional<byte[]> kept = repository.thumbnailOf(id);
+        if (kept.isPresent()) return kept.get().length > 0 ? kept : Optional.empty();
+        Optional<byte[]> original = storage.get(id);
+        if (original.isEmpty()) return Optional.empty();
+        byte[] small = Thumbnails.of(original.get());
+        // Empty bytes remember that none can be made, so the original is not decoded every time.
+        repository.keepThumbnail(id, small == null ? new byte[0] : small);
+        return Optional.ofNullable(small);
+    }
+
     /** Forgets a file: its row now, its bytes once the transaction commits (a rolled-back delete
      *  keeps them). Unknown and null ids are ignored: the record that named it is going anyway. */
     @Transactional
@@ -126,6 +144,48 @@ public class Attachments {
         if (id == null || repository.forget(id) == 0) return;
         afterCommit(id);
     }
+
+{{#hasMultiFiles}}
+    /**
+     * The files a field that holds several takes: at most {@code max}, at least one when it is
+     * required, none twice. A file the record already had ({@code kept}) is not asked again; every
+     * other one must be one it may take ({@link #requireAttachable}). Each is named as it was
+     * uploaded — whatever name a client sent. Returns a new list; no list at all is none.
+     */
+    @Transactional(readOnly = true)
+    public List<AttachedFile> attachAll(List<AttachedFile> files, List<AttachedFile> kept, String field, int max,
+                                        boolean required) {
+        List<AttachedFile> out = new ArrayList<>();
+        java.util.Set<UUID> seen = new java.util.HashSet<>();
+        java.util.Set<UUID> had = new java.util.HashSet<>();
+        for (AttachedFile file : kept) had.add(file.getId());
+        for (AttachedFile file : files == null ? List.<AttachedFile>of() : files) {
+            if (file == null || file.getId() == null) continue;
+            if (!seen.add(file.getId())) {
+                throw new AttachmentException(field, "The same file is in the list twice");
+            }
+            if (!had.contains(file.getId())) requireAttachable(file.getId(), field);
+            String name = repository.describe(file.getId()).map(Info::fileName).orElse(null);
+            out.add(new AttachedFile(file.getId(), name));
+        }
+        if (out.size() > max) {
+            throw new AttachmentException(field, "At most " + max + " files");
+        }
+        if (required && out.isEmpty()) {
+            throw new AttachmentException(field, "Add at least one file");
+        }
+        return out;
+    }
+
+    /** Forgets the files that were in {@code before} and are not in {@code after} (once the save commits). */
+    public void detachRemoved(List<AttachedFile> before, List<AttachedFile> after) {
+        java.util.Set<UUID> stays = new java.util.HashSet<>();
+        for (AttachedFile file : after) stays.add(file.getId());
+        for (AttachedFile file : before) {
+            if (!stays.contains(file.getId())) delete(file.getId());
+        }
+    }
+{{/hasMultiFiles}}
 
     /**
      * Whether a record may take file {@code id} into {@code field}: the file is there, no record

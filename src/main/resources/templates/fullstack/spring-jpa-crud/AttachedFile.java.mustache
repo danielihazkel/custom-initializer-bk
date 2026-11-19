@@ -1,0 +1,59 @@
+package {{packageName}}.attachment;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Embeddable;
+
+import java.util.Objects;
+import java.util.UUID;
+
+/**
+ * One file of a field that holds several: the uploaded file's id and its name. A record keeps the
+ * list in a table of its own ({@code <entity>_<field>}: {@code owner_id}, {@code file_order} and
+ * these two columns). The name is the file's own, copied when the file is attached (a file is
+ * never renamed), so a list is shown without reading {@code app_attachment}.
+ *
+ * <p>A client sends the ids ({@code [{"id": "…"}]}); the names it sends are not taken.
+ */
+@Embeddable
+public class AttachedFile {
+
+    @Column(name = "attachment_id", nullable = false)
+    private UUID id;
+
+    @Column(name = "file_name", length = 255)
+    private String name;
+
+    public AttachedFile() {
+    }
+
+    public AttachedFile(UUID id, String name) {
+        this.id = id;
+        this.name = name;
+    }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public void setId(UUID id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        return other instanceof AttachedFile file && Objects.equals(id, file.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(id);
+    }
+}

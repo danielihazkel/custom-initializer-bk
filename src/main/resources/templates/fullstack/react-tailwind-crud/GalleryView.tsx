@@ -86,7 +86,7 @@ export function GalleryView<T extends object>({
                 <div className="flex aspect-square items-center justify-center overflow-hidden bg-surface-2">
                   {picture == null || picture === ''
                     ? <ImageOff className="h-8 w-8 text-muted" aria-hidden="true" />
-                    : <img src={attachmentUrl(String(picture))} alt="" loading="lazy" className="h-full w-full object-cover" />}
+                    : <img src={attachmentUrl(String(picture), true)} alt="" loading="lazy" className="h-full w-full object-cover" />}
                 </div>
                 <div className="p-3">
                   {heading && <div className="truncate text-sm font-semibold text-fg">{heading.render(row)}</div>}

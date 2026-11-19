@@ -13,7 +13,8 @@ import org.springframework.web.client.RestClient;
 public class OpenApiClientConfig {
 
     @Bean
-    public RestClient openApiRestClient(RestClient.Builder builder, @Value("{{baseUrlPlaceholder}}") String baseUrl) {
-        return builder.baseUrl(baseUrl).build();
+    public RestClient openApiRestClient(RestClient.Builder builder, @Value("{{baseUrlPlaceholder}}") String baseUrl{{#oauth2}},
+                                        OpenApiOAuth2Tokens tokens{{/oauth2}}) {
+        return builder.baseUrl(baseUrl){{#oauth2}}.requestInterceptor(tokens){{/oauth2}}.build();
     }
 }

@@ -403,14 +403,20 @@ class SqlToEntityDefinitionConverterTest {
         assertThat(SqlToEntityDefinitionConverter.relationFieldName("paid", "Invoice", java.util.Set.of())).isEqualTo("paid");
     }
 
+    /**
+     * The constants are what the database holds (the generated entity stores an enum by its
+     * constant's name), so the values become constants as they are — the SQL wizard's rule. The
+     * import used to upper-case them, and the table's own CHECK then refused every save.
+     */
     @Test
-    void checkInConstraintsBecomeEnums() {
+    void checkInConstraintsBecomeEnumsOfTheValuesTheDatabaseHolds() {
         String sql = """
                 CREATE TABLE tickets (
                     id BIGINT PRIMARY KEY,
-                    status VARCHAR(20) NOT NULL CHECK (status IN ('open', 'in progress', 'closed')),
+                    status VARCHAR(20) NOT NULL CHECK (status IN ('open', 'pending', 'closed')),
                     priority VARCHAR(10),
-                    kind VARCHAR(10) CHECK (kind IN ('a', 'A')),
+                    stage VARCHAR(20) CHECK (stage IN ('new', 'in progress')),
+                    kind VARCHAR(10) CHECK (kind IN ('class', 'other')),
                     CONSTRAINT chk_priority CHECK (priority IN ('LOW', 'HIGH'))
                 );
                 """;
@@ -418,24 +424,48 @@ class SqlToEntityDefinitionConverterTest {
         EntityDefinition ticket = entities.get(0);
         FieldDefinition status = ticket.fields().get(1);
         assertThat(status.type()).isEqualTo(FieldType.ENUM);
-        assertThat(status.enumValues()).containsExactly("OPEN", "IN_PROGRESS", "CLOSED");
+        assertThat(status.enumValues()).containsExactly("open", "pending", "closed");
         assertThat(status.length()).isNull();
         assertThat(status.required()).isTrue();
         FieldDefinition priority = ticket.fields().get(2);
         assertThat(priority.type()).isEqualTo(FieldType.ENUM);
         assertThat(priority.enumValues()).containsExactly("LOW", "HIGH");
-        // 'a' and 'A' collapse to the same constant — the column is left as a string.
-        FieldDefinition kind = ticket.fields().get(3);
-        assertThat(kind.type()).isEqualTo(FieldType.STRING);
-        assertThat(kind.enumValues()).isEmpty();
+        // 'in progress' cannot be a constant, nor 'class' (a keyword): those columns stay strings.
+        for (FieldDefinition f : List.of(ticket.fields().get(3), ticket.fields().get(4))) {
+            assertThat(f.type()).as(f.name()).isEqualTo(FieldType.STRING);
+            assertThat(f.enumValues()).as(f.name()).isEmpty();
+        }
     }
 
+    /** What an export declares after the table: ALTER … ADD CHECK, and UNIQUE as a constraint or an index. */
     @Test
-    void enumConstantSanitizing() {
-        assertThat(SqlToEntityDefinitionConverter.toEnumConstant("in progress")).isEqualTo("IN_PROGRESS");
-        assertThat(SqlToEntityDefinitionConverter.toEnumConstant("2fa")).isEqualTo("_2FA");
-        assertThat(SqlToEntityDefinitionConverter.toEnumConstant("new")).isEqualTo("NEW");
-        assertThat(SqlToEntityDefinitionConverter.toEnumConstant("---")).isNull();
-        assertThat(SqlToEntityDefinitionConverter.toEnumConstant("")).isNull();
+    void constraintsDeclaredAfterTheTableAreRead() {
+        String sql = """
+                CREATE TABLE customers (id BIGINT PRIMARY KEY, name VARCHAR(80));
+                CREATE TABLE orders (
+                    id BIGINT PRIMARY KEY,
+                    customer_id BIGINT NOT NULL REFERENCES customers(id),
+                    order_no VARCHAR(20) NOT NULL,
+                    region VARCHAR(10),
+                    channel VARCHAR(10),
+                    email VARCHAR(80),
+                    tenant VARCHAR(10)
+                );
+                ALTER TABLE orders ADD CONSTRAINT chk_region CHECK (region IN ('NORTH', 'SOUTH'));
+                ALTER TABLE orders ADD CONSTRAINT uq_order UNIQUE (customer_id, order_no);
+                CREATE UNIQUE INDEX ux_channel ON orders (channel, region);
+                CREATE UNIQUE INDEX ux_email ON orders (lower(email));
+                CREATE UNIQUE INDEX ux_tenant ON orders (tenant, email) WHERE tenant IS NOT NULL;
+                """;
+        EntityDefinition order = converter.convert(sql, SqlDialect.POSTGRESQL).stream()
+                .filter(e -> e.name().equals("Order")).findFirst().orElseThrow();
+
+        FieldDefinition region = order.fields().stream().filter(f -> f.name().equals("region")).findFirst().orElseThrow();
+        assertThat(region.type()).isEqualTo(FieldType.ENUM);
+        assertThat(region.enumValues()).containsExactly("NORTH", "SOUTH");
+        // Over the link the foreign key became, and over plain fields; never the expression or the
+        // partial index.
+        assertThat(order.uniqueKeys()).extracting(EntityDefinition.UniqueKey::fields).containsExactly(
+                List.of("customer", "orderNo"), List.of("channel", "region"));
     }
 }

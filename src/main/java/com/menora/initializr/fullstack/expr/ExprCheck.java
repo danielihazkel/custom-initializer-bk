@@ -1,6 +1,8 @@
 package com.menora.initializr.fullstack.expr;
 
+import com.menora.initializr.fullstack.EntityDefinition;
 import com.menora.initializr.fullstack.FieldDefinition;
+import com.menora.initializr.fullstack.FieldType;
 import com.menora.initializr.fullstack.expr.Expr.Binary;
 import com.menora.initializr.fullstack.expr.Expr.Call;
 import com.menora.initializr.fullstack.expr.Expr.ExprException;
@@ -38,10 +40,11 @@ public final class ExprCheck {
     /**
      * A checked expression.
      *
-     * @param refs the fields it reads, in the order it first reads them
+     * @param refs  the row's own fields it reads, in the order it first reads them
+     * @param paths the fields of linked rows it reads ({@code costCenter.budget}), by how it spells them
      */
     public record Checked(String text, Node root, Type type, Map<Node, Type> types, Map<Node, Object> literals,
-                          Set<String> refs, Map<String, FieldDefinition> fields) {
+                          Set<String> refs, Map<String, FieldDefinition> fields, Map<String, Path> paths) {
 
         public Type typeOf(Node node) {
             return types.get(node);
@@ -53,17 +56,34 @@ public final class ExprCheck {
         }
     }
 
+    /**
+     * A field of a linked row: the MANY_TO_ONE ({@code relation}, as the entity names it), what it
+     * leads to, and the field read there.
+     */
+    public record Path(String relation, EntityDefinition.LinkedEntity target, FieldDefinition field) {}
+
     /** Parses and checks {@code text} over {@code fields}; it must come out as {@code expected} (null: anything). */
     public static Checked check(String text, List<FieldDefinition> fields, Type expected) {
+        return check(text, fields, Map.of(), expected);
+    }
+
+    /** {@link #check} over an entity: its fields and the rows its links point at. */
+    public static Checked check(String text, EntityDefinition entity, Type expected) {
+        return check(text, entity.fields(), entity.links(), expected);
+    }
+
+    /** {@link #check} over {@code fields} and, through {@code links} (by relation name), the fields of linked rows. */
+    public static Checked check(String text, List<FieldDefinition> fields, Map<String, EntityDefinition.LinkedEntity> links,
+                                Type expected) {
         Node root = Expr.parse(text);
         Map<String, FieldDefinition> byName = new LinkedHashMap<>();
         for (FieldDefinition f : fields) byName.put(f.name(), f);
-        Checker c = new Checker(byName);
+        Checker c = new Checker(byName, links == null ? Map.of() : links);
         Type type = c.type(root, false);
         if (expected != null && type != expected) {
             throw new ExprException("This must be " + describe(expected) + ", but it is " + describe(type), root.at());
         }
-        return new Checked(text, root, type, c.types, c.literals, c.refs, byName);
+        return new Checked(text, root, type, c.types, c.literals, c.refs, byName, c.paths);
     }
 
     /** The expression type of a field, or null for one an expression cannot read (only test with isEmpty). */
@@ -97,12 +117,46 @@ public final class ExprCheck {
 
     private static final class Checker {
         private final Map<String, FieldDefinition> fields;
+        private final Map<String, EntityDefinition.LinkedEntity> links;
         final Map<Node, Type> types = new IdentityHashMap<>();
         final Map<Node, Object> literals = new IdentityHashMap<>();
         final Set<String> refs = new LinkedHashSet<>();
+        final Map<String, Path> paths = new LinkedHashMap<>();
 
-        Checker(Map<String, FieldDefinition> fields) {
+        Checker(Map<String, FieldDefinition> fields, Map<String, EntityDefinition.LinkedEntity> links) {
             this.fields = fields;
+            this.links = links;
+        }
+
+        /** The field a name reads: the row's own, or a linked row's. */
+        FieldDefinition fieldOf(Ref ref) {
+            return ref.isPath() ? paths.get(ref.name()).field() : fields.get(ref.name());
+        }
+
+        private Type path(Ref ref) {
+            int dot = ref.name().indexOf('.');
+            String relation = ref.name().substring(0, dot);
+            String name = ref.name().substring(dot + 1);
+            EntityDefinition.LinkedEntity target = links.get(relation);
+            if (target == null) {
+                String loose = links.keySet().stream().filter(k -> k.equalsIgnoreCase(relation)).findFirst().orElse(null);
+                throw new ExprException("'" + relation + "' is not a link of this entity (a MANY_TO_ONE)"
+                        + (loose != null ? " (did you mean '" + loose + "'?)"
+                        : links.isEmpty() ? "" : " — its links are " + String.join(", ", links.keySet())), ref.at());
+            }
+            FieldDefinition f = target.fields().stream().filter(x -> x.name().equals(name)).findFirst().orElse(null);
+            if (f == null) {
+                FieldDefinition loose = target.fields().stream().filter(x -> x.name().equalsIgnoreCase(name)).findFirst().orElse(null);
+                throw new ExprException("'" + name + "' is not a field of " + target.name()
+                        + (loose != null ? " (did you mean '" + loose.name() + "'?)" : ""), ref.at());
+            }
+            Type t = typeOf(f);
+            if (t == null || f.type() == FieldType.TEXT || f.type() == FieldType.MARKDOWN) {
+                throw new ExprException("'" + ref.name() + "' (" + f.type() + ") cannot be read through a link: only a short value can",
+                        ref.at());
+            }
+            paths.put(ref.name(), new Path(relation, target, f));
+            return t;
         }
 
         Type type(Node node, boolean emptinessOnly) {
@@ -119,6 +173,7 @@ public final class ExprCheck {
                 return Type.TEXT;
             }
             if (node instanceof Ref ref) {
+                if (ref.isPath()) return path(ref);
                 FieldDefinition f = fields.get(ref.name());
                 if (f == null) {
                     FieldDefinition loose = fields.values().stream()
@@ -207,7 +262,7 @@ public final class ExprCheck {
 
         private void enumLiteral(Node enumSide, Node textSide) {
             if (!(textSide instanceof Lit lit) || !(enumSide instanceof Ref ref)) return;
-            FieldDefinition f = fields.get(ref.name());
+            FieldDefinition f = fieldOf(ref);
             String text = (String) lit.value();
             String constant = f.enumValues().stream().filter(v -> v.equalsIgnoreCase(text)).findFirst().orElse(null);
             if (constant == null) {

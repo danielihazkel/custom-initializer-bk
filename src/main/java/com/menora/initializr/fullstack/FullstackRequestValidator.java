@@ -259,6 +259,22 @@ public final class FullstackRequestValidator {
                             throw new WizardArgumentException("help of field '" + fname + "' on entity '" + name
                                     + "' is over " + MAX_HELP + " characters").on("help");
                         }
+                        // Several files in one field: a list kept in a table of its own.
+                        Integer maxFiles = f.maxFiles();
+                        if (maxFiles != null) {
+                            if (!type.isAttachment()) {
+                                throw new WizardArgumentException("maxFiles only applies to a FILE or IMAGE field (field '"
+                                        + fname + "' on entity '" + name + "')").on("maxFiles");
+                            }
+                            if (maxFiles < 1 || maxFiles > MAX_FILES) {
+                                throw new WizardArgumentException("maxFiles of field '" + fname + "' on entity '" + name
+                                        + "' must be between 1 and " + MAX_FILES).on("maxFiles");
+                            }
+                            if (f.showWhen() != null && !f.showWhen().isBlank()) {
+                                throw new WizardArgumentException("a field with several files cannot be shown on a condition"
+                                        + " (field '" + fname + "' on entity '" + name + "')").on("showWhen");
+                            }
+                        }
                         String column = parseColumnName(f.column(), "column", fname, name);
                         if (column != null && viewQuery != null) {
                             throw new WizardArgumentException("Field '" + fname + "' on entity '" + name
@@ -292,13 +308,13 @@ public final class FullstackRequestValidator {
                                 help,
                                 f.showWhen(),
                                 f.formula(),
-                                false));
+                                false,
+                                maxFiles));
                     } catch (WizardArgumentException problem) {
                         throw problem.at("fields[" + fi + "]");
                     }
                 }
-                // Show-when conditions and formulas read the other fields: checked once all are known.
-                checkDerivations(fields, name, readOnly || viewQuery != null);
+                // Show-when conditions and formulas are checked in pass 2, where the rows a link points at are known.
 
                 if (pkCount == 0) {
                     throw new WizardArgumentException("Entity '" + name + "' has no primary key field");
@@ -352,6 +368,8 @@ public final class FullstackRequestValidator {
         }
 
         // Pass 2 — resolve and validate relations now that all entity names are known.
+        Map<String, List<FieldDefinition>> fieldsOf = new LinkedHashMap<>();
+        for (Parsed p : parsed) fieldsOf.put(p.name(), p.fields());
         List<EntityDefinition> result = new ArrayList<>(parsed.size());
         for (Parsed p : parsed) {
             try {
@@ -374,6 +392,13 @@ public final class FullstackRequestValidator {
                         .filter(r -> r.type() == RelationType.ONE_TO_MANY).toList();
                 checkColumnClashes(p.name(), p.fields(), relations);
                 checkVersionName(p.name(), p.fields(), relations, p.readOnly(), p.viewQuery(), p.opts(), body);
+                // What each foreign key leads to: an expression may read a linked row's field (costCenter.budget).
+                Map<String, EntityDefinition.LinkedEntity> links = new LinkedHashMap<>();
+                for (RelationDefinition r : relations) {
+                    links.put(r.fieldName(), new EntityDefinition.LinkedEntity(r.targetEntity(), fieldsOf.get(r.targetEntity())));
+                }
+                // Show-when conditions and formulas read the other fields and the linked rows.
+                checkDerivations(p.fields(), links, p.name(), p.readOnly() || p.viewQuery() != null);
                 EntityDefinition built = new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
                         p.readOnly(), p.viewQuery(), null, p.listViews(), p.label(), p.labelPlural(), p.opts(),
                         parseFormSections(p.rawSections(), p.name(), p.fields(), relations),
@@ -381,7 +406,7 @@ public final class FullstackRequestValidator {
                                 p.readOnly(), p.pkCount())),
                         collections, children, p.access(),
                         parseUniqueKeys(p.rawUniqueKeys(), p.name(), p.viewQuery(), p.fields(), relations),
-                        parseRules(p.rawRules(), p.name(), p.readOnly(), p.fields()));
+                        parseRules(p.rawRules(), p.name(), p.readOnly(), p.fields(), links), links);
                 // A workflow's status and assignee are set by its moves: never hidden or computed.
                 if (built.workflow() != null) {
                     for (int fi = 0; fi < built.fields().size(); fi++) {
@@ -477,11 +502,6 @@ public final class FullstackRequestValidator {
         if (child.workflow() != null) {
             throw new WizardArgumentException(where + "'" + child.name()
                     + "' has a workflow: its rows change by their own moves, not with a parent's save").on("composition");
-        }
-        if (!child.rules().isEmpty() || child.fields().stream().anyMatch(f -> f.showWhen() != null || f.computed())) {
-            throw new WizardArgumentException(where + "'" + child.name()
-                    + "' has rules, show-when conditions or computed fields, which a save of its parent does not run yet")
-                    .on("composition");
         }
         if (!child.uniqueKeys().isEmpty()) {
             // A save inserts the new rows before it deletes the removed ones: a row swapped for
@@ -738,7 +758,8 @@ public final class FullstackRequestValidator {
      * the server: never a key, never asked for, no default, no condition, and it reads no other
      * computed field. A read-only entity is never saved, so it has neither.
      */
-    static void checkDerivations(List<FieldDefinition> fields, String entity, boolean readOnly) {
+    static void checkDerivations(List<FieldDefinition> fields, Map<String, EntityDefinition.LinkedEntity> links,
+                                 String entity, boolean readOnly) {
         for (int i = 0; i < fields.size(); i++) {
             FieldDefinition f = fields.get(i);
             if (f.showWhen() == null && f.formula() == null) continue;
@@ -760,7 +781,7 @@ public final class FullstackRequestValidator {
                     }
                     ExprCheck.Checked when;
                     try {
-                        when = ExprCheck.check(f.showWhen(), fields, Expr.Type.BOOL);
+                        when = ExprCheck.check(f.showWhen(), fields, links, Expr.Type.BOOL);
                     } catch (Expr.ExprException e) {
                         throw new WizardArgumentException(where + " (its show-when): " + e.describe()).on("showWhen");
                     }
@@ -782,7 +803,7 @@ public final class FullstackRequestValidator {
                     }
                     ExprCheck.Checked formula;
                     try {
-                        formula = ExprCheck.check(f.formula(), fields, wanted);
+                        formula = ExprCheck.check(f.formula(), fields, links, wanted);
                     } catch (Expr.ExprException e) {
                         throw new WizardArgumentException(where + " (its formula): " + e.describe()).on("formula");
                     }
@@ -801,7 +822,7 @@ public final class FullstackRequestValidator {
                 fields.set(i, new FieldDefinition(f.name(), f.type(), f.primaryKey(), f.generated(), false, f.unique(),
                         f.length(), f.min(), f.max(), f.pattern(), f.email(), f.enumValues(), f.searchable(), f.filterable(),
                         f.label(), f.readOnly(), f.defaultValue(), f.enumLabels(), f.column(), f.currency(), f.help(),
-                        f.showWhen(), f.formula(), true));
+                        f.showWhen(), f.formula(), true, f.maxFiles()));
             }
         }
     }
@@ -830,7 +851,8 @@ public final class FullstackRequestValidator {
      * saved, so it has nothing to check.
      */
     static List<EntityDefinition.Rule> parseRules(List<FullstackStarterRequest.RuleDto> raw, String entity,
-                                                 boolean readOnly, List<FieldDefinition> fields) {
+                                                 boolean readOnly, List<FieldDefinition> fields,
+                                                 Map<String, EntityDefinition.LinkedEntity> links) {
         if (raw == null || raw.isEmpty()) return List.of();
         if (readOnly) {
             throw new WizardArgumentException("Entity '" + entity + "' is read-only: nothing saves a row to check rules on")
@@ -850,14 +872,14 @@ public final class FullstackRequestValidator {
                 String check = rule.check().trim();
                 ExprCheck.Checked checked;
                 try {
-                    checked = ExprCheck.check(check, fields, Expr.Type.BOOL);
+                    checked = ExprCheck.check(check, fields, links, Expr.Type.BOOL);
                 } catch (Expr.ExprException e) {
                     throw new WizardArgumentException(where + ": " + e.describe()).on("check");
                 }
                 String when = rule.when() == null || rule.when().isBlank() ? null : rule.when().trim();
                 if (when != null) {
                     try {
-                        ExprCheck.check(when, fields, Expr.Type.BOOL);
+                        ExprCheck.check(when, fields, links, Expr.Type.BOOL);
                     } catch (Expr.ExprException e) {
                         throw new WizardArgumentException(where + " (its when): " + e.describe()).on("when");
                     }
@@ -887,6 +909,8 @@ public final class FullstackRequestValidator {
 
     /** A field's help text: a line or two under its input. */
     static final int MAX_HELP = 300;
+    /** The most files one field may hold ({@code maxFiles}). */
+    public static final int MAX_FILES = 50;
     static final int MAX_UNIQUE_KEYS = 10;
     static final int MAX_UNIQUE_KEY_FIELDS = 8;
 
@@ -942,6 +966,10 @@ public final class FullstackRequestValidator {
                         if (field.type().isText() || field.type().isMarkdown()) {
                             throw new WizardArgumentException(where + " includes '" + field.name()
                                     + "', a long text, which a database cannot index").on("fields");
+                        }
+                        if (field.multiple()) {
+                            throw new WizardArgumentException(where + " includes '" + field.name()
+                                    + "', which holds several files in a table of its own").on("fields");
                         }
                         canonical = field.name();
                     } else if (links.containsKey(lower)) {
@@ -1130,6 +1158,10 @@ public final class FullstackRequestValidator {
                     if (f != null && f.name().equals(assignee)) {
                         throw new WizardArgumentException(at + "requires '" + f.name()
                                 + "', which a transition cannot set (the assignee changes by claiming and reassigning)");
+                    }
+                    if (f != null && f.multiple()) {
+                        throw new WizardArgumentException(at + "requires '" + f.name()
+                                + "', which holds several files: a transition sets one value per field");
                     }
                     if (requires.contains(canonical)) throw new WizardArgumentException(at + "requires '" + canonical + "' twice");
                     requires.add(canonical);

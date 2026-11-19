@@ -418,6 +418,12 @@
             "name": "unitPrice",
             "type": "BIG_DECIMAL",
             "min": 0
+          },
+          {
+            "name": "lineTotal",
+            "type": "BIG_DECIMAL",
+            "label": "Line total",
+            "formula": "quantity * unitPrice"
           }
         ],
         "relations": [
@@ -432,6 +438,13 @@
             "fieldName": "product",
             "targetEntity": "Product",
             "required": true
+          }
+        ],
+        "rules": [
+          {
+            "check": "unitPrice > 0",
+            "message": "A unit price cannot be zero",
+            "field": "unitPrice"
           }
         ]
       }
@@ -1872,7 +1885,9 @@
           {
             "name": "budget",
             "type": "MONEY",
-            "min": 0
+            "min": 0,
+            "defaultValue": "10000",
+            "help": "A submitted claim may not be more than this."
           }
         ]
       },
@@ -1955,8 +1970,9 @@
             "type": "TEXT"
           },
           {
-            "name": "receipt",
-            "type": "FILE"
+            "name": "receipts",
+            "type": "FILE",
+            "maxFiles": 5
           }
         ],
         "relations": [
@@ -1976,7 +1992,7 @@
               "category",
               "spentOn",
               "costCenter",
-              "receipt"
+              "receipts"
             ]
           },
           {
@@ -1985,6 +2001,14 @@
               "assignee",
               "dueDate"
             ]
+          }
+        ],
+        "rules": [
+          {
+            "when": "status == 'SUBMITTED'",
+            "check": "amount <= costCenter.budget",
+            "message": "Over the cost center's budget",
+            "field": "amount"
           }
         ],
         "workflow": {

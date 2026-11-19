@@ -3,12 +3,14 @@ import { RowsEditor, type RowColumn } from '@shared/ui/RowsEditor'
 {{#rowsUseStrings}}import { t } from '@shared/i18n'
 {{/rowsUseStrings}}{{#rowsUseOptions}}import { useOptions } from '@shared/api'
 {{/rowsUseOptions}}{{#rowsUseInstant}}import { fromLocalInput, toLocalInput } from '@shared/ui/format'
-{{/rowsUseInstant}}import type { {{EntityName}}{{#rowFields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/rowFields}} } from '@entities/{{entityNameKebab}}'
+{{/rowsUseInstant}}{{#rowsUseRules}}import * as rule from '@shared/ui/rules'
+{{/rowsUseRules}}{{#rowsReadLinks}}import * as linked from '@shared/api/linked'
+{{/rowsReadLinks}}import type { {{EntityName}}{{#rowFields}}{{#isEnum}}, {{enumTypeName}}{{/isEnum}}{{/rowFields}} } from '@entities/{{entityNameKebab}}'
 {{#rowFields}}{{#isEnum}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
 {{/isEnum}}{{/rowFields}}
 
 const COLUMNS: RowColumn[] = [
-{{#rowFields}}  { key: '{{name}}', label: '{{labelTs}}'{{#isRequired}}, required: true{{/isRequired}} },
+{{#rowFields}}  { key: '{{name}}', label: '{{labelTs}}'{{#isRequired}}{{^isComputed}}, required: true{{/isComputed}}{{/isRequired}} },
 {{/rowFields}}{{#rowRelations}}  { key: '{{fkFieldName}}', label: '{{labelTs}}'{{#required}}, required: true{{/required}} },
 {{/rowRelations}}]
 
@@ -36,7 +38,11 @@ export function {{EntityName}}Rows({ label, name, value, onChange, errors }: Pro
         switch (column) {
 {{#rowFields}}
           case '{{name}}':
-            return (
+{{#hasShowWhen}}            // Shown when {{showWhenTextComment}}: a dash (and cleared on save) while it does not hold.
+            if (!{{{rowShowWhenTs}}}) return <span className="block px-2 py-1.5 text-muted">—</span>
+{{/hasShowWhen}}{{#isComputed}}            // Computed on save: shown as it will come out.
+            return <input aria-label="{{labelAttr}}" className={`${inputClass} cursor-not-allowed bg-surface-2 text-muted`} value={rule.show({{{rowComputedTs}}})} readOnly aria-readonly />
+{{/isComputed}}{{^isComputed}}            return (
 {{#isBoolean}}              <select
                 aria-label="{{labelAttr}}"
                 className={inputClass}
@@ -64,7 +70,7 @@ export function {{EntityName}}Rows({ label, name, value, onChange, errors }: Pro
                 onChange={e => set({ {{name}}: {{#isInstant}}fromLocalInput(e.target.value){{/isInstant}}{{^isInstant}}{{#isNumeric}}e.target.value === '' ? null : Number(e.target.value){{/isNumeric}}{{^isNumeric}}e.target.value === '' ? null : e.target.value{{/isNumeric}}{{/isInstant}} })}
               />
 {{/isEnum}}{{/isBoolean}}            )
-{{/rowFields}}
+{{/isComputed}}{{/rowFields}}
 {{#rowRelations}}
           case '{{fkFieldName}}':
             return (

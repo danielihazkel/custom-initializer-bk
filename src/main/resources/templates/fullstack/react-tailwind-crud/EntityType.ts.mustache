@@ -10,9 +10,9 @@ export const {{enumTypeName}}Options: { value: {{enumTypeName}}; label: string }
 
 export interface {{EntityName}} {
 {{#fields}}  {{name}}{{^isRequired}}?{{/isRequired}}: {{#isEnum}}{{enumTypeName}}{{/isEnum}}{{^isEnum}}{{tsType}}{{/isEnum}} | null
-{{#isAttachment}}  /** Read-only name of the file in {{name}} (which holds its id), set by the API. */
+{{#isAttachment}}{{^isMultiFile}}  /** Read-only name of the file in {{name}} (which holds its id), set by the API. */
   {{nameField}}?: string | null
-{{/isAttachment}}{{/fields}}{{#relations}}  {{fkFieldName}}{{^required}}?{{/required}}: {{targetPkTsType}} | null
+{{/isMultiFile}}{{/isAttachment}}{{/fields}}{{#relations}}  {{fkFieldName}}{{^required}}?{{/required}}: {{targetPkTsType}} | null
 {{#hasTargetLabel}}  /** Read-only display label of the referenced {{targetEntity}} ({{targetLabelField}}), set by the API. */
   {{fieldName}}Label?: string | null
 {{/hasTargetLabel}}{{/relations}}{{#collections}}  /** The linked {{targetEntity}} rows: their ids, and — read-only, set by the API — their labels in the same order. */

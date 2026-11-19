@@ -4,7 +4,8 @@ package {{entityPackage}};
 import {{name}};
 {{/imports}}
 import jakarta.persistence.*;
-import lombok.Data;
+{{#hasMultiFileFields}}import {{packageName}}.attachment.AttachedFile;
+{{/hasMultiFileFields}}import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 {{#isView}}import org.hibernate.annotations.Immutable;
@@ -49,8 +50,16 @@ import org.hibernate.annotations.Formula;
 {{#isGenerated}}{{#isUuid}}    @org.hibernate.annotations.UuidGenerator
 {{/isUuid}}{{^isUuid}}    @GeneratedValue(strategy = GenerationType.IDENTITY)
 {{/isUuid}}{{/isGenerated}}{{/isPrimaryKey}}{{#isEnum}}    @Enumerated(EnumType.STRING)
-{{/isEnum}}    @Column(name = "{{#isView}}{{viewColumn}}{{/isView}}{{^isView}}{{column}}{{/isView}}"{{#isNotNullColumn}}, nullable = false{{/isNotNullColumn}}{{#isUnique}}, unique = true{{/isUnique}}{{#hasLength}}, length = {{length}}{{/hasLength}}{{#isMoney}}, precision = 19, scale = 2{{/isMoney}}{{#isText}}, columnDefinition = "TEXT"{{/isText}})
+{{/isEnum}}{{#isMultiFile}}    /** Several files, in order: kept in {{filesTable}}, loaded with the row (the DTO is built after
+     *  the transaction). */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "{{filesTable}}"{{#hasSchema}}, schema = "{{schema}}"{{/hasSchema}}, joinColumns = @JoinColumn(name = "owner_id"))
+    @OrderColumn(name = "file_order")
+    @org.hibernate.annotations.BatchSize(size = 100)
+    private {{javaType}} {{name}} = new java.util.ArrayList<>();
+{{/isMultiFile}}{{^isMultiFile}}    @Column(name = "{{#isView}}{{viewColumn}}{{/isView}}{{^isView}}{{column}}{{/isView}}"{{#isNotNullColumn}}, nullable = false{{/isNotNullColumn}}{{#isUnique}}, unique = true{{/isUnique}}{{#hasLength}}, length = {{length}}{{/hasLength}}{{#isMoney}}, precision = 19, scale = 2{{/isMoney}}{{#isText}}, columnDefinition = "TEXT"{{/isText}})
     private {{javaType}} {{name}}{{#hasDefault}} = {{{defaultJava}}}{{/hasDefault}};
+{{/isMultiFile}}
 
 {{/fields}}{{#relations}}    @ManyToOne(fetch = FetchType.LAZY{{#required}}, optional = false{{/required}})
     @JoinColumn(name = "{{joinColumn}}"{{#required}}, nullable = false{{/required}})

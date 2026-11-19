@@ -43,4 +43,12 @@ spring:
     # The compose broker has no TLS or SASL (KafkaConfig reads this; SASL_SSL otherwise).
     security:
       protocol: PLAINTEXT
+{{#schemaRegistry}}
+app:
+  events:
+    schema-registry:
+      url: http://localhost:8081
+      # On this machine the application registers the schemas it writes with.
+      auto-register: true
+{{/schemaRegistry}}
 {{/kafka}}

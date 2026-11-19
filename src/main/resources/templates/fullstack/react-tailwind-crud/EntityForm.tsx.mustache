@@ -2,12 +2,14 @@ import { Field, inputClass{{#formUsesPicker}}, RelationPicker{{/formUsesPicker}}
 {{#formUsesStrings}}import { t } from '@shared/i18n'
 {{/formUsesStrings}}{{#formUsesOptions}}import { useOptions } from '@shared/api'
 {{/formUsesOptions}}{{#formUsesInstant}}import { fromLocalInput, toLocalInput } from '@shared/ui/format'
-{{/formUsesInstant}}{{#hasAttachmentFields}}import { AttachmentField } from '@shared/ui/AttachmentField'
-{{/hasAttachmentFields}}{{#hasMarkdownField}}import { MarkdownEditor } from '@shared/ui/MarkdownEditor'
+{{/formUsesInstant}}{{#hasSingleFileFields}}import { AttachmentField } from '@shared/ui/AttachmentField'
+{{/hasSingleFileFields}}{{#hasMultiFileFields}}import { AttachmentsField } from '@shared/ui/AttachmentsField'
+{{/hasMultiFileFields}}{{#hasMarkdownField}}import { MarkdownEditor } from '@shared/ui/MarkdownEditor'
 {{/hasMarkdownField}}{{#hasCollections}}import { MultiRelationPicker } from '@shared/ui/MultiRelationPicker'
 {{/hasCollections}}{{#compositions}}import { {{childEntity}}Rows } from '@features/{{childKebab}}-form'
 {{/compositions}}{{#formUsesRules}}import * as rule from '@shared/ui/rules'
-{{/formUsesRules}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
+{{/formUsesRules}}{{#readsLinks}}import * as linked from '@shared/api/linked'
+{{/readsLinks}}import type { {{EntityName}}{{#fields}}{{#isEnum}}{{^isWorkflowStatus}}, {{enumTypeName}}{{/isWorkflowStatus}}{{/isEnum}}{{/fields}} } from '@entities/{{entityNameKebab}}'
 {{#fields}}{{#isEnum}}{{^isWorkflowStatus}}import { {{enumTypeName}}Options } from '@entities/{{entityNameKebab}}'
 {{/isWorkflowStatus}}{{/isEnum}}{{/fields}}
 
@@ -27,7 +29,9 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
 {{#formHasSteps}}
   const show = (name: string) => !only || only.includes(name)
 {{/formHasSteps}}
-{{#relations}}{{^targetSearchable}}  const {{fieldName}}Options = useOptions<Record<string, unknown>>('/api/{{targetEntityKebabPlural}}')
+{{#readsLinks}}  // The linked rows its rules read, fetched as the links are picked (until then the server decides).
+  linked.useLinkedRows([{{#linkedReads}}['{{linkedPath}}', value.{{fkFieldName}}]{{^last}}, {{/last}}{{/linkedReads}}])
+{{/readsLinks}}{{#relations}}{{^targetSearchable}}  const {{fieldName}}Options = useOptions<Record<string, unknown>>('/api/{{targetEntityKebabPlural}}')
 {{/targetSearchable}}{{/relations}}
   return (
     <>
@@ -96,14 +100,21 @@ export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSte
           onChange={e => set('{{name}}', e.target.value === '' ? null : e.target.value)}
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}
         />
-{{/isMarkdown}}{{/isText}}{{^isText}}{{#isAttachment}}        <AttachmentField
+{{/isMarkdown}}{{/isText}}{{^isText}}{{#isAttachment}}{{#isMultiFile}}        <AttachmentsField
+          value={value.{{name}} ?? []}
+          max={ {{maxFiles}} }
+          {{#isImage}}image{{/isImage}}{{^isImage}}image={false}{{/isImage}}
+          {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}{{^isReadOnly}}disabled={false}{{/isReadOnly}}
+          onChange={files => onChange({ ...value, {{name}}: files })}
+        />
+{{/isMultiFile}}{{^isMultiFile}}        <AttachmentField
           value={value.{{name}}}
           name={value.{{nameField}}}
           {{#isImage}}image{{/isImage}}{{^isImage}}image={false}{{/isImage}}
           {{#isReadOnly}}disabled={!isNew}{{/isReadOnly}}{{^isReadOnly}}disabled={false}{{/isReadOnly}}
           onChange={(id, name) => onChange({ ...value, {{name}}: id, {{nameField}}: name })}
         />
-{{/isAttachment}}{{^isAttachment}}        <input
+{{/isMultiFile}}{{/isAttachment}}{{^isAttachment}}        <input
           className={{#isReadOnly}}{isNew ? inputClass : `${inputClass} cursor-not-allowed bg-surface-2 text-muted`}{{/isReadOnly}}{{^isReadOnly}}{inputClass}{{/isReadOnly}}
           type="{{inputType}}"{{#isNumeric}}{{#hasMin}} min="{{min}}"{{/hasMin}}{{#hasMax}} max="{{max}}"{{/hasMax}}{{#isBigDecimal}}{{#isMoney}} step="0.01"{{/isMoney}}{{^isMoney}} step="any"{{/isMoney}}{{/isBigDecimal}}{{/isNumeric}}{{#hasPattern}} pattern={"{{patternEscaped}}"}{{/hasPattern}}
           value={{#isInstant}}{toLocalInput(value.{{name}})}{{/isInstant}}{{^isInstant}}{value.{{name}} == null ? '' : String(value.{{name}})}{{/isInstant}}

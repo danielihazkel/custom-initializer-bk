@@ -226,6 +226,58 @@ class FullstackMigrationTests {
         assertThat(zip.keySet()).noneMatch(path -> path.contains("db/migration"));
     }
 
+    /**
+     * The generator's own tables move on too: a project whose model file says it was generated
+     * with version 1 of them (before the Attachments round) is brought up by its next update, even
+     * when the model itself did not change its schema. Its model file names the version.
+     */
+    @Test
+    void anUpdateBringsTheGeneratorsOwnTablesUpFromTheVersionTheProjectHas() throws Exception {
+        Map<String, Object> base = FullstackExampleRequests.fieldTypesBody("react-tailwind-crud");
+        base.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "flyway"));
+        Map<String, Object> relabelled = new LinkedHashMap<>(base);
+        relabelled.put("dashboardTitle", "Rota desk");
+        String migrations = "rota-update/files/backend/src/main/resources/db/migration/";
+
+        // The version this release writes is in the model file and the zip's header.
+        ResponseEntity<byte[]> generated = FullstackExampleRequests.post(rest, base);
+        assertThat(generated.getHeaders().getFirst("X-Schema-Version")).isEqualTo("3");
+        assertThat(text(FullstackExampleRequests.unzip(generated.getBody()), "rota/menora-model.json"))
+                .contains("\"schemaVersion\" : 3");
+
+        // Version 1: the round's columns and indexes, and this one's file-column indexes — they run.
+        String fromOne = migrationOf(updateFrom(base, relabelled, 1), migrations);
+        assertThat(fromOne).doesNotContain("To review")
+                .contains("alter table app_attachment add column created_by varchar(255);")
+                .contains("create index ix_app_attachment_created on app_attachment (created_at);")
+                .containsPattern("create index ixa_\\w+_photo on \\w+ \\(photo\\);");
+
+        // This release's own version: nothing to bring up.
+        assertThat(updateFrom(base, relabelled, 3).keySet()).noneMatch(path -> path.contains("__model_update"));
+
+        // No version (a model file from before them): the attachments table's statements are for review.
+        String unknown = migrationOf(update(base, relabelled), migrations);
+        int review = unknown.indexOf("-- ── To review ");
+        assertThat(review).isPositive();
+        assertThat(unknown.substring(0, review)).doesNotContain("app_attachment").containsPattern("create index ixa_\\w+_photo");
+        assertThat(unknown.substring(review)).contains("-- alter table app_attachment add column created_by varchar(255);");
+    }
+
+    private Map<String, byte[]> updateFrom(Map<String, Object> base, Map<String, Object> target, int schemaVersion) throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<byte[]> response = rest.exchange("/starter-fullstack.patch", HttpMethod.POST,
+                new HttpEntity<>(Map.of("base", base, "target", target, "baseSchemaVersion", schemaVersion), headers), byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return FullstackExampleRequests.unzip(response.getBody());
+    }
+
+    private static String migrationOf(Map<String, byte[]> zip, String folder) {
+        String path = zip.keySet().stream().filter(p -> p.startsWith(folder) && p.endsWith("__model_update.sql"))
+                .findFirst().orElseThrow(() -> new AssertionError("no migration in " + zip.keySet()));
+        return text(zip, path);
+    }
+
     @Test
     void addingFlywayToAProjectBringsTheWholeSchemaAsItsBaseline() throws Exception {
         // No migration ran before: the baseline is the change. (Flyway's baseline-on-migrate, which

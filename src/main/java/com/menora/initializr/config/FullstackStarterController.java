@@ -93,6 +93,7 @@ public class FullstackStarterController {
     private final DependencyConfigService configService;
     private final DepartmentResolver departmentResolver;
     private final ContainerImages containerImages;
+    private final com.menora.initializr.observability.SnapshotStore snapshotStore;
 
     public FullstackStarterController(ProjectGenerationInvoker<ProjectRequest> invoker,
                                       ProjectRequestFactory requestFactory,
@@ -107,7 +108,9 @@ public class FullstackStarterController {
                                       VersionService versionService,
                                       DependencyConfigService configService,
                                       DepartmentResolver departmentResolver,
-                                      ContainerImages containerImages) {
+                                      ContainerImages containerImages,
+                                      com.menora.initializr.observability.SnapshotStore snapshotStore) {
+        this.snapshotStore = snapshotStore;
         this.invoker = invoker;
         this.requestFactory = requestFactory;
         this.optionsContext = optionsContext;
@@ -135,6 +138,7 @@ public class FullstackStarterController {
             String templates = templatesHashOf(Files.readAllBytes(tempDir.resolve(MODEL_FILE)));
             return ResponseEntity.ok()
                     .header("X-Templates-Hash", templates == null ? "" : templates)
+                    .header("X-Schema-Version", String.valueOf(com.menora.initializr.fullstack.schema.SchemaBuilder.CURRENT_VERSION))
                     .header(HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=\"" + request.getArtifactId() + ".zip\"")
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
@@ -179,7 +183,11 @@ public class FullstackStarterController {
      * templates are still the ones the project was generated with.
      */
     public record FullstackPatchRequest(FullstackStarterRequest base, FullstackStarterRequest target,
-                                        String baseTemplatesHash) {}
+                                        String baseTemplatesHash, String baseSnapshot, Integer baseSchemaVersion) {
+        public FullstackPatchRequest(FullstackStarterRequest base, FullstackStarterRequest target, String baseTemplatesHash) {
+            this(base, target, baseTemplatesHash, null, null);
+        }
+    }
 
     /**
      * What a model change does to a project that already exists: both models are generated,
@@ -197,26 +205,45 @@ public class FullstackStarterController {
         Path baseDir = Files.createTempDirectory("fullstack-update-base-");
         Path targetDir = Files.createTempDirectory("fullstack-update-target-");
         try {
+            // The base side is generated even when its files were kept: the migration needs its schema.
             Side base = generateSide("base", body.base(), baseDir);
             Side changed = generateSide("target", body.target(), targetDir);
             WebProjectRequest request = changed.request();
             Map<String, byte[]> baseTree = GeneratedProjectFiles.readTree(baseDir);
+            // What the project really is, when its download was kept: then the patch also carries
+            // what the generator writes differently since (GeneratedSnapshots).
+            java.util.Optional<Map<String, byte[]>> kept = snapshotStore.find(body.baseSnapshot());
+            if (kept.isPresent()) {
+                Map<String, byte[]> stored = new java.util.TreeMap<>(kept.get());
+                // The project's model file names those files: the update then replaces it with one
+                // naming its result, and the next update starts from there.
+                stored.put(MODEL_FILE, GeneratedSnapshots.withSnapshot(
+                        new String(baseTree.get(MODEL_FILE), StandardCharsets.UTF_8), body.baseSnapshot())
+                        .getBytes(StandardCharsets.UTF_8));
+                baseTree = stored;
+            }
             Map<String, byte[]> target = GeneratedProjectFiles.readTree(targetDir);
             // With Flyway, the first migration has run and stays as it was; what the model
             // changed is a migration of its own.
             java.time.LocalDateTime now = java.time.LocalDateTime.now(java.time.ZoneOffset.UTC);
+            // The generator's own tables as the project has them: the version its model file names.
             SchemaMigrations.carryBaselineOver(baseTree, target, base.schema(), changed.schema(),
                     now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss")),
-                    now.toLocalDate().toString());
+                    now.toLocalDate().toString(), body.baseSchemaVersion());
+            // What the project is once the update is applied — the next update starts from it.
+            GeneratedSnapshots.stamp(target);
             ProjectUpdateBuilder.ProjectUpdate update = ProjectUpdateBuilder.build(
                     baseTree, target,
                     new ProjectUpdateBuilder.Info(request.getArtifactId(), body.baseTemplatesHash(),
-                            templatesHashOf(target.get(MODEL_FILE))),
+                            templatesHashOf(target.get(MODEL_FILE))).fromSnapshot(kept.isPresent()),
                     // Never edited by hand and rewritten whole by every generation: replaced, not patched.
                     Set.of(MODEL_FILE));
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=\"" + request.getArtifactId() + "-update.zip\"")
+                    .header(UPDATE_BASE_HEADER, kept.isPresent() ? "snapshot" : "regenerated")
+                    // Once applied, the project's own tables are this release's.
+                    .header("X-Schema-Version", String.valueOf(com.menora.initializr.fullstack.schema.SchemaBuilder.CURRENT_VERSION))
                     .header("X-Update-Added", String.valueOf(update.added().size()))
                     .header("X-Update-Changed", String.valueOf(update.changed().size()))
                     .header("X-Update-Deleted", String.valueOf(update.deleted().size()))
@@ -229,6 +256,13 @@ public class FullstackStarterController {
             optionsContext.clear();
         }
     }
+
+    /**
+     * Says what an update compared the new model with: {@code snapshot} — the files the project
+     * was generated with, kept since its download — or {@code regenerated}, the old model generated
+     * again now (a project from before snapshots, or one whose snapshot has expired).
+     */
+    public static final String UPDATE_BASE_HEADER = "X-Update-Base";
 
     /** One side of an update: the request it resolved to, and the schema it wrote a migration for (or null). */
     private record Side(WebProjectRequest request, SchemaMigrations.Generated schema) {
@@ -388,6 +422,8 @@ public class FullstackStarterController {
         Files.writeString(tempDir.resolve(MODEL_FILE), modelJson(body, templatesHash(backendSet, frontendSet)));
         // One set of bytes whatever machine generated it — see normalizeLineEndings.
         GeneratedProjectFiles.normalizeLineEndings(tempDir);
+        // Named last, by everything above (an update names its result again, once its migration is in).
+        GeneratedSnapshots.stamp(tempDir);
         return request;
     }
 
@@ -416,6 +452,9 @@ public class FullstackStarterController {
         if (templatesHash != null) {
             generator = MODEL_MAPPER.createObjectNode();
             generator.put("templatesHash", templatesHash);
+            // Which version of the generator's own tables the baseline was written with: an update
+            // brings an older one up (SchemaBuilder.asOf).
+            generator.put(SCHEMA_VERSION_KEY, com.menora.initializr.fullstack.schema.SchemaBuilder.CURRENT_VERSION);
         }
         com.fasterxml.jackson.databind.JsonNode model = body.editorModel();
         if (model != null && model.isObject() && model.path("entities").isArray()) {
@@ -437,6 +476,7 @@ public class FullstackStarterController {
 
     /** The model file's block about the generation itself — never part of the model. */
     static final String GENERATOR_KEY = "generator";
+    static final String SCHEMA_VERSION_KEY = "schemaVersion";
 
     /** The {@code generator.templatesHash} of a model file, or null when it has none. */
     static String templatesHashOf(byte[] modelFile) {

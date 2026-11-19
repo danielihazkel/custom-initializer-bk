@@ -45,7 +45,19 @@ public record EntityDefinition(
         List<RelationDefinition> children,
         Access access,
         List<UniqueKey> uniqueKeys,
-        List<Rule> rules) {
+        List<Rule> rules,
+        Map<String, LinkedEntity> links) {
+
+    /**
+     * What a MANY_TO_ONE leads to, for an expression that reads a linked row ({@code costCenter.budget}):
+     * the target entity's name and its fields. Keyed by the relation's field name; filled by
+     * FullstackRequestValidator once every entity's fields are known.
+     */
+    public record LinkedEntity(String name, List<FieldDefinition> fields) {
+        public LinkedEntity {
+            fields = List.copyOf(fields);
+        }
+    }
 
     /**
      * A check over several of a row's fields, in the model's expression language (already
@@ -199,6 +211,25 @@ public record EntityDefinition(
         access = access == null ? Access.DEFAULT : access;
         uniqueKeys = uniqueKeys == null ? List.of() : List.copyOf(uniqueKeys);
         rules = rules == null ? List.of() : List.copyOf(rules);
+        links = links == null ? Map.of() : java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(links));
+    }
+
+    /** Every property but {@code links} (none: no expression of it reads a linked row). */
+    public EntityDefinition(String name, String tableName, String schema,
+                            List<FieldDefinition> fields, List<RelationDefinition> relations,
+                            boolean readOnly, String viewQuery, String sourceSql, List<String> listViews,
+                            String label, String labelPlural, Map<String, Boolean> opts, List<FormSection> formSections,
+                            Workflow workflow, List<RelationDefinition> collections, List<RelationDefinition> children,
+                            Access access, List<UniqueKey> uniqueKeys, List<Rule> rules) {
+        this(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql, listViews,
+                label, labelPlural, opts, formSections, workflow, collections, children, access, uniqueKeys, rules, null);
+    }
+
+    /** The same entity knowing what each of its MANY_TO_ONEs leads to. */
+    public EntityDefinition withLinks(Map<String, LinkedEntity> resolved) {
+        return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
+                listViews, label, labelPlural, opts, formSections, workflow, collections, children, access, uniqueKeys,
+                rules, resolved);
     }
 
     /** Every property but {@code rules} (none). */
@@ -250,7 +281,8 @@ public record EntityDefinition(
     /** The same entity with its ONE_TO_MANYs resolved (each naming the MANY_TO_ONE behind it). */
     public EntityDefinition withChildren(List<RelationDefinition> resolved) {
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
-                listViews, label, labelPlural, opts, formSections, workflow, collections, resolved, access, uniqueKeys, rules);
+                listViews, label, labelPlural, opts, formSections, workflow, collections, resolved, access, uniqueKeys, rules,
+                links);
     }
 
     /**
@@ -302,7 +334,8 @@ public record EntityDefinition(
         next.put(key, value);
         // Every other property kept: this once dropped `access`, so an import page reset the levels.
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
-                listViews, label, labelPlural, next, formSections, workflow, collections, children, access, uniqueKeys, rules);
+                listViews, label, labelPlural, next, formSections, workflow, collections, children, access, uniqueKeys, rules,
+                links);
     }
 
     public String listView() {

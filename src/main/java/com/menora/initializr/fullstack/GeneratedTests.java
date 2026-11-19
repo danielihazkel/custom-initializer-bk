@@ -79,6 +79,7 @@ public final class GeneratedTests {
         List<Map<String, Object>> rows = new ArrayList<>();
         Map<String, Map<String, Object>> perEntity = new LinkedHashMap<>();
         boolean attachments = false;
+        boolean linkedValues = false;
         for (EntityDefinition e : entities) {
             Map<String, Object> row = new LinkedHashMap<>();
             String pascal = Naming.toPascalCase(e.name());
@@ -98,14 +99,27 @@ public final class GeneratedTests {
                         if (pick.java() != null) puts.add("row.put(\"" + f.name() + "\", " + pick.java() + ");");
                         continue;
                     }
-                    puts.add("row.put(\"" + f.name() + "\", " + valueJava(f) + ");");
+                    // Several files: a list of one, by id.
+                    puts.add(f.multiple()
+                            ? "row.putArray(\"" + f.name() + "\").addObject().put(\"id\", " + valueJava(f) + ");"
+                            : "row.put(\"" + f.name() + "\", " + valueJava(f) + ");");
                     attachments |= f.type() == FieldType.FILE || f.type() == FieldType.IMAGE;
                 }
                 for (RelationDefinition r : e.relations()) {
                     if (!r.required()) continue;
                     EntityDefinition target = byLower.get(r.targetEntity().toLowerCase(Locale.ROOT));
-                    puts.add("row.set(\"" + Naming.toCamelCase(r.fieldName()) + "Id\", create(\""
-                            + Naming.toPascalCase(target.name()) + "\").get(\"" + keys(target).get(0).name() + "\"));");
+                    // A field of the parent the rules read (costCenter.budget): the parent is made with the value they hold for.
+                    StringBuilder values = new StringBuilder();
+                    for (Map.Entry<String, RuleRows.Pick> pick : picks.entrySet()) {
+                        if (!pick.getKey().startsWith(r.fieldName() + ".") || pick.getValue().java() == null) continue;
+                        values.append("parent.put(\"").append(pick.getKey().substring(r.fieldName().length() + 1))
+                                .append("\", ").append(pick.getValue().java()).append("); ");
+                    }
+                    linkedValues |= values.length() > 0;
+                    String made = values.length() == 0 ? "create(\"" + Naming.toPascalCase(target.name()) + "\")"
+                            : "create(\"" + Naming.toPascalCase(target.name()) + "\", parent -> { " + values.toString().trim() + " })";
+                    puts.add("row.set(\"" + Naming.toCamelCase(r.fieldName()) + "Id\", " + made
+                            + ".get(\"" + keys(target).get(0).name() + "\"));");
                 }
             }
             row.put("puts", puts);
@@ -114,6 +128,7 @@ public final class GeneratedTests {
         }
         ctx.put("apiTestRows", rows);
         ctx.put("apiTestUsesAttachments", attachments);
+        ctx.put("apiTestLinkedValues", linkedValues);
         ctx.put(API_TESTS_KEY, perEntity);
         ctx.put("apiTestAdmin", ADMIN_USER);
         ctx.put("apiTestUser", PLAIN_USER);

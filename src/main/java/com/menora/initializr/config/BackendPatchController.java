@@ -46,16 +46,27 @@ public class BackendPatchController {
     private final MultiModuleController multiModule;
     private final ProjectOptionsContext optionsContext;
     private final ObjectMapper mapper;
+    private final com.menora.initializr.observability.SnapshotStore snapshotStore;
 
     public BackendPatchController(WizardStarterController wizard, MultiModuleController multiModule,
-                                  ProjectOptionsContext optionsContext, ObjectMapper mapper) {
+                                  ProjectOptionsContext optionsContext, ObjectMapper mapper,
+                                  com.menora.initializr.observability.SnapshotStore snapshotStore) {
         this.wizard = wizard;
         this.multiModule = multiModule;
         this.optionsContext = optionsContext;
         this.mapper = mapper;
+        this.snapshotStore = snapshotStore;
     }
 
-    public record BackendPatchRequest(JsonNode base, JsonNode target, String baseCatalogHash) {}
+    /**
+     * {@code baseSnapshot}: the {@code generator.snapshot} of the project's model file, when the
+     * caller has it apart from {@code base} (else it is read from {@code base} itself).
+     */
+    public record BackendPatchRequest(JsonNode base, JsonNode target, String baseCatalogHash, String baseSnapshot) {
+        public BackendPatchRequest(JsonNode base, JsonNode target, String baseCatalogHash) {
+            this(base, target, baseCatalogHash, null);
+        }
+    }
 
     /**
      * The files an update replaces instead of patching: the model file, and every {@code HELP.md} —
@@ -82,9 +93,26 @@ public class BackendPatchController {
         Path baseDir = Files.createTempDirectory("backend-update-base-");
         Path targetDir = Files.createTempDirectory("backend-update-target-");
         try {
+            // What the project really is, when its download was kept (GeneratedSnapshots): the
+            // patch then also carries what the generator writes differently since. Otherwise the
+            // old model, generated again now.
+            String baseId = GeneratedSnapshots.isId(body.baseSnapshot()) ? body.baseSnapshot()
+                    : GeneratedSnapshots.snapshotOf(body.base());
+            java.util.Optional<Map<String, byte[]>> kept = snapshotStore.find(baseId);
+            // Generated either way: a model that no longer generates is the same 400 as before,
+            // and its model file stands in for the one the snapshot leaves out.
             generateSide("base", requestOf(body.base()), baseDir);
             WebProjectRequest request = generateSide("target", requestOf(body.target()), targetDir);
             Map<String, byte[]> base = GeneratedProjectFiles.readTree(baseDir);
+            if (kept.isPresent()) {
+                Map<String, byte[]> stored = new java.util.TreeMap<>(kept.get());
+                // The project's model file names those files: the update then replaces it with one
+                // naming its result, and the next update starts from there.
+                stored.put(BackendModel.FILE, GeneratedSnapshots.withSnapshot(
+                        new String(base.get(BackendModel.FILE), java.nio.charset.StandardCharsets.UTF_8), baseId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                base = stored;
+            }
             Map<String, byte[]> target = GeneratedProjectFiles.readTree(targetDir);
             // What the project was generated with: the hash the caller names, else the one its
             // model file carries. It is compared with the hash of the *same* model generated now —
@@ -96,12 +124,13 @@ public class BackendPatchController {
                     base, target,
                     new ProjectUpdateBuilder.Info(request.getArtifactId(), generatedWith,
                             BackendModel.catalogHashOf(base.get(BackendModel.FILE)),
-                            "the folder holding `pom.xml`", "catalog"),
+                            "the folder holding `pom.xml`", "catalog", kept.isPresent()),
                     // Never edited by hand and rewritten whole by every generation: replaced, not patched.
                     deliveredWhole(base, target));
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=\"" + request.getArtifactId() + "-update.zip\"")
+                    .header(FullstackStarterController.UPDATE_BASE_HEADER, kept.isPresent() ? "snapshot" : "regenerated")
                     .header("X-Update-Added", String.valueOf(update.added().size()))
                     .header("X-Update-Changed", String.valueOf(update.changed().size()))
                     .header("X-Update-Deleted", String.valueOf(update.deleted().size()))

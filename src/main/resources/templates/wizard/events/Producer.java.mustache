@@ -26,9 +26,25 @@ public class {{stem}}Producer {
 {{#hasTitle}}
     /** {{titleJavadoc}} */
 {{/hasTitle}}
-    public CompletableFuture<SendResult<String, String>> {{method}}(String key, {{type}} payload) {
-        return kafkaTemplate.send(topic, key, toJson(payload));
+{{^hasHeaders}}
+    public CompletableFuture<SendResult<String, String>> {{method}}({{keyType}} key, {{type}} payload) {
+        return kafkaTemplate.send(topic, {{keyArg}}, toJson(payload));
     }
+{{/hasHeaders}}
+{{#hasHeaders}}
+    public CompletableFuture<SendResult<String, String>> {{method}}({{keyType}} key, {{type}} payload) {
+        return {{method}}(key, payload, null);
+    }
+
+    /** With its headers{{#hasCorrelation}}: a correlation id left empty is a new UUID{{/hasCorrelation}}. */
+    public CompletableFuture<SendResult<String, String>> {{method}}({{keyType}} key, {{type}} payload, {{headersType}} headers) {
+        ProducerRecord<String, String> record = new ProducerRecord<>(topic, {{keyArg}}, toJson(payload));
+{{#headerLines}}
+        {{{.}}}
+{{/headerLines}}
+        return kafkaTemplate.send(record);
+    }
+{{/hasHeaders}}
 
 {{/sends}}
     private String toJson(Object payload) {

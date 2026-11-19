@@ -98,6 +98,8 @@ public final class EntityScaffoldContext {
         // File and image fields: the attachment package on the backend, the upload call and the
         // AttachmentField on the frontend (both render paths read it).
         ctx.put("hasAttachments", attachments);
+        // A field that holds several files: attachment/AttachedFile and the AttachmentsField list.
+        ctx.put("hasMultiFiles", entities.stream().flatMap(e -> e.fields().stream()).anyMatch(FieldDefinition::multiple));
         ctx.put("hasFormatHelpers", attachments || entities.stream().flatMap(e -> e.fields().stream())
                 .anyMatch(f -> f.type().isMoney() || f.type().isInstant()
                         || f.type() == FieldType.LOCAL_DATE || f.type() == FieldType.LOCAL_DATE_TIME));
@@ -203,6 +205,11 @@ public final class EntityScaffoldContext {
         ctx.put("rowsUsePicker", rowRelations.stream().anyMatch(rel -> Boolean.TRUE.equals(rel.get("targetSearchable"))));
         ctx.put("rowsUseStrings", options || rowFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isBoolean"))));
         ctx.put("rowsUseInstant", rowFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isInstant"))));
+        // A computed cell is shown as it will be saved; a field shown on a condition is a dash while it does not hold.
+        ctx.put("rowsUseRules", rowFields.stream().anyMatch(f -> Boolean.TRUE.equals(f.get("isComputed"))
+                || Boolean.TRUE.equals(f.get("hasShowWhen"))));
+        // …through a link too: the rows editor reads what the parent's form fetched (unknown otherwise).
+        ctx.put("rowsReadLinks", Boolean.TRUE.equals(ctx.get("formReadsLinks")));
     }
 
     /** Puts {@code <name>} = {@code base.layer} and {@code <name>Path} = the slash form. */
@@ -416,7 +423,7 @@ public final class EntityScaffoldContext {
         ctx.put("hasCompositions", hasCompositions);
         ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable
                 || (lockedRelations && mutable) || (Boolean.TRUE.equals(ctx.get("hasCollections")) && mutable)
-                || hasCompositions);
+                || hasCompositions || (Boolean.TRUE.equals(ctx.get("readsLinks")) && mutable));
         // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
         // besides the audit rows — so it imports t / LOCALE exactly when one of them is drawn
         // (the generated lint rejects an unused import).

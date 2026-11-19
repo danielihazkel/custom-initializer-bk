@@ -156,6 +156,10 @@ ChangeHistory
 CreatedBy
 HistoryField
 LastModifiedBy
+AttachmentsField
+CollectionTable
+ElementCollection
+OrderColumn
 
 # a name one of the entity's own generated names would spell
 CallerMay

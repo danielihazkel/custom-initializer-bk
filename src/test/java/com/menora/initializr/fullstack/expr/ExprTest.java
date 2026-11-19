@@ -73,6 +73,54 @@ class ExprTest {
                 .contains("Expr.lt(row.getPlacedAt(), Expr.now())").contains("java.time.LocalDate.parse(\"2025-01-31\")");
     }
 
+    /** A claim's cost center: what its link leads to. */
+    private static final Map<String, com.menora.initializr.fullstack.EntityDefinition.LinkedEntity> LINKS = Map.of(
+            "costCenter", new com.menora.initializr.fullstack.EntityDefinition.LinkedEntity("CostCenter", List.of(
+                    field("budget", FieldType.MONEY), field("kind", FieldType.ENUM, "OPEX", "CAPEX"),
+                    field("notes", FieldType.TEXT), field("logo", FieldType.IMAGE))));
+
+    private static String linkedMessage(String text) {
+        try {
+            ExprCheck.check(text, FIELDS, LINKS, Type.BOOL);
+            return null;
+        } catch (ExprException e) {
+            return e.getMessage();
+        }
+    }
+
+    @Test
+    void aLinkedRowsFieldIsReadOneStepAway() {
+        Checked c = ExprCheck.check("unitPrice <= costCenter.budget and costCenter.kind == 'capex'", FIELDS, LINKS, Type.BOOL);
+        // The row's own fields and the linked ones are kept apart.
+        assertThat(c.refs()).containsExactly("unitPrice");
+        assertThat(c.paths()).containsOnlyKeys("costCenter.budget", "costCenter.kind");
+        assertThat(c.paths().get("costCenter.budget").relation()).isEqualTo("costCenter");
+        // Java: the loaded row, null-safe. TS: what the form fetched for the picked id.
+        assertThat(ExprCode.java(c, "row"))
+                .contains("Expr.num((row.getCostCenter() == null ? null : row.getCostCenter().getBudget()))")
+                // An enum literal of the linked entity is spelled as its constant, too.
+                .contains("Expr.eq(Expr.name((row.getCostCenter() == null ? null : row.getCostCenter().getKind())), \"CAPEX\")");
+        assertThat(ExprCode.ts(c, "value"))
+                .contains("rule.num(linked.value('/api/cost-centers', value.costCenterId, 'budget'))")
+                .contains("rule.text(linked.value('/api/cost-centers', value.costCenterId, 'kind'))");
+        // In the generator an unknown linked value is empty: the rule holds.
+        Map<String, Object> values = new HashMap<>(Map.of("unitPrice", new BigDecimal("50")));
+        assertThat(ExprEval.holds(c, null, values, LocalDate.of(2026, 3, 10))).isTrue();
+        values.put("costCenter.budget", new BigDecimal("40"));
+        values.put("costCenter.kind", "CAPEX");
+        assertThat(ExprEval.holds(c, null, values, LocalDate.of(2026, 3, 10))).isFalse();
+
+        assertThat(linkedMessage("costcenter.budget > 1")).contains("'costcenter' is not a link of this entity").contains("did you mean 'costCenter'?");
+        assertThat(linkedMessage("title.budget > 1")).contains("its links are costCenter");
+        assertThat(linkedMessage("costCenter.budgt > 1")).isEqualTo("'budgt' is not a field of CostCenter");
+        assertThat(linkedMessage("costCenter.notes == 'x'")).contains("cannot be read through a link");
+        assertThat(linkedMessage("isEmpty(costCenter.logo)")).contains("cannot be read through a link");
+        assertThat(linkedMessage("costCenter.owner.name == 'x'")).contains("one step only");
+        assertThat(linkedMessage("costCenter.kind == 'other'")).contains("is not one of kind's values");
+        // Without the links (an entity with none) a path is no field at all.
+        assertThat(message("costCenter.budget > 1")).contains("'costCenter' is not a link of this entity");
+    }
+
     @Test
     void whatDoesNotFitIsRefusedWithWhereItIs() {
         assertThatThrownBy(() -> check("ends >= startsOn")).isInstanceOfSatisfying(ExprException.class, e -> {

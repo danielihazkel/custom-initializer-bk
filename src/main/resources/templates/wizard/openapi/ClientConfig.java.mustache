@@ -14,7 +14,7 @@ import org.springframework.web.client.RestTemplate;
 public class OpenApiClientConfig {
 
     @Bean
-    public RestTemplate openApiRestTemplate(RestTemplateBuilder builder) {
-        return builder.build();
+    public RestTemplate openApiRestTemplate(RestTemplateBuilder builder{{#oauth2}}, OpenApiOAuth2Tokens tokens{{/oauth2}}) {
+        return builder{{#oauth2}}.additionalInterceptors(tokens){{/oauth2}}.build();
     }
 }

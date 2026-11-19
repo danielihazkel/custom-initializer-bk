@@ -1,0 +1,104 @@
+asyncapi: 3.0.0
+info:
+  title: Orders (Avro, schema registry)
+  version: 1.0.0
+  description: >-
+    The events wizard's keys, headers and schema registry (EventsHeadersAndRegistryTest,
+    WizardGoldenOutputTests): an Avro channel whose messages have a UUID key, headers of their own and
+    from a trait, and a correlation id in a header the headers do not declare; a JSON channel with
+    headers and a correlation id in one of them; and an Avro channel with neither.
+channels:
+  orderPlaced:
+    address: orders.placed
+    messages:
+      placed:
+        $ref: '#/components/messages/OrderPlaced'
+  shipments:
+    address: orders.shipments
+    messages:
+      shipped:
+        $ref: '#/components/messages/OrderShipped'
+  refunds:
+    address: orders.refunds
+    messages:
+      refunded:
+        $ref: '#/components/messages/OrderRefunded'
+operations:
+  publishOrderPlaced:
+    action: send
+    channel:
+      $ref: '#/channels/orderPlaced'
+  onOrderPlaced:
+    action: receive
+    channel:
+      $ref: '#/channels/orderPlaced'
+  publishShipment:
+    action: send
+    channel:
+      $ref: '#/channels/shipments'
+  onShipment:
+    action: receive
+    channel:
+      $ref: '#/channels/shipments'
+  onRefund:
+    action: receive
+    channel:
+      $ref: '#/channels/refunds'
+components:
+  messages:
+    OrderPlaced:
+      name: OrderPlaced
+      title: An order was placed
+      traits:
+        - $ref: '#/components/messageTraits/Traced'
+      headers:
+        type: object
+        properties:
+          source: { type: string }
+          priority: { type: integer }
+      correlationId:
+        location: $message.header#/x-correlation-id
+      bindings:
+        kafka:
+          key: { type: string, format: uuid }
+      payload:
+        schemaFormat: application/vnd.apache.avro;version=1.9.0
+        schema:
+          type: record
+          name: OrderPlaced
+          namespace: com.acme.orders
+          fields:
+            - { name: orderId, type: string }
+            - { name: total, type: double }
+    OrderShipped:
+      name: OrderShipped
+      headers:
+        type: object
+        properties:
+          trace-id: { type: string }
+          urgent: { type: boolean }
+      correlationId:
+        location: $message.header#/trace-id
+      payload:
+        type: object
+        properties:
+          orderId: { type: string }
+          carrier: { type: string }
+    OrderRefunded:
+      name: OrderRefunded
+      payload:
+        schemaFormat: application/vnd.apache.avro;version=1.9.0
+        schema:
+          type: record
+          name: OrderRefunded
+          namespace: com.acme.orders
+          fields:
+            - { name: orderId, type: string }
+            - { name: amount, type: double }
+  messageTraits:
+    Traced:
+      headers:
+        type: object
+        properties:
+          tenant: { type: string }
+          source: { type: string, description: overridden by the message's own }

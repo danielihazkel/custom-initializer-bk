@@ -908,7 +908,23 @@ public record FullstackStarterRequest(
             // An expression the field's value is computed from on every save (a stored column the
             // client does not set). Left out when absent.
             @JsonInclude(JsonInclude.Include.NON_NULL)
-            String formula) {
+            String formula,
+            // FILE and IMAGE only: the field holds several files, at most this many (1–50). Left
+            // out when absent (one file).
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            Integer maxFiles) {
+
+        /** Every property but {@code maxFiles}. */
+        public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,
+                                  Boolean required, Boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                                  String pattern, Boolean email, List<String> enumValues,
+                                  Boolean searchable, Boolean filterable, String label, Boolean readOnly,
+                                  String defaultValue, Map<String, String> enumLabels, String column, String currency,
+                                  String help, String showWhen, String formula) {
+            this(name, type, primaryKey, generated, required, unique, length, min, max,
+                    pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
+                    column, currency, help, showWhen, formula, null);
+        }
 
         /** Back-compat constructor without {@code showWhen} and {@code formula}. */
         public FieldDefinitionDto(String name, String type, Boolean primaryKey, Boolean generated,

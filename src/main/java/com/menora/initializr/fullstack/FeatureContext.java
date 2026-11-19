@@ -199,12 +199,68 @@ public final class FeatureContext {
      */
     public static void putRules(Map<String, Object> ctx, List<EntityDefinition> entities) {
         ctx.put("hasRules", entities.stream().anyMatch(EntityDefinition::hasRowLogic));
+        // Some entity's expressions read a linked row: the form's shared/api/linked.ts.
+        ctx.put("hasLinkedRules", entities.stream().anyMatch(e -> {
+            Map<String, Object> probe = new LinkedHashMap<>();
+            putLinkedReads(probe, e, Map.of());
+            return Boolean.TRUE.equals(probe.get("readsLinks"));
+        }));
+    }
+
+    /**
+     * The links an entity's rules, show-when conditions and formulas read through ({@code costCenter.budget}):
+     * the service loads those rows before the rules run, the form fetches them. {@code formReadsLinks}:
+     * a show-when or formula reads one (the form's own expressions), {@code rowsReadLinks} the same for
+     * a composed child's rows editor.
+     */
+    static void putLinkedReads(Map<String, Object> view, EntityDefinition entity, Map<String, Map<String, Object>> summaries) {
+        java.util.Set<String> read = new java.util.LinkedHashSet<>();
+        boolean form = false;
+        for (EntityDefinition.Rule rule : entity.allRules()) {
+            read.addAll(linksOf(rule.check(), entity));
+            if (rule.when() != null) read.addAll(linksOf(rule.when(), entity));
+        }
+        for (FieldDefinition f : entity.fields()) {
+            for (String expr : new String[] {f.showWhen(), f.formula()}) {
+                if (expr == null) continue;
+                java.util.Set<String> links = linksOf(expr, entity);
+                form |= !links.isEmpty();
+                read.addAll(links);
+            }
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (String relation : read) {
+            RelationDefinition r = entity.relations().stream().filter(x -> x.fieldName().equals(relation)).findFirst().orElseThrow();
+            Map<String, Object> target = summaries.get(r.targetEntity().toLowerCase(java.util.Locale.ROOT));
+            Map<String, Object> v = new LinkedHashMap<>();
+            v.put("FieldName", Naming.toPascalCase(relation));
+            v.put("fkFieldName", Naming.toCamelCase(relation) + "Id");
+            v.put("targetEntity", Naming.toPascalCase(r.targetEntity()));
+            v.put("TargetPkName", target != null ? target.get("PkName") : "Id");
+            v.put("linkedPath", com.menora.initializr.fullstack.expr.ExprCode.linkedPath(r.targetEntity()));
+            out.add(v);
+        }
+        if (!out.isEmpty()) out.get(out.size() - 1).put("last", true);
+        view.put("linkedReads", out);
+        view.put("readsLinks", !out.isEmpty());
+        view.put("formReadsLinks", form);
+    }
+
+    private static java.util.Set<String> linksOf(String expr, EntityDefinition entity) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (var p : com.menora.initializr.fullstack.expr.ExprCheck.check(expr, entity, null).paths().values()) out.add(p.relation());
+        return out;
     }
 
     /** A computed field's value in the form, as the field holds it (a date and time as text, not milliseconds). */
     static String computedTs(EntityDefinition entity, FieldDefinition f) {
-        var c = com.menora.initializr.fullstack.expr.ExprCheck.check(f.formula(), entity.fields(), null);
-        String ts = com.menora.initializr.fullstack.expr.ExprCode.ts(c, "value");
+        return computedTs(entity, f, "value");
+    }
+
+    /** {@link #computedTs} over another variable (a composed row's cell reads {@code row}). */
+    static String computedTs(EntityDefinition entity, FieldDefinition f, String variable) {
+        var c = com.menora.initializr.fullstack.expr.ExprCheck.check(f.formula(), entity, null);
+        String ts = com.menora.initializr.fullstack.expr.ExprCode.ts(c, variable);
         return switch (f.type()) {
             case LOCAL_DATE_TIME -> "rule.localMoment(" + ts + ")";
             case INSTANT -> "rule.isoInstant(" + ts + ")";
@@ -214,7 +270,7 @@ public final class FeatureContext {
 
     /** A computed field's value in Java, as the entity holds it (a whole number rounded, money to cents, text to its length). */
     static String computedJava(EntityDefinition entity, FieldDefinition f) {
-        var c = com.menora.initializr.fullstack.expr.ExprCheck.check(f.formula(), entity.fields(), null);
+        var c = com.menora.initializr.fullstack.expr.ExprCheck.check(f.formula(), entity, null);
         String java = com.menora.initializr.fullstack.expr.ExprCode.java(c, "row");
         return switch (f.type()) {
             case INTEGER -> "Expr.toInteger(" + java + ")";
@@ -231,7 +287,7 @@ public final class FeatureContext {
         List<Map<String, Object>> computed = new ArrayList<>();
         for (FieldDefinition f : entity.fields()) {
             if (f.showWhen() != null) {
-                var when = com.menora.initializr.fullstack.expr.ExprCheck.check(f.showWhen(), entity.fields(),
+                var when = com.menora.initializr.fullstack.expr.ExprCheck.check(f.showWhen(), entity,
                         com.menora.initializr.fullstack.expr.Expr.Type.BOOL);
                 Map<String, Object> h = new LinkedHashMap<>();
                 h.put("name", f.name());
@@ -264,7 +320,7 @@ public final class FeatureContext {
         List<Map<String, Object>> out = new ArrayList<>();
         int index = 0;
         for (EntityDefinition.Rule rule : entity.allRules()) {
-            var check = com.menora.initializr.fullstack.expr.ExprCheck.check(rule.check(), entity.fields(),
+            var check = com.menora.initializr.fullstack.expr.ExprCheck.check(rule.check(), entity,
                     com.menora.initializr.fullstack.expr.Expr.Type.BOOL);
             Map<String, Object> rv = new LinkedHashMap<>();
             rv.put("index", index++);
@@ -278,7 +334,7 @@ public final class FeatureContext {
             rv.put("checkTs", com.menora.initializr.fullstack.expr.ExprCode.ts(check, "value"));
             rv.put("hasWhen", rule.when() != null);
             if (rule.when() != null) {
-                var when = com.menora.initializr.fullstack.expr.ExprCheck.check(rule.when(), entity.fields(),
+                var when = com.menora.initializr.fullstack.expr.ExprCheck.check(rule.when(), entity,
                         com.menora.initializr.fullstack.expr.Expr.Type.BOOL);
                 TemplateText.putText(rv, "whenText", rule.when());
                 rv.put("whenJava", com.menora.initializr.fullstack.expr.ExprCode.java(when, "row"));
@@ -414,6 +470,12 @@ public final class FeatureContext {
         List<String> cells = new ArrayList<>();
         for (Map<String, Object> f : (List<Map<String, Object>>) ctx.get("fields")) {
             headers.add(javaText(f.get("label")));
+            if (Boolean.TRUE.equals(f.get("isMultiFile"))) {
+                // Several files: their names, as one cell.
+                cells.add("dto." + f.get("name") + "() == null ? null : String.join(\"; \", dto." + f.get("name")
+                        + "().stream().map(file -> String.valueOf(file.getName())).toList())");
+                continue;
+            }
             cells.add("dto." + (Boolean.TRUE.equals(f.get("isAttachment")) ? f.get("nameField") : f.get("name")) + "()");
         }
         for (Map<String, Object> rel : (List<Map<String, Object>>) ctx.get("relations")) {
@@ -458,14 +520,16 @@ public final class FeatureContext {
             String table = SqlNames.javaLiteral(SchemaNames.tableRefOf(e));
             for (FieldDefinition f : e.fields()) {
                 if (!f.type().isAttachment()) continue;
-                String column = SqlNames.javaLiteral(SchemaNames.columnOf(f));
+                // A field with several files keeps them in a table of its own (attachment_id per row).
+                String holder = f.multiple() ? SqlNames.javaLiteral(SchemaNames.filesTableRefOf(e, f)) : table;
+                String column = f.multiple() ? "attachment_id" : SqlNames.javaLiteral(SchemaNames.columnOf(f));
                 Map<String, Object> o = new LinkedHashMap<>();
                 o.put("EntityName", e.name());
                 o.put("field", f.name());
                 o.put("readLevel", e.access().read());
-                o.put("countSqlJava", "select count(*) from " + table + " where " + column + " = :id");
+                o.put("countSqlJava", "select count(*) from " + holder + " where " + column + " = :id");
                 owners.add(o);
-                unattached.append(" and not exists (select 1 from ").append(table).append(" o where o.")
+                unattached.append(" and not exists (select 1 from ").append(holder).append(" o where o.")
                         .append(column).append(" = a.id)");
             }
         }

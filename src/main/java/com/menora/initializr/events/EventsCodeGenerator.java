@@ -11,6 +11,7 @@ import com.menora.initializr.events.AsyncApiReader.AsyncApiParseException;
 import com.menora.initializr.events.AsyncApiReader.EventChannel;
 import com.menora.initializr.events.AsyncApiReader.EventMessage;
 import com.menora.initializr.gen.Naming;
+import com.menora.initializr.gen.WizardMemo;
 import com.menora.initializr.openapi.SchemaModel;
 import com.menora.initializr.openapi.SchemaRecordEmitter;
 import com.menora.initializr.openapi.SchemaRecordEmitter.JavaTypeRef;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -53,10 +55,12 @@ public class EventsCodeGenerator {
     /**
      * What the wizard's drawer shows of a channel before anything is generated.
      *
-     * @param format {@code avro} when its messages are Avro records, else {@code json}
+     * @param format  {@code avro} when its messages are Avro records, else {@code json}
+     * @param key     {@code uuid} when a message's Kafka key is a UUID, else null (text)
+     * @param headers the Kafka headers its messages carry (a correlation id's included), in order
      */
     public record DetectedChannel(String name, String address, boolean sends, boolean receives,
-                                  List<String> messages, String problem, String format) {}
+                                  List<String> messages, String problem, String format, String key, List<String> headers) {}
 
     /** The version of Avro (and of its Maven plugin) a project with Avro payloads is given. */
     public static final String AVRO_VERSION = "1.11.4";
@@ -71,8 +75,16 @@ public class EventsCodeGenerator {
         if (document == null || document.isBlank()) return List.of();
         List<DetectedChannel> out = new ArrayList<>();
         for (EventChannel c : AsyncApiReader.read(document).channels()) {
+            Set<String> headers = new LinkedHashSet<>();
+            boolean uuidKey = false;
+            for (EventMessage m : c.messages()) {
+                if (m.headers() != null) m.headers().path("properties").fieldNames().forEachRemaining(headers::add);
+                if (m.correlationHeader() != null) headers.add(m.correlationHeader());
+                uuidKey |= Extras.uuidKey(m);
+            }
             out.add(new DetectedChannel(c.name(), c.address(), c.sends(), c.receives(),
-                    c.messages().stream().map(EventMessage::name).toList(), c.problem(), c.avro() ? "avro" : "json"));
+                    c.messages().stream().map(EventMessage::name).toList(), c.problem(), c.avro() ? "avro" : "json",
+                    uuidKey ? "uuid" : null, List.copyOf(headers)));
         }
         return out;
     }
@@ -85,8 +97,27 @@ public class EventsCodeGenerator {
     public List<String> avroImports(String document, String packageName, EventsWizardOptions options) {
         if (document == null || document.isBlank()) return null;
         EventsWizardOptions opts = options == null ? EventsWizardOptions.DEFAULTS : options;
-        AvroSchemas avro = new AvroSchemas(AsyncApiReader.read(document), packageName + "." + opts.payloadPackageOrDefault());
+        AvroSchemas avro = new AvroSchemas(read(document), packageName + "." + opts.payloadPackageOrDefault());
         return avro.isEmpty() ? null : avro.imports();
+    }
+
+    /**
+     * The Confluent serializer for a Spring Boot line: the release built on the Kafka client that
+     * Boot line manages (Boot 3.2 manages Kafka 3.6 — Confluent 7.6; 3.3, 3.7 — 7.7; 3.4, 3.8 — 7.8;
+     * 3.5, 3.9 — 7.9). The project's own kafka-clients version wins over the serializer's.
+     */
+    public static String confluentVersion(io.spring.initializr.generator.version.Version boot) {
+        if (boot == null) return "7.6.1";
+        if (boot.compareTo(io.spring.initializr.generator.version.Version.parse("3.3.0")) < 0) return "7.6.1";
+        if (boot.compareTo(io.spring.initializr.generator.version.Version.parse("3.4.0")) < 0) return "7.7.1";
+        if (boot.compareTo(io.spring.initializr.generator.version.Version.parse("3.5.0")) < 0) return "7.8.0";
+        return "7.9.0";
+    }
+
+    /** Whether the document's Avro channels go through Confluent's schema registry (its client and a registry container). */
+    public boolean usesRegistry(String document, String packageName, EventsWizardOptions options) {
+        if (document == null || document.isBlank() || options == null || !options.confluent()) return false;
+        return avroImports(document, packageName, options) != null;
     }
 
     public List<GeneratedEventFile> generate(String document, String packageName, EventsWizardOptions options,
@@ -94,13 +125,27 @@ public class EventsCodeGenerator {
         if (document == null || document.isBlank()) return List.of();
         EventsWizardOptions opts = options == null ? EventsWizardOptions.DEFAULTS : options;
         ProjectFacts facts = projectFacts == null ? ProjectFacts.NONE : projectFacts;
-        AsyncApiDocument doc = AsyncApiReader.read(document);
+        // A wizard request checks its document by generating it, then writes what the same inputs give.
+        return WizardMemo.get(WizardMemo.Key.of("events", document, packageName, opts, facts),
+                () -> render(document, packageName, opts, facts));
+    }
+
+    /** The document read once per request, however many times it is asked for. */
+    private static AsyncApiDocument read(String document) {
+        return WizardMemo.get(WizardMemo.Key.of("asyncapi-parse", document), () -> AsyncApiReader.read(document));
+    }
+
+    private List<GeneratedEventFile> render(String document, String packageName, EventsWizardOptions opts,
+                                            ProjectFacts facts) {
+        AsyncApiDocument doc = read(document);
         List<Planned> plan = plan(doc, opts);
 
         String payloadPackage = packageName + "." + opts.payloadPackageOrDefault();
         String eventsPackage = packageName + "." + opts.packageOrDefault();
         AvroSchemas avro = new AvroSchemas(doc, payloadPackage);
         Payloads payloads = new Payloads(doc, facts.validation(), payloadPackage, avro.components());
+        Extras extras = new Extras(doc.root(), payloadPackage, new LinkedHashSet<>(payloads.schemas.models().keySet()));
+        boolean registry = opts.confluent();
 
         List<GeneratedEventFile> out = new ArrayList<>();
         Map<String, String> topics = new LinkedHashMap<>();
@@ -114,11 +159,11 @@ public class EventsCodeGenerator {
             Map<String, Object> view;
             if (p.channel().avro()) {
                 anyAvro = true;
-                view = avroChannelView(p.channel(), stem, topicKey, avro, eventsPackage, opts);
+                view = avroChannelView(p.channel(), stem, topicKey, avro, eventsPackage, opts, extras);
             } else {
                 List<MessageType> messages = new ArrayList<>();
                 for (EventMessage m : p.channel().messages()) messages.add(payloads.typeOf(m));
-                view = channelView(p.channel(), stem, topicKey, messages, eventsPackage, opts);
+                view = channelView(p.channel(), stem, topicKey, messages, eventsPackage, opts, extras);
             }
             view.put("avro", p.channel().avro());
             view.put("produce", p.produce());
@@ -135,10 +180,13 @@ public class EventsCodeGenerator {
             out.add(new GeneratedEventFile("src/main/java/{{packagePath}}/" + payloadPath + "/" + model.name() + ".java",
                     SchemaRecordEmitter.render(model, payloadPackage)));
         }
+        // Each message's headers as a record of their own, beside the payloads.
+        extras.files.forEach((name, source) -> out.add(new GeneratedEventFile(
+                "src/main/java/{{packagePath}}/" + payloadPath + "/" + name + ".java", source)));
         String eventsPath = opts.packageOrDefault().replace('.', '/');
         for (Map<String, Object> view : rendered) {
             String stem = (String) view.get("stem");
-            String kind = (boolean) view.get("avro") ? "events/Avro" : "events/";
+            String kind = (boolean) view.get("avro") ? (registry ? "events/AvroRegistry" : "events/Avro") : "events/";
             if ((boolean) view.get("produce")) {
                 out.add(new GeneratedEventFile("src/main/java/{{packagePath}}/" + eventsPath + "/" + stem + "Producer.java",
                         WizardTemplates.render(kind + "Producer.java", view)));
@@ -158,9 +206,11 @@ public class EventsCodeGenerator {
         }
         if (anyAvro) {
             out.add(new GeneratedEventFile("src/main/java/{{packagePath}}/" + eventsPath + "/AvroKafkaConfig.java",
-                    WizardTemplates.render("events/AvroKafkaConfig.java", Map.of("package", eventsPackage))));
+                    WizardTemplates.render(registry ? "events/AvroRegistryKafkaConfig.java" : "events/AvroKafkaConfig.java",
+                            Map.of("package", eventsPackage))));
         }
-        out.add(new GeneratedEventFile("src/main/resources/application.yaml", topicsYaml(topics)));
+        out.add(new GeneratedEventFile("src/main/resources/application.yaml",
+                topicsYaml(topics) + (registry && anyAvro ? REGISTRY_YAML : "")));
         return out;
     }
 
@@ -212,7 +262,7 @@ public class EventsCodeGenerator {
     // ── Payload types ─────────────────────────────────────────────────────────
 
     /** A message's payload as Java: its type, and an expression that makes a value of it for a test. */
-    private record MessageType(String messageName, String title, JavaTypeRef type, String sample) {}
+    private record MessageType(String messageName, String title, JavaTypeRef type, String sample, EventMessage message) {}
 
     /**
      * The document's schemas as a schema set. The payload schemas are JSON Schema, which is what
@@ -287,7 +337,7 @@ public class EventsCodeGenerator {
             // No payload declared: whatever JSON it is.
             JavaTypeRef type = schemaName == null ? new JavaTypeRef("Object", Set.of())
                     : schemas.typeOf(new Schema<>().$ref("#/components/schemas/" + schemaName), null);
-            return new MessageType(message.name(), message.title(), type, sampleOf(type));
+            return new MessageType(message.name(), message.title(), type, sampleOf(type), message);
         }
 
         /** An expression for a value of the type, for the generated tests; null where none is simple. */
@@ -320,7 +370,7 @@ public class EventsCodeGenerator {
 
     private static Map<String, Object> channelView(EventChannel channel, String stem, String topicKey,
                                                    List<MessageType> messages, String eventsPackage,
-                                                   EventsWizardOptions opts) {
+                                                   EventsWizardOptions opts, Extras extras) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("package", eventsPackage);
         view.put("stem", stem);
@@ -337,7 +387,7 @@ public class EventsCodeGenerator {
 
         // A channel with one kind of message reads and writes that type; with none declared, any JSON.
         List<MessageType> typed = messages.isEmpty()
-                ? List.of(new MessageType(channel.name(), null, new JavaTypeRef("Object", Set.of()), null)) : messages;
+                ? List.of(new MessageType(channel.name(), null, new JavaTypeRef("Object", Set.of()), null, null)) : messages;
         boolean single = typed.size() == 1;
 
         Set<String> typeImports = new TreeSet<>();
@@ -357,10 +407,13 @@ public class EventsCodeGenerator {
             mv.put("hasSample", m.sample() != null);
             mv.put("sample", m.sample());
             mv.put("readBack", readExpression("mapper", "sent.getValue()", m.type().typeName()));
+            mv.put("readBackRecord", readExpression("mapper", "sent.getValue().value()", m.type().typeName()));
             mv.put("testName", candidate + "WritesJsonToTheTopic");
+            extras.putSend(mv, m.message());
             sends.add(mv);
         }
         view.put("sends", sends);
+        boolean anyHeaders = sends.stream().anyMatch(mv -> Boolean.TRUE.equals(mv.get("hasHeaders")));
 
         // The listener: the one type, or the tree when several kinds of message share the channel.
         MessageType only = single ? typed.get(0) : null;
@@ -377,6 +430,7 @@ public class EventsCodeGenerator {
         view.put("hasListenerSample", typedListener && only.sample() != null);
         // "{}" is a message for a tree; a typed listener is tried only with a value the test can make.
         view.put("listenerReadable", !typedListener || only.sample() != null);
+        extras.putListener(view, only == null ? null : only.message());
 
         Set<String> producerImports = new TreeSet<>(typeImports);
         producerImports.addAll(List.of(
@@ -387,6 +441,7 @@ public class EventsCodeGenerator {
                 "org.springframework.kafka.core.KafkaTemplate",
                 "org.springframework.kafka.support.SendResult",
                 "org.springframework.stereotype.Component"));
+        producerImports.addAll(extras.producerImports(sends));
         producerImports.removeIf(i -> isIn(i, eventsPackage));
         view.put("producerImports", producerImports);
 
@@ -402,6 +457,7 @@ public class EventsCodeGenerator {
                 "org.slf4j.LoggerFactory",
                 "org.springframework.kafka.annotation.KafkaListener",
                 "org.springframework.stereotype.Component"));
+        listenerImports.addAll(extras.listenerImports(view));
         listenerImports.removeIf(i -> isIn(i, eventsPackage));
         view.put("listenerImports", listenerImports);
 
@@ -412,6 +468,7 @@ public class EventsCodeGenerator {
         }
         if (typed.stream().anyMatch(m -> "List.of()".equals(m.sample()))) testImports.add("java.util.List");
         if (typed.stream().anyMatch(m -> "Map.of()".equals(m.sample()))) testImports.add("java.util.Map");
+        if (anyHeaders) testImports.add("org.apache.kafka.clients.producer.ProducerRecord");
         testImports.removeIf(i -> isIn(i, eventsPackage));
         view.put("testImports", testImports);
         view.put("hasTestImports", !testImports.isEmpty());
@@ -425,7 +482,8 @@ public class EventsCodeGenerator {
      */
     private static Map<String, Object> avroChannelView(EventChannel channel, String stem, String topicKey,
                                                        AvroSchemas avro, String eventsPackage,
-                                                       EventsWizardOptions opts) {
+                                                       EventsWizardOptions opts, Extras extras) {
+        boolean registry = opts.confluent();
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("package", eventsPackage);
         view.put("stem", stem);
@@ -472,9 +530,11 @@ public class EventsCodeGenerator {
             mv.put("hasSample", s.type().sample() != null);
             mv.put("sample", s.type().sample());
             mv.put("testName", candidate + "WritesAvroToTheTopic");
+            extras.putSend(mv, s.message());
             sends.add(mv);
         }
         view.put("sends", sends);
+        boolean anyHeaders = sends.stream().anyMatch(mv -> Boolean.TRUE.equals(mv.get("hasHeaders")));
         view.put("hasAnySample", sent.stream().anyMatch(s -> s.type().sample() != null));
 
         // The listener: the one class, or SpecificRecord when several kinds share the channel.
@@ -486,9 +546,17 @@ public class EventsCodeGenerator {
         String listenerSample = sent.stream().map(s -> s.type().sample()).filter(java.util.Objects::nonNull).findFirst().orElse(null);
         view.put("hasListenerSample", listenerSample != null);
         view.put("listenerSample", listenerSample);
+        extras.putListener(view, several ? null : sent.get(0).message());
 
         Set<String> producerImports = new TreeSet<>(typeImports);
-        producerImports.addAll(List.of(
+        producerImports.addAll(registry ? List.of(
+                "java.util.concurrent.CompletableFuture",
+                "org.apache.avro.specific.SpecificRecord",
+                "org.springframework.beans.factory.annotation.Qualifier",
+                "org.springframework.beans.factory.annotation.Value",
+                "org.springframework.kafka.core.KafkaTemplate",
+                "org.springframework.kafka.support.SendResult",
+                "org.springframework.stereotype.Component") : List.of(
                 "java.io.IOException",
                 "java.io.UncheckedIOException",
                 "java.nio.ByteBuffer",
@@ -498,15 +566,19 @@ public class EventsCodeGenerator {
                 "org.springframework.kafka.core.KafkaTemplate",
                 "org.springframework.kafka.support.SendResult",
                 "org.springframework.stereotype.Component"));
+        producerImports.addAll(extras.producerImports(sends));
+        producerImports.removeIf(i -> isIn(i, eventsPackage));
         view.put("producerImports", producerImports);
 
         Set<String> listenerImports = new TreeSet<>(typeImports);
         if (several) {
-            listenerImports.add("org.apache.avro.message.MissingSchemaException");
+            if (!registry) listenerImports.add("org.apache.avro.message.MissingSchemaException");
             listenerImports.add("org.apache.avro.specific.SpecificRecord");
         }
+        if (!registry) listenerImports.add("java.io.IOException");
+        listenerImports.addAll(extras.listenerImports(view));
+        listenerImports.removeIf(i -> isIn(i, eventsPackage));
         listenerImports.addAll(List.of(
-                "java.io.IOException",
                 "org.apache.kafka.clients.consumer.ConsumerRecord",
                 "org.slf4j.Logger",
                 "org.slf4j.LoggerFactory",
@@ -515,8 +587,206 @@ public class EventsCodeGenerator {
         view.put("listenerImports", listenerImports);
 
         // The producer's test names the payload classes; the listener's makes a value by its full name.
-        view.put("testImports", typeImports);
+        Set<String> testImports = new TreeSet<>(typeImports);
+        if (anyHeaders) testImports.add("org.apache.kafka.clients.producer.ProducerRecord");
+        view.put("testImports", testImports);
         return view;
+    }
+
+    /**
+     * With the registry, beside the topics under {@code app.events}: where it is, whether the
+     * application may register a schema (off but on a developer's machine), and its credentials.
+     * AvroKafkaConfig hands them to the serializers itself — the project's own Kafka configuration
+     * class builds the factories without {@code spring.kafka.properties}.
+     */
+    private static final String REGISTRY_YAML = """
+                schema-registry:
+                  url: "${SCHEMA_REGISTRY_URL:http://localhost:8081}"
+                  auto-register: "${SCHEMA_REGISTRY_AUTO_REGISTER:false}"
+                  # user:password, when the registry asks for basic authentication
+                  user-info: "${SCHEMA_REGISTRY_USER_INFO:}"
+            """;
+
+    /** The key a test sends when a message's key is a UUID. */
+    private static final String SAMPLE_UUID = "00000000-0000-0000-0000-000000000001";
+
+    /**
+     * What a message carries besides its payload: its Kafka key's type (a UUID when the
+     * document's {@code bindings.kafka.key} says so, else text) and its headers, as a record of
+     * their own in the payload package — each written as UTF-8 text, a correlation id left empty
+     * made a new UUID.
+     */
+    private static final class Extras {
+        private final JsonNode root;
+        private final String payloadPackage;
+        private final Set<String> taken;
+        /** Header record name → its source. */
+        final Map<String, String> files = new LinkedHashMap<>();
+        private final Map<String, Map<String, Object>> byMessage = new LinkedHashMap<>();
+
+        Extras(JsonNode root, String payloadPackage, Set<String> taken) {
+            this.root = root;
+            this.payloadPackage = payloadPackage;
+            this.taken = taken;
+        }
+
+        static boolean uuidKey(EventMessage m) {
+            return m != null && m.key() != null && "string".equals(m.key().path("type").asText())
+                    && "uuid".equals(m.key().path("format").asText());
+        }
+
+        void putSend(Map<String, Object> mv, EventMessage m) {
+            boolean uuid = uuidKey(m);
+            mv.put("keyType", uuid ? "java.util.UUID" : "String");
+            mv.put("keyArg", uuid ? "key == null ? null : key.toString()" : "key");
+            mv.put("keySample", uuid ? "java.util.UUID.fromString(\"" + SAMPLE_UUID + "\")" : "\"key-1\"");
+            mv.put("keySent", "\"" + (uuid ? SAMPLE_UUID : "key-1") + "\"");
+            Map<String, Object> headers = headers(m);
+            mv.put("hasHeaders", headers != null);
+            if (headers != null) mv.putAll(headers);
+        }
+
+        void putListener(Map<String, Object> view, EventMessage m) {
+            boolean uuid = uuidKey(m);
+            view.put("listenerKeyType", uuid ? "java.util.UUID" : "String");
+            view.put("listenerKey", uuid ? "record.key() == null ? null : java.util.UUID.fromString(record.key())" : "record.key()");
+            view.put("listenerTestKey", "\"" + (uuid ? SAMPLE_UUID : "key-1") + "\"");
+            Map<String, Object> headers = headers(m);
+            view.put("listenerHeaders", headers != null);
+            if (headers != null) {
+                view.put("listenerHeadersType", headers.get("headersType"));
+                view.put("listenerHeaderArgs", headers.get("headerArgs"));
+                view.put("listenerHeadersImport", headers.get("headersImport"));
+            }
+        }
+
+        Set<String> producerImports(List<Map<String, Object>> sends) {
+            Set<String> out = new TreeSet<>();
+            for (Map<String, Object> mv : sends) {
+                if (!Boolean.TRUE.equals(mv.get("hasHeaders"))) continue;
+                out.add("org.apache.kafka.clients.producer.ProducerRecord");
+                out.add("java.nio.charset.StandardCharsets");
+                out.add((String) mv.get("headersImport"));
+            }
+            return out;
+        }
+
+        Set<String> listenerImports(Map<String, Object> view) {
+            return Boolean.TRUE.equals(view.get("listenerHeaders"))
+                    ? Set.of((String) view.get("listenerHeadersImport")) : Set.of();
+        }
+
+        /** The view of a message's headers, or null when it carries none. */
+        Map<String, Object> headers(EventMessage m) {
+            if (m == null || !m.hasHeaders()) return null;
+            return byMessage.computeIfAbsent(m.name(), k -> build(m));
+        }
+
+        private Map<String, Object> build(EventMessage m) {
+            String base = SchemaRecordEmitter.toPascalCase(m.name().replaceAll("[^A-Za-z0-9]+", " ").trim());
+            if (base.isEmpty() || !Character.isJavaIdentifierStart(base.charAt(0))) base = "Message" + base;
+            String name = base + "Headers";
+            for (int n = 2; !taken.add(name); n++) name = base + "Headers" + n;
+
+            record Field(String javaName, String wire, String javaType, String parse) {}
+            List<Field> fields = new ArrayList<>();
+            Set<String> javaNames = new LinkedHashSet<>();
+            if (m.headers() != null) {
+                for (Iterator<Map.Entry<String, JsonNode>> it = m.headers().path("properties").fields(); it.hasNext(); ) {
+                    Map.Entry<String, JsonNode> e = it.next();
+                    JsonNode schema = resolve(e.getValue());
+                    String type = schema.path("type").asText("string");
+                    String format = schema.path("format").asText("");
+                    String javaType;
+                    String parser;
+                    switch (type) {
+                        case "integer" -> {
+                            javaType = "int64".equals(format) ? "Long" : "Integer";
+                            parser = javaType + "::valueOf";
+                        }
+                        case "number" -> {
+                            javaType = "java.math.BigDecimal";
+                            parser = "java.math.BigDecimal::new";
+                        }
+                        case "boolean" -> {
+                            javaType = "Boolean";
+                            parser = "Boolean::valueOf";
+                        }
+                        default -> {
+                            javaType = "uuid".equals(format) ? "java.util.UUID" : "String";
+                            parser = "uuid".equals(format) ? "java.util.UUID::fromString" : null;
+                        }
+                    }
+                    String javaName = SchemaRecordEmitter.javaName(e.getKey());
+                    for (int n = 2; !javaNames.add(javaName); n++) javaName = SchemaRecordEmitter.javaName(e.getKey()) + n;
+                    fields.add(new Field(javaName, e.getKey(), javaType, parser));
+                }
+            }
+            String correlation = m.correlationHeader();
+            if (correlation != null && fields.stream().noneMatch(f -> f.wire().equals(correlation))) {
+                String javaName = SchemaRecordEmitter.javaName(correlation);
+                for (int n = 2; !javaNames.add(javaName); n++) javaName = SchemaRecordEmitter.javaName(correlation) + n;
+                fields.add(new Field(javaName, correlation, "String", null));
+            }
+
+            // The record.
+            List<Map<String, Object>> recordFields = new ArrayList<>();
+            for (int i = 0; i < fields.size(); i++) {
+                Field f = fields.get(i);
+                Map<String, Object> rf = new LinkedHashMap<>();
+                rf.put("javaType", f.javaType());
+                rf.put("javaName", f.javaName());
+                rf.put("separator", i == fields.size() - 1 ? ") {" : ",");
+                recordFields.add(rf);
+            }
+            Map<String, Object> rv = new LinkedHashMap<>();
+            rv.put("package", payloadPackage);
+            rv.put("name", name);
+            rv.put("messageJavadoc", SchemaRecordEmitter.escapeJavadoc(m.name()));
+            rv.put("fields", recordFields);
+            rv.put("hasCorrelation", correlation != null);
+            rv.put("correlationJavadoc", correlation == null ? null : SchemaRecordEmitter.escapeJavadoc(correlation));
+            files.put(name, WizardTemplates.render("events/Headers.java", rv));
+
+            // The producer writes each one that is set; a correlation id left empty is a new one.
+            List<String> lines = new ArrayList<>();
+            List<String> args = new ArrayList<>();
+            boolean generated = false;
+            for (Field f : fields) {
+                String wire = SchemaRecordEmitter.javaString(f.wire());
+                boolean isCorrelation = f.wire().equals(correlation)
+                        && (f.javaType().equals("String") || f.javaType().equals("java.util.UUID"));
+                if (isCorrelation) {
+                    generated = true;
+                    String fresh = f.javaType().equals("String") ? "java.util.UUID.randomUUID().toString()" : "java.util.UUID.randomUUID()";
+                    lines.add(f.javaType() + " correlation = headers == null || headers." + f.javaName() + "() == null ? "
+                            + fresh + " : headers." + f.javaName() + "();");
+                    lines.add("record.headers().add(\"" + wire + "\", String.valueOf(correlation).getBytes(StandardCharsets.UTF_8));");
+                } else {
+                    lines.add("if (headers != null && headers." + f.javaName() + "() != null) record.headers().add(\"" + wire
+                            + "\", String.valueOf(headers." + f.javaName() + "()).getBytes(StandardCharsets.UTF_8));");
+                }
+                args.add(f.parse() == null ? "header(record, \"" + wire + "\")"
+                        : "parse(header(record, \"" + wire + "\"), " + f.parse() + ")");
+            }
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("headersType", name);
+            view.put("headersImport", payloadPackage + "." + name);
+            view.put("headerLines", lines);
+            view.put("headerArgs", String.join(",\n                ", args));
+            view.put("hasCorrelation", generated);
+            view.put("correlationWire", correlation == null ? null : SchemaRecordEmitter.javaString(correlation));
+            return view;
+        }
+
+        /** A header's schema with a reference inside the document followed. */
+        private JsonNode resolve(JsonNode node) {
+            JsonNode current = node;
+            for (int hops = 0; hops < 10 && current.path("$ref").asText("").startsWith("#/"); hops++) {
+                current = root.at(current.path("$ref").asText().substring(1));
+            }
+            return current;
+        }
     }
 
     private static boolean isIn(String imported, String pkg) {

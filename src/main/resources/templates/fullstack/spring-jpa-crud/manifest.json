@@ -265,6 +265,24 @@
       "gatedBy": "hasAttachments"
     },
     {
+      "source": "AttachedFile.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/AttachedFile.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasMultiFiles"
+    },
+    {
+      "source": "Thumbnails.java.mustache",
+      "path": "src/main/java/{{packagePath}}/attachment/Thumbnails.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 7,
+      "gatedBy": "hasAttachments"
+    },
+    {
       "source": "AttachmentProperties.java.mustache",
       "path": "src/main/java/{{packagePath}}/attachment/AttachmentProperties.java",
       "perEntity": false,

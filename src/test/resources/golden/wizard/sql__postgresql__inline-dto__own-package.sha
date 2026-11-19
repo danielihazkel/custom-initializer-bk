@@ -9,7 +9,7 @@ dc2af0faddf14c7a9f89133747a3ea37392a3ee405822add8b05fb96f331f86f  golden/compose
 0d0dd4fb8734310090375eaaf2219f813da11c73ea09780b134a58abcc6b3bc0  golden/entrypoint.sh
 c8cd5413aa1094fd5e5b31a84a0d3031a6701941fa18a7b4c426228c22e94ad9  golden/k8s/Jenkinsfile
 61982c135db17e618100cbac3599791492c5ae61a4541fdd95c7f0beba2eb2aa  golden/k8s/values.yaml
-a983cf2dd43d1901369093c899389360c4eda4ee8355f3c06f30897a1f453cdc  golden/menora-model.json
+dbc697ffe65248e468bbe25e649c1e6d2458775486450573420b5c969562e7bd  golden/menora-model.json
 dec1099905ac5e09c49ecd6d2962acefd2b669ad2969d1ffec74adc16cd54b84  golden/pom.xml
 c1472eead393d284301250879f955f0d5d92f7841438ccdd6642a954a03cbf3f  golden/settings.xml
 761ebf07897eca7fcc51628612e905bdc4c8577da10f80d1cbef8b252c9db674  golden/src/main/java/com/menora/golden/GoldenApplication.java
@@ -37,7 +37,7 @@ fbba8ce08cecb904f98d77e4448831f662509631aa801577852f4ca26a4b57fc  golden/src/mai
 8b79b633cf8ded0896a5cd3ad3d0da1420a53e2aefd705690bee2a4da1993803  golden/src/main/java/com/menora/golden/dto/MembershipsDto.java
 defd7497fd4e975eaa34996e7484ca0007034b5ec956bd0fb81dd371329864da  golden/src/main/java/com/menora/golden/dto/OrderItemsDto.java
 5fcb9b50f554cabf2fb0db2197f1c229895ee20584493d39059382b7ee82b949  golden/src/main/java/com/menora/golden/dto/PublishersDto.java
-b915dcb485660b1ff109827689f71c75b73be8159189f7449a2f3e309f439417  golden/src/main/java/com/menora/golden/dto/ReviewsDto.java
+f641028c2a08592aa3c344e432e1634515c392fd4f2100ed80f262fc845af6a5  golden/src/main/java/com/menora/golden/dto/ReviewsDto.java
 b7de6e4f158366ec278bdc945b69e4087971fbe61d95cbf37f1eaa8135a0e679  golden/src/main/java/com/menora/golden/dto/ShipmentsDto.java
 9fd7ce6dbeb5294e99d424ceeeffcbe1ea47a04d484b4fb1bc8734472d2e0bca  golden/src/main/java/com/menora/golden/dto/StockLevelsDto.java
 408ba1b14c50653336532acdf719fcd726cccad87de40fcfc7b938e6a1dd42e0  golden/src/main/java/com/menora/golden/model/AuditLog.java
@@ -52,7 +52,8 @@ d8320e21971a13931adc7384ad81e54ee1b23412b2e281c1f4fbe6029f626eaf  golden/src/mai
 70f518006428e4dad981e3ee53d99ae87d0aef9e6293b7930f1c8d2cdfe06609  golden/src/main/java/com/menora/golden/model/MembershipsTier.java
 c7105eda9465068a8611e7ece279e61e3b9d3167798ede025c39c8202e4debe0  golden/src/main/java/com/menora/golden/model/OrderItems.java
 3e0afe5e924c5be84fb607a60cdde72adae8c94a5e3eb993924c2a628b86b665  golden/src/main/java/com/menora/golden/model/Publishers.java
-e8e0a2c637a18de050eb840cee5000144bb83f71f904f9b4d4658dab8ac8d43b  golden/src/main/java/com/menora/golden/model/Reviews.java
+91e6521b5e4e406a241e71e62400dc965ec8f4ba0e69ad14fb48dd21efd95bd1  golden/src/main/java/com/menora/golden/model/Reviews.java
+182177a9a51147ccc4234641dbe8cae14d68ff450654ccb72f04bb88fb08ff02  golden/src/main/java/com/menora/golden/model/ReviewsVerdict.java
 32a6e8ee67f43c91eba525b3ac1910eb281bb0ba2f6219ac101169efcc865411  golden/src/main/java/com/menora/golden/model/Shipments.java
 de31c2bb3822ed93f450c6c02fa39051105869c54d99f848ab3c9eea2b555458  golden/src/main/java/com/menora/golden/model/StockLevels.java
 f56628a61ef98f051a98e30f8257b7ff35b3aaf8240fbf1f6b06c98b2a229c31  golden/src/main/java/com/menora/golden/repository/AuthorProfilesRepository.java
@@ -76,7 +77,7 @@ d8a22d7f45d66b77c7446c3d6a8e11df29777d00800613fa39467f5a2b6423db  golden/src/mai
 52745433d5a383009e8778745438fa0c44b4d1efe9057d82242c4ec59abddef9  golden/src/main/java/com/menora/golden/service/MembershipsService.java
 13e7b92d83422d1442fc894ca269741bb11a312aefad4d4b776d6f5bc5e398b2  golden/src/main/java/com/menora/golden/service/OrderItemsService.java
 47b7d2bbe2d6def089996a3c797ebdd4af47b026060173e1c8217963d355e748  golden/src/main/java/com/menora/golden/service/PublishersService.java
-93b45cb9a199872688f940012fbe04cb80d65525537b4cf260978d4b01b9323e  golden/src/main/java/com/menora/golden/service/ReviewsService.java
+0ce5770a34efb73df3a263a221232d8a95b70690aeed50e3519b7943043d0d09  golden/src/main/java/com/menora/golden/service/ReviewsService.java
 57b2ecad4f0e7ef1ff7aa464f7484faeb7f992165e446c6c267b9747d0e90625  golden/src/main/java/com/menora/golden/service/ShipmentsService.java
 082cad4ac9aedc3f00edc4d8028f24be6c431eccc4e873d7d9fde19e6f519d10  golden/src/main/java/com/menora/golden/service/StockLevelsService.java
 b761146891722a15c54a4713c4f5462e68723619162140d3e48ff103cbb45b6f  golden/src/main/java/com/menora/golden/web/ValidationExceptionHandler.java

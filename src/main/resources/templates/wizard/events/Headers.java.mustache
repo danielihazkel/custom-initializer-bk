@@ -1,0 +1,11 @@
+package {{package}};
+
+/**
+ * The Kafka headers of a {@code {{messageJavadoc}}} message{{#hasCorrelation}}; {@code {{correlationJavadoc}}} is its
+ * correlation id{{/hasCorrelation}}. Each travels as UTF-8 text; one left null is not sent.
+ */
+public record {{name}}(
+{{#fields}}
+        {{javaType}} {{javaName}}{{separator}}
+{{/fields}}
+}

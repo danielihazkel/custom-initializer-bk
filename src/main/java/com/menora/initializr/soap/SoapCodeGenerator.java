@@ -1,6 +1,7 @@
 package com.menora.initializr.soap;
 
 import com.menora.initializr.config.WizardTemplates;
+import com.menora.initializr.gen.WizardMemo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -66,11 +67,15 @@ public class SoapCodeGenerator {
 
     public List<GeneratedSoapFile> generate(String wsdl, String packageName, SoapWizardOptions options) {
         if (wsdl == null || wsdl.isBlank()) return List.of();
-        Definition def = parseOrThrow(wsdl);
         SoapWizardOptions opts = options != null ? options
                 : new SoapWizardOptions(null, null, null, null, null, null);
+        // A wizard request checks its WSDL by generating it, then writes what the same inputs give.
+        return WizardMemo.get(WizardMemo.Key.of("soap", wsdl, packageName, opts),
+                () -> render(wsdl, packageName, opts));
+    }
 
-        List<SoapServiceModel> services = buildServices(def);
+    private List<GeneratedSoapFile> render(String wsdl, String packageName, SoapWizardOptions opts) {
+        List<SoapServiceModel> services = servicesOf(wsdl);
         if (services.isEmpty()) {
             throw new SoapParseException(List.of("WSDL contains no <service> definitions"));
         }
@@ -102,7 +107,7 @@ public class SoapCodeGenerator {
      */
     public List<String> detectServices(String wsdl) {
         if (wsdl == null || wsdl.isBlank()) return List.of();
-        List<SoapServiceModel> services = buildServices(parseOrThrow(wsdl));
+        List<SoapServiceModel> services = servicesOf(wsdl);
         if (services.isEmpty()) {
             throw new SoapParseException(List.of("WSDL contains no <service> definitions"));
         }
@@ -116,6 +121,11 @@ public class SoapCodeGenerator {
     }
 
     // ── Parsing ───────────────────────────────────────────────────────────────
+
+    /** The services of a WSDL, read once per request however many times they are asked for. */
+    private List<SoapServiceModel> servicesOf(String wsdl) {
+        return WizardMemo.get(WizardMemo.Key.of("soap-parse", wsdl), () -> buildServices(parseOrThrow(wsdl)));
+    }
 
     private Definition parseOrThrow(String wsdl) {
         // Before wsdl4j sees it: given a schemaLocation, its reader goes and opens the file —
@@ -490,13 +500,12 @@ public class SoapCodeGenerator {
      */
     public List<String> resolveWsdlFileNames(String wsdl) {
         if (wsdl == null || wsdl.isBlank()) return List.of();
-        Definition def;
+        List<SoapServiceModel> services;
         try {
-            def = parseOrThrow(wsdl);
+            services = servicesOf(wsdl);
         } catch (SoapParseException e) {
             return List.of();
         }
-        List<SoapServiceModel> services = buildServices(def);
         if (services.isEmpty()) return List.of();
         Set<String> seen = new LinkedHashSet<>();
         seen.add(pickWsdlFileName(services));

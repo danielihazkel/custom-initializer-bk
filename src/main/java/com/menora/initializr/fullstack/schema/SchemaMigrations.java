@@ -79,12 +79,27 @@ public final class SchemaMigrations {
      */
     public static void carryBaselineOver(Map<String, byte[]> baseTree, Map<String, byte[]> targetTree,
                                          Generated base, Generated target, String stamp, String date) {
+        carryBaselineOver(baseTree, targetTree, base, target, stamp, date, SchemaBuilder.CURRENT_VERSION);
+    }
+
+    /**
+     * @param baseVersion the {@code generator.schemaVersion} of the project's model file: the base
+     *                    side was generated now, so its schema is taken back to that version
+     *                    ({@link SchemaBuilder#asOf}) — the migration then brings the generator's own
+     *                    tables up too. {@code null} (a project from before versions were written):
+     *                    taken back to the oldest, and what that adds to the generator's own tables
+     *                    is put up for review rather than run.
+     */
+    public static void carryBaselineOver(Map<String, byte[]> baseTree, Map<String, byte[]> targetTree,
+                                         Generated base, Generated target, String stamp, String date,
+                                         Integer baseVersion) {
         if (base == null || target == null || base.dialect() != target.dialect()) return;
         String baselinePath = "backend/" + SchemaSql.BASELINE_PATH;
         byte[] ran = baseTree.get(baselinePath);
         if (ran == null) return;
         targetTree.put(baselinePath, ran);
-        String migration = SchemaDiff.migration(base.schema(), target.schema(), target.dialect(), date);
+        String migration = SchemaDiff.migration(SchemaBuilder.asOf(base.schema(), baseVersion), target.schema(),
+                target.dialect(), date, baseVersion == null ? SchemaBuilder::isGeneratorTable : ref -> false);
         if (migration != null) {
             targetTree.put(MIGRATIONS + "V" + stamp + "__model_update.sql",
                     migration.getBytes(java.nio.charset.StandardCharsets.UTF_8));

@@ -24,6 +24,9 @@ public class {{className}} {
     /** {{summaryJavadoc}} */
 {{/hasSummary}}
     public {{returnType}} {{operationId}}({{arguments}}) {
+{{#authChoice}}
+        {{.}}
+{{/authChoice}}
 {{#formLines}}
         {{.}}
 {{/formLines}}

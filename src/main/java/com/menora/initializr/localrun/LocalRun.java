@@ -56,6 +56,14 @@ public final class LocalRun {
     static final String MONGO_IMAGE = "mongo:7";
     static final String REDIS_IMAGE = "redis:7-alpine";
     static final String KAFKA_IMAGE = "apache/kafka:3.8.0";
+    static final String SCHEMA_REGISTRY_IMAGE = "confluentinc/cp-schema-registry:7.7.1";
+
+    /**
+     * Not a dependency: the events wizard's Avro channels use Confluent's schema registry. Beside
+     * {@code kafka} it adds the registry's container, and the compose profile points the
+     * application at it (and lets it register its schemas there).
+     */
+    public static final String SCHEMA_REGISTRY = "schema-registry";
 
     /**
      * The databases a container can stand in for, in the order a fullstack migration picks its
@@ -164,6 +172,7 @@ public final class LocalRun {
     public static String profile(Collection<String> deps, boolean composeAtParent) {
         Map<String, Object> view = new HashMap<>();
         for (String dep : SERVICES) view.put(dep, deps.contains(dep));
+        view.put("schemaRegistry", deps.contains("kafka") && deps.contains(SCHEMA_REGISTRY));
         boolean createsSchema = createsSchema(deps);
         view.put("createsSchema", createsSchema);
         view.put("profiles", profiles(deps));
@@ -351,6 +360,8 @@ public final class LocalRun {
         view.put("mongoImage", images.hub(MONGO_IMAGE));
         view.put("redisImage", images.hub(REDIS_IMAGE));
         view.put("kafkaImage", images.hub(KAFKA_IMAGE));
+        view.put("schemaRegistry", deps.contains("kafka") && deps.contains(SCHEMA_REGISTRY));
+        view.put("schemaRegistryImage", images.hub(SCHEMA_REGISTRY_IMAGE));
         return view;
     }
 

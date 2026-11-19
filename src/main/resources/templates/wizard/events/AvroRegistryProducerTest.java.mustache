@@ -1,0 +1,58 @@
+package {{package}};
+
+{{#testImports}}
+import {{.}};
+{{/testImports}}
+import org.apache.avro.specific.SpecificRecord;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
+import org.springframework.kafka.core.KafkaTemplate;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** {{stem}}Producer without a broker or a registry: what it hands the template (the serializer writes it). */
+class {{stem}}ProducerTest {
+
+    private static final String TOPIC = "topic-under-test";
+
+    @SuppressWarnings("unchecked")
+    private final KafkaTemplate<String, SpecificRecord> kafkaTemplate = Mockito.mock(KafkaTemplate.class);
+    private final {{stem}}Producer producer = new {{stem}}Producer(kafkaTemplate, TOPIC);
+
+{{#sends}}
+{{#hasSample}}
+    @Test
+    void {{testName}}() {
+        {{type}} payload = {{sample}};
+
+        producer.{{method}}({{keySample}}, payload);
+
+{{^hasHeaders}}
+        ArgumentCaptor<SpecificRecord> sent = ArgumentCaptor.forClass(SpecificRecord.class);
+        Mockito.verify(kafkaTemplate).send(Mockito.eq(TOPIC), Mockito.eq({{keySent}}), sent.capture());
+        assertThat(sent.getValue()).isEqualTo(payload);
+{{/hasHeaders}}
+{{#hasHeaders}}
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<ProducerRecord<String, SpecificRecord>> sent = ArgumentCaptor.forClass((Class) ProducerRecord.class);
+        Mockito.verify(kafkaTemplate).send(sent.capture());
+        assertThat(sent.getValue().key()).isEqualTo({{keySent}});
+        assertThat(sent.getValue().value()).isEqualTo(payload);
+{{#hasCorrelation}}
+        // No correlation id given: a new one.
+        assertThat(sent.getValue().headers().lastHeader("{{correlationWire}}")).isNotNull();
+{{/hasCorrelation}}
+{{/hasHeaders}}
+    }
+
+{{/hasSample}}
+{{/sends}}
+{{^hasAnySample}}
+    @Test
+    void isBuilt() {
+        assertThat(producer).isNotNull();
+    }
+
+{{/hasAnySample}}
+}

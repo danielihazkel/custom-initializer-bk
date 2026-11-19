@@ -109,6 +109,12 @@ class WizardGoldenOutputTests {
         // Avro payloads: .avsc files, the plugin in the pom, byte[] producers and listeners, a JSON channel beside them.
         golden.pin("events__avro__tests", wizard(eventsBody("orders-avro-asyncapi.yaml", List.of("kafka"),
                 Map.of("generateTests", true))));
+        // Keys, headers (a trait's too) and correlation ids, in the single-object encoding…
+        golden.pin("events__headers-keys", wizard(eventsBody("orders-avro-registry-asyncapi.yaml", List.of("kafka"),
+                Map.of("generateTests", true))));
+        // …and through Confluent's schema registry.
+        golden.pin("events__avro__confluent", wizard(eventsBody("orders-avro-registry-asyncapi.yaml", List.of("kafka"),
+                Map.of("generateTests", true, "schemaRegistry", "confluent"))));
 
         // The SOAP wizard: endpoints, a client, both.
         golden.pin("soap__endpoints", wizard(soapBody("ENDPOINTS", null)));
@@ -254,6 +260,8 @@ class WizardGoldenOutputTests {
         return new GoldenManifests("wizard", Path.of("target", "golden-actual", "wizard"), (path, text) ->
                 path.endsWith("menora-model.json")
                         ? text.replaceAll("\"catalogHash\" : \"[0-9a-f]{64}\"", "\"catalogHash\" : \"<catalog>\"")
+                                // The id of every other file's bytes: those are pinned one by one.
+                                .replaceAll("\"snapshot\" : \"[0-9a-f]{64}\"", "\"snapshot\" : \"<snapshot>\"")
                         : text);
     }
 }

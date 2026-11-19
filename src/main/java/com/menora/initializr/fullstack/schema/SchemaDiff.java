@@ -46,6 +46,15 @@ public final class SchemaDiff {
     }
 
     public static Result between(Schema base, Schema target, SchemaDialect dialect) {
+        return between(base, target, dialect, ref -> false);
+    }
+
+    /**
+     * @param unsure the tables whose state in the project is not known for sure — the generator's
+     *               own, when the project's model file does not say which version of them it has.
+     *               What would run on one of them is put up for review instead, together.
+     */
+    public static Result between(Schema base, Schema target, SchemaDialect dialect, java.util.function.Predicate<String> unsure) {
         List<String> creates = new ArrayList<>();
         List<String> alters = new ArrayList<>();
         List<String> after = new ArrayList<>();
@@ -53,11 +62,50 @@ public final class SchemaDiff {
         List<String> review = new ArrayList<>();
 
         for (Table table : target.tables()) {
+            int[] marks = {creates.size(), alters.size(), after.size(), drops.size()};
+            between(base, table, dialect, creates, alters, after, drops, review);
+            if (!unsure.test(table.ref())) continue;
+            List<String> moved = new ArrayList<>();
+            List<List<String>> lists = List.of(creates, alters, after, drops);
+            for (int i = 0; i < lists.size(); i++) {
+                List<String> list = lists.get(i);
+                List<String> tail = list.subList(marks[i], list.size());
+                moved.addAll(tail);
+                tail.clear();
+            }
+            if (!moved.isEmpty()) {
+                review.add(note(table.ref() + " is one of the generator's own tables. This project's model file does"
+                        + " not say which version of it the project has, so these statements bring the oldest up to"
+                        + " this release's: run the ones your database lacks (a column or an index that is already"
+                        + " there makes its statement fail).", moved.toArray(String[]::new)));
+            }
+        }
+
+        for (Table was : base.tables()) {
+            if (target.table(was.ref()) != null) continue;
+            review.add(note(was.ref() + " is no longer in the model; dropping the table loses its rows."
+                    + " If the entity was renamed rather than removed, rename the table instead — and delete the"
+                    + " statement above that creates the new one.",
+                    "drop table " + was.ref() + ";"));
+        }
+
+        List<String> live = new ArrayList<>();
+        live.addAll(creates);
+        live.addAll(alters);
+        live.addAll(drops);
+        live.addAll(after);
+        return new Result(live, review);
+    }
+
+    /** What one table of the target needs, added to the lists. */
+    private static void between(Schema base, Table table, SchemaDialect dialect, List<String> creates, List<String> alters,
+                                List<String> after, List<String> drops, List<String> review) {
+        {
             Table was = base.table(table.ref());
             if (was == null) {
                 creates.add(SchemaSql.createTable(table, dialect).stripTrailing());
                 after.addAll(SchemaSql.constraintsAndIndexes(table, dialect));
-                continue;
+                return;
             }
             Set<String> added = new HashSet<>();
             for (Column column : table.columns()) {
@@ -161,21 +209,6 @@ public final class SchemaDiff {
                 drops.add(dialect.dropIndex(table.schema(), table.ref(), index.name()) + ";");
             }
         }
-
-        for (Table was : base.tables()) {
-            if (target.table(was.ref()) != null) continue;
-            review.add(note(was.ref() + " is no longer in the model; dropping the table loses its rows."
-                    + " If the entity was renamed rather than removed, rename the table instead — and delete the"
-                    + " statement above that creates the new one.",
-                    "drop table " + was.ref() + ";"));
-        }
-
-        List<String> live = new ArrayList<>();
-        live.addAll(creates);
-        live.addAll(alters);
-        live.addAll(drops);
-        live.addAll(after);
-        return new Result(live, review);
     }
 
     /**
@@ -184,7 +217,13 @@ public final class SchemaDiff {
      * @param generatedOn the date for the header
      */
     public static String migration(Schema base, Schema target, SchemaDialect dialect, String generatedOn) {
-        Result result = between(base, target, dialect);
+        return migration(base, target, dialect, generatedOn, ref -> false);
+    }
+
+    /** {@link #migration(Schema, Schema, SchemaDialect, String)}, with the tables it is unsure of (see {@link #between}). */
+    public static String migration(Schema base, Schema target, SchemaDialect dialect, String generatedOn,
+                                   java.util.function.Predicate<String> unsure) {
+        Result result = between(base, target, dialect, unsure);
         if (result.isEmpty()) return null;
         StringBuilder sql = new StringBuilder();
         sql.append("-- What the changed model needs of the database, generated by the Menora Initializr on ")

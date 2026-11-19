@@ -106,6 +106,8 @@ final class RelationViews {
                         refs.add(ref);
                     }
                     inv.put("childRefs", refs);
+                    // Rules, show-when or computed fields: the parent's save runs them on each row.
+                    inv.put("childHasRules", child.hasRowLogic());
                 }
                 if (declared != null) {
                     inv.put("listTitleTs", TemplateText.tsLiteralBody(declared.label() != null && !declared.label().isBlank()

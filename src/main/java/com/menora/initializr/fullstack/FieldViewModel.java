@@ -90,6 +90,8 @@ final class FieldViewModel {
         // beside it (nameField) for the list, the detail and the form to show.
         fv.put("isAttachment", f.type().isAttachment());
         fv.put("isImage", f.type().isImage());
+        // Several files (maxFiles): the entity view puts what changes with it (EntityViewModel).
+        fv.put("isMultiFile", f.multiple());
         fv.put("nameField", f.name() + "Name");
         fv.put("NameField", pascalName + "Name");
         // The TS that draws a non-null value of this field: a list cell reads it off `r`, the
@@ -210,6 +212,45 @@ final class FieldViewModel {
      *  and inbox cards). Not referenced by any template. */
     static final String FIELD_TYPE_KEY = "__type";
 
+    static String multiFileTs(FieldDefinition f, String v, Display where) {
+        return multiFileTs(f.type(), v, where);
+    }
+
+    /**
+     * What a field that holds several files ({@code maxFiles}) shows: its value {@code v} is a list
+     * of {@code {id, name}}, never null (the caller's null check stays harmless). A cell and a
+     * card: the names, or the first picture's thumbnail and how many more; the details: every
+     * file, each opening its original.
+     */
+    static String multiFileTs(FieldType type, String value, Display where) {
+        boolean image = type.isImage();
+        // The type lets the list be absent: drawn as none.
+        String v = "(" + value + " ?? [])";
+        String empty = "(" + v + ".length === 0 ? '—' : ";
+        return switch (where) {
+            case CELL, CARD -> image
+                    ? empty + "<span className=\"inline-flex items-center gap-1\"><img src={attachmentUrl(" + v
+                            + "[0].id, true)} alt={" + v + "[0].name ?? ''} loading=\"lazy\" className=\""
+                            + (where == Display.CELL ? "h-8 w-8" : "h-10 w-10") + " rounded object-cover\" />{" + v
+                            + ".length > 1 && <span className=\"text-xs text-muted\">+{" + v + ".length - 1}</span>}</span>)"
+                    : where == Display.CARD
+                            // A card is itself a link: the names alone.
+                            ? empty + v + ".map(x => x.name ?? x.id).join(', '))"
+                            // A row's names, each opening its file, as a single file's cell does.
+                            : empty + "<span>{" + v + ".map((x, k) => <a key={x.id} href={attachmentUrl(x.id)} target=\"_blank\" "
+                                    + "rel=\"noopener noreferrer\" onClick={e => e.stopPropagation()} "
+                                    + "className=\"font-medium text-brand hover:underline\">{x.name ?? x.id}{k < " + v
+                                    + ".length - 1 ? ', ' : ''}</a>)}</span>)";
+            case DETAIL -> image
+                    ? "<div className=\"flex flex-wrap gap-2\">{" + v + ".map(x => <a key={x.id} href={attachmentUrl(x.id)} "
+                            + "target=\"_blank\" rel=\"noopener noreferrer\"><img src={attachmentUrl(x.id, true)} alt={x.name ?? ''} "
+                            + "className=\"h-24 w-24 rounded-lg border border-border object-cover\" /></a>)}</div>"
+                    : "<ul className=\"space-y-1\">{" + v + ".map(x => <li key={x.id}><a href={attachmentUrl(x.id)} "
+                            + "target=\"_blank\" rel=\"noopener noreferrer\" className=\"font-medium text-brand hover:underline\">"
+                            + "{x.name ?? x.id}</a></li>)}</ul>";
+        };
+    }
+
     /** Where a value is shown: a table cell, the details, or a board card / inbox row. */
     enum Display { CELL, DETAIL, CARD }
 
@@ -254,16 +295,17 @@ final class FieldViewModel {
                         + "className=\"font-medium text-brand hover:underline\">{" + v + "Name ?? String(" + v + ")}</a>";
                 case CARD -> "(" + v + "Name ?? '\u2014')";
             };
-            // A small picture in a row, the picture itself (opening the file) in the details.
+            // A small picture in a row, a larger one (opening the file) in the details — each drawn
+            // from the server's thumbnail (attachmentUrl(id, true)), the link the original.
             case IMAGE -> switch (where) {
-                case CELL -> "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
-                        + "className=\"h-8 w-8 rounded object-cover\" />";
+                case CELL -> "<img src={attachmentUrl(" + v + ", true)} alt={" + v + "Name ?? ''} "
+                        + "loading=\"lazy\" className=\"h-8 w-8 rounded object-cover\" />";
                 case DETAIL -> "<a href={attachmentUrl(" + v + ")} target=\"_blank\" rel=\"noopener noreferrer\">"
-                        + "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
+                        + "<img src={attachmentUrl(" + v + ", true)} alt={" + v + "Name ?? ''} "
                         + "className=\"max-h-48 rounded-lg border border-border\" /></a>";
                 // A card is itself a link, so the picture alone — small, like a table row's.
-                case CARD -> "<img src={attachmentUrl(" + v + ")} alt={" + v + "Name ?? ''} "
-                        + "className=\"h-10 w-10 rounded object-cover\" />";
+                case CARD -> "<img src={attachmentUrl(" + v + ", true)} alt={" + v + "Name ?? ''} "
+                        + "loading=\"lazy\" className=\"h-10 w-10 rounded object-cover\" />";
             };
             case STRING, LONG, INTEGER, LOCAL_TIME, BIG_DECIMAL, UUID -> "String(" + v + ")";
         };

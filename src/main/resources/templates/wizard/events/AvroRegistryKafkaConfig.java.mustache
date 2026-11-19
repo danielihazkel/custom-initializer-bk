@@ -1,0 +1,75 @@
+package {{package}};
+
+import io.confluent.kafka.serializers.KafkaAvroDeserializer;
+import io.confluent.kafka.serializers.KafkaAvroDeserializerConfig;
+import io.confluent.kafka.serializers.KafkaAvroSerializer;
+import org.apache.avro.specific.SpecificRecord;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.ProducerFactory;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Kafka for the channels whose messages are Avro, through Confluent's schema registry: the
+ * application's own producer and consumer settings (servers, security, acknowledgements — the
+ * {@code ProducerFactory} and {@code ConsumerFactory} the project already has), with the value
+ * written by {@code KafkaAvroSerializer} and read by {@code KafkaAvroDeserializer} as the generated
+ * record classes ({@code specific.avro.reader}).
+ *
+ * <p>The registry is {@code app.events.schema-registry.url} ({@code SCHEMA_REGISTRY_URL}); its
+ * credentials, when it asks for them, {@code app.events.schema-registry.user-info}
+ * ({@code SCHEMA_REGISTRY_USER_INFO}, {@code user:password}). The application registers no schema of
+ * its own ({@code auto-register} is off — the pipeline that owns a topic registers its schemas)
+ * except on a developer's machine ({@code SCHEMA_REGISTRY_AUTO_REGISTER=true}, which the compose
+ * profile sets).
+ */
+@Configuration
+public class AvroKafkaConfig {
+
+    public static final String TEMPLATE = "avroKafkaTemplate";
+    public static final String LISTENER_FACTORY = "avroListenerContainerFactory";
+
+    /** The serializers' registry settings, given to the producer and the consumer alike. */
+    private final Map<String, Object> registry = new HashMap<>();
+
+    public AvroKafkaConfig(@Value("${app.events.schema-registry.url}") String url,
+            @Value("${app.events.schema-registry.auto-register:false}") boolean autoRegister,
+            @Value("${app.events.schema-registry.user-info:}") String userInfo) {
+        registry.put("schema.registry.url", url);
+        registry.put("auto.register.schemas", autoRegister);
+        if (!userInfo.isBlank()) {
+            registry.put("basic.auth.credentials.source", "USER_INFO");
+            registry.put("basic.auth.user.info", userInfo);
+        }
+    }
+
+    @Bean(TEMPLATE)
+    public KafkaTemplate<String, SpecificRecord> avroKafkaTemplate(ProducerFactory<?, ?> producerFactory) {
+        Map<String, Object> props = new HashMap<>(producerFactory.getConfigurationProperties());
+        props.putAll(registry);
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class);
+        return new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(props));
+    }
+
+    @Bean(LISTENER_FACTORY)
+    public ConcurrentKafkaListenerContainerFactory<String, SpecificRecord> avroListenerContainerFactory(
+            ConsumerFactory<?, ?> consumerFactory) {
+        Map<String, Object> props = new HashMap<>(consumerFactory.getConfigurationProperties());
+        props.putAll(registry);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class);
+        props.put(KafkaAvroDeserializerConfig.SPECIFIC_AVRO_READER_CONFIG, true);
+        ConcurrentKafkaListenerContainerFactory<String, SpecificRecord> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(props));
+        return factory;
+    }
+}

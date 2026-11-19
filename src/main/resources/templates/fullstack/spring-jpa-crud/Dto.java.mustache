@@ -11,12 +11,13 @@ import {{entityPackage}}.{{EntityName}};
 {{/hasDecimalMinFields}}{{#hasDecimalMaxFields}}import jakarta.validation.constraints.DecimalMax;
 {{/hasDecimalMaxFields}}{{#hasPatternFields}}import jakarta.validation.constraints.Pattern;
 {{/hasPatternFields}}{{#hasEmailFields}}import jakarta.validation.constraints.Email;
-{{/hasEmailFields}}{{/hasValidation}}{{#imports}}
+{{/hasEmailFields}}{{/hasValidation}}{{#hasMultiFileFields}}import {{packageName}}.attachment.AttachedFile;
+{{/hasMultiFileFields}}{{#imports}}
 import {{name}};
 {{/imports}}
 
 public record {{EntityName}}Dto(
-{{#fields}}        {{#hasValidation}}{{#isRequired}}{{^isGenerated}}@NotNull {{/isGenerated}}{{/isRequired}}{{#hasLength}}@Size(max = {{length}}) {{/hasLength}}{{#isIntegral}}{{#hasMin}}@Min({{min}}) {{/hasMin}}{{#hasMax}}@Max({{max}}) {{/hasMax}}{{/isIntegral}}{{#isBigDecimal}}{{#hasMin}}@DecimalMin(value = "{{min}}") {{/hasMin}}{{#hasMax}}@DecimalMax(value = "{{max}}") {{/hasMax}}{{/isBigDecimal}}{{#hasPattern}}@Pattern(regexp = "{{patternEscaped}}") {{/hasPattern}}{{#isEmail}}@Email {{/isEmail}}{{/hasValidation}}{{javaType}} {{name}}{{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
+{{#fields}}        {{#hasValidation}}{{#isRequired}}{{^isGenerated}}{{^isMultiFile}}@NotNull {{/isMultiFile}}{{/isGenerated}}{{/isRequired}}{{#hasLength}}@Size(max = {{length}}) {{/hasLength}}{{#isIntegral}}{{#hasMin}}@Min({{min}}) {{/hasMin}}{{#hasMax}}@Max({{max}}) {{/hasMax}}{{/isIntegral}}{{#isBigDecimal}}{{#hasMin}}@DecimalMin(value = "{{min}}") {{/hasMin}}{{#hasMax}}@DecimalMax(value = "{{max}}") {{/hasMax}}{{/isBigDecimal}}{{#hasPattern}}@Pattern(regexp = "{{patternEscaped}}") {{/hasPattern}}{{#isEmail}}@Email {{/isEmail}}{{/hasValidation}}{{javaType}} {{name}}{{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
 {{/fields}}{{#relations}}        {{#hasValidation}}{{#dtoRequired}}@NotNull {{/dtoRequired}}{{/hasValidation}}{{targetPkJavaType}} {{fkFieldName}}{{#hasTargetLabel}},
         String {{fieldName}}Label{{/hasTargetLabel}}{{^last}},{{/last}}
 {{/relations}}{{#auditApplicable}},
@@ -33,7 +34,7 @@ public record {{EntityName}}Dto(
 
     public static {{EntityName}}Dto from({{EntityName}} entity) {
         return new {{EntityName}}Dto(
-{{#fields}}                entity.get{{Name}}(){{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
+{{#fields}}                {{#isMultiFile}}entity.get{{Name}}() == null ? java.util.List.of() : java.util.List.copyOf(entity.get{{Name}}()){{/isMultiFile}}{{^isMultiFile}}entity.get{{Name}}(){{/isMultiFile}}{{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
 {{/fields}}{{#relations}}                entity.get{{FieldName}}() == null ? null : entity.get{{FieldName}}().get{{TargetPkName}}(){{#hasTargetLabel}},
                 entity.get{{FieldName}}Label(){{/hasTargetLabel}}{{^last}},{{/last}}
 {{/relations}}{{#auditApplicable}},
@@ -57,8 +58,10 @@ public record {{EntityName}}Dto(
 
     public {{EntityName}} toEntity() {
         {{EntityName}} entity = new {{EntityName}}();
-{{#fields}}        {{#hasDefault}}if (this.{{name}} != null) {{/hasDefault}}entity.set{{Name}}(this.{{name}});
-{{/fields}}{{#relations}}        if (this.{{fkFieldName}} != null) {
+{{#fields}}        {{#isMultiFile}}// No list means "leave the files as they are" to an update.
+        entity.set{{Name}}(this.{{name}} == null ? null : new java.util.ArrayList<>(this.{{name}}));
+{{/isMultiFile}}{{^isMultiFile}}{{#hasDefault}}if (this.{{name}} != null) {{/hasDefault}}entity.set{{Name}}(this.{{name}});
+{{/isMultiFile}}{{/fields}}{{#relations}}        if (this.{{fkFieldName}} != null) {
             {{targetEntity}} {{fieldName}} = new {{targetEntity}}();
             {{fieldName}}.set{{TargetPkName}}(this.{{fkFieldName}});
             entity.set{{FieldName}}({{fieldName}});

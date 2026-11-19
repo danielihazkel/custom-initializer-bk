@@ -2,9 +2,10 @@ import { LOCALE } from '@shared/i18n'
 
 const BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '').replace(/\/+$/, '')
 
-/** Where an uploaded file (a file or image field's value) is read from. */
-export function attachmentUrl(id: string): string {
-  return `${BASE}/api/attachments/${encodeURIComponent(id)}`
+/** Where an uploaded file (a file or image field's value) is read from. `thumbnail`: a picture's
+ *  small version, made by the server once (the original when it cannot make one). */
+export function attachmentUrl(id: string, thumbnail = false): string {
+  return `${BASE}/api/attachments/${encodeURIComponent(id)}${thumbnail ? '/thumbnail' : ''}`
 }
 
 /** An amount in its currency, written for the app's locale: 1234.5 → "₪1,234.50". */

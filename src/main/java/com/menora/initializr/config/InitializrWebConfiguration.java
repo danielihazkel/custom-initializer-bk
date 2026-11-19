@@ -157,6 +157,7 @@ public class InitializrWebConfiguration extends OncePerRequestFilter {
      * would then be scaffolded into the next request served by this pooled thread.
      */
     private void clearAllContexts() {
+        com.menora.initializr.gen.WizardMemo.close();
         optionsContext.clear();
         sqlContext.clear();
         specContext.clear();

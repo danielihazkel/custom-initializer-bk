@@ -687,6 +687,15 @@ public class ConfigurationExportImportService {
             }
         }
 
+        // A file contribution writes inside the project — checked here, before the wipe, as a save is.
+        for (FileContribExport f : safe(data.getFileContributions())) {
+            String problem = com.menora.initializr.admin.validation.FileContributionContentValidator
+                    .targetPathProblem(f.getTargetPath());
+            if (problem != null) {
+                throw new IllegalArgumentException("File contribution of '" + f.getDepId() + "': " + problem);
+            }
+        }
+
         // Fullstack examples must be ones the generator accepts — checked here, before the wipe.
         Set<String> exampleIds = new HashSet<>();
         for (FullstackExampleExport ex : safe(data.getFullstackExamples())) {

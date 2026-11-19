@@ -258,6 +258,8 @@ public class MultiModuleController {
         }
         // One set of bytes whatever machine generated it.
         GeneratedProjectFiles.normalizeLineEndings(dir);
+        // Named last, by everything above.
+        GeneratedSnapshots.stamp(dir);
     }
 
     /**

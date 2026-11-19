@@ -48,8 +48,27 @@ public record OperationModel(
         return bodyKind == BodyKind.MULTIPART || bodyKind == BodyKind.FORM;
     }
 
-    /** The schemes the client sends: the first requirement's. */
+    /**
+     * The requirements the client can meet, in the document's order: each an alternative of the
+     * schemes it sends together. Up to the first that asks for nothing (a call may then be made
+     * without credentials), and without an alternative it cannot send (mutual TLS alone).
+     */
+    public List<List<SecurityUse>> clientAlternatives() {
+        List<List<SecurityUse>> out = new java.util.ArrayList<>();
+        for (List<SecurityUse> alternative : security) {
+            if (alternative.isEmpty()) break;
+            List<SecurityUse> sendable = alternative.stream().filter(SecurityUse::sendable).toList();
+            if (sendable.size() == alternative.size()) out.add(sendable);
+        }
+        return out;
+    }
+
+    /** Every scheme the client may send, once each: the credentials it reads. */
     public List<SecurityUse> clientSecurity() {
-        return security.isEmpty() ? List.of() : security.get(0).stream().filter(SecurityUse::sendable).toList();
+        java.util.Map<String, SecurityUse> out = new java.util.LinkedHashMap<>();
+        for (List<SecurityUse> alternative : clientAlternatives()) {
+            for (SecurityUse use : alternative) out.putIfAbsent(use.scheme(), use);
+        }
+        return List.copyOf(out.values());
     }
 }

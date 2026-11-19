@@ -299,8 +299,9 @@ public class ExtensionMetadataController {
                 relations.add(new RelationWire(r.type().name(), r.fieldName(), r.targetEntity(), r.required(),
                         r.joinColumn()));
             }
+            List<List<String>> uniqueKeys = d.uniqueKeys().stream().map(EntityDefinition.UniqueKey::fields).toList();
             wire.add(new EntityWire(d.name(), d.tableName(), d.schema(), fields,
-                    d.readOnly(), d.viewQuery(), d.sourceSql(), relations));
+                    d.readOnly(), d.viewQuery(), d.sourceSql(), relations, uniqueKeys.isEmpty() ? null : uniqueKeys));
         }
         return wire;
     }
@@ -329,9 +330,12 @@ public class ExtensionMetadataController {
 
     public record ImportDdlRequest(String sql, String dialect) {}
     public record ImportDdlResponse(List<EntityWire> entities, String note) {}
+    /** {@code uniqueKeys}: UNIQUE constraints over several columns, by field / relation name; absent when none. */
     public record EntityWire(String name, String tableName, String schema, List<FieldWire> fields,
                              boolean readOnly, String viewQuery, String sourceSql,
-                             List<RelationWire> relations) {}
+                             List<RelationWire> relations,
+                             @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                             List<List<String>> uniqueKeys) {}
     /** A MANY_TO_ONE derived from a single-column foreign key in the imported DDL. */
     public record RelationWire(String type, String fieldName, String targetEntity, boolean required,
                                String joinColumn) {}

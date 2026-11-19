@@ -98,6 +98,23 @@ public class AttachmentController {
                 .body(stored.content());
     }
 
+    /**
+     * A picture's small version — what a table, a card and a gallery draw — under the same read
+     * check as the file. The original when no smaller one can be made.
+     */
+{{#hasLdapAuth}}    @RequiresPermission(Constants.SIGNED_IN)
+{{/hasLdapAuth}}    @GetMapping("/{id}/thumbnail")
+    public ResponseEntity<byte[]> thumbnail(@PathVariable UUID id, @RequestHeader(value = "userinfo", required = false) String user) {
+{{#hasLdapAuth}}        attachments.requireReadable(id, user);
+{{/hasLdapAuth}}        java.util.Optional<byte[]> small = attachments.thumbnail(id);
+        if (small.isEmpty()) return download(id, user);
+        return ResponseEntity.ok()
+                .header("X-Content-Type-Options", "nosniff")
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
+                .contentType(MediaType.parseMediaType(imageType(small.get())))
+                .body(small.get());
+    }
+
     /** The image type a file's first bytes say it is, or null when it is not one we show. */
     static String imageType(byte[] b) {
         if (b.length >= 8 && (b[0] & 0xFF) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') return "image/png";

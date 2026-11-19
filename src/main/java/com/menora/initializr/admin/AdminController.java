@@ -232,6 +232,8 @@ public class AdminController {
     }
 
     private void validateContent(FileContributionEntity fc) {
+        String pathProblem = FileContributionContentValidator.targetPathProblem(fc.getTargetPath());
+        if (pathProblem != null) throw new IllegalArgumentException(pathProblem);
         List<String> errors = contentValidator.validate(fc);
         if (errors.isEmpty()) return;
         String detail = errors.get(0);

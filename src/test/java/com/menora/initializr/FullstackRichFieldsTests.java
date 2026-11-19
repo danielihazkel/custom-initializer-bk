@@ -103,7 +103,7 @@ class FullstackRichFieldsTests {
         Map<String, String> files = generate(layout("react-tailwind-crud"));
         assertThat(files.get(FE + "app/screens/BoardScreen.tsx"))
                 .contains("import { attachmentUrl } from '@shared/ui/format'")
-                .contains("r.photo == null ? '—' : <img src={attachmentUrl(r.photo)} alt={r.photoName ?? ''} className=\"h-10 w-10 rounded object-cover\" />");
+                .contains("r.photo == null ? '—' : <img src={attachmentUrl(r.photo, true)} alt={r.photoName ?? ''} loading=\"lazy\" className=\"h-10 w-10 rounded object-cover\" />");
         assertThat(files.get(FE + "shared/ui/AttachmentField.tsx"))
                 .contains("onDrop={onDrop}")
                 .contains("void pick(e.dataTransfer.files[0])")

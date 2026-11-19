@@ -304,6 +304,31 @@ class GeneratedBackendBuildSmokeTests {
                 }
 
                 @Test
+                void aRowIsComputedAndCheckedByItsOwnRulesInItsParentsSave() throws Exception {
+                    long product = firstId("/api/products");
+                    // The line total is computed on the parent's save, as on the line's own.
+                    JsonNode made = send(post("/api/orders"), null, order("R-8", ",'lines':[{'quantity':2,'unitPrice':5,'lineTotal':999,'productId':"
+                            + product + "},{'quantity':3,'productId':" + product + "}]"), 200);
+                    assertThat(made.get("lines").get(0).get("lineTotal").decimalValue()).isEqualByComparingTo("10");
+                    assertThat(made.get("lines").get(1).get("lineTotal").isNull()).isTrue();
+                    long id = made.get("id").asLong();
+                    long first = made.get("lines").get(0).get("id").asLong();
+
+                    // A row breaking its rule (a unit price of zero) stops the save, named by its place…
+                    JsonNode refused = send(post("/api/orders"), null, order("R-9", ",'lines':[{'quantity':1,'productId':" + product
+                            + "},{'quantity':1,'unitPrice':0,'productId':" + product + "}]"), 400);
+                    assertThat(refused.get("errors").get("lines[1].unitPrice").asText()).isEqualTo("A unit price cannot be zero");
+                    assertThat(get("/api/orders?q=R-9").get("totalElements").asInt()).isZero();
+                    // …on an update too, where a kept row is recomputed from its new values.
+                    long version = get("/api/orders/" + id).get("version").asLong();
+                    send(put("/api/orders/" + id), null, order("R-8", ",'version':" + version + ",'lines':[{'id':" + first
+                            + ",'quantity':1,'unitPrice':0,'productId':" + product + "}]"), 400);
+                    JsonNode changed = send(put("/api/orders/" + id), null, order("R-8", ",'version':" + version + ",'lines':[{'id':" + first
+                            + ",'quantity':4,'unitPrice':2.5,'productId':" + product + "}]"), 200);
+                    assertThat(changed.get("lines").get(0).get("lineTotal").decimalValue()).isEqualByComparingTo("10");
+                }
+
+                @Test
                 void aRowIsCheckedAndNeverTakenFromAnotherParent() throws Exception {
                     long product = firstId("/api/products");
                     // A row that breaks its own rules stops the whole save, named by its place.
@@ -506,6 +531,119 @@ class GeneratedBackendBuildSmokeTests {
         }
     }
 
+    /**
+     * A field that holds several files, over a real API on the schema its Flyway baseline makes
+     * ({@code ddl-auto: validate}, so the element collection must match the files table): files
+     * attached in order and named, a removed one gone, too many refused, a required one asked for.
+     */
+    @org.junit.jupiter.api.Test
+    void severalFilesInAFieldOverTheRealApi(@TempDir Path workDir) throws Exception {
+        Path backend = postAndExtractBackend(workDir, FullstackMultiFileTests.body());
+        writeProjectTest(backend, "com.menora.album", "SeveralFilesTests", SEVERAL_FILES_TESTS);
+        runMvn(backend, "-B", "package");
+        try (var reports = Files.list(backend.resolve("target/surefire-reports"))) {
+            assertThat(reports.map(p -> p.getFileName().toString()).toList())
+                    .contains("com.menora.album.SeveralFilesTests.txt")
+                    .anyMatch(name -> name.endsWith("TripApiTest.txt"));
+        }
+    }
+
+    private static final String SEVERAL_FILES_TESTS = """
+            package com.menora.album;
+
+            import com.fasterxml.jackson.databind.JsonNode;
+            import com.fasterxml.jackson.databind.ObjectMapper;
+            import com.menora.album.attachment.Attachments;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.http.MediaType;
+            import org.springframework.mock.web.MockMultipartFile;
+            import org.springframework.test.web.servlet.MockMvc;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+            @SpringBootTest
+            @AutoConfigureMockMvc
+            class SeveralFilesTests {
+
+                @Autowired MockMvc mvc;
+                @Autowired Attachments attachments;
+                private final ObjectMapper json = new ObjectMapper();
+
+                private String upload(String name) throws Exception {
+                    MockMultipartFile file = new MockMultipartFile("file", name, "text/plain", ("bytes of " + name).getBytes());
+                    String body = mvc.perform(multipart("/api/attachments").file(file))
+                            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+                    return json.readTree(body).get("id").asText();
+                }
+
+                private static String list(String... ids) {
+                    StringBuilder sb = new StringBuilder("[");
+                    for (int i = 0; i < ids.length; i++) sb.append(i == 0 ? "" : ",").append("{\\"id\\":\\"").append(ids[i]).append("\\"}");
+                    return sb.append("]").toString();
+                }
+
+                @Test
+                void filesAreAttachedInOrderNamedAndForgottenWhenRemoved() throws Exception {
+                    String a = upload("a.txt"), b = upload("b.txt"), ticket = upload("ticket.txt");
+                    String answer = mvc.perform(post("/api/trips").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"title\\":\\"Rome\\",\\"photos\\":" + list(b, a) + ",\\"tickets\\":" + list(ticket) + "}"))
+                            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+                    JsonNode trip = json.readTree(answer);
+                    long id = trip.get("id").asLong();
+                    // In the order sent, with the names they were uploaded under (not sent by the client).
+                    assertThat(trip.get("photos").get(0).get("id").asText()).isEqualTo(b);
+                    assertThat(trip.get("photos").get(0).get("name").asText()).isEqualTo("b.txt");
+                    assertThat(trip.get("photos").get(1).get("name").asText()).isEqualTo("a.txt");
+                    mvc.perform(get("/api/trips/" + id)).andExpect(jsonPath("$.photos.length()").value(2));
+
+                    // A file another record holds cannot be taken.
+                    mvc.perform(post("/api/trips").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"title\\":\\"Copy\\",\\"photos\\":" + list(a) + ",\\"tickets\\":" + list(upload("t2.txt")) + "}"))
+                            .andExpect(status().isBadRequest())
+                            .andExpect(jsonPath("$.errors.photos").exists());
+
+                    // Removed from the list: gone once the save commits.
+                    mvc.perform(put("/api/trips/" + id).contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"id\\":" + id + ",\\"title\\":\\"Rome\\",\\"photos\\":" + list(a) + ",\\"tickets\\":" + list(ticket) + "}"))
+                            .andExpect(status().isOk())
+                            .andExpect(jsonPath("$.photos.length()").value(1));
+                    mvc.perform(get("/api/attachments/" + b)).andExpect(status().isNotFound());
+                    mvc.perform(get("/api/attachments/" + a)).andExpect(status().isOk());
+
+                    // No list: the files stay as they are.
+                    mvc.perform(put("/api/trips/" + id).contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"id\\":" + id + ",\\"title\\":\\"Rome again\\"}"))
+                            .andExpect(status().isOk())
+                            .andExpect(jsonPath("$.photos.length()").value(1));
+                    // The clean-up leaves what a list holds alone.
+                    attachments.removeUnattached();
+                    mvc.perform(get("/api/attachments/" + a)).andExpect(status().isOk());
+                }
+
+                @Test
+                void tooManyFilesAndNoneForARequiredFieldAreRefused() throws Exception {
+                    String[] six = {upload("1"), upload("2"), upload("3"), upload("4"), upload("5"), upload("6")};
+                    mvc.perform(post("/api/trips").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"title\\":\\"Many\\",\\"photos\\":" + list(six) + ",\\"tickets\\":" + list(upload("t")) + "}"))
+                            .andExpect(status().isBadRequest())
+                            .andExpect(jsonPath("$.errors.photos").value("At most 5 files"));
+                    mvc.perform(post("/api/trips").contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\\"title\\":\\"None\\",\\"tickets\\":[]}"))
+                            .andExpect(status().isBadRequest())
+                            .andExpect(jsonPath("$.errors.tickets").value("Add at least one file"));
+                }
+            }
+            """;
+
     /** Run inside the generated backend, files in the database (the default storage). */
     private static final String ATTACHMENT_TESTS = """
             package com.menora.files;
@@ -606,6 +744,34 @@ class GeneratedBackendBuildSmokeTests {
                                     .content("{\\"title\\":\\"Gone\\",\\"slip\\":\\"00000000-0000-0000-0000-000000000001\\"}")))
                             .andExpect(status().isBadRequest())
                             .andExpect(jsonPath("$.errors.slip").value("The file is no longer there: upload it again"));
+                }
+
+                @Test
+                void aPictureHasASmallVersionAndOtherFilesAreServedAsTheyAre() throws Exception {
+                    java.awt.image.BufferedImage big = new java.awt.image.BufferedImage(1200, 800, java.awt.image.BufferedImage.TYPE_INT_RGB);
+                    java.io.ByteArrayOutputStream png = new java.io.ByteArrayOutputStream();
+                    javax.imageio.ImageIO.write(big, "png", png);
+                    MockMultipartFile file = new MockMultipartFile("file", "big.png", "image/png", png.toByteArray());
+                    String id = json.readTree(mvc.perform(as("clerk", multipart("/api/attachments").file(file).param("kind", "image")))
+                            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).get("id").asText();
+
+                    for (int time = 0; time < 2; time++) { // made once, then the kept one
+                        byte[] small = mvc.perform(as("clerk", get("/api/attachments/" + id + "/thumbnail")))
+                                .andExpect(status().isOk())
+                                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType("image/png"))
+                                .andReturn().getResponse().getContentAsByteArray();
+                        java.awt.image.BufferedImage read = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(small));
+                        assertThat(read.getWidth()).isEqualTo(320);
+                        assertThat(read.getHeight()).isEqualTo(213);
+                    }
+                    // The same read check as the file: somebody else's upload on no record.
+                    mvc.perform(as("boss", get("/api/attachments/" + id + "/thumbnail"))).andExpect(status().isNotFound());
+
+                    // Not a picture: the file itself.
+                    String text = upload("clerk", "notes.txt");
+                    mvc.perform(as("clerk", get("/api/attachments/" + text + "/thumbnail")))
+                            .andExpect(status().isOk())
+                            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string("bytes of notes.txt"));
                 }
 
                 @Test
@@ -1329,6 +1495,30 @@ class GeneratedBackendBuildSmokeTests {
                 }
 
                 @Test
+                void aSubmittedClaimStaysWithinItsCostCentersBudget() throws Exception {
+                    // The rule reads the claim's cost center: when SUBMITTED, amount <= costCenter.budget.
+                    long small = send(post("/api/cost-centers"), "alice", "{\\"code\\":\\"CC-LIVE-1\\",\\"name\\":\\"Small\\",\\"budget\\":30}", 200)
+                            .get("id").asLong();
+                    long tiny = send(post("/api/cost-centers"), "alice", "{\\"code\\":\\"CC-LIVE-2\\",\\"name\\":\\"Tiny\\",\\"budget\\":10}", 200)
+                            .get("id").asLong();
+                    String claim = "{\\"title\\":\\"Hotel\\",\\"category\\":\\"TRAVEL\\",\\"spentOn\\":\\"2026-11-01\\",";
+                    long id = send(post("/api/expense-claims"), "alice", claim + "\\"amount\\":40,\\"costCenterId\\":" + small + "}", 200)
+                            .get("id").asLong();
+                    // A draft may be over it; submitting it is refused, on the amount.
+                    JsonNode refused = send(post("/api/expense-claims/" + id + "/transitions/submit"), "bob", null, 400);
+                    assertThat(refused.get("errors").get("amount").asText()).isEqualTo("Over the cost center's budget");
+                    // Within it, the move goes through.
+                    send(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/expense-claims/" + id), "alice",
+                            claim + "\\"amount\\":25,\\"costCenterId\\":" + small + "}", 200);
+                    send(post("/api/expense-claims/" + id + "/transitions/submit"), "bob", null, 200);
+                    // A save naming another cost center by id is checked against that center's budget —
+                    // the row is read, not the id alone.
+                    JsonNode moved = send(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/expense-claims/" + id),
+                            "alice", claim + "\\"amount\\":25,\\"costCenterId\\":" + tiny + "}", 400);
+                    assertThat(moved.get("errors").has("amount")).isTrue();
+                }
+
+                @Test
                 void everyStepOfAClaimIsLogged() throws Exception {
                     long id = newClaim("").get("id").asLong();
                     // Created: its first step, by whoever made the request.
@@ -1765,17 +1955,99 @@ class GeneratedBackendBuildSmokeTests {
         assertThat(Files.readString(impl)).contains("public class ClaimsController implements ClaimsApi {\n}");
         Files.writeString(impl, OPENAPI_TEAM_CLAIMS_CONTROLLER);
         writeProjectTest(project, "com.menora.petstore", "InterfaceTests", OPENAPI_INTERFACE_TESTS);
+        writeProjectTest(project, "com.menora.petstore", "OAuth2Tests", OPENAPI_OAUTH2_TESTS);
         runMvn(project, "-B", "package");
+        assertThat(project.resolve("target/surefire-reports/com.menora.petstore.OAuth2Tests.txt")).exists();
     }
 
     @org.junit.jupiter.api.Test
     void openApiWizardSecureFormsAsClassesCompile(@TempDir Path workDir) throws Exception {
         // The same document as classes with a RestTemplate client (springdoc comes with the
-        // controllers): the forms bind in the classes, the client builds its parts.
+        // controllers): the forms bind in the classes, the client builds its parts — and fetches
+        // its OAuth2 token through the RestTemplate's interceptor.
         Map<String, Object> body = openApiBody("claimsclasses", List.of("web", "validation"), Map.of("mode", "BOTH"));
         body.put("specByDep", Map.of("web", WizardGoldenOutputTests.fixture("secure-forms.yaml")));
-        runMvn(postAndExtractWizard(workDir, body), "-B", "package");
+        Path project = postAndExtractWizard(workDir, body);
+        writeProjectTest(project, "com.menora.petstore", "OAuth2Tests", OPENAPI_OAUTH2_TESTS);
+        runMvn(project, "-B", "package");
+        assertThat(project.resolve("target/surefire-reports/com.menora.petstore.OAuth2Tests.txt")).exists();
     }
+
+    /**
+     * OAuth2 client credentials, for real: with a client id configured the client asks the
+     * document's token endpoint once, sends the token on every call, and — refused with a 401 —
+     * forgets it, asks again and repeats the call once. Either client kind.
+     */
+    private static final String OPENAPI_OAUTH2_TESTS = """
+            package com.menora.petstore;
+
+            import com.menora.petstore.client.OpenApiOAuth2Tokens;
+            import com.menora.petstore.client.PartnersClient;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.autoconfigure.web.client.AutoConfigureMockRestServiceServer;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.http.HttpMethod;
+            import org.springframework.http.MediaType;
+            import org.springframework.test.web.client.MockRestServiceServer;
+
+            import java.nio.charset.StandardCharsets;
+            import java.util.Base64;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+            import static org.hamcrest.Matchers.containsString;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+            import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+            import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+            import static org.springframework.test.web.client.response.MockRestResponseCreators.withUnauthorizedRequest;
+
+            @SpringBootTest(properties = {
+                    "openapi.client.security.partner-key.api-key=p4r",
+                    "openapi.client.security.oauth.client-id=app",
+                    "openapi.client.security.oauth.client-secret=s3cret"})
+            @AutoConfigureMockRestServiceServer
+            class OAuth2Tests {
+
+                @Autowired private MockRestServiceServer server;
+                @Autowired private OpenApiOAuth2Tokens tokens;
+                @Autowired private PartnersClient partners;
+
+                private static String partner(String id) {
+                    return "http://localhost:8080/partners/" + id + "?partner_key=p4r";
+                }
+
+                @Test
+                void aTokenIsFetchedOnceSentOnEveryCallAndRenewedAfterA401() {
+                    MockRestServiceServer idp = MockRestServiceServer.bindTo(tokens.tokenEndpoint()).build();
+                    String basic = "Basic " + Base64.getEncoder().encodeToString("app:s3cret".getBytes(StandardCharsets.UTF_8));
+                    idp.expect(requestTo("https://idp.example.com/token")).andExpect(method(HttpMethod.POST))
+                            .andExpect(header("Authorization", basic))
+                            .andExpect(content().string(containsString("grant_type=client_credentials")))
+                            .andExpect(content().string(containsString("scope=read")))
+                            .andRespond(withSuccess("{\\"access_token\\":\\"a1\\",\\"expires_in\\":3600}", MediaType.APPLICATION_JSON));
+                    // The second token, asked for after the 401 below.
+                    idp.expect(requestTo("https://idp.example.com/token"))
+                            .andRespond(withSuccess("{\\"access_token\\":\\"a2\\",\\"expires_in\\":3600}", MediaType.APPLICATION_JSON));
+                    server.expect(requestTo(partner("p1"))).andExpect(header("Authorization", "Bearer a1"))
+                            .andRespond(withSuccess("{\\"description\\":\\"one\\"}", MediaType.APPLICATION_JSON));
+                    server.expect(requestTo(partner("p2"))).andExpect(header("Authorization", "Bearer a1"))
+                            .andRespond(withSuccess("{\\"description\\":\\"two\\"}", MediaType.APPLICATION_JSON));
+                    // Revoked early: the server answers 401; a new token is fetched and the call sent again.
+                    server.expect(requestTo(partner("p3"))).andExpect(header("Authorization", "Bearer a1"))
+                            .andRespond(withUnauthorizedRequest());
+                    server.expect(requestTo(partner("p3"))).andExpect(header("Authorization", "Bearer a2"))
+                            .andRespond(withSuccess("{\\"description\\":\\"three\\"}", MediaType.APPLICATION_JSON));
+
+                    assertThat(partners.getPartner("p1").description()).isEqualTo("one");
+                    assertThat(partners.getPartner("p2").description()).isEqualTo("two");
+                    assertThat(partners.getPartner("p3").description()).isEqualTo("three");
+                    idp.verify();
+                    server.verify();
+                }
+            }
+            """;
 
     /** What a team writes in the generated ClaimsController: two of the operations, signatures only. */
     private static final String OPENAPI_TEAM_CLAIMS_CONTROLLER = """
@@ -1974,6 +2246,140 @@ class GeneratedBackendBuildSmokeTests {
         assertThat(project.resolve("src/main/avro/com.acme.orders.OrderPlaced.avsc")).isRegularFile();
         runMvn(project, "-B", "package");
         assertThat(project.resolve("target/generated-sources/avro/com/acme/orders/OrderPlaced.java")).isRegularFile();
+    }
+
+    /**
+     * Keys, headers (a trait's too) and correlation ids on a JSON channel, offline: the producer
+     * writes the headers and a new correlation id, the listener reads them back typed — the
+     * project's own tests and one written here against the generated classes.
+     */
+    @org.junit.jupiter.api.Test
+    void eventsWizardJsonKeysAndHeadersCompileAndTravel(@TempDir Path workDir) throws Exception {
+        String document = """
+                asyncapi: 3.0.0
+                info: { title: Shipments, version: 1.0.0 }
+                channels:
+                  shipments:
+                    address: orders.shipments
+                    messages:
+                      shipped: { $ref: '#/components/messages/OrderShipped' }
+                operations:
+                  publishShipment: { action: send, channel: { $ref: '#/channels/shipments' } }
+                  onShipment: { action: receive, channel: { $ref: '#/channels/shipments' } }
+                components:
+                  messages:
+                    OrderShipped:
+                      name: OrderShipped
+                      traits:
+                        - $ref: '#/components/messageTraits/Traced'
+                      headers:
+                        type: object
+                        properties:
+                          urgent: { type: boolean }
+                          attempt: { type: integer }
+                      correlationId: { location: '$message.header#/trace-id' }
+                      bindings: { kafka: { key: { type: string, format: uuid } } }
+                      payload:
+                        type: object
+                        properties:
+                          orderId: { type: string }
+                  messageTraits:
+                    Traced:
+                      headers:
+                        type: object
+                        properties:
+                          tenant: { type: string }
+                """;
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "shipments");
+        body.put("packageName", "com.menora.shipments");
+        body.put("bootVersion", "3.2.1");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("kafka"));
+        body.put("asyncApiByDep", Map.of("kafka", document));
+        body.put("eventOptions", Map.of("kafka", Map.of("generateTests", true)));
+        Path project = postAndExtractWizard(workDir, body);
+        writeProjectTest(project, "com.menora.shipments.events", "HeadersTravelTests", """
+                package com.menora.shipments.events;
+
+                import com.fasterxml.jackson.databind.ObjectMapper;
+                import com.menora.shipments.events.model.OrderShipped;
+                import com.menora.shipments.events.model.OrderShippedHeaders;
+                import org.apache.kafka.clients.consumer.ConsumerRecord;
+                import org.apache.kafka.clients.producer.ProducerRecord;
+                import org.junit.jupiter.api.Test;
+                import org.mockito.ArgumentCaptor;
+                import org.mockito.Mockito;
+                import org.springframework.kafka.core.KafkaTemplate;
+
+                import java.util.UUID;
+
+                import static org.assertj.core.api.Assertions.assertThat;
+
+                class HeadersTravelTests {
+
+                    @Test
+                    @SuppressWarnings({"unchecked", "rawtypes"})
+                    void theHeadersGoOutAndComeBackTyped() throws Exception {
+                        KafkaTemplate<String, String> kafkaTemplate = Mockito.mock(KafkaTemplate.class);
+                        ObjectMapper mapper = new ObjectMapper();
+                        ShipmentsProducer producer = new ShipmentsProducer(kafkaTemplate, mapper, "orders.shipments");
+                        UUID key = UUID.randomUUID();
+                        producer.send(key, new OrderShipped("o-1"), new OrderShippedHeaders(true, 3, "acme", null));
+
+                        ArgumentCaptor<ProducerRecord<String, String>> sent = ArgumentCaptor.forClass((Class) ProducerRecord.class);
+                        Mockito.verify(kafkaTemplate).send(sent.capture());
+                        ProducerRecord<String, String> out = sent.getValue();
+                        assertThat(out.key()).isEqualTo(key.toString());
+                        assertThat(new String(out.headers().lastHeader("attempt").value())).isEqualTo("3");
+                        // No correlation id given: a new UUID.
+                        String trace = new String(out.headers().lastHeader("trace-id").value());
+                        assertThat(UUID.fromString(trace)).isNotNull();
+
+                        ConsumerRecord<String, String> in = new ConsumerRecord<>("orders.shipments", 0, 0L, out.key(), out.value());
+                        out.headers().forEach(h -> in.headers().add(h));
+                        OrderShippedHeaders read = ShipmentsListener.headersOf(in);
+                        assertThat(read).isEqualTo(new OrderShippedHeaders(true, 3, "acme", trace));
+                    }
+                }
+                """);
+        runMvn(project, "-B", "package");
+        assertThat(project.resolve("target/surefire-reports/com.menora.shipments.events.HeadersTravelTests.txt")).exists();
+    }
+
+    /**
+     * Keys, headers (a trait's too) and correlation ids on JSON and Avro channels, and the Avro ones
+     * through Confluent's schema registry: the project compiles and its tests pass — the producers'
+     * records and headers, the listeners' headers read back, and a record through an in-memory
+     * registry ({@code mock://}). Needs the avro-maven-plugin and Confluent's serializer, which the
+     * offline repository does not have: {@code -Dsmoke.be=true -Dsmoke.confluent=true}, online (or
+     * through a mirror of packages.confluent.io).
+     */
+    @ParameterizedTest(name = "schema registry: {0}")
+    @ValueSource(strings = {"none", "confluent"})
+    @EnabledIfSystemProperty(named = "smoke.confluent", matches = "true")
+    void eventsWizardKeysHeadersAndRegistryBackendCompilesAndPassesItsTests(String registry, @TempDir Path workDir) throws Exception {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", "orders");
+        body.put("packageName", "com.menora.orders");
+        body.put("bootVersion", "3.2.1");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("kafka"));
+        body.put("asyncApiByDep", Map.of("kafka", WizardGoldenOutputTests.fixture("orders-avro-registry-asyncapi.yaml")));
+        Map<String, Object> options = new java.util.LinkedHashMap<>();
+        options.put("generateTests", true);
+        if (!registry.equals("none")) options.put("schemaRegistry", registry);
+        options.put("channels", List.of(
+                Map.of("name", "orderPlaced", "produce", true, "consume", true),
+                Map.of("name", "shipments", "produce", true, "consume", true),
+                Map.of("name", "refunds", "produce", true, "consume", true)));
+        body.put("eventOptions", Map.of("kafka", options));
+        Path project = postAndExtractWizard(workDir, body);
+        runMvn(project, "-B", "package");
+        assertThat(project.resolve("target/surefire-reports/com.menora.orders.events.OrderPlacedProducerTest.txt")).exists();
+        assertThat(project.resolve("target/surefire-reports/com.menora.orders.events.RefundsListenerTest.txt")).exists();
     }
 
     /** Run inside the generated Petstore project (controllers + RestTemplate client + validation). */

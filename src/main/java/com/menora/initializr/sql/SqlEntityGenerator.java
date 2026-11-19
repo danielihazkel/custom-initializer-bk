@@ -1,6 +1,7 @@
 package com.menora.initializr.sql;
 
 import com.menora.initializr.gen.Naming;
+import com.menora.initializr.gen.WizardMemo;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
@@ -69,7 +70,13 @@ public class SqlEntityGenerator {
         }
         SqlProjectFacts facts = projectFacts == null ? SqlProjectFacts.NONE : projectFacts;
         SqlDepOptions opts = options != null ? options : new SqlDepOptions("entity", List.of());
+        // A wizard request checks its script by generating it, then writes what the same inputs give.
+        return WizardMemo.get(WizardMemo.Key.of("sql", sql, dialect, packageName, opts, facts),
+                () -> render(sql, dialect, packageName, opts, facts));
+    }
 
+    private List<GeneratedJavaFile> render(String sql, SqlDialect dialect, String packageName,
+                                           SqlDepOptions opts, SqlProjectFacts facts) {
         List<TableModel> tables = parseTables(sql, dialect);
         if (tables.isEmpty()) {
             log.warn("SQL parse produced no CREATE TABLE statements for dialect {}", dialect);
@@ -517,79 +524,6 @@ public class SqlEntityGenerator {
             "^\\s*CREATE\\s+(?:GLOBAL\\s+TEMPORARY\\s+|TEMPORARY\\s+|TEMP\\s+)?TABLE\\b",
             Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern ALTER_TABLE_LEAD = Pattern.compile(
-            "^\\s*ALTER\\s+TABLE\\s+(?:ONLY\\s+)?(?:IF\\s+EXISTS\\s+)?(\\S+)", Pattern.CASE_INSENSITIVE);
-
-    /** A column's own {@code REFERENCES [schema.]table [(column)]}. */
-    private static final Pattern INLINE_REFERENCES = Pattern.compile(
-            "(?i)\\bREFERENCES\\s+((?:[^\\s(.]+\\s*\\.\\s*)*[^\\s(.]+)\\s*(?:\\(\\s*([^),]+?)\\s*\\))?");
-
-    /** One {@code ADD [CONSTRAINT name] PRIMARY KEY|FOREIGN KEY|UNIQUE (cols) [REFERENCES t (cols)]} clause. */
-    private static final Pattern ALTER_ADD_CONSTRAINT = Pattern.compile(
-            "\\bADD\\s+(?:CONSTRAINT\\s+\\S+\\s+)?(PRIMARY\\s+KEY|FOREIGN\\s+KEY|UNIQUE)(?:\\s+(?:NON)?CLUSTERED)?\\s*\\(([^)]*)\\)"
-                    + "(?:\\s*REFERENCES\\s+([^\\s(]+)\\s*\\(([^)]*)\\))?",
-            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-
-    /** {@code CHECK ( col IN ( 'A', 'B' ) )}, the column name optionally quoted. */
-    private static final Pattern CHECK_IN = Pattern.compile(
-            "(?is)CHECK\\s*\\(\\s*[\"`\\[]?(\\w+)[\"`\\]]?\\s+IN\\s*\\(([^)]*)\\)\\s*\\)");
-
-    private static final Pattern JAVA_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
-
-    /**
-     * Applies the constraints an {@code ALTER TABLE … ADD …} declares to the table it names, when
-     * that table is in the script (a table created elsewhere is none of the wizard's business).
-     */
-    private static void applyAlterTable(List<TableModel> tables, String stmt) {
-        Matcher lead = ALTER_TABLE_LEAD.matcher(stmt);
-        if (!lead.find()) return;
-        String tableName = bareName(lead.group(1));
-        int index = -1;
-        for (int i = 0; i < tables.size(); i++) {
-            if (!tables.get(i).isView() && tables.get(i).name().equalsIgnoreCase(tableName)) index = i;
-        }
-        if (index < 0) return;
-        TableModel table = tables.get(index);
-        Matcher add = ALTER_ADD_CONSTRAINT.matcher(stmt);
-        while (add.find()) {
-            String kind = add.group(1).toUpperCase(Locale.ROOT).replaceAll("\\s+", " ");
-            List<String> columns = canonicalColumns(table, add.group(2));
-            if (columns.isEmpty()) continue;
-            switch (kind) {
-                case "PRIMARY KEY" -> table = table.withPrimaryKey(columns);
-                case "UNIQUE" -> table = table.withUnique(columns);
-                case "FOREIGN KEY" -> {
-                    if (add.group(3) == null) continue;
-                    List<String> referenced = new ArrayList<>();
-                    for (String c : add.group(4).split(",")) referenced.add(bareName(c));
-                    table = table.withForeignKey(new ForeignKey(columns, bareName(add.group(3)), referenced));
-                }
-                default -> { }
-            }
-        }
-        tables.set(index, table);
-    }
-
-    /** The columns a constraint lists, as the table spells them; empty when one is not the table's. */
-    private static List<String> canonicalColumns(TableModel table, String list) {
-        List<String> out = new ArrayList<>();
-        for (String raw : list.split(",")) {
-            String name = bareName(raw.trim().replaceAll("(?i)\\s+(ASC|DESC)$", ""));
-            ColumnModel column = table.columns().stream().filter(c -> c.name().equalsIgnoreCase(name)).findFirst().orElse(null);
-            if (column == null) return List.of();
-            out.add(column.name());
-        }
-        return out;
-    }
-
-    /** {@code "inv"."Stock Levels"} / {@code [dbo].[Orders]} / {@code public.orders} → the bare, unquoted last part. */
-    private static String bareName(String raw) {
-        String s = raw.trim();
-        int dot = s.lastIndexOf('.');
-        if (dot >= 0 && dot < s.length() - 1) s = s.substring(dot + 1);
-        return unquote(s.trim());
-    }
-
     private List<TableModel> parseTables(String sql, SqlDialect dialect) {
         String prepared = sql;
         if (dialect == SqlDialect.ORACLE)   prepared = normalizeOracle(prepared);
@@ -634,8 +568,14 @@ public class SqlEntityGenerator {
 
             // ALTER TABLE … ADD PRIMARY KEY / FOREIGN KEY / UNIQUE: how pg_dump, SSMS and most
             // schema exports declare a table's constraints. Anything else an ALTER does is skipped.
-            if (ALTER_TABLE_LEAD.matcher(stmt).find()) {
-                applyAlterTable(result, stmt);
+            if (SqlConstraintReader.isAlterTable(stmt)) {
+                SqlConstraintReader.applyAlterTable(result, stmt);
+                continue;
+            }
+
+            // A unique index over plain columns is a unique constraint to the application.
+            if (SqlConstraintReader.isCreateUniqueIndex(stmt)) {
+                SqlConstraintReader.applyUniqueIndex(result, stmt);
                 continue;
             }
 
@@ -889,13 +829,13 @@ public class SqlEntityGenerator {
         // usual way to write one in PostgreSQL and MySQL scripts. Only the table-level form was read.
         for (ColumnDefinition cd : defs) {
             if (cd.getColumnSpecs() == null) continue;
-            Matcher ref = INLINE_REFERENCES.matcher(String.join(" ", cd.getColumnSpecs()));
+            Matcher ref = SqlConstraintReader.INLINE_REFERENCES.matcher(String.join(" ", cd.getColumnSpecs()));
             if (!ref.find()) continue;
             String column = unquote(cd.getColumnName(), quoted);
             if (fkColumnNames.contains(column)) continue;
             List<String> refCols = ref.group(2) == null || ref.group(2).isBlank()
                     ? List.of() : List.of(unquote(ref.group(2).trim(), quoted));
-            fks.add(new ForeignKey(List.of(column), bareName(ref.group(1).replaceAll("\\s+", "")), refCols));
+            fks.add(new ForeignKey(List.of(column), SqlConstraintReader.bareName(ref.group(1).replaceAll("\\s+", "")), refCols));
             fkColumnNames.add(column);
         }
         for (ColumnDefinition cd : defs) {
@@ -931,17 +871,7 @@ public class SqlEntityGenerator {
         }
         // CHECK (col IN ('A', 'B')) limits a column to a fixed set of values. Read from the
         // statement's text: a column-level check only survives JSqlParser as loose tokens.
-        Matcher check = CHECK_IN.matcher(sourceSql == null ? "" : sourceSql);
-        while (check.find()) {
-            String column = check.group(1);
-            List<String> values = new ArrayList<>();
-            for (String raw : check.group(2).split(",")) {
-                String v = raw.trim();
-                if (v.length() >= 2 && v.startsWith("'") && v.endsWith("'")) values.add(v.substring(1, v.length() - 1));
-            }
-            boolean known = table.columns().stream().anyMatch(c -> c.name().equalsIgnoreCase(column));
-            if (known && !values.isEmpty()) table = table.withEnum(column, values);
-        }
+        table = SqlConstraintReader.withChecks(table, sourceSql);
         return table;
     }
 
@@ -956,12 +886,7 @@ public class SqlEntityGenerator {
     private static String enumClassOf(TableModel table, ColumnModel c, JavaType mapped, Set<String> knownTableNames) {
         List<String> values = table.enumValuesOf(c.name());
         if (values == null || c.isPk() || c.isForeignKey() || !isStringType(mapped)) return null;
-        Set<String> distinct = new HashSet<>();
-        for (String v : values) {
-            if (!JAVA_IDENTIFIER.matcher(v).matches() || javax.lang.model.SourceVersion.isKeyword(v) || !distinct.add(v)) {
-                return null;
-            }
-        }
+        if (SqlConstraintReader.enumConstants(values) == null) return null;
         String name = toPascalCase(table.name()) + toPascalCase(c.name());
         for (String other : knownTableNames) {
             if (toPascalCase(other).equals(name)) return null;

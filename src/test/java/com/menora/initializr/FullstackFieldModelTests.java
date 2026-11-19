@@ -269,6 +269,63 @@ class FullstackFieldModelTests {
                 "entities[2].fields[6]", "(its show-when): This must be a yes/no condition");
     }
 
+    @SuppressWarnings("unchecked")
+    private static Consumer<Map<String, Object>> taskDueByItsProject(List<String> scaffold) {
+        return body -> {
+            body.put("opts", Map.of("scaffold", scaffold));
+            Map<String, Object> task = entity(body, "Task");
+            List<Object> rules = new java.util.ArrayList<>((List<Object>) task.getOrDefault("rules", List.of()));
+            rules.add(Map.of("check", "dueOn <= project.endsOn", "message", "Due by the end of its project", "field", "dueOn"));
+            task.put("rules", rules);
+        };
+    }
+
+    @Test
+    void aRuleReadsTheRowALinkPointsAt() throws Exception {
+        Map<String, String> files = generate(taskDueByItsProject(List.of("tests", "seedData")));
+        assertThat(file(files, "rules/TaskRules.java"))
+                .contains("Expr.fails(Expr.le(row.getDueOn(), (row.getProject() == null ? null : row.getProject().getEndsOn())))");
+        // The service reads the linked row, not the id the request carried, before the rules run.
+        String service = file(files, "service/TaskService.java");
+        assertThat(service)
+                .contains("    private void withLinkedRows(Task row) {\n"
+                        + "        if (row.getProject() != null && row.getProject().getId() != null) {\n"
+                        + "            com.menora.support.entity.Project linked = entityManager.find(com.menora.support.entity.Project.class, row.getProject().getId());")
+                .contains("        withLinkedRows(entity);\n        com.menora.support.rules.TaskRules.check(entity);")
+                .contains("        withLinkedRows(existing);\n        com.menora.support.rules.TaskRules.check(existing);")
+                .contains("            withLinkedRows(entity);\n            com.menora.support.rules.TaskRules.apply(entity)");
+        // The form fetches the project as it is picked; its checks read it from there.
+        assertThat(file(files, "task-form/model/validate.ts"))
+                .contains("import * as linked from '@shared/api/linked'")
+                .contains("rule.le(rule.date(value.dueOn), rule.date(linked.value('/api/projects', value.projectId, 'endsOn')))");
+        assertThat(file(files, "task-form/ui/TaskForm.tsx"))
+                .contains("import * as linked from '@shared/api/linked'")
+                .contains("  linked.useLinkedRows([['/api/projects', value.projectId]])");
+        assertThat(file(files, "frontend/src/shared/api/linked.ts")).contains("export function useLinkedRows(");
+        // The test rows' project is made with an end the rules accept.
+        assertThat(file(files, "ApiTestSupport.java"))
+                .contains("row.set(\"projectId\", create(\"Project\", parent -> { parent.put(\"endsOn\", java.time.LocalDate.now().plusDays(")
+                .contains("protected JsonNode create(String entity, java.util.function.Consumer<ObjectNode> values) throws Exception {");
+        // Another entity's form, and the project without such a rule, are left as they were.
+        assertThat(file(files, "project-form/ui/ProjectForm.tsx")).doesNotContain("linked");
+        Map<String, String> plain = generate(body -> body.put("opts", Map.of("scaffold", List.of("tests"))));
+        assertThat(plain.keySet()).noneMatch(p -> p.endsWith("shared/api/linked.ts"));
+        assertThat(file(plain, "ApiTestSupport.java")).doesNotContain("Consumer<ObjectNode>");
+    }
+
+    @Test
+    void whatALinkedReadCannotBeIsRefusedWhereItIs() {
+        assertRefused(body -> entity(body, "Task").put("rules", List.of(
+                        Map.of("check", "dueOn <= project.EndsOn", "message", "x"))),
+                "entities[2].rules[0]", "'EndsOn' is not a field of Project (did you mean 'endsOn'?)");
+        assertRefused(body -> entity(body, "Task").put("rules", List.of(
+                        Map.of("check", "project.owner.name == 'x'", "message", "x", "field", "title"))),
+                "entities[2].rules[0]", "A link is followed one step only");
+        assertRefused(body -> entity(body, "Task").put("rules", List.of(
+                        Map.of("check", "status.name == 'x'", "message", "x", "field", "title"))),
+                "entities[2].rules[0]", "'status' is not a link of this entity");
+    }
+
     private void assertRefused(Consumer<Map<String, Object>> change, String path, String message) {
         ResponseEntity<String> response = post(change);
         assertThat(response.getStatusCode()).as(response.getBody()).isEqualTo(HttpStatus.BAD_REQUEST);

@@ -37,6 +37,21 @@ public final class SchemaNames {
                 : Naming.toSnakeCase(owner.name()) + "_" + Naming.toSnakeCase(c.fieldName()), null);
     }
 
+    /**
+     * The table of a field that holds several files ({@code maxFiles}): {@code <entity>_<field>} —
+     * the many-to-many's rule, so the two are named alike. Its columns are fixed:
+     * {@code owner_id}, {@code file_order}, {@code attachment_id}, {@code file_name}.
+     */
+    public static String filesTableOf(EntityDefinition owner, FieldDefinition field) {
+        return SqlNames.physical(Naming.toSnakeCase(owner.name()) + "_" + Naming.toSnakeCase(field.name()), null);
+    }
+
+    /** {@link #filesTableOf}, schema-qualified like the entity's own table, for native SQL. */
+    static String filesTableRefOf(EntityDefinition owner, FieldDefinition field) {
+        String schema = schemaOf(owner);
+        return (schema != null ? schema + "." : "") + filesTableOf(owner, field);
+    }
+
     /** The join table's column for the owning entity: named, or {@code <entity>_id}. */
     public static String ownerJoinColumnOf(EntityDefinition owner, RelationDefinition c) {
         return SqlNames.physical(c.joinColumn() != null ? c.joinColumn()

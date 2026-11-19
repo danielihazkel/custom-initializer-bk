@@ -1350,6 +1350,44 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void eventsWizardThroughTheSchemaRegistryAddsTheSerializerAndTheRegistryContainer() throws Exception {
+        String document;
+        try (var in = new org.springframework.core.io.ClassPathResource("wizard-fixtures/orders-avro-registry-asyncapi.yaml").getInputStream()) {
+            document = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        Map<String, Object> body = openApiBaseBody();
+        body.put("dependencies", List.of("kafka"));
+        body.put("asyncApiByDep", Map.of("kafka", document));
+        body.put("eventOptions", Map.of("kafka", Map.of("schemaRegistry", "confluent")));
+        ResponseEntity<byte[]> response = restTemplate.postForEntity("/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> files = unzip(response.getBody());
+        assertThat(files.get("demo/pom.xml"))
+                .contains("<confluent.version>7.6.1</confluent.version>")
+                .contains("<artifactId>kafka-avro-serializer</artifactId>")
+                .contains("<url>https://packages.confluent.io/maven/</url>");
+        // A developer's machine: the registry beside the broker, and the application pointed at it.
+        assertThat(files.get("demo/compose.yaml"))
+                .contains("  schema-registry:\n    image: repo.menora.co.il/dockerhub/confluentinc/cp-schema-registry:7.7.1")
+                .contains("SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092");
+        assertThat(files.get("demo/src/main/resources/application-compose.yaml"))
+                .contains("app:\n  events:\n    schema-registry:\n      url: http://localhost:8081\n")
+                .contains("      auto-register: true");
+
+        // Without the registry: neither.
+        body.put("eventOptions", Map.of("kafka", Map.of()));
+        Map<String, String> plain = unzip(restTemplate.postForEntity("/starter-wizard.zip", body, byte[].class).getBody());
+        assertThat(plain.get("demo/pom.xml")).doesNotContain("kafka-avro-serializer").doesNotContain("confluent");
+        assertThat(plain.get("demo/compose.yaml")).doesNotContain("schema-registry");
+
+        // A registry the wizard does not know.
+        body.put("eventOptions", Map.of("kafka", Map.of("schemaRegistry", "apicurio")));
+        ResponseEntity<String> refused = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody()).contains("'apicurio' is not one the wizard knows");
+    }
+
+    @Test
     void eventsWizardEndpointsSayWhatADocumentHasAndWhyOneIsRefused() {
         assertThat(restTemplate.getForEntity("/metadata/events-capable-deps", String.class).getBody()).contains("kafka");
 

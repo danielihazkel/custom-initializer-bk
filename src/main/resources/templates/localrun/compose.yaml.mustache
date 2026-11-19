@@ -110,6 +110,20 @@ services:
       timeout: 10s
       retries: 30
       start_period: 15s
+{{#schemaRegistry}}
+  schema-registry:
+    image: {{schemaRegistryImage}}
+    # Confluent's schema registry, its schemas kept in the broker: localhost:8081 from this machine.
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    ports:
+      - "8081:8081"
+{{/schemaRegistry}}
 {{/kafka}}
 {{#apps}}
   backend:

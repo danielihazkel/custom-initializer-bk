@@ -27,11 +27,25 @@ class {{stem}}ProducerTest {
     void {{testName}}() throws Exception {
         {{type}} payload = {{sample}};
 
-        producer.{{method}}("key-1", payload);
+        producer.{{method}}({{keySample}}, payload);
 
+{{^hasHeaders}}
         ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
-        Mockito.verify(kafkaTemplate).send(Mockito.eq(TOPIC), Mockito.eq("key-1"), sent.capture());
+        Mockito.verify(kafkaTemplate).send(Mockito.eq(TOPIC), Mockito.eq({{keySent}}), sent.capture());
         assertThat({{readBack}}).isEqualTo(payload);
+{{/hasHeaders}}
+{{#hasHeaders}}
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<ProducerRecord<String, String>> sent = ArgumentCaptor.forClass((Class) ProducerRecord.class);
+        Mockito.verify(kafkaTemplate).send(sent.capture());
+        assertThat(sent.getValue().topic()).isEqualTo(TOPIC);
+        assertThat(sent.getValue().key()).isEqualTo({{keySent}});
+        assertThat({{readBackRecord}}).isEqualTo(payload);
+{{#hasCorrelation}}
+        // No correlation id given: a new one.
+        assertThat(sent.getValue().headers().lastHeader("{{correlationWire}}")).isNotNull();
+{{/hasCorrelation}}
+{{/hasHeaders}}
     }
 
 {{/hasSample}}

@@ -2349,7 +2349,7 @@ class FullstackStarterIntegrationTests {
         // The attachment package ships because a field needs it: a table behind a storage interface.
         for (String file : List.of("Attachment", "AttachmentRepository", "Attachments", "AttachmentStorage",
                 "DbAttachmentStorage", "FileSystemAttachmentStorage", "S3AttachmentStorage", "AttachmentProperties",
-                "AttachmentException", "AttachmentController", "AttachmentConfig")) {
+                "AttachmentException", "AttachmentController", "AttachmentConfig", "Thumbnails")) {
             assertThat(entries.keySet()).as(file)
                     .anyMatch(p -> p.endsWith("backend/src/main/java/com/menora/rota/attachment/" + file + ".java"));
         }
@@ -2362,7 +2362,23 @@ class FullstackStarterIntegrationTests {
                 .contains("@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)")
                 // Never served as a page: nosniff, and inline only for what its bytes say is a picture.
                 .contains("\"X-Content-Type-Options\", \"nosniff\"")
-                .contains("image != null ? ContentDisposition.inline() : ContentDisposition.attachment()");
+                .contains("image != null ? ContentDisposition.inline() : ContentDisposition.attachment()")
+                // A picture's small version, under the same read check; the original when none.
+                .contains("@GetMapping(\"/{id}/thumbnail\")")
+                .contains("if (small.isEmpty()) return download(id, user);");
+        assertThat(contentEndingWith(entries, "/attachment/Thumbnails.java"))
+                .contains("static final int SIZE = 320;")
+                // The size is read before decoding; an enormous picture is never decoded.
+                .contains("(long) width * height > MAX_PIXELS")
+                .contains("reader.getWidth(0)");
+        assertThat(contentEndingWith(entries, "/attachment/Attachment.java"))
+                .contains("@Column(name = \"thumbnail\", length = Length.LONG32)");
+        // Tables, cards and the details draw the thumbnail; the link opens the original.
+        assertThat(entries.entrySet().stream().filter(e -> e.getKey().contains("frontend/src/"))
+                .map(Map.Entry::getValue).filter(v -> v.contains("attachmentUrl(r.photo, true)")).count())
+                .isPositive();
+        assertThat(contentEndingWith(entries, "frontend/src/shared/ui/format.ts"))
+                .contains("${thumbnail ? '/thumbnail' : ''}");
 
         // The field is the attachment's id; the entity reads the file's name beside it.
         assertThat(contentEndingWith(entries, "/entity/Shift.java"))
@@ -2415,7 +2431,7 @@ class FullstackStarterIntegrationTests {
                 .contains("onChange={(id, name) => onChange({ ...value, photo: id, photoName: name })}");
         assertThat(ListPages.of(entries, "/ui/ShiftPage.tsx"))
                 .contains("<a href={attachmentUrl(r.contract)}")
-                .contains("<img src={attachmentUrl(r.photo)} alt={r.photoName ?? ''}");
+                .contains("<img src={attachmentUrl(r.photo, true)} alt={r.photoName ?? ''} loading=\"lazy\"");
         assertThat(contentEndingWith(entries, "/model/types.ts"))
                 .contains("photo: string | null").contains("photoName?: string | null");
         // A CSV carries no files.

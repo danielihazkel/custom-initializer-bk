@@ -1193,8 +1193,10 @@ public final class PageContext {
             if (f != null) {
                 label = (String) f.get("label");
                 if (Boolean.TRUE.equals(f.get("isEnum"))) labelImports.add(f.get("enumTypeName") + "Labels");
-                render = "r." + name + " == null ? '\u2014' : " + FieldViewModel.displayTs((FieldType) f.get(FieldViewModel.FIELD_TYPE_KEY), "r." + name,
-                        (String) f.get("enumTypeName"), (String) f.get("currency"), FieldViewModel.Display.CARD);
+                render = "r." + name + " == null ? '\u2014' : " + (Boolean.TRUE.equals(f.get("isMultiFile"))
+                        ? FieldViewModel.multiFileTs((FieldType) f.get(FieldViewModel.FIELD_TYPE_KEY), "r." + name, FieldViewModel.Display.CARD)
+                        : FieldViewModel.displayTs((FieldType) f.get(FieldViewModel.FIELD_TYPE_KEY), "r." + name,
+                        (String) f.get("enumTypeName"), (String) f.get("currency"), FieldViewModel.Display.CARD));
             } else {
                 Map<String, Object> r = relations.get(name);
                 label = (String) r.get("label");

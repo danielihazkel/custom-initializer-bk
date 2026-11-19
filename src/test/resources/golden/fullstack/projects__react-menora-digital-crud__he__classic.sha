@@ -28,7 +28,7 @@ aa22b4ea30e34cca3b96706c8bb3d91415bb87d56d56af6e01461b8abf1713af  golden-project
 5560a779909050d3ee64ad2d64ec73f78b9d3f036336c4c6769650049095edc5  golden-projects/backend/src/main/java/com/menora/golden/repository/PersonRepository.java
 1c095b9b82b8d3fd68c8feb846ff5d13ec3ca0e71e0465b03086927136173578  golden-projects/backend/src/main/java/com/menora/golden/repository/ProjectRepository.java
 f4878d5b44b604346413d4654b897ac633520ac20f1fb52668d2fa34ce4b2b0e  golden-projects/backend/src/main/java/com/menora/golden/repository/TaskRepository.java
-bc99b72b91adbbd40ca3b388d7ec0918ffaa25ce4e8426d1b8768bcf65a64929  golden-projects/backend/src/main/java/com/menora/golden/rules/Expr.java
+a705f7082643caec36671da5037e7f3b4c12021063ed684b31d84414462cafcf  golden-projects/backend/src/main/java/com/menora/golden/rules/Expr.java
 807faff07fe9f0b4389f9d70aa82e238dd8a2bce07d9101b9df2607862b3fe22  golden-projects/backend/src/main/java/com/menora/golden/rules/ProjectRules.java
 97436d9abeea75aece0f2eb35dc2894746f4b63a2f5fb692970ed3894a26b9e0  golden-projects/backend/src/main/java/com/menora/golden/rules/TaskRules.java
 4a4e667b04ce063f76b5d7dfc51c54796bd275e76596cfda23b5d1ddc5eb6057  golden-projects/backend/src/main/java/com/menora/golden/security/Constants.java
@@ -144,7 +144,7 @@ adb400d2dc6ac134acdb7adea524021a8b5fe995e05f1d6fdb636a1d2f1ed62a  golden-project
 dd1fc0a250d6088bfd0b3910cd1602bd859f46b0175cdd5b118425823cae2617  golden-projects/frontend/src/shared/ui/RelationPicker.tsx
 a9fb00f2f5dad34d192b8f5fa2f155737eee9674224ab244c52dce8cad403037  golden-projects/frontend/src/shared/ui/Skeleton.tsx
 2f46fbba4893cd6ce32b30cddbf850c73ab7fc88da12434673aecc3e9f63bb8d  golden-projects/frontend/src/shared/ui/Table.tsx
-ead90fc35e323c8d29f562aacad5a3a1b63767a0d0b6ff1e375191fcfa814397  golden-projects/frontend/src/shared/ui/format.ts
+298f53e824d9d916b863bee5659949c7d71541116f761b8a4bbc9b05800f2b06  golden-projects/frontend/src/shared/ui/format.ts
 8ae35916b7d1744df84298c41dfb41512479fe8635ebc96809fe735723d77653  golden-projects/frontend/src/shared/ui/index.ts
 8955de89372b3499c55feb95ccd98ccfd96a0a7c8762fd09ba86b7ba34bcc82c  golden-projects/frontend/src/shared/ui/leaveGuard.ts
 88f54515c958080a6c42936e01ded4e55870f1aeb145e78194d40a700012517f  golden-projects/frontend/src/shared/ui/listPrefs.ts
@@ -170,7 +170,7 @@ c3d6c48718cc6ace2e8a2557cf103b196269662097d5fe836217bc79e77c0ab3  golden-project
 50866ee8a3501f35e3df2a30ed23316655b576bade88f8ebe922b16a616dee9e  golden-projects/frontend/src/shared/ui/menora/index.ts
 7787e90b1fd3f4874329d8ab70b0eb1fa6d1e7390596b98a9d59e2efc2146585  golden-projects/frontend/src/shared/ui/menora/tokens.css
 a5a0cc961c7222168f22d52f2675cd475dfb4252b34077902dfbbb35ca225604  golden-projects/frontend/src/shared/ui/menora/useMenoraTheme.ts
-05510d4e3a0057d76737044824195ccb14339cde2efe1ada140e0fa13931b97c  golden-projects/frontend/src/shared/ui/rules.ts
+d8a262cd5efa4199f18504453d959e170c543e5f3d2610831c7fce5164bfa29d  golden-projects/frontend/src/shared/ui/rules.ts
 5f804d857de4f2fb03b94721e25d820a7b8a2f880a1a7b24936461637bf844df  golden-projects/frontend/src/shared/ui/useTheme.ts
 65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5  golden-projects/frontend/src/vite-env.d.ts
 4358487068b01a59311e920ceecfe6d4dff869906029b98ecf91c77fe8d0edde  golden-projects/frontend/src/widgets/README.md
@@ -178,4 +178,4 @@ a5a0cc961c7222168f22d52f2675cd475dfb4252b34077902dfbbb35ca225604  golden-project
 1a657bc8b14e013ac12884344b75f725b742b4fcdd27bea16bb5ca1e484b61f3  golden-projects/frontend/tsconfig.json
 bb9fd8592a9e364641441219f10d84daae9ba2ca5cc85db798efad6913bb8257  golden-projects/frontend/tsconfig.node.json
 47a77f018d8f1f16e15333f078134b8e9a0341bfdec1a4b50a688920580c9504  golden-projects/frontend/vite.config.ts
-bbba5ff741d37ca44b05c292608a6e8b46bd47f48a25982f1c3b25832203036e  golden-projects/menora-model.json
+866db20ebc1b12d060a7214a89f7275cb6e7419358ff938df35785a364ae1d47  golden-projects/menora-model.json

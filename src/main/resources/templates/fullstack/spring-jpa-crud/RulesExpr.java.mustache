@@ -114,7 +114,8 @@ public final class Expr {
     }
 
     public static boolean isEmpty(Object value) {
-        return value == null || value instanceof String s && s.isBlank();
+        // A list of files counts as empty with none in it.
+        return value == null || value instanceof String s && s.isBlank() || value instanceof java.util.Collection<?> c && c.isEmpty();
     }
 
     public static LocalDate today() {

@@ -103,7 +103,7 @@ export function AttachmentField({ value, name, image, disabled, onChange, ...ari
       ) : value && (
         <a href={attachmentUrl(value)} target="_blank" rel="noopener noreferrer" className="block w-fit max-w-full">
           {image
-            ? <img src={attachmentUrl(value)} alt={name ?? ''} className="max-h-32 rounded-lg border border-border" />
+            ? <img src={attachmentUrl(value, true)} alt={name ?? ''} className="max-h-32 rounded-lg border border-border" />
             : <span className="block truncate text-sm font-medium text-brand hover:underline">{name ?? value}</span>}
         </a>
       )}

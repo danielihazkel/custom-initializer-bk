@@ -27,6 +27,9 @@ public class {{className}} {
     /** {{summaryJavadoc}} */
 {{/hasSummary}}
     public {{returnType}} {{operationId}}({{arguments}}) {
+{{#authChoice}}
+        {{.}}
+{{/authChoice}}
         UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(baseUrl)
                 .path("{{path}}");
 {{#queryParams}}

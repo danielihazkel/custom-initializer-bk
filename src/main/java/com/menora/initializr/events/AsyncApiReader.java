@@ -93,16 +93,30 @@ public final class AsyncApiReader {
     }
 
     /**
-     * @param name    the message's name: its {@code name}, else its key, else the channel's
-     * @param payload the payload's schema as written (it may be a {@code $ref}), or null when the
-     *                message declares none
-     * @param avro    the payload is an Avro schema ({@code schemaFormat: application/vnd.apache.avro…}),
-     *                not JSON Schema
+     * @param name              the message's name: its {@code name}, else its key, else the channel's
+     * @param payload           the payload's schema as written (it may be a {@code $ref}), or null when
+     *                          the message declares none
+     * @param avro              the payload is an Avro schema ({@code schemaFormat: application/vnd.apache.avro…}),
+     *                          not JSON Schema
+     * @param headers           its {@code headers}: an object schema whose properties are the Kafka
+     *                          headers it carries (traits merged in), or null
+     * @param correlationHeader the header its {@code correlationId} is in ({@code $message.header#/x}), or null
+     * @param key               its Kafka key's schema ({@code bindings.kafka.key}), or null
      */
-    public record EventMessage(String name, String title, JsonNode payload, boolean avro) {
+    public record EventMessage(String name, String title, JsonNode payload, boolean avro,
+                               JsonNode headers, String correlationHeader, JsonNode key) {
+
+        public EventMessage(String name, String title, JsonNode payload, boolean avro) {
+            this(name, title, payload, avro, null, null, null);
+        }
 
         public EventMessage(String name, String title, JsonNode payload) {
             this(name, title, payload, false);
+        }
+
+        /** Whether its producer and listener carry headers (some declared, or a correlation id). */
+        public boolean hasHeaders() {
+            return headers != null || correlationHeader != null;
         }
     }
 
@@ -241,12 +255,14 @@ public final class AsyncApiReader {
             String refName = null;
             String ref = written.path("$ref").asText("");
             if (!ref.isEmpty()) refName = unescape(ref.substring(ref.lastIndexOf('/') + 1));
-            JsonNode message = resolve(written, "a message of channel '" + channel + "'");
-            if (!message.isObject()) return;
-            String name = message.path("name").isTextual() ? message.path("name").asText()
+            JsonNode written0 = resolve(written, "a message of channel '" + channel + "'");
+            if (!written0.isObject()) return;
+            String name = written0.path("name").isTextual() ? written0.path("name").asText()
                     : refName != null ? refName
                     : fallbackName != null ? fallbackName
                     : channel;
+            // Its traits first: what the message says itself wins, and their headers join its own.
+            JsonNode message = withTraits((ObjectNode) written0, name);
             JsonNode payload = message.path("payload");
             String format = message.path("schemaFormat").asText(null);
             // 3.x's other way to say it: payload: { schemaFormat, schema }.
@@ -277,7 +293,65 @@ public final class AsyncApiReader {
                 }
             }
             into.putIfAbsent(name, new EventMessage(name, text(message, "title") != null ? text(message, "title")
-                    : text(message, "summary"), payload.isMissingNode() || payload.isNull() ? null : payload, avro));
+                    : text(message, "summary"), payload.isMissingNode() || payload.isNull() ? null : payload, avro,
+                    headersOf(message, name), correlationHeaderOf(message, name), keyOf(message, name)));
+        }
+
+        /**
+         * The message with its {@code traits} applied: each trait's fields that the message does
+         * not set, and the properties of each trait's {@code headers} that its own do not name.
+         * (A 2.x trait may be written {@code [trait, bindings]}: the first is the trait.)
+         */
+        private JsonNode withTraits(ObjectNode message, String name) {
+            if (!message.path("traits").isArray() || message.path("traits").isEmpty()) return message;
+            ObjectNode out = message.deepCopy();
+            out.remove("traits");
+            for (JsonNode written : message.path("traits")) {
+                JsonNode trait = resolve(written.isArray() ? written.path(0) : written, "a trait of message '" + name + "'");
+                for (Iterator<Map.Entry<String, JsonNode>> it = trait.fields(); it.hasNext(); ) {
+                    Map.Entry<String, JsonNode> f = it.next();
+                    if (!out.has(f.getKey())) {
+                        out.set(f.getKey(), f.getValue());
+                    } else if (f.getKey().equals("headers")) {
+                        JsonNode own = resolve(out.get("headers"), "the headers of message '" + name + "'");
+                        JsonNode theirs = resolve(f.getValue(), "the headers of a trait of message '" + name + "'");
+                        if (own.path("properties").isObject() && theirs.path("properties").isObject()) {
+                            ObjectNode merged = own.deepCopy();
+                            ObjectNode properties = (ObjectNode) merged.get("properties");
+                            theirs.path("properties").fields().forEachRemaining(h -> {
+                                if (!properties.has(h.getKey())) properties.set(h.getKey(), h.getValue());
+                            });
+                            out.set("headers", merged);
+                        }
+                    }
+                }
+            }
+            return out;
+        }
+
+        /** Its headers' schema: an object with properties (3.x's {schemaFormat, schema} unwrapped), or null. */
+        private JsonNode headersOf(JsonNode message, String name) {
+            JsonNode headers = resolve(message.path("headers"), "the headers of message '" + name + "'");
+            if (headers.path("schema").isObject()) headers = resolve(headers.path("schema"), "the headers of message '" + name + "'");
+            return headers.path("properties").isObject() && !headers.path("properties").isEmpty() ? headers : null;
+        }
+
+        /** The header a {@code correlationId} is in ({@code $message.header#/correlationId}); one in the payload is not a header. */
+        private String correlationHeaderOf(JsonNode message, String name) {
+            JsonNode correlation = resolve(message.path("correlationId"), "the correlationId of message '" + name + "'");
+            String location = text(correlation, "location");
+            if (location == null || !location.startsWith("$message.header#/")) return null;
+            String header = unescape(location.substring("$message.header#/".length()));
+            return header.isBlank() || header.contains("/") ? null : header;
+        }
+
+        /** Its Kafka key's schema ({@code bindings.kafka.key}), or null. */
+        private JsonNode keyOf(JsonNode message, String name) {
+            JsonNode bindings = resolve(message.path("bindings"), "the bindings of message '" + name + "'");
+            JsonNode key = bindings.path("kafka").path("key");
+            if (key.isMissingNode() || key.isNull()) return null;
+            JsonNode schema = resolve(key, "the Kafka key of message '" + name + "'");
+            return schema.isObject() ? schema : null;
         }
 
         private static boolean isJsonSchema(String format) {

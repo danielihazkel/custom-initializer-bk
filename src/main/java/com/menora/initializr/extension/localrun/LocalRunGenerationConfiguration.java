@@ -37,9 +37,16 @@ public class LocalRunGenerationConfiguration {
     @Bean
     @Order(Ordered.LOWEST_PRECEDENCE - 20)
     ProjectContributor localRunContributor(ProjectDescription description, ProjectOptionsContext optionsContext,
-                                           EntityDefinitionContext entityContext, ContainerImages images) {
+                                           EntityDefinitionContext entityContext, ContainerImages images,
+                                           com.menora.initializr.config.EventsSpecContext eventsContext,
+                                           com.menora.initializr.events.EventsCodeGenerator events) {
         return projectRoot -> {
-            Set<String> deps = description.getRequestedDependencies().keySet();
+            Set<String> deps = new java.util.LinkedHashSet<>(description.getRequestedDependencies().keySet());
+            // The events wizard's Avro channels through Confluent's schema registry: its container too.
+            if (!eventsContext.isEmpty() && eventsContext.all().entrySet().stream().anyMatch(e -> events.usesRegistry(
+                    e.getValue(), description.getPackageName(), eventsContext.optionsFor(e.getKey())))) {
+                deps.add(LocalRun.SCHEMA_REGISTRY);
+            }
             if (!optionsContext.isEmbedded()) {
                 LocalRun.writeProject(projectRoot, description.getArtifactId(), deps, images);
             } else if (!entityContext.isEmpty()) {

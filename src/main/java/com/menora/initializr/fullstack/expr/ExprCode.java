@@ -60,6 +60,7 @@ public final class ExprCode {
         }
 
         private String ref(Ref ref) {
+            if (ref.isPath()) return path(ref);
             FieldDefinition f = c.fields().get(ref.name());
             Type t = c.typeOf(ref);
             if (java) {
@@ -71,6 +72,36 @@ public final class ExprCode {
                 };
             }
             String get = subject + "." + f.name();
+            return switch (t) {
+                case NUMBER -> "rule.num(" + get + ")";
+                case TEXT, ENUM -> "rule.text(" + get + ")";
+                case BOOL -> "rule.bool(" + get + ")";
+                case DATE -> "rule.date(" + get + ")";
+                case DATETIME, INSTANT -> "rule.moment(" + get + ")";
+                case TIME -> "rule.time(" + get + ")";
+                case ANY -> get;
+            };
+        }
+
+        /**
+         * A linked row's field. Java: the row the service loaded for the link (null-safe). TS: the
+         * row the form fetched for the picked id ({@code rule.linked}) — unknown until it has.
+         */
+        private String path(Ref ref) {
+            ExprCheck.Path p = c.paths().get(ref.name());
+            Type t = c.typeOf(ref);
+            String rel = Naming.toPascalCase(p.relation());
+            if (java) {
+                String link = subject + ".get" + rel + "()";
+                String get = "(" + link + " == null ? null : " + link + ".get" + Naming.toPascalCase(p.field().name()) + "())";
+                return switch (t) {
+                    case NUMBER -> "Expr.num(" + get + ")";
+                    case ENUM -> "Expr.name(" + get + ")";
+                    default -> get;
+                };
+            }
+            String get = "linked.value('" + linkedPath(p.target().name()) + "', " + subject + "."
+                    + Naming.toCamelCase(p.relation()) + "Id, '" + p.field().name() + "')";
             return switch (t) {
                 case NUMBER -> "rule.num(" + get + ")";
                 case TEXT, ENUM -> "rule.text(" + get + ")";
@@ -127,6 +158,11 @@ public final class ExprCode {
         private String call(String fn, String... args) {
             return (java ? "Expr." : "rule.") + fn + "(" + String.join(", ", args) + ")";
         }
+    }
+
+    /** Where a linked row is read by id: {@code /api/cost-centers}. */
+    public static String linkedPath(String entity) {
+        return "/api/" + Naming.pluralize(Naming.toKebabCase(entity));
     }
 
     static String javaEscape(String s) {

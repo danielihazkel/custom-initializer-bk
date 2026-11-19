@@ -269,4 +269,65 @@ class SchemaDiffTest {
         assertThat(SchemaBuilder.name("[Order]")).isEqualTo("\"Order\"");
         assertThat(SchemaBuilder.name("orders")).isEqualTo("orders");
     }
+
+    // ── The generator's own tables, by version (Round 13) ────────────────────────
+
+    /** This release's attachments table and an entity with a FILE column, as SchemaBuilder writes them. */
+    private static Schema withAttachments() {
+        Table claims = new Table(null, "claims",
+                List.of(ID, Column.of("receipt", ColumnType.UUID, true)),
+                List.of("id"), List.of(), List.of(), List.of(new Index("ixa_claims_receipt", List.of("receipt"))));
+        Table attachments = new Table(null, "app_attachment", List.of(
+                Column.of("id", ColumnType.UUID, false),
+                Column.varchar("file_name", 255, false),
+                Column.varchar("content_type", 150, false),
+                Column.of("size_bytes", ColumnType.BIGINT, false),
+                Column.of("created_at", ColumnType.INSTANT, false),
+                Column.varchar("created_by", 255, true),
+                Column.of("content", ColumnType.BLOB, true),
+                Column.of("thumbnail", ColumnType.BLOB, true)),
+                List.of("id"), List.of(), List.of(), List.of(new Index("ix_app_attachment_created", List.of("created_at"))));
+        return schema(claims, attachments);
+    }
+
+    @Test
+    void anOlderVersionOfTheGeneratorsTablesIsBroughtUp() {
+        Schema current = withAttachments();
+        assertThat(SchemaBuilder.asOf(current, SchemaBuilder.CURRENT_VERSION)).isSameAs(current);
+
+        // Version 1: before the Attachments round. Its project gets what the round added, and
+        // what this round adds, as statements that run.
+        String sql = SchemaDiff.migration(SchemaBuilder.asOf(current, 1), current, SchemaDialect.POSTGRESQL, "2026-11-18");
+        assertThat(sql).doesNotContain("To review")
+                .contains("alter table app_attachment add column created_by varchar(255);")
+                .contains("alter table app_attachment alter column content drop not null;")
+                .contains("create index ix_app_attachment_created on app_attachment (created_at);")
+                .contains("create index ixa_claims_receipt on claims (receipt);");
+
+        // Version 2: the file-column index and the thumbnails are new.
+        String fromTwo = SchemaDiff.migration(SchemaBuilder.asOf(current, 2), current, SchemaDialect.POSTGRESQL, "2026-11-18");
+        assertThat(fromTwo).contains("create index ixa_claims_receipt on claims (receipt);")
+                .contains("alter table app_attachment add column thumbnail bytea;")
+                .doesNotContain("created_by");
+    }
+
+    /**
+     * A model file from before versions were written: the project's attachments table is the
+     * oldest or the next one, nobody can say which — so its statements are put up for review;
+     * an entity's new index still runs.
+     */
+    @Test
+    void anUnknownVersionPutsTheGeneratorsTablesUpForReview() {
+        Schema current = withAttachments();
+        String sql = SchemaDiff.migration(SchemaBuilder.asOf(current, null), current, SchemaDialect.POSTGRESQL, "2026-11-18",
+                SchemaBuilder::isGeneratorTable);
+        int review = sql.indexOf("To review");
+        assertThat(review).isPositive();
+        assertThat(sql.indexOf("create index ixa_claims_receipt on claims (receipt);")).isBetween(0, review);
+        assertThat(unwrapped(sql.substring(review)))
+                .contains("app_attachment is one of the generator's own tables")
+                .contains("alter table app_attachment add column created_by varchar(255);")
+                .contains("create index ix_app_attachment_created on app_attachment (created_at);");
+        assertThat(sql.substring(0, review)).doesNotContain("app_attachment");
+    }
 }

@@ -1,0 +1,51 @@
+package {{package}};
+
+{{#listenerImports}}
+import {{.}};
+{{/listenerImports}}
+
+/**
+ * Receives from {@code {{addressJavadoc}}}{{#hasDescription}}: {{descriptionJavadoc}}{{/hasDescription}}.
+ * The topic's name is the property {@code {{topicProperty}}}; a message arrives as Avro through the
+ * schema registry, as its generated record class (see {@link AvroKafkaConfig}).
+{{#hasCandidates}}
+ *
+ * <p>The channel carries several kinds of message ({{candidatesText}}); the registry says which
+ * schema each was written with, so each arrives as its own class.
+{{/hasCandidates}}
+ */
+@Component
+public class {{stem}}Listener {
+
+    private static final Logger log = LoggerFactory.getLogger({{stem}}Listener.class);
+
+    /** A message the registry cannot read fails in the deserializer, and is the container's error handler's to deal with. */
+    @KafkaListener(topics = "{{topicPlaceholder}}", groupId = "{{groupId}}",
+            containerFactory = AvroKafkaConfig.LISTENER_FACTORY)
+    public void onMessage(ConsumerRecord<String, {{listenerType}}> record) {
+        handle({{listenerKey}}, record.value(){{#listenerHeaders}}, headersOf(record){{/listenerHeaders}});
+    }
+{{#listenerHeaders}}
+
+    /** The record's headers; one not sent is null. */
+    static {{listenerHeadersType}} headersOf(ConsumerRecord<?, ?> record) {
+        return new {{listenerHeadersType}}(
+                {{{listenerHeaderArgs}}});
+    }
+
+    private static String header(ConsumerRecord<?, ?> record, String name) {
+        org.apache.kafka.common.header.Header header = record.headers().lastHeader(name);
+        return header == null ? null : new String(header.value(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static <T> T parse(String text, java.util.function.Function<String, T> parser) {
+        return text == null ? null : parser.apply(text);
+    }
+{{/listenerHeaders}}
+
+    /** What the application does with a message.{{#hasCandidates}} Tell the kinds apart with {@code instanceof}.{{/hasCandidates}} */
+    void handle({{listenerKeyType}} key, {{listenerType}} payload{{#listenerHeaders}}, {{listenerHeadersType}} headers{{/listenerHeaders}}) {
+        // TODO: implement
+        log.info("Received a message from {}: key={}", "{{addressString}}", key);
+    }
+}

@@ -148,7 +148,7 @@ final class EntityViewModel {
         if (requested.contains("kanban") && breakdown && !entity.readOnly()) emitted.add("kanban");
         if (requested.contains("calendar") && temporal) emitted.add("calendar");
         // A gallery is the rows by their pictures: it needs an image field to show.
-        if (requested.contains("gallery") && entity.fields().stream().anyMatch(f -> f.type().isImage())) emitted.add("gallery");
+        if (requested.contains("gallery") && entity.fields().stream().anyMatch(f -> f.type().isImage() && !f.multiple())) emitted.add("gallery");
         if (emitted.isEmpty()) emitted.add("table");
         return emitted;
     }
@@ -241,6 +241,7 @@ final class EntityViewModel {
         view.put("rules", rules);
         view.put("hasRules", entity.hasRowLogic());
         FeatureContext.putDerivations(view, entity);
+        FeatureContext.putLinkedReads(view, entity, summaries);
         view.put("uniqueConstraintsJava", "{" + String.join(", ", uniqueKeys.stream()
                 .map(k -> "@UniqueConstraint(name = \"" + k.get("constraint") + "\", columnNames = {" + k.get("columnsJava") + "})")
                 .toList()) + "}");
@@ -276,17 +277,33 @@ final class EntityViewModel {
             // Shown only while a condition holds (the form's guard is put once the form's steps are known).
             fv.put("hasShowWhen", f.showWhen() != null);
             if (f.showWhen() != null) {
-                var when = com.menora.initializr.fullstack.expr.ExprCheck.check(f.showWhen(), entity.fields(),
+                var when = com.menora.initializr.fullstack.expr.ExprCheck.check(f.showWhen(), entity,
                         com.menora.initializr.fullstack.expr.Expr.Type.BOOL);
                 fv.put("showWhenTs", "rule.applies(" + com.menora.initializr.fullstack.expr.ExprCode.ts(when, "value") + ")");
+                fv.put("rowShowWhenTs", "rule.applies(" + com.menora.initializr.fullstack.expr.ExprCode.ts(when, "row") + ")");
+                TemplateText.putText(fv, "showWhenText", f.showWhen());
             }
             // Computed on every save: the form shows it, read-only, as it would come out.
             fv.put("isComputed", f.computed());
             if (f.computed()) {
                 fv.put("computedTs", FeatureContext.computedTs(entity, f));
+                fv.put("rowComputedTs", FeatureContext.computedTs(entity, f, "row"));
                 // Never set by a client: locked like a workflow's status (no PUT, bulk or inline edit, no import column).
                 fv.put("isReadOnly", true);
                 fv.put("isEditable", false);
+            }
+            // Several files: a list of {id, name} kept in a table of its own (attachment/AttachedFile).
+            fv.put("isMultiFile", f.multiple());
+            if (f.multiple()) {
+                fv.put("maxFiles", f.maxFiles());
+                fv.put("filesTable", com.menora.initializr.sql.SqlNames.javaLiteral(SchemaNames.filesTableOf(entity, f)));
+                fv.put("javaType", "java.util.List<AttachedFile>");
+                fv.put("tsType", "{ id: string; name?: string | null }[]");
+                // The single-file shapes do not apply.
+                fv.put("isNotNullColumn", false);
+                fv.put("cellTs", FieldViewModel.multiFileTs(f, "r." + f.name(), FieldViewModel.Display.CELL));
+                fv.put("detailTs", FieldViewModel.multiFileTs(f, "value." + f.name(), FieldViewModel.Display.DETAIL));
+                fv.put("seedExpr", f.required() ? "sampleFiles(i, " + f.type().isImage() + ")" : "new java.util.ArrayList<>()");
             }
             fv.put("first", i == 0);
             fv.put("last", i == entity.fields().size() - 1);
@@ -355,10 +372,16 @@ final class EntityViewModel {
         view.put("hasBulkUpdatableFields", !bulkUpdatableViews.isEmpty());
 
         view.put("fields", fieldViews);
+        // One file per field (an id in a column), and several (a list in a table of its own).
         List<Map<String, Object>> attachmentViews = fieldViews.stream()
-                .filter(fv -> Boolean.TRUE.equals(fv.get("isAttachment"))).toList();
+                .filter(fv -> Boolean.TRUE.equals(fv.get("isAttachment")) && !Boolean.TRUE.equals(fv.get("isMultiFile"))).toList();
+        List<Map<String, Object>> multiFileViews = fieldViews.stream()
+                .filter(fv -> Boolean.TRUE.equals(fv.get("isMultiFile"))).toList();
         view.put("attachmentFields", attachmentViews);
-        view.put("hasAttachmentFields", !attachmentViews.isEmpty());
+        view.put("multiFileFields", multiFileViews);
+        view.put("hasMultiFileFields", !multiFileViews.isEmpty());
+        view.put("hasSingleFileFields", !attachmentViews.isEmpty());
+        view.put("hasAttachmentFields", !attachmentViews.isEmpty() || !multiFileViews.isEmpty());
         view.put("hasFieldDefaults", fieldViews.stream().anyMatch(m -> Boolean.TRUE.equals(m.get("hasDefault"))));
         view.put("nonPkFields", nonPkViews);
         view.put("pkField", pkView);
@@ -546,7 +569,7 @@ final class EntityViewModel {
         boolean gallery = emitted.contains("gallery");
         view.put("viewGallery", gallery);
         if (gallery) {
-            FieldDefinition picture = entity.fields().stream().filter(f -> f.type().isImage()).findFirst().orElseThrow();
+            FieldDefinition picture = entity.fields().stream().filter(f -> f.type().isImage() && !f.multiple()).findFirst().orElseThrow();
             Map<String, Object> pictureView = fieldViews.stream().filter(fv -> picture.name().equals(fv.get("name"))).findFirst().orElseThrow();
             view.put("galleryField", picture.name());
             view.put("galleryLabelTs", pictureView.get("labelTs"));
@@ -701,13 +724,17 @@ final class EntityViewModel {
         boolean hasBlankChecks = hasRequiredRelations
                 || fieldViews.stream().anyMatch(m ->
                         (Boolean.TRUE.equals(m.get("isPrimaryKey")) && !Boolean.TRUE.equals(m.get("isGenerated")))
-                        || (!Boolean.TRUE.equals(m.get("isPrimaryKey")) && Boolean.TRUE.equals(m.get("isRequired"))));
+                        || (!Boolean.TRUE.equals(m.get("isPrimaryKey")) && Boolean.TRUE.equals(m.get("isRequired"))
+                                // A list of files is checked by its length, not blank().
+                                && !Boolean.TRUE.equals(m.get("isMultiFile"))));
         view.put("hasBlankChecks", hasBlankChecks);
         // Same lint concern for the validator's `t`/`tf` string imports: only import them when at
         // least one check (blank, length, min/max, pattern, email) is actually emitted.
         view.put("hasValidationChecks",
                 hasBlankChecks
                         || entity.fields().stream().anyMatch(FieldDefinition::requiredWhenShown)
+                        // A list of files: its most, and at least one when required.
+                        || entity.fields().stream().anyMatch(FieldDefinition::multiple)
                         || fieldViews.stream().anyMatch(m ->
                                 !Boolean.TRUE.equals(m.get("isGenerated")) && !Boolean.TRUE.equals(m.get("isComputed"))
                                 && (Boolean.TRUE.equals(m.get("hasLength")) || Boolean.TRUE.equals(m.get("hasMin"))
@@ -808,7 +835,9 @@ final class EntityViewModel {
         // actually uses. @NotNull is skipped on a generated PK (it is null until persisted);
         // a required relation's FK id, however, does carry @NotNull.
         view.put("hasNotNullFields", hasRequiredRelations || fieldViews.stream().anyMatch(
-                m -> Boolean.TRUE.equals(m.get("isRequired")) && !Boolean.TRUE.equals(m.get("isGenerated"))));
+                m -> Boolean.TRUE.equals(m.get("isRequired")) && !Boolean.TRUE.equals(m.get("isGenerated"))
+                        // A required list of files: no list on an update keeps the files (the service checks the rest).
+                        && !Boolean.TRUE.equals(m.get("isMultiFile"))));
         view.put("hasSizeFields", fieldViews.stream().anyMatch(
                 m -> Boolean.TRUE.equals(m.get("hasLength"))));
         // @Min/@Max apply to integral fields; @DecimalMin/@DecimalMax to BigDecimal; @Pattern/@Email

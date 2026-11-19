@@ -1,0 +1,49 @@
+package {{package}};
+
+import io.confluent.kafka.serializers.KafkaAvroDeserializer;
+import io.confluent.kafka.serializers.KafkaAvroSerializer;
+import org.apache.avro.specific.SpecificRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.Test;
+
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+
+/**
+ * {{stem}}Listener without a broker: a record in, as the container would hand it over — written and
+ * read through an in-memory registry ({@code mock://}), the way the application's serializers do.
+ */
+class {{stem}}ListenerTest {
+
+    private final {{stem}}Listener listener = new {{stem}}Listener();
+
+{{#hasListenerSample}}
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void readsAMessageThroughTheRegistry() {
+        Map<String, Object> config = Map.of("schema.registry.url", "mock://{{stem}}ListenerTest",
+                "auto.register.schemas", true, "specific.avro.reader", true);
+        try (KafkaAvroSerializer serializer = new KafkaAvroSerializer();
+             KafkaAvroDeserializer deserializer = new KafkaAvroDeserializer()) {
+            serializer.configure(config, false);
+            deserializer.configure(config, false);
+            SpecificRecord written = {{listenerSample}};
+            Object read = deserializer.deserialize("topic-under-test", serializer.serialize("topic-under-test", written));
+            assertThat(read).isEqualTo(written);
+
+            ConsumerRecord record = new ConsumerRecord<>("topic-under-test", 0, 0L, {{listenerTestKey}}, read);
+            assertThatCode(() -> listener.onMessage(record)).doesNotThrowAnyException();
+        }
+    }
+
+{{/hasListenerSample}}
+{{^hasListenerSample}}
+    @Test
+    void isBuilt() {
+        assertThat(listener).isNotNull();
+    }
+
+{{/hasListenerSample}}
+}

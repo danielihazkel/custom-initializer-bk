@@ -15,7 +15,10 @@ import java.util.List;
  * @param generateTests     a unit test per producer and listener (no broker)
  */
 public record EventsWizardOptions(String subPackage, String payloadSubPackage, String groupId,
-                                  List<ChannelChoice> channels, boolean generateTests) {
+                                  List<ChannelChoice> channels, boolean generateTests, String schemaRegistry) {
+
+    /** The one schema registry the Avro channels can use: Confluent's. */
+    public static final String CONFLUENT = "confluent";
 
     public static final String DEFAULT_PACKAGE = "events";
     public static final String DEFAULT_PAYLOAD_PACKAGE = "events.model";
@@ -27,6 +30,18 @@ public record EventsWizardOptions(String subPackage, String payloadSubPackage, S
 
     public EventsWizardOptions {
         channels = channels == null ? List.of() : List.copyOf(channels);
+        schemaRegistry = schemaRegistry == null || schemaRegistry.isBlank() ? null : schemaRegistry.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Options without a schema registry: Avro channels in the single-object encoding. */
+    public EventsWizardOptions(String subPackage, String payloadSubPackage, String groupId,
+                               List<ChannelChoice> channels, boolean generateTests) {
+        this(subPackage, payloadSubPackage, groupId, channels, generateTests, null);
+    }
+
+    /** Avro through Confluent's schema registry. */
+    public boolean confluent() {
+        return CONFLUENT.equals(schemaRegistry);
     }
 
     public String packageOrDefault() {

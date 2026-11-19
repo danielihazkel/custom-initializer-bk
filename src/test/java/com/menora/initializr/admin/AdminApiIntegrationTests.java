@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -90,6 +91,35 @@ class AdminApiIntegrationTests {
                         .content("{\"name\":\"\",\"sortOrder\":0,\"projectKind\":\"BACKEND\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.name").exists());
+    }
+
+    /**
+     * A target path that leads out of the project is refused when the row is saved — it used to
+     * be saved, and then broke every generation that selected the dependency.
+     */
+    @Test
+    void fileContributionLeadingOutOfTheProjectReturns400() throws Exception {
+        String auth = bearer();
+        for (String path : java.util.List.of("../outside.txt", "/etc/x.conf", "src/../../x.txt", "{{packagePath}}/../../../../x")) {
+            mvc.perform(post("/admin/file-contributions")
+                            .header("Authorization", auth)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json.writeValueAsString(java.util.Map.of(
+                                    "dependencyId", "web", "fileType", "STATIC_COPY", "targetPath", path,
+                                    "content", "x", "projectKind", "BACKEND"))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString("is not a file inside the project")));
+        }
+    }
+
+    @Test
+    void validTargetPathsStayAccepted() {
+        assertThat(com.menora.initializr.admin.validation.FileContributionContentValidator
+                .targetPathProblem("src/main/java/{{packagePath}}/config/X.java")).isNull();
+        assertThat(com.menora.initializr.admin.validation.FileContributionContentValidator
+                .targetPathProblem(".env")).isNull();
+        assertThat(com.menora.initializr.admin.validation.FileContributionContentValidator
+                .targetPathProblem("{{artifactId}}-docs/README.md")).isNull();
     }
 
     // ── Refresh ─────────────────────────────────────────────────────────────

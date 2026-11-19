@@ -165,7 +165,7 @@ db15dd93b213c807800158600b265eda094776c197d774f2724318687c5b0a56  golden-blog/fr
 dd1fc0a250d6088bfd0b3910cd1602bd859f46b0175cdd5b118425823cae2617  golden-blog/frontend/src/shared/ui/RelationPicker.tsx
 a9fb00f2f5dad34d192b8f5fa2f155737eee9674224ab244c52dce8cad403037  golden-blog/frontend/src/shared/ui/Skeleton.tsx
 9e8000a40e1327d26b044acda8ff6dc9ae89cc5c49b5fed022cef8561472df75  golden-blog/frontend/src/shared/ui/Table.tsx
-ead90fc35e323c8d29f562aacad5a3a1b63767a0d0b6ff1e375191fcfa814397  golden-blog/frontend/src/shared/ui/format.ts
+298f53e824d9d916b863bee5659949c7d71541116f761b8a4bbc9b05800f2b06  golden-blog/frontend/src/shared/ui/format.ts
 8ae35916b7d1744df84298c41dfb41512479fe8635ebc96809fe735723d77653  golden-blog/frontend/src/shared/ui/index.ts
 8955de89372b3499c55feb95ccd98ccfd96a0a7c8762fd09ba86b7ba34bcc82c  golden-blog/frontend/src/shared/ui/leaveGuard.ts
 88f54515c958080a6c42936e01ded4e55870f1aeb145e78194d40a700012517f  golden-blog/frontend/src/shared/ui/listPrefs.ts
@@ -178,4 +178,4 @@ e83b0db1901aa1023efe5ec7db118f7590a7d16dafed54ca6e067dcc68275781  golden-blog/fr
 1a657bc8b14e013ac12884344b75f725b742b4fcdd27bea16bb5ca1e484b61f3  golden-blog/frontend/tsconfig.json
 bb9fd8592a9e364641441219f10d84daae9ba2ca5cc85db798efad6913bb8257  golden-blog/frontend/tsconfig.node.json
 47a77f018d8f1f16e15333f078134b8e9a0341bfdec1a4b50a688920580c9504  golden-blog/frontend/vite.config.ts
-94a47630871537f3411d6667cb5c9d27135a2894a5acc9c8fa832c6208021227  golden-blog/menora-model.json
+f9cbb4cd1470582d933f9362ea1c85d6c84f643f97aad7ef8ad2be518ce4a4e3  golden-blog/menora-model.json

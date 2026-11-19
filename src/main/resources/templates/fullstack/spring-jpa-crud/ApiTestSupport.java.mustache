@@ -73,6 +73,15 @@ public abstract class ApiTestSupport {
     protected JsonNode create(String entity) throws Exception {
         return send(post(listPath(entity)), ADMIN, body(entity), 200);
     }
+{{#apiTestLinkedValues}}
+
+    /** {@link #create(String)} with some values set: a parent whose fields a child's rules read. */
+    protected JsonNode create(String entity, java.util.function.Consumer<ObjectNode> values) throws Exception {
+        ObjectNode row = body(entity);
+        values.accept(row);
+        return send(post(listPath(entity)), ADMIN, row, 200);
+    }
+{{/apiTestLinkedValues}}
 
     /** The JSON of a new, valid row of {@code entity}: what {@code POST} takes. Parents it needs are created first. */
     protected ObjectNode body(String entity) throws Exception {

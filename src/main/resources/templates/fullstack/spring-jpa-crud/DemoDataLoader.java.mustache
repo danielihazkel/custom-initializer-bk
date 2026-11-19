@@ -82,7 +82,14 @@ public class DemoDataLoader implements CommandLineRunner {
         return attachments.store("sample-" + i + ".txt", "text/plain", content, {{packageName}}.attachment.Attachments.SYSTEM).id();
     }
 
-{{/hasAttachments}}    /** "{base} {i}", truncated to {max} characters while keeping the row number so values stay unique. */
+{{#hasMultiFiles}}    /** The one file a required field with several files holds in the demo rows. */
+    private java.util.List<{{packageName}}.attachment.AttachedFile> sampleFiles(int i, boolean image) {
+        java.util.UUID id = image ? sampleImage(i) : sampleFile(i);
+        return new java.util.ArrayList<>(java.util.List.of(new {{packageName}}.attachment.AttachedFile(id,
+                "sample-" + i + (image ? ".png" : ".txt"))));
+    }
+
+{{/hasMultiFiles}}{{/hasAttachments}}    /** "{base} {i}", truncated to {max} characters while keeping the row number so values stay unique. */
     static String label(String base, int i, int max) {
         String s = base + " " + i;
         if (s.length() <= max) {

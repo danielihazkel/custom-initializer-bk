@@ -146,12 +146,21 @@ class BackendPatchTests {
                 .doesNotContain("frontend/")
                 .contains("changes the generator's catalog has had since the project was first generated");
 
-        // A model file as it is on disk is taken too, and its catalog hash is the base's.
+        // A model file as it is on disk is taken too: its snapshot names the files its download
+        // kept, and the update starts from them (GeneratedSnapshotTests).
         Map<String, byte[]> project = generate(base());
         ObjectNode onDisk = (ObjectNode) mapper.readTree(project.get("club/menora-model.json"));
         ResponseEntity<byte[]> fromFile = update(Map.of("base", onDisk, "target", target()));
         assertThat(fromFile.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(fromFile.getHeaders().getFirst("X-Update-Base")).isEqualTo("snapshot");
         assertThat(text(FullstackExampleRequests.unzip(fromFile.getBody()), "club-update/UPDATE.md"))
+                .contains("## Where it starts");
+        // Without a snapshot (a project from before them), its catalog hash is the base's.
+        ObjectNode noSnapshot = onDisk.deepCopy();
+        ((ObjectNode) noSnapshot.get("generator")).remove("snapshot");
+        ResponseEntity<byte[]> regenerated = update(Map.of("base", noSnapshot, "target", target()));
+        assertThat(regenerated.getHeaders().getFirst("X-Update-Base")).isEqualTo("regenerated");
+        assertThat(text(FullstackExampleRequests.unzip(regenerated.getBody()), "club-update/UPDATE.md"))
                 .contains("The catalog is the one the project was generated with");
         // A project generated from an older catalog is told so.
         ResponseEntity<byte[]> older = update(Map.of("base", base(), "target", target(), "baseCatalogHash", "0".repeat(64)));

@@ -40,6 +40,10 @@ import java.util.Map;
  * (set by the DDL import, or by hand). Null means the column is derived from the name
  * ({@link com.menora.initializr.gen.Naming#toSnakeCase}) — which cannot reproduce every schema
  * name ({@code USE_8} and {@code USE8} both camel-case to {@code use8}), hence the field.
+ *
+ * <p>{@code maxFiles} (FILE and IMAGE only): the field holds several files, at most this many — a
+ * list kept in a table of its own ({@code <table>_<column>}) instead of one id in a column. Null:
+ * one file.
  */
 public record FieldDefinition(
         String name,
@@ -65,7 +69,8 @@ public record FieldDefinition(
         String help,
         String showWhen,
         String formula,
-        boolean requiredWhenShown) {
+        boolean requiredWhenShown,
+        Integer maxFiles) {
 
     /** The currency of a MONEY field that names none. */
     public static final String DEFAULT_CURRENCY = "ILS";
@@ -90,6 +95,23 @@ public record FieldDefinition(
         this(name, type, primaryKey, generated, required, unique, length, min, max,
                 pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
                 column, currency, help, null, null, false);
+    }
+
+    /** Every property but {@code maxFiles} (one file, for a FILE or IMAGE field). */
+    public FieldDefinition(String name, FieldType type, boolean primaryKey, boolean generated,
+                           boolean required, boolean unique, Integer length, BigDecimal min, BigDecimal max,
+                           String pattern, boolean email, List<String> enumValues,
+                           boolean searchable, boolean filterable, String label, boolean readOnly,
+                           String defaultValue, Map<String, String> enumLabels, String column, String currency,
+                           String help, String showWhen, String formula, boolean requiredWhenShown) {
+        this(name, type, primaryKey, generated, required, unique, length, min, max,
+                pattern, email, enumValues, searchable, filterable, label, readOnly, defaultValue, enumLabels,
+                column, currency, help, showWhen, formula, requiredWhenShown, null);
+    }
+
+    /** A FILE or IMAGE field that holds several files (see {@code maxFiles}). */
+    public boolean multiple() {
+        return maxFiles != null;
     }
 
     /** The value is computed from other fields on every save. */

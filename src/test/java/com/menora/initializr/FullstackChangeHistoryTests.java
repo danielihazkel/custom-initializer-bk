@@ -98,7 +98,7 @@ class FullstackChangeHistoryTests {
         String recorder = file(files, "history/ChangeLogRecorder.java");
         assertThat(recorder)
                 // Each tracked class with the fields a restore leaves alone: the workflow's and the file.
-                .contains("Map.entry(com.menora.support.entity.ExpenseClaim.class, new Tracked(\"expense-claim\", Set.of(\"status\", \"assignee\", \"receipt\")))")
+                .contains("Map.entry(com.menora.support.entity.ExpenseClaim.class, new Tracked(\"expense-claim\", Set.of(\"status\", \"assignee\", \"receipts\")))")
                 .contains("Map.entry(com.menora.support.entity.CostCenter.class, new Tracked(\"cost-center\", Set.of()))")
                 .contains("registry.appendListeners(EventType.POST_UPDATE, this);");
         assertThat(file(files, "history/ChangeHistory.java")).contains("throw new ResourceConflictException(newest.getChangedBy() + \" changed it since\");");

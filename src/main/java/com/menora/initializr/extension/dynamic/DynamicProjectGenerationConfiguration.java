@@ -520,7 +520,8 @@ public class DynamicProjectGenerationConfiguration {
      */
     @Bean
     BuildCustomizer<MavenBuild> eventsBuildCustomizer(ProjectDescription description, EventsSpecContext eventsContext,
-                                                      EventsCodeGenerator generator) {
+                                                      EventsCodeGenerator generator,
+                                                      org.springframework.core.env.Environment environment) {
         return build -> {
             if (eventsContext.isEmpty()) return;
             build.dependencies().add("events-json", Dependency
@@ -538,8 +539,23 @@ public class DynamicProjectGenerationConfiguration {
             }
             if (avroImports == null) return;
             addAvro(build, avroImports);
+            // Through Confluent's schema registry: its serializer, from its own repository.
+            boolean registry = eventsContext.all().entrySet().stream().anyMatch(e -> generator.usesRegistry(
+                    e.getValue(), description.getPackageName(), eventsContext.optionsFor(e.getKey())));
+            if (registry) {
+                String repository = environment.getProperty("menora.events.confluent-repository", CONFLUENT_REPOSITORY);
+                build.repositories().add("confluent", MavenRepository.withIdAndUrl("confluent", repository).name("Confluent").build());
+                VersionProperty confluentVersion = VersionProperty.of("confluent.version");
+                build.properties().version(confluentVersion, EventsCodeGenerator.confluentVersion(description.getPlatformVersion()));
+                build.dependencies().add("events-avro-serializer", Dependency.withCoordinates("io.confluent", "kafka-avro-serializer")
+                        .version(VersionReference.ofProperty(confluentVersion))
+                        .scope(DependencyScope.COMPILE));
+            }
         };
     }
+
+    /** Where Confluent's artifacts are: {@code menora.events.confluent-repository} points it at a mirror (an Artifactory remote). */
+    static final String CONFLUENT_REPOSITORY = "https://packages.confluent.io/maven/";
 
     /**
      * Avro and the avro-maven-plugin's {@code schema} goal over {@code src/main/avro}. The files

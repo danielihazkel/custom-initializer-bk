@@ -41,6 +41,22 @@ public final class SchemaBuilder {
     private SchemaBuilder() {}
 
     /**
+     * The version of what the generator itself adds to a schema — its own tables ({@code app_*})
+     * and the indexes it puts beside an entity's columns — that this release writes. A project's
+     * model file says which version its baseline was written with ({@code generator.schemaVersion}),
+     * so an update's migration can bring that project's tables up to this one:
+     * <ul>
+     *   <li>1 — before the Attachments round (2026-11): {@code app_attachment} without
+     *       {@code created_by}, its {@code content} NOT NULL, no index on {@code created_at};</li>
+     *   <li>2 — the Attachments round;</li>
+     *   <li>3 — Round 13: an index on every FILE/IMAGE column ({@code ixa_…}: the read check
+     *       counts rows by them), and {@code app_attachment.thumbnail}.</li>
+     * </ul>
+     * A model file without one is from before versions were written: 1 or 2.
+     */
+    public static final int CURRENT_VERSION = 3;
+
+    /**
      * @param projectContext the backend render context (it says whether the project has the
      *                       attachment, saved-view and workflow-move tables, and resolves each
      *                       entity's options)
@@ -57,6 +73,9 @@ public final class SchemaBuilder {
             tables.add(tableOf(entity, ctx, byName));
             for (RelationDefinition collection : entity.collections()) {
                 joinTables.add(joinTableOf(entity, collection, byName));
+            }
+            for (FieldDefinition field : entity.fields()) {
+                if (field.multiple()) joinTables.add(filesTableOf(entity, field));
             }
         }
         tables.addAll(joinTables);
@@ -78,6 +97,8 @@ public final class SchemaBuilder {
         List<Index> indexes = new ArrayList<>();
 
         for (FieldDefinition f : entity.fields()) {
+            // Several files: a table of their own (filesTableOf), no column here.
+            if (f.multiple()) continue;
             String column = name(SchemaNames.columnOf(f));
             ColumnType type = typeOf(f.type());
             Integer length = type == ColumnType.VARCHAR ? (f.length() != null ? f.length() : 255) : null;
@@ -85,6 +106,8 @@ public final class SchemaBuilder {
             columns.add(new Column(column, type, length, !f.primaryKey() && !f.required(), identity, false));
             if (f.primaryKey()) primaryKey.add(column);
             else if (f.unique()) uniques.add(new Unique(constraint("uk", table, column), List.of(column)));
+            // Who may read a file is asked by counting the rows that hold it (Attachments.ownersOf).
+            if (f.type().isAttachment()) indexes.add(new Index(constraint(ATTACHMENT_INDEX, table, column), List.of(column)));
         }
         // Unique keys over several fields and links, in the order the model gives them.
         for (EntityDefinition.UniqueKey key : entity.uniqueKeys()) {
@@ -150,6 +173,27 @@ public final class SchemaBuilder {
                 List.of(new Index(constraint("ix", table, targetColumn), List.of(targetColumn))));
     }
 
+    /**
+     * The table of a field that holds several files ({@code attachment/AttachedFile}, the entity's
+     * {@code @ElementCollection}): the owner's key, the file's place in the list (the key with it),
+     * the file's id — indexed, the read check counts rows by it — and its name.
+     */
+    private static Table filesTableOf(EntityDefinition owner, FieldDefinition field) {
+        String table = name(SchemaNames.filesTableOf(owner, field));
+        FieldDefinition ownerKey = keyOf(owner);
+        List<Column> columns = List.of(
+                referencing("owner_id", ownerKey, false),
+                Column.of("file_order", ColumnType.INTEGER, false),
+                Column.of("attachment_id", ColumnType.UUID, false),
+                Column.varchar("file_name", 255, true));
+        return new Table(name(SchemaNames.schemaOf(owner)), table, columns, List.of("owner_id", "file_order"),
+                List.of(new ForeignKey(constraint("fk", table, "owner_id"), List.of("owner_id"),
+                        name(SchemaNames.schemaOf(owner)), name(SchemaNames.tableOf(owner)),
+                        List.of(name(SchemaNames.columnOf(ownerKey))))),
+                List.of(),
+                List.of(new Index(constraint(ATTACHMENT_INDEX, table, "attachment_id"), List.of("attachment_id"))));
+    }
+
     /** A column holding another row's key: the key's type, never numbered by the database. */
     private static Column referencing(String column, FieldDefinition key, boolean nullable) {
         ColumnType type = typeOf(key.type());
@@ -180,21 +224,62 @@ public final class SchemaBuilder {
         };
     }
 
+    /** The prefix of the index on a FILE/IMAGE column (version 3). */
+    static final String ATTACHMENT_INDEX = "ixa";
+
+    /**
+     * {@code schema} — built by this release — as an older version of the generator wrote it: the
+     * generator's own tables of that version, and none of the indexes it added since. What an
+     * update's migration compares a project's schema from. {@code null} (a model file from before
+     * versions were written) is read as the oldest.
+     */
+    public static Schema asOf(Schema schema, Integer version) {
+        int v = version == null ? 1 : version;
+        if (v >= CURRENT_VERSION) return schema;
+        List<Table> tables = new ArrayList<>();
+        for (Table t : schema.tables()) {
+            if (t.name().equals(ATTACHMENTS) && t.schema() == null) {
+                tables.add(attachments(v));
+                continue;
+            }
+            List<Index> indexes = v >= 3 ? t.indexes()
+                    : t.indexes().stream().filter(i -> !i.name().startsWith(ATTACHMENT_INDEX + "_")).toList();
+            tables.add(new Table(t.schema(), t.name(), t.columns(), t.primaryKey(), t.foreignKeys(), t.uniques(), indexes));
+        }
+        return new Schema(tables);
+    }
+
+    /** The generator's own tables: their names begin so (attachments, views, moves, history, outbox). */
+    public static boolean isGeneratorTable(String ref) {
+        return ref != null && ref.startsWith("app_");
+    }
+
     // ── The generator's own tables (attachment/, views/, workflow/ in the backend set) ──
 
+    private static final String ATTACHMENTS = "app_attachment";
+
     private static Table attachments() {
-        return new Table(null, "app_attachment", List.of(
+        return attachments(CURRENT_VERSION);
+    }
+
+    private static Table attachments(int version) {
+        List<Column> columns = new ArrayList<>(List.of(
                 Column.of("id", ColumnType.UUID, false),
                 Column.varchar("file_name", 255, false),
                 Column.varchar("content_type", 150, false),
                 Column.of("size_bytes", ColumnType.BIGINT, false),
-                Column.of("created_at", ColumnType.INSTANT, false),
-                Column.varchar("created_by", 255, true),
-                // Only the database storage fills it; a folder or an object store keeps the bytes instead.
-                Column.of("content", ColumnType.BLOB, true)),
+                Column.of("created_at", ColumnType.INSTANT, false)));
+        // Who uploaded it (version 2: a file on no record yet is its uploader's).
+        if (version >= 2) columns.add(Column.varchar("created_by", 255, true));
+        // Only the database storage fills it; a folder or an object store keeps the bytes instead
+        // (version 2 — before, the database held every file).
+        columns.add(Column.of("content", ColumnType.BLOB, version >= 2));
+        // A picture's small version, made on its first request (version 3, Thumbnails).
+        if (version >= 3) columns.add(Column.of("thumbnail", ColumnType.BLOB, true));
+        return new Table(null, ATTACHMENTS, columns,
                 List.of("id"), List.of(), List.of(),
-                // The clean-up looks for old uploads (Attachments.removeUnattached).
-                List.of(new Index("ix_app_attachment_created", List.of("created_at"))));
+                // The clean-up looks for old uploads (Attachments.removeUnattached; version 2).
+                version >= 2 ? List.of(new Index("ix_app_attachment_created", List.of("created_at"))) : List.of());
     }
 
     private static Table savedViews() {

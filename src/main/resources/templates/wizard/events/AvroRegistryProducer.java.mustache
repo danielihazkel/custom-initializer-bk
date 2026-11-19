@@ -1,0 +1,49 @@
+package {{package}};
+
+{{#producerImports}}
+import {{.}};
+{{/producerImports}}
+
+/**
+ * Sends to {@code {{addressJavadoc}}}{{#hasDescription}}: {{descriptionJavadoc}}{{/hasDescription}}.
+ * The topic's name is the property {@code {{topicProperty}}}; a message travels as Avro through the
+ * schema registry (see {@link AvroKafkaConfig}).
+ */
+@Component
+public class {{stem}}Producer {
+
+    private final KafkaTemplate<String, SpecificRecord> kafkaTemplate;
+    private final String topic;
+
+    public {{stem}}Producer(@Qualifier(AvroKafkaConfig.TEMPLATE) KafkaTemplate<String, SpecificRecord> kafkaTemplate,
+            @Value("{{topicPlaceholder}}") String topic) {
+        this.kafkaTemplate = kafkaTemplate;
+        this.topic = topic;
+    }
+
+{{#sends}}
+{{#hasTitle}}
+    /** {{titleJavadoc}} */
+{{/hasTitle}}
+{{^hasHeaders}}
+    public CompletableFuture<SendResult<String, SpecificRecord>> {{method}}({{keyType}} key, {{type}} payload) {
+        return kafkaTemplate.send(topic, {{keyArg}}, payload);
+    }
+{{/hasHeaders}}
+{{#hasHeaders}}
+    public CompletableFuture<SendResult<String, SpecificRecord>> {{method}}({{keyType}} key, {{type}} payload) {
+        return {{method}}(key, payload, null);
+    }
+
+    /** With its headers{{#hasCorrelation}}: a correlation id left empty is a new UUID{{/hasCorrelation}}. */
+    public CompletableFuture<SendResult<String, SpecificRecord>> {{method}}({{keyType}} key, {{type}} payload, {{headersType}} headers) {
+        ProducerRecord<String, SpecificRecord> record = new ProducerRecord<>(topic, {{keyArg}}, payload);
+{{#headerLines}}
+        {{{.}}}
+{{/headerLines}}
+        return kafkaTemplate.send(record);
+    }
+{{/hasHeaders}}
+
+{{/sends}}
+}

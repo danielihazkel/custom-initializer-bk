@@ -29,6 +29,9 @@ public final class AuditDetails {
     String department;
     final Set<String> wizards = new LinkedHashSet<>();
     Integer entityCount;
+    /** The project's snapshot ({@code config/GeneratedSnapshots}): its id and its files, model file aside. */
+    String snapshotId;
+    java.util.Map<String, byte[]> snapshotTree;
 
     /** The request's details, made on first use; null outside a request. */
     static AuditDetails current() {
@@ -82,5 +85,33 @@ public final class AuditDetails {
     public static void entityCount(int count) {
         AuditDetails d = current();
         if (d != null) d.entityCount = count;
+    }
+
+    /**
+     * What the request generated, by its snapshot id. A later call wins: an update generates its
+     * base side first and its result last, and the result is what the project becomes.
+     */
+    public static void snapshot(String id, java.util.Map<String, byte[]> tree) {
+        AuditDetails d = current();
+        if (d == null) return;
+        d.snapshotId = id;
+        d.snapshotTree = tree;
+    }
+
+    /** The snapshot id this request has generated so far, or null. */
+    public static String snapshotId() {
+        AuditDetails d = currentIfAny();
+        return d == null ? null : d.snapshotId;
+    }
+
+    /** The request's details when somebody has said something; null otherwise or outside a request. */
+    static AuditDetails currentOrNull() {
+        return currentIfAny();
+    }
+
+    private static AuditDetails currentIfAny() {
+        RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
+        if (attributes == null) return null;
+        return attributes.getAttribute(ATTRIBUTE, RequestAttributes.SCOPE_REQUEST) instanceof AuditDetails d ? d : null;
     }
 }

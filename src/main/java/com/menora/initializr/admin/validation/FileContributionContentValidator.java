@@ -77,6 +77,25 @@ public class FileContributionContentValidator {
         return validator.validate(content);
     }
 
+    /**
+     * Why a row's target path would not name a file inside the generated project, or null. Every
+     * generation checks it ({@code GeneratedProjectFiles.resolveInside}), but a row saved with
+     * {@code ../x} broke every project that selected its dependency until an admin noticed; this is
+     * the same check when the row is saved or imported. Placeholders take sample values first.
+     */
+    public static String targetPathProblem(String targetPath) {
+        if (targetPath == null || targetPath.isBlank()) return "The target path is empty";
+        String sample = targetPath.replace("{{packagePath}}", "com/example/demo")
+                .replaceAll("\\{\\{[^}]*}}", "x");
+        try {
+            com.menora.initializr.config.GeneratedProjectFiles.resolveInside(java.nio.file.Path.of("project"), sample);
+            return null;
+        } catch (com.menora.initializr.config.WizardArgumentException e) {
+            return "The target path '" + targetPath + "' is not a file inside the project: give a relative path that"
+                    + " stays in it (no leading '/', no '..' out of it)";
+        }
+    }
+
     private ContentSyntaxValidator pickValidator(String targetPath) {
         if (targetPath == null) return null;
         int slash = Math.max(targetPath.lastIndexOf('/'), targetPath.lastIndexOf('\\'));
