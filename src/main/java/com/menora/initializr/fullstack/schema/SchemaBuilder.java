@@ -148,6 +148,15 @@ public final class SchemaBuilder {
                 indexes.add(new Index(constraint("ix", table, column), List.of(column)));
             }
         }
+        // Rows that belong to users (access.owners): every list asks whose a row is.
+        for (String owner : entity.access().owners()) {
+            String column = owner.equals(EntityDefinition.Access.CREATED_BY) ? "created_by"
+                    : entity.fields().stream().filter(f -> f.name().equals(owner)).findFirst()
+                            .map(f -> name(SchemaNames.columnOf(f))).orElse(null);
+            if (column == null || columns.stream().noneMatch(c -> c.name().equals(column))) continue;
+            Index index = new Index(constraint("ix", table, column), List.of(column));
+            if (indexes.stream().noneMatch(i -> i.name().equals(index.name()))) indexes.add(index);
+        }
         return new Table(schema, table, columns, primaryKey, foreignKeys, uniques, indexes);
     }
 

@@ -1,0 +1,9 @@
+package {{packageName}}.web;
+
+/** A row that is somebody else's to change, or a new row made out to somebody else: 403. */
+public class RowAccessException extends RuntimeException {
+
+    public RowAccessException(String message) {
+        super(message);
+    }
+}

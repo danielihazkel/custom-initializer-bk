@@ -257,8 +257,8 @@ export function {{EntityName}}Page({{#hasPages}}props: {{EntityName}}PageProps =
                   <button type="button" onClick={() => list.setPendingDelete(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('delete')}</button>
 {{/listActionsConfigurable}}
 {{#listActionsConfigurable}}
-                  {list.can('edit') && <button type="button" onClick={() => list.openEdit(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('edit')}</button>}
-                  {list.can('delete') && <button type="button" onClick={() => list.setPendingDelete(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('delete')}</button>}
+                  {list.can('edit'){{#listOwnWrites}} && list.mine(selectedRow){{/listOwnWrites}} && <button type="button" onClick={() => list.openEdit(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('edit')}</button>}
+                  {list.can('delete'){{#listOwnWrites}} && list.mine(selectedRow){{/listOwnWrites}} && <button type="button" onClick={() => list.setPendingDelete(selectedRow)} className="text-xs font-medium text-brand hover:underline">{t('delete')}</button>}
 {{/listActionsConfigurable}}
 {{/mutable}}
                   <button type="button" onClick={() => props.onSelect?.(undefined)} className="text-xs font-medium text-muted hover:text-fg" aria-label={t('close')}>×</button>
@@ -361,7 +361,7 @@ export function {{EntityName}}Page({{#hasPages}}props: {{EntityName}}PageProps =
         title={t('xDetails', { x: '{{entityLabelTs}}' })}
         onClose={() => list.setDetailRow(null)}
 {{#mutable}}{{^listActionsConfigurable}}        onEdit={() => { if (list.detailRow) { list.openEdit(list.detailRow); list.setDetailRow(null) } }}
-{{/listActionsConfigurable}}{{#listActionsConfigurable}}        onEdit={list.can('edit') ? () => { if (list.detailRow) { list.openEdit(list.detailRow); list.setDetailRow(null) } } : undefined}
+{{/listActionsConfigurable}}{{#listActionsConfigurable}}        onEdit={list.can('edit'){{#listOwnWrites}} && (!list.detailRow || list.mine(list.detailRow)){{/listOwnWrites}} ? () => { if (list.detailRow) { list.openEdit(list.detailRow); list.setDetailRow(null) } } : undefined}
 {{/listActionsConfigurable}}{{/mutable}}      >
         {list.detailRow && <{{EntityName}}Detail value={list.detailRow} />}
 {{#historyApplicable}}        {list.detailRow && <{{EntityName}}History id={String(list.rowKey(list.detailRow))} version={list.detailRow} onRestored={next => { list.setDetailRow(next); void list.reload() }} />}

@@ -35,7 +35,11 @@ class FullstackChangeHistoryTests {
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
         body.put("opts", Map.of("scaffold", scaffold));
         // The example's activity feed needs audit: without it, the classic shell.
-        if (!scaffold.contains("audit")) body.put("pages", List.of());
+        if (!scaffold.contains("audit")) {
+            body.put("pages", List.of());
+            // …and neither does the example's claim belong to its creator (an owner that turns audit on).
+            for (Object e : (List<?>) body.get("entities")) ((Map<?, ?>) e).remove("access");
+        }
         if (deps != null) body.put("dependencies", deps);
         if (claimOpts != null) {
             for (Object e : (List<?>) body.get("entities")) {

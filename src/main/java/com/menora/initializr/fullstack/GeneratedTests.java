@@ -38,6 +38,8 @@ public final class GeneratedTests {
     public static final String ADMIN_USER = "api-test-admin";
     public static final String PLAIN_USER = "api-test-user";
     public static final String NO_ROLES_USER = "api-test-nobody";
+    /** A second holder of the USER role: where rows belong to users, the one whose row it is not. */
+    public static final String OTHER_USER = "api-test-other";
 
     /** The project context's lookup: entity name → its per-entity test view. */
     static final String API_TESTS_KEY = "__apiTests";
@@ -133,6 +135,7 @@ public final class GeneratedTests {
         ctx.put("apiTestAdmin", ADMIN_USER);
         ctx.put("apiTestUser", PLAIN_USER);
         ctx.put("apiTestNobody", NO_ROLES_USER);
+        ctx.put("apiTestOther", OTHER_USER);
         putTestDatabase(ctx, entities, dependencyIds);
     }
 
@@ -157,6 +160,18 @@ public final class GeneratedTests {
         entityCtx.putAll(view);
         entityCtx.put("apiTestRestores", Boolean.TRUE.equals(entityCtx.get("softDeleteApplicable"))
                 && Boolean.TRUE.equals(view.get("apiTestWritable")));
+        // Rows that belong to users (RowAccessContext ran before this): a user makes a row, and
+        // another user is kept from it. Not where a user cannot make one here — only admins
+        // write, the row needs a parent of the user's own, or its rows are its parent's.
+        boolean owned = Boolean.TRUE.equals(entityCtx.get("rowLimited")) && !Boolean.TRUE.equals(entityCtx.get("rowsViaParent"))
+                && Boolean.TRUE.equals(view.get("apiTestWritable")) && !Boolean.TRUE.equals(view.get("apiTestBlocked"))
+                && !"ADMIN".equals(entity.access().write()) && !Boolean.TRUE.equals(entityCtx.get("hasOwnLinks"))
+                && !Boolean.TRUE.equals(entityCtx.get("hasCompositePk"));
+        entityCtx.put("apiTestRowAccess", owned);
+        if (owned) {
+            entityCtx.put("apiTestRowOwners", entity.access().owners().stream()
+                    .filter(o -> !o.equals(EntityDefinition.Access.CREATED_BY)).toList());
+        }
     }
 
     private static Map<String, Object> entityView(EntityDefinition e, String reason, boolean ldap, boolean validation) {

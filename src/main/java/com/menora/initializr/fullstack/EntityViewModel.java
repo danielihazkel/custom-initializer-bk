@@ -261,6 +261,16 @@ final class EntityViewModel {
         // The security.Constants an endpoint asks for (the controller template, with ldap-auth).
         view.put("readLevel", entity.access().read());
         view.put("writeLevel", entity.access().write());
+        // Rows that belong to users. OWN_WRITES — everyone sees a row, whose it is changes it — is
+        // what the frontend has to ask of a row (under OWN every row a user sees is theirs):
+        // isMine<Entity>, from the owners the row itself carries. OWN keeps some numbers to admins.
+        boolean ownWrites = entity.access().ownWritesOnly() && !entity.readOnly();
+        view.put("listOwnWrites", ownWrites);
+        view.put("rowsAdminNumbers", entity.access().ownRowsOnly());
+        if (ownWrites) {
+            view.put("rowMineTs", String.join(" || ", entity.access().owners().stream()
+                    .map(owner -> "row." + owner + " === me.id").toList()));
+        }
         view.put("viewQuery", entity.viewQuery());
 
         List<Map<String, Object>> fieldViews = new ArrayList<>(entity.fields().size());
@@ -282,6 +292,13 @@ final class EntityViewModel {
             }
             RuleRows.Pick pick = ruled.get(f.name());
             if (pick != null && pick.seed() != null) fv.put("seedExpr", pick.seed());
+            // A field that says whose the row is (access.owners): a third of the demo rows are the
+            // dev user's, so their list has rows when they are not an admin. (The workflow's
+            // assignee is dealt out below; a demo row's creator is "system".)
+            if (entity.access().owners().contains(f.name()) && !f.unique()
+                    && (entity.workflow() == null || !f.name().equals(entity.workflow().assigneeField()))) {
+                fv.put("seedExpr", "i % 3 == 1 ? \"dev-user\" : \"user\" + i");
+            }
             // Shown only while a condition holds (the form's guard is put once the form's steps are known).
             fv.put("hasShowWhen", f.showWhen() != null);
             if (f.showWhen() != null) {

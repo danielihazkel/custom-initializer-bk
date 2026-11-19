@@ -37,7 +37,11 @@ class FullstackEntityEventsTests {
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
         body.put("opts", Map.of("scaffold", scaffold));
         // The example's activity feed needs audit: without it, the classic shell.
-        if (!scaffold.contains("audit")) body.put("pages", List.of());
+        if (!scaffold.contains("audit")) {
+            body.put("pages", List.of());
+            // …and neither does the example's claim belong to its creator (an owner that turns audit on).
+            for (Object e : (List<?>) body.get("entities")) ((Map<?, ?>) e).remove("access");
+        }
         if (deps != null) body.put("dependencies", deps);
         if (claim != null) {
             for (Object e : (List<?>) body.get("entities")) {
@@ -86,8 +90,10 @@ class FullstackEntityEventsTests {
         Map<String, String> files = generate(List.of("audit", "events"), null, null);
         String recorder = file(files, "events/EventRecorder.java");
         assertThat(recorder)
-                .contains("Map.entry(com.menora.support.entity.ExpenseClaim.class, new Tracked(\"expense-claim\", true, \"status\", \"USER\"))")
-                .contains("Map.entry(com.menora.support.entity.CostCenter.class, new Tracked(\"cost-center\", true, null, \"USER\"))")
+                // The last flag: a claim belongs to its users (the example's access.owners), so a
+                // user's page hears that a claim changed, not which one.
+                .contains("Map.entry(com.menora.support.entity.ExpenseClaim.class, new Tracked(\"expense-claim\", true, \"status\", \"USER\", true))")
+                .contains("Map.entry(com.menora.support.entity.CostCenter.class, new Tracked(\"cost-center\", true, null, \"USER\", false))")
                 .contains("registry.appendListeners(EventType.POST_UPDATE, this);")
                 .doesNotContain("NOTIFY")
                 .doesNotContain("\"kafka\"");
@@ -132,7 +138,7 @@ class FullstackEntityEventsTests {
         String recorder = file(files, "events/EventRecorder.java");
         assertThat(recorder)
                 // Watched for its moves only: its changes are not published.
-                .contains("new Tracked(\"expense-claim\", false, \"status\", \"USER\")")
+                .contains("new Tracked(\"expense-claim\", false, \"status\", \"USER\", true)")
                 .doesNotContain("CostCenter.class")
                 .contains("Map.entry(\"expense-claim:approve\", new Notify(null, true, Set.of(\"ADMIN\"), \"ExpenseClaim\", \"Approve\"))")
                 // The states as the application words them.

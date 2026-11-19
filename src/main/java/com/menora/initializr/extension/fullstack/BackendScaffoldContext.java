@@ -68,7 +68,8 @@ public final class BackendScaffoldContext {
         FeatureContext.putXlsxExport(projectCtx, entities);
         FeatureContext.putSavedViews(projectCtx, entities);
         // CurrentUser and GET /api/me: for a workflow, or for a shell that shows who is signed in.
-        projectCtx.put("usesCurrentUser", Boolean.TRUE.equals(projectCtx.get("hasWorkflows")) || in.shellUser());
+        projectCtx.put("usesCurrentUser", Boolean.TRUE.equals(projectCtx.get("hasWorkflows")) || in.shellUser()
+                || Boolean.TRUE.equals(projectCtx.get("hasRowAccess")));
         // @EnableJpaAuditing ships when any entity is audited, not only with the project option.
         FeatureContext.putAudit(projectCtx, entities);
         // The change log (history option) and who makes a change (audit columns and the log).

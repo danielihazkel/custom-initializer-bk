@@ -30,3 +30,14 @@ export interface {{EntityName}} {
    *  its key; a row of a list has none, and a save without it leaves the rows as they are. */
   {{collectionField}}?: Partial<{{childEntity}}>[] | null
 {{/compositions}}}
+{{#listOwnWrites}}
+
+/**
+ * Whether `row` is the caller's to change. Everyone sees a {{EntityName}}; whose it is — and an
+ * admin — changes it. The backend decides: this only says what a page offers.
+ */
+export function isMine{{EntityName}}(row: {{EntityName}}, me: { id: string | null; roles: string[] }): boolean {
+  if (me.roles.includes('ADMIN')) return true
+  return me.id != null && ({{{rowMineTs}}})
+}
+{{/listOwnWrites}}

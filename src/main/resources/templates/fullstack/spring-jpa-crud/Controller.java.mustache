@@ -103,7 +103,9 @@ public class {{EntityName}}Controller {
 {{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#hasAssignee}}inbox, CurrentUser.idOf(workflowUser), {{/hasAssignee}}{{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
 {{/hasFilters}}{{#auditApplicable}}        // Read here, on the request's own thread: the rows are written on another.
         String author = "me".equals(changedBy) ? {{packageName}}.web.RequestUser.current() : changedBy;
-{{/auditApplicable}}        Sort sort = sortOf(pageable);
+{{/auditApplicable}}{{#rowsOwnOnly}}        // Who is asking is read here too: on the thread that writes the rows there is no request to ask.
+        {{packageName}}.web.RowAccess.Caller caller = service.caller();
+{{/rowsOwnOnly}}        Sort sort = sortOf(pageable);
         // Written row by row as the chunks are read: memory stays bounded whatever the table size,
         // and each chunk is its own read-only transaction.
         org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody stream = out -> {
@@ -114,9 +116,12 @@ public class {{EntityName}}Controller {
                 int pageNo = 0;
                 Page<{{EntityName}}Dto> chunk;
                 do {
-                    chunk = service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}{{#auditApplicable}}author, {{/auditApplicable}}PageRequest.of(pageNo++, 500, sort))
+{{^rowsOwnOnly}}                    chunk = service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}{{#auditApplicable}}author, {{/auditApplicable}}PageRequest.of(pageNo++, 500, sort))
                             .map({{EntityName}}Dto::from);
-                    for ({{EntityName}}Dto dto : chunk) {
+{{/rowsOwnOnly}}{{#rowsOwnOnly}}                    Pageable part = PageRequest.of(pageNo++, 500, sort);
+                    chunk = {{packageName}}.web.RowAccess.as(caller, () -> service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}{{#auditApplicable}}author, {{/auditApplicable}}part))
+                            .map({{EntityName}}Dto::from);
+{{/rowsOwnOnly}}                    for ({{EntityName}}Dto dto : chunk) {
                         if (sheet.full()) break; // a sheet holds no more rows
                         sheet.row(
 {{#xlsxCells}}                                {{.}}{{^-last}},{{/-last}}
@@ -147,7 +152,9 @@ public class {{EntityName}}Controller {
 {{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#hasAssignee}}inbox, CurrentUser.idOf(workflowUser), {{/hasAssignee}}{{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
 {{/hasFilters}}{{#auditApplicable}}        // Read here, on the request's own thread: the rows are written on another.
         String author = "me".equals(changedBy) ? {{packageName}}.web.RequestUser.current() : changedBy;
-{{/auditApplicable}}        Sort sort = sortOf(pageable);
+{{/auditApplicable}}{{#rowsOwnOnly}}        // Who is asking is read here too: on the thread that writes the rows there is no request to ask.
+        {{packageName}}.web.RowAccess.Caller caller = service.caller();
+{{/rowsOwnOnly}}        Sort sort = sortOf(pageable);
         // Streamed in fixed-size chunks so memory stays bounded regardless of table size; each
         // chunk is its own read-only transaction, so no session is held open across the response.
         StreamingResponseBody stream = out -> {
@@ -159,9 +166,12 @@ public class {{EntityName}}Controller {
             int pageNo = 0;
             Page<{{EntityName}}Dto> chunk;
             do {
-                chunk = service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}{{#auditApplicable}}author, {{/auditApplicable}}PageRequest.of(pageNo++, CSV_CHUNK_SIZE, sort))
+{{^rowsOwnOnly}}                chunk = service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}{{#auditApplicable}}author, {{/auditApplicable}}PageRequest.of(pageNo++, CSV_CHUNK_SIZE, sort))
                         .map({{EntityName}}Dto::from);
-                for ({{EntityName}}Dto dto : chunk) {
+{{/rowsOwnOnly}}{{#rowsOwnOnly}}                Pageable part = PageRequest.of(pageNo++, CSV_CHUNK_SIZE, sort);
+                chunk = {{packageName}}.web.RowAccess.as(caller, () -> service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}{{#auditApplicable}}author, {{/auditApplicable}}part))
+                        .map({{EntityName}}Dto::from);
+{{/rowsOwnOnly}}                for ({{EntityName}}Dto dto : chunk) {
                     String[] cells = {
 {{#fields}}                            {{#isMultiFile}}csv(String.join("; ", dto.{{name}}().stream().map(file -> String.valueOf(file.getName())).toList())),{{/isMultiFile}}{{^isMultiFile}}csv(dto.{{name}}()),{{/isMultiFile}}
 {{/fields}}{{#relations}}                            csv(dto.{{fkFieldName}}()),
@@ -300,7 +310,8 @@ public class {{EntityName}}Controller {
 {{/optScaffoldOpenApi}}{{#hasLdapAuth}}    @RequiresPermission(Constants.{{readLevel}})
 {{/hasLdapAuth}}    @GetMapping("/{id}/history")
     public java.util.List<{{packageName}}.history.ChangeHistory.Change> history(@PathVariable {{pkField.javaType}} id) {
-        return history.of("{{entityNameKebab}}", id);
+{{#rowsOwnOnly}}        if (service.caller().limited()) service.findById(id); // somebody else's row is not there
+{{/rowsOwnOnly}}        return history.of("{{entityNameKebab}}", id);
     }
 
     /** {@code latest}: the newest change the caller saw — a newer one is a 409 unless {@code force}. */
@@ -342,7 +353,7 @@ public class {{EntityName}}Controller {
 
     /** How long rows stay in each state they have left: the average, in seconds, and the stays behind it. */
 {{#optScaffoldOpenApi}}    @Operation(summary = "Average time {{EntityName}} records stay in each workflow state")
-{{/optScaffoldOpenApi}}{{#hasLdapAuth}}    @RequiresPermission(Constants.{{readLevel}})
+{{/optScaffoldOpenApi}}{{#hasLdapAuth}}    @RequiresPermission(Constants.{{#rowsOwnOnly}}ADMIN{{/rowsOwnOnly}}{{^rowsOwnOnly}}{{readLevel}}{{/rowsOwnOnly}})
 {{/hasLdapAuth}}    @GetMapping("/moves/time-in-state")
     public java.util.List<{{packageName}}.workflow.WorkflowMoveLog.StateTime> timeInState() {
         return service.timeInState();

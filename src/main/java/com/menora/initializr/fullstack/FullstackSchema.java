@@ -101,6 +101,14 @@ public final class FullstackSchema {
         defaultAccess.put("read", EntityDefinition.Access.DEFAULT.read());
         defaultAccess.put("write", EntityDefinition.Access.DEFAULT.write());
         doc.put("defaultAccess", defaultAccess);
+        // An entity's access.owners / access.rows: whose a row is (the creator, and text fields
+        // holding a user id) and what everyone else is kept from.
+        Map<String, Object> rowAccess = new LinkedHashMap<>();
+        rowAccess.put("modes", EntityDefinition.Access.ROW_MODES);
+        rowAccess.put("defaultMode", EntityDefinition.Access.OWN);
+        rowAccess.put("creator", EntityDefinition.Access.CREATED_BY);
+        rowAccess.put("maxOwners", EntityDefinition.Access.MAX_OWNERS);
+        doc.put("rowAccess", rowAccess);
         doc.put("listViews", FullstackPageValidator.LIST_VIEWS);
         doc.put("pageTypes", wires(PageDefinition.Type.values(), PageDefinition.Type::wire));
         doc.put("widgetKinds", wires(PageDefinition.WidgetKind.values(), PageDefinition.WidgetKind::wire));

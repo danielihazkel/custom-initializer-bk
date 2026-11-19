@@ -8,7 +8,9 @@ import { readListPrefs, writeListPrefs } from '@shared/ui/listPrefs'
 {{#optScaffoldSavedViews}}import type { ViewState } from '@shared/ui/savedViews'
 {{/optScaffoldSavedViews}}{{#kanbanIsWorkflow}}import { {{EntityName}}Workflow } from '@features/{{entityNameKebab}}-form'
 import { useMe } from '@shared/api/me'
-{{/kanbanIsWorkflow}}{{#mutable}}import { t } from '@shared/i18n'
+{{/kanbanIsWorkflow}}{{#listOwnWrites}}{{^kanbanIsWorkflow}}import { useMe } from '@shared/api/me'
+{{/kanbanIsWorkflow}}import { isMine{{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{/listOwnWrites}}{{#mutable}}import { t } from '@shared/i18n'
 import { validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
 import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail}}{{/lockingApplicable}} } from '@shared/api'
 {{#inlineEditApplicable}}import { InlineCell, type InlineKind } from '@shared/ui/InlineCell'
@@ -167,6 +169,14 @@ export function use{{EntityName}}List(columns: {{EntityName}}Column[]{{#hasPages
 {{#kanbanIsWorkflow}}
   const me = useMe()
 {{/kanbanIsWorkflow}}
+{{#listOwnWrites}}
+{{^kanbanIsWorkflow}}
+  const me = useMe()
+{{/kanbanIsWorkflow}}
+  // Everyone sees a row; whose it is changes it. The backend refuses anyone else — this keeps
+  // the list from offering what it would refuse.
+  const mine = (row: {{EntityName}}) => isMine{{EntityName}}(row, me)
+{{/listOwnWrites}}
   const [hiddenColumns{{#viewTable}}, setHiddenColumns{{/viewTable}}] = useState<string[]>(prefs.hidden ?? {{#auditApplicable}}WHO_HIDDEN{{/auditApplicable}}{{^auditApplicable}}[]{{/auditApplicable}})
   // Only what differs from how the list opens by default is kept.
   useEffect(() => {
@@ -513,7 +523,11 @@ export function use{{EntityName}}List(columns: {{EntityName}}Column[]{{#hasPages
   // A cell edited in place: checked like the form, saved with the row's PUT. A rejection keeps the
   // cell's editor open (InlineCell), so a mistake can be fixed where it was made.
   async function saveCell(row: {{EntityName}}, field: string, value: unknown) {
-    const next = { ...row, [field]: value } as {{EntityName}}
+{{#listOwnWrites}}    if (!mine(row)) {
+      toast.error(t('notYours'))
+      throw new Error(t('notYours'))
+    }
+{{/listOwnWrites}}    const next = { ...row, [field]: value } as {{EntityName}}
     const problem = validate{{EntityName}}(next)[field]
     if (problem) {
       toast.error(problem)
@@ -554,6 +568,13 @@ export function use{{EntityName}}List(columns: {{EntityName}}Column[]{{#hasPages
   // Kanban drag-and-drop writes the new lane value back. On failure the board is reloaded so
   // the card snaps back to its real lane instead of silently showing a move that never saved.
   async function onKanbanMove(row: {{EntityName}}, value: string) {
+{{#listOwnWrites}}
+    if (!mine(row)) {
+      toast.error(t('notYours'))
+      await reload()
+      return
+    }
+{{/listOwnWrites}}
 {{#kanbanIsWorkflow}}
     // The lanes are the workflow's states: a card moves by the one transition between them.
     const step = {{EntityName}}Workflow.between(String(row.{{kanbanField}}), value, me.roles)
@@ -651,9 +672,16 @@ export function use{{EntityName}}List(columns: {{EntityName}}Column[]{{#hasPages
 {{/writeChecked}}  // What this list offers. An action left out loses its button; the API still answers for itself.
   const can = (action: ListAction) => {{#listHidesActions}}!hideActions?.includes(action){{#writeChecked}} && ({{/writeChecked}}{{/listHidesActions}}{{#writeChecked}}action === 'export' || mayWrite{{#listHidesActions}}){{/listHidesActions}}{{/writeChecked}}
 {{/listActionsConfigurable}}{{#mutable}}  const emptyAction = {{#listActionsConfigurable}}!can('new') ? undefined : {{/listActionsConfigurable}}{ label: t('newX', { x: '{{entityLabelTs}}' }), onClick: {{^hasCreatePage}}openNew{{/hasCreatePage}}{{#hasCreatePage}}onCreate ?? openNew{{/hasCreatePage}} }
-{{#listActionsConfigurable}}  const editRow = can('edit') ? openEdit : undefined
+{{#listActionsConfigurable}}{{^listOwnWrites}}  const editRow = can('edit') ? openEdit : undefined
   const deleteRow = can('delete') ? setPendingDelete : undefined
-{{/listActionsConfigurable}}{{/mutable}}{{#viewTable}}  // The Columns menu: hide columns, or forget everything this browser saved for the list.
+{{/listOwnWrites}}{{#listOwnWrites}}  // A row's own buttons act for whose the row is, and say so to anyone else.
+  const ifMine = (act: (row: {{EntityName}}) => void) => (row: {{EntityName}}) => {
+    if (mine(row)) act(row)
+    else toast.error(t('notYours'))
+  }
+  const editRow = can('edit') ? ifMine(openEdit) : undefined
+  const deleteRow = can('delete') ? ifMine(setPendingDelete) : undefined
+{{/listOwnWrites}}{{/listActionsConfigurable}}{{/mutable}}{{#viewTable}}  // The Columns menu: hide columns, or forget everything this browser saved for the list.
   const columnMenu = {
     hidden: hiddenColumns,
     onChange: setHiddenColumns,
@@ -697,7 +725,8 @@ export function use{{EntityName}}List(columns: {{EntityName}}Column[]{{#hasPages
     openNew, openEdit, close, save, emptyAction,
     pendingDelete, setPendingDelete, deleting, confirmDelete,
 {{#listActionsConfigurable}}    editRow, deleteRow,
-{{/listActionsConfigurable}}{{#lockingApplicable}}    stale, loadTheirs, saveMineAnyway,
+{{#listOwnWrites}}    mine,
+{{/listOwnWrites}}{{/listActionsConfigurable}}{{#lockingApplicable}}    stale, loadTheirs, saveMineAnyway,
 {{/lockingApplicable}}{{#inlineEditApplicable}}    inline,
 {{/inlineEditApplicable}}{{/mutable}}{{#bulkSelectApplicable}}{{#viewTable}}    selected, setSelected, isRowSelected, toggleRow, allOnPageSelected, toggleAllOnPage,
 {{/viewTable}}{{/bulkSelectApplicable}}{{#bulkDeleteApplicable}}{{#viewTable}}    bulkConfirm, setBulkConfirm, bulkBusy, runBulkDelete,

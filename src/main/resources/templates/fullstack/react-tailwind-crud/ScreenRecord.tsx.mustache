@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 {{#recordWriteChecked}}import { useCallerMay } from '@shared/api/roles'
-{{/recordWriteChecked}}{{#recordHasIcons}}
+{{/recordWriteChecked}}{{#recordOwnWrites}}import { useMe } from '@shared/api/me'
+import { isMine{{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{/recordOwnWrites}}{{#recordHasIcons}}
 import { {{#hasBack}}ArrowLeft, {{/hasBack}}ChevronLeft, ChevronRight, {{#printable}}Printer, {{/printable}}{{#recordMutable}}Pencil, Trash2, {{/recordMutable}}} from 'lucide-react'
 {{/recordHasIcons}}
 {{#recordMutable}}
@@ -59,9 +61,12 @@ function siblingsOf(): string[] {
 
 export function {{PageName}}Screen({ recordId{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
 {{#recordWriteChecked}}  // Edit and Delete are offered to those who may write; the backend checks the call itself.
-  const mayWrite = useCallerMay('{{recordWriteLevel}}')
+  const {{#recordOwnWrites}}holdsRole{{/recordOwnWrites}}{{^recordOwnWrites}}mayWrite{{/recordOwnWrites}} = useCallerMay('{{recordWriteLevel}}')
 {{/recordWriteChecked}}  const [record, setRecord] = useState<{{EntityName}} | null>(null)
-  const [error, setError] = useState<string | null>(null)
+{{#recordOwnWrites}}  // …and, since everyone sees the row, to whose it is.
+  const me = useMe()
+  const mayWrite = holdsRole && record != null && isMine{{EntityName}}(record, me)
+{{/recordOwnWrites}}  const [error, setError] = useState<string | null>(null)
   // Bumped by "Try again" to fetch the record once more.
   const [attempt, setAttempt] = useState(0)
   // Previous / Next: the neighbours in the list this record was opened from.

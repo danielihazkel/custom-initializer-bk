@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react'
 {{#calendarCreatesInDrawer}}
 import { toast } from 'sonner'
 {{/calendarCreatesInDrawer}}
+{{#calendarWriteChecked}}
+import { useCallerMay } from '@shared/api/roles'
+{{/calendarWriteChecked}}
 import { use{{EntityName}} } from '@entities/{{entityNameKebab}}'
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 {{^hasRecordPage}}
@@ -50,6 +53,10 @@ interface Props {
 }
 
 export function {{PageName}}Screen({ query, onQueryChange{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
+{{#calendarWriteChecked}}
+  // A day offers a new record to those who may write; the backend checks the call.
+  const mayCreate = useCallerMay('{{calendarWriteLevel}}')
+{{/calendarWriteChecked}}
   // Routed, the day and view live in the URL, so a reload or a link reopens the same period;
   // embedded as a tab, they are local state.
   const [local, setLocal] = useState<{ date: string; mode: ScheduleMode }>(() => ({ date: todayKey(), mode: MODES[0] }))
@@ -158,10 +165,20 @@ export function {{PageName}}Screen({ query, onQueryChange{{#needsNavigate}}, onN
         onOpen={setDetail}
 {{/hasRecordPage}}
 {{#calendarCreatesInPage}}
+{{^calendarWriteChecked}}
         onCreate={() => onNavigate('{{createPageId}}')}
+{{/calendarWriteChecked}}
+{{#calendarWriteChecked}}
+        onCreate={mayCreate ? () => onNavigate('{{createPageId}}') : undefined}
+{{/calendarWriteChecked}}
 {{/calendarCreatesInPage}}
 {{#calendarCreatesInDrawer}}
+{{^calendarWriteChecked}}
         onCreate={createOn}
+{{/calendarWriteChecked}}
+{{#calendarWriteChecked}}
+        onCreate={mayCreate ? createOn : undefined}
+{{/calendarWriteChecked}}
 {{/calendarCreatesInDrawer}}
       />
 {{^hasRecordPage}}

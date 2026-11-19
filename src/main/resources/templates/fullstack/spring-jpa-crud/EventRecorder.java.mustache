@@ -66,7 +66,7 @@ public class EventRecorder implements PostInsertEventListener, PostUpdateEventLi
      * (the events option) or only its transitions e-mailed, its workflow's status field, and who
      * may read it (what the live stream checks).
      */
-    public record Tracked(String name, boolean publishes, String statusField, String readLevel) {}
+    public record Tracked(String name, boolean publishes, String statusField, String readLevel{{#hasRowAccess}}, boolean ownRows{{/hasRowAccess}}) {}
 {{#hasNotifications}}
 
     /** Whom a transition e-mails: the row's assignee (the field holding it), who created it, every holder of these roles. */
@@ -74,7 +74,7 @@ public class EventRecorder implements PostInsertEventListener, PostUpdateEventLi
 {{/hasNotifications}}
 
     public static final Map<Class<?>, Tracked> TRACKED = Map.ofEntries(
-{{#outboxEntities}}            Map.entry({{entityClass}}.class, new Tracked("{{entityKey}}", {{publishes}}, {{{statusJava}}}, "{{readLevel}}")){{^last}},{{/last}}
+{{#outboxEntities}}            Map.entry({{entityClass}}.class, new Tracked("{{entityKey}}", {{publishes}}, {{{statusJava}}}, "{{readLevel}}"{{#hasRowAccess}}, {{ownRows}}{{/hasRowAccess}})){{^last}},{{/last}}
 {{/outboxEntities}}    );
 {{#hasNotifications}}
 

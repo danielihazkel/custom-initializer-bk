@@ -5,7 +5,8 @@ import { toast } from 'sonner'
 import { t } from '@shared/i18n'
 {{#workflowRequiresFields}}import { FormDrawer } from '@shared/ui'
 {{/workflowRequiresFields}}import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
-import { {{EntityName}}Workflow{{#workflowRequiresFields}}, type {{EntityName}}Transition{{/workflowRequiresFields}} } from '../model/workflow'
+{{#listOwnWrites}}import { isMine{{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{/listOwnWrites}}import { {{EntityName}}Workflow{{#workflowRequiresFields}}, type {{EntityName}}Transition{{/workflowRequiresFields}} } from '../model/workflow'
 {{#workflowRequiresFields}}import { {{EntityName}}Form } from './{{EntityName}}Form'
 {{/workflowRequiresFields}}
 
@@ -30,7 +31,10 @@ export function {{EntityName}}Transitions({ row, onDone, compact = false }: Prop
   const [draft, setDraft] = useState<Partial<{{EntityName}}>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
 {{/workflowRequiresFields}}
-  const moves = {{EntityName}}Workflow.available(row, me.roles)
+{{^listOwnWrites}}  const moves = {{EntityName}}Workflow.available(row, me.roles)
+{{/listOwnWrites}}{{#listOwnWrites}}  // A move is for whose the row is (taking an unassigned one is how it becomes somebody's).
+  const moves = isMine{{EntityName}}(row, me) ? {{EntityName}}Workflow.available(row, me.roles) : []
+{{/listOwnWrites}}
 {{#hasAssignee}}
   const assignee = {{EntityName}}Workflow.assigneeOf(row)
   const canClaim = me.id != null && assignee == null && {{EntityName}}Workflow.isOpen(row)

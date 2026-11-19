@@ -72,6 +72,7 @@ class GeneratedBackendBuildSmokeTests {
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
         body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "seedData", "tests")));
         for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
+            entity.remove("access"); // rows that belong to users need ldap-auth too
             Map<String, Object> workflow = (Map<String, Object>) entity.get("workflow");
             if (workflow == null) continue;
             for (Map<String, Object> t : (List<Map<String, Object>>) workflow.get("transitions")) t.remove("roles");
@@ -495,6 +496,278 @@ class GeneratedBackendBuildSmokeTests {
             """;
 
     /**
+     * Rows that belong to users, over a real API with ldap-auth-rest and dev roles: two users and
+     * an admin against a client (its account manager's — a text field), a visit (its creator's)
+     * and the visit's composed items. Once with users kept to their own visits ({@code OWN}), once
+     * seeing every visit and changing their own ({@code OWN_WRITES}). The project's own generated
+     * tests run in the same build ({@code ClientApiTest.aUsersRowIsTheirOwn}).
+     */
+    @SuppressWarnings("unchecked")
+    @ParameterizedTest(name = "visits: {0}")
+    @ValueSource(strings = {"OWN", "OWN_WRITES"})
+    void rowsBelongToTheirUsersOverTheRealApi(String visitRows, @TempDir Path workDir) throws Exception {
+        Map<String, Object> body = FullstackExampleRequests.rowAccessBody(visitRows);
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "ldap-auth-rest"));
+        // A client's files — one, and a list of several — are read by whose the client is.
+        Map<String, Object> client = ((List<Map<String, Object>>) body.get("entities")).get(0);
+        List<Map<String, Object>> fields = new java.util.ArrayList<>((List<Map<String, Object>>) client.get("fields"));
+        fields.add(Map.of("name", "contract", "type", "FILE"));
+        fields.add(Map.of("name", "photos", "type", "IMAGE", "maxFiles", 3));
+        client.put("fields", fields);
+        Path backend = postAndExtractBackend(workDir, body);
+        writeProjectTest(backend, "com.menora.visits", "RowAccessTests",
+                ROW_ACCESS_TESTS.replace("__OWN__", String.valueOf("OWN".equals(visitRows))));
+        runMvn(backend, "-B", "package");
+        assertThat(Files.exists(backend.resolve("target/surefire-reports/com.menora.visits.RowAccessTests.txt")))
+                .as("the row access tests ran in the generated build").isTrue();
+    }
+
+    /**
+     * The Approvals example as it ships — a claim belongs to whoever created it or holds it, with
+     * its workflow, roles and ldap-auth-rest — builds, and its own generated tests pass: the
+     * workflow's moves as an admin, and a user's claim kept from another user.
+     */
+    @org.junit.jupiter.api.Test
+    void approvalsWithItsOwnedClaimsBuildsAndPassesItsTests(@TempDir Path workDir) throws Exception {
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("approvals", "react-tailwind-crud");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "ldap-auth-rest"));
+        body.put("opts", Map.of("scaffold", List.of("audit", "optimisticLocking", "csvExport", "seedData", "tests")));
+        Path backend = postAndExtractBackend(workDir, body);
+        assertThat(Files.readString(backend.resolve("src/test/java/com/menora/support/controller/ExpenseClaimApiTest.java")))
+                .contains("void aUsersRowIsTheirOwn()");
+        runMvn(backend, "-B", "package");
+    }
+
+    /** Run inside the generated backend: ann and ben are users, boss an admin. */
+    private static final String ROW_ACCESS_TESTS = """
+            package com.menora.visits;
+
+            import com.fasterxml.jackson.databind.JsonNode;
+            import com.fasterxml.jackson.databind.ObjectMapper;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.http.MediaType;
+            import org.springframework.test.web.servlet.MockMvc;
+            import org.springframework.test.web.servlet.MvcResult;
+            import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+            import java.util.LinkedHashMap;
+            import java.util.List;
+            import java.util.Map;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+            import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+            import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+            @SpringBootTest(properties = {
+                    "app.security.dev-roles.boss=ADMIN",
+                    "app.security.dev-roles.ann=USER",
+                    "app.security.dev-roles.ben=USER"})
+            @AutoConfigureMockMvc
+            class RowAccessTests {
+
+                /** Users see only their own visits (else: every visit, and change their own). */
+                private static final boolean OWN = __OWN__;
+
+                @Autowired MockMvc mvc;
+
+                private final ObjectMapper json = new ObjectMapper();
+
+                private JsonNode call(String user, MockHttpServletRequestBuilder call, Object body, int expected) throws Exception {
+                    call.header("userinfo", user);
+                    if (body != null) call.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body));
+                    byte[] answer = mvc.perform(call).andExpect(status().is(expected)).andReturn().getResponse().getContentAsByteArray();
+                    return answer.length == 0 ? json.nullNode() : json.readTree(answer);
+                }
+
+                /** An export is written after the request's thread has gone: the rows are read on another. */
+                private String export(String user, String path) throws Exception {
+                    MvcResult started = mvc.perform(get(path).header("userinfo", user))
+                            .andExpect(request().asyncStarted()).andReturn();
+                    return mvc.perform(asyncDispatch(started)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+                }
+
+                private static long total(JsonNode page) {
+                    return page.has("totalElements") ? page.get("totalElements").asLong() : page.get("page").get("totalElements").asLong();
+                }
+
+                private JsonNode client(String user, String name) throws Exception {
+                    return call(user, post("/api/clients"), Map.of("name", name), 200);
+                }
+
+                private static Map<String, Object> bulk(long id, String field, Object value) {
+                    Map<String, Object> change = new LinkedHashMap<>();
+                    change.put("ids", List.of(id));
+                    change.put("field", field);
+                    change.put("value", value);
+                    return change;
+                }
+
+                @Test
+                void aClientIsItsAccountManagersAlone() throws Exception {
+                    JsonNode mine = client("ann", "Acme of Ann");
+                    // Left empty, the owner field is whoever made the row.
+                    assertThat(mine.get("accountManager").asText()).isEqualTo("ann");
+                    long id = mine.get("id").asLong();
+                    String path = "/api/clients/" + id;
+
+                    call("ann", get(path), null, 200);
+                    call("ben", get(path), null, 404);
+                    call("boss", get(path), null, 200);
+
+                    JsonNode annsList = call("ann", get("/api/clients?size=200"), null, 200);
+                    assertThat(annsList.get("content")).isNotEmpty()
+                            .allSatisfy(row -> assertThat(row.get("accountManager").asText()).isEqualTo("ann"));
+                    assertThat(call("ben", get("/api/clients?size=200&q=Acme of Ann"), null, 200).get("content")).isEmpty();
+                    // The admin's list has the demo rows too.
+                    assertThat(total(call("boss", get("/api/clients"), null, 200))).isGreaterThan(total(annsList));
+
+                    // A row a user makes is theirs: not somebody else's.
+                    call("ann", post("/api/clients"), Map.of("name", "For Ben", "accountManager", "ben"), 403);
+                    call("boss", post("/api/clients"), Map.of("name", "Given to Ben", "accountManager", "ben"), 200);
+
+                    // To anyone else the row is not there to change either — one at a time or in bulk.
+                    call("ben", put(path), mine, 404);
+                    call("ben", delete(path), null, 404);
+                    call("ben", patch("/api/clients/bulk"), bulk(id, "city", "Elsewhere"), 404);
+                    call("ben", delete("/api/clients/bulk"), List.of(id), 404);
+                    call("ann", patch("/api/clients/bulk"), bulk(id, "city", "Haifa"), 204);
+                    assertThat(call("ann", get(path), null, 200).get("city").asText()).isEqualTo("Haifa");
+
+                    // The exports are over the caller's rows, though they are read on another thread.
+                    assertThat(export("ann", "/api/clients/export.csv")).contains("Acme of Ann");
+                    assertThat(export("ben", "/api/clients/export.csv")).doesNotContain("Acme of Ann").doesNotContain("user3");
+                    assertThat(export("boss", "/api/clients/export.csv")).contains("Acme of Ann").contains("Given to Ben");
+                    assertThat(export("ben", "/api/clients/export.xlsx")).isNotEmpty();
+
+                    // Deleted softly, it is its owner's to bring back.
+                    call("ann", delete(path), null, 204);
+                    call("ben", post(path + "/restore"), null, 404);
+                    call("ann", post(path + "/restore"), null, 200);
+                    call("ann", get(path), null, 200);
+                }
+
+                private String upload(String user, String name) throws Exception {
+                    org.springframework.mock.web.MockMultipartFile file = new org.springframework.mock.web.MockMultipartFile(
+                            "file", name, "text/plain", ("File " + name).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    byte[] answer = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                    .multipart("/api/attachments").file(file).header("userinfo", user))
+                            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsByteArray();
+                    return json.readTree(answer).get("id").asText();
+                }
+
+                @Test
+                void aClientsFilesAreReadByWhoseTheClientIs() throws Exception {
+                    String contract = upload("ann", "contract.txt");
+                    String photo = upload("ann", "photo.txt");
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("name", "Client with files");
+                    row.put("contract", contract);
+                    row.put("photos", List.of(Map.of("id", photo)));
+                    call("ann", post("/api/clients"), row, 200);
+                    for (String file : List.of(contract, photo)) {
+                        mvc.perform(get("/api/attachments/" + file).header("userinfo", "ann")).andExpect(status().isOk());
+                        // Ben may read clients — his own: this one's files are not his to read.
+                        mvc.perform(get("/api/attachments/" + file).header("userinfo", "ben")).andExpect(status().isForbidden());
+                        mvc.perform(get("/api/attachments/" + file).header("userinfo", "boss")).andExpect(status().isOk());
+                    }
+                }
+
+                @Test
+                void anImportedRowIsItsImporters() throws Exception {
+                    JsonNode refused = call("ann", post("/api/clients/import"),
+                            List.of(Map.of("name", "Imported one"), Map.of("name", "Imported two", "accountManager", "ben")), 422);
+                    assertThat(refused.get("errors")).hasSize(1);
+                    assertThat(refused.get("errors").get(0).get("row").asInt()).isEqualTo(2);
+                    call("ann", post("/api/clients/import"), List.of(Map.of("name", "Imported one"), Map.of("name", "Imported two")), 200);
+                    assertThat(call("ann", get("/api/clients?q=Imported"), null, 200).get("content")).hasSize(2)
+                            .allSatisfy(row -> assertThat(row.get("accountManager").asText()).isEqualTo("ann"));
+                    assertThat(call("ben", get("/api/clients?q=Imported"), null, 200).get("content")).isEmpty();
+                }
+
+                @Test
+                void aVisitIsItsCreators() throws Exception {
+                    long annsClient = client("ann", "Client of Ann").get("id").asLong();
+                    long bensClient = client("ben", "Client of Ben").get("id").asLong();
+
+                    Map<String, Object> first = new LinkedHashMap<>();
+                    first.put("summary", "First visit of Ann");
+                    first.put("clientId", annsClient);
+                    first.put("items", List.of(Map.of("note", "Bring samples")));
+                    JsonNode visit = call("ann", post("/api/visits"), first, 200);
+                    assertThat(visit.get("createdBy").asText()).isEqualTo("ann");
+                    long id = visit.get("id").asLong();
+                    String path = "/api/visits/" + id;
+
+                    // A client the caller may not see is no client to link to — on a new visit or an old one.
+                    JsonNode unseen = call("ann", post("/api/visits"), Map.of("summary", "Poaching", "clientId", bensClient), 400);
+                    assertThat(unseen.get("detail").asText()).contains("clientId: no Client " + bensClient);
+                    Map<String, Object> moved = new LinkedHashMap<>(first);
+                    moved.remove("items");
+                    moved.put("clientId", bensClient);
+                    call("ann", put(path), moved, 400);
+                    moved.put("clientId", annsClient);
+                    moved.put("summary", "First visit of Ann, again");
+                    call("ann", put(path), moved, 200);
+
+                    JsonNode read = call("ann", get(path), null, 200);
+                    long item = read.get("items").get(0).get("id").asLong();
+                    String itemPath = "/api/visit-items/" + item;
+
+                    if (OWN) {
+                        call("ben", get(path), null, 404);
+                        call("ben", put(path), moved, 404);
+                        call("ben", delete(path), null, 404);
+                        call("ben", get(path + "/history"), null, 404);
+                        assertThat(call("ben", get("/api/visits?size=200"), null, 200).get("content")).isEmpty();
+                        // A user's numbers are over their own rows.
+                        assertThat(call("ben", get("/api/visits/stats"), null, 200).get("total").asLong()).isZero();
+                        assertThat(call("ann", get("/api/visits/stats"), null, 200).get("total").asLong())
+                                .isEqualTo(total(call("ann", get("/api/visits"), null, 200)));
+                        assertThat(export("ben", "/api/visits/export.csv")).doesNotContain("First visit of Ann");
+                        // The visit's items follow it.
+                        call("ben", get(itemPath), null, 404);
+                        assertThat(call("ben", get("/api/visit-items?size=200"), null, 200).get("content")).isEmpty();
+                        call("ben", post("/api/visit-items"), Map.of("note", "Slipped in", "visitId", id), 400);
+                    } else {
+                        call("ben", get(path), null, 200);
+                        assertThat(total(call("ben", get("/api/visits"), null, 200))).isGreaterThan(1);
+                        call("ben", put(path), moved, 403);
+                        call("ben", delete(path), null, 403);
+                        call("ben", patch("/api/visits/bulk"), bulk(id, "outcome", "WON"), 403);
+                        call("ben", delete("/api/visits/bulk"), List.of(id), 403);
+                        call("ben", get(path + "/history"), null, 200);
+                        // The visit's items: read by all, changed by the visit's owner.
+                        call("ben", get(itemPath), null, 200);
+                        call("ben", post("/api/visit-items"), Map.of("note", "Slipped in", "visitId", id), 403);
+                        call("ben", put(itemPath), Map.of("note", "Rewritten", "visitId", id), 403);
+                        call("ben", delete(itemPath), null, 403);
+                    }
+                    assertThat(call("ann", get(path + "/history"), null, 200)).isNotEmpty();
+                    call("ann", post("/api/visit-items"), Map.of("note", "One more", "visitId", id), 200);
+                    call("ann", put(itemPath), Map.of("note", "Bring two samples", "visitId", id), 200);
+                    assertThat(call("ann", get(path), null, 200).get("items")).hasSize(2);
+
+                    // An admin is not limited: reads, changes, deletes.
+                    call("boss", get(path), null, 200);
+                    call("boss", patch("/api/visits/bulk"), bulk(id, "outcome", "WON"), 204);
+                    call("boss", delete(path), null, 204);
+                    // Deleted softly: its owner brings it back, another user does not.
+                    call("ben", post(path + "/restore"), null, 404);
+                    call("ann", post(path + "/restore"), null, 200);
+                }
+            }
+            """;
+
+    /**
      * Uploaded files over a real API with ldap-auth-rest: a file is read with its record's read
      * level, a record takes only a free file its caller uploaded, a replaced file is gone, the
      * clean-up deletes what no record holds — once with the files in the database and once in a
@@ -897,6 +1170,7 @@ class GeneratedBackendBuildSmokeTests {
         }
         // Roles need ldap-auth, whose artifact is in the company repository.
         for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
+            entity.remove("access"); // rows that belong to users need ldap-auth too
             Map<String, Object> workflow = (Map<String, Object>) entity.get("workflow");
             if (workflow == null) continue;
             workflow.put("trackMoves", true);
@@ -1045,6 +1319,7 @@ class GeneratedBackendBuildSmokeTests {
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
         body.put("opts", Map.of("scaffold", List.of("audit", "history", "optimisticLocking", "csvExport", "csvImport", "bulkUpdate", "seedData", "tests")));
         for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
+            entity.remove("access"); // rows that belong to users need ldap-auth too
             Map<String, Object> workflow = (Map<String, Object>) entity.get("workflow");
             if (workflow == null) continue;
             for (Map<String, Object> t : (List<Map<String, Object>>) workflow.get("transitions")) t.remove("roles");
@@ -1241,6 +1516,7 @@ class GeneratedBackendBuildSmokeTests {
         body.put("dependencies", List.of("web", "data-jpa", "h2", "validation", "kafka"));
         body.put("opts", Map.of("scaffold", List.of("audit", "events", "softDelete", "seedData", "tests")));
         for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
+            entity.remove("access"); // rows that belong to users need ldap-auth too
             Map<String, Object> workflow = (Map<String, Object>) entity.get("workflow");
             if (workflow == null) continue;
             for (Map<String, Object> t : (List<Map<String, Object>>) workflow.get("transitions")) {

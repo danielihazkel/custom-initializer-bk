@@ -242,6 +242,7 @@ final class DashboardContext {
         if (Boolean.TRUE.equals(pv.get("usesGauge"))) flow.add("GaugeTile");
         if (Boolean.TRUE.equals(pv.get("usesTimeInState"))) flow.add("TimeInStateCard");
         pv.put("usesFlow", !flow.isEmpty());
+        pv.put("hasAdminOnlyWidgets", widgetViews.stream().anyMatch(v -> Boolean.TRUE.equals(v.get("widgetAdminOnly"))));
         pv.put("flowImports", String.join(", ", flow));
         // The entity pages the list widgets embed: one import per entity module.
         Map<String, Map<String, Object>> listModules = new LinkedHashMap<>();
@@ -467,6 +468,8 @@ final class DashboardContext {
             wv.put("widgetIs" + kind, false);
         }
         wv.put("widgetIsTimeInState", true);
+        // Where users see only their own rows, how long rows stay in a state is an admin's number.
+        wv.put("widgetAdminOnly", Boolean.TRUE.equals(ev.get("rowsAdminNumbers")));
         wv.put("path", "/api/" + ev.get("entityNamePluralKebab"));
         String labelsRef = PageContext.fieldOf(ev, (String) ev.get("workflowStatusField")).get("enumTypeName") + "Labels";
         wv.put("labelsRef", labelsRef);

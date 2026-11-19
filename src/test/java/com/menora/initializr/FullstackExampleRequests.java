@@ -264,6 +264,72 @@ public final class FullstackExampleRequests {
         return body;
     }
 
+    /**
+     * Rows that belong to users (Round 14): {@code Client} — its account manager's (a text field,
+     * users see only their own), soft-deleted; {@code Visit} — its creator's, in the given
+     * {@code visitRows} mode ({@code OWN} or {@code OWN_WRITES}), linked to a client, with a
+     * history and composed {@code VisitItem} rows that follow it. No {@code dependencies}: the
+     * backend set's defaults bring ldap-auth-rest, which row access needs.
+     */
+    public static Map<String, Object> rowAccessBody(String visitRows) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "visits");
+        body.put("packageName", "com.menora.visits");
+        body.put("bootVersion", "3.2.1");
+        body.put("frontendTemplateSet", "react-tailwind-crud");
+        body.put("opts", Map.of("scaffold", List.of("softDelete", "csvExport", "xlsxExport", "bulkDelete",
+                "bulkUpdate", "csvImport", "history", "seedData", "tests")));
+        Map<String, Object> client = entity("Client", List.of(
+                Map.of("name", "id", "type", "LONG", "primaryKey", true, "generated", true),
+                Map.of("name", "name", "type", "STRING", "required", true),
+                Map.of("name", "city", "type", "STRING"),
+                Map.of("name", "accountManager", "type", "STRING")));
+        client.put("access", new LinkedHashMap<>(Map.of("read", "USER", "write", "USER",
+                "owners", List.of("accountManager"), "rows", "OWN")));
+        Map<String, Object> visit = entity("Visit", List.of(
+                Map.of("name", "id", "type", "LONG", "primaryKey", true, "generated", true),
+                Map.of("name", "summary", "type", "STRING", "required", true),
+                Map.of("name", "visitedOn", "type", "LOCAL_DATE"),
+                Map.of("name", "outcome", "type", "ENUM", "enumValues", List.of("OPEN", "WON", "LOST"))),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "client", "targetEntity", "Client"),
+                Map.of("type", "ONE_TO_MANY", "fieldName", "items", "targetEntity", "VisitItem", "composition", true));
+        visit.put("access", new LinkedHashMap<>(Map.of("read", "USER", "write", "USER",
+                "owners", List.of("createdBy"), "rows", visitRows)));
+        Map<String, Object> item = entity("VisitItem", List.of(
+                Map.of("name", "id", "type", "LONG", "primaryKey", true, "generated", true),
+                Map.of("name", "note", "type", "STRING", "required", true)),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "visit", "targetEntity", "Visit", "required", true));
+        item.put("access", Map.of("read", "USER", "write", "USER"));
+        body.put("entities", new ArrayList<>(List.of(client, visit, item)));
+        return body;
+    }
+
+    /**
+     * {@link #rowAccessBody} where everyone sees every client and visit and changes their own
+     * ({@code OWN_WRITES}), laid out on the pages that draw a row's own buttons: a list with a
+     * side pane, a list with a board view and cells edited in place, a record page, a
+     * master–detail page, a board and a calendar.
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> rowAccessPagesBody(String frontendSet) {
+        Map<String, Object> body = rowAccessBody("OWN_WRITES");
+        body.put("frontendTemplateSet", frontendSet);
+        body.put("opts", Map.of("scaffold", List.of("softDelete", "csvExport", "bulkDelete", "bulkUpdate", "inlineEdit",
+                "history", "tests")));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) body.get("entities");
+        ((Map<String, Object>) entities.get(0).get("access")).put("rows", "OWN_WRITES");
+        entities.get(1).put("listViews", List.of("table", "kanban"));
+        body.put("pages", List.of(
+                Map.of("id", "clients", "type", "entity-list", "entity", "Client", "detail", "side"),
+                Map.of("id", "visits", "type", "entity-list", "entity", "Visit"),
+                Map.of("id", "visit", "type", "record", "entity", "Visit"),
+                Map.of("id", "by-client", "type", "master-detail", "title", "Visits by client",
+                        "parent", "Client", "child", "Visit", "showParent", true),
+                Map.of("id", "pipeline", "type", "board", "entity", "Visit", "laneField", "outcome"),
+                Map.of("id", "diary", "type", "calendar", "entity", "Visit", "dateField", "visitedOn")));
+        return body;
+    }
+
     /** POSTs a fullstack request; the response, whatever its status. */
     public static ResponseEntity<byte[]> post(TestRestTemplate rest, Map<String, Object> body) {
         HttpHeaders headers = new HttpHeaders();

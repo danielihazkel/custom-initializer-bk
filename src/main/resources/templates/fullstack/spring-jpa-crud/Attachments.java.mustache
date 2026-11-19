@@ -59,11 +59,11 @@ public class Attachments {
 
     /** A column that holds attachment ids: the entity and field, who may read its rows, and the
      *  native SQL that counts the rows holding an id (soft-deleted rows included). */
-    private record Owner(String entity, String field, String readLevel, String countSql) {
+    private record Owner(String entity, String field, String readLevel, String countSql{{#hasRowAccess}}, String mineSql{{/hasRowAccess}}) {
     }
 
     private static final List<Owner> OWNERS = List.of(
-{{#attachmentOwners}}            new Owner("{{EntityName}}", "{{field}}", "{{readLevel}}", "{{{countSqlJava}}}"){{^last}},{{/last}}
+{{#attachmentOwners}}            new Owner("{{EntityName}}", "{{field}}", "{{readLevel}}", "{{{countSqlJava}}}"{{#hasRowAccess}}, {{#mineSqlJava}}"{{{mineSqlJava}}}"{{/mineSqlJava}}{{^mineSqlJava}}null{{/mineSqlJava}}{{/hasRowAccess}}){{^last}},{{/last}}
 {{/attachmentOwners}}    );
 
     /** The files uploaded before {@code :before} that no column holds. */
@@ -225,7 +225,7 @@ public class Attachments {
             return;
         }
         for (Owner owner : owners) {
-            if (holds(user, owner.readLevel())) return;
+            if (holds(user, owner.readLevel()){{#hasRowAccess}} && seesRow(owner, id, user){{/hasRowAccess}}) return;
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You may not read the record this file belongs to");
     }
@@ -237,6 +237,16 @@ public class Attachments {
             return false;
         }
     }
+{{#hasRowAccess}}
+
+    /** Where rows belong to users, a row's file is read by whose the row is — and by an admin. */
+    private boolean seesRow(Owner owner, UUID id, String user) {
+        if (owner.mineSql() == null || holds(user, "ADMIN")) return true;
+        Object count = entityManager.createNativeQuery(owner.mineSql())
+                .setParameter("id", id).setParameter("me", user.trim()).getSingleResult();
+        return ((Number) count).longValue() > 0;
+    }
+{{/hasRowAccess}}
 {{/hasLdapAuth}}
 
     /** The sweep: every hour, starting five minutes after start-up. (Transactional itself: a call to

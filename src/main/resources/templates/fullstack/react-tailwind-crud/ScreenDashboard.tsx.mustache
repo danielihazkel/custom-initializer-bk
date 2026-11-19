@@ -8,6 +8,9 @@ import { {{EntityName}}Page } from '@pages/{{entityNameKebab}}'
 {{#usesLinks}}
 import { LinksCard } from '@shared/ui/links'
 {{/usesLinks}}
+{{#hasAdminOnlyWidgets}}
+import { useCallerMay } from '@shared/api/roles'
+{{/hasAdminOnlyWidgets}}
 {{#usesFlow}}
 import { {{flowImports}} } from '@shared/ui/widgets-flow'
 {{/usesFlow}}
@@ -55,6 +58,10 @@ interface Props {
 {{/hasScreenProps}}
 
 export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Props{{/hasScreenProps}}) {
+{{#hasAdminOnlyWidgets}}
+  // Where users see only their own rows, a number over everybody's is shown to an admin.
+  const isAdmin = useCallerMay('ADMIN')
+{{/hasAdminOnlyWidgets}}
 {{#hasDashFilters}}
   // The filter bar's values{{#hasDateRange}} and the period{{/hasDateRange}}. Routed, they live in the URL, so a reload
   // or bookmark keeps them; embedded as a tab, they are local state.
@@ -400,6 +407,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
         />
 {{/widgetIsGauge}}
 {{#widgetIsTimeInState}}
+{{#widgetAdminOnly}}
+        {isAdmin && (
+{{/widgetAdminOnly}}
         <TimeInStateCard
           title={ {{titleExpr}} }
           path="{{path}}"
@@ -408,6 +418,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           className="{{spanClass}}"
 {{/hasSpanClass}}
         />
+{{#widgetAdminOnly}}
+        )}
+{{/widgetAdminOnly}}
 {{/widgetIsTimeInState}}
 {{#widgetIsText}}
         <TextCard

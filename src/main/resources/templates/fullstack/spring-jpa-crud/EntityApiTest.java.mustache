@@ -132,5 +132,29 @@ class {{EntityName}}ApiTest extends ApiTestSupport {
         send(post(PATH), ADMIN, body("{{EntityName}}"), 200);
     }
 {{/apiTestWriteAdmin}}
+{{#apiTestRowAccess}}
+
+    @Test
+    void aUsersRowIsTheirOwn() throws Exception {
+        ObjectNode row = body("{{EntityName}}");
+{{#apiTestRowOwners}}        row.remove("{{.}}"); // left empty, it is whoever makes the row
+{{/apiTestRowOwners}}        JsonNode mine = send(post(PATH), USER, row, 200);
+        String path = pathOf("{{EntityName}}", mine);
+        send(get(path), USER, null, 200);
+{{#rowsOwnOnly}}        // To another user the row is not there: not by its key, not in the list, not to change.
+        send(get(path), OTHER, null, 404);
+        assertThat(send(get(PATH).param("size", "200"), OTHER, null, 200).get("content").findValuesAsText("{{apiTestKey}}"))
+                .doesNotContain(mine.get("{{apiTestKey}}").asText());
+        send(put(path), OTHER, mine, 404);
+        send(delete(path), OTHER, null, 404);
+{{/rowsOwnOnly}}{{#rowsOwnWrites}}        // Another user reads it and cannot change it.
+        send(get(path), OTHER, null, 200);
+        send(put(path), OTHER, mine, 403);
+        send(delete(path), OTHER, null, 403);
+{{/rowsOwnWrites}}        // An admin is not limited.
+        send(get(path), ADMIN, null, 200);
+        send(put(path), ADMIN, mine, 200);
+    }
+{{/apiTestRowAccess}}
 {{/apiTestChecksAccess}}
 }

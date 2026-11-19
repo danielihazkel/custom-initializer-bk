@@ -113,6 +113,9 @@ public final class EntityScaffoldContext {
         ctx.put("hasWorkflowMoves", entities.stream().anyMatch(e -> e.workflow() != null && e.workflow().trackMoves()));
         // ...which a shell that shows the signed-in user needs too: each render path adds its own.
         ctx.put("usesCurrentUser", entities.stream().anyMatch(e -> e.workflow() != null));
+        // Rows that belong to users (access.owners): web/RowAccess, and who each entity's rows are.
+        RowAccessContext.putProject(ctx, entities);
+        if (Boolean.TRUE.equals(ctx.get("hasRowAccess"))) ctx.put("usesCurrentUser", true);
         // Demo-data seeding order (optScaffoldSeedData): parents before children, writable only.
         List<Map<String, Object>> seedViews = buildSeedOrder(entities, entityViews);
         ctx.put("seedEntities", seedViews);
@@ -428,6 +431,8 @@ public final class EntityScaffoldContext {
         ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable
                 || (lockedRelations && mutable) || (Boolean.TRUE.equals(ctx.get("hasCollections")) && mutable)
                 || hasCompositions || (Boolean.TRUE.equals(ctx.get("readsLinks")) && mutable) || deletedHoldsKeys);
+        // Rows that belong to users: the service's checks, and the links to such rows it guards.
+        RowAccessContext.putEntity(ctx, entity);
         // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
         // besides the audit rows — so it imports t / LOCALE exactly when one of them is drawn
         // (the generated lint rejects an unused import).
@@ -515,8 +520,9 @@ public final class EntityScaffoldContext {
         // With ldap-auth the backend checks who may write: the list offers New, Edit, Delete,
         // Import and the bulk bar to those callers only. An entity anyone signed in may write
         // needs no such check, and neither does a project without the dependency.
+        // Where everyone sees a row and whose it is changes it, the list asks who the caller is too.
         boolean writeChecked = Boolean.TRUE.equals(ctx.get("hasLdapAuth")) && mutable
-                && !"SIGNED_IN".equals(entity.access().write());
+                && (!"SIGNED_IN".equals(entity.access().write()) || Boolean.TRUE.equals(ctx.get("listOwnWrites")));
         // The page takes a hideActions prop / asks the caller's roles / has the can() helper.
         ctx.put("listHidesActions", hidesActions);
         ctx.put("writeChecked", writeChecked);

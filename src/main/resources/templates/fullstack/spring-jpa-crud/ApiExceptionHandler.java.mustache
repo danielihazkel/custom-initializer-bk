@@ -100,7 +100,13 @@ public class ApiExceptionHandler {
         return pd;
     }
 
-{{/hasDeletedHolders}}{{#hasOptimisticLocking}}    /** Thrown by a service's version check, or by Hibernate when two saves race past it. */
+{{/hasDeletedHolders}}{{#hasRowAccess}}    /** A row that belongs to another user: theirs (and an admin's) to change. */
+    @ExceptionHandler(RowAccessException.class)
+    public ProblemDetail handleRowAccess(RowAccessException ex) {
+        return problem(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+{{/hasRowAccess}}{{#hasOptimisticLocking}}    /** Thrown by a service's version check, or by Hibernate when two saves race past it. */
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ProblemDetail handleStale(ObjectOptimisticLockingFailureException ex) {
         ProblemDetail pd = problem(HttpStatus.CONFLICT, "This record was changed by someone else since you opened it");

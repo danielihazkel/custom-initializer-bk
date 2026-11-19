@@ -1181,3 +1181,57 @@ Eleven follow-ups picked from the "Not done" notes above; the plan is `~/.claude
 *Closes* these earlier notes: keyword-named tables and columns (*Fullstack migrations*, *Fullstack DDL*); a soft-deleted row holding its key (*Deeper field model, phase 1*); rules on claim/release/reassign and demo rows, a hidden field's checks, a formula over `today()` (*phases 2–3*); a restore skipping validation and dropping a renamed field silently (*Who changed what*); charts printing money as plain numbers (*Round 10, phase 1*); the Excel export's dates and widths (*phase 7*).
 
 *Golden re-pin:* 52 of the 61 fullstack manifests — `widgets.tsx` in every layout case, plus Approvals' `ExpenseClaimService`, controllers and `DemoDataLoader`, Orders' controllers, `XlsxWriter`, `useOrderList`/`useOrderLineList`, Projects' `TaskForm` and the dashboards with a money chart. No wizard manifest moved. `fullstack-schema.json` gained the two word lists.
+
+### Phase 3: row-level access
+
+An entity's rows can belong to users. Beside `read` and `write`, `access` takes `owners` and `rows`:
+
+```json
+"access": { "read": "USER", "write": "USER", "owners": ["createdBy", "assignee"], "rows": "OWN" }
+```
+
+- **`owners`** (1–4): `createdBy` — whoever created the row, which turns the entity's `audit` on (an explicit `audit: false` is a 400) — and/or stored STRING fields holding a user id (not the key, not computed, no show-when). A row is a caller's when any of them names the caller. **Admins are never limited**, and neither is work no request asked for (demo data, scheduled jobs).
+- **`rows`**: `OWN` (the default with owners) — a user sees and changes only their own rows; to anyone else a row is not there (404). `OWN_WRITES` — every user sees every row, only its owners change it (403).
+- It needs an ldap-auth dependency like any non-default access. A request without the keys keeps its bytes (checked: both golden suites passed unchanged before the Approvals example took the setting).
+- 400s (`fullstack/RowAccessRules`, run after the compositions are resolved; paths `entities[i].access.owners[k]` / `.rows`; mirrored in the editor): an owner that is no field, not a STRING, the key, computed or shown on a condition; an owner named twice; more than four; `rows` without `owners`; an unknown mode; on a SELECT view; on a composed child (it follows its parent); `read: ADMIN`; `OWN_WRITES` with `write: ADMIN` or on a read-only entity; `createdBy` on a read-only entity; the workflow's assignee as the only owner (a new row never has one, so nobody could own what they create).
+
+**Model.** `EntityDefinition.Access(read, write, owners, rows)` (`rowLimited()`, `ownRowsOnly()`, `ownWritesOnly()`; the two-argument constructor remains). `FullstackSchema` publishes `rowAccess: {modes, defaultMode, creator, maxOwners}`.
+
+**View-model — `fullstack/RowAccessContext`.** `rulesOf(entities)` gives each limited entity its `Rule(holder, link)`: its own owners, or — a composed child — its parent's, read through the composition link. From that one description "is this row the caller's" is written four ways: a criteria predicate (`rowMineSpecJava`), a Java test on a loaded row (`rowMineJava`), JPQL over an alias (a link to such a row) and native SQL over an alias (a soft-deleted row, a file's holder). `putProject` (in `buildProjectContext`, so both render paths) sets `hasRowAccess`, `hasOwnWrites` and turns `usesCurrentUser` on; `putEntity` sets `rowLimited`, `rowsOwnOnly`, `rowsOwnWrites`, `rowsViaParent`, `rowOwnsOnCreate` + `rowFillOwners`, `rowRestoresOwned` + `rowOwnedSqlJava`, `ownLinks` / `ownSets` (links to `OWN` entities), `usesRowAccess`, and adds to `usesEntityManager`.
+
+**Generated backend** (`spring-jpa-crud`; the Lombok set borrows). `web/RowAccess` (gated `hasRowAccess`): `caller()` → `Caller(id, limited)` from the request's `userinfo` header and `CurrentUser`'s roles, worked out once per request; unlimited outside a request; `RowAccess.as(caller, work)` carries a caller onto a thread that serves no request. `web/RowAccessException` → 403 from `ApiExceptionHandler`. In `Service.java.mustache`:
+
+| Path | Under `OWN` | Under `OWN_WRITES` |
+|---|---|---|
+| the three `findAll`s (so the list, "Changed by me", the inbox queues, the CSV and Excel exports, widgets) and `stats` | `limited(specOf(…))`: the caller's rows | everything |
+| `findById` — and so get, update, delete, a transition, claim, release, the move log | `.filter(this::isMine)`: 404 | `requireMine(findById(id))` on update, delete, transition and release: 403 (claim stays open — it is how a row becomes somebody's) |
+| bulk edit and bulk delete | somebody else's row counts as missing: 404 naming it, nothing changed | 403, nothing changed |
+| create, each imported row | `own(entity)`: with `createdBy` among the owners nothing to do; else the first owner field left empty (never the workflow's assignee, which `create` empties) is filled with the caller, and a row made out to somebody else is a 403 / that row's import error | the same |
+| soft-delete restore | `requireOwnedDeleted`: a native count (the restriction hides the row) — 404 | the same |
+| `GET /{id}/history` | the controller reads the row first for a limited caller: 404 | open |
+| time in state | `@RequiresPermission(ADMIN)`; the dashboard draws its card for admins | as before |
+| a composed child (`rowsViaParent`) | its predicate goes through the link (`root.get("visit").get("createdBy")`); `requireParentMine` on create, update and import: 400 "visitId: no Visit 7" | 403 |
+| a link to a row of an `OWN` entity the caller cannot see (`requireVisibleLinks`, MANY_TO_ONE and MANY_TO_MANY) | 400 in the words of an unknown id; a link the row already had is left alone | — |
+
+- *Exports.* The rows are read while the response is written, after the request's thread has gone: the controller takes `service.caller()` on the request thread and reads each chunk inside `RowAccess.as(caller, …)`.
+- *Files* (`Attachments`): an owner column of an `OWN` entity carries `mineSql`, and `requireReadable` also asks `seesRow` — the same count over the caller's rows (through `owner_id` for a field of several files), or the ADMIN role.
+- *Live events* (`LiveEvents`): `Tracked.ownRows`; a non-admin listener gets such an entity's change without its `rowId` (the frontend only refreshes).
+- *Schema* (`SchemaBuilder`): an index on `created_by` and on each owner column (the workflow's assignee already had one).
+- *Demo data*: a third of the rows carry `dev-user` in an owner field. A demo row's creator is `system`, so an entity owned only by its creator shows a non-admin dev user no demo rows.
+- *Generated tests*: a fourth caller `api-test-other` (USER; `application-test.yaml`, `ApiTestSupport.OTHER`, both gated `hasRowAccess`) and `<Entity>ApiTest.aUsersRowIsTheirOwn` — a user makes a row, the other user gets 404 (or reads it and gets 403 on a change), an admin does both. Left out where a user cannot make a row here: only admins write, the row links to a row only its owner sees, its rows are its parent's, a composite key.
+
+**Generated frontend.** Under `OWN` nothing per row is needed: every row a user sees is theirs. Under `OWN_WRITES` (`listOwnWrites` on the entity view, also read by the pages):
+- `entities/<e>/model/types.ts` gains `isMine<Entity>(row, me)` (an admin: always; else `row.<owner> === me.id`), and `me.ts` / `GET /api/me` ship with any row access.
+- The list hook (`use<Entity>List`): `mine(row)`; Edit and Delete (`ifMine`), a cell edited in place and a kanban move refuse somebody else's row with a toast (`notYours`, in both languages, gated `hasOwnWrites`); `writeChecked` is on for such an entity even when anyone signed in may write.
+- Hidden per row: Edit and Delete in the side pane and Edit in the quick look (both sets' `EntityPage`), the record page's Edit and Delete, the workflow's moves in `<Entity>Transitions` (Claim stays), the master–detail parent's Edit; a board card is not moved. The shared `Table` / `CardGrid` still draw a row's buttons — they refuse with the toast.
+- **Write actions that were shown to callers who may not write** now ask `useCallerMay` (with ldap-auth, and only where the entity's write level is not SIGNED_IN): the master–detail parent's New and Edit, a calendar day's New, a board's move. This moved the bytes of every ldap project with those pages.
+
+**Example.** Approvals' `ExpenseClaim`: `{read: USER, write: USER, owners: [createdBy, assignee], rows: OWN}` — a user sees the claims they made or hold; admins approve. (It had the default write level, so only admins could create a claim.)
+
+**Golden re-pin:** 25 of 61 fullstack manifests. Approvals (9): `ExpenseClaimService`, `ExpenseClaimController`, `Attachments`, `ApiExceptionHandler`, new `RowAccess` / `RowAccessException`, `useExpenseClaimList` (asks for USER), `access.ts`, the claim's record screen, the home dashboard (the time-in-state card for admins), `menora-model.json`. Blog, Orders, Tickets (4 each): the master–detail screen. Projects (4): the board and calendar screens. `fullstack-schema.json` gained `rowAccess`. No wizard manifest moved.
+
+**Pinned by** `FullstackRowAccessTests` (12: both modes, the owner field, composed rows, links, files and live changes, the generated tests, the baseline's indexes, every 400, the Approvals example). **Run for real** (2026-11-19): `GeneratedBackendBuildSmokeTests.rowsBelongToTheirUsersOverTheRealApi` builds `FullstackExampleRequests.rowAccessBody` with ldap-auth-rest in both modes and drives it as two users and an admin — lists, exports read on another thread, bulk calls, import, soft-delete restore, history, statistics, a composed child, a link to an unseen row — a client's files read by its owner and refused to another user — with the project's own generated tests in the same build; `approvalsWithItsOwnedClaimsBuildsAndPassesItsTests` builds the Approvals example as it ships (ldap-auth-rest, roles, owned claims) and runs its generated tests; `GeneratedFrontendBuildSmokeTests.fullstackFrontend[Menora]RowAccessInstallsAndBuilds` install, lint, build (and, on the tailwind set, test) a layout with a side-pane list, a record page, a master–detail page, a board and a calendar under `OWN_WRITES`.
+
+**Limits.** A linked row's label and a child count (both `@Formula`) show whatever the caller may see, and a rule over a linked row still reads it on the server. No ownership by LDAP group or team, no field-level access, no ownership through a relation other than a composition. Under `OWN` a user sees the unassigned queue only for rows that are otherwise theirs (the editor says so). A deleted row's history is not shown to a limited caller. The shared table and cards draw Edit/Delete on every row under `OWN_WRITES`. The Approvals smoke builds that drop ldap-auth drop the example's `access` too.
+
+*Closes* from *Enforced access*'s "Not done": the parent's New and Edit on a master–detail page, a calendar day's create and a board page's drag follow who may write; the check can be per row. Still open there: a list embedded as a tab beyond what its `EntityPage` hides, two roles, levels fixed at generation.

@@ -1,0 +1,64 @@
+package {{packageName}}.web;
+
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import java.util.function.Supplier;
+
+/**
+ * Whose rows a caller gets, for the entities whose rows belong to users (their services say
+ * which fields name the owner). A user is limited to their own rows; an admin is not, and
+ * neither is work no user asked for — demo data, a scheduled job.
+ *
+ * <p>The caller is the request's {@code userinfo} header (set by the SSO gateway; in development
+ * by the frontend's API client) and the roles are {@link CurrentUser}'s. A user whose roles
+ * cannot be read is limited.
+ */
+@Component
+public class RowAccess {
+
+    /** The user id (null: nobody signed in) and whether they are kept to their own rows. */
+    public record Caller(String id, boolean limited) {}
+
+    private static final Caller UNLIMITED = new Caller(null, false);
+    private static final String REQUEST_KEY = RowAccess.class.getName() + ".caller";
+    private static final ThreadLocal<Caller> CARRIED = new ThreadLocal<>();
+
+    private final CurrentUser currentUser;
+
+    public RowAccess(CurrentUser currentUser) {
+        this.currentUser = currentUser;
+    }
+
+    /** Who is asking now. Worked out once per request. */
+    public Caller caller() {
+        Caller carried = CARRIED.get();
+        if (carried != null) return carried;
+        RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
+        if (!(attributes instanceof ServletRequestAttributes servlet)) return UNLIMITED;
+        HttpServletRequest request = servlet.getRequest();
+        if (request.getAttribute(REQUEST_KEY) instanceof Caller known) return known;
+        String id = CurrentUser.idOf(request.getHeader("userinfo"));
+        Caller caller = new Caller(id, id == null || !currentUser.roles(id).contains("ADMIN"));
+        request.setAttribute(REQUEST_KEY, caller);
+        return caller;
+    }
+
+    /**
+     * Runs {@code work} as {@code caller} on a thread that serves no request of its own: an
+     * export's rows are read while the response is written, after the request's thread has gone.
+     */
+    public static <T> T as(Caller caller, Supplier<T> work) {
+        Caller before = CARRIED.get();
+        CARRIED.set(caller);
+        try {
+            return work.get();
+        } finally {
+            if (before == null) CARRIED.remove();
+            else CARRIED.set(before);
+        }
+    }
+}

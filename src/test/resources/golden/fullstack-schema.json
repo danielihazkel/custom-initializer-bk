@@ -1315,6 +1315,15 @@
     "read" : "USER",
     "write" : "ADMIN"
   },
+  "rowAccess" : {
+    "modes" : [
+      "OWN",
+      "OWN_WRITES"
+    ],
+    "defaultMode" : "OWN",
+    "creator" : "createdBy",
+    "maxOwners" : 4
+  },
   "listViews" : [
     "table",
     "cards",

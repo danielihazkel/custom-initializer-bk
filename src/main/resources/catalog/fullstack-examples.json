@@ -1897,6 +1897,15 @@
           "table",
           "kanban"
         ],
+        "access": {
+          "read": "USER",
+          "write": "USER",
+          "owners": [
+            "createdBy",
+            "assignee"
+          ],
+          "rows": "OWN"
+        },
         "fields": [
           {
             "name": "id",

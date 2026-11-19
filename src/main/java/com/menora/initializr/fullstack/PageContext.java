@@ -200,6 +200,13 @@ public final class PageContext {
                     boolean createsInDrawer = parentMutable && parentCreatePage == null;
                     boolean hasDrawer = createsInDrawer || (showParent && parentMutable);
                     pv.put("parentCreatable", parentMutable);
+                    // With ldap-auth, New and Edit on the parent are offered to those who may write
+                    // it — and Edit, where its rows belong to users, to the row's owner.
+                    boolean parentOwnWrites = showParent && parentMutable && Boolean.TRUE.equals(parent.get("listOwnWrites"));
+                    pv.put("parentOwnWrites", parentOwnWrites);
+                    pv.put("parentWriteChecked", parentMutable && Boolean.TRUE.equals(ctx.get("hasLdapAuth"))
+                            && (!"SIGNED_IN".equals(parent.get("writeLevel")) || parentOwnWrites));
+                    pv.put("parentWriteLevel", parent.get("writeLevel"));
                     pv.put("parentCreatesInPage", parentCreatePage != null);
                     pv.put("parentCreatePageId", parentCreatePage);
                     pv.put("parentCreatesInDrawer", createsInDrawer);
@@ -265,8 +272,11 @@ public final class PageContext {
                     String editPage = recordMutable ? links.createPageOf(p.entity()) : null;
                     pv.put("recordMutable", recordMutable);
                     // With ldap-auth, Edit and Delete are offered to those who may write.
+                    // …and, where rows belong to users who alone change them, for the row's owner.
+                    boolean recordOwnWrites = recordMutable && Boolean.TRUE.equals(ev.get("listOwnWrites"));
+                    pv.put("recordOwnWrites", recordOwnWrites);
                     pv.put("recordWriteChecked", recordMutable && Boolean.TRUE.equals(ctx.get("hasLdapAuth"))
-                            && !"SIGNED_IN".equals(ev.get("writeLevel")));
+                            && (!"SIGNED_IN".equals(ev.get("writeLevel")) || recordOwnWrites));
                     pv.put("recordWriteLevel", ev.get("writeLevel"));
                     // The record's workflow moves sit by its Edit and Delete.
                     pv.put("recordHasWorkflow", Boolean.TRUE.equals(ev.get("hasWorkflow")));
@@ -365,6 +375,8 @@ public final class PageContext {
                 case BOARD -> {
                     Map<String, Object> ev = entityByPascal.get(Naming.toPascalCase(p.entity()));
                     putBoard(pv, p, ev, links, summaries);
+                    pv.put("boardWriteChecked", Boolean.TRUE.equals(ev.get("mutable")) && Boolean.TRUE.equals(ctx.get("hasLdapAuth"))
+                            && (!"SIGNED_IN".equals(ev.get("writeLevel")) || Boolean.TRUE.equals(pv.get("boardOwnWrites"))));
                     pv.put("navIcon", "Columns3");
                     defaultTitleExpr = TemplateText.tsString((String) ev.get("entityLabelPlural"));
                 }
@@ -840,6 +852,10 @@ public final class PageContext {
         pv.put("calendarCreates", mutable);
         pv.put("calendarCreatesInPage", create != null);
         pv.put("calendarCreatesInDrawer", mutable && create == null);
+        // With ldap-auth, a day offers a new record to those who may write the entity.
+        pv.put("calendarWriteChecked", mutable && Boolean.TRUE.equals(ctx.get("hasLdapAuth"))
+                && !"SIGNED_IN".equals(ev.get("writeLevel")));
+        pv.put("calendarWriteLevel", ev.get("writeLevel"));
         pv.put("createPageId", create);
         pv.put("needsNavigate", Boolean.TRUE.equals(pv.get("hasRecordPage")) || create != null);
     }
@@ -891,6 +907,11 @@ public final class PageContext {
         putRowNaming(pv, ev, summary);
         putRecordLink(pv, "", p.entity(), links, summaries);
         pv.put("boardMutable", Boolean.TRUE.equals(ev.get("mutable")));
+        // With ldap-auth, a card is moved by those who may write the entity — and, where its rows
+        // belong to users, by the row's owner.
+        boolean boardOwnWrites = Boolean.TRUE.equals(ev.get("mutable")) && Boolean.TRUE.equals(ev.get("listOwnWrites"));
+        pv.put("boardOwnWrites", boardOwnWrites);
+        pv.put("boardWriteLevel", ev.get("writeLevel"));
         // Lanes of the workflow's status: a card moves by the transition between them, and the quick
         // look (no record page) offers the row's moves.
         boolean workflow = Boolean.TRUE.equals(ev.get("hasWorkflow"));

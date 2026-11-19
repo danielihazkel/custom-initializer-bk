@@ -162,8 +162,16 @@ public record FullstackStarterRequest(
                 dashboardOverview, locale, null, entities);
     }
 
-    /** {@code read} / {@code write}: SIGNED_IN, USER or ADMIN; either may be left out for its default. */
-    public record AccessDto(String read, String write) {
+    /**
+     * {@code read} / {@code write}: SIGNED_IN, USER or ADMIN; either may be left out for its default.
+     * {@code owners} ({@code createdBy} and/or text fields holding a user id) make rows belong to
+     * users, and {@code rows} says what the others are kept from: {@code OWN} (the default — they
+     * do not see the row) or {@code OWN_WRITES} (they see it and cannot change it).
+     */
+    public record AccessDto(String read, String write, List<String> owners, String rows) {
+        public AccessDto(String read, String write) {
+            this(read, write, null, null);
+        }
     }
 
     public record EntityDefinitionDto(

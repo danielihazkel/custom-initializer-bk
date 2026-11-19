@@ -41,7 +41,7 @@ public class LiveEvents {
     private static final long TIMEOUT_MS = 30 * 60 * 1000L;
 
     /** One open page, and the entities it may hear of. */
-    private record Listener(SseEmitter emitter, Set<String> entities) {}
+    private record Listener(SseEmitter emitter, Set<String> entities{{#hasRowAccess}}, Set<String> unnamed{{/hasRowAccess}}) {}
 
     private final Set<Listener> listeners = ConcurrentHashMap.newKeySet();
 {{#hasLdapAuth}}
@@ -67,7 +67,14 @@ public class LiveEvents {
         response.setHeader("X-Accel-Buffering", "no");
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-cache");
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
-        Listener listener = new Listener(emitter, entities);
+{{#hasRowAccess}}        // Where rows belong to users, a user hears that something changed — not which row.
+        Set<String> unnamed = new TreeSet<>();
+        if (!mayRead(user, "ADMIN")) {
+            for (EventRecorder.Tracked tracked : EventRecorder.TRACKED.values()) {
+                if (tracked.ownRows() && entities.contains(tracked.name())) unnamed.add(tracked.name());
+            }
+        }
+{{/hasRowAccess}}        Listener listener = new Listener(emitter, entities{{#hasRowAccess}}, unnamed{{/hasRowAccess}});
         listeners.add(listener);
         emitter.onCompletion(() -> listeners.remove(listener));
         emitter.onTimeout(() -> listeners.remove(listener));
@@ -98,9 +105,11 @@ public class LiveEvents {
         change.put("entity", entity);
         change.put("rowId", rowId);
         change.put("kind", kind);
-        for (Listener listener : listeners) {
+{{#hasRowAccess}}        Map<String, String> anonymous = new LinkedHashMap<>(change);
+        anonymous.remove("rowId");
+{{/hasRowAccess}}        for (Listener listener : listeners) {
             if (listener.entities().contains(entity)) {
-                send(listener, SseEmitter.event().name("change").data(change, MediaType.APPLICATION_JSON));
+                send(listener, SseEmitter.event().name("change").data({{#hasRowAccess}}listener.unnamed().contains(entity) ? anonymous : {{/hasRowAccess}}change, MediaType.APPLICATION_JSON));
             }
         }
     }

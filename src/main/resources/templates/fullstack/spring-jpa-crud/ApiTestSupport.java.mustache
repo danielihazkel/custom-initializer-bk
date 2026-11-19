@@ -38,7 +38,9 @@ public abstract class ApiTestSupport {
     protected static final String USER = "{{apiTestUser}}";
     /** A signed-in caller holding no role. */
     protected static final String NO_ROLES = "{{apiTestNobody}}";
-{{/hasLdapAuth}}
+{{#hasRowAccess}}    /** Another caller holding the USER role: where rows belong to users, the one whose row it is not. */
+    protected static final String OTHER = "{{apiTestOther}}";
+{{/hasRowAccess}}{{/hasLdapAuth}}
     private static final AtomicInteger ROW = new AtomicInteger(1000);
 
     @Autowired

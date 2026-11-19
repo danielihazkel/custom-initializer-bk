@@ -427,6 +427,7 @@ public final class FullstackRequestValidator {
             }
         }
         result = resolveChildLists(result, body);
+        result = RowAccessRules.resolve(result);
         checkGeneratedMemberClashes(result, body);
         return result;
     }
@@ -1025,7 +1026,31 @@ public final class FullstackRequestValidator {
             throw new WizardArgumentException("Entity '" + entity + "' access: write (" + write
                     + ") cannot be open to more people than read (" + read + ")").on("write");
         }
-        return new EntityDefinition.Access(read, write);
+        // Whose rows are whose: the names are settled once the fields, the workflow and the
+        // compositions are known (RowAccessRules.resolve).
+        List<String> owners = new ArrayList<>();
+        if (dto.owners() != null) {
+            for (String owner : dto.owners()) {
+                if (owner == null || owner.isBlank()) {
+                    throw new WizardArgumentException("Entity '" + entity + "' access: an owner is blank").on("owners");
+                }
+                owners.add(owner.trim());
+            }
+        }
+        String rows = dto.rows() == null || dto.rows().isBlank() ? null : dto.rows().trim().toUpperCase(java.util.Locale.ROOT);
+        if (rows != null && !EntityDefinition.Access.ROW_MODES.contains(rows)) {
+            throw new WizardArgumentException("Entity '" + entity + "' access: rows '" + dto.rows().trim()
+                    + "' is not one of " + String.join(", ", EntityDefinition.Access.ROW_MODES)).on("rows");
+        }
+        if (rows != null && owners.isEmpty()) {
+            throw new WizardArgumentException("Entity '" + entity + "' access: rows " + rows
+                    + " needs owners — who a row belongs to (createdBy, or a text field holding a user id)").on("rows");
+        }
+        if (owners.size() > EntityDefinition.Access.MAX_OWNERS) {
+            throw new WizardArgumentException("Entity '" + entity + "' access: at most "
+                    + EntityDefinition.Access.MAX_OWNERS + " owners, got " + owners.size()).on("owners");
+        }
+        return new EntityDefinition.Access(read, write, owners, rows);
     }
 
     private static String accessLevel(String value, String fallback, String which, String entity) {

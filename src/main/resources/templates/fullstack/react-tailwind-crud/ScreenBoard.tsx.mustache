@@ -2,6 +2,15 @@ import { useCallback, useEffect, useState } from 'react'
 {{#boardMutable}}
 import { toast } from 'sonner'
 {{/boardMutable}}
+{{#boardWriteChecked}}
+import { useCallerMay } from '@shared/api/roles'
+{{/boardWriteChecked}}
+{{#boardOwnWrites}}
+import { isMine{{EntityName}} } from '@entities/{{entityNameKebab}}'
+{{^boardIsWorkflow}}
+import { useMe } from '@shared/api/me'
+{{/boardIsWorkflow}}
+{{/boardOwnWrites}}
 import type { {{EntityName}} } from '@entities/{{entityNameKebab}}'
 {{#hasCardLabelImports}}
 import { {{cardLabelImports}} } from '@entities/{{entityNameKebab}}'
@@ -97,6 +106,15 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
 {{#boardIsWorkflow}}
   const me = useMe()
 {{/boardIsWorkflow}}
+{{#boardOwnWrites}}
+{{^boardIsWorkflow}}
+  const me = useMe()
+{{/boardIsWorkflow}}
+{{/boardOwnWrites}}
+{{#boardWriteChecked}}
+  // A card is moved by those who may write; the backend checks the call.
+  const mayMove = useCallerMay('{{boardWriteLevel}}')
+{{/boardWriteChecked}}
 {{^hasRecordPage}}
   const [detail, setDetail] = useState<{{EntityName}} | null>(null)
 {{/hasRecordPage}}
@@ -131,6 +149,12 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
 
   // A move shows at once and is undone if the save fails. A lane at its limit takes no more cards.
   async function move(row: {{EntityName}}, from: string, to: string) {
+{{#boardOwnWrites}}
+    if (!isMine{{EntityName}}(row, me)) {
+      toast.error(t('notYours'))
+      return
+    }
+{{/boardOwnWrites}}
     const target = LANES.find(l => l.value === to)
     if (target?.limit != null && (lanes[to]?.total ?? 0) >= target.limit) {
       toast.error(t('laneFull', { lane: target.label, n: target.limit }))
@@ -201,7 +225,12 @@ export function {{PageName}}Screen({{#needsNavigate}}{ onNavigate }: Props{{/nee
         onOpen={setDetail}
 {{/hasRecordPage}}
 {{#boardMutable}}
+{{^boardWriteChecked}}
         onMove={(row, from, to) => { void move(row, from, to) }}
+{{/boardWriteChecked}}
+{{#boardWriteChecked}}
+        onMove={mayMove ? (row, from, to) => { void move(row, from, to) } : undefined}
+{{/boardWriteChecked}}
 {{/boardMutable}}
         onLoadMore={value => { void loadLane(value, (lanes[value]?.page ?? 0) + 1) }}
         onRetry={value => { void loadLane(value, 0) }}

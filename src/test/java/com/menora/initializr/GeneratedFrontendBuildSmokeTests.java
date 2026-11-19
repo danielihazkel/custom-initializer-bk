@@ -448,6 +448,29 @@ class GeneratedFrontendBuildSmokeTests {
     }
 
     @Test
+    void fullstackFrontendRowAccessInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        // Round 14, phase 3: rows everyone sees and their owners change — isMine<Entity> behind the
+        // list's own buttons, the side pane, the record page, the master–detail parent, the board
+        // and the cells edited in place; New on a calendar day and on the parent list for writers.
+        Path project = postAndExtractFrontend(workDir, FullstackExampleRequests.rowAccessPagesBody("react-tailwind-crud"));
+        assertThat(Files.readString(project.resolve("src/entities/visit/model/types.ts"))).contains("export function isMineVisit(");
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+        runPnpm(project, "run", "test");
+    }
+
+    @Test
+    void fullstackFrontendMenoraRowAccessInstallsAndBuilds(@TempDir Path workDir) throws Exception {
+        Map<String, Object> body = FullstackExampleRequests.rowAccessPagesBody("react-menora-digital-crud");
+        body.put("locale", "he");
+        Path project = postAndExtractFrontend(workDir, body);
+        runPnpm(project, "install", "--prefer-offline");
+        lintAll(project);
+        runPnpm(project, "run", "build");
+    }
+
+    @Test
     void fullstackFrontendTreePageInstallsAndBuilds(@TempDir Path workDir) throws Exception {
         // Round 10, phase 10: a tree of categories whose rows open their record page.
         Path project = postAndExtractFrontend(workDir, FullstackTreePageTests.body("react-tailwind-crud", true));

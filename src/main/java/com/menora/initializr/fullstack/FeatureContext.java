@@ -104,6 +104,9 @@ public final class FeatureContext {
             view.put("publishes", events);
             view.put("statusJava", e.workflow() == null ? "null" : "\"" + e.workflow().statusField() + "\"");
             view.put("readLevel", e.access().read());
+            // Rows that belong to users: a user hears that something changed, not which row.
+            RowAccessContext.Rule rowRule = RowAccessContext.rulesOf(entities).get(e.name());
+            view.put("ownRows", rowRule != null && rowRule.ownOnly());
             watched.add(view);
             if (!notifies) continue;
             String entityLabel = e.label() != null && !e.label().isBlank() ? e.label() : Naming.toPascalCase(e.name());
@@ -611,6 +614,7 @@ public final class FeatureContext {
      */
     public static void putAttachments(Map<String, Object> ctx, List<EntityDefinition> entities) {
         List<Map<String, Object>> owners = new ArrayList<>();
+        Map<String, RowAccessContext.Rule> rowRules = RowAccessContext.rulesOf(entities);
         StringBuilder unattached = new StringBuilder("select a.id from app_attachment a where a.created_at < :before");
         for (EntityDefinition e : entities) {
             if (e.viewQuery() != null) continue; // the validator refuses an attachment on a view
@@ -625,6 +629,18 @@ public final class FeatureContext {
                 o.put("field", f.name());
                 o.put("readLevel", e.access().read());
                 o.put("countSqlJava", "select count(*) from " + holder + " where " + column + " = :id");
+                // Where rows belong to users, the same count over the caller's own rows (:me).
+                RowAccessContext.Rule rowRule = rowRules.get(e.name());
+                if (rowRule != null && rowRule.ownOnly()) {
+                    String mine = RowAccessContext.sqlMine(rowRule, e, "t");
+                    String raw = f.multiple()
+                            ? "select count(*) from " + SchemaNames.filesTableRefOf(e, f) + " f where f.attachment_id = :id"
+                                    + " and exists (select 1 from " + SchemaNames.tableRefOf(e) + " t where t."
+                                    + SchemaNames.columnOf(RowAccessContext.keyOf(e)) + " = f.owner_id and " + mine + ")"
+                            : "select count(*) from " + SchemaNames.tableRefOf(e) + " t where t." + SchemaNames.columnOf(f)
+                                    + " = :id and " + mine;
+                    o.put("mineSqlJava", SqlNames.javaLiteral(raw));
+                }
                 owners.add(o);
                 unattached.append(" and not exists (select 1 from ").append(holder).append(" o where o.")
                         .append(column).append(" = a.id)");

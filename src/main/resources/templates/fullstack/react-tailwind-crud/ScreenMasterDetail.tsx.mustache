@@ -8,6 +8,13 @@ import { toast } from 'sonner'
 {{#parentUsesApi}}
 import { api{{#parentHasDrawer}}, ApiError{{/parentHasDrawer}} } from '@shared/api'
 {{/parentUsesApi}}
+{{#parentWriteChecked}}
+import { useCallerMay } from '@shared/api/roles'
+{{/parentWriteChecked}}
+{{#parentOwnWrites}}
+import { useMe } from '@shared/api/me'
+import { isMine{{parentEntityName}} } from '@entities/{{parentEntityNameKebab}}'
+{{/parentOwnWrites}}
 import { use{{parentEntityName}} } from '@entities/{{parentEntityNameKebab}}'
 import type { {{parentEntityName}} } from '@entities/{{parentEntityNameKebab}}'
 {{#parentFeatureImports}}
@@ -44,6 +51,13 @@ const newParent = (): Partial<{{parentEntityName}}> => ({{{parentNewTs}}})
 {{/parentCreatesInDrawer}}
 
 export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNavigate}}, onNavigate{{/needsNavigate}} }: Props) {
+{{#parentWriteChecked}}
+  // New and Edit on the {{parentEntityName}} are offered to those who may write it; the backend checks the call.
+  const mayWriteParent = useCallerMay('{{parentWriteLevel}}')
+{{/parentWriteChecked}}
+{{#parentOwnWrites}}
+  const me = useMe()
+{{/parentOwnWrites}}
   const [page, setPage] = useState(0)
 {{#parentSearchable}}
   const [search, setSearch] = useState('')
@@ -174,6 +188,9 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
 {{#parentCreatable}}
           <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
             <span className="text-sm font-semibold text-fg">{ {{parentLabelPluralExpr}} }</span>
+{{#parentWriteChecked}}
+            {mayWriteParent && (
+{{/parentWriteChecked}}
             <button
               type="button"
               onClick={ {{#parentCreatesInPage}}() => onNavigate('{{parentCreatePageId}}'){{/parentCreatesInPage}}{{#parentCreatesInDrawer}}openNew{{/parentCreatesInDrawer}} }
@@ -182,6 +199,9 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
               <Plus className="h-3.5 w-3.5" />
               {t('newX', { x: {{parentLabelExpr}} })}
             </button>
+{{#parentWriteChecked}}
+            )}
+{{/parentWriteChecked}}
           </div>
 {{/parentCreatable}}
 {{^parentCreatable}}
@@ -277,7 +297,7 @@ export function {{PageName}}Screen({ selectedId: routeId, onSelect{{#needsNaviga
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <h2 className="text-sm font-semibold text-fg">{parent ? parentLabel(parent) : {{parentLabelExpr}} }</h2>
 {{#showParentEdit}}
-                  {parent && (
+                  {parent{{#parentWriteChecked}} && mayWriteParent{{/parentWriteChecked}}{{#parentOwnWrites}} && isMine{{parentEntityName}}(parent, me){{/parentOwnWrites}} && (
                     <button
                       type="button"
                       onClick={() => { setFormErrors({}); {{#parentCreatesInDrawer}}setCreating(false); {{/parentCreatesInDrawer}}setEditing({ ...parent }) }}

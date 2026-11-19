@@ -48,7 +48,9 @@ class FullstackNewPageTypesTests {
                 .contains("use Task({ page: 0, size: LIMIT, sort: SORT, q: '', filters })".replace("use Task", "useTask"))
                 // Task has a record page: an event opens it. No wizard: a day creates in the drawer.
                 .contains("onOpen={r => onNavigate('task', String(r.id))}")
-                .contains("onCreate={createOn}")
+                // …offered to those who may write tasks (the backend checks the call itself).
+                .contains("const mayCreate = useCallerMay('ADMIN')")
+                .contains("onCreate={mayCreate ? createOn : undefined}")
                 .contains("setEditing({ startsOn: day } as Partial<Task>)")
                 .doesNotContain("DetailDrawer");
         assertThat(files).containsKeys(FE + "src/shared/ui/ScheduleView.tsx", FE + "src/shared/ui/schedule.ts");
@@ -209,8 +211,8 @@ class FullstackNewPageTypesTests {
         // It takes over New on the list, a day on the calendar and Edit on the record page.
         assertThat(files.get(FE + "src/app/screens/TasksScreen.tsx")).contains("onCreate={() => onNavigate('new-task')}");
         assertThat(files.get(FE + "src/app/screens/ScheduleScreen.tsx"))
-                .contains("onCreate={() => onNavigate('new-task')}")
-                .doesNotContain("onCreate={createOn}");
+                .contains("onCreate={mayCreate ? () => onNavigate('new-task') : undefined}")
+                .doesNotContain("createOn");
         assertThat(files.get(FE + "src/app/screens/TaskScreen.tsx")).contains("onNavigate('new-task', recordId)");
         assertThat(files.get(FE + "src/app/App.tsx"))
                 .contains("<NewTaskScreen key={route.arg ?? ''} editId={route.arg} onNavigate={goView} />")

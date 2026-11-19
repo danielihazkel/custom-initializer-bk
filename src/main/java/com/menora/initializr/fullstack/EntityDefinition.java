@@ -110,14 +110,55 @@ public record EntityDefinition(
      * and the exports, {@code write} for everything that changes a row. Each is one of
      * {@link #LEVELS}, weakest first; {@code write} is never weaker than {@code read}.
      */
-    public record Access(String read, String write) {
+    public record Access(String read, String write, List<String> owners, String rows) {
         /** Any signed-in user, a holder of the USER role, a holder of the ADMIN role. */
         public static final List<String> LEVELS = List.of("SIGNED_IN", "USER", "ADMIN");
         /** What an entity that says nothing gets: read for users, write for admins. */
         public static final Access DEFAULT = new Access("USER", "ADMIN");
+        /** The owner that is whoever created the row (the audit column), beside the text fields holding a user id. */
+        public static final String CREATED_BY = "createdBy";
+        /** What a row's owners have that other users do not: the row at all, or only changing it. */
+        public static final String OWN = "OWN";
+        public static final String OWN_WRITES = "OWN_WRITES";
+        public static final List<String> ROW_MODES = List.of(OWN, OWN_WRITES);
+        public static final int MAX_OWNERS = 4;
+
+        /**
+         * {@code owners} — {@link #CREATED_BY} and/or the names of text fields that hold a user id —
+         * say whose a row is: a caller named by any of them. With owners, {@code rows} limits the
+         * users who are not ({@link #OWN}: they do not see the row; {@link #OWN_WRITES}: they see
+         * it and cannot change it); admins are never limited. No owners: no limit, {@code rows} null.
+         */
+        public Access {
+            owners = owners == null ? List.of() : List.copyOf(owners);
+            rows = owners.isEmpty() ? null : rows == null ? OWN : rows;
+        }
+
+        public Access(String read, String write) {
+            this(read, write, List.of(), null);
+        }
 
         public boolean isDefault() {
             return equals(DEFAULT);
+        }
+
+        /** Whether rows belong to users at all. */
+        public boolean rowLimited() {
+            return !owners.isEmpty();
+        }
+
+        /** Users see only their own rows. */
+        public boolean ownRowsOnly() {
+            return OWN.equals(rows);
+        }
+
+        /** Users see every row and change only their own. */
+        public boolean ownWritesOnly() {
+            return OWN_WRITES.equals(rows);
+        }
+
+        public boolean ownedByCreator() {
+            return owners.contains(CREATED_BY);
         }
     }
 
@@ -335,6 +376,13 @@ public record EntityDefinition(
         // Every other property kept: this once dropped `access`, so an import page reset the levels.
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
                 listViews, label, labelPlural, next, formSections, workflow, collections, children, access, uniqueKeys, rules,
+                links);
+    }
+
+    /** The same entity with its access settled (its owners resolved to the names as declared). */
+    public EntityDefinition withAccess(Access settled) {
+        return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
+                listViews, label, labelPlural, opts, formSections, workflow, collections, children, settled, uniqueKeys, rules,
                 links);
     }
 

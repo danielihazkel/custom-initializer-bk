@@ -40,17 +40,20 @@ public class {{EntityName}}Service {
 {{#usesEntityManager}}    private final EntityManager entityManager;
 {{/usesEntityManager}}{{#usesValidator}}    private final jakarta.validation.Validator validator;
 {{/usesValidator}}{{#serviceUsesCurrentUser}}    private final CurrentUser currentUser;
-{{/serviceUsesCurrentUser}}{{#hasAttachmentFields}}    private final {{packageName}}.attachment.Attachments attachments;
+{{/serviceUsesCurrentUser}}{{#usesRowAccess}}    private final {{packageName}}.web.RowAccess rowAccess;
+{{/usesRowAccess}}{{#hasAttachmentFields}}    private final {{packageName}}.attachment.Attachments attachments;
 {{/hasAttachmentFields}}{{#tracksMoves}}    private final {{packageName}}.workflow.WorkflowMoveLog moves;
 {{/tracksMoves}}{{#eventsRestores}}    private final {{packageName}}.events.EventRecorder events;
 {{/eventsRestores}}
     public {{EntityName}}Service({{EntityName}}Repository repository{{#usesEntityManager}}, EntityManager entityManager{{/usesEntityManager}}{{#usesValidator}},
-                                 jakarta.validation.Validator validator{{/usesValidator}}{{#serviceUsesCurrentUser}}, CurrentUser currentUser{{/serviceUsesCurrentUser}}{{#hasAttachmentFields}},
+                                 jakarta.validation.Validator validator{{/usesValidator}}{{#serviceUsesCurrentUser}}, CurrentUser currentUser{{/serviceUsesCurrentUser}}{{#usesRowAccess}},
+                                 {{packageName}}.web.RowAccess rowAccess{{/usesRowAccess}}{{#hasAttachmentFields}},
                                  {{packageName}}.attachment.Attachments attachments{{/hasAttachmentFields}}{{#tracksMoves}},
                                  {{packageName}}.workflow.WorkflowMoveLog moves{{/tracksMoves}}{{#eventsRestores}},
                                  {{packageName}}.events.EventRecorder events{{/eventsRestores}}) {
         this.repository = repository;
-{{#eventsRestores}}        this.events = events;
+{{#usesRowAccess}}        this.rowAccess = rowAccess;
+{{/usesRowAccess}}{{#eventsRestores}}        this.events = events;
 {{/eventsRestores}}{{#tracksMoves}}        this.moves = moves;
 {{/tracksMoves}}{{#hasAttachmentFields}}        this.attachments = attachments;
 {{/hasAttachmentFields}}
@@ -69,7 +72,7 @@ public class {{EntityName}}Service {
 
     @Transactional(readOnly = true)
     public Page<{{EntityName}}> findAll(String q, Filters filters, Pageable pageable) {
-        Specification<{{EntityName}}> spec = specOf(q, filters);
+        Specification<{{EntityName}}> spec = {{#rowsOwnOnly}}limited({{/rowsOwnOnly}}specOf(q, filters){{#rowsOwnOnly}}){{/rowsOwnOnly}};
 {{^hasCollections}}        return spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
 {{/hasCollections}}{{#hasCollections}}        Page<{{EntityName}}> page = spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
         page.forEach(this::loaded);
@@ -111,10 +114,13 @@ public class {{EntityName}}Service {
 {{/hasFilters}}{{^hasFilters}}
     @Transactional(readOnly = true)
     public Page<{{EntityName}}> findAll(String q, Pageable pageable) {
-{{#hasStringFields}}        Specification<{{EntityName}}> spec = specOf(q);
+{{^rowsOwnOnly}}{{#hasStringFields}}        Specification<{{EntityName}}> spec = specOf(q);
         if (spec != null) return repository.findAll(spec, pageable);
 {{/hasStringFields}}        return repository.findAll(pageable);
-    }
+{{/rowsOwnOnly}}{{#rowsOwnOnly}}        org.springframework.data.jpa.domain.Specification<{{EntityName}}> spec =
+                limited({{#hasStringFields}}specOf(q){{/hasStringFields}}{{^hasStringFields}}null{{/hasStringFields}});
+        return spec == null ? repository.findAll(pageable) : repository.findAll(spec, pageable);
+{{/rowsOwnOnly}}    }
 {{#hasStringFields}}
     /** The search predicate the list, the CSV export and the stats endpoint all share; null when
      *  nothing was searched for. */
@@ -130,7 +136,7 @@ public class {{EntityName}}Service {
     /** The list narrowed to the rows {@code changedBy} created or last changed — "Changed by me". */
     @Transactional(readOnly = true)
     public Page<{{EntityName}}> findAll(String q, {{#hasFilters}}Filters filters, {{/hasFilters}}String changedBy, Pageable pageable) {
-        org.springframework.data.jpa.domain.Specification<{{EntityName}}> spec = {{#hasFilters}}specOf(q, filters){{/hasFilters}}{{^hasFilters}}{{#hasStringFields}}specOf(q){{/hasStringFields}}{{^hasStringFields}}null{{/hasStringFields}}{{/hasFilters}};
+        org.springframework.data.jpa.domain.Specification<{{EntityName}}> spec = {{#rowsOwnOnly}}limited({{/rowsOwnOnly}}{{#hasFilters}}specOf(q, filters){{/hasFilters}}{{^hasFilters}}{{#hasStringFields}}specOf(q){{/hasStringFields}}{{^hasStringFields}}null{{/hasStringFields}}{{/hasFilters}}{{#rowsOwnOnly}}){{/rowsOwnOnly}};
         if (changedBy != null && !changedBy.isBlank()) {
             org.springframework.data.jpa.domain.Specification<{{EntityName}}> theirs = (root, query, cb) -> cb.or(
                     cb.equal(root.get("createdBy"), changedBy), cb.equal(root.get("updatedBy"), changedBy));
@@ -213,12 +219,18 @@ public class {{EntityName}}Service {
         Expression<? extends Number> measure = aggregate(cb, root, agg, field);
         selections.add(measure);
         query.multiselect(selections);
-{{#needsSpecification}}        Specification<{{EntityName}}> spec = specOf(q{{#hasFilters}}, filters{{/hasFilters}});
+{{^rowsOwnOnly}}{{#needsSpecification}}        Specification<{{EntityName}}> spec = specOf(q{{#hasFilters}}, filters{{/hasFilters}});
         if (spec != null) {
             Predicate predicate = spec.toPredicate(root, query, cb);
             if (predicate != null) query.where(predicate);
         }
-{{/needsSpecification}}        if (!groups.isEmpty()) {
+{{/needsSpecification}}{{/rowsOwnOnly}}{{#rowsOwnOnly}}        // A user's numbers are over their own rows, like their list.
+        org.springframework.data.jpa.domain.Specification<{{EntityName}}> spec = limited({{#hasFilters}}specOf(q, filters){{/hasFilters}}{{^hasFilters}}{{#hasStringFields}}specOf(q){{/hasStringFields}}{{^hasStringFields}}null{{/hasStringFields}}{{/hasFilters}});
+        if (spec != null) {
+            jakarta.persistence.criteria.Predicate predicate = spec.toPredicate(root, query, cb);
+            if (predicate != null) query.where(predicate);
+        }
+{{/rowsOwnOnly}}        if (!groups.isEmpty()) {
             query.groupBy(groups);
             if (top != null) {
                 query.orderBy(cb.desc(measure));
@@ -324,11 +336,124 @@ public class {{EntityName}}Service {
 {{/statsApplicable}}
     @Transactional(readOnly = true)
     public {{EntityName}} findById({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
-{{^hasCollections}}        return {{#hasCompositions}}withRows({{/hasCompositions}}repository.findById(id).orElseThrow(() ->
+{{^hasCollections}}        return {{#hasCompositions}}withRows({{/hasCompositions}}repository.findById(id){{#rowsOwnOnly}}.filter(this::isMine){{/rowsOwnOnly}}.orElseThrow(() ->
                 new ResourceNotFoundException("{{EntityName}} " + id + " not found")){{#hasCompositions}}){{/hasCompositions}};
-{{/hasCollections}}{{#hasCollections}}        return {{#hasCompositions}}withRows({{/hasCompositions}}loaded(repository.findById(id).orElseThrow(() ->
+{{/hasCollections}}{{#hasCollections}}        return {{#hasCompositions}}withRows({{/hasCompositions}}loaded(repository.findById(id){{#rowsOwnOnly}}.filter(this::isMine){{/rowsOwnOnly}}.orElseThrow(() ->
                 new ResourceNotFoundException("{{EntityName}} " + id + " not found"))){{#hasCompositions}}){{/hasCompositions}};
 {{/hasCollections}}    }
+{{#rowLimited}}
+
+    /**
+     * A {{EntityName}} belongs to {{{rowOwnersText}}}.{{#rowsOwnOnly}} A user sees and changes their own; to
+     * anyone else the row is not there.{{/rowsOwnOnly}}{{#rowsOwnWrites}} Every user sees it; only whose it is changes it.{{/rowsOwnWrites}} An admin — and work no
+     * user asked for (demo data, a scheduled job) — is not limited.
+     */
+    private boolean isMine({{EntityName}} row) {
+        {{packageName}}.web.RowAccess.Caller caller = rowAccess.caller();
+        if (!caller.limited()) return true;
+        String me = caller.id();
+        return me != null && ({{{rowMineJava}}});
+    }
+{{#rowsOwnOnly}}
+
+    /** {@code spec} narrowed to the caller's own rows (as it is, for an admin). */
+    private org.springframework.data.jpa.domain.Specification<{{EntityName}}> limited(
+            org.springframework.data.jpa.domain.Specification<{{EntityName}}> spec) {
+        {{packageName}}.web.RowAccess.Caller caller = rowAccess.caller();
+        if (!caller.limited()) return spec;
+        String me = caller.id();
+        org.springframework.data.jpa.domain.Specification<{{EntityName}}> mine = (root, query, cb) ->
+                me == null ? cb.disjunction() : {{{rowMineSpecJava}}};
+        return spec == null ? mine : spec.and(mine);
+    }
+
+    /** Who is asking — for a caller that reads the rows on another thread (an export). */
+    public {{packageName}}.web.RowAccess.Caller caller() {
+        return rowAccess.caller();
+    }
+{{/rowsOwnOnly}}{{#rowsOwnWrites}}{{#mutable}}
+
+    /** A change is for whose the row is: 403 for anyone else. */
+    private {{EntityName}} requireMine({{EntityName}} row) {
+        if (!isMine(row)) throw new {{packageName}}.web.RowAccessException("This {{EntityName}} is not yours to change");
+        return row;
+    }
+{{/mutable}}{{/rowsOwnWrites}}{{#rowOwnsOnCreate}}
+
+    /** A row a user makes is theirs: {{rowFillNames}} left empty is filled in with them, and one made out to somebody else is refused (403). */
+    private void own({{EntityName}} row) {
+        {{packageName}}.web.RowAccess.Caller caller = rowAccess.caller();
+        if (!caller.limited()) return;
+        String me = caller.id();
+        if (me != null && ({{{rowMineJava}}})) return;
+{{#rowFillOwners}}        if (me != null && (row.get{{Name}}() == null || row.get{{Name}}().isBlank())) {
+            row.set{{Name}}(me);
+            return;
+        }
+{{/rowFillOwners}}        throw new {{packageName}}.web.RowAccessException(
+                "A {{EntityName}} you create is yours: leave {{rowFillNames}} empty, or put your own user id there");
+    }
+{{/rowOwnsOnCreate}}{{#rowsViaParent}}{{#mutable}}
+
+    /** A row is its {{RowParentEntity}}'s: made, or moved, only under one that is the caller's. */
+    private void requireParentMine({{entityPackage}}.{{RowParentEntity}} stub) {
+        {{packageName}}.web.RowAccess.Caller caller = rowAccess.caller();
+        if (!caller.limited() || stub == null || stub.get{{RowParentPkName}}() == null) return;
+        String me = caller.id();
+        {{entityPackage}}.{{RowParentEntity}} parent =
+                entityManager.find({{entityPackage}}.{{RowParentEntity}}.class, stub.get{{RowParentPkName}}());
+        if (parent == null) return; // no such row: the save says so
+        if (me == null || !({{{rowParentMineJava}}})) {
+{{#rowsOwnOnly}}            throw new IllegalArgumentException("{{rowParentIdName}}: no {{RowParentEntity}} " + stub.get{{RowParentPkName}}());
+{{/rowsOwnOnly}}{{#rowsOwnWrites}}            throw new {{packageName}}.web.RowAccessException("This {{RowParentEntity}} is not yours to change");
+{{/rowsOwnWrites}}        }
+    }
+{{/mutable}}{{/rowsViaParent}}{{#rowRestoresOwned}}
+
+    /** A deleted row is brought back by whose it is — asked natively, because the restriction hides it. */
+    private void requireOwnedDeleted({{pkField.javaType}} id) {
+        {{packageName}}.web.RowAccess.Caller caller = rowAccess.caller();
+        if (!caller.limited()) return;
+        Number owned = caller.id() == null ? Integer.valueOf(0)
+                : (Number) entityManager.createNativeQuery("{{{rowOwnedSqlJava}}}")
+                        .setParameter("id", id).setParameter("me", caller.id()).getSingleResult();
+        if (owned.longValue() == 0) throw new ResourceNotFoundException("{{EntityName}} " + id + " not found");
+    }
+{{/rowRestoresOwned}}
+{{/rowLimited}}{{#hasOwnLinks}}
+
+    /**
+     * A link to a row the caller may not see is a link to no row: a 400 in the words of an unknown
+     * id. {@code before} is the row as it was — a link it already had is left alone.
+     */
+    private void requireVisibleLinks({{EntityName}} row, {{EntityName}} before) {
+        {{packageName}}.web.RowAccess.Caller caller = rowAccess.caller();
+        if (!caller.limited()) return;
+        String me = caller.id();
+{{#ownLinks}}        if (row.get{{FieldName}}() != null && row.get{{FieldName}}().get{{TargetPkName}}() != null) {
+            Object id = row.get{{FieldName}}().get{{TargetPkName}}();
+            boolean had = before != null && before.get{{FieldName}}() != null
+                    && id.equals(before.get{{FieldName}}().get{{TargetPkName}}());
+            if (!had && (me == null || entityManager.createQuery(
+                            "select count(t) from {{targetEntity}} t where t.{{targetPkName}} = :id and ({{{mineJpql}}})", Long.class)
+                    .setParameter("id", id).setParameter("me", me).getSingleResult() == 0)) {
+                throw new IllegalArgumentException("{{idName}}: no {{targetEntity}} " + id);
+            }
+        }
+{{/ownLinks}}{{#ownSets}}        if (row.get{{FieldName}}() != null && !row.get{{FieldName}}().isEmpty()) {
+            java.util.Set<Object> ids = new java.util.LinkedHashSet<>();
+            for ({{entityPackage}}.{{targetEntity}} linked : row.get{{FieldName}}()) ids.add(linked.get{{TargetPkName}}());
+            if (before != null) {
+                for ({{entityPackage}}.{{targetEntity}} kept : before.get{{FieldName}}()) ids.remove(kept.get{{TargetPkName}}());
+            }
+            if (!ids.isEmpty() && (me == null || entityManager.createQuery(
+                            "select count(t) from {{targetEntity}} t where t.{{targetPkName}} in :ids and ({{{mineJpql}}})", Long.class)
+                    .setParameter("ids", ids).setParameter("me", me).getSingleResult() != ids.size())) {
+                throw new IllegalArgumentException("{{fieldName}}: no {{targetEntity}} with one of the ids " + ids);
+            }
+        }
+{{/ownSets}}    }
+{{/hasOwnLinks}}
 {{#hasCompositions}}
 
     /** At most this many rows of a composed list in one save. */
@@ -490,7 +615,10 @@ public class {{EntityName}}Service {
 {{/pkField.isGenerated}}{{#attachmentFields}}{{^isReadOnly}}        attachments.requireAttachable(entity.get{{Name}}(), "{{name}}"); // a file no other record holds
 {{/isReadOnly}}{{/attachmentFields}}{{#multiFileFields}}        // Files no other record holds, at most {{maxFiles}}, named as they were uploaded.
         entity.set{{Name}}(attachments.attachAll(entity.get{{Name}}(), java.util.List.of(), "{{name}}", {{maxFiles}}, {{isRequired}}));
-{{/multiFileFields}}{{#hasLockedRelations}}        withReferences(entity);
+{{/multiFileFields}}{{#rowOwnsOnCreate}}        own(entity);
+{{/rowOwnsOnCreate}}{{#rowsViaParent}}        requireParentMine(entity.get{{RowParentLink}}());
+{{/rowsViaParent}}{{#hasOwnLinks}}        requireVisibleLinks(entity, null);
+{{/hasOwnLinks}}{{#hasLockedRelations}}        withReferences(entity);
 {{/hasLockedRelations}}{{#readsLinks}}        withLinkedRows(entity);
 {{/readsLinks}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(entity);
 {{/hasRules}}{{#deletedHoldsKeys}}        requireNoDeletedHolder(entity);
@@ -560,7 +688,22 @@ public class {{EntityName}}Service {
             } else if (id != null && repository.existsById(id)) {
                 errors.add(new ImportError(row, null, "{{EntityName}} " + id + " already exists"));
             }
-{{/pkField.isGenerated}}{{#readsLinks}}            withLinkedRows(entity);
+{{/pkField.isGenerated}}{{#rowOwnsOnCreate}}            try {
+                own(entity); // a row a user imports is theirs, like one they create
+            } catch ({{packageName}}.web.RowAccessException refused) {
+                errors.add(new ImportError(row, null, refused.getMessage()));
+            }
+{{/rowOwnsOnCreate}}{{#rowsViaParent}}            try {
+                requireParentMine(entity.get{{RowParentLink}}());
+            } catch (IllegalArgumentException | {{packageName}}.web.RowAccessException refused) {
+                errors.add(new ImportError(row, "{{rowParentIdName}}", refused.getMessage()));
+            }
+{{/rowsViaParent}}{{#hasOwnLinks}}            try {
+                requireVisibleLinks(entity, null);
+            } catch (IllegalArgumentException unseen) {
+                errors.add(new ImportError(row, null, unseen.getMessage()));
+            }
+{{/hasOwnLinks}}{{#readsLinks}}            withLinkedRows(entity);
 {{/readsLinks}}{{#hasRules}}            {{packageName}}.rules.{{EntityName}}Rules.apply(entity)
                     .forEach((field, message) -> errors.add(new ImportError(row, field, message)));
 {{/hasRules}}{{#deletedHoldsKeys}}            try {
@@ -576,8 +719,10 @@ public class {{EntityName}}Service {
 {{/importApplicable}}
 
     public {{EntityName}} update({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id, {{EntityName}} updated) {
-        {{EntityName}} existing = findById(id);
-{{#hasLockedRelations}}        withReferences(updated);
+        {{EntityName}} existing = {{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}};
+{{#rowsViaParent}}        requireParentMine(updated.get{{RowParentLink}}());
+{{/rowsViaParent}}{{#hasOwnLinks}}        requireVisibleLinks(updated, existing);
+{{/hasOwnLinks}}{{#hasLockedRelations}}        withReferences(updated);
 {{/hasLockedRelations}}{{#lockingApplicable}}        // The client sends the version it read: an older one means someone saved in between, so
         // refuse instead of overwriting their change (409, "stale"). No version = last write wins.
         if (updated.getVersion() != null && !updated.getVersion().equals(existing.getVersion())) {
@@ -628,7 +773,7 @@ public class {{EntityName}}Service {
      * must be filled in (400, each named).
      */
     public {{EntityName}} transition({{pkField.javaType}} id, String name, {{EntityName}} values, String user) {
-        {{EntityName}} existing = findById(id);
+        {{EntityName}} existing = {{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}};
 {{#tracksMoves}}        {{EntityName}}.{{workflowEnumType}} before = existing.get{{WorkflowStatusName}}();
 {{/tracksMoves}}        {{EntityName}} given = values == null ? new {{EntityName}}() : values;
 {{#hasLockedRelations}}        withReferences(given);
@@ -729,7 +874,7 @@ public class {{EntityName}}Service {
     /** Gives a row back to the unassigned queue — only the user it is assigned to can. */
     public {{EntityName}} release({{pkField.javaType}} id, String user) {
         if (user == null) throw WorkflowException.unauthenticated();
-        {{EntityName}} existing = findById(id);
+        {{EntityName}} existing = {{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}};
         if (!user.equals(existing.get{{AssigneeName}}())) {
             throw WorkflowException.forbidden("Only the user it is assigned to can release it");
         }
@@ -792,8 +937,8 @@ public class {{EntityName}}Service {
 {{/hasLockedRelations}}    /** Loads first so a missing id surfaces as a 404 (ResourceNotFoundException) rather than a
      *  500 from deleteById's EmptyResultDataAccessException. */
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
-{{^hasAttachmentFields}}        repository.delete(findById(id));
-{{/hasAttachmentFields}}{{#hasAttachmentFields}}        {{EntityName}} existing = findById(id);
+{{^hasAttachmentFields}}        repository.delete({{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}});
+{{/hasAttachmentFields}}{{#hasAttachmentFields}}        {{EntityName}} existing = {{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}};
         repository.delete(existing);
 {{^softDeleteApplicable}}        // The record's files go with it. (A soft-deleted record keeps them, for a restore.)
 {{#attachmentFields}}        attachments.delete(existing.get{{Name}}());
@@ -803,7 +948,8 @@ public class {{EntityName}}Service {
     /** Un-deletes a soft-deleted record (the frontend's Undo after delete). 404 when no row has
      *  that id; restoring a live row is a harmless no-op. */
     public {{EntityName}} restore({{pkField.javaType}} id) {
-        if (repository.restore(id{{#auditApplicable}}, {{packageName}}.web.RequestUser.current(){{/auditApplicable}}) == 0) {
+{{#rowRestoresOwned}}        requireOwnedDeleted(id);
+{{/rowRestoresOwned}}        if (repository.restore(id{{#auditApplicable}}, {{packageName}}.web.RequestUser.current(){{/auditApplicable}}) == 0) {
             throw new ResourceNotFoundException("{{EntityName}} " + id + " not found");
         }
 {{^eventsRestores}}
@@ -841,8 +987,10 @@ public class {{EntityName}}Service {
 {{#bulkDeleteApplicable}}
     public void deleteAll(java.util.List<{{pkField.javaType}}> ids) {
         java.util.List<{{EntityName}}> rows = repository.findAllById(ids);
-        requireAll(ids, rows);
-        repository.deleteAllById(ids);
+{{#rowsOwnOnly}}        rows = rows.stream().filter(this::isMine).toList(); // somebody else's row is not there
+{{/rowsOwnOnly}}        requireAll(ids, rows);
+{{#rowsOwnWrites}}        rows.forEach(this::requireMine);
+{{/rowsOwnWrites}}        repository.deleteAllById(ids);
 {{#hasAttachmentFields}}{{^softDeleteApplicable}}        for ({{EntityName}} row : rows) {
 {{#attachmentFields}}            attachments.delete(row.get{{Name}}());
 {{/attachmentFields}}{{#multiFileFields}}            row.get{{Name}}().forEach(file -> attachments.delete(file.getId()));
@@ -856,8 +1004,10 @@ public class {{EntityName}}Service {
      *  a required field cannot be cleared{{/hasRequiredBulkFields}}{{#bulkValidates}} and the value passes the DTO's validation{{/bulkValidates}}. */
     public void updateMany(java.util.List<{{pkField.javaType}}> ids, String field, Object value) {
         java.util.List<{{EntityName}}> rows = repository.findAllById(ids);
-        requireAll(ids, rows);
-{{#hasRequiredBulkFields}}        if (value == null && java.util.Set.of({{{requiredBulkFieldsJava}}}).contains(field)) {
+{{#rowsOwnOnly}}        rows = rows.stream().filter(this::isMine).toList(); // somebody else's row is not there
+{{/rowsOwnOnly}}        requireAll(ids, rows);
+{{#rowsOwnWrites}}        rows.forEach(this::requireMine);
+{{/rowsOwnWrites}}{{#hasRequiredBulkFields}}        if (value == null && java.util.Set.of({{{requiredBulkFieldsJava}}}).contains(field)) {
             throw new IllegalArgumentException(field + " is required");
         }
 {{/hasRequiredBulkFields}}        for ({{EntityName}} entity : rows) {

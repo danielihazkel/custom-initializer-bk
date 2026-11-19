@@ -395,6 +395,8 @@ a 400.
 | *(none)* | `rtl` — not a flag: sets `FrontendProjectDescription.rtl`, so FE templates read `isRtl` (§5) | — | — |
 | `locale` / `isHebrew` | request field `locale` (`en`/`he`), not an opt — frontend context only; `i18n-strings.ts.mustache` picks the string table on `isHebrew`, `LOCALE` = `locale` | — | — |
 
+**Not an option — an entity's `access.owners` / `access.rows`:** `hasRowAccess`, `hasOwnWrites` (project); `rowLimited`, `rowsOwnOnly`, `rowsOwnWrites`, `rowsViaParent`, `rowMineSpecJava`, `rowMineJava`, `rowOwnsOnCreate`, `rowFillOwners`, `rowRestoresOwned`, `rowOwnedSqlJava`, `ownLinks`, `ownSets`, `usesRowAccess` (entity, backend); `listOwnWrites`, `rowMineTs` (entity view, frontend). Rows that belong to users — an entity's `access.owners` / `access.rows`. Built in `fullstack/RowAccessContext` (and `EntityViewModel` for the two frontend keys); see *Round 14, phase 3* in `CLAUDE.md`.
+
 A per-entity option is resolved against the entity's own `opts` override in `buildEntityContext`, and
 templates mostly read the derived `*Applicable` flag, which also accounts for read-only entities, views
 and composite keys.

@@ -441,6 +441,24 @@
       "gatedBy": "hasDeletedHolders"
     },
     {
+      "source": "RowAccess.java.mustache",
+      "path": "src/main/java/{{packagePath}}/web/RowAccess.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 12,
+      "gatedBy": "hasRowAccess"
+    },
+    {
+      "source": "RowAccessException.java.mustache",
+      "path": "src/main/java/{{packagePath}}/web/RowAccessException.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 12,
+      "gatedBy": "hasRowAccess"
+    },
+    {
       "source": "WorkflowException.java.mustache",
       "path": "src/main/java/{{packagePath}}/web/WorkflowException.java",
       "perEntity": false,
