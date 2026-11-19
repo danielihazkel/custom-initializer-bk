@@ -432,6 +432,15 @@
       "gatedBy": "hasLdapAuth"
     },
     {
+      "source": "DeletedHolderException.java.mustache",
+      "path": "src/main/java/{{packagePath}}/web/DeletedHolderException.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 12,
+      "gatedBy": "hasDeletedHolders"
+    },
+    {
       "source": "WorkflowException.java.mustache",
       "path": "src/main/java/{{packagePath}}/web/WorkflowException.java",
       "perEntity": false,

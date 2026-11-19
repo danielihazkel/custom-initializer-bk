@@ -24,7 +24,12 @@ public final class {{EntityName}}Rules {
 {{/hiddenFields}}{{#computedFields}}        // {{name}} = {{formulaTextComment}}
         row.set{{Name}}({{{formulaJava}}});
 {{/computedFields}}    }
-
+{{#computedFields}}{{#readsClock}}
+    /** {{name}} as it stands now: its formula reads the clock, so what the row stores is the last save's. */
+    public static {{{javaType}}} {{name}}Now({{EntityName}} row) {
+        return {{{formulaJava}}};
+    }
+{{/readsClock}}{{/computedFields}}
     /** Each field's message for the first rule on it that is broken; empty when every rule holds. */
     public static Map<String, String> violations({{EntityName}} row) {
         Map<String, String> errors = new LinkedHashMap<>();

@@ -97,9 +97,13 @@ public class {{EntityName}}Controller {
 {{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isRelationFilter}},
 {{/filterFields}}{{#hasAssignee}}            @RequestParam(required = false) String inbox,
             @RequestHeader(value = "userinfo", required = false) String workflowUser,
-{{/hasAssignee}}            Pageable pageable) {
+{{/hasAssignee}}{{#auditApplicable}}            // As the list takes it: "me" (the caller), or a user id.
+            @RequestParam(required = false) String changedBy,
+{{/auditApplicable}}            Pageable pageable) {
 {{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#hasAssignee}}inbox, CurrentUser.idOf(workflowUser), {{/hasAssignee}}{{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
-{{/hasFilters}}        Sort sort = sortOf(pageable);
+{{/hasFilters}}{{#auditApplicable}}        // Read here, on the request's own thread: the rows are written on another.
+        String author = "me".equals(changedBy) ? {{packageName}}.web.RequestUser.current() : changedBy;
+{{/auditApplicable}}        Sort sort = sortOf(pageable);
         // Written row by row as the chunks are read: memory stays bounded whatever the table size,
         // and each chunk is its own read-only transaction.
         org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody stream = out -> {
@@ -110,14 +114,15 @@ public class {{EntityName}}Controller {
                 int pageNo = 0;
                 Page<{{EntityName}}Dto> chunk;
                 do {
-                    chunk = service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}PageRequest.of(pageNo++, 500, sort))
+                    chunk = service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}{{#auditApplicable}}author, {{/auditApplicable}}PageRequest.of(pageNo++, 500, sort))
                             .map({{EntityName}}Dto::from);
                     for ({{EntityName}}Dto dto : chunk) {
+                        if (sheet.full()) break; // a sheet holds no more rows
                         sheet.row(
 {{#xlsxCells}}                                {{.}}{{^-last}},{{/-last}}
 {{/xlsxCells}}                        );
                     }
-                } while (chunk.hasNext());
+                } while (chunk.hasNext() && !sheet.full());
             }
         };
         return ResponseEntity.ok()
@@ -136,9 +141,13 @@ public class {{EntityName}}Controller {
 {{#filterFields}}            {{#isEnumFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isEnumFilter}}{{#isBooleanFilter}}@RequestParam(required = false) {{javaType}} {{name}}{{/isBooleanFilter}}{{#isNumericFilter}}@RequestParam(required = false) {{javaType}} {{name}}Min, @RequestParam(required = false) {{javaType}} {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}@RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}From, @RequestParam(required = false) {{#isDate}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) {{/isDate}}{{#isDateTime}}@org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) {{/isDateTime}}{{javaType}} {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}@RequestParam(required = false) List<{{javaType}}> {{name}}{{/isRelationFilter}},
 {{/filterFields}}{{#hasAssignee}}            @RequestParam(required = false) String inbox,
             @RequestHeader(value = "userinfo", required = false) String workflowUser,
-{{/hasAssignee}}            Pageable pageable) {
+{{/hasAssignee}}{{#auditApplicable}}            // As the list takes it: "me" (the caller), or a user id.
+            @RequestParam(required = false) String changedBy,
+{{/auditApplicable}}            Pageable pageable) {
 {{#hasFilters}}        {{EntityName}}Service.Filters filters = new {{EntityName}}Service.Filters({{#hasAssignee}}inbox, CurrentUser.idOf(workflowUser), {{/hasAssignee}}{{#filterFields}}{{#isEnumFilter}}{{name}}{{/isEnumFilter}}{{#isBooleanFilter}}{{name}}{{/isBooleanFilter}}{{#isNumericFilter}}{{name}}Min, {{name}}Max{{/isNumericFilter}}{{#isTemporalFilter}}{{name}}From, {{name}}To{{/isTemporalFilter}}{{#isRelationFilter}}{{name}}{{/isRelationFilter}}{{^last}}, {{/last}}{{/filterFields}});
-{{/hasFilters}}        Sort sort = sortOf(pageable);
+{{/hasFilters}}{{#auditApplicable}}        // Read here, on the request's own thread: the rows are written on another.
+        String author = "me".equals(changedBy) ? {{packageName}}.web.RequestUser.current() : changedBy;
+{{/auditApplicable}}        Sort sort = sortOf(pageable);
         // Streamed in fixed-size chunks so memory stays bounded regardless of table size; each
         // chunk is its own read-only transaction, so no session is held open across the response.
         StreamingResponseBody stream = out -> {
@@ -150,7 +159,7 @@ public class {{EntityName}}Controller {
             int pageNo = 0;
             Page<{{EntityName}}Dto> chunk;
             do {
-                chunk = service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}PageRequest.of(pageNo++, CSV_CHUNK_SIZE, sort))
+                chunk = service.findAll(q, {{#hasFilters}}filters, {{/hasFilters}}{{#auditApplicable}}author, {{/auditApplicable}}PageRequest.of(pageNo++, CSV_CHUNK_SIZE, sort))
                         .map({{EntityName}}Dto::from);
                 for ({{EntityName}}Dto dto : chunk) {
                     String[] cells = {
@@ -301,12 +310,16 @@ public class {{EntityName}}Controller {
 {{#optScaffoldOpenApi}}    @Operation(summary = "Restore a {{EntityName}} to an earlier version")
 {{/optScaffoldOpenApi}}{{#hasLdapAuth}}    @RequiresPermission(Constants.ADMIN)
 {{/hasLdapAuth}}    @PostMapping("/{id}/history/{changeId}/restore")
-    public {{EntityName}}Dto restoreVersion(@PathVariable {{pkField.javaType}} id, @PathVariable Long changeId,
-                                            @RequestBody(required = false) RestoreVersion body) {
-        history.restore("{{entityNameKebab}}", id, changeId,
-                body == null ? null : body.latest(), body != null && Boolean.TRUE.equals(body.force()));
-        return {{EntityName}}Dto.from(service.findById(id));
+    public Restored restoreVersion(@PathVariable {{pkField.javaType}} id, @PathVariable Long changeId,
+                                   @RequestBody(required = false) RestoreVersion body) {
+        java.util.List<String> skipped = history.restore("{{entityNameKebab}}", id, changeId,
+                body == null ? null : body.latest(), body != null && Boolean.TRUE.equals(body.force()),
+                service::checkRestored);
+        return new Restored({{EntityName}}Dto.from(service.findById(id)), skipped);
     }
+
+    /** The row as restored, and the fields its old version had that the row no longer has. */
+    public record Restored({{EntityName}}Dto row, java.util.List<String> skipped) {}
 {{/historyApplicable}}{{#hasWorkflow}}
     /** Moves the row by one of its workflow's transitions; the body carries the fields it asks for. */
 {{#optScaffoldOpenApi}}    @Operation(summary = "Move a {{EntityName}} by a workflow transition")

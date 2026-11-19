@@ -52,6 +52,17 @@ public final class FullstackSchema {
         names.put("reservedEntityNames", ReservedNames.all());
         names.put("generatedClassSuffixes", ReservedNames.GENERATED_SUFFIXES);
         names.put("sqlName", FullstackRequestValidator.SQL_NAME.pattern());
+        // By database dependency: the words a table or column name is written quoted for, and the
+        // columns every table already has (a model's column cannot be one). The editor says so.
+        Map<String, Object> sqlReserved = new LinkedHashMap<>();
+        Map<String, Object> sqlSystem = new LinkedHashMap<>();
+        for (com.menora.initializr.fullstack.schema.SchemaDialect dialect : com.menora.initializr.fullstack.schema.SchemaDialect.values()) {
+            com.menora.initializr.sql.SqlDialect database = com.menora.initializr.sql.SqlDialect.forDepId(dialect.dependencyId());
+            sqlReserved.put(dialect.dependencyId(), new TreeSet<>(com.menora.initializr.sql.SqlKeywords.words(database)));
+            sqlSystem.put(dialect.dependencyId(), new TreeSet<>(com.menora.initializr.sql.SqlKeywords.systemColumns(database)));
+        }
+        names.put("sqlReservedWords", sqlReserved);
+        names.put("sqlSystemColumns", sqlSystem);
         names.put("pageId", FullstackPageValidator.PAGE_ID.pattern());
         names.put("transitionName", FullstackRequestValidator.TRANSITION_NAME.pattern());
         doc.put("names", names);

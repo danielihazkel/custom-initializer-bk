@@ -103,7 +103,7 @@ ccc0a8c77f150e4cb7ca4a6cc289fbe04bee7675f028921db7014c7f954e685a  golden-project
 872c98bc84c991fa0874dd80a4bc87b5fd557351a5a06be132a8be85ae3b8ea1  golden-projects/frontend/src/features/task-form/index.ts
 5a61c9e78db0fa07be44128b5a9dca5f1eec864029f4030c4f3d8e5e6dfdf035  golden-projects/frontend/src/features/task-form/model/validate.ts
 091172bfd43705824d61c675c0a8e15f426018ecbe31abb006261c31b39b6669  golden-projects/frontend/src/features/task-form/ui/TaskDetail.tsx
-102009c8540bda11aa3988de79e5c39214479fb0eef81fb403649a31dda36c71  golden-projects/frontend/src/features/task-form/ui/TaskForm.tsx
+a99887a86430b8eef3dd0e11b8ce65bd729f9e75529686d16bbd790f57d6298f  golden-projects/frontend/src/features/task-form/ui/TaskForm.tsx
 2282317ff999f6c5758d41f966ff7adc010d282c72376ee0ac8a7d9470d00efb  golden-projects/frontend/src/index.css
 dd596a1459bf26fd044ea233a820404cb2a54f0a438f9dc97b8538b165f0ea3e  golden-projects/frontend/src/main.tsx
 f33251b158fd83b7be8ed5a2e445f5454031d1e765847b731eeba42d8c8c32bc  golden-projects/frontend/src/pages/README.md

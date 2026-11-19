@@ -363,6 +363,10 @@ public final class EntityScaffoldContext {
                 Boolean.TRUE.equals(ctx.get("optScaffoldSoftDelete"))
                         && !Boolean.TRUE.equals(ctx.get("hasCompositePk"))
                         && mutable);
+        // A deleted row keeps its unique values: the service asks about one before it saves.
+        boolean deletedHoldsKeys = Boolean.TRUE.equals(ctx.get("softDeleteApplicable"))
+                && ctx.get("uniqueProbes") instanceof List<?> probes && !probes.isEmpty();
+        ctx.put("deletedHoldsKeys", deletedHoldsKeys);
         // Audit timestamps (created/updated) only make sense for writable, table-backed entities —
         // a @Subselect view would have to project created_at/updated_at columns that may not exist.
         ctx.put("auditApplicable",
@@ -423,7 +427,7 @@ public final class EntityScaffoldContext {
         ctx.put("hasCompositions", hasCompositions);
         ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable
                 || (lockedRelations && mutable) || (Boolean.TRUE.equals(ctx.get("hasCollections")) && mutable)
-                || hasCompositions || (Boolean.TRUE.equals(ctx.get("readsLinks")) && mutable));
+                || hasCompositions || (Boolean.TRUE.equals(ctx.get("readsLinks")) && mutable) || deletedHoldsKeys);
         // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
         // besides the audit rows — so it imports t / LOCALE exactly when one of them is drawn
         // (the generated lint rejects an unused import).
@@ -485,7 +489,12 @@ public final class EntityScaffoldContext {
         boolean transitionValidates = Boolean.TRUE.equals(ctx.get("workflowRequiresFields"))
                 && Boolean.TRUE.equals(ctx.get("hasValidation"));
         ctx.put("transitionValidates", transitionValidates);
-        ctx.put("usesValidator", bulkValidates || transitionValidates || Boolean.TRUE.equals(ctx.get("importValidates")));
+        // …and a version put back from the change history.
+        boolean restoreValidates = Boolean.TRUE.equals(ctx.get("historyApplicable"))
+                && Boolean.TRUE.equals(ctx.get("hasValidation"));
+        ctx.put("restoreValidates", restoreValidates);
+        ctx.put("usesValidator", bulkValidates || transitionValidates || restoreValidates
+                || Boolean.TRUE.equals(ctx.get("importValidates")));
         // Reassigning is the ADMIN's when the project can tell roles (an ldap-auth dependency);
         // without one there are no roles and any signed-in user may. The service asks CurrentUser
         // for that, or for a transition limited to roles.
@@ -572,6 +581,9 @@ public final class EntityScaffoldContext {
                 Map<String, Object> rc = new LinkedHashMap<>(rels.get(r));
                 String t = e.relations().get(r).targetEntity().toLowerCase(Locale.ROOT);
                 rc.put("targetSeeded", seededSoFar.contains(t));
+                // Demo rows a rule is broken by are left out, so a parent with rules may have none.
+                rc.put("targetMayHaveNoRows", seededSoFar.contains(t)
+                        && !entities.get(indexByLower.get(t)).allRules().isEmpty());
                 relCopies.add(rc);
             }
             sv.put("relations", relCopies);

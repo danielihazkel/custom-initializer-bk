@@ -115,6 +115,8 @@ class CreateTablesDockerTests {
         out.put("m_types", FullstackExampleRequests.fieldTypesBody("react-tailwind-crud"));
         out.put("m_press", FullstackExampleRequests.manyToManyBody("react-tailwind-crud"));
         out.put("m_shop", FullstackExampleRequests.oneToManyBody("react-tailwind-crud"));
+        // Tables and columns named by SQL keywords: quoted for the source's database, bare where it takes them.
+        out.put("m_words", FullstackExampleRequests.keywordNamesBody());
         int i = 0;
         for (Map<String, Object> example : FullstackExampleRequests.examples()) {
             // No dependencies named: the set's defaults (ldap-auth-rest among them), as the editor starts.

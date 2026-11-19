@@ -633,6 +633,8 @@ final class DashboardContext {
             if (chart.series() != null) query.append("&series=").append(chart.series());
             if (reduces) query.append("&agg=").append(chart.agg().wire()).append("&field=").append(chart.field());
             cv.put("rollupQuery", query.toString());
+            // Money summed (or averaged…) is written in its currency, as a KPI's is.
+            putAggCurrency(cv, ev, reduces ? chart.field() : null);
             // A bar opens the list on its value (a relation's on its id); a point in time on its day/month/year.
             boolean drill = putDrill(cv, ev, p.entity(), links, (String) rank.get("drillKey"), null);
             cv.put("drillExpr", overTime

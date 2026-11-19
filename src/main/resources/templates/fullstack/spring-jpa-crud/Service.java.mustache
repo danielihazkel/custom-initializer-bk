@@ -18,7 +18,8 @@ import java.util.List;
 {{/imports}}{{#fields}}{{#isEnum}}import {{entityPackage}}.{{EntityName}}.{{enumTypeName}};
 {{/isEnum}}{{/fields}}{{/hasFilters}}{{#importApplicable}}import {{dtoPackage}}.{{EntityName}}Dto;
 {{^statsApplicable}}import jakarta.persistence.EntityManager;
-{{/statsApplicable}}{{/importApplicable}}{{#statsApplicable}}import jakarta.persistence.EntityManager;
+{{/statsApplicable}}{{/importApplicable}}{{^importApplicable}}{{^statsApplicable}}{{#usesEntityManager}}import jakarta.persistence.EntityManager;
+{{/usesEntityManager}}{{/statsApplicable}}{{/importApplicable}}{{#statsApplicable}}import jakarta.persistence.EntityManager;
 import jakarta.persistence.Tuple;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Expression;
@@ -439,7 +440,29 @@ public class {{EntityName}}Service {
         }
 {{/linkedReads}}    }
 
-{{/mutable}}{{/readsLinks}}{{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
+{{/mutable}}{{/readsLinks}}{{#deletedHoldsKeys}}
+    /**
+     * A deleted {{EntityName}} keeps its unique values, so the database would refuse this row as a
+     * duplicate of one nobody sees. Asked first, to say so (409, with the deleted record's key —
+     * it can be restored instead). Two saves racing past this get the database's own refusal.
+     */
+    private void requireNoDeletedHolder({{EntityName}} row) {
+{{#uniqueProbes}}        {
+{{#values}}            Object v{{i}} = {{{valueJava}}};
+{{/values}}            if ({{#values}}{{#more}} && {{/more}}v{{i}} != null{{/values}}) {
+                java.util.List<?> held = entityManager.createNativeQuery("{{{sqlJava}}}")
+{{#values}}                        .setParameter("v{{i}}", v{{i}})
+{{/values}}                        // The row being saved is not written first: this asks about the others.
+                        .setFlushMode(jakarta.persistence.FlushModeType.COMMIT)
+                        .setMaxResults(1).getResultList();
+                if (!held.isEmpty()) {
+                    throw new {{packageName}}.web.DeletedHolderException("{{{messageJava}}}",
+                            java.util.List.of({{{fieldsJava}}}), held.get(0));
+                }
+            }
+        }
+{{/uniqueProbes}}    }
+{{/deletedHoldsKeys}}{{#mutable}}    public {{EntityName}} create({{EntityName}} entity) {
 {{#compositions}}        if (entity.get{{CollectionField}}() == null) entity.set{{CollectionField}}(new java.util.ArrayList<>());
         if (entity.get{{CollectionField}}().size() > MAX_ROWS) {
             throw new IllegalArgumentException("{{collectionField}}: at most " + MAX_ROWS + " rows in one save");
@@ -470,7 +493,8 @@ public class {{EntityName}}Service {
 {{/multiFileFields}}{{#hasLockedRelations}}        withReferences(entity);
 {{/hasLockedRelations}}{{#readsLinks}}        withLinkedRows(entity);
 {{/readsLinks}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(entity);
-{{/hasRules}}{{^tracksMoves}}        return repository.save(entity);
+{{/hasRules}}{{#deletedHoldsKeys}}        requireNoDeletedHolder(entity);
+{{/deletedHoldsKeys}}{{^tracksMoves}}        return repository.save(entity);
 {{/tracksMoves}}{{#tracksMoves}}        {{EntityName}} saved = repository.save(entity);
         moves.created("{{entityNameKebab}}", saved.get{{pkField.Name}}(), saved.get{{WorkflowStatusName}}());
         return saved;
@@ -539,7 +563,12 @@ public class {{EntityName}}Service {
 {{/pkField.isGenerated}}{{#readsLinks}}            withLinkedRows(entity);
 {{/readsLinks}}{{#hasRules}}            {{packageName}}.rules.{{EntityName}}Rules.apply(entity)
                     .forEach((field, message) -> errors.add(new ImportError(row, field, message)));
-{{/hasRules}}            entities.add(entity);
+{{/hasRules}}{{#deletedHoldsKeys}}            try {
+                requireNoDeletedHolder(entity);
+            } catch ({{packageName}}.web.DeletedHolderException held) {
+                errors.add(new ImportError(row, held.fields().get(0), held.getMessage()));
+            }
+{{/deletedHoldsKeys}}            entities.add(entity);
         }
         if (errors.isEmpty()) repository.saveAll(entities);
         return errors;
@@ -583,7 +612,8 @@ public class {{EntityName}}Service {
 {{/lockingApplicable}}        }
 {{/compositions}}{{#readsLinks}}        withLinkedRows(existing);
 {{/readsLinks}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(existing);
-{{/hasRules}}        return repository.save(existing);
+{{/hasRules}}{{#deletedHoldsKeys}}        requireNoDeletedHolder(existing);
+{{/deletedHoldsKeys}}        return repository.save(existing);
     }
 {{#hasWorkflow}}
 
@@ -692,7 +722,8 @@ public class {{EntityName}}Service {
             throw WorkflowException.wrongState("Already assigned to " + holder);
         }
         existing.set{{AssigneeName}}(user);
-        return repository.save(existing);
+{{#hasRules}}        checkRules(existing);
+{{/hasRules}}        return repository.save(existing);
     }
 
     /** Gives a row back to the unassigned queue — only the user it is assigned to can. */
@@ -703,7 +734,8 @@ public class {{EntityName}}Service {
             throw WorkflowException.forbidden("Only the user it is assigned to can release it");
         }
         existing.set{{AssigneeName}}(null);
-        return repository.save(existing);
+{{#hasRules}}        checkRules(existing);
+{{/hasRules}}        return repository.save(existing);
     }
 
     /**
@@ -721,8 +753,17 @@ public class {{EntityName}}Service {
             throw WorkflowException.wrongState("This {{EntityName}} is " + existing.get{{WorkflowStatusName}}() + ", so there is nothing left to do");
         }
         existing.set{{AssigneeName}}(assignee == null || assignee.isBlank() ? null : assignee.trim());
-        return repository.save(existing);
+{{#hasRules}}        checkRules(existing);
+{{/hasRules}}        return repository.save(existing);
     }
+{{#hasRules}}
+
+    /** A change of who holds a row is a save like any other: its rules run (a rule may read the assignee). */
+    private void checkRules({{EntityName}} row) {
+{{#readsLinks}}        withLinkedRows(row);
+{{/readsLinks}}        {{packageName}}.rules.{{EntityName}}Rules.check(row);
+    }
+{{/hasRules}}
 
     /** An inbox queue: the caller's unfinished rows, the unfinished rows nobody has, or every unfinished row. */
     private static Specification<{{EntityName}}> inboxOf(String queue, String me) {
@@ -775,6 +816,28 @@ public class {{EntityName}}Service {
 {{/eventsRestores}}
     }
 {{/softDeleteApplicable}}
+{{#historyApplicable}}
+    /**
+     * A version put back from the row's history is held to what a save is held to{{#restoreValidates}}: the DTO's
+     * validation{{/restoreValidates}}{{#hasRules}}, the entity's rules{{/hasRules}}. A 400 naming the fields otherwise, and the row stays as it was.
+     */
+    public void checkRestored(Object restored) {
+{{#restoreValidates}}        {{EntityName}} row = ({{EntityName}}) restored;
+        java.util.List<String> invalid = new java.util.ArrayList<>();
+        for (jakarta.validation.ConstraintViolation<{{dtoPackage}}.{{EntityName}}Dto> violation
+                : validator.validate({{dtoPackage}}.{{EntityName}}Dto.from(row))) {
+            invalid.add(violation.getPropertyPath() + " " + violation.getMessage());
+        }
+        if (!invalid.isEmpty()) {
+            throw new IllegalArgumentException("That version no longer passes the checks: " + String.join("; ", invalid));
+        }
+{{#hasRules}}{{#readsLinks}}        withLinkedRows(row);
+{{/readsLinks}}        {{packageName}}.rules.{{EntityName}}Rules.check(row);
+{{/hasRules}}{{/restoreValidates}}{{^restoreValidates}}{{#hasRules}}        {{EntityName}} row = ({{EntityName}}) restored;
+{{#readsLinks}}        withLinkedRows(row);
+{{/readsLinks}}        {{packageName}}.rules.{{EntityName}}Rules.check(row);
+{{/hasRules}}{{/restoreValidates}}    }
+{{/historyApplicable}}
 {{#bulkDeleteApplicable}}
     public void deleteAll(java.util.List<{{pkField.javaType}}> ids) {
         java.util.List<{{EntityName}}> rows = repository.findAllById(ids);

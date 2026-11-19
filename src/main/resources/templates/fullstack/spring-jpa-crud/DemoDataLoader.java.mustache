@@ -51,9 +51,13 @@ public class DemoDataLoader implements CommandLineRunner {
 {{/uniqueKeys}}        for (int i = 1; i <= ROWS; i++) {
             {{EntityName}} row = new {{EntityName}}();
 {{#fields}}{{^isGenerated}}            row.set{{Name}}({{seedExpr}});
-{{/isGenerated}}{{/fields}}{{#relations}}{{#targetSeeded}}            row.set{{FieldName}}({{targetEntityCamel}}Rows.get((i - 1) % {{targetEntityCamel}}Rows.size()));
-{{/targetSeeded}}{{/relations}}{{#hasRules}}            {{packageName}}.rules.{{EntityName}}Rules.derive(row); // hidden fields cleared, computed ones computed
-{{/hasRules}}{{#uniqueKeys}}            if (!{{entityName}}Key{{index}}.add(java.util.Arrays.<Object>asList({{{tuple}}}))) continue;
+{{/isGenerated}}{{/fields}}{{#relations}}{{#targetSeeded}}{{#targetMayHaveNoRows}}            if ({{targetEntityCamel}}Rows.isEmpty()) continue; // its rules left it no demo rows to link to
+{{/targetMayHaveNoRows}}            row.set{{FieldName}}({{targetEntityCamel}}Rows.get((i - 1) % {{targetEntityCamel}}Rows.size()));
+{{/targetSeeded}}{{/relations}}{{#hasRules}}{{^hasRuleChecks}}            {{packageName}}.rules.{{EntityName}}Rules.derive(row); // hidden fields cleared, computed ones computed
+{{/hasRuleChecks}}{{#hasRuleChecks}}            // Hidden fields cleared, computed ones computed — and a row a rule is broken by is left out:
+            // the app would refuse to save it, so it could never be edited.
+            if (!{{packageName}}.rules.{{EntityName}}Rules.apply(row).isEmpty()) continue;
+{{/hasRuleChecks}}{{/hasRules}}{{#uniqueKeys}}            if (!{{entityName}}Key{{index}}.add(java.util.Arrays.<Object>asList({{{tuple}}}))) continue;
 {{/uniqueKeys}}            {{entityName}}Rows.add(row);
         }
         {{entityName}}Rows = {{entityName}}Repository.saveAll({{entityName}}Rows);

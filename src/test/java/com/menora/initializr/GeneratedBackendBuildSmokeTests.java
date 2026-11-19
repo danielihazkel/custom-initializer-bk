@@ -157,11 +157,14 @@ class GeneratedBackendBuildSmokeTests {
      * tests — an API test per entity and the context-load test — run on the {@code test} profile's
      * in-memory H2, so {@code mvn package} passes on a machine with no database running.
      */
-    @org.junit.jupiter.api.Test
-    void aPostgresqlBackendPassesItsOwnTestsOnH2(@TempDir Path workDir) throws Exception {
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"postgresql", "mssql", "oracle"})
+    void aBackendOnAnotherDatabasePassesItsOwnTestsOnH2(String database, @TempDir Path workDir) throws Exception {
+        // Soft delete among the options: its SQL says true and false as the project's database does
+        // (1 and 0 on SQL Server and Oracle), and H2 has to run that same SQL in these tests.
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", "react-tailwind-crud");
         body.put("pages", List.of());
-        body.put("dependencies", List.of("web", "data-jpa", "postgresql", "validation", "flyway"));
+        body.put("dependencies", List.of("web", "data-jpa", database, "validation", "flyway"));
         body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "optimisticLocking", "tests")));
         Path backend = postAndExtractBackend(workDir, body);
         runMvn(backend, "-B", "package");
@@ -1065,6 +1068,112 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(backend, "-B", "package");
     }
 
+    @org.junit.jupiter.api.Test
+    void liveApiOfTheFixSweepBehaves(@TempDir Path workDir) throws Exception {
+        // Round 14's fix sweep, run: Projects with soft delete (a deleted task still holding its
+        // unique key), the change history (a version put back, checked first) and the Excel export
+        // (dates as date cells) — and the generated tests, over a project that now compiles all of it.
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("projects", "react-tailwind-crud");
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        body.put("opts", Map.of("scaffold", List.of("audit", "history", "softDelete", "csvExport", "xlsxExport", "seedData", "tests")));
+        Path backend = postAndExtractBackend(workDir, body);
+        writeLiveTest(backend, "com.menora.support", FIX_SWEEP_LIVE_TESTS);
+        runMvn(backend, "-B", "package");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"h2, schema by hibernate", "h2, schema by flyway", "postgresql, its tests on h2"})
+    @SuppressWarnings("unchecked")
+    void keywordNamedTablesAndColumnsBuildAndBehave(String variant, @TempDir Path workDir) throws Exception {
+        // Tables called values and user, columns called key, order, user and value: quoted in the
+        // mapping, in the SQL the mapping carries (soft delete, the restore, the deleted-row probe)
+        // and — with Flyway — in the baseline Hibernate then validates against. The generated API
+        // tests create, read, search, change, delete and restore rows of both entities.
+        // On PostgreSQL fewer of the words are keywords: those stay bare, and the project's tests,
+        // which run on H2, tell H2 so (NON_KEYWORDS) — the same tests have to pass there.
+        Map<String, Object> body = FullstackExampleRequests.keywordNamesBody();
+        List<String> deps = (List<String>) body.get("dependencies");
+        if (variant.startsWith("postgresql")) deps.replaceAll(d -> d.equals("h2") ? "postgresql" : d);
+        if (!variant.endsWith("hibernate")) deps.add("flyway");
+        Path backend = postAndExtractBackend(workDir, body);
+        if (variant.equals("h2, schema by flyway")) {
+            assertThat(Files.readString(backend.resolve("src/main/resources/db/migration/V1__init.sql")))
+                    .contains("create table \"VALUES\" (").contains("\"ORDER\" integer");
+        }
+        runMvn(backend, "-B", "package");
+        Path reports = backend.resolve("target/surefire-reports");
+        for (String test : List.of("SettingApiTest", "BatchApiTest")) {
+            assertThat(Files.readString(reports.resolve("com.menora.words.controller." + test + ".txt")))
+                    .contains("Failures: 0, Errors: 0, Skipped: 0");
+        }
+    }
+
+    /** Added to the Projects backend with soft delete, history and the Excel export. */
+    private static final String FIX_SWEEP_LIVE_TESTS = """
+                @Test
+                void aDeletedTaskThatHoldsAKeySaysSoAndComesBack() throws Exception {
+                    long project = firstId("/api/projects");
+                    String task = "{\\"title\\": \\"Held by a deleted one\\", \\"status\\": \\"TODO\\", \\"projectId\\": " + project + "}";
+                    long id = send(post("/api/tasks"), null, task, 200).get("id").asLong();
+                    mvc.perform(delete("/api/tasks/" + id)).andExpect(status().is2xxSuccessful());
+
+                    JsonNode held = send(post("/api/tasks"), null, task, 409);
+                    assertThat(held.get("detail").asText()).isEqualTo("A deleted Task has the same Project and Title");
+                    assertThat(held.get("deleted").get("id").asLong()).isEqualTo(id);
+                    assertThat(held.get("errors").get("title").asText()).isEqualTo("A deleted Task has the same Project and Title");
+                    assertThat(held.get("errors").get("projectId").asText()).isEqualTo("A deleted Task has the same Project and Title");
+
+                    // An edit into the deleted task's values is told the same.
+                    long other = send(post("/api/tasks"), null, task.replace("Held by a deleted one", "Another"), 200).get("id").asLong();
+                    assertThat(send(put("/api/tasks/" + other), null, task, 409).get("deleted").get("id").asLong()).isEqualTo(id);
+
+                    // The deleted task comes back with its values; a second one is then a duplicate of a row that shows.
+                    mvc.perform(post("/api/tasks/" + id + "/restore")).andExpect(status().isOk());
+                    assertThat(send(post("/api/tasks"), null, task, 409).get("detail").asText())
+                            .isEqualTo("Another Task has the same Project and Title");
+                }
+
+                @Test
+                void aVersionPutBackAnswersTheRowAndWhatItCouldNotPutBack() throws Exception {
+                    long project = firstId("/api/projects");
+                    String task = "{\\"title\\": \\"%s\\", \\"status\\": \\"TODO\\", \\"projectId\\": " + project + "}";
+                    long id = send(post("/api/tasks"), null, task.formatted("First name"), 200).get("id").asLong();
+                    send(put("/api/tasks/" + id), null, task.formatted("Second name"), 200);
+                    JsonNode changes = get("/api/tasks/" + id + "/history");
+                    long created = changes.get(changes.size() - 1).get("id").asLong();
+                    JsonNode restored = send(post("/api/tasks/" + id + "/history/" + created + "/restore"), null, "{}", 200);
+                    assertThat(restored.get("row").get("title").asText()).isEqualTo("First name");
+                    assertThat(restored.get("skipped")).isEmpty();
+                    assertThat(get("/api/tasks/" + id).get("title").asText()).isEqualTo("First name");
+                }
+
+                @Test
+                void theWorkbookKeepsADateAsADate() throws Exception {
+                    long project = firstId("/api/projects");
+                    send(post("/api/tasks"), null, "{\\"title\\": \\"Dated for the sheet\\", \\"status\\": \\"TODO\\", \\"dueOn\\": \\"2026-05-10\\", \\"projectId\\": " + project + "}", 200);
+                    var started = mvc.perform(MockMvcRequestBuilders.get("/api/tasks/export.xlsx").param("q", "Dated for the sheet")).andReturn();
+                    byte[] workbook = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(started))
+                            .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+                    java.util.Map<String, String> parts = new java.util.LinkedHashMap<>();
+                    try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(workbook))) {
+                        for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                            parts.put(entry.getName(), new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+                        }
+                    }
+                    for (String xml : parts.values()) {
+                        javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                                .parse(new org.xml.sax.InputSource(new java.io.StringReader(xml)));
+                    }
+                    String sheet = parts.get("xl/worksheets/sheet1.xml").replace('"', '\\'');
+                    // The widths come before the rows; 2026-05-10 is day 46152 as Excel counts, in the date format.
+                    assertThat(sheet).contains("<cols><col min='1' max='1' width='16' customWidth='1'/>");
+                    assertThat(sheet.indexOf("<cols>")).isLessThan(sheet.indexOf("<sheetData>"));
+                    assertThat(sheet).containsPattern("<c r='[A-Z]+2' s='2'><v>46152</v></c>");
+                    assertThat(parts.get("xl/styles.xml")).contains("numFmtId=" + '"' + "14" + '"');
+                }
+
+            """;
+
     /** Added to the Projects backend: a second task of one project and title is a 409 naming both. */
     private static final String FIELD_MODEL_LIVE_TESTS = """
                 @Test
@@ -1457,10 +1566,12 @@ class GeneratedBackendBuildSmokeTests {
                     // Restoring over a change the caller has not seen is refused, then done when told to.
                     send(post(path + "/history/" + created + "/restore"), "carol", "{\\"latest\\":" + (newest - 1) + "}", 409);
                     JsonNode restored = send(post(path + "/history/" + created + "/restore"), "carol", "{\\"latest\\":" + newest + "}", 200);
-                    assertThat(restored.get("title").asText()).isEqualTo("Taxi");
+                    assertThat(restored.get("row").get("title").asText()).isEqualTo("Taxi");
                     // The workflow's status moves only by its transitions.
-                    assertThat(restored.get("status").asText()).isEqualTo("SUBMITTED");
-                    assertThat(restored.get("updatedBy").asText()).isEqualTo("carol");
+                    assertThat(restored.get("row").get("status").asText()).isEqualTo("SUBMITTED");
+                    assertThat(restored.get("row").get("updatedBy").asText()).isEqualTo("carol");
+                    // Every field the old version had is still a field of the row.
+                    assertThat(restored.get("skipped")).isEmpty();
                     history = get(path + "/history");
                     assertThat(history.get(0).get("action").asText()).isEqualTo("RESTORE");
                     assertThat(history.get(0).get("by").asText()).isEqualTo("carol");

@@ -60,9 +60,13 @@ public class ChangeHistory {
     /**
      * Puts the row back to what change {@code changeId} left. {@code latest}: the newest change the
      * caller saw; a newer one is a 409 naming who made it, unless {@code force}. Null skips the check.
+     * {@code check} is the entity's own say on the row as it would be saved — its validation and
+     * rules; what it throws leaves the row as it was. Answers the fields the version recorded
+     * that the row no longer has (renamed or removed since), which could not be put back.
      */
     @Transactional
-    public void restore(String entity, Object rowId, long changeId, Long latest, boolean force) {
+    public List<String> restore(String entity, Object rowId, long changeId, Long latest, boolean force,
+                                java.util.function.Consumer<Object> check) {
         Class<?> type = ChangeLogRecorder.TRACKED.entrySet().stream()
                 .filter(e -> e.getValue().name().equals(entity)).map(Map.Entry::getKey).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("No history is kept of " + entity));
@@ -110,12 +114,15 @@ public class ChangeHistory {
             }
             fields.setPropertyValue(name, value);
         }
+        List<String> gone = version.keySet().stream().filter(name -> !Arrays.asList(names).contains(name)).toList();
+        if (check != null) check.accept(row);
         ChangeLogRecorder.RESTORING.set(true);
         try {
             entityManager.flush();
         } finally {
             ChangeLogRecorder.RESTORING.remove();
         }
+        return gone;
     }
 
     /** A soft-deleted row brought back with plain SQL, which Hibernate does not see: logged here. */

@@ -194,7 +194,7 @@ c3d6c48718cc6ace2e8a2557cf103b196269662097d5fe836217bc79e77c0ab3  golden-blog/fr
 a5a0cc961c7222168f22d52f2675cd475dfb4252b34077902dfbbb35ca225604  golden-blog/frontend/src/shared/ui/menora/useMenoraTheme.ts
 e83b0db1901aa1023efe5ec7db118f7590a7d16dafed54ca6e067dcc68275781  golden-blog/frontend/src/shared/ui/stats.ts
 5f804d857de4f2fb03b94721e25d820a7b8a2f880a1a7b24936461637bf844df  golden-blog/frontend/src/shared/ui/useTheme.ts
-828983c072b07aa6b410ceda7481a8371216ad8d5ab693977480e5fcb849734c  golden-blog/frontend/src/shared/ui/widgets.tsx
+41bf6e96fef77e60a97de953b77d6815e7dc45c8dd0bb4f71abb1b4b18d6a828  golden-blog/frontend/src/shared/ui/widgets.tsx
 65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5  golden-blog/frontend/src/vite-env.d.ts
 4358487068b01a59311e920ceecfe6d4dff869906029b98ecf91c77fe8d0edde  golden-blog/frontend/src/widgets/README.md
 8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881  golden-blog/frontend/src/widgets/index.ts

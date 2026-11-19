@@ -24,8 +24,15 @@ interface Props {
 {{/formHasSteps}}
 }
 
-export function {{EntityName}}Form({ value, onChange, errors, isNew{{#formHasSteps}}, only{{/formHasSteps}} }: Props) {
-  const set = (k: keyof {{EntityName}}, v: unknown) => onChange({ ...value, [k]: v })
+export function {{EntityName}}Form({ value, onChange{{#hasShowWhenFields}}: report{{/hasShowWhenFields}}, errors, isNew{{#formHasSteps}}, only{{/formHasSteps}} }: Props) {
+{{#hasShowWhenFields}}  // A field its condition hides is emptied as it goes, in the model's order — as the server
+  // clears it on save — so what was typed there before is never sent to be checked.
+  const onChange = (next: Partial<{{EntityName}}>) => {
+    let row = next
+{{#hiddenFields}}    if (row.{{name}} != null && !{{{rowShowWhenTs}}}) row = { ...row, {{name}}: null }
+{{/hiddenFields}}    report(row)
+  }
+{{/hasShowWhenFields}}  const set = (k: keyof {{EntityName}}, v: unknown) => onChange({ ...value, [k]: v })
 {{#formHasSteps}}
   const show = (name: string) => !only || only.includes(name)
 {{/formHasSteps}}

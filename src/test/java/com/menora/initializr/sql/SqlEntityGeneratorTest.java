@@ -940,41 +940,41 @@ class SqlEntityGeneratorTest {
 
     @Test
     void extractColumns_aliasesAndDottedAndFunctions() {
-        assertThat(SqlEntityGenerator.extractProjectedColumns(
+        assertThat(SqlSelectReader.extractProjectedColumns(
                 "SELECT a AS x, b AS y FROM t")).containsExactly("x", "y");
-        assertThat(SqlEntityGenerator.extractProjectedColumns(
+        assertThat(SqlSelectReader.extractProjectedColumns(
                 "SELECT u.id, u.full_name FROM users u")).containsExactly("id", "full_name");
-        assertThat(SqlEntityGenerator.extractProjectedColumns(
+        assertThat(SqlSelectReader.extractProjectedColumns(
                 "SELECT count(*) AS n, max(p) AS hi FROM t")).containsExactly("n", "hi");
     }
 
     @Test
     void extractColumns_skipsStarAndUnaliasedExpressions() {
         // bare * and an unaliased function can't name a field; a plain column survives.
-        assertThat(SqlEntityGenerator.extractProjectedColumns(
+        assertThat(SqlSelectReader.extractProjectedColumns(
                 "SELECT *, count(*), id FROM t")).containsExactly("id");
-        assertThat(SqlEntityGenerator.extractProjectedColumns(
+        assertThat(SqlSelectReader.extractProjectedColumns(
                 "SELECT t.* FROM t")).isEmpty();
     }
 
     @Test
     void extractColumns_doesNotSplitInsideFunctionArgs() {
-        assertThat(SqlEntityGenerator.extractProjectedColumns(
+        assertThat(SqlSelectReader.extractProjectedColumns(
                 "SELECT coalesce(a, b) AS c, d FROM t")).containsExactly("c", "d");
     }
 
     @Test
     void extractColumns_handlesDistinctAndDistinctOn() {
-        assertThat(SqlEntityGenerator.extractProjectedColumns(
+        assertThat(SqlSelectReader.extractProjectedColumns(
                 "SELECT DISTINCT a, b FROM t")).containsExactly("a", "b");
-        assertThat(SqlEntityGenerator.extractProjectedColumns(
+        assertThat(SqlSelectReader.extractProjectedColumns(
                 "SELECT DISTINCT ON (region) region AS region, amount AS amount FROM sales"))
                 .containsExactly("region", "amount");
     }
 
     @Test
     void extractColumns_resolvesCteOuterProjection() {
-        assertThat(SqlEntityGenerator.extractProjectedColumns(
+        assertThat(SqlSelectReader.extractProjectedColumns(
                 "WITH recent AS (SELECT id FROM orders) SELECT a, b FROM recent"))
                 .containsExactly("a", "b");
     }

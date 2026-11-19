@@ -104,6 +104,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
         path={PATH}
         rollup="{{rollupQuery}}"
         search={search}
+{{#hasAggCurrency}}
+        currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
 {{#chartIsLine}}
         line
 {{/chartIsLine}}
@@ -141,6 +144,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           path={PATH}
           rollup="{{rollupQuery}}"
           search={search}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
 {{#chartIsLine}}
           line
 {{/chartIsLine}}

@@ -38,7 +38,9 @@ public final class SqlNames {
     public static String physical(String name, boolean quoted, SqlDialect dialect) {
         if (name == null || name.isEmpty()) return name;
         if (quoted) {
-            return plain(name, dialect) ? name : quote(name, dialect);
+            // A keyword keeps its quotes even where the database would store it the same bare:
+            // bare, it would not be read as a name at all.
+            return plain(name, dialect) && !SqlKeywords.reserved(name, dialect) ? name : quote(name, dialect);
         }
         if (dialect == SqlDialect.MYSQL && !name.equals(name.toLowerCase(Locale.ROOT))) {
             return quote(name, dialect);
@@ -54,6 +56,21 @@ public final class SqlNames {
     public static String physical(String stored, SqlDialect dialect) {
         if (stored == null || stored.isEmpty() || isQuoted(stored)) return stored;
         return physical(stored, false, dialect);
+    }
+
+    /**
+     * A bare name, quoted in the case {@code dialect} folds bare names to: {@code "order"} on
+     * PostgreSQL, {@code [order]} on SQL Server (which keeps a name as written), {@code "ORDER"} on
+     * the upper-folding databases. Quoted that way it is the very column the bare name would be —
+     * which is the point: a name that is a keyword can be written at all, and one that the
+     * database also takes bare keeps naming the same column.
+     */
+    public static String quoteFolded(String name, SqlDialect dialect) {
+        if (name == null || name.isEmpty() || isQuoted(name)) return name;
+        boolean lowerFold = dialect == SqlDialect.POSTGRESQL || dialect == SqlDialect.MYSQL;
+        String folded = dialect == SqlDialect.MSSQL ? name
+                : lowerFold ? name.toLowerCase(Locale.ROOT) : name.toUpperCase(Locale.ROOT);
+        return quote(folded, dialect);
     }
 
     /** True for {@code "x"}, {@code `x`} and {@code [x]} — the three styles Hibernate also reads. */

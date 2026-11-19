@@ -82,11 +82,14 @@ export function ChangeHistory({ path, fields, canRestore, version, onRestored }:
     setBusy(change.id)
     setMessage(null)
     try {
-      const row = await api.post<unknown>(`${path}/history/${change.id}/restore`, { latest: changes?.[0]?.id, force })
+      const answer = await api.post<{ row: unknown; skipped?: string[] }>(
+        `${path}/history/${change.id}/restore`, { latest: changes?.[0]?.id, force })
       setConflict(null)
-      setMessage(t('versionRestored'))
+      // A field the old version had and the row no longer has (renamed or removed since) is named.
+      const skipped = answer.skipped ?? []
+      setMessage(skipped.length > 0 ? t('versionRestoredWithout', { fields: skipped.join(', ') }) : t('versionRestored'))
       setAttempt(a => a + 1)
-      onRestored?.(row)
+      onRestored?.(answer.row)
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         // Someone changed the row after this list was read: show their change, then ask.

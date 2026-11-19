@@ -136,6 +136,7 @@ public final class LiveDdlWriter {
      */
     static String ident(DialectSupport support, String name) {
         boolean plain = PLAIN.matcher(name).matches() && !RESERVED.contains(name)
+                && !com.menora.initializr.sql.SqlKeywords.reservedAnywhere(name)
                 && name.equals(support.fold(name));
         if (plain) return name;
         if (support instanceof DialectSupport.SqlServer) {

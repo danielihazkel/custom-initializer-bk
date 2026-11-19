@@ -949,7 +949,7 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
                 .contains("export function BreakdownCard({ title, path, field, agg, valueField, labels, optionsPath, optionValue = 'id', optionLabel,")
                 .contains("const data = fillBuckets(")
-                .contains("<span>{formatStat(min + span / 2)}</span>");
+                .contains("<span>{formatStat(min + span / 2, currency)}</span>");
         assertThat(files.get(FE + "src/shared/ui/stats.ts"))
                 .contains("export function fillBuckets<T extends { key: string; label: string; value: number }>(rows: T[], bucket: string, agg?: string): T[] {");
         // The report's third chart asks for its totals table; the second does not get one.
@@ -1332,7 +1332,7 @@ class FullstackPagesIntegrationTests {
         assertThat(files.get(FE + "src/shared/ui/widgets.tsx"))
                 .contains("export function StackedBars(")
                 .contains("shape?: 'donut' | 'stacked' | 'area' | 'table'")
-                .contains("<StackedBars buckets={buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />");
+                .contains("<StackedBars currency={currency} buckets={buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />");
 
         assertChartRejected(Map.of("groupBy", "status", "kind", "pie"),
                 "unknown chart kind 'pie' (expected bar, donut, stacked, line, area or table)");

@@ -249,8 +249,10 @@ class FullstackFieldModelTests {
         assertThat(file(files, "project-form/model/validate.ts"))
                 .contains("value = { ...value, durationDays: rule.add(rule.daysBetweenDates(rule.date(value.startsOn), rule.date(value.endsOn)), 1) }");
         assertThat(file(files, "service/ProjectService.java")).doesNotContain("existing.setDurationDays(updated.getDurationDays());");
-        // Demo rows are derived too.
-        assertThat(file(files, "config/DemoDataLoader.java")).contains("rules.ProjectRules.derive(row);");
+        // Demo rows are derived too — and, the project having rules, one a rule is broken by is left out.
+        assertThat(file(files, "config/DemoDataLoader.java"))
+                .contains(".rules.ProjectRules.apply(row).isEmpty()) continue;")
+                .doesNotContain("rules.ProjectRules.derive(row);");
     }
 
     @Test

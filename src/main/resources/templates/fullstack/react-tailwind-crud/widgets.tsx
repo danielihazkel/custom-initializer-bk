@@ -187,7 +187,7 @@ function WidgetHeader({ title, onOpen }: { title: string; onOpen?: () => void })
 /** Horizontal bars scaled to the largest value. Shared by the breakdown widget and the report
  *  screen, which draw the same chart from the same rollup. With `onSelect` each bar is a button
  *  (a drill-down into the list). */
-export function BarRows({ data, onSelect }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void }) {
+export function BarRows({ data, onSelect, currency }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void; currency?: string }) {
   const max = data.reduce((m, d) => Math.max(m, d.value), 0) || 1
   return (
     <div className="space-y-2">
@@ -198,7 +198,7 @@ export function BarRows({ data, onSelect }: { data: { label: string; value: numb
             <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
               <div className="h-full rounded-full bg-brand" style={{ width: `${(d.value / max) * 100}%` }} />
             </div>
-            <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(d.value)}</div>
+            <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(d.value, currency)}</div>
           </>
         )
         return onSelect ? (
@@ -226,7 +226,7 @@ const CHART_PAD = 8
  *  with the container, so the stroke and the dots keep their proportions at any width. With
  *  `onSelect` each point is a button (a drill-down into its day/month/year); `area` fills the
  *  ground under the line, for a total read by its size. */
-export function LineChart({ data, onSelect, area: filled = false }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void; area?: boolean }) {
+export function LineChart({ data, onSelect, area: filled = false, currency }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void; area?: boolean; currency?: string }) {
   if (data.length === 0) return null
   const values = data.map(d => d.value)
   const max = Math.max(...values, 0)
@@ -246,15 +246,15 @@ export function LineChart({ data, onSelect, area: filled = false }: { data: { la
       <div className="flex gap-2">
       {/* The scale: the highest value, the middle and the lowest (never above zero). */}
       <div className="flex flex-col justify-between py-1 text-end text-[10px] tabular-nums text-muted" aria-hidden="true">
-        <span>{formatStat(max)}</span>
-        <span>{formatStat(min + span / 2)}</span>
-        <span>{formatStat(min)}</span>
+        <span>{formatStat(max, currency)}</span>
+        <span>{formatStat(min + span / 2, currency)}</span>
+        <span>{formatStat(min, currency)}</span>
       </div>
       <svg
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
         className="h-auto w-full min-w-0 flex-1"
         role="img"
-        aria-label={data.map(d => `${d.label}: ${formatStat(d.value)}`).join(', ')}
+        aria-label={data.map(d => `${d.label}: ${formatStat(d.value, currency)}`).join(', ')}
       >
         {[0, 0.5, 1].map(f => (
           <line
@@ -278,7 +278,7 @@ export function LineChart({ data, onSelect, area: filled = false }: { data: { la
         />
         {points.map(([x, y], i) => (
           <circle key={data[i].label} cx={x} cy={y} r={2.5} className="fill-brand">
-            <title>{`${data[i].label}: ${formatStat(data[i].value)}`}</title>
+            <title>{`${data[i].label}: ${formatStat(data[i].value, currency)}`}</title>
           </circle>
         ))}
         {onSelect && points.map(([x, y], i) => (
@@ -290,7 +290,7 @@ export function LineChart({ data, onSelect, area: filled = false }: { data: { la
             className="cursor-pointer fill-transparent hover:fill-brand/20 focus:fill-brand/20 focus:outline-none"
             role="button"
             tabIndex={0}
-            aria-label={`${data[i].label}: ${formatStat(data[i].value)}`}
+            aria-label={`${data[i].label}: ${formatStat(data[i].value, currency)}`}
             onClick={() => onSelect(i)}
             onKeyDown={e => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -498,14 +498,14 @@ const SERIES_COLORS = [
 const seriesColor = (i: number) => SERIES_COLORS[i % SERIES_COLORS.length]
 
 /** A legend row: a colour swatch per label. */
-function Legend({ items }: { items: { label: string; value?: number }[] }) {
+function Legend({ items, currency }: { items: { label: string; value?: number }[]; currency?: string }) {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
       {items.map((item, i) => (
         <li key={i} className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: seriesColor(i) }} />
           <span className="truncate">{item.label}</span>
-          {item.value != null && <span className="tabular-nums text-fg">{formatStat(item.value)}</span>}
+          {item.value != null && <span className="tabular-nums text-fg">{formatStat(item.value, currency)}</span>}
         </li>
       ))}
     </ul>
@@ -516,13 +516,13 @@ const RING_R = 42
 const RING_C = 2 * Math.PI * RING_R
 
 /** Shares of a whole as a ring, the total in its middle. With `onSelect` each slice is a button. */
-export function DonutChart({ data, onSelect }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void }) {
+export function DonutChart({ data, onSelect, currency }: { data: { label: string; value: number }[]; onSelect?: (index: number) => void; currency?: string }) {
   const total = data.reduce((sum, d) => sum + Math.max(d.value, 0), 0)
   let offset = 0
   return (
     <div className="flex flex-wrap items-center gap-5">
       <svg viewBox="0 0 100 100" className="h-32 w-32 shrink-0 -rotate-90" role="img"
-        aria-label={data.map(d => `${d.label}: ${formatStat(d.value)}`).join(', ')}>
+        aria-label={data.map(d => `${d.label}: ${formatStat(d.value, currency)}`).join(', ')}>
         <circle cx={50} cy={50} r={RING_R} fill="none" strokeWidth={14} className="stroke-surface-2" />
         {total > 0 && data.map((d, i) => {
           const length = (Math.max(d.value, 0) / total) * RING_C
@@ -540,7 +540,7 @@ export function DonutChart({ data, onSelect }: { data: { label: string; value: n
               className={onSelect ? 'cursor-pointer transition-opacity hover:opacity-80 focus:opacity-80 focus:outline-none' : undefined}
               role={onSelect ? 'button' : undefined}
               tabIndex={onSelect ? 0 : undefined}
-              aria-label={onSelect ? `${d.label}: ${formatStat(d.value)}` : undefined}
+              aria-label={onSelect ? `${d.label}: ${formatStat(d.value, currency)}` : undefined}
               onClick={onSelect && (() => onSelect(i))}
               onKeyDown={onSelect && (e => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -549,17 +549,17 @@ export function DonutChart({ data, onSelect }: { data: { label: string; value: n
                 }
               })}
             >
-              <title>{`${d.label}: ${formatStat(d.value)}`}</title>
+              <title>{`${d.label}: ${formatStat(d.value, currency)}`}</title>
             </circle>
           )
           offset += length
           return slice
         })}
         <text x={50} y={50} textAnchor="middle" dominantBaseline="central" transform="rotate(90 50 50)"
-          className="fill-fg text-[15px] font-semibold tabular-nums">{formatStat(total)}</text>
+          className="fill-fg text-[15px] font-semibold tabular-nums">{formatStat(total, currency)}</text>
       </svg>
       <div className="min-w-0 flex-1">
-        <Legend items={data} />
+        <Legend items={data} currency={currency} />
       </div>
     </div>
   )
@@ -567,9 +567,11 @@ export function DonutChart({ data, onSelect }: { data: { label: string; value: n
 
 /** Records grouped by `field` (an enum or boolean column), rolled up by the backend — as bars, or
  *  with `donut` as shares of a ring. */
-export function BreakdownCard({ title, path, field, agg, valueField, labels, optionsPath, optionValue = 'id', optionLabel, params = '', donut = false, onSelect, onOpen, className = '' }: {
+export function BreakdownCard({ title, path, field, agg, valueField, labels, optionsPath, optionValue = 'id', optionLabel, currency, params = '', donut = false, onSelect, onOpen, className = '' }: {
   title: string
   path: string
+  /** The currency the numbers are written in, when they are a rollup of money. */
+  currency?: string
   field: string
   /** sum/avg/min/max over `valueField`; omitted counts records. */
   agg?: string
@@ -603,7 +605,7 @@ export function BreakdownCard({ title, path, field, agg, valueField, labels, opt
       <Status failed={failed} loading={stats == null} empty={data.length === 0} onRetry={retry} />
       {data.length > 0 && !failed && (() => {
         const select = onSelect && ((i: number) => { if (data[i].key !== '') onSelect(data[i].key) })
-        return donut ? <DonutChart data={data} onSelect={select} /> : <BarRows data={data} onSelect={select} />
+        return donut ? <DonutChart currency={currency} data={data} onSelect={select} /> : <BarRows currency={currency} data={data} onSelect={select} />
       })()}
     </div>
   )
@@ -611,9 +613,11 @@ export function BreakdownCard({ title, path, field, agg, valueField, labels, opt
 
 /** Records grouped by `field`, each group's bar split by the `series` column — one stacked bar
  *  per group, largest first, with a legend of the series. */
-export function StackedCard({ title, path, field, series, agg, valueField, labels, seriesLabels, params = '', onSelect, onOpen, className = '' }: {
+export function StackedCard({ title, path, field, series, agg, valueField, labels, seriesLabels, currency, params = '', onSelect, onOpen, className = '' }: {
   title: string
   path: string
+  /** The currency the numbers are written in, when they are a rollup of money. */
+  currency?: string
   field: string
   series: string
   agg?: string
@@ -634,7 +638,7 @@ export function StackedCard({ title, path, field, series, agg, valueField, label
       <WidgetHeader title={title} onOpen={onOpen} />
       <Status failed={failed} loading={stats == null} empty={buckets.length === 0} onRetry={retry} />
       {buckets.length > 0 && !failed && (
-        <StackedBars buckets={buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />
+        <StackedBars currency={currency} buckets={buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />
       )}
     </div>
   )
@@ -642,12 +646,14 @@ export function StackedCard({ title, path, field, series, agg, valueField, label
 
 /** The groups of a split rollup (one bucket per group and series) as stacked bars, largest first,
  *  with a legend of the series. Shared by the stacked widget and a stacked report chart. */
-export function StackedBars({ buckets, labels, seriesLabels, onSelect }: {
+export function StackedBars({ buckets, labels, seriesLabels, onSelect, currency }: {
   buckets: StatsBucket[]
   labels?: Record<string, string>
   seriesLabels?: Record<string, string>
   /** A click on a bar, with its group's key. */
   onSelect?: (key: string) => void
+  /** The currency the numbers are written in, when they are a rollup of money. */
+  currency?: string
 }) {
   // Series in first-seen order, so the colours stay put as the numbers change.
   const seriesKeys = [...new Set(buckets.map(b => b.series ?? ''))]
@@ -671,11 +677,11 @@ export function StackedBars({ buckets, labels, seriesLabels, onSelect }: {
                     key={seriesKeys[i]}
                     className="h-full"
                     style={{ width: `${(v / max) * 100}%`, background: seriesColor(i) }}
-                    title={`${seriesLabel(seriesKeys[i])}: ${formatStat(v)}`}
+                    title={`${seriesLabel(seriesKeys[i])}: ${formatStat(v, currency)}`}
                   />
                 ))}
               </div>
-              <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(g.total)}</div>
+              <div className="w-16 shrink-0 text-end tabular-nums text-fg">{formatStat(g.total, currency)}</div>
             </>
           )
           return onSelect && g.key !== '' ? (
@@ -700,9 +706,11 @@ export function StackedBars({ buckets, labels, seriesLabels, onSelect }: {
 /** One aggregate over two columns at once: a row per `rows` group, a column per `columns` group,
  *  each cell the rows in both — with row, column and grand totals for a count or a sum (an average
  *  or an extreme does not add up). A relation on either axis is named from its target's list. */
-export function PivotCard({ title, path, rows, columns, agg, valueField, rowLabels, columnLabels, rowOptionsPath, rowOptionValue = 'id', rowOptionLabel, columnOptionsPath, columnOptionValue = 'id', columnOptionLabel, params = '', onSelect, onOpen, className = '' }: {
+export function PivotCard({ title, path, rows, columns, agg, valueField, rowLabels, columnLabels, rowOptionsPath, rowOptionValue = 'id', rowOptionLabel, columnOptionsPath, columnOptionValue = 'id', columnOptionLabel, currency, params = '', onSelect, onOpen, className = '' }: {
   title: string
   path: string
+  /** The currency the numbers are written in, when they are a rollup of money. */
+  currency?: string
   /** The column whose groups are the rows, and the one whose groups are the columns. */
   rows: string
   columns: string
@@ -759,7 +767,7 @@ export function PivotCard({ title, path, rows, columns, agg, valueField, rowLabe
                   <th scope="row" className="sticky start-0 bg-surface py-2 pe-3 text-start font-medium text-fg">{nameOf(r, rowOptionsPath, rowNames, rowLabels)}</th>
                   {columnKeys.map(c => {
                     const value = cell(r, c)
-                    const text = value == null ? '—' : formatStat(value)
+                    const text = value == null ? '—' : formatStat(value, currency)
                     return (
                       <td key={c} className="px-2 py-2 text-end tabular-nums text-fg">
                         {onSelect && value != null && r !== '' && c !== '' ? (
@@ -768,7 +776,7 @@ export function PivotCard({ title, path, rows, columns, agg, valueField, rowLabe
                       </td>
                     )
                   })}
-                  {totals && <td className="ps-2 py-2 text-end font-semibold tabular-nums text-fg">{formatStat(sum(columnKeys.map(c => cell(r, c))))}</td>}
+                  {totals && <td className="ps-2 py-2 text-end font-semibold tabular-nums text-fg">{formatStat(sum(columnKeys.map(c => cell(r, c))), currency)}</td>}
                 </tr>
               ))}
             </tbody>
@@ -777,9 +785,9 @@ export function PivotCard({ title, path, rows, columns, agg, valueField, rowLabe
                 <tr className="border-t-2 border-border font-semibold text-fg">
                   <th scope="row" className="sticky start-0 bg-surface py-2 pe-3 text-start">{t('total')}</th>
                   {columnKeys.map(c => (
-                    <td key={c} className="px-2 py-2 text-end tabular-nums">{formatStat(sum(rowKeys.map(r => cell(r, c))))}</td>
+                    <td key={c} className="px-2 py-2 text-end tabular-nums">{formatStat(sum(rowKeys.map(r => cell(r, c))), currency)}</td>
                   ))}
-                  <td className="ps-2 py-2 text-end tabular-nums">{formatStat(stats?.total ?? null)}</td>
+                  <td className="ps-2 py-2 text-end tabular-nums">{formatStat(stats?.total ?? null, currency)}</td>
                 </tr>
               </tfoot>
             )}
@@ -901,9 +909,11 @@ export function ListCard({ title, onOpen, className = '', children }: { title: s
 }
 
 /** A time series of `agg` over the temporal column `on`, bucketed by day/month/year. */
-export function TrendCard({ title, path, on, bucket, agg, field, params = '', onSelect, onOpen, className = '' }: {
+export function TrendCard({ title, path, on, bucket, agg, field, currency, params = '', onSelect, onOpen, className = '' }: {
   title: string
   path: string
+  /** The currency the numbers are written in, when they are a rollup of money. */
+  currency?: string
   on: string
   bucket: string
   agg?: string
@@ -924,7 +934,7 @@ export function TrendCard({ title, path, on, bucket, agg, field, params = '', on
       <WidgetHeader title={title} onOpen={onOpen} />
       <Status failed={failed} loading={stats == null} empty={data.length === 0} onRetry={retry} />
       {data.length > 0 && !failed && (
-        <LineChart data={data} onSelect={onSelect && (i => { if (data[i].key !== '') onSelect(data[i].key) })} />
+        <LineChart currency={currency} data={data} onSelect={onSelect && (i => { if (data[i].key !== '') onSelect(data[i].key) })} />
       )}
     </div>
   )
@@ -932,9 +942,11 @@ export function TrendCard({ title, path, on, bucket, agg, field, params = '', on
 
 /** The largest `limit` groups of `by` — an enum/boolean column, or a relation whose ids are named
  *  from its target's list (`optionsPath`) — ranked by the backend. */
-export function TopList({ title, path, by, agg, valueField, limit, labels, optionsPath, optionValue = 'id', optionLabel, params = '', onSelect, onOpen, className = '' }: {
+export function TopList({ title, path, by, agg, valueField, limit, labels, optionsPath, optionValue = 'id', optionLabel, currency, params = '', onSelect, onOpen, className = '' }: {
   title: string
   path: string
+  /** The currency the numbers are written in, when they are a rollup of money. */
+  currency?: string
   by: string
   agg?: string
   valueField?: string
@@ -971,7 +983,7 @@ export function TopList({ title, path, by, agg, valueField, limit, labels, optio
               <>
                 <span className="w-5 shrink-0 tabular-nums text-muted">{i + 1}</span>
                 <span className={`min-w-0 flex-1 truncate ${onSelect && row.key !== '' ? 'font-medium text-brand' : 'text-fg'}`}>{row.label}</span>
-                <span className="shrink-0 tabular-nums font-medium text-fg">{formatStat(row.value)}</span>
+                <span className="shrink-0 tabular-nums font-medium text-fg">{formatStat(row.value, currency)}</span>
               </>
             )
             return (
@@ -1098,10 +1110,12 @@ function useOptionNames(optionsPath: string | undefined, optionValue: string, op
 /** One chart of a report page: bars (an enum/boolean group) or a line (a date, bucketed) from the
  *  rollup of the filtered rows — or, by `shape`, a ring of shares, bars split by a series, a filled
  *  area, or only the table — and, for the page's first chart, the totals table beneath it. */
-export function ReportChart({ title, path, rollup, search, line = false, shape, labels, seriesLabels, optionsPath, optionValue = 'id', optionLabel, groupLabel, valueLabel, table = false, onSelect }: {
+export function ReportChart({ title, path, rollup, search, line = false, shape, labels, seriesLabels, optionsPath, optionValue = 'id', optionLabel, groupLabel, valueLabel, currency, table = false, onSelect }: {
   /** Shown when the page has more than one chart. */
   title?: string
   path: string
+  /** The currency the numbers are written in, when they are a rollup of money. */
+  currency?: string
   /** The fixed half of the /stats query. */
   rollup: string
   /** The filter bar's values, as list params. */
@@ -1151,10 +1165,10 @@ export function ReportChart({ title, path, rollup, search, line = false, shape, 
       ) : (
         <>
           {shape === 'table' ? null
-            : shape === 'stacked' ? <StackedBars buckets={stats.buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />
-              : shape === 'donut' ? <DonutChart data={points} onSelect={select} />
-                : line ? <LineChart data={points} onSelect={select} area={shape === 'area'} />
-                  : <BarRows data={points} onSelect={select} />}
+            : shape === 'stacked' ? <StackedBars currency={currency} buckets={stats.buckets} labels={labels} seriesLabels={seriesLabels} onSelect={onSelect} />
+              : shape === 'donut' ? <DonutChart currency={currency} data={points} onSelect={select} />
+                : line ? <LineChart currency={currency} data={points} onSelect={select} area={shape === 'area'} />
+                  : <BarRows currency={currency} data={points} onSelect={select} />}
           {(table || shape === 'table') && (
             <table className={`${shape === 'table' ? '' : 'mt-5 '}w-full text-sm`}>
               <thead>
@@ -1167,14 +1181,14 @@ export function ReportChart({ title, path, rollup, search, line = false, shape, 
                 {rows.map((row, i) => (
                   <tr key={i}>
                     <td className="py-2 text-fg">{row.label}</td>
-                    <td className="py-2 text-end tabular-nums text-fg">{formatStat(row.value)}</td>
+                    <td className="py-2 text-end tabular-nums text-fg">{formatStat(row.value, currency)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-border font-semibold text-fg">
                   <td className="py-2">{t('total')}</td>
-                  <td className="py-2 text-end tabular-nums">{formatStat(stats.total)}</td>
+                  <td className="py-2 text-end tabular-nums">{formatStat(stats.total, currency)}</td>
                 </tr>
               </tfoot>
             </table>

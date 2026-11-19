@@ -227,6 +227,43 @@ public final class FullstackExampleRequests {
         return e;
     }
 
+    /**
+     * Names that are SQL keywords somewhere: fields {@code key}, {@code order}, {@code user},
+     * {@code comment}, {@code date}, {@code level} and {@code value}, a table {@code values} and a
+     * table {@code user} — with the options whose SQL names a column or a table itself (soft
+     * delete, locking, a unique key, a link's label, search, export, demo data).
+     * Asserted as text, built on H2 ({@code -Dsmoke.be}) and created on the other databases
+     * ({@code -Dsmoke.docker}).
+     */
+    public static Map<String, Object> keywordNamesBody() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "words");
+        body.put("packageName", "com.menora.words");
+        body.put("bootVersion", "3.2.1");
+        body.put("frontendTemplateSet", "react-tailwind-crud");
+        body.put("dependencies", new ArrayList<>(List.of("web", "data-jpa", "h2", "validation")));
+        body.put("opts", Map.of("scaffold", List.of("audit", "softDelete", "optimisticLocking",
+                "csvExport", "seedData", "tests")));
+        Map<String, Object> setting = entity("Setting", List.of(
+                Map.of("name", "id", "type", "LONG", "primaryKey", true, "generated", true),
+                Map.of("name", "key", "type", "STRING", "required", true, "unique", true),
+                Map.of("name", "order", "type", "INTEGER"),
+                Map.of("name", "user", "type", "STRING"),
+                Map.of("name", "comment", "type", "STRING"),
+                Map.of("name", "date", "type", "LOCAL_DATE"),
+                Map.of("name", "level", "type", "INTEGER"),
+                Map.of("name", "value", "type", "BIG_DECIMAL")));
+        setting.put("tableName", "values");
+        setting.put("uniqueKeys", List.of(Map.of("fields", List.of("order", "user"))));
+        Map<String, Object> batch = entity("Batch", List.of(
+                Map.of("name", "id", "type", "LONG", "primaryKey", true, "generated", true),
+                Map.of("name", "name", "type", "STRING", "required", true)),
+                Map.of("type", "MANY_TO_ONE", "fieldName", "setting", "targetEntity", "Setting", "required", true));
+        batch.put("tableName", "user");
+        body.put("entities", List.of(setting, batch));
+        return body;
+    }
+
     /** POSTs a fullstack request; the response, whatever its status. */
     public static ResponseEntity<byte[]> post(TestRestTemplate rest, Map<String, Object> body) {
         HttpHeaders headers = new HttpHeaders();

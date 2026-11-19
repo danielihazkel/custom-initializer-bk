@@ -22,11 +22,21 @@ import java.util.zip.ZipOutputStream;
  * }
  * </pre>
  *
- * A number is written as a number and a boolean as a boolean; anything else as text, exactly as
- * {@code toString()} gives it (a date is ISO 8601). Text is never read as a formula: it is an
- * inline string, not a cell value Excel evaluates.
+ * A number is written as a number, a boolean as a boolean, and a date or a date and time as a
+ * date cell (so Excel sorts and filters it as one); anything else as text, exactly as
+ * {@code toString()} gives it (an instant is ISO 8601, in UTC). Text is never read as a formula:
+ * it is an inline string, not a cell value Excel evaluates. Each column is as wide as its
+ * heading asks, within limits. A sheet holds {@value #MAX_ROWS} rows: see {@link #full()}.
  */
 public final class XlsxWriter implements Closeable {
+
+    /** The rows of one sheet, the heading among them — Excel's own limit. */
+    public static final int MAX_ROWS = 1_048_576;
+    /** Excel counts days from here (and treats 1900 as a leap year, which this date allows for). */
+    private static final long EXCEL_EPOCH_DAY = java.time.LocalDate.of(1899, 12, 30).toEpochDay();
+    private static final int BOLD = 1;
+    private static final int DATE = 2;
+    private static final int DATE_TIME = 3;
 
     private static final String MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
     private static final String RELS = "http://schemas.openxmlformats.org/package/2006/relationships";
@@ -36,6 +46,8 @@ public final class XlsxWriter implements Closeable {
     private final ZipOutputStream zip;
     private final Writer sheet;
     private int rows;
+    /** Whether the rows have begun: the column widths have to be written before the first of them. */
+    private boolean begun;
 
     public XlsxWriter(OutputStream out, String sheetName) throws IOException {
         zip = new ZipOutputStream(out, StandardCharsets.UTF_8);
@@ -60,7 +72,8 @@ public final class XlsxWriter implements Closeable {
                 + "<Relationship Id=\"rId1\" Type=\"" + DOC_RELS + "/worksheet\" Target=\"worksheets/sheet1.xml\"/>"
                 + "<Relationship Id=\"rId2\" Type=\"" + DOC_RELS + "/styles\" Target=\"styles.xml\"/>"
                 + "</Relationships>");
-        // Two cell formats: 0 the default, 1 bold (the header row).
+        // Four cell formats: 0 the default, 1 bold (the header row), 2 a date, 3 a date and time
+        // (14 and 22 are Excel's built-in formats, shown in the reader's own regional style).
         entry("xl/styles.xml", XML
                 + "<styleSheet xmlns=\"" + MAIN + "\">"
                 + "<fonts count=\"2\"><font><sz val=\"11\"/><name val=\"Calibri\"/></font>"
@@ -69,26 +82,48 @@ public final class XlsxWriter implements Closeable {
                 + "<fill><patternFill patternType=\"gray125\"/></fill></fills>"
                 + "<borders count=\"1\"><border><left/><right/><top/><bottom/><diagonal/></border></borders>"
                 + "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>"
-                + "<cellXfs count=\"2\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>"
-                + "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/></cellXfs>"
+                + "<cellXfs count=\"4\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>"
+                + "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>"
+                + "<xf numFmtId=\"14\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyNumberFormat=\"1\"/>"
+                + "<xf numFmtId=\"22\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyNumberFormat=\"1\"/></cellXfs>"
                 + "</styleSheet>");
         // The sheet is the entry left open: rows are written into it until close().
         zip.putNextEntry(new ZipEntry("xl/worksheets/sheet1.xml"));
         sheet = new OutputStreamWriter(zip, StandardCharsets.UTF_8);
-        sheet.write(XML + "<worksheet xmlns=\"" + MAIN + "\"><sheetData>");
+        sheet.write(XML + "<worksheet xmlns=\"" + MAIN + "\">");
     }
 
-    /** The first row, in bold: the columns' names. */
+    /** The first row, in bold: the columns' names. Each column is made wide enough for its name. */
     public void header(String... labels) throws IOException {
-        write(1, (Object[]) labels);
+        if (!begun && labels.length > 0) {
+            StringBuilder cols = new StringBuilder("<cols>");
+            for (int i = 0; i < labels.length; i++) {
+                // A date and time needs about 16 characters; a long heading is not given the whole screen.
+                int width = Math.max(16, Math.min(60, (labels[i] == null ? 0 : labels[i].length()) + 4));
+                cols.append("<col min=\"").append(i + 1).append("\" max=\"").append(i + 1)
+                        .append("\" width=\"").append(width).append("\" customWidth=\"1\"/>");
+            }
+            sheet.write(cols.append("</cols>").toString());
+        }
+        write(BOLD, (Object[]) labels);
     }
 
-    /** One row: a cell per value, left to right. A null leaves its cell empty. */
+    /** One row: a cell per value, left to right. A null leaves its cell empty. Nothing is written once the sheet is {@link #full()}. */
     public void row(Object... cells) throws IOException {
+        if (full()) return;
         write(0, cells);
     }
 
+    /** Whether the sheet holds all the rows Excel takes: the rest of a longer list is left out. */
+    public boolean full() {
+        return rows >= MAX_ROWS;
+    }
+
     private void write(int style, Object... cells) throws IOException {
+        if (!begun) {
+            sheet.write("<sheetData>");
+            begun = true;
+        }
         rows++;
         StringBuilder xml = new StringBuilder(64 + cells.length * 48);
         xml.append("<row r=\"").append(rows).append("\">");
@@ -96,6 +131,18 @@ public final class XlsxWriter implements Closeable {
             Object value = cells[i];
             if (value == null) continue;
             xml.append("<c r=\"").append(column(i)).append(rows).append('"');
+            if (style == 0 && value instanceof java.time.LocalDate date) {
+                xml.append(" s=\"").append(DATE).append("\"><v>").append(date.toEpochDay() - EXCEL_EPOCH_DAY).append("</v></c>");
+                continue;
+            }
+            if (style == 0 && value instanceof java.time.LocalDateTime moment) {
+                // A day and the part of it gone by, as Excel keeps a moment.
+                BigDecimal serial = BigDecimal.valueOf(moment.toLocalDate().toEpochDay() - EXCEL_EPOCH_DAY)
+                        .add(BigDecimal.valueOf(moment.toLocalTime().toSecondOfDay())
+                                .divide(BigDecimal.valueOf(86_400), 10, java.math.RoundingMode.HALF_UP));
+                xml.append(" s=\"").append(DATE_TIME).append("\"><v>").append(serial.toPlainString()).append("</v></c>");
+                continue;
+            }
             if (style != 0) xml.append(" s=\"").append(style).append('"');
             if (value instanceof Boolean flag) {
                 xml.append(" t=\"b\"><v>").append(flag ? '1' : '0').append("</v></c>");
@@ -112,7 +159,7 @@ public final class XlsxWriter implements Closeable {
 
     @Override
     public void close() throws IOException {
-        sheet.write("</sheetData></worksheet>");
+        sheet.write(begun ? "</sheetData></worksheet>" : "<sheetData/></worksheet>");
         sheet.flush();
         zip.closeEntry();
         zip.finish();

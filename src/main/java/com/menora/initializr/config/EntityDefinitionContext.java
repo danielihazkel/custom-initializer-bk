@@ -51,6 +51,8 @@ public class EntityDefinitionContext {
         DOMAIN_PACKAGE.remove();
         SHELL_USER.remove();
         SCHEMA.remove();
+        // The database the request's names were rendered for goes with the request.
+        com.menora.initializr.fullstack.SchemaNames.clearDatabase();
     }
 
     /** The schema the generation on this thread wrote a migration for, or null when it wrote none. */

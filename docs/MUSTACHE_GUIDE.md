@@ -367,7 +367,7 @@ Driven by the request `opts` map (`{ "scaffold": ["tests","audit",…] }`) and e
 `optScaffold<Option>`. The two render paths do not share a context, but they no longer need wiring
 one by one: `fullstack/ScaffoldOption` is the single list (key, flag, which path reads it, per entity
 or not), and both `FullstackProjectGenerationConfiguration` (backend) and
-`FullstackStarterController.renderFrontend` (frontend) call `ScaffoldOption.putFlags(ctx, options, side)`,
+`FullstackProjectAssembler.renderFrontend` (frontend) call `ScaffoldOption.putFlags(ctx, options, side)`,
 which sets every flag that path reads. **A new option is one `ScaffoldOption` constant** — then the
 templates, a re-pin of the schema (`GET /metadata/fullstack/schema`), `npm run sync:schema` in `ui/`
 and a label in the UI's `scaffoldOptions.ts` (its parity test names what is missing). An unknown key is
@@ -464,7 +464,7 @@ Project & versions:
 | `nodeVersion` | `"18"` / `"20"` / `"22"` |
 | `packageManager`, `isNpm`, `isPnpm` | package manager + convenience flags |
 | `typescriptVersion`, `viteVersion`, `basePath` | tooling |
-| `department`, `departmentUpper`, `departmentName` | selected department (see §3 *Department*); added by `FrontendProjectGenerator.renderInto` / `FullstackStarterController.renderFrontend` after `build(...)` |
+| `department`, `departmentUpper`, `departmentName` | selected department (see §3 *Department*); added by `FrontendProjectGenerator.renderInto` / `FullstackProjectAssembler.renderFrontend` after `build(...)` |
 
 Backend pairing:
 
@@ -686,7 +686,7 @@ row.
   `ctx.put(...)` there is what makes a new `{{name}}` usable; there's nowhere else to wire it.
 - **A new scaffold option is a `ScaffoldOption` constant** — `ScaffoldOption.putFlags` sets its flag on
   both render paths (backend `FullstackProjectGenerationConfiguration`, frontend
-  `FullstackStarterController.renderFrontend`); don't put an `optScaffold*` flag into a context by hand.
+  `FullstackProjectAssembler.renderFrontend`); don't put an `optScaffold*` flag into a context by hand.
 - **A new generated package holding a JPA entity** goes into `FeatureContext.supportPackages`, which
   feeds `dsExtraPackages`; otherwise the hand-written datasource configs do not scan it.
 - **`YAML_MERGE` rows honour `substitutionType`** — a `MUSTACHE` YAML_MERGE row is rendered with the
@@ -704,7 +704,7 @@ row.
 | Backend dep context | `extension/dynamic/DynamicProjectGenerationConfiguration.java` (`buildBaseContext`, `toPascalCase`, `resolveTargetPath`) |
 | Fullstack entity context | `fullstack/EntityScaffoldContext.java` |
 | Frontend context | `extension/frontend/FrontendMustacheContext.java`, `FrontendProjectGenerator.java` |
-| Opt flags wiring | `extension/fullstack/FullstackProjectGenerationConfiguration.java`, `config/FullstackStarterController.java` |
+| Opt flags wiring | `extension/fullstack/FullstackProjectGenerationConfiguration.java`, `config/FullstackProjectAssembler.java` |
 | Department vars | `config/DepartmentResolver.java`, `config/ProjectOptionsContext.java` (`department()`) |
 | Row model | `db/entity/FileContributionEntity.java`, `db/entity/EntityTemplateFileEntity.java` |
 | Seed manifests | `resources/catalog/file-contributions.json`, `resources/catalog/frontend/file-contributions.json`, `resources/templates/fullstack/<set>/manifest.json` |

@@ -270,10 +270,13 @@ export function use{{EntityName}}List(columns: {{EntityName}}Column[]{{#hasPages
   const exportXlsx = () => {
     const params = new URLSearchParams()
     if (debouncedSearch.trim() !== '') params.set('q', debouncedSearch.trim())
-{{#hasFilters}}    for (const [key, value] of Object.entries(filters)) {
+{{^auditApplicable}}{{#hasFilters}}    for (const [key, value] of Object.entries({{#calendarRanged}}listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}scopedFilters{{/pageScopeable}}{{^pageScopeable}}filters{{/pageScopeable}}{{/calendarRanged}})) {
       if (value !== '' && value != null) params.set(key, value)
     }
-{{/hasFilters}}    if (sort) params.set('sort', `${sort.field},${sort.direction}`)
+{{/hasFilters}}{{/auditApplicable}}{{#auditApplicable}}    for (const [key, value] of Object.entries(withMine({{#hasFilters}}{{#calendarRanged}}listFilters{{/calendarRanged}}{{^calendarRanged}}{{#pageScopeable}}scopedFilters{{/pageScopeable}}{{^pageScopeable}}filters{{/pageScopeable}}{{/calendarRanged}}{{/hasFilters}}) ?? {})) {
+      if (value !== '' && value != null) params.set(key, value)
+    }
+{{/auditApplicable}}    if (sort) params.set('sort', `${sort.field},${sort.direction}`)
     return sheetApi.download(`/api/{{entityNamePluralKebab}}/export.xlsx?${params}`, '{{entityNamePluralKebab}}.xlsx')
   }
 {{/optScaffoldXlsxExport}}{{#importApplicable}}  const [importing, setImporting] = useState(false)
@@ -410,7 +413,24 @@ export function use{{EntityName}}List(columns: {{EntityName}}Column[]{{#hasPages
       toast.success(isNew ? t('xCreated', { x: '{{entityLabelTs}}' }) : t('xUpdated', { x: '{{entityLabelTs}}' }))
       close()
     } catch (e) {
-      // A 400 carries per-field messages — show them inline; anything else is a toast.
+{{#deletedHoldsKeys}}      // A deleted record still holds one of the values: say which, and offer to bring it back
+      // instead (the save is not repeated — the restored record is the one that has the value).
+      const held = e instanceof ApiError ? (e.body as { deleted?: { id?: number | string } } | undefined)?.deleted?.id : undefined
+      if (e instanceof ApiError && held != null) {
+        if (e.fieldErrors) setFormErrors(e.fieldErrors)
+        toast.error(e.message, {
+          action: {
+            label: t('restoreIt'),
+            onClick: () => {
+              restore(held)
+                .then(() => { toast.success(t('xRestored', { x: '{{entityLabelTs}}' })); close() })
+                .catch(err => toast.error(err instanceof Error ? err.message : String(err)))
+            },
+          },
+        })
+        return
+      }
+{{/deletedHoldsKeys}}      // A 400 carries per-field messages — show them inline; anything else is a toast.
       if (e instanceof ApiError && e.fieldErrors) {
         setFormErrors(e.fieldErrors)
         toast.error(t('fixHighlighted'))

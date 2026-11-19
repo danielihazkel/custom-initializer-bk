@@ -372,6 +372,9 @@ public final class GeneratedTests {
             if (e.schema() != null && !e.schema().isBlank() && !e.isView()) schemas.add(e.schema().replaceAll("[\"`\\[\\]]", ""));
         }
         StringBuilder url = new StringBuilder("jdbc:h2:mem:api-test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false");
+        // Names the application's own database takes bare, and H2 would read as keywords.
+        List<String> freed = SchemaNames.freedOnH2(entities);
+        if (!freed.isEmpty()) url.append(";NON_KEYWORDS=").append(String.join(",", freed));
         if (!schemas.isEmpty()) {
             url.append(";INIT=");
             List<String> creates = schemas.stream().map(s -> "CREATE SCHEMA IF NOT EXISTS " + s).toList();

@@ -281,6 +281,27 @@ public final class FeatureContext {
         };
     }
 
+    /**
+     * Whether a computed field's formula reads the clock ({@code today()}, {@code now()}) and
+     * nothing of a linked row: its stored value is then only the last save's, so a read answers
+     * it computed afresh. (One that reads a link stays as saved — the link is not loaded on a read.)
+     */
+    static boolean readsClock(EntityDefinition entity, FieldDefinition f) {
+        if (!f.computed()) return false;
+        var c = com.menora.initializr.fullstack.expr.ExprCheck.check(f.formula(), entity, null);
+        return c.paths().isEmpty() && readsClock(c.root());
+    }
+
+    private static boolean readsClock(com.menora.initializr.fullstack.expr.Expr.Node node) {
+        return switch (node) {
+            case com.menora.initializr.fullstack.expr.Expr.Call call ->
+                    call.fn().equals("today") || call.fn().equals("now") || call.args().stream().anyMatch(FeatureContext::readsClock);
+            case com.menora.initializr.fullstack.expr.Expr.Unary unary -> readsClock(unary.operand());
+            case com.menora.initializr.fullstack.expr.Expr.Binary binary -> readsClock(binary.left()) || readsClock(binary.right());
+            default -> false;
+        };
+    }
+
     /** What the rules class does before it checks: hide (clear) and compute. */
     static void putDerivations(Map<String, Object> view, EntityDefinition entity) {
         List<Map<String, Object>> hidden = new ArrayList<>();
@@ -295,6 +316,7 @@ public final class FeatureContext {
                 TemplateText.putText(h, "showWhenText", f.showWhen());
                 h.put("showWhenJava", com.menora.initializr.fullstack.expr.ExprCode.java(when, "row"));
                 h.put("showWhenTs", "rule.applies(" + com.menora.initializr.fullstack.expr.ExprCode.ts(when, "value") + ")");
+                h.put("rowShowWhenTs", "rule.applies(" + com.menora.initializr.fullstack.expr.ExprCode.ts(when, "row") + ")");
                 hidden.add(h);
             }
             if (f.computed()) {
@@ -304,6 +326,8 @@ public final class FeatureContext {
                 TemplateText.putText(c, "formulaText", f.formula());
                 c.put("formulaJava", computedJava(entity, f));
                 c.put("formulaTs", computedTs(entity, f));
+                c.put("readsClock", readsClock(entity, f));
+                c.put("javaType", FieldViewModel.of(Naming.toPascalCase(entity.name()), f).get("javaType"));
                 computed.add(c);
             }
         }
@@ -399,6 +423,79 @@ public final class FeatureContext {
             out.add(kv);
         }
         return out;
+    }
+
+    /**
+     * One probe per unique constraint of the entity — a unique field, a unique key — for a row
+     * that is deleted but still holds the values: the query (the deleted row's key), how each
+     * member's value is read off a row, the fields a client knows and the message. A soft-deleted
+     * row keeps its values, so the database refuses a new row with them; the service asks first
+     * and says so (see {@code deletedHoldsKeys}), instead of "already exists" about a row nobody sees.
+     */
+    static List<Map<String, Object>> deletedProbes(EntityDefinition entity) {
+        FieldDefinition pk = entity.fields().stream().filter(FieldDefinition::primaryKey).findFirst().orElse(null);
+        if (pk == null) return List.of();
+        String entityLabel = entity.label() != null ? entity.label() : Naming.toPascalCase(entity.name());
+        List<List<String>> keys = new ArrayList<>();
+        for (FieldDefinition f : entity.fields()) {
+            if (f.unique() && !f.primaryKey()) keys.add(List.of(f.name()));
+        }
+        for (EntityDefinition.UniqueKey key : entity.uniqueKeys()) keys.add(key.fields());
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (List<String> members : keys) {
+            StringBuilder sql = new StringBuilder("select ").append(SchemaNames.columnOf(pk)).append(" from ")
+                    .append(SchemaNames.tableRefOf(entity)).append(" where ").append(SchemaNames.booleanTest("deleted", true));
+            List<Map<String, Object>> values = new ArrayList<>();
+            List<String> clientNames = new ArrayList<>();
+            List<String> labels = new ArrayList<>();
+            for (String member : members) {
+                sql.append(" and ").append(uniqueKeyColumnOf(entity, member)).append(" = :v").append(values.size());
+                FieldDefinition field = entity.fields().stream().filter(f -> f.name().equals(member)).findFirst().orElse(null);
+                String getter = "row.get" + Naming.toPascalCase(member) + "()";
+                String valueJava;
+                if (field != null) {
+                    // An enum is stored by its constant's name.
+                    valueJava = field.type() == FieldType.ENUM ? getter + " == null ? null : " + getter + ".name()" : getter;
+                    clientNames.add(field.name());
+                    labels.add(field.label() != null && !field.label().isBlank() ? field.label() : Naming.toPascalCase(field.name()));
+                } else {
+                    RelationDefinition link = entity.relations().stream().filter(r -> r.fieldName().equals(member))
+                            .findFirst().orElseThrow();
+                    valueJava = getter + " == null ? null : entityManager.getEntityManagerFactory().getPersistenceUnitUtil().getIdentifier("
+                            + getter + ")";
+                    clientNames.add(Naming.toCamelCase(link.fieldName()) + "Id");
+                    labels.add(TemplateText.labelOf(link));
+                }
+                values.add(new LinkedHashMap<>(Map.of("i", values.size(), "more", !values.isEmpty(), "valueJava", valueJava)));
+            }
+            Map<String, Object> probe = new LinkedHashMap<>();
+            probe.put("sqlJava", SqlNames.javaLiteral(sql.toString()));
+            probe.put("values", values);
+            probe.put("fieldsJava", String.join(", ", clientNames.stream().map(n -> "\"" + n + "\"").toList()));
+            probe.put("messageJava", TemplateText.escapeJavaLiteral("A deleted " + entityLabel + " has the same " + listing(labels)));
+            out.add(probe);
+        }
+        return out;
+    }
+
+    /** {@code softDelete} for one entity: its override, else the project option; writable single-key tables only. */
+    public static boolean softDeleteApplies(EntityDefinition e, boolean projectOpt) {
+        Boolean override = e.opts().get("softDelete");
+        return !e.readOnly() && e.viewQuery() == null
+                && e.fields().stream().filter(FieldDefinition::primaryKey).count() == 1
+                && (override != null ? override : projectOpt);
+    }
+
+    /**
+     * {@code hasDeletedHolders}: some soft-deleted entity has a unique field or key, so a deleted
+     * row can hold a value a new one asks for — the 409 that says so ({@code web/DeletedHolderException}),
+     * and the form's offer to restore the row. {@code conflictErrors}: a 409 may name fields.
+     */
+    public static void putDeletedHolders(Map<String, Object> ctx, List<EntityDefinition> entities) {
+        boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldSoftDelete"));
+        boolean holders = entities.stream().anyMatch(e -> softDeleteApplies(e, projectOpt) && !deletedProbes(e).isEmpty());
+        ctx.put("hasDeletedHolders", holders);
+        ctx.put("conflictErrors", holders || Boolean.TRUE.equals(ctx.get("hasUniqueKeys")));
     }
 
     /** "a and b", "a, b and c". */

@@ -209,8 +209,14 @@ final class RelationViews {
             s.put("pkJavaType", pk == null ? "Long" : pk.type().javaType());
             s.put("pkTsType", pk == null ? "number" : pk.type().tsType());
             // First non-PK string field — used as a human-readable label in the frontend FK <select>.
-            FieldDefinition labelField = e.fields().stream()
-                    .filter(f -> f.type().isString() && !f.primaryKey()).findFirst().orElse(null);
+            // …that the label subselect can name: a quoted name (a keyword on the project's database, an
+            // exact-case name from imported DDL) cannot be written there, so the next text field is the
+            // label, and an entity whose table or key is quoted has none (its links show the id).
+            boolean reachable = SchemaNames.formulaCanName(SchemaNames.tableRefOf(e))
+                    && (pk == null || SchemaNames.formulaCanName(SchemaNames.columnOf(pk)));
+            FieldDefinition labelField = !reachable ? null : e.fields().stream()
+                    .filter(f -> f.type().isString() && !f.primaryKey() && SchemaNames.formulaCanName(SchemaNames.columnOf(f)))
+                    .findFirst().orElse(null);
             s.put("labelField", labelField == null ? null : labelField.name());
             // The list's `q` text search covers the label field: a link to this entity can be picked
             // by typing its name (RelationPicker) instead of from a one-page <select>.

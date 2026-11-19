@@ -83,8 +83,16 @@ class LocalRunDockerSmokeTests {
             "mssql, " + FullstackGoldenOutputTests.BOOT_35 + ", true",
     })
     void theApiTestsPassOnTheRealDatabase(String db, String boot, boolean flyway, @TempDir Path workDir) throws Exception {
+        // One database per run with -Dsmoke.db=oracle (a container and a nested build each: several at once is a lot).
+        String only = System.getProperty("smoke.db");
+        org.junit.jupiter.api.Assumptions.assumeTrue(only == null || only.equalsIgnoreCase(db), "another database was asked for");
         Path root = extract(workDir, fullstack(orders(db, boot, flyway)));
-        run(root.resolve("backend"), Duration.ofMinutes(30), MVN, "-B", "test", "-P" + LocalRun.DB_TESTS_PROFILE);
+        // -Dsmoke.offline=true: the nested build may not download; it fails if an artifact is not cached.
+        if (Boolean.getBoolean("smoke.offline")) {
+            run(root.resolve("backend"), Duration.ofMinutes(30), MVN, "-B", "-o", "test", "-P" + LocalRun.DB_TESTS_PROFILE);
+        } else {
+            run(root.resolve("backend"), Duration.ofMinutes(30), MVN, "-B", "test", "-P" + LocalRun.DB_TESTS_PROFILE);
+        }
     }
 
     @ParameterizedTest(name = "{0}")

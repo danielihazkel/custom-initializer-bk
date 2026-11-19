@@ -196,6 +196,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           agg="{{agg}}"
           field="{{aggField}}"
 {{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
 {{#hasParams}}
           params={ {{paramsExpr}} }
 {{/hasParams}}
@@ -219,6 +222,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           agg="{{agg}}"
           valueField="{{aggField}}"
 {{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
 {{#hasLabels}}
           labels={ {{labelsRef}} }
 {{/hasLabels}}
@@ -256,6 +262,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           agg="{{agg}}"
           valueField="{{aggField}}"
 {{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
 {{#hasLabels}}
           labels={ {{labelsRef}} }
 {{/hasLabels}}
@@ -286,6 +295,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           agg="{{agg}}"
           valueField="{{aggField}}"
 {{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
 {{#hasLabels}}
           rowLabels={ {{labelsRef}} }
 {{/hasLabels}}
@@ -442,6 +454,9 @@ export function {{PageName}}Screen({{#hasScreenProps}}{ {{screenParams}} }: Prop
           agg="{{agg}}"
           valueField="{{aggField}}"
 {{/hasAgg}}
+{{#hasAggCurrency}}
+          currency="{{aggCurrency}}"
+{{/hasAggCurrency}}
           limit={ {{limit}} }
 {{#hasLabels}}
           labels={ {{labelsRef}} }

@@ -152,6 +152,32 @@ public enum SchemaDialect {
         };
     }
 
+    /**
+     * {@code true} / {@code false} as a value <em>set</em> in SQL a generated project carries (the
+     * soft-delete mark): the words where the database has them; 1 / 0 on SQL Server ({@code bit})
+     * and Oracle ({@code number(1)}), where the words are "invalid column name 'true'". H2, where
+     * the project's own tests run that SQL against a boolean column, takes either when assigning.
+     */
+    public String flag(boolean value) {
+        return switch (this) {
+            case H2, POSTGRESQL, DB2 -> String.valueOf(value);
+            case ORACLE, MSSQL -> value ? "1" : "0";
+        };
+    }
+
+    /**
+     * {@code column} <em>compared</em> with true or false, in that same SQL. Comparing is where H2
+     * is strict — a boolean is comparable with neither a number nor a text — so on SQL Server and
+     * Oracle the column is read as a number first ({@code cast(deleted as integer) = 0}), which
+     * all three accept; elsewhere it is {@code deleted = false}.
+     */
+    public String flagIs(String column, boolean value) {
+        return switch (this) {
+            case H2, POSTGRESQL, DB2 -> column + " = " + value;
+            case ORACLE, MSSQL -> "cast(" + column + " as integer) = " + (value ? "1" : "0");
+        };
+    }
+
     /** Whether {@code CREATE SCHEMA IF NOT EXISTS} can be written; elsewhere the schema must exist. */
     public boolean createsSchemas() {
         return this == H2 || this == POSTGRESQL;

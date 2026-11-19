@@ -1,0 +1,32 @@
+package {{packageName}}.web;
+
+import java.util.List;
+
+/**
+ * A save asked for a value that a deleted record still holds — a unique field, or a unique key
+ * over several. Deleting only marks a record, so its values stay taken and the database would
+ * refuse the save as a duplicate of a row nobody sees. {@link ApiExceptionHandler} answers it as
+ * a 409 that says so, names the fields and carries the deleted record's key, so the caller can
+ * restore that record instead.
+ */
+public class DeletedHolderException extends RuntimeException {
+
+    private final List<String> fields;
+    private final Object deletedId;
+
+    public DeletedHolderException(String message, List<String> fields, Object deletedId) {
+        super(message);
+        this.fields = List.copyOf(fields);
+        this.deletedId = deletedId;
+    }
+
+    /** The fields whose values the deleted record holds, as a client names them. */
+    public List<String> fields() {
+        return fields;
+    }
+
+    /** The key of the deleted record. */
+    public Object deletedId() {
+        return deletedId;
+    }
+}

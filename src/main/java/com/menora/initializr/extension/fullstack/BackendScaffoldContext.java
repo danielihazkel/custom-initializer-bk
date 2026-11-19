@@ -62,6 +62,8 @@ public final class BackendScaffoldContext {
         // hasOptimisticLocking gates the shared stale-update handler.
         FeatureContext.putOptimisticLocking(projectCtx, entities);
         FeatureContext.putUniqueKeys(projectCtx, entities);
+        // A soft-deleted row that still holds a unique value: the 409 that says so.
+        FeatureContext.putDeletedHolders(projectCtx, entities);
         FeatureContext.putRules(projectCtx, entities);
         FeatureContext.putXlsxExport(projectCtx, entities);
         FeatureContext.putSavedViews(projectCtx, entities);

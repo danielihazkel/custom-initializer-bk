@@ -34,7 +34,7 @@ public record {{EntityName}}Dto(
 
     public static {{EntityName}}Dto from({{EntityName}} entity) {
         return new {{EntityName}}Dto(
-{{#fields}}                {{#isMultiFile}}entity.get{{Name}}() == null ? java.util.List.of() : java.util.List.copyOf(entity.get{{Name}}()){{/isMultiFile}}{{^isMultiFile}}entity.get{{Name}}(){{/isMultiFile}}{{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
+{{#fields}}                {{#isMultiFile}}entity.get{{Name}}() == null ? java.util.List.of() : java.util.List.copyOf(entity.get{{Name}}()){{/isMultiFile}}{{^isMultiFile}}{{#readsClock}}{{packageName}}.rules.{{EntityName}}Rules.{{name}}Now(entity){{/readsClock}}{{^readsClock}}entity.get{{Name}}(){{/readsClock}}{{/isMultiFile}}{{#hasRelations}},{{/hasRelations}}{{^hasRelations}}{{^last}},{{/last}}{{/hasRelations}}
 {{/fields}}{{#relations}}                entity.get{{FieldName}}() == null ? null : entity.get{{FieldName}}().get{{TargetPkName}}(){{#hasTargetLabel}},
                 entity.get{{FieldName}}Label(){{/hasTargetLabel}}{{^last}},{{/last}}
 {{/relations}}{{#auditApplicable}},

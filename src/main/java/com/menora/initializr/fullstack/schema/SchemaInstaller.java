@@ -55,12 +55,22 @@ public class SchemaInstaller {
      * @param build  the model's schema; the dialect is the source's
      * @param check  read and plan only: nothing is created
      */
-    public Result install(String source, String schemaName, Schema build, boolean check) {
-        ConnectionSpec spec = live.writableSource(source);
+    /** The database of a source tables may be created on (403 or 404 as {@link #install} answers). */
+    public SchemaDialect dialectOf(String source) {
+        return dialectOf(live.writableSource(source));
+    }
+
+    private static SchemaDialect dialectOf(ConnectionSpec spec) {
         SchemaDialect dialect = SchemaDialect.ofDependency(spec.dialect().depId());
         if (dialect == null) {
             throw LiveSchemaException.badRequest("Tables cannot be created on " + LiveSchemaReader.label(spec.dialect()));
         }
+        return dialect;
+    }
+
+    public Result install(String source, String schemaName, Schema build, boolean check) {
+        ConnectionSpec spec = live.writableSource(source);
+        SchemaDialect dialect = dialectOf(spec);
         if (schemaName == null || schemaName.isBlank()) throw LiveSchemaException.badRequest("Pick a schema");
         return live.withConnection(spec, check, (reader, c) -> {
             List<String> schemas = reader.schemas(c).schemas();

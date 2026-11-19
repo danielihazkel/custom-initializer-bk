@@ -233,6 +233,12 @@ final class EntityViewModel {
         view.put("tableRef", SqlNames.javaLiteral(SchemaNames.tableRefOf(entity)));
         // Unique keys over several fields: @Table's uniqueConstraints and the demo loader's check.
         List<Map<String, Object>> uniqueKeys = FeatureContext.uniqueKeyViews(entity);
+        // Asked before a save when the entity is soft-deleted (deletedHoldsKeys, set with that flag).
+        view.put("uniqueProbes", FeatureContext.deletedProbes(entity));
+        // The soft-delete mark in SQL, as the project's database spells a boolean.
+        view.put("softDeleteTrue", SchemaNames.booleanLiteral(true));
+        view.put("softDeleteFalse", SchemaNames.booleanLiteral(false));
+        view.put("softDeleteLive", SchemaNames.booleanTest("deleted", false));
         view.put("uniqueKeys", uniqueKeys);
         view.put("hasUniqueKeys", !uniqueKeys.isEmpty());
         // Rules over several fields: a <Entity>Rules class the service asks before a save, and the
@@ -240,6 +246,8 @@ final class EntityViewModel {
         List<Map<String, Object>> rules = FeatureContext.ruleViews(entity);
         view.put("rules", rules);
         view.put("hasRules", entity.hasRowLogic());
+        // Rules proper, not only derivations: a demo row one is broken by is left out.
+        view.put("hasRuleChecks", !rules.isEmpty());
         FeatureContext.putDerivations(view, entity);
         FeatureContext.putLinkedReads(view, entity, summaries);
         view.put("uniqueConstraintsJava", "{" + String.join(", ", uniqueKeys.stream()
@@ -291,6 +299,8 @@ final class EntityViewModel {
                 // Never set by a client: locked like a workflow's status (no PUT, bulk or inline edit, no import column).
                 fv.put("isReadOnly", true);
                 fv.put("isEditable", false);
+                // Over today() or now(): the DTO answers it as it stands, not as the last save left it.
+                fv.put("readsClock", FeatureContext.readsClock(entity, f));
             }
             // Several files: a list of {id, name} kept in a table of its own (attachment/AttachedFile).
             fv.put("isMultiFile", f.multiple());

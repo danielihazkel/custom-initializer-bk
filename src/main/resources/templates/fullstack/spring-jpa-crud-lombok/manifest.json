@@ -478,6 +478,16 @@
       "gatedBy": "hasLdapAuth"
     },
     {
+      "source": "DeletedHolderException.java.mustache",
+      "sourceSet": "spring-jpa-crud",
+      "path": "src/main/java/{{packagePath}}/web/DeletedHolderException.java",
+      "perEntity": false,
+      "substitutionType": "MUSTACHE",
+      "fileType": "TEMPLATE",
+      "sortOrder": 12,
+      "gatedBy": "hasDeletedHolders"
+    },
+    {
       "source": "WorkflowException.java.mustache",
       "sourceSet": "spring-jpa-crud",
       "path": "src/main/java/{{packagePath}}/web/WorkflowException.java",
