@@ -79,7 +79,7 @@ public final class SchemaNames {
         if (schemaOf(e) != null) names.add(schemaOf(e));
         e.fields().forEach(f -> names.add(columnOf(f)));
         e.relations().forEach(r -> names.add(joinColumnOf(r)));
-        e.collections().forEach(c -> {
+        e.ownedCollections().forEach(c -> {
             names.add(joinTableOf(e, c));
             names.add(ownerJoinColumnOf(e, c));
             names.add(inverseJoinColumnOf(c));

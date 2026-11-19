@@ -58,7 +58,7 @@ final class PageStructureRules {
 
     /**
      * A wizard's steps. Each names form fields: the entity's fields — all but a generated key —
-     * and its relations by field name. Every field and relation the form requires has to be asked
+     * and its relations (links, and sets of linked rows) by field name. Every field and relation the form requires has to be asked
      * for somewhere, and nothing twice. Omitted: the fields in declaration order, then the
      * relations, {@value #DEFAULT_STEP_SIZE} to a step.
      */
@@ -80,6 +80,10 @@ final class PageStructureRules {
             if (r.type() != RelationType.MANY_TO_ONE) continue;
             askable.put(r.fieldName().toLowerCase(Locale.ROOT), r.fieldName());
             if (r.required()) required.add(r.fieldName());
+        }
+        // A set of linked rows (a MANY_TO_MANY) is a field of the form too; it may always be empty.
+        for (RelationDefinition set : entity.collections()) {
+            askable.put(set.fieldName().toLowerCase(Locale.ROOT), set.fieldName());
         }
         if (askable.isEmpty()) {
             throw new WizardArgumentException(prefix + ": " + entity.name() + " has no field to ask for");

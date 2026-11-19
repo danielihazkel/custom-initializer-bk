@@ -48,20 +48,29 @@ public class DemoDataLoader implements CommandLineRunner {
         List<{{EntityName}}> {{entityName}}Rows = new ArrayList<>();
 {{#uniqueKeys}}        // Unique key {{index}}: a row that would repeat another's values is left out.
         java.util.Set<List<Object>> {{entityName}}Key{{index}} = new java.util.HashSet<>();
-{{/uniqueKeys}}        for (int i = 1; i <= ROWS; i++) {
+{{/uniqueKeys}}{{#seedComposed}}        // The rows of a {{seedParent}}: two to each, made here and saved with it.
+{{/seedComposed}}        for (int i = 1; i <= ROWS{{#seedComposed}} * 2{{/seedComposed}}; i++) {
             {{EntityName}} row = new {{EntityName}}();
 {{#fields}}{{^isGenerated}}            row.set{{Name}}({{seedExpr}});
 {{/isGenerated}}{{/fields}}{{#relations}}{{#targetSeeded}}{{#targetMayHaveNoRows}}            if ({{targetEntityCamel}}Rows.isEmpty()) continue; // its rules left it no demo rows to link to
 {{/targetMayHaveNoRows}}            row.set{{FieldName}}({{targetEntityCamel}}Rows.get((i - 1) % {{targetEntityCamel}}Rows.size()));
-{{/targetSeeded}}{{/relations}}{{#hasRules}}{{^hasRuleChecks}}            {{packageName}}.rules.{{EntityName}}Rules.derive(row); // hidden fields cleared, computed ones computed
+{{/targetSeeded}}{{/relations}}{{#seedSets}}            if (!{{targetEntityCamel}}Rows.isEmpty()) {
+                row.get{{FieldName}}().add({{targetEntityCamel}}Rows.get((i - 1) % {{targetEntityCamel}}Rows.size()));
+                row.get{{FieldName}}().add({{targetEntityCamel}}Rows.get(i % {{targetEntityCamel}}Rows.size()));
+            }
+{{/seedSets}}{{#seedRows}}            for (int n = (i - 1) * 2; n < Math.min(i * 2, {{childCamel}}Rows.size()); n++) {
+                {{childCamel}}Rows.get(n).set{{MappedBy}}(row);
+                row.get{{CollectionField}}().add({{childCamel}}Rows.get(n));
+            }
+{{/seedRows}}{{#hasRules}}{{^hasRuleChecks}}            {{packageName}}.rules.{{EntityName}}Rules.derive(row); // hidden fields cleared, computed ones computed
 {{/hasRuleChecks}}{{#hasRuleChecks}}            // Hidden fields cleared, computed ones computed — and a row a rule is broken by is left out:
             // the app would refuse to save it, so it could never be edited.
             if (!{{packageName}}.rules.{{EntityName}}Rules.apply(row).isEmpty()) continue;
 {{/hasRuleChecks}}{{/hasRules}}{{#uniqueKeys}}            if (!{{entityName}}Key{{index}}.add(java.util.Arrays.<Object>asList({{{tuple}}}))) continue;
 {{/uniqueKeys}}            {{entityName}}Rows.add(row);
         }
-        {{entityName}}Rows = {{entityName}}Repository.saveAll({{entityName}}Rows);
-{{#tracksMoves}}        // A history for each: created some days ago, and moved on if it is no longer where it started.
+{{^seedComposed}}        {{entityName}}Rows = {{entityName}}Repository.saveAll({{entityName}}Rows);
+{{/seedComposed}}{{#tracksMoves}}        // A history for each: created some days ago, and moved on if it is no longer where it started.
         for (int i = 0; i < {{entityName}}Rows.size(); i++) {
             {{EntityName}} row = {{entityName}}Rows.get(i);
             moves.seed("{{entityNameKebab}}", row.get{{pkField.Name}}(), {{workflowInitialJava}}, row.get{{WorkflowStatusName}}(), i);

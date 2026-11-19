@@ -188,7 +188,7 @@ c3d6c48718cc6ace2e8a2557cf103b196269662097d5fe836217bc79e77c0ab3  golden-project
 50866ee8a3501f35e3df2a30ed23316655b576bade88f8ebe922b16a616dee9e  golden-projects/frontend/src/shared/ui/menora/index.ts
 7787e90b1fd3f4874329d8ab70b0eb1fa6d1e7390596b98a9d59e2efc2146585  golden-projects/frontend/src/shared/ui/menora/tokens.css
 a5a0cc961c7222168f22d52f2675cd475dfb4252b34077902dfbbb35ca225604  golden-projects/frontend/src/shared/ui/menora/useMenoraTheme.ts
-d8a262cd5efa4199f18504453d959e170c543e5f3d2610831c7fce5164bfa29d  golden-projects/frontend/src/shared/ui/rules.ts
+739db77ce04d2df594df0f0d47740f28840da762358be1a6d6dc4cbd12a296a3  golden-projects/frontend/src/shared/ui/rules.ts
 3737db6c2e339e1baa933752f5cf496357603ea819d1d35ab216ee91a029b438  golden-projects/frontend/src/shared/ui/schedule.ts
 e83b0db1901aa1023efe5ec7db118f7590a7d16dafed54ca6e067dcc68275781  golden-projects/frontend/src/shared/ui/stats.ts
 5f804d857de4f2fb03b94721e25d820a7b8a2f880a1a7b24936461637bf844df  golden-projects/frontend/src/shared/ui/useTheme.ts

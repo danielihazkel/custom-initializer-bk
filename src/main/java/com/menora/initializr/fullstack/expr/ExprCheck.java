@@ -35,16 +35,23 @@ public final class ExprCheck {
 
     /** The functions, as they are spelled. */
     public static final List<String> FUNCTIONS =
-            List.of("isEmpty", "today", "now", "daysBetween", "length", "abs", "round", "date");
+            List.of("isEmpty", "today", "now", "daysBetween", "length", "abs", "round", "date",
+                    "sum", "count", "min", "max", "avg");
+
+    /** The functions over the rows saved with a record (a composition): {@code sum(lines.total)}, {@code count(lines)}. */
+    public static final List<String> AGGREGATES = List.of("sum", "count", "min", "max", "avg");
 
     /**
      * A checked expression.
      *
      * @param refs  the row's own fields it reads, in the order it first reads them
      * @param paths the fields of linked rows it reads ({@code costCenter.budget}), by how it spells them
+     * @param rows  what each function over the record's rows reads ({@code sum(lines.total)}), by its call
+     * @param lists the lists of rows it reads, in the order it first reads them
      */
     public record Checked(String text, Node root, Type type, Map<Node, Type> types, Map<Node, Object> literals,
-                          Set<String> refs, Map<String, FieldDefinition> fields, Map<String, Path> paths) {
+                          Set<String> refs, Map<String, FieldDefinition> fields, Map<String, Path> paths,
+                          Map<Node, Rows> rows, Set<String> lists) {
 
         public Type typeOf(Node node) {
             return types.get(node);
@@ -61,6 +68,12 @@ public final class ExprCheck {
      * leads to, and the field read there.
      */
     public record Path(String relation, EntityDefinition.LinkedEntity target, FieldDefinition field) {}
+
+    /**
+     * A function over the rows saved with the record: which one ({@code fn}, as {@link #AGGREGATES}
+     * spells it), the list, what its rows are, and the field read in each ({@code null} for count).
+     */
+    public record Rows(String fn, String list, EntityDefinition.LinkedEntity child, FieldDefinition field) {}
 
     /** Parses and checks {@code text} over {@code fields}; it must come out as {@code expected} (null: anything). */
     public static Checked check(String text, List<FieldDefinition> fields, Type expected) {
@@ -83,7 +96,7 @@ public final class ExprCheck {
         if (expected != null && type != expected) {
             throw new ExprException("This must be " + describe(expected) + ", but it is " + describe(type), root.at());
         }
-        return new Checked(text, root, type, c.types, c.literals, c.refs, byName, c.paths);
+        return new Checked(text, root, type, c.types, c.literals, c.refs, byName, c.paths, c.rows, c.lists);
     }
 
     /** The expression type of a field, or null for one an expression cannot read (only test with isEmpty). */
@@ -122,6 +135,8 @@ public final class ExprCheck {
         final Map<Node, Object> literals = new IdentityHashMap<>();
         final Set<String> refs = new LinkedHashSet<>();
         final Map<String, Path> paths = new LinkedHashMap<>();
+        final Map<Node, Rows> rows = new IdentityHashMap<>();
+        final Set<String> lists = new LinkedHashSet<>();
 
         Checker(Map<String, FieldDefinition> fields, Map<String, EntityDefinition.LinkedEntity> links) {
             this.fields = fields;
@@ -138,6 +153,10 @@ public final class ExprCheck {
             String relation = ref.name().substring(0, dot);
             String name = ref.name().substring(dot + 1);
             EntityDefinition.LinkedEntity target = links.get(relation);
+            if (target != null && target.rows()) {
+                throw new ExprException("'" + ref.name() + "' is one value in each of the rows: read them with sum, min, max or avg (sum("
+                        + ref.name() + "))", ref.at());
+            }
             if (target == null) {
                 String loose = links.keySet().stream().filter(k -> k.equalsIgnoreCase(relation)).findFirst().orElse(null);
                 throw new ExprException("'" + relation + "' is not a link of this entity (a MANY_TO_ONE)"
@@ -175,6 +194,10 @@ public final class ExprCheck {
             if (node instanceof Ref ref) {
                 if (ref.isPath()) return path(ref);
                 FieldDefinition f = fields.get(ref.name());
+                if (f == null && links.get(ref.name()) != null && links.get(ref.name()).rows()) {
+                    throw new ExprException("'" + ref.name() + "' is the rows saved with this entity: count(" + ref.name()
+                            + "), or sum, min, max or avg over one of their fields", ref.at());
+                }
                 if (f == null) {
                     FieldDefinition loose = fields.values().stream()
                             .filter(x -> x.name().equalsIgnoreCase(ref.name())).findFirst().orElse(null);
@@ -318,6 +341,39 @@ public final class ExprCheck {
                     }
                     return Type.NUMBER;
                 }
+                case "count" -> {
+                    arity(c, fn, 1);
+                    if (!(args.get(0) instanceof Ref ref) || ref.isPath() || rowsOf(ref.name()) == null) {
+                        throw new ExprException("count takes the rows saved with this entity" + listsHint(), c.at());
+                    }
+                    rows.put(c, new Rows(fn, ref.name(), rowsOf(ref.name()), null));
+                    lists.add(ref.name());
+                    return Type.NUMBER;
+                }
+                case "sum", "min", "max", "avg" -> {
+                    arity(c, fn, 1);
+                    if (!(args.get(0) instanceof Ref ref) || !ref.isPath()
+                            || rowsOf(ref.name().substring(0, ref.name().indexOf('.'))) == null) {
+                        throw new ExprException(fn + " takes a field of the rows saved with this entity, like " + fn
+                                + "(lines.total)" + listsHint(), c.at());
+                    }
+                    String list = ref.name().substring(0, ref.name().indexOf('.'));
+                    String name = ref.name().substring(list.length() + 1);
+                    EntityDefinition.LinkedEntity child = rowsOf(list);
+                    FieldDefinition f = child.fields().stream().filter(x -> x.name().equals(name)).findFirst().orElse(null);
+                    if (f == null) {
+                        FieldDefinition loose = child.fields().stream().filter(x -> x.name().equalsIgnoreCase(name)).findFirst().orElse(null);
+                        throw new ExprException("'" + name + "' is not a field of " + child.name()
+                                + (loose != null ? " (did you mean '" + loose.name() + "'?)" : ""), ref.at());
+                    }
+                    if (typeOf(f) != Type.NUMBER) {
+                        throw new ExprException(fn + " takes a number field of the rows; '" + ref.name() + "' is "
+                                + describe(typeOf(f) == null ? Type.ANY : typeOf(f)), ref.at());
+                    }
+                    rows.put(c, new Rows(fn, list, child, f));
+                    lists.add(list);
+                    return Type.NUMBER;
+                }
                 default -> {
                     arity(c, fn, 1);
                     type(args.get(0), false);
@@ -332,6 +388,18 @@ public final class ExprCheck {
                     return Type.DATE;
                 }
             }
+        }
+
+        /** The rows a name stands for, or null when it is not a list saved with this entity. */
+        private EntityDefinition.LinkedEntity rowsOf(String list) {
+            EntityDefinition.LinkedEntity linked = links.get(list);
+            return linked != null && linked.rows() ? linked : null;
+        }
+
+        private String listsHint() {
+            List<String> lists = links.entrySet().stream().filter(e -> e.getValue().rows()).map(Map.Entry::getKey).toList();
+            return lists.isEmpty() ? " — this entity has none (a ONE_TO_MANY with composition)"
+                    : " — here: " + String.join(", ", lists);
         }
 
         private static void arity(Call c, String fn, int n) {

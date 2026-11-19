@@ -47,8 +47,8 @@ final class RuleRows {
     record Pick(Object value, String java, String ts, String seed) {}
 
     /** The picks for the fields the rules read; {@code usesDays}: a TS value calls {@code day(k)}. */
-    record Solution(Map<String, Pick> picks, boolean usesDays) {
-        static final Solution NONE = new Solution(Map.of(), false);
+    record Solution(Map<String, Pick> picks, boolean usesDays, Set<String> lists) {
+        static final Solution NONE = new Solution(Map.of(), false, Set.of());
     }
 
     /** No candidate combination passes the rules: which rule stopped the last one. */
@@ -61,7 +61,29 @@ final class RuleRows {
         }
     }
 
-    private record Checked(ExprCheck.Checked when, ExprCheck.Checked check, Set<String> refs) {}
+    /** {@code scope}: the list whose row the rule is checked on (a rule of the rows' own), null for the record itself. */
+    private record Checked(ExprCheck.Checked when, ExprCheck.Checked check, Set<String> refs, String scope) {}
+
+    /**
+     * The rows a record's rules read ({@code sum(lines.total)}): the test record is made with one
+     * row of each such list. {@code names} are that row's fields the search knows a value of — as
+     * {@code <list>.<field>} — and {@code derive} what the server does to the row before its rules run.
+     */
+    private record RowScope(String list, List<String> names, Derive derive) {
+
+        /** The row as the rules see it: its chosen and usual values, then what is hidden and computed. */
+        Map<String, Object> row(Map<String, Object> env, LocalDate today) {
+            Map<String, Object> row = new HashMap<>();
+            for (String name : names) row.put(name.substring(list.length() + 1), env.get(name));
+            derive.apply(row, today);
+            return row;
+        }
+    }
+
+    /** How a list of rows is written among the names an expression reads: every value in its row. */
+    private static String all(String list) {
+        return list + ".*";
+    }
 
     /** Every field {@code e}'s rules read. */
     static Set<String> read(EntityDefinition e) {
@@ -77,6 +99,8 @@ final class RuleRows {
     private static Set<String> read(ExprCheck.Checked c) {
         Set<String> out = new LinkedHashSet<>(c.refs());
         out.addAll(c.paths().keySet());
+        // …and the rows saved with the record, whichever of their fields it adds up.
+        for (String list : c.lists()) out.add(all(list));
         return out;
     }
 
@@ -104,18 +128,22 @@ final class RuleRows {
                           List<String> computed, List<ExprCheck.Checked> formulas) {
 
         static Derive of(EntityDefinition e) {
+            return of(e.fields(), e.links());
+        }
+
+        static Derive of(List<FieldDefinition> fields, Map<String, EntityDefinition.LinkedEntity> links) {
             List<String> hidden = new ArrayList<>();
             List<ExprCheck.Checked> conditions = new ArrayList<>();
             List<String> computed = new ArrayList<>();
             List<ExprCheck.Checked> formulas = new ArrayList<>();
-            for (FieldDefinition f : e.fields()) {
+            for (FieldDefinition f : fields) {
                 if (f.showWhen() != null) {
                     hidden.add(f.name());
-                    conditions.add(ExprCheck.check(f.showWhen(), e, Expr.Type.BOOL));
+                    conditions.add(ExprCheck.check(f.showWhen(), fields, links, Expr.Type.BOOL));
                 }
                 if (f.computed()) {
                     computed.add(f.name());
-                    formulas.add(ExprCheck.check(f.formula(), e, null));
+                    formulas.add(ExprCheck.check(f.formula(), fields, links, null));
                 }
             }
             return new Derive(hidden, conditions, computed, formulas);
@@ -152,10 +180,11 @@ final class RuleRows {
             Set<String> refs = read(check);
             if (when != null) refs.addAll(read(when));
             refs = expand(e, refs);
-            rules.add(new Checked(when, check, refs));
+            rules.add(new Checked(when, check, refs, null));
             read.addAll(refs);
         }
         Derive derive = Derive.of(e);
+        int own = rules.size();
         EntityDefinition.Workflow wf = e.workflow();
         String status = wf == null ? null : wf.statusField();
         String assignee = wf == null ? null : wf.assigneeField();
@@ -167,9 +196,38 @@ final class RuleRows {
         Map<String, List<Pick>> options = new LinkedHashMap<>();
         Map<String, Pick> fixed = new LinkedHashMap<>();
         boolean[] days = {false};
-        for (int ri = 0; ri < rules.size(); ri++) {
+        // The rows the rules read: one row of each such list, its values chosen with the record's.
+        List<RowScope> scopes = new ArrayList<>();
+        for (String list : e.links().keySet()) {
+            if (!e.links().get(list).rows() || !read.contains(all(list))) continue;
+            int reader = 0;
+            while (reader < own - 1 && !rules.get(reader).refs().contains(all(list))) reader++;
+            // The fields of the rows the record's expressions add up.
+            List<ExprCheck.Checked> reading = new ArrayList<>(derive.formulas());
+            reading.addAll(derive.conditions());
+            for (int i = 0; i < own; i++) {
+                reading.add(rules.get(i).check());
+                if (rules.get(i).when() != null) reading.add(rules.get(i).when());
+            }
+            Set<String> addedUp = new LinkedHashSet<>();
+            for (ExprCheck.Checked c : reading) {
+                for (ExprCheck.Rows over : c.rows().values()) {
+                    if (over.list().equals(list) && over.field() != null) addedUp.add(over.field().name());
+                }
+            }
+            scopes.add(rowScope(e, list, reader, rules, vars, options, fixed, today, days, addedUp));
+        }
+        for (int i = 0; i < own; i++) {
+            // A rule that reads a list reads every value of its row.
+            Set<String> refs = rules.get(i).refs();
+            for (RowScope scope : scopes) {
+                if (refs.remove(all(scope.list()))) refs.addAll(scope.names());
+            }
+        }
+        for (int ri = 0; ri < own; ri++) {
             for (String name : rules.get(ri).refs()) {
                 if (name.indexOf('.') < 0 || vars.contains(name) || fixed.containsKey(name)) continue;
+                if (name.endsWith(".*")) continue; // rows the entity does not save with it: none in a test record
                 // A linked row's field: the test row's parent is created with the value chosen here.
                 ExprCheck.Path path = pathOf(e, name);
                 RelationDefinition link = e.relations().stream()
@@ -208,19 +266,89 @@ final class RuleRows {
             else if (stateValues.isEmpty()) stateValues.add(null);
         }
 
-        Map<String, Pick> chosen = search(rules, vars, options, fixed, status, assignee, stateValues, today, derive);
+        Map<String, Pick> chosen = search(rules, vars, options, fixed, status, assignee, stateValues, today, derive, scopes);
         if (chosen == null) {
-            // Which rule: the first that the rules before it and it cannot all be passed.
-            for (int i = 0; i < rules.size(); i++) {
-                if (search(rules.subList(0, i + 1), vars, options, fixed, status, assignee, stateValues, today, derive) == null) {
+            // Which rule: the first that the rules before it and it (and the rows' own) cannot all be passed.
+            for (int i = 0; i < own; i++) {
+                List<Checked> upTo = new ArrayList<>(rules.subList(0, i + 1));
+                upTo.addAll(rules.subList(own, rules.size()));
+                if (search(upTo, vars, options, fixed, status, assignee, stateValues, today, derive, scopes) == null) {
                     throw new Unsolvable(i);
                 }
             }
-            throw new Unsolvable(rules.size() - 1);
+            throw new Unsolvable(own - 1);
         }
         Map<String, Pick> picks = new LinkedHashMap<>();
         for (String v : vars) picks.put(v, chosen.get(v));
-        return new Solution(picks, days[0]);
+        Set<String> lists = new LinkedHashSet<>();
+        for (RowScope scope : scopes) lists.add(scope.list());
+        return new Solution(picks, days[0], lists);
+    }
+
+    /**
+     * One row of {@code list} for the test record: the fields the record adds up and the fields
+     * the rows' own rules read become choices of the search ({@code <list>.<field>}), and the
+     * rows' rules join {@code rules}, checked on that row. A row whose expressions the generator
+     * cannot run on their own (they read a linked row) leaves the tests to the team: the rule
+     * that reads the rows is named.
+     */
+    private static RowScope rowScope(EntityDefinition e, String list, int reader, List<Checked> rules, List<String> vars,
+                                     Map<String, List<Pick>> options, Map<String, Pick> fixed, LocalDate today,
+                                     boolean[] days, Set<String> addedUp) throws Unsolvable {
+        EntityDefinition.LinkedEntity child = e.links().get(list);
+        List<FieldDefinition> fields = child.fields();
+        Derive derive;
+        List<Checked> own = new ArrayList<>();
+        Set<String> names = new LinkedHashSet<>();
+        try {
+            derive = Derive.of(fields, Map.of());
+            for (EntityDefinition.Rule r : child.rules()) {
+                ExprCheck.Checked check = ExprCheck.check(r.check(), fields, Map.of(), Expr.Type.BOOL);
+                ExprCheck.Checked when = r.when() == null ? null : ExprCheck.check(r.when(), fields, Map.of(), Expr.Type.BOOL);
+                Set<String> refs = new LinkedHashSet<>(check.refs());
+                if (when != null) refs.addAll(when.refs());
+                names.addAll(refs);
+                own.add(new Checked(when, check, refs, list));
+            }
+        } catch (Expr.ExprException beyondTheRow) {
+            throw new Unsolvable(reader);
+        }
+        // …and the fields the record adds up (sum, min, max, avg).
+        names.addAll(addedUp);
+        // …and behind a computed or conditional field are the fields its expression reads.
+        boolean grew = true;
+        while (grew) {
+            grew = false;
+            for (FieldDefinition f : fields) {
+                if (!names.contains(f.name())) continue;
+                String expr = f.computed() ? f.formula() : f.showWhen();
+                if (expr != null) grew |= names.addAll(ExprCheck.check(expr, fields, Map.of(), null).refs());
+            }
+        }
+        List<FieldDefinition> sent = GeneratedTests.sent(fields, null);
+        List<String> scoped = new ArrayList<>();
+        for (String name : names) {
+            FieldDefinition f = fields.stream().filter(x -> x.name().equals(name)).findFirst().orElseThrow();
+            if (f.computed()) continue; // the server computes it, from fields that are here
+            String scopedName = list + "." + name;
+            scoped.add(scopedName);
+            boolean isSent = sent.stream().anyMatch(x -> x.name().equals(name));
+            if (!isSent || (f.primaryKey() && f.generated())) {
+                fixed.put(scopedName, new Pick(null, null, null, null));
+            } else if (f.primaryKey() || f.unique() || f.pattern() != null || ExprCheck.typeOf(f) == null) {
+                fixed.put(scopedName, new Pick(usual(f, today), null, null, null));
+            } else {
+                vars.add(scopedName);
+                // Always a value: a row sent without one would carry its usual one.
+                options.put(scopedName, candidates(e, f, today, days).stream().filter(p -> p.value() != null).toList());
+            }
+        }
+        for (Checked rule : own) {
+            Set<String> refs = new LinkedHashSet<>();
+            for (String scopedName : scoped) refs.add(scopedName);
+            rules.add(new Checked(rule.when(), rule.check(), refs, list));
+        }
+        return new RowScope(list, scoped, derive);
     }
 
     /** How an entity's expressions read {@code name}, a linked row's field. */
@@ -234,21 +362,23 @@ final class RuleRows {
     /** A choice for every variable that the rules hold for, or null. */
     private static Map<String, Pick> search(List<Checked> rules, List<String> vars, Map<String, List<Pick>> options,
                                             Map<String, Pick> fixed, String status, String assignee,
-                                            List<String> states, LocalDate today, Derive derive) {
+                                            List<String> states, LocalDate today, Derive derive, List<RowScope> scopes) {
         Map<String, Object> env = new HashMap<>();
         fixed.forEach((n, p) -> env.put(n, p.value()));
         Map<String, Pick> chosen = new LinkedHashMap<>(fixed);
         int[] steps = {0};
         int[] lastBroken = {0};
-        return assign(0, vars, options, rules, env, chosen, status, assignee, states, today, steps, lastBroken, derive) ? chosen : null;
+        return assign(0, vars, options, rules, env, chosen, status, assignee, states, today, steps, lastBroken, derive, scopes)
+                ? chosen : null;
     }
 
     private static boolean assign(int at, List<String> vars, Map<String, List<Pick>> options, List<Checked> rules,
                                   Map<String, Object> env, Map<String, Pick> chosen, String status, String assignee,
-                                  List<String> states, LocalDate today, int[] steps, int[] lastBroken, Derive derive) {
+                                  List<String> states, LocalDate today, int[] steps, int[] lastBroken, Derive derive,
+                                  List<RowScope> scopes) {
         // Everything chosen: every rule must hold — those over fixed values only too.
         if (at == vars.size()) {
-            return holds(rules, env, new LinkedHashSet<>(vars), vars, status, assignee, states, today, lastBroken, derive);
+            return holds(rules, env, new LinkedHashSet<>(vars), vars, status, assignee, states, today, lastBroken, derive, scopes);
         }
         String name = vars.get(at);
         Set<String> assigned = new LinkedHashSet<>(vars.subList(0, at + 1));
@@ -256,8 +386,8 @@ final class RuleRows {
             if (++steps[0] > MAX_STEPS) return false;
             env.put(name, pick.value());
             chosen.put(name, pick);
-            if (holds(rules, env, assigned, vars, status, assignee, states, today, lastBroken, derive)
-                    && assign(at + 1, vars, options, rules, env, chosen, status, assignee, states, today, steps, lastBroken, derive)) {
+            if (holds(rules, env, assigned, vars, status, assignee, states, today, lastBroken, derive, scopes)
+                    && assign(at + 1, vars, options, rules, env, chosen, status, assignee, states, today, steps, lastBroken, derive, scopes)) {
                 return true;
             }
         }
@@ -269,15 +399,26 @@ final class RuleRows {
     /** Every rule whose fields are all chosen holds, in every state the row must pass in. */
     private static boolean holds(List<Checked> rules, Map<String, Object> env, Set<String> assigned, List<String> vars,
                                  String status, String assignee, List<String> states, LocalDate today, int[] lastBroken,
-                                 Derive derive) {
+                                 Derive derive, List<RowScope> scopes) {
         for (int i = 0; i < rules.size(); i++) {
             Checked r = rules.get(i);
             boolean ready = r.refs().stream().noneMatch(ref -> vars.contains(ref) && !assigned.contains(ref));
             if (!ready) continue;
+            if (r.scope() != null) {
+                // A rule of the rows' own, on the one row the record is made with.
+                RowScope scope = scopes.stream().filter(s -> s.list().equals(r.scope())).findFirst().orElseThrow();
+                if (!ExprEval.holds(r.check(), r.when(), scope.row(env, today), today)) {
+                    lastBroken[0] = i;
+                    return false;
+                }
+                continue;
+            }
             for (String state : states) {
                 Map<String, Object> scenario = new HashMap<>(env);
                 if (status != null) scenario.put(status, state);
                 if (assignee != null) scenario.put(assignee, null);
+                // The record's rows, as the rules read them: one row of each list.
+                for (RowScope scope : scopes) scenario.put(scope.list(), List.of(scope.row(env, today)));
                 derive.apply(scenario, today);
                 if (!ExprEval.holds(r.check(), r.when(), scenario, today)) {
                     lastBroken[0] = i;

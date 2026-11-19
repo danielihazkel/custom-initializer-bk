@@ -52,10 +52,25 @@ public record EntityDefinition(
      * What a MANY_TO_ONE leads to, for an expression that reads a linked row ({@code costCenter.budget}):
      * the target entity's name and its fields. Keyed by the relation's field name; filled by
      * FullstackRequestValidator once every entity's fields are known.
+     *
+     * <p>{@code rows}: not one row but the rows saved with this entity (a composition), keyed by
+     * the list's name — what {@code sum(lines.total)} and {@code count(lines)} read. {@code rules}
+     * are then the rows' own rules (the generator's test rows have to pass those too).
      */
-    public record LinkedEntity(String name, List<FieldDefinition> fields) {
+    public record LinkedEntity(String name, List<FieldDefinition> fields, boolean rows, List<Rule> rules) {
         public LinkedEntity {
             fields = List.copyOf(fields);
+            rules = rules == null ? List.of() : List.copyOf(rules);
+        }
+
+        /** What a MANY_TO_ONE leads to: one row. */
+        public LinkedEntity(String name, List<FieldDefinition> fields) {
+            this(name, fields, false, List.of());
+        }
+
+        /** The rows saved with the entity, before their own rules are known. */
+        public LinkedEntity(String name, List<FieldDefinition> fields, boolean rows) {
+            this(name, fields, rows, List.of());
         }
     }
 
@@ -324,6 +339,18 @@ public record EntityDefinition(
         return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
                 listViews, label, labelPlural, opts, formSections, workflow, collections, resolved, access, uniqueKeys, rules,
                 links);
+    }
+
+    /** The same entity with its MANY_TO_MANYs resolved (an inverse side naming the set it mirrors). */
+    public EntityDefinition withCollections(List<RelationDefinition> resolved) {
+        return new EntityDefinition(name, tableName, schema, fields, relations, readOnly, viewQuery, sourceSql,
+                listViews, label, labelPlural, opts, formSections, workflow, resolved, children, access, uniqueKeys, rules,
+                links);
+    }
+
+    /** The MANY_TO_MANYs whose join table is this entity's own (not the other side of another's). */
+    public List<RelationDefinition> ownedCollections() {
+        return collections.stream().filter(c -> c.mappedBy() == null).toList();
     }
 
     /**

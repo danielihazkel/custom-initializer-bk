@@ -137,7 +137,24 @@ public final class ExprCode {
             };
         }
 
+        /**
+         * A function over the record's rows. Java: the entity's own list, each row's value read by
+         * its getter. TS: the form's rows, each row's value by its name — unknown while the rows
+         * were not read (a row of a list page does not carry them).
+         */
+        private String rows(ExprCheck.Rows a) {
+            if (java) {
+                String list = subject + ".get" + Naming.toPascalCase(a.list()) + "()";
+                if (a.field() == null) return "Expr.count(" + list + ")";
+                return "Expr." + a.fn() + "(" + list + ", each -> Expr.num(each.get" + Naming.toPascalCase(a.field().name()) + "()))";
+            }
+            String list = subject + "." + Naming.toCamelCase(a.list());
+            return a.field() == null ? "rule.count(" + list + ")" : "rule." + a.fn() + "(" + list + ", '" + a.field().name() + "')";
+        }
+
         private String function(Call fn) {
+            ExprCheck.Rows over = c.rows().get(fn);
+            if (over != null) return rows(over);
             String name = ExprCheck.FUNCTIONS.stream().filter(n -> n.equalsIgnoreCase(fn.fn())).findFirst().orElseThrow();
             List<Node> args = fn.args();
             return switch (name) {

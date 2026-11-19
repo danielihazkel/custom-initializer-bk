@@ -178,6 +178,7 @@ export function {{EntityName}}Form({ value, onChange{{#hasShowWhenFields}}: repo
         onChange={rows => onChange({ ...value, {{collectionField}}: rows })}
         errors={errors}
       />{{#formHasSteps}})}{{/formHasSteps}}
-{{/compositions}}    </>
+{{#showsMessage}}      { {{#formHasSteps}}show('{{collectionField}}') && {{/formHasSteps}}errors?.{{collectionField}} && <p role="alert" className="mt-1 text-xs text-danger">{errors.{{collectionField}}}</p>}
+{{/showsMessage}}{{/compositions}}    </>
   )
 }

@@ -162,4 +162,47 @@ public final class Expr {
     public static String fit(String s, int length) {
         return s == null || s.length() <= length ? s : s.substring(0, length);
     }
-}
+{{#rulesReadRows}}
+
+    // The rows saved with a record: sum(lines.total), count(lines). A row's empty value is left
+    // out; a list that was not read at all is unknown, like an empty value.
+
+    public static BigDecimal count(java.util.Collection<?> rows) {
+        return rows == null ? null : BigDecimal.valueOf(rows.size());
+    }
+
+    /** Zero for no rows. */
+    public static <T> BigDecimal sum(java.util.Collection<T> rows, java.util.function.Function<T, BigDecimal> value) {
+        if (rows == null) return null;
+        BigDecimal total = BigDecimal.ZERO;
+        for (BigDecimal v : values(rows, value)) total = total.add(v);
+        return total;
+    }
+
+    /** Empty for no rows — as are max and avg. */
+    public static <T> BigDecimal min(java.util.Collection<T> rows, java.util.function.Function<T, BigDecimal> value) {
+        return rows == null ? null : values(rows, value).stream().min(BigDecimal::compareTo).orElse(null);
+    }
+
+    public static <T> BigDecimal max(java.util.Collection<T> rows, java.util.function.Function<T, BigDecimal> value) {
+        return rows == null ? null : values(rows, value).stream().max(BigDecimal::compareTo).orElse(null);
+    }
+
+    public static <T> BigDecimal avg(java.util.Collection<T> rows, java.util.function.Function<T, BigDecimal> value) {
+        if (rows == null) return null;
+        java.util.List<BigDecimal> numbers = values(rows, value);
+        if (numbers.isEmpty()) return null;
+        BigDecimal total = BigDecimal.ZERO;
+        for (BigDecimal v : numbers) total = total.add(v);
+        return total.divide(BigDecimal.valueOf(numbers.size()), java.math.MathContext.DECIMAL64);
+    }
+
+    private static <T> java.util.List<BigDecimal> values(java.util.Collection<T> rows, java.util.function.Function<T, BigDecimal> value) {
+        java.util.List<BigDecimal> out = new java.util.ArrayList<>();
+        for (T row : rows) {
+            BigDecimal v = row == null ? null : value.apply(row);
+            if (v != null) out.add(v);
+        }
+        return out;
+    }
+{{/rulesReadRows}}}

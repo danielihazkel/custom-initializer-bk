@@ -64,11 +64,14 @@ import org.hibernate.annotations.Formula;
     @Formula("(select t.{{targetLabelColumn}} from {{targetTableRef}} t where t.{{targetPkColumn}} = {{joinColumn}})")
     private String {{fieldName}}Label;
 
-{{/hasTargetLabel}}{{/relations}}{{#collections}}    @ManyToMany(fetch = FetchType.LAZY)
+{{/hasTargetLabel}}{{/relations}}{{#collections}}{{^isInverse}}    @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(name = "{{joinTable}}",
             joinColumns = @JoinColumn(name = "{{joinColumn}}"),
             inverseJoinColumns = @JoinColumn(name = "{{inverseJoinColumn}}"))
-    @org.hibernate.annotations.BatchSize(size = 100)
+{{/isInverse}}{{#isInverse}}    /** The other side of {{targetEntity}}.{{mappedBy}}, which holds the link: read from here, changed there
+     *  (the service does that for a save made from this side). */
+    @ManyToMany(mappedBy = "{{mappedBy}}", fetch = FetchType.LAZY)
+{{/isInverse}}    @org.hibernate.annotations.BatchSize(size = 100)
     private java.util.Set<{{targetEntity}}> {{fieldName}} = new java.util.LinkedHashSet<>();
 
 {{/collections}}{{#attachmentFields}}    /** Name of the file in {{name}}, read by the database on load — the attachment itself is fetched

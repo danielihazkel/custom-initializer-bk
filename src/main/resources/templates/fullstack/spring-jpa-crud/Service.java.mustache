@@ -552,7 +552,59 @@ public class {{EntityName}}Service {
             entity.set{{FieldName}}(new java.util.LinkedHashSet<>(found));
         }
 {{/collections}}    }
-{{/mutable}}{{/hasCollections}}
+{{#inverseSets}}
+
+    /**
+     * {{EntityName}}.{{fieldName}} is the other side of {{targetEntity}}.{{mappedBy}}, which holds the link: a change made
+     * from here is made there â€” taken out of the rows left out, put into the rows added. Rows are
+     * told apart by their key.
+     */
+    private void link{{FieldName}}({{EntityName}} row, java.util.Collection<{{entityPackage}}.{{targetEntity}}> wanted) {
+        java.util.Set<Object> kept = new java.util.HashSet<>();
+        for ({{entityPackage}}.{{targetEntity}} owner : wanted) kept.add(owner.get{{TargetPkName}}());
+        for ({{entityPackage}}.{{targetEntity}} owner : row.get{{FieldName}}()) {
+            if (!kept.contains(owner.get{{TargetPkName}}())) {
+                owner.get{{MappedBy}}().removeIf(mine -> java.util.Objects.equals(mine.get{{pkField.Name}}(), row.get{{pkField.Name}}()));
+            }
+        }
+        for ({{entityPackage}}.{{targetEntity}} owner : wanted) {
+            if (owner.get{{MappedBy}}().stream().noneMatch(mine -> java.util.Objects.equals(mine.get{{pkField.Name}}(), row.get{{pkField.Name}}()))) {
+                owner.get{{MappedBy}}().add(row);
+            }
+        }
+    }
+{{/inverseSets}}{{#hasInverseSets}}
+
+    /** A new row's links, made where they are held. */
+    private {{EntityName}} linkedBack({{EntityName}} saved) {
+{{#inverseSets}}        link{{FieldName}}(saved, new java.util.ArrayList<>(saved.get{{FieldName}}()));
+{{/inverseSets}}        return saved;
+    }
+{{#unlinksOnDelete}}
+
+    /** A row about to be deleted, taken out of the sets that hold a link to it. */
+    private {{EntityName}} unlinked({{EntityName}} row) {
+{{#inverseSets}}        link{{FieldName}}(row, java.util.List.of());
+{{/inverseSets}}        return row;
+    }
+{{/unlinksOnDelete}}{{/hasInverseSets}}{{#bulkSetsApplicable}}{{#bulkSets}}
+
+    /** The ids a bulk change carries for {{fieldName}}, as the stubs resolveLinks takes (none: the set is emptied). */
+    private static java.util.Set<{{entityPackage}}.{{targetEntity}}> stubs{{FieldName}}(Object value) {
+        java.util.Set<{{entityPackage}}.{{targetEntity}}> stubs = new java.util.LinkedHashSet<>();
+        if (value == null) return stubs;
+        if (!(value instanceof java.util.Collection<?> ids)) {
+            throw new IllegalArgumentException("{{fieldName}}: a list of ids is expected");
+        }
+        for (Object id : ids) {
+            if (id == null) continue;
+            {{entityPackage}}.{{targetEntity}} stub = new {{entityPackage}}.{{targetEntity}}();
+            stub.set{{TargetPkName}}({{{targetPkCoerceJava}}});
+            stubs.add(stub);
+        }
+        return stubs;
+    }
+{{/bulkSets}}{{/bulkSetsApplicable}}{{/mutable}}{{/hasCollections}}
 {{#readsLinks}}{{#mutable}}
     /**
      * Loads the rows this {{EntityName}}'s rules read through its links: a row from a request links by
@@ -565,7 +617,42 @@ public class {{EntityName}}Service {
         }
 {{/linkedReads}}    }
 
-{{/mutable}}{{/readsLinks}}{{#deletedHoldsKeys}}
+{{/mutable}}{{/readsLinks}}{{#parentReadsRows}}
+    /**
+     * A {{EntityName}} is one of its {{CompositionParent}}'s rows, which that record's rules and computed fields read:
+     * after a change made here they run again, over the rows as they now are. A rule the change
+     * breaks refuses it (400, in the {{CompositionParent}}'s own words).
+     */
+    private void recheckParent({{entityPackage}}.{{CompositionParent}} link) {
+        if (link == null || link.get{{CompositionParentPk}}() == null) return;
+        entityManager.flush();
+        {{entityPackage}}.{{CompositionParent}} parent = entityManager.find({{entityPackage}}.{{CompositionParent}}.class, link.get{{CompositionParentPk}}());
+        if (parent == null) return;
+        entityManager.refresh(parent);
+        try {
+            {{packageName}}.rules.{{CompositionParent}}Rules.check(parent);
+        } catch ({{packageName}}.web.RuleViolationException broken) {
+            throw new IllegalArgumentException("{{{compositionParentLabelJava}}}: " + String.join("; ", broken.errors().values()));
+        }
+    }
+
+    private {{EntityName}} rechecked({{EntityName}} saved) {
+        recheckParent(saved.get{{CompositionLinkName}}());
+        return saved;
+    }
+
+    /** {@link #recheckParent} for each record these rows belong to, once. */
+    private void recheckParents(java.util.Collection<{{EntityName}}> rows) {
+        java.util.Map<Object, {{entityPackage}}.{{CompositionParent}}> parents = new java.util.LinkedHashMap<>();
+        for ({{EntityName}} row : rows) {
+            if (row.get{{CompositionLinkName}}() != null) {
+                parents.putIfAbsent(row.get{{CompositionLinkName}}().get{{CompositionParentPk}}(), row.get{{CompositionLinkName}}());
+            }
+        }
+        parents.values().forEach(this::recheckParent);
+    }
+
+{{/parentReadsRows}}{{#deletedHoldsKeys}}
     /**
      * A deleted {{EntityName}} keeps its unique values, so the database would refuse this row as a
      * duplicate of one nobody sees. Asked first, to say so (409, with the deleted record's key —
@@ -622,8 +709,8 @@ public class {{EntityName}}Service {
 {{/hasLockedRelations}}{{#readsLinks}}        withLinkedRows(entity);
 {{/readsLinks}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(entity);
 {{/hasRules}}{{#deletedHoldsKeys}}        requireNoDeletedHolder(entity);
-{{/deletedHoldsKeys}}{{^tracksMoves}}        return repository.save(entity);
-{{/tracksMoves}}{{#tracksMoves}}        {{EntityName}} saved = repository.save(entity);
+{{/deletedHoldsKeys}}{{^tracksMoves}}        return {{#parentReadsRows}}rechecked({{/parentReadsRows}}{{#hasInverseSets}}linkedBack({{/hasInverseSets}}repository.save(entity){{#hasInverseSets}}){{/hasInverseSets}}{{#parentReadsRows}}){{/parentReadsRows}};
+{{/tracksMoves}}{{#tracksMoves}}        {{EntityName}} saved = {{#hasInverseSets}}linkedBack({{/hasInverseSets}}repository.save(entity){{#hasInverseSets}}){{/hasInverseSets}};
         moves.created("{{entityNameKebab}}", saved.get{{pkField.Name}}(), saved.get{{WorkflowStatusName}}());
         return saved;
 {{/tracksMoves}}    }
@@ -713,14 +800,16 @@ public class {{EntityName}}Service {
             }
 {{/deletedHoldsKeys}}            entities.add(entity);
         }
-        if (errors.isEmpty()) repository.saveAll(entities);
-        return errors;
+        if (errors.isEmpty()) repository.saveAll(entities){{#hasInverseSets}}.forEach(this::linkedBack){{/hasInverseSets}};
+{{#parentReadsRows}}        if (errors.isEmpty()) recheckParents(entities);
+{{/parentReadsRows}}        return errors;
     }
 {{/importApplicable}}
 
     public {{EntityName}} update({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id, {{EntityName}} updated) {
         {{EntityName}} existing = {{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}};
-{{#rowsViaParent}}        requireParentMine(updated.get{{RowParentLink}}());
+{{#parentReadsRows}}        {{entityPackage}}.{{CompositionParent}} movedFrom = existing.get{{CompositionLinkName}}();
+{{/parentReadsRows}}{{#rowsViaParent}}        requireParentMine(updated.get{{RowParentLink}}());
 {{/rowsViaParent}}{{#hasOwnLinks}}        requireVisibleLinks(updated, existing);
 {{/hasOwnLinks}}{{#hasLockedRelations}}        withReferences(updated);
 {{/hasLockedRelations}}{{#lockingApplicable}}        // The client sends the version it read: an older one means someone saved in between, so
@@ -746,7 +835,8 @@ public class {{EntityName}}Service {
 {{/isMultiFile}}{{/isReadOnly}}{{/nonPkFields}}{{#relations}}        existing.set{{FieldName}}(updated.get{{FieldName}}());
 {{/relations}}{{#hasCollections}}        resolveLinks(updated);
 {{#collections}}        if (updated.get{{FieldName}}() != null) {
-            existing.get{{FieldName}}().clear();
+{{#isInverse}}            link{{FieldName}}(existing, updated.get{{FieldName}}());
+{{/isInverse}}            existing.get{{FieldName}}().clear();
             existing.get{{FieldName}}().addAll(updated.get{{FieldName}}());
         }
 {{/collections}}{{/hasCollections}}{{#compositions}}        if (updated.get{{CollectionField}}() != null) {
@@ -758,8 +848,15 @@ public class {{EntityName}}Service {
 {{/compositions}}{{#readsLinks}}        withLinkedRows(existing);
 {{/readsLinks}}{{#hasRules}}        {{packageName}}.rules.{{EntityName}}Rules.check(existing);
 {{/hasRules}}{{#deletedHoldsKeys}}        requireNoDeletedHolder(existing);
-{{/deletedHoldsKeys}}        return repository.save(existing);
-    }
+{{/deletedHoldsKeys}}{{^parentReadsRows}}        return repository.save(existing);
+{{/parentReadsRows}}{{#parentReadsRows}}        {{EntityName}} saved = rechecked(repository.save(existing));
+        // Moved to another {{CompositionParent}}: the one it left has a row less.
+        if (movedFrom != null && saved.get{{CompositionLinkName}}() != null
+                && !java.util.Objects.equals(movedFrom.get{{CompositionParentPk}}(), saved.get{{CompositionLinkName}}().get{{CompositionParentPk}}())) {
+            recheckParent(movedFrom);
+        }
+        return saved;
+{{/parentReadsRows}}    }
 {{#hasWorkflow}}
 
     /** The states a row can still move on from; the others are final. */
@@ -937,9 +1034,12 @@ public class {{EntityName}}Service {
 {{/hasLockedRelations}}    /** Loads first so a missing id surfaces as a 404 (ResourceNotFoundException) rather than a
      *  500 from deleteById's EmptyResultDataAccessException. */
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
-{{^hasAttachmentFields}}        repository.delete({{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}});
-{{/hasAttachmentFields}}{{#hasAttachmentFields}}        {{EntityName}} existing = {{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}};
+{{^hasAttachmentFields}}{{^parentReadsRows}}        repository.delete({{#unlinksOnDelete}}unlinked({{/unlinksOnDelete}}{{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}}{{#unlinksOnDelete}}){{/unlinksOnDelete}});
+{{/parentReadsRows}}{{#parentReadsRows}}        {{EntityName}} existing = {{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}};
         repository.delete(existing);
+        recheckParent(existing.get{{CompositionLinkName}}());
+{{/parentReadsRows}}{{/hasAttachmentFields}}{{#hasAttachmentFields}}        {{EntityName}} existing = {{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}};
+        repository.delete({{#unlinksOnDelete}}unlinked({{/unlinksOnDelete}}existing{{#unlinksOnDelete}}){{/unlinksOnDelete}});
 {{^softDeleteApplicable}}        // The record's files go with it. (A soft-deleted record keeps them, for a restore.)
 {{#attachmentFields}}        attachments.delete(existing.get{{Name}}());
 {{/attachmentFields}}{{#multiFileFields}}        existing.get{{Name}}().forEach(file -> attachments.delete(file.getId()));
@@ -953,10 +1053,10 @@ public class {{EntityName}}Service {
             throw new ResourceNotFoundException("{{EntityName}} " + id + " not found");
         }
 {{^eventsRestores}}
-        return findById(id);
+        return {{#parentReadsRows}}rechecked({{/parentReadsRows}}findById(id){{#parentReadsRows}}){{/parentReadsRows}};
 {{/eventsRestores}}
 {{#eventsRestores}}
-        {{EntityName}} restored = findById(id);
+        {{EntityName}} restored = {{#parentReadsRows}}rechecked({{/parentReadsRows}}findById(id){{#parentReadsRows}}){{/parentReadsRows}};
         events.restored(restored);
         return restored;
 {{/eventsRestores}}
@@ -990,8 +1090,10 @@ public class {{EntityName}}Service {
 {{#rowsOwnOnly}}        rows = rows.stream().filter(this::isMine).toList(); // somebody else's row is not there
 {{/rowsOwnOnly}}        requireAll(ids, rows);
 {{#rowsOwnWrites}}        rows.forEach(this::requireMine);
-{{/rowsOwnWrites}}        repository.deleteAllById(ids);
-{{#hasAttachmentFields}}{{^softDeleteApplicable}}        for ({{EntityName}} row : rows) {
+{{/rowsOwnWrites}}{{#unlinksOnDelete}}        rows.forEach(this::unlinked);
+{{/unlinksOnDelete}}        repository.deleteAllById(ids);
+{{#parentReadsRows}}        recheckParents(rows);
+{{/parentReadsRows}}{{#hasAttachmentFields}}{{^softDeleteApplicable}}        for ({{EntityName}} row : rows) {
 {{#attachmentFields}}            attachments.delete(row.get{{Name}}());
 {{/attachmentFields}}{{#multiFileFields}}            row.get{{Name}}().forEach(file -> attachments.delete(file.getId()));
 {{/multiFileFields}}        }
@@ -1010,14 +1112,26 @@ public class {{EntityName}}Service {
 {{/rowsOwnWrites}}{{#hasRequiredBulkFields}}        if (value == null && java.util.Set.of({{{requiredBulkFieldsJava}}}).contains(field)) {
             throw new IllegalArgumentException(field + " is required");
         }
-{{/hasRequiredBulkFields}}        for ({{EntityName}} entity : rows) {
+{{/hasRequiredBulkFields}}{{#bulkSetsApplicable}}        // A set of linked rows: the same rows on every record, resolved (and refused) once.
+        {{EntityName}} links = new {{EntityName}}();
+        switch (field) {
+{{#bulkSets}}            case "{{fieldName}}" -> links.set{{FieldName}}(stubs{{FieldName}}(value));
+{{/bulkSets}}            default -> { }
+        }
+        resolveLinks(links);
+{{/bulkSetsApplicable}}        for ({{EntityName}} entity : rows) {
             switch (field) {
 {{#bulkUpdatableFields}}                case "{{name}}" -> entity.set{{Name}}(value == null ? null : {{bulkCoerceJava}});
-{{/bulkUpdatableFields}}                default -> throw new IllegalArgumentException("Field not bulk-updatable: " + field);
+{{/bulkUpdatableFields}}{{#bulkSetsApplicable}}{{#bulkSets}}                case "{{fieldName}}" -> {
+{{#hasOwnLinks}}                    requireVisibleLinks(links, entity);
+{{/hasOwnLinks}}                    entity.get{{FieldName}}().clear();
+                    entity.get{{FieldName}}().addAll(links.get{{FieldName}}());
+                }
+{{/bulkSets}}{{/bulkSetsApplicable}}                default -> throw new IllegalArgumentException("Field not bulk-updatable: " + field);
             }
         }
 {{#bulkValidates}}        // The same value went onto every row: one row's answer is every row's.
-        if (!rows.isEmpty()) {
+        if (!rows.isEmpty(){{#bulkSetsApplicable}} && !java.util.Set.of({{{bulkSetNamesJava}}}).contains(field){{/bulkSetsApplicable}}) {
             for (jakarta.validation.ConstraintViolation<{{dtoPackage}}.{{EntityName}}Dto> violation
                     : validator.validateProperty({{dtoPackage}}.{{EntityName}}Dto.from(rows.get(0)), field)) {
                 throw new IllegalArgumentException(field + " " + violation.getMessage());
@@ -1025,7 +1139,8 @@ public class {{EntityName}}Service {
         }
 {{/bulkValidates}}{{#hasRules}}        rows.forEach({{packageName}}.rules.{{EntityName}}Rules::check);
 {{/hasRules}}        repository.saveAll(rows);
-    }
+{{#parentReadsRows}}        recheckParents(rows);
+{{/parentReadsRows}}    }
 {{/bulkUpdateApplicable}}{{#bulkSelectApplicable}}
     /** A bulk call names the records it changes: all of them must exist, or none is touched. */
     private void requireAll(java.util.List<{{pkField.javaType}}> ids, java.util.List<{{EntityName}}> rows) {

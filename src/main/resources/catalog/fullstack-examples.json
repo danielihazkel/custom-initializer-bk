@@ -51,6 +51,14 @@
             "unique": true,
             "length": 40
           }
+        ],
+        "relations": [
+          {
+            "type": "MANY_TO_MANY",
+            "fieldName": "posts",
+            "targetEntity": "Post",
+            "mappedBy": "tags"
+          }
         ]
       },
       {
@@ -259,7 +267,10 @@
     ],
     "settings": {
       "scaffold": [
-        "audit"
+        "audit",
+        "seedData",
+        "bulkUpdate",
+        "inlineEdit"
       ]
     }
   },
@@ -380,7 +391,7 @@
           {
             "name": "total",
             "type": "BIG_DECIMAL",
-            "min": 0
+            "formula": "sum(lines.lineTotal)"
           }
         ],
         "relations": [
@@ -395,6 +406,12 @@
             "fieldName": "lines",
             "targetEntity": "OrderLine",
             "composition": true
+          }
+        ],
+        "rules": [
+          {
+            "check": "count(lines) > 0",
+            "message": "An order needs at least one line"
           }
         ]
       },

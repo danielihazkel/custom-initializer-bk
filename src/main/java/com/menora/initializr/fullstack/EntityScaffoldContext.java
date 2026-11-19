@@ -2,6 +2,8 @@ package com.menora.initializr.fullstack;
 
 import com.menora.initializr.db.entity.ColorPaletteEntity;
 
+import com.menora.initializr.gen.Naming;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -249,14 +251,31 @@ public final class EntityScaffoldContext {
         // A composed child: the relation that is its link to the parent is never asked of a
         // client inside the parent's rows (the parent is the link), so the DTO does not require it.
         ctx.put("isComposedChild", false);
+        ctx.put("parentReadsRows", false);
+        Map<String, Set<String>> rowsReadBy = (Map<String, Set<String>>) ctx.get(FeatureContext.ROWS_READ_KEY);
         if (inverses != null) {
-            for (List<Map<String, Object>> ofParent : inverses.values()) {
+            for (Map.Entry<String, List<Map<String, Object>>> byParent : inverses.entrySet()) {
+                List<Map<String, Object>> ofParent = byParent.getValue();
                 for (Map<String, Object> inv : ofParent) {
                     if (!Boolean.TRUE.equals(inv.get("composition"))
                             || !String.valueOf(inv.get("childEntity")).equals(ctx.get("EntityName"))) continue;
                     ctx.put("isComposedChild", true);
                     ctx.put("CompositionLinkName", inv.get("MappedBy"));
                     ctx.put("compositionLinkName", inv.get("mappedBy"));
+                    // Its parent's rules or computed fields read these rows: a change made through
+                    // this entity's own endpoints runs them again (and the rows editor keeps each
+                    // row as it will be saved, so the parent's form follows).
+                    Set<String> read = rowsReadBy == null ? null : rowsReadBy.get(byParent.getKey());
+                    boolean parentReads = read != null && read.contains(String.valueOf(inv.get("collectionField")));
+                    Map<String, Object> parent = summaries == null ? null : summaries.get(byParent.getKey());
+                    if (parentReads && parent != null) {
+                        ctx.put("parentReadsRows", true);
+                        ctx.put("CompositionParent", parent.get("pascal"));
+                        ctx.put("CompositionParentPk", parent.get("PkName"));
+                        ctx.put("compositionParentLabelJava", TemplateText.escapeJavaLiteral(String.valueOf(parent.get("pascal"))));
+                    }
+                    ctx.put("rowsDeriveLive", parentReads && (Boolean.TRUE.equals(ctx.get("hasComputedFields"))
+                            || Boolean.TRUE.equals(ctx.get("hasShowWhenFields"))));
                     for (Map<String, Object> rel : (List<Map<String, Object>>) ctx.get("relations")) {
                         if (String.valueOf(rel.get("fieldName")).equals(inv.get("mappedBy"))) {
                             rel.put("isCompositionLink", true);
@@ -420,6 +439,9 @@ public final class EntityScaffoldContext {
             inv.put("cascadeJava", keepsRows
                     ? "{jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE}"
                     : "{jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE, jakarta.persistence.CascadeType.REMOVE}");
+            // A rule may show its message on the rows themselves (under their editor).
+            Object withMessages = ctx.get("rowsWithMessages");
+            inv.put("showsMessage", withMessages instanceof Set<?> lists && lists.contains(inv.get("collectionField")));
         }
         if (Boolean.TRUE.equals(ctx.get("optScaffoldXlsxExport"))) FeatureContext.putXlsxColumns(ctx);
         // One busy flag for whichever exports the list page offers.
@@ -430,7 +452,8 @@ public final class EntityScaffoldContext {
         ctx.put("hasCompositions", hasCompositions);
         ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable
                 || (lockedRelations && mutable) || (Boolean.TRUE.equals(ctx.get("hasCollections")) && mutable)
-                || hasCompositions || (Boolean.TRUE.equals(ctx.get("readsLinks")) && mutable) || deletedHoldsKeys);
+                || hasCompositions || (Boolean.TRUE.equals(ctx.get("readsLinks")) && mutable) || deletedHoldsKeys
+                || Boolean.TRUE.equals(ctx.get("parentReadsRows")));
         // Rows that belong to users: the service's checks, and the links to such rows it guards.
         RowAccessContext.putEntity(ctx, entity);
         // The detail view words a boolean (t('trueLabel')) and formats dates for the app's locale,
@@ -480,6 +503,16 @@ public final class EntityScaffoldContext {
                         && mutable
                         && Boolean.TRUE.equals(ctx.get("viewTable"))
                         && bulkFields != null && !bulkFields.isEmpty());
+        // â€¦and so are its sets of linked rows (a many-to-many's cell opens the picker).
+        ctx.put("inlineLinks", Boolean.TRUE.equals(ctx.get("inlineEditApplicable"))
+                && Boolean.TRUE.equals(ctx.get("hasCollections")));
+        // A bulk change can set one of the entity's own sets too.
+        ctx.put("bulkSetsApplicable", Boolean.TRUE.equals(ctx.get("bulkUpdateApplicable"))
+                && Boolean.TRUE.equals(ctx.get("hasBulkSets")));
+        // A row that is really deleted leaves the sets whose other side it is (a soft-deleted one
+        // stays in them, for a restore).
+        ctx.put("unlinksOnDelete", mutable && Boolean.TRUE.equals(ctx.get("hasInverseSets"))
+                && !Boolean.TRUE.equals(ctx.get("softDeleteApplicable")));
         // The row-selection substrate (checkboxes, `selected` state) is shared by both bulk actions,
         // so it is emitted when either is applicable.
         ctx.put("bulkSelectApplicable",
@@ -540,6 +573,12 @@ public final class EntityScaffoldContext {
      * for self-references, read-only targets, or the back edge of a cycle (left null). Cycles fall
      * back to declaration order. Each entry is a copy of the entity view-model plus
      * {@code seedFirst}/{@code seedLast}.
+     *
+     * <p>A set of linked rows (a MANY_TO_MANY this entity owns) is filled from the target's rows, so
+     * the target comes first too ({@code seedSets}). Rows edited in their parent's form (a
+     * composition) are made before the parent and saved with it — two to each ({@code seedComposed}
+     * on the child, {@code seedRows} on the parent) — so a parent's rule or total over its rows
+     * has rows to read.
      */
     static List<Map<String, Object>> buildSeedOrder(List<EntityDefinition> entities,
                                                     List<Map<String, Object>> entityViews) {
@@ -551,18 +590,38 @@ public final class EntityScaffoldContext {
         for (int i = 0; i < entities.size(); i++) {
             if (!entities.get(i).readOnly()) remaining.add(i);
         }
+        // Child entity (lower-cased) → the parent whose rows it is, and the link that says so.
+        Map<String, EntityDefinition> parentOf = new LinkedHashMap<>();
+        Map<String, String> parentLinkOf = new LinkedHashMap<>();
+        for (EntityDefinition parent : entities) {
+            for (RelationDefinition list : parent.children()) {
+                if (!list.composition() || parent.readOnly()) continue;
+                parentOf.put(list.targetEntity().toLowerCase(Locale.ROOT), parent);
+                parentLinkOf.put(list.targetEntity().toLowerCase(Locale.ROOT), list.mappedBy());
+            }
+        }
         Set<String> placed = new LinkedHashSet<>();
         List<Integer> order = new ArrayList<>();
         while (!remaining.isEmpty()) {
             Integer next = null;
             for (Integer idx : remaining) {
                 EntityDefinition e = entities.get(idx);
-                boolean ready = true;
+                String self = e.name().toLowerCase(Locale.ROOT);
+                List<String> needs = new ArrayList<>();
                 for (RelationDefinition rel : e.relations()) {
-                    String t = rel.targetEntity().toLowerCase(Locale.ROOT);
+                    // A composed row does not wait for its parent: the parent waits for it.
+                    if (rel.fieldName().equals(parentLinkOf.get(self))) continue;
+                    needs.add(rel.targetEntity().toLowerCase(Locale.ROOT));
+                }
+                for (RelationDefinition set : e.ownedCollections()) needs.add(set.targetEntity().toLowerCase(Locale.ROOT));
+                for (RelationDefinition list : e.children()) {
+                    if (list.composition()) needs.add(list.targetEntity().toLowerCase(Locale.ROOT));
+                }
+                boolean ready = true;
+                for (String t : needs) {
                     Integer ti = indexByLower.get(t);
                     boolean seedableTarget = ti != null && !entities.get(ti).readOnly();
-                    if (seedableTarget && !t.equals(e.name().toLowerCase(Locale.ROOT)) && !placed.contains(t)) {
+                    if (seedableTarget && !t.equals(self) && !placed.contains(t)) {
                         ready = false;
                         break;
                     }
@@ -586,13 +645,41 @@ public final class EntityScaffoldContext {
             for (int r = 0; r < e.relations().size(); r++) {
                 Map<String, Object> rc = new LinkedHashMap<>(rels.get(r));
                 String t = e.relations().get(r).targetEntity().toLowerCase(Locale.ROOT);
-                rc.put("targetSeeded", seededSoFar.contains(t));
+                String self = e.name().toLowerCase(Locale.ROOT);
+                // A composed row gets its parent when the parent takes it, below.
+                boolean toParent = e.relations().get(r).fieldName().equals(parentLinkOf.get(self));
+                rc.put("targetSeeded", seededSoFar.contains(t) && !toParent);
                 // Demo rows a rule is broken by are left out, so a parent with rules may have none.
-                rc.put("targetMayHaveNoRows", seededSoFar.contains(t)
+                rc.put("targetMayHaveNoRows", seededSoFar.contains(t) && !toParent
                         && !entities.get(indexByLower.get(t)).allRules().isEmpty());
                 relCopies.add(rc);
             }
             sv.put("relations", relCopies);
+            String lower = e.name().toLowerCase(Locale.ROOT);
+            sv.put("seedComposed", parentOf.containsKey(lower));
+            sv.put("seedParent", parentOf.containsKey(lower) ? Naming.toPascalCase(parentOf.get(lower).name()) : null);
+            List<Map<String, Object>> seedSets = new ArrayList<>();
+            for (RelationDefinition set : e.ownedCollections()) {
+                String t = set.targetEntity().toLowerCase(Locale.ROOT);
+                // Rows made for a parent are not saved yet: nothing links to them here.
+                if (!seededSoFar.contains(t) || parentOf.containsKey(t)) continue;
+                Map<String, Object> ss = new LinkedHashMap<>();
+                ss.put("FieldName", Naming.toPascalCase(set.fieldName()));
+                ss.put("targetEntityCamel", Naming.toCamelCase(set.targetEntity()));
+                seedSets.add(ss);
+            }
+            sv.put("seedSets", seedSets);
+            List<Map<String, Object>> seedRows = new ArrayList<>();
+            for (RelationDefinition list : e.children()) {
+                String t = list.targetEntity().toLowerCase(Locale.ROOT);
+                if (!list.composition() || !seededSoFar.contains(t) || parentOf.get(t) != e) continue;
+                Map<String, Object> sr = new LinkedHashMap<>();
+                sr.put("CollectionField", Naming.toPascalCase(list.fieldName()));
+                sr.put("childCamel", Naming.toCamelCase(list.targetEntity()));
+                sr.put("MappedBy", Naming.toPascalCase(list.mappedBy()));
+                seedRows.add(sr);
+            }
+            sv.put("seedRows", seedRows);
             sv.put("seedFirst", n == 0);
             sv.put("seedLast", n == order.size() - 1);
             seeds.add(sv);

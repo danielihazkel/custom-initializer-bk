@@ -397,6 +397,8 @@ a 400.
 
 **Not an option — an entity's `access.owners` / `access.rows`:** `hasRowAccess`, `hasOwnWrites` (project); `rowLimited`, `rowsOwnOnly`, `rowsOwnWrites`, `rowsViaParent`, `rowMineSpecJava`, `rowMineJava`, `rowOwnsOnCreate`, `rowFillOwners`, `rowRestoresOwned`, `rowOwnedSqlJava`, `ownLinks`, `ownSets`, `usesRowAccess` (entity, backend); `listOwnWrites`, `rowMineTs` (entity view, frontend). Rows that belong to users — an entity's `access.owners` / `access.rows`. Built in `fullstack/RowAccessContext` (and `EntityViewModel` for the two frontend keys); see *Round 14, phase 3* in `CLAUDE.md`.
 
+**Not options — relations and rows (Round 14, phase 4):** on each `collections` entry `isInverse`, `mappedBy` / `MappedBy` (the other side of a set) and `targetPkCoerceJava`; `inverseSets`, `hasInverseSets`, `unlinksOnDelete`, `bulkSets`, `hasBulkSets`, `bulkSetNamesJava`, `bulkSetsApplicable`, `inlineLinks` (entity), `hasInlineLinks` (project). For a parent that reads its rows: `rulesReadRows` (project), `readsRows`, `rowsRead`, `rowsWithMessages` (entity) and `showsMessage` on a composition; on the rows' own entity `parentReadsRows`, `CompositionParent`, `CompositionParentPk`, `rowsDeriveLive`, and `rowFormulaTs` on each computed field. In the demo loader's `seedEntities`: `seedComposed`, `seedParent`, `seedSets`, `seedRows`. Built in `EntityViewModel`, `EntityScaffoldContext` and `FeatureContext`; see *Round 14, phase 4* in `CLAUDE.md`.
+
 A per-entity option is resolved against the entity's own `opts` override in `buildEntityContext`, and
 templates mostly read the derived `*Applicable` flag, which also accounts for read-only entities, views
 and composite keys.

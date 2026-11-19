@@ -118,6 +118,97 @@ class GeneratedBackendBuildSmokeTests {
         runMvn(postAndExtractBackend(workDir, body), "-B", "package");
     }
 
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"spring-jpa-crud", "spring-jpa-crud-lombok"})
+    void aManyToManyIsReadAndChangedFromBothSidesOverTheRealApi(String backendSet, @TempDir Path workDir) throws Exception {
+        // Tag.posts is the other side of Post.tags: read, filtered and saved from the tag too, a
+        // bulk change of a post's tags, a tag deleted out of the posts that had it, and the demo
+        // rows' links — with the project's own generated tests in the same build. On both backend
+        // sets: the Lombok one tells rows apart by their values, which a set of rows must survive.
+        Map<String, Object> body = FullstackExampleRequests.twoSidedManyToManyBody("react-tailwind-crud");
+        body.put("backendTemplateSet", backendSet);
+        body.put("dependencies", List.of("web", "data-jpa", "h2", "validation"));
+        Path backend = postAndExtractBackend(workDir, body);
+        writeLiveTest(backend, "com.menora.press", LIVE_TWO_SIDED_TESTS);
+        runMvn(backend, "-B", "package");
+    }
+
+    /** Test methods run against the generated press backend, whose tags know their posts. */
+    private static final String LIVE_TWO_SIDED_TESTS = """
+                private static String j(String json) {
+                    return json.replace('\\'', '"');
+                }
+
+                private java.util.List<Long> ids(String path, String field) throws Exception {
+                    java.util.List<Long> out = new java.util.ArrayList<>();
+                    for (JsonNode id : get(path).get(field)) out.add(id.asLong());
+                    return out;
+                }
+
+                @Test
+                void aSetIsReadAndChangedFromEitherSide() throws Exception {
+                    // The demo posts came with tags, and the tags know those posts.
+                    long demoPost = firstId("/api/posts");
+                    java.util.List<Long> demoTags = ids("/api/posts/" + demoPost, "tagsIds");
+                    assertThat(demoTags).isNotEmpty();
+                    assertThat(ids("/api/tags/" + demoTags.get(0), "postsIds")).contains(demoPost);
+
+                    long tag = send(post("/api/tags"), null, j("{'name':'fresh'}"), 200).get("id").asLong();
+                    long a = send(post("/api/posts"), null, j("{'title':'A'}"), 200).get("id").asLong();
+                    long b = send(post("/api/posts"), null, j("{'title':'B'}"), 200).get("id").asLong();
+
+                    // From the tag: both posts get it.
+                    send(put("/api/tags/" + tag), null, j("{'name':'fresh','postsIds':[" + a + "," + b + "]}"), 200);
+                    assertThat(ids("/api/posts/" + a, "tagsIds")).containsExactly(tag);
+                    assertThat(ids("/api/posts/" + b, "tagsIds")).containsExactly(tag);
+                    assertThat(ids("/api/tags/" + tag, "postsIds")).containsExactlyInAnyOrder(a, b);
+                    assertThat(get("/api/tags/" + tag).get("postsLabels").toString()).contains("A").contains("B");
+                    // Either end filters by the other.
+                    assertThat(get("/api/tags?postsId=" + a).get("totalElements").asInt()).isEqualTo(1);
+                    assertThat(get("/api/posts?tagsId=" + tag).get("totalElements").asInt()).isEqualTo(2);
+
+                    // A post left out from the tag's side loses it; no list at all leaves the links alone.
+                    send(put("/api/tags/" + tag), null, j("{'name':'fresh','postsIds':[" + b + "]}"), 200);
+                    assertThat(ids("/api/posts/" + a, "tagsIds")).isEmpty();
+                    send(put("/api/tags/" + tag), null, j("{'name':'renamed'}"), 200);
+                    assertThat(ids("/api/tags/" + tag, "postsIds")).containsExactly(b);
+                    // …and what the post's own side saves is what the tag reads.
+                    send(put("/api/posts/" + a), null, j("{'title':'A','tagsIds':[" + tag + "]}"), 200);
+                    assertThat(ids("/api/tags/" + tag, "postsIds")).containsExactlyInAnyOrder(a, b);
+
+                    // A tag made with its posts; a post that is not there is refused.
+                    long second = send(post("/api/tags"), null, j("{'name':'second','postsIds':[" + a + "]}"), 200).get("id").asLong();
+                    assertThat(ids("/api/posts/" + a, "tagsIds")).containsExactlyInAnyOrder(tag, second);
+                    send(put("/api/tags/" + second), null, j("{'name':'second','postsIds':[987654]}"), 400);
+                    assertThat(ids("/api/tags/" + second, "postsIds")).containsExactly(a);
+
+                    // A bulk change puts the same tags on every picked post (none: the set is emptied).
+                    mvc.perform(patch("/api/posts/bulk").contentType(MediaType.APPLICATION_JSON)
+                                    .content(j("{'ids':[" + a + "," + b + "],'field':'tags','value':[" + second + "]}")))
+                            .andExpect(status().is2xxSuccessful());
+                    assertThat(ids("/api/posts/" + a, "tagsIds")).containsExactly(second);
+                    assertThat(ids("/api/posts/" + b, "tagsIds")).containsExactly(second);
+                    assertThat(ids("/api/tags/" + tag, "postsIds")).isEmpty();
+                    mvc.perform(patch("/api/posts/bulk").contentType(MediaType.APPLICATION_JSON)
+                                    .content(j("{'ids':[" + a + "],'field':'tags','value':[987654]}")))
+                            .andExpect(status().isBadRequest());
+                    mvc.perform(patch("/api/posts/bulk").contentType(MediaType.APPLICATION_JSON)
+                                    .content(j("{'ids':[" + b + "],'field':'tags','value':null}")))
+                            .andExpect(status().is2xxSuccessful());
+                    assertThat(ids("/api/posts/" + b, "tagsIds")).isEmpty();
+                    assertThat(ids("/api/posts/" + a, "tagsIds")).containsExactly(second);
+
+                    // A tag deleted leaves the posts that had it (it used to be refused by the join table's key).
+                    mvc.perform(delete("/api/tags/" + second)).andExpect(status().is2xxSuccessful());
+                    assertThat(ids("/api/posts/" + a, "tagsIds")).isEmpty();
+                    mvc.perform(delete("/api/tags/bulk").contentType(MediaType.APPLICATION_JSON)
+                                    .content("[" + demoTags.get(0) + "]"))
+                            .andExpect(status().is2xxSuccessful());
+                    assertThat(ids("/api/posts/" + demoPost, "tagsIds")).doesNotContain(demoTags.get(0));
+                }
+
+            """;
+
     @ParameterizedTest(name = "Spring Boot {0}")
     @ValueSource(strings = {"3.2.1", FullstackGoldenOutputTests.BOOT_35})
     void oneToManyBackendCompilesAndPassesItsTests(String bootVersion, @TempDir Path workDir) throws Exception {
@@ -221,10 +312,31 @@ class GeneratedBackendBuildSmokeTests {
         log.info("ContainerDatabaseTests: {}", report.lines().filter(l -> l.startsWith("Tests run")).findFirst().orElse(""));
     }
 
-    /** The Orders example with its lines composed into the order (whatever the catalog's copy says). */
+    /**
+     * The Orders example with its lines composed into the order (whatever the catalog's copy says)
+     * and nothing of the order read from them: no total over the lines, no rule that it has one.
+     * What a composition does on its own is what these builds hold it to; an order that reads its
+     * lines is {@code liveApiOfABackendWithEveryOptBehaves}.
+     */
     @SuppressWarnings("unchecked")
     static Map<String, Object> composedOrders(String frontendSet) throws Exception {
         Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("orders", frontendSet);
+        List<Map<String, Object>> plain = new ArrayList<>();
+        for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
+            Map<String, Object> copy = new java.util.LinkedHashMap<>(entity);
+            if ("Order".equals(copy.get("name"))) {
+                copy.remove("rules");
+                List<Map<String, Object>> fields = new ArrayList<>();
+                for (Map<String, Object> field : (List<Map<String, Object>>) copy.get("fields")) {
+                    Map<String, Object> entered = new java.util.LinkedHashMap<>(field);
+                    entered.remove("formula");
+                    fields.add(entered);
+                }
+                copy.put("fields", fields);
+            }
+            plain.add(copy);
+        }
+        body.put("entities", plain);
         for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
             if (!"Order".equals(entity.get("name"))) continue;
             List<Map<String, Object>> relations = new ArrayList<>();
@@ -1995,6 +2107,71 @@ class GeneratedBackendBuildSmokeTests {
 
     /** Test methods run against the generated Orders backend (every option on) and its demo rows. */
     private static final String LIVE_ORDERS_TESTS = """
+                private static String j(String json) {
+                    return json.replace('\\'', '"');
+                }
+
+                @Test
+                void anOrdersTotalFollowsItsLinesHoweverTheyChange() throws Exception {
+                    long customer = firstId("/api/customers");
+                    long product = firstId("/api/products");
+                    String head = "{'reference':'T-1','status':'OPEN','placedAt':'2026-11-01','customerId':" + customer;
+                    // An order needs a line: refused, and said on the lines.
+                    JsonNode refused = send(post("/api/orders"), null, j(head + "}"), 400);
+                    assertThat(refused.get("errors").get("lines").asText()).isEqualTo("An order needs at least one line");
+                    // Two lines: the total is theirs, whatever the client sent.
+                    JsonNode made = send(post("/api/orders"), null, j(head + ",'total':999,'lines':[{'quantity':2,'unitPrice':5,'productId':"
+                            + product + "},{'quantity':1,'unitPrice':2.5,'productId':" + product + "}]}"), 200);
+                    long id = made.get("id").asLong();
+                    assertThat(made.get("total").decimalValue()).isEqualByComparingTo("12.5");
+                    long first = made.get("lines").get(0).get("id").asLong();
+                    long second = made.get("lines").get(1).get("id").asLong();
+
+                    // A line added, changed and removed through its own endpoints: the order's total follows each.
+                    JsonNode added = send(post("/api/order-lines"), null,
+                            j("{'quantity':3,'unitPrice':10,'productId':" + product + ",'orderId':" + id + "}"), 200);
+                    long extra = added.get("id").asLong();
+                    assertThat(get("/api/orders/" + id).get("total").decimalValue()).isEqualByComparingTo("42.5");
+                    send(put("/api/order-lines/" + extra), null,
+                            j("{'quantity':1,'unitPrice':10,'productId':" + product + ",'orderId':" + id + "}"), 200);
+                    assertThat(get("/api/orders/" + id).get("total").decimalValue()).isEqualByComparingTo("22.5");
+                    mvc.perform(patch("/api/order-lines/bulk").contentType(MediaType.APPLICATION_JSON)
+                                    .content(j("{'ids':[" + extra + "],'field':'quantity','value':4}")))
+                            .andExpect(status().is2xxSuccessful());
+                    assertThat(get("/api/orders/" + id).get("total").decimalValue()).isEqualByComparingTo("52.5");
+                    mvc.perform(delete("/api/order-lines/" + extra)).andExpect(status().is2xxSuccessful());
+                    assertThat(get("/api/orders/" + id).get("total").decimalValue()).isEqualByComparingTo("12.5");
+                    // Brought back (soft delete is on), it counts again.
+                    mvc.perform(post("/api/order-lines/" + extra + "/restore")).andExpect(status().isOk());
+                    assertThat(get("/api/orders/" + id).get("total").decimalValue()).isEqualByComparingTo("52.5");
+                    mvc.perform(delete("/api/order-lines/bulk").contentType(MediaType.APPLICATION_JSON).content("[" + extra + "]"))
+                            .andExpect(status().is2xxSuccessful());
+
+                    // A change there that breaks the order's rule is refused, in the order's words — and undone.
+                    mvc.perform(delete("/api/order-lines/" + first)).andExpect(status().is2xxSuccessful());
+                    JsonNode last = send(delete("/api/order-lines/" + second), null, null, 400);
+                    assertThat(last.get("detail").asText()).contains("An order needs at least one line");
+                    assertThat(get("/api/orders/" + id).get("lines")).hasSize(1);
+                    assertThat(get("/api/orders/" + id).get("total").decimalValue()).isEqualByComparingTo("2.5");
+
+                    // The order's own save: no list leaves the lines (and the total) alone, an empty one is refused.
+                    long version = get("/api/orders/" + id).get("version").asLong();
+                    send(put("/api/orders/" + id), null, j(head.replace("T-1", "T-1b") + ",'version':" + version + "}"), 200);
+                    assertThat(get("/api/orders/" + id).get("total").decimalValue()).isEqualByComparingTo("2.5");
+                    send(put("/api/orders/" + id), null, j(head + ",'lines':[]}"), 400);
+                    // Its lines are saved with it, so it carries the version check: an old version is told so.
+                    send(put("/api/orders/" + id), null, j(head + ",'version':" + version + "}"), 409);
+
+                    // The demo orders came with their two lines, added up.
+                    JsonNode demo = get("/api/orders/" + firstId("/api/orders"));
+                    assertThat(demo.get("lines").size()).isBetween(1, 2);
+                    java.math.BigDecimal sum = java.math.BigDecimal.ZERO;
+                    for (JsonNode line : demo.get("lines")) {
+                        if (!line.get("lineTotal").isNull()) sum = sum.add(line.get("lineTotal").decimalValue());
+                    }
+                    assertThat(demo.get("total").decimalValue()).isEqualByComparingTo(sum);
+                }
+
                 @Test
                 void aSavedViewBelongsToWhoeverSavedIt() throws Exception {
                     String state = "{\\"q\\":\\"acme\\",\\"sort\\":{\\"field\\":\\"name\\",\\"direction\\":\\"asc\\"},\\"filters\\":{\\"active\\":\\"true\\"}}";

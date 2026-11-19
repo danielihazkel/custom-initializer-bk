@@ -173,6 +173,26 @@ public final class FullstackExampleRequests {
     }
 
     /**
+     * {@link #manyToManyBody} with the set declared from both sides ({@code Tag.posts} is the other
+     * side of {@code Post.tags}) and the options a set shows up in: bulk edit, cells edited in place.
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> twoSidedManyToManyBody(String frontendSet) {
+        Map<String, Object> body = manyToManyBody(frontendSet);
+        body.put("opts", Map.of("scaffold", List.of("csvExport", "seedData", "tests", "audit", "bulkUpdate", "bulkDelete", "inlineEdit")));
+        List<Map<String, Object>> entities = new java.util.ArrayList<>();
+        for (Map<String, Object> entity : (List<Map<String, Object>>) body.get("entities")) {
+            Map<String, Object> copy = new LinkedHashMap<>(entity);
+            if ("Tag".equals(copy.get("name"))) {
+                copy.put("relations", List.of(Map.of("type", "MANY_TO_MANY", "fieldName", "posts", "targetEntity", "Post", "mappedBy", "tags")));
+            }
+            entities.add(copy);
+        }
+        body.put("entities", entities);
+        return body;
+    }
+
+    /**
      * A shop with ONE_TO_MANYs of every shape: one whose link is inferred ({@code Order.lines}),
      * one that names it ({@code Customer.orders}), two over the same child
      * ({@code Account.outgoing}/{@code incoming}, by {@code Transfer.source}/{@code target}) and

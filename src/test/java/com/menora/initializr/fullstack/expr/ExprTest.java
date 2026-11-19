@@ -192,4 +192,76 @@ class ExprTest {
         assertThat(eval("length(title) + abs(-2)", Map.of("title", "abc"))).isEqualTo(new BigDecimal("5"));
         assertThat(eval("unitPrice == 2", Map.of("unitPrice", new BigDecimal("2.00")))).isEqualTo(true);
     }
+
+    // ── The rows saved with a record (a composition) ────────────────────────────────────────
+
+    /** An order's own fields, its link to a customer and the lines saved with it. */
+    private static final Map<String, com.menora.initializr.fullstack.EntityDefinition.LinkedEntity> ORDER_LINKS = Map.of(
+            "customer", new com.menora.initializr.fullstack.EntityDefinition.LinkedEntity("Customer",
+                    List.of(field("name", FieldType.STRING))),
+            "lines", new com.menora.initializr.fullstack.EntityDefinition.LinkedEntity("OrderLine",
+                    List.of(field("lineTotal", FieldType.MONEY), field("quantity", FieldType.INTEGER), field("note", FieldType.STRING)), true));
+
+    private static Checked rows(String text, Type expected) {
+        return ExprCheck.check(text, FIELDS, ORDER_LINKS, expected);
+    }
+
+    @Test
+    void aRecordReadsItsRowsThroughSumCountMinMaxAndAvg() {
+        Checked c = rows("sum(lines.lineTotal) > 10 and count(lines) > 0", Type.BOOL);
+        assertThat(c.lists()).containsExactly("lines");
+        assertThat(c.refs()).isEmpty();
+        assertThat(c.paths()).isEmpty();
+        assertThat(ExprCode.java(c, "row")).isEqualTo("Expr.and("
+                + "Expr.gt(Expr.sum(row.getLines(), each -> Expr.num(each.getLineTotal())), new java.math.BigDecimal(\"10\")), "
+                + "Expr.gt(Expr.count(row.getLines()), new java.math.BigDecimal(\"0\")))");
+        assertThat(ExprCode.ts(c, "value")).isEqualTo(
+                "rule.and(rule.gt(rule.sum(value.lines, 'lineTotal'), 10), rule.gt(rule.count(value.lines), 0))");
+        assertThat(ExprCode.ts(rows("quantity <= max(lines.quantity) - min(lines.quantity) + avg(lines.quantity)", Type.BOOL), "value"))
+                .contains("rule.max(value.lines, 'quantity')").contains("rule.min(value.lines, 'quantity')").contains("rule.avg(value.lines, 'quantity')");
+    }
+
+    @Test
+    void rowsMeanWhatTheRuntimesMean() {
+        LocalDate today = LocalDate.of(2026, 3, 10);
+        Map<String, Object> empty = new HashMap<>();
+        empty.put("lineTotal", null);
+        Map<String, Object> order = Map.of("lines", List.of(
+                Map.of("lineTotal", new BigDecimal("5")), Map.of("lineTotal", new BigDecimal("7.5")), empty));
+        java.util.function.Function<String, Object> on = text -> ExprEval.eval(rows(text, null), order, today);
+        // An empty value is left out; the rows are still counted.
+        assertThat(on.apply("sum(lines.lineTotal)")).isEqualTo(new BigDecimal("12.5"));
+        assertThat(on.apply("count(lines)")).isEqualTo(BigDecimal.valueOf(3));
+        assertThat(on.apply("min(lines.lineTotal)")).isEqualTo(new BigDecimal("5"));
+        assertThat(on.apply("max(lines.lineTotal)")).isEqualTo(new BigDecimal("7.5"));
+        assertThat((BigDecimal) on.apply("avg(lines.lineTotal)")).isEqualByComparingTo("6.25");
+        // No rows: nothing adds up to zero, and there is no smallest, largest or average.
+        Map<String, Object> none = Map.of("lines", List.of());
+        assertThat(ExprEval.eval(rows("sum(lines.lineTotal)", null), none, today)).isEqualTo(BigDecimal.ZERO);
+        assertThat(ExprEval.eval(rows("count(lines)", null), none, today)).isEqualTo(BigDecimal.ZERO);
+        assertThat(ExprEval.eval(rows("avg(lines.lineTotal)", null), none, today)).isNull();
+        assertThat(ExprEval.holds(rows("count(lines) > 0", Type.BOOL), null, none, today)).isFalse();
+        // Rows that were not read at all are unknown, so a rule over them holds.
+        assertThat(ExprEval.eval(rows("sum(lines.lineTotal)", null), Map.of(), today)).isNull();
+        assertThat(ExprEval.holds(rows("count(lines) > 0", Type.BOOL), null, Map.of(), today)).isTrue();
+    }
+
+    @Test
+    void rowsAreReadThroughTheirFunctionsOnly() {
+        assertThatThrownBy(() -> rows("lines.lineTotal > 0", Type.BOOL)).isInstanceOf(ExprException.class)
+                .hasMessageContaining("'lines.lineTotal' is one value in each of the rows");
+        assertThatThrownBy(() -> rows("lines == 0", Type.BOOL)).hasMessageContaining("'lines' is the rows saved with this entity: count(lines)");
+        assertThatThrownBy(() -> rows("count(customer) > 0", Type.BOOL)).hasMessage("count takes the rows saved with this entity — here: lines");
+        assertThatThrownBy(() -> rows("count(lines.quantity) > 0", Type.BOOL)).hasMessageContaining("count takes the rows saved with this entity");
+        assertThatThrownBy(() -> rows("sum(quantity) > 0", Type.BOOL))
+                .hasMessage("sum takes a field of the rows saved with this entity, like sum(lines.total) — here: lines");
+        assertThatThrownBy(() -> rows("sum(customer.name) > 0", Type.BOOL)).hasMessageContaining("sum takes a field of the rows");
+        assertThatThrownBy(() -> rows("avg(lines.linetotal) > 0", Type.BOOL))
+                .hasMessage("'linetotal' is not a field of OrderLine (did you mean 'lineTotal'?)");
+        assertThatThrownBy(() -> rows("max(lines.note) > 0", Type.BOOL)).hasMessage("max takes a number field of the rows; 'lines.note' is a text");
+        assertThatThrownBy(() -> rows("sum(lines.lineTotal, 2) > 0", Type.BOOL)).hasMessage("sum takes one argument");
+        // An entity with no rows of its own says so.
+        assertThatThrownBy(() -> check("count(lines) > 0"))
+                .hasMessage("count takes the rows saved with this entity — this entity has none (a ONE_TO_MANY with composition)");
+    }
 }

@@ -93,7 +93,26 @@ public final class ExprEval {
             return ((Comparable) l).compareTo(r);
         }
 
+        /** A function over the record's rows — a list of rows, each a map of its fields; unknown when there is none. */
+        private Object rows(ExprCheck.Rows a) {
+            if (!(values.get(a.list()) instanceof java.util.List<?> rows)) return null;
+            if (a.field() == null) return BigDecimal.valueOf(rows.size());
+            java.util.List<BigDecimal> numbers = new java.util.ArrayList<>();
+            for (Object row : rows) {
+                if (row instanceof Map<?, ?> fields && fields.get(a.field().name()) instanceof BigDecimal n) numbers.add(n);
+            }
+            BigDecimal total = numbers.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+            return switch (a.fn()) {
+                case "sum" -> total;
+                case "min" -> numbers.stream().min(BigDecimal::compareTo).orElse(null);
+                case "max" -> numbers.stream().max(BigDecimal::compareTo).orElse(null);
+                default -> numbers.isEmpty() ? null : total.divide(BigDecimal.valueOf(numbers.size()), MathContext.DECIMAL64);
+            };
+        }
+
         private Object call(Call fn) {
+            ExprCheck.Rows over = c.rows().get(fn);
+            if (over != null) return rows(over);
             String name = ExprCheck.FUNCTIONS.stream().filter(n -> n.equalsIgnoreCase(fn.fn())).findFirst().orElseThrow();
             return switch (name) {
                 case "isEmpty" -> {

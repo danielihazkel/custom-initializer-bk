@@ -94,7 +94,8 @@ public final class GeneratedTests {
             List<String> puts = new ArrayList<>();
             if (reason == null) {
                 // The fields the entity's rules read take values the rules accept.
-                Map<String, RuleRows.Pick> picks = solved(e).picks();
+                RuleRows.Solution solution = solved(e);
+                Map<String, RuleRows.Pick> picks = solution.picks();
                 for (FieldDefinition f : sent(e)) {
                     RuleRows.Pick pick = picks.get(f.name());
                     if (pick != null) {
@@ -123,6 +124,7 @@ public final class GeneratedTests {
                     puts.add("row.set(\"" + Naming.toCamelCase(r.fieldName()) + "Id\", " + made
                             + ".get(\"" + keys(target).get(0).name() + "\"));");
                 }
+                putRows(puts, e, solution, byLower);
             }
             row.put("puts", puts);
             rows.add(row);
@@ -252,6 +254,35 @@ public final class GeneratedTests {
         return v;
     }
 
+    /**
+     * The rows a test record is made with — one of each list its rules read ({@code count(lines) > 0},
+     * a total over them) — as statements on {@code row}: the values the rules were solved with,
+     * the usual ones for the rest, and a new row of each entity the row must link to.
+     */
+    private static void putRows(List<String> puts, EntityDefinition e, RuleRows.Solution solution,
+                                Map<String, EntityDefinition> byLower) {
+        for (String listName : solution.lists()) {
+            RelationDefinition list = e.children().stream().filter(c -> c.fieldName().equals(listName)).findFirst().orElseThrow();
+            EntityDefinition child = byLower.get(list.targetEntity().toLowerCase(Locale.ROOT));
+            String var = Naming.toCamelCase(listName) + "Row";
+            puts.add("ObjectNode " + var + " = row.putArray(\"" + Naming.toCamelCase(listName) + "\").addObject();");
+            for (FieldDefinition f : sent(child)) {
+                RuleRows.Pick pick = solution.picks().get(listName + "." + f.name());
+                if (pick != null) {
+                    if (pick.java() != null) puts.add(var + ".put(\"" + f.name() + "\", " + pick.java() + ");");
+                    continue;
+                }
+                puts.add(var + ".put(\"" + f.name() + "\", " + valueJava(f) + ");");
+            }
+            for (RelationDefinition r : child.relations()) {
+                if (!r.required() || r.fieldName().equals(list.mappedBy())) continue;
+                EntityDefinition target = byLower.get(r.targetEntity().toLowerCase(Locale.ROOT));
+                puts.add(var + ".set(\"" + Naming.toCamelCase(r.fieldName()) + "Id\", create(\"" + Naming.toPascalCase(target.name())
+                        + "\").get(\"" + keys(target).get(0).name() + "\"));");
+            }
+        }
+    }
+
     /** The values {@code e}'s rules accept for a test row; none when it has no rules or none can be found. */
     static RuleRows.Solution solved(EntityDefinition e) {
         try {
@@ -263,9 +294,13 @@ public final class GeneratedTests {
 
     /** The fields a test row sends: everything a client may set, less what it can leave out and the tests cannot fill. */
     private static List<FieldDefinition> sent(EntityDefinition e) {
-        EntityDefinition.Workflow wf = e.workflow();
+        return sent(e.fields(), e.workflow());
+    }
+
+    /** {@link #sent(EntityDefinition)} for fields alone: a row saved with its parent has no entity of its own here. */
+    static List<FieldDefinition> sent(List<FieldDefinition> fields, EntityDefinition.Workflow wf) {
         List<FieldDefinition> out = new ArrayList<>();
-        for (FieldDefinition f : e.fields()) {
+        for (FieldDefinition f : fields) {
             if (f.primaryKey() && f.generated()) continue;
             if (wf != null && (f.name().equals(wf.statusField()) || f.name().equals(wf.assigneeField()))) continue;
             boolean attachment = f.type() == FieldType.FILE || f.type() == FieldType.IMAGE;
@@ -308,6 +343,27 @@ public final class GeneratedTests {
                 reason = "no row the tests can make passes its rule " + (u.rule + 1) + " ('"
                         + e.allRules().get(u.rule).check() + "') — put values that do in ApiTestSupport.body";
             }
+        }
+        // Its rules read its rows: the test record is made with one, which has to be makeable too.
+        for (String listName : reason == null ? solved(e).lists() : Set.<String>of()) {
+            RelationDefinition list = e.children().stream().filter(c -> c.fieldName().equals(listName)).findFirst().orElseThrow();
+            EntityDefinition child = byLower.get(list.targetEntity().toLowerCase(Locale.ROOT));
+            String rows = "its rules read its '" + listName + "' rows, and ";
+            for (FieldDefinition f : child.fields()) {
+                if (f.pattern() != null && (f.required() || f.primaryKey()) && !f.hasDefault()) {
+                    reason = rows + "a row's '" + f.name() + "' must match a pattern the tests cannot guess a value for"
+                            + " — put the rows in ApiTestSupport.body";
+                }
+            }
+            for (RelationDefinition r : child.relations()) {
+                if (reason != null) break;
+                if (!r.required() || r.fieldName().equals(list.mappedBy())) continue;
+                EntityDefinition target = byLower.get(r.targetEntity().toLowerCase(Locale.ROOT));
+                String upstream = target == null || target == e ? e.name() + " cannot be made first"
+                        : reasonOf(target, byLower, visiting, reasons);
+                if (upstream != null) reason = rows + "a row needs a " + r.targetEntity() + ", and " + upstream;
+            }
+            if (reason != null) break;
         }
         for (RelationDefinition r : e.relations()) {
             if (reason != null) break;
@@ -487,9 +543,12 @@ public final class GeneratedTests {
             try {
                 RuleRows.Solution solution = RuleRows.solve(e, sent(e));
                 for (Map.Entry<String, RuleRows.Pick> pick : solution.picks().entrySet()) {
+                    // A value of another row (a linked one, or one of the record's own rows) is not a property here.
+                    if (pick.getKey().indexOf('.') >= 0) continue;
                     props.removeIf(p -> p.startsWith(pick.getKey() + ": "));
                     if (pick.getValue().ts() != null) props.add(pick.getKey() + ": " + pick.getValue().ts());
                 }
+                for (String listName : solution.lists()) props.add(rowsTs(e, listName, solution, byLower));
                 usesDays = solution.usesDays();
             } catch (RuleRows.Unsolvable u) {
                 complete = false;
@@ -515,6 +574,34 @@ public final class GeneratedTests {
         v.put("feTestComplete", complete);
         v.put("feTestCases", cases);
         return v;
+    }
+
+    /** The one row of a list the valid record is made with (its rules read its rows), as a property. */
+    private static String rowsTs(EntityDefinition e, String listName, RuleRows.Solution solution,
+                                 Map<String, EntityDefinition> byLower) {
+        RelationDefinition list = e.children().stream().filter(c -> c.fieldName().equals(listName)).findFirst().orElseThrow();
+        EntityDefinition child = byLower.get(list.targetEntity().toLowerCase(Locale.ROOT));
+        List<String> props = new ArrayList<>();
+        for (FieldDefinition f : child.fields()) {
+            if ((f.primaryKey() && f.generated()) || f.computed() || f.showWhen() != null) continue;
+            RuleRows.Pick pick = solution.picks().get(listName + "." + f.name());
+            if (pick != null) {
+                if (pick.ts() != null) props.add(f.name() + ": " + pick.ts());
+            } else if (f.pattern() != null) {
+                if (f.hasDefault()) props.add(f.name() + ": " + tsString(f.defaultValue()));
+            } else if (f.required() || f.primaryKey() || f.length() != null || f.min() != null || f.max() != null || f.email()) {
+                props.add(f.name() + ": " + valueTs(f));
+            }
+        }
+        for (RelationDefinition r : child.relations()) {
+            if (!r.required() || r.fieldName().equals(list.mappedBy())) continue;
+            EntityDefinition target = byLower.get(r.targetEntity().toLowerCase(Locale.ROOT));
+            FieldDefinition targetKey = target == null ? null : keys(target).get(0);
+            props.add(Naming.toCamelCase(r.fieldName()) + "Id: " + (targetKey == null || targetKey.type() == FieldType.LONG
+                    || targetKey.type() == FieldType.INTEGER ? "1" : targetKey.type() == FieldType.UUID
+                    ? "'00000000-0000-0000-0000-000000000001'" : "'1'"));
+        }
+        return Naming.toCamelCase(listName) + ": [{ " + String.join(", ", props) + " }]";
     }
 
     private static Map<String, Object> testCase(String title, String field, String patch) {

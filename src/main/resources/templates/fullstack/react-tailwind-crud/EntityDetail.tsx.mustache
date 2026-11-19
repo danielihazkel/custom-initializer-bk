@@ -48,7 +48,9 @@ export function {{EntityName}}Detail({ value }: Props) {
       param="{{filterParam}}"
       id={value.{{pkField.name}}}
       count={value.{{collectionField}}Count}
-      columns={[
+{{#composition}}      rows={value.{{collectionField}}}
+      whole
+{{/composition}}      columns={[
 {{#childColumns}}        { key: '{{key}}', label: '{{{labelTs}}}'{{#hasAlt}}, alt: '{{alt}}'{{/hasAlt}}{{#isEnum}}, labels: {{enumTypeName}}Labels{{/isEnum}} },
 {{/childColumns}}      ]}
     />

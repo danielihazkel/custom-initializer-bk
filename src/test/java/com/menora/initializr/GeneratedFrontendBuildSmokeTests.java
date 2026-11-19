@@ -532,13 +532,24 @@ class GeneratedFrontendBuildSmokeTests {
         runPnpm(project, "run", "build");
     }
 
+    /** The Blog example with its own options (audit for the activity feed, demo rows, bulk edit, cells edited in place) and a wizard for posts. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> blogWithAWizard(String frontendSet) {
+        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("blog", frontendSet);
+        body.put("opts", Map.of("scaffold", List.of("audit", "seedData", "bulkUpdate", "inlineEdit")));
+        List<Map<String, Object>> pages = new java.util.ArrayList<>((List<Map<String, Object>>) body.get("pages"));
+        pages.add(new java.util.LinkedHashMap<>(Map.of("id", "new-post", "type", "wizard", "entity", "Post", "title", "New post")));
+        body.put("pages", pages);
+        return body;
+    }
+
     @Test
     void fullstackFrontendBlogLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
-        // The Blog example with its layout: a many-to-many (Post.tags) under page mode — the list
-        // page, the record page's details, the form drawer and the tags' own list page.
-        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("blog", "react-tailwind-crud");
-        // The example's own setting: its home page has an activity feed, which reads audit columns.
-        body.put("opts", Map.of("scaffold", List.of("audit")));
+        // The Blog example with its layout: a many-to-many declared from both sides (Post.tags,
+        // Tag.posts) under page mode — the list page, the record page's details, the form drawer
+        // and the tags' own list page — with the example's own options, so the set is also a
+        // bulk change and a cell edited in place, and a wizard that asks for it in a step.
+        Map<String, Object> body = blogWithAWizard("react-tailwind-crud");
         Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);
@@ -547,9 +558,7 @@ class GeneratedFrontendBuildSmokeTests {
 
     @Test
     void fullstackFrontendMenoraBlogLayoutInstallsAndBuilds(@TempDir Path workDir) throws Exception {
-        Map<String, Object> body = FullstackPagesIntegrationTests.exampleBody("blog", "react-menora-digital-crud");
-        // The example's own setting: its home page has an activity feed, which reads audit columns.
-        body.put("opts", Map.of("scaffold", List.of("audit")));
+        Map<String, Object> body = blogWithAWizard("react-menora-digital-crud");
         Path project = postAndExtractFrontend(workDir, body);
         runPnpm(project, "install", "--prefer-offline");
         lintAll(project);

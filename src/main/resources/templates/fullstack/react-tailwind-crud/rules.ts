@@ -119,6 +119,37 @@ export function show(v: unknown): string {
   return String(v)
 }
 
+/**
+ * The rows saved with a record — sum(lines.total), count(lines). A row's empty value is left out;
+ * rows that were not read (a row of a list page does not carry them) are unknown, like an empty value.
+ */
+type Rows = readonly object[] | null | undefined
+
+const numbers = (rows: readonly object[], field: string): number[] =>
+  rows.map(row => num((row as Record<string, unknown>)[field])).filter((n): n is number => n != null)
+
+export const count = (rows: Rows): number | null => (rows == null ? null : rows.length)
+
+/** Zero for no rows. */
+export const sum = (rows: Rows, field: string): number | null =>
+  (rows == null ? null : numbers(rows, field).reduce((total, n) => total + n, 0))
+
+/** Empty for no rows — as are max and avg. */
+export function min(rows: Rows, field: string): number | null {
+  const all = rows == null ? [] : numbers(rows, field)
+  return all.length === 0 ? null : Math.min(...all)
+}
+
+export function max(rows: Rows, field: string): number | null {
+  const all = rows == null ? [] : numbers(rows, field)
+  return all.length === 0 ? null : Math.max(...all)
+}
+
+export function avg(rows: Rows, field: string): number | null {
+  const all = rows == null ? [] : numbers(rows, field)
+  return all.length === 0 ? null : all.reduce((total, n) => total + n, 0) / all.length
+}
+
 /** Half away from zero, like the backend's HALF_UP. */
 export function round(a: number | null, places: number): number | null {
   if (a == null) return null

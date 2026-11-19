@@ -70,6 +70,7 @@ IllegalArgumentException
 Immutable
 ImportError
 InlineCell
+InlineLinks
 InlineKind
 Instant
 Integer

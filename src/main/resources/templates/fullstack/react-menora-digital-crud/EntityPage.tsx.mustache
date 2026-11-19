@@ -12,14 +12,15 @@ import { {{EntityName}}Detail{{#hasWorkflow}}, {{EntityName}}Transitions{{/hasWo
 import { t{{#auditApplicable}}, LOCALE{{/auditApplicable}} } from '@shared/i18n'
 {{#lockingApplicable}}import { StaleNotice } from '@shared/ui/StaleNotice'
 {{/lockingApplicable}}{{#importApplicable}}import { CsvImport } from '@shared/ui/CsvImport'
-{{/importApplicable}}import { use{{EntityName}}List, type {{EntityName}}Column{{#hasPages}}, type {{EntityName}}PageProps{{/hasPages}} } from '../model/use{{EntityName}}List'
+{{/importApplicable}}{{#bulkSetsApplicable}}{{#viewTable}}import { MultiRelationPicker } from '@shared/ui/MultiRelationPicker'
+{{/viewTable}}{{/bulkSetsApplicable}}import { use{{EntityName}}List, type {{EntityName}}Column{{#hasPages}}, type {{EntityName}}PageProps{{/hasPages}} } from '../model/use{{EntityName}}List'
 
 // `numeric` columns render LTR with tabular figures (numbers, dates, ids); `chip` columns render
 // their value as a lavender Chip (enums, booleans) — see the Menora Table.
 const columns: {{EntityName}}Column[] = [
 {{#fields}}  { {{#listConfigurable}}key: '{{name}}', {{/listConfigurable}}label: '{{labelTs}}'{{#isSortable}}, sortKey: '{{name}}'{{/isSortable}}{{#isNumeric}}, numeric: true{{/isNumeric}}{{#isTemporal}}, numeric: true{{/isTemporal}}{{#isUuid}}, numeric: true{{/isUuid}}{{#isEnum}}, chip: true{{/isEnum}}{{#isBoolean}}, chip: true{{/isBoolean}}, render: r => r.{{name}} == null ? '—' : {{cellTs}} },
 {{/fields}}{{#relations}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{labelTs}}', render: r => {{#targetHasRecordPage}}r.{{fkFieldName}} == null ? '—' : <a href={`#/{{targetRecordPageId}}/${encodeURIComponent(String(r.{{fkFieldName}}))}`} onClick={e => e.stopPropagation()} className="font-medium text-brand hover:underline">{ {{#hasTargetLabel}}r.{{fieldName}}Label ?? {{/hasTargetLabel}}'#' + String(r.{{fkFieldName}})}</a>{{/targetHasRecordPage}}{{^targetHasRecordPage}}{{#hasTargetLabel}}r.{{fieldName}}Label ?? ({{/hasTargetLabel}}r.{{fkFieldName}} == null ? '—' : {{#hasTargetLabel}}'#' + {{/hasTargetLabel}}String(r.{{fkFieldName}}){{#hasTargetLabel}}){{/hasTargetLabel}}{{/targetHasRecordPage}} },
-{{/relations}}{{#collections}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}label: '{{labelTs}}', render: r => r.{{labelsField}} == null || r.{{labelsField}}.length === 0 ? '—' : r.{{labelsField}}.join(', ') },
+{{/relations}}{{#collections}}  { {{#listConfigurable}}key: '{{fieldName}}', {{/listConfigurable}}{{#inlineLinks}}links: '{{fieldName}}', {{/inlineLinks}}label: '{{labelTs}}', render: r => r.{{labelsField}} == null || r.{{labelsField}}.length === 0 ? '—' : r.{{labelsField}}.join(', ') },
 {{/collections}}{{#auditApplicable}}  { {{#listConfigurable}}key: 'createdAt', {{/listConfigurable}}label: t('created'), sortKey: 'createdAt', numeric: true, render: r => r.createdAt == null ? '—' : new Date(r.createdAt).toLocaleString(LOCALE) },
   { {{#listConfigurable}}key: 'updatedAt', {{/listConfigurable}}label: t('updated'), sortKey: 'updatedAt', numeric: true, render: r => r.updatedAt == null ? '—' : new Date(r.updatedAt).toLocaleString(LOCALE) },
   { {{#listConfigurable}}key: 'createdBy', {{/listConfigurable}}label: t('createdBy'), sortKey: 'createdBy', render: r => r.createdBy ?? '—' },
@@ -92,7 +93,8 @@ export function {{EntityName}}Page({{#hasPages}}props: {{EntityName}}PageProps =
             >
               <option value="">{t('setField')}</option>
 {{#bulkUpdatableFields}}              <option value="{{name}}">{{labelJsx}}</option>
-{{/bulkUpdatableFields}}            </select>
+{{/bulkUpdatableFields}}{{#bulkSetsApplicable}}{{#bulkSets}}              <option value="{{fieldName}}">{{labelJsx}}</option>
+{{/bulkSets}}{{/bulkSetsApplicable}}            </select>
             {list.bulkField && (() => {
               const meta = list.bulkFields[list.bulkField]
               if (!meta) return null
@@ -110,7 +112,25 @@ export function {{EntityName}}Page({{#hasPages}}props: {{EntityName}}PageProps =
                   {meta.options!.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               )
-              const type = meta.kind === 'number' ? 'number' : meta.kind === 'date' ? 'date' : meta.kind === 'datetime' ? 'datetime-local' : 'text'
+{{#bulkSetsApplicable}}              if (meta.kind === 'links') {
+                // A set of linked rows: the picked ids travel in the value, comma-joined.
+                const picker = meta.picker!
+                const ids = list.bulkValue.split(',').filter(v => v !== '')
+                return (
+                  <div className="min-w-[14rem]">
+                    <MultiRelationPicker
+                      path={picker.path}
+                      valueKey={picker.valueKey}
+                      labelKey={picker.labelKey}
+                      numeric={picker.numeric}
+                      value={picker.numeric ? ids.map(Number) : ids}
+                      labels={[]}
+                      onChange={next => list.setBulkValue(next.join(','))}
+                    />
+                  </div>
+                )
+              }
+{{/bulkSetsApplicable}}              const type = meta.kind === 'number' ? 'number' : meta.kind === 'date' ? 'date' : meta.kind === 'datetime' ? 'datetime-local' : 'text'
               return <input type={type} value={list.bulkValue} onChange={e => list.setBulkValue(e.target.value)} className={cls} placeholder={t('newValue')} aria-label={t('newValue')} />
             })()}
             {/* Native button: the Button port has no `disabled`. */}

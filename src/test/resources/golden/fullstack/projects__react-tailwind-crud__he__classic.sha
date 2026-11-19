@@ -147,7 +147,7 @@ a9fb00f2f5dad34d192b8f5fa2f155737eee9674224ab244c52dce8cad403037  golden-project
 8ae35916b7d1744df84298c41dfb41512479fe8635ebc96809fe735723d77653  golden-projects/frontend/src/shared/ui/index.ts
 8955de89372b3499c55feb95ccd98ccfd96a0a7c8762fd09ba86b7ba34bcc82c  golden-projects/frontend/src/shared/ui/leaveGuard.ts
 88f54515c958080a6c42936e01ded4e55870f1aeb145e78194d40a700012517f  golden-projects/frontend/src/shared/ui/listPrefs.ts
-d8a262cd5efa4199f18504453d959e170c543e5f3d2610831c7fce5164bfa29d  golden-projects/frontend/src/shared/ui/rules.ts
+739db77ce04d2df594df0f0d47740f28840da762358be1a6d6dc4cbd12a296a3  golden-projects/frontend/src/shared/ui/rules.ts
 5f804d857de4f2fb03b94721e25d820a7b8a2f880a1a7b24936461637bf844df  golden-projects/frontend/src/shared/ui/useTheme.ts
 65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5  golden-projects/frontend/src/vite-env.d.ts
 4358487068b01a59311e920ceecfe6d4dff869906029b98ecf91c77fe8d0edde  golden-projects/frontend/src/widgets/README.md

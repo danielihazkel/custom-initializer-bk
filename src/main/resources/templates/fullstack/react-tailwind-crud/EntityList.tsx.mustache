@@ -14,13 +14,14 @@ import { useMe } from '@shared/api/me'
 import { validate{{EntityName}} } from '@features/{{entityNameKebab}}-form'
 import { ApiError{{#lockingApplicable}}{{^listSideDetail}}, api{{/listSideDetail}}{{/lockingApplicable}} } from '@shared/api'
 {{#inlineEditApplicable}}import { InlineCell, type InlineKind } from '@shared/ui/InlineCell'
-{{/inlineEditApplicable}}{{/mutable}}{{#usesDownload}}import { useDownload } from '@shared/api'
+{{#inlineLinks}}import { InlineLinks } from '@shared/ui/InlineLinks'
+{{/inlineLinks}}{{/inlineEditApplicable}}{{/mutable}}{{#usesDownload}}import { useDownload } from '@shared/api'
 {{/usesDownload}}{{#optScaffoldXlsxExport}}import { api as sheetApi } from '@shared/api'
 {{/optScaffoldXlsxExport}}{{#listSideDetail}}import { api } from '@shared/api'
 {{/listSideDetail}}{{#hasCompositions}}import { api as rowsApi } from '@shared/api'
 {{/hasCompositions}}
 /** A column of the list{{#listConfigurable}}, with the key a list page's `columns` prop picks it by{{/listConfigurable}}. */
-export type {{EntityName}}Column = Column<{{EntityName}}>{{#listConfigurable}} & { key: string }{{/listConfigurable}}
+export type {{EntityName}}Column = Column<{{EntityName}}>{{#listConfigurable}} & { key: string }{{/listConfigurable}}{{#inlineLinks}} & { links?: string }{{/inlineLinks}}
 
 {{#auditApplicable}}
 /** Who created and last changed a row: in the Columns menu, not shown until asked for. */
@@ -33,16 +34,21 @@ const filterDescriptors: FilterDescriptor[] = [
 {{/hasFilters}}{{#bulkUpdateApplicable}}{{#viewTable}}
 // Fields eligible for bulk edit. `kind` selects the value control shown in the bulk-edit bar; the
 // raw value is sent to the backend which coerces it to the field's type.
-type BulkFieldKind = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum'
-const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?: { value: string; label: string }[] }> = {
+type BulkFieldKind = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum'{{#bulkSetsApplicable}} | 'links'{{/bulkSetsApplicable}}
+const BULK_FIELDS: Record<string, { label: string; kind: BulkFieldKind; options?: { value: string; label: string }[]{{#bulkSetsApplicable}}; picker?: { path: string; valueKey: string; labelKey?: string; numeric: boolean }{{/bulkSetsApplicable}} }> = {
 {{#bulkUpdatableFields}}  '{{name}}': { label: '{{labelTs}}', kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
-{{/bulkUpdatableFields}}}
+{{/bulkUpdatableFields}}{{#bulkSetsApplicable}}{{#bulkSets}}  '{{fieldName}}': { label: '{{labelTs}}', kind: 'links', picker: { path: '/api/{{targetEntityKebabPlural}}', valueKey: '{{targetPkName}}', {{#hasTargetLabel}}labelKey: '{{targetLabelField}}', {{/hasTargetLabel}}numeric: {{isTargetPkNumeric}} } },
+{{/bulkSets}}{{/bulkSetsApplicable}}}
 {{/viewTable}}{{/bulkUpdateApplicable}}
 {{#inlineEditApplicable}}/** The table cells that are edited in place, by field. */
 const INLINE_FIELDS: Record<string, { kind: InlineKind; options?: { value: string; label: string }[] }> = {
 {{#bulkUpdatableFields}}  '{{name}}': { kind: '{{bulkInputKind}}'{{#isEnum}}, options: [{{#enumValues}}{ value: '{{value}}', label: '{{labelTs}}' }{{^last}}, {{/last}}{{/enumValues}}]{{/isEnum}} },
 {{/bulkUpdatableFields}}}
-{{/inlineEditApplicable}}{{#wholeViews}}/** The most records the board or the calendar loads at once. */
+{{#inlineLinks}}/** The sets of linked rows edited in place, by relation: where a row keeps their ids and labels, and what the picker reads. */
+const INLINE_LINKS: Record<string, { ids: string; labels: string; path: string; valueKey: string; labelKey?: string; numeric: boolean }> = {
+{{#collections}}  '{{fieldName}}': { ids: '{{idsField}}', labels: '{{labelsField}}', path: '/api/{{targetEntityKebabPlural}}', valueKey: '{{targetPkName}}', {{#hasTargetLabel}}labelKey: '{{targetLabelField}}', {{/hasTargetLabel}}numeric: {{isTargetPkNumeric}} },
+{{/collections}}}
+{{/inlineLinks}}{{/inlineEditApplicable}}{{#wholeViews}}/** The most records the board or the calendar loads at once. */
 const WHOLE_VIEW_LIMIT = 500
 
 {{/wholeViews}}{{#lockingApplicable}}/** A save refused because the record changed since it was read (the API's 409 with `stale`). */
@@ -547,7 +553,28 @@ export function use{{EntityName}}List(columns: {{EntityName}}Column[]{{#hasPages
     }
   }
   const inline = (cols: Column<{{EntityName}}>[]): Column<{{EntityName}}>[] => cols.map(c => {
-    const spec = c.sortKey ? INLINE_FIELDS[c.sortKey] : undefined
+{{#inlineLinks}}    // A set of linked rows: its cell opens the picker, and saves the ids with the row.
+    const relation = (c as {{EntityName}}Column).links
+    const set = relation ? INLINE_LINKS[relation] : undefined
+    if (set) {
+      return {
+        ...c,
+        render: (r: {{EntityName}}) => (
+          <InlineLinks
+            label={c.label}
+            display={c.render(r)}
+            path={set.path}
+            valueKey={set.valueKey}
+            labelKey={set.labelKey}
+            numeric={set.numeric}
+            value={((r as unknown as Record<string, unknown>)[set.ids] as (string | number)[] | null | undefined) ?? []}
+            labels={((r as unknown as Record<string, unknown>)[set.labels] as string[] | null | undefined) ?? []}
+            onSave={ids => saveCell(r, set.ids, ids)}
+          />
+        ),
+      }
+    }
+{{/inlineLinks}}    const spec = c.sortKey ? INLINE_FIELDS[c.sortKey] : undefined
     if (!spec || !c.sortKey) return c
     const field = c.sortKey
     return {
@@ -653,8 +680,12 @@ export function use{{EntityName}}List(columns: {{EntityName}}Column[]{{#hasPages
     setBulkUpdating(true)
     try {
       // An empty value clears the field (sent as null); otherwise the raw string is coerced server-side.
-      await updateMany(selected, bulkField, bulkValue === '' ? null : bulkValue)
-      toast.success(t('nXRecordsUpdated', { n: selected.length, x: '{{entityLabelTs}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
+{{^bulkSetsApplicable}}      await updateMany(selected, bulkField, bulkValue === '' ? null : bulkValue)
+{{/bulkSetsApplicable}}{{#bulkSetsApplicable}}      // A set of linked rows travels as a list of ids (none: the set is emptied).
+      const picker = BULK_FIELDS[bulkField]?.picker
+      const ids = bulkValue.split(',').filter(v => v !== '')
+      await updateMany(selected, bulkField, picker ? (picker.numeric ? ids.map(Number) : ids) : bulkValue === '' ? null : bulkValue)
+{{/bulkSetsApplicable}}      toast.success(t('nXRecordsUpdated', { n: selected.length, x: '{{entityLabelTs}}', unit: t(selected.length === 1 ? 'record' : 'records') }))
       setSelected([])
       setBulkField('')
       setBulkValue('')

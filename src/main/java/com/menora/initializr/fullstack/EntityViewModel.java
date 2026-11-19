@@ -249,6 +249,14 @@ final class EntityViewModel {
         // Rules proper, not only derivations: a demo row one is broken by is left out.
         view.put("hasRuleChecks", !rules.isEmpty());
         FeatureContext.putDerivations(view, entity);
+        // The lists of its own rows the entity's expressions read (sum(lines.total)).
+        java.util.Set<String> rowsRead = FeatureContext.rowsRead(entity);
+        view.put("readsRows", !rowsRead.isEmpty());
+        view.put("rowsRead", rowsRead);
+        // …and the lists a rule shows its message on (under their editor in the form).
+        view.put("rowsWithMessages", entity.allRules().stream().map(EntityDefinition.Rule::field)
+                .filter(field -> entity.fields().stream().noneMatch(f -> f.name().equals(field)))
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new)));
         FeatureContext.putLinkedReads(view, entity, summaries);
         view.put("uniqueConstraintsJava", "{" + String.join(", ", uniqueKeys.stream()
                 .map(k -> "@UniqueConstraint(name = \"" + k.get("constraint") + "\", columnNames = {" + k.get("columnsJava") + "})")
@@ -705,6 +713,18 @@ final class EntityViewModel {
             cv.put("joinTable", SqlNames.javaLiteral(SchemaNames.joinTableOf(entity, c)));
             cv.put("joinColumn", SqlNames.javaLiteral(SchemaNames.ownerJoinColumnOf(entity, c)));
             cv.put("inverseJoinColumn", SqlNames.javaLiteral(SchemaNames.inverseJoinColumnOf(c)));
+            // The other side of a set the target declares (mappedBy): the link is held there, so a
+            // change made from here is made in the target's set.
+            cv.put("isInverse", c.mappedBy() != null);
+            cv.put("mappedBy", c.mappedBy() == null ? null : Naming.toCamelCase(c.mappedBy()));
+            cv.put("MappedBy", c.mappedBy() == null ? null : Naming.toPascalCase(c.mappedBy()));
+            // An id as a bulk change carries it (a JSON scalar), as the target's key type.
+            cv.put("targetPkCoerceJava", switch (String.valueOf(cv.get("targetPkJavaType"))) {
+                case "Long" -> "Long.valueOf(String.valueOf(id))";
+                case "Integer" -> "Integer.valueOf(String.valueOf(id))";
+                case "java.util.UUID", "UUID" -> "java.util.UUID.fromString(String.valueOf(id))";
+                default -> "String.valueOf(id)";
+            });
             collectionViews.add(cv);
         }
         for (int i = 0; i < collectionViews.size(); i++) {
@@ -712,6 +732,16 @@ final class EntityViewModel {
         }
         view.put("collections", collectionViews);
         view.put("hasCollections", !collectionViews.isEmpty());
+        List<Map<String, Object>> inverseSets = collectionViews.stream()
+                .filter(cv -> Boolean.TRUE.equals(cv.get("isInverse"))).toList();
+        view.put("inverseSets", inverseSets);
+        view.put("hasInverseSets", !inverseSets.isEmpty());
+        // A bulk change sets one of the entity's own sets on every picked row.
+        List<Map<String, Object>> bulkSets = collectionViews.stream()
+                .filter(cv -> !Boolean.TRUE.equals(cv.get("isInverse"))).toList();
+        view.put("bulkSets", bulkSets);
+        view.put("hasBulkSets", !bulkSets.isEmpty());
+        view.put("bulkSetNamesJava", String.join(", ", bulkSets.stream().map(cv -> "\"" + cv.get("fieldName") + "\"").toList()));
         // The form and the details in groups: without sections one untitled group of every field
         // then every relation (the bytes they always had); with sections the entity's key(s) not in
         // one first, each section in its order, then an untitled group of the rest.

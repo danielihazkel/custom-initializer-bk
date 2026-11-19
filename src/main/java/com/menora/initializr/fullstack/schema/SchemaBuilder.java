@@ -71,7 +71,7 @@ public final class SchemaBuilder {
             if (entity.isView()) continue;
             Map<String, Object> ctx = EntityScaffoldContext.buildEntityContext(projectContext, entity);
             tables.add(tableOf(entity, ctx, byName));
-            for (RelationDefinition collection : entity.collections()) {
+            for (RelationDefinition collection : entity.ownedCollections()) {
                 joinTables.add(joinTableOf(entity, collection, byName));
             }
             for (FieldDefinition field : entity.fields()) {

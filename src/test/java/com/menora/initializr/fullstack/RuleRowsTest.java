@@ -34,6 +34,59 @@ class RuleRowsTest {
         return e.fields().stream().filter(f -> !f.primaryKey() && !f.name().equals("status")).toList();
     }
 
+    /** An order whose lines are saved with it: each line has a quantity (at least one), a price and their product. */
+    private static EntityDefinition order(List<EntityDefinition.Rule> rules, List<EntityDefinition.Rule> lineRules, String totalFormula) {
+        FieldDefinition quantity = new FieldDefinition("quantity", FieldType.INTEGER, false, false, true, false,
+                null, BigDecimal.ONE, null, null, false, List.of(), true, true);
+        FieldDefinition lineTotal = computed("lineTotal", "quantity * unitPrice");
+        List<FieldDefinition> lineFields = List.of(ID, quantity, field("unitPrice", FieldType.MONEY, false), lineTotal);
+        java.util.Map<String, EntityDefinition.LinkedEntity> links = java.util.Map.of(
+                "lines", new EntityDefinition.LinkedEntity("OrderLine", lineFields, true, lineRules));
+        List<FieldDefinition> fields = new java.util.ArrayList<>(List.of(ID, field("reference", FieldType.STRING, true)));
+        if (totalFormula != null) fields.add(computed("total", totalFormula));
+        return new EntityDefinition("Order", null, null, fields, List.of(), false, null, null, List.of(), null, null,
+                null, List.of(), null, List.of(), List.of(), null, null, rules, links);
+    }
+
+    private static FieldDefinition computed(String name, String formula) {
+        return new FieldDefinition(name, FieldType.BIG_DECIMAL, false, false, false, false, null, null, null, null, false,
+                List.of(), true, true, null, false, null, null, null, null, null, null, formula, false, null);
+    }
+
+    @Test
+    void aRecordWhoseRulesReadItsRowsIsMadeWithOneThatPassesThem() throws Exception {
+        // The order needs a line, and its lines must add up to something: one line, with a price.
+        EntityDefinition e = order(List.of(
+                        new EntityDefinition.Rule(null, "count(lines) > 0", "An order needs a line", "lines"),
+                        new EntityDefinition.Rule(null, "total >= 10", "Too small an order", "total")),
+                List.of(), "sum(lines.lineTotal)");
+        RuleRows.Solution s = RuleRows.solve(e, sent(e));
+        assertThat(s.lists()).containsExactly("lines");
+        BigDecimal quantity = (BigDecimal) s.picks().get("lines.quantity").value();
+        BigDecimal price = (BigDecimal) s.picks().get("lines.unitPrice").value();
+        assertThat(quantity.multiply(price)).isGreaterThanOrEqualTo(BigDecimal.TEN);
+        assertThat(s.picks().get("lines.quantity").java()).isEqualTo(quantity.toPlainString());
+        // Nothing of the order itself had to be chosen.
+        assertThat(s.picks().keySet()).allMatch(name -> name.startsWith("lines."));
+    }
+
+    @Test
+    void theRowsOwnRulesHoldForTheRowTheRecordIsMadeWith() throws Exception {
+        // The lines' own rule caps a line at 5; the order wants 4 or more in all: one line of 4 or 5.
+        EntityDefinition e = order(List.of(new EntityDefinition.Rule(null, "sum(lines.quantity) >= 4", "Too few", "lines")),
+                List.of(new EntityDefinition.Rule(null, "quantity <= 5", "At most five to a line", "quantity")), null);
+        RuleRows.Solution s = RuleRows.solve(e, sent(e));
+        assertThat((BigDecimal) s.picks().get("lines.quantity").value()).isBetween(BigDecimal.valueOf(4), BigDecimal.valueOf(5));
+
+        // One row cannot be two: the rule is named, and the tests are left to the team.
+        EntityDefinition two = order(List.of(new EntityDefinition.Rule(null, "count(lines) >= 2", "Two lines", "lines")), List.of(), null);
+        assertThatThrownBy(() -> RuleRows.solve(two, sent(two))).isInstanceOf(RuleRows.Unsolvable.class)
+                .satisfies(u -> assertThat(((RuleRows.Unsolvable) u).rule).isZero());
+        // A record whose rules read no rows is made without one, as before.
+        EntityDefinition plain = order(List.of(new EntityDefinition.Rule(null, "length(reference) > 0", "Named", "reference")), List.of(), null);
+        assertThat(RuleRows.solve(plain, sent(plain)).lists()).isEmpty();
+    }
+
     @Test
     void aRuleMustHoldInTheStateTheTestMovesTheRowTo() throws Exception {
         // Empty would do while the claim is open, but the generated test approves it.

@@ -202,12 +202,38 @@ public final class FeatureContext {
      */
     public static void putRules(Map<String, Object> ctx, List<EntityDefinition> entities) {
         ctx.put("hasRules", entities.stream().anyMatch(EntityDefinition::hasRowLogic));
+        // Some entity's expressions read the rows saved with it (sum(lines.total)): the runtime's
+        // functions over rows, and — by entity — which lists, for the rows' own entity to know.
+        Map<String, java.util.Set<String>> rowsRead = new LinkedHashMap<>();
+        for (EntityDefinition e : entities) rowsRead.put(e.name().toLowerCase(java.util.Locale.ROOT), rowsRead(e));
+        ctx.put(ROWS_READ_KEY, rowsRead);
+        ctx.put("rulesReadRows", rowsRead.values().stream().anyMatch(lists -> !lists.isEmpty()));
         // Some entity's expressions read a linked row: the form's shared/api/linked.ts.
         ctx.put("hasLinkedRules", entities.stream().anyMatch(e -> {
             Map<String, Object> probe = new LinkedHashMap<>();
             putLinkedReads(probe, e, Map.of());
             return Boolean.TRUE.equals(probe.get("readsLinks"));
         }));
+    }
+
+    /** The project context's lookup: entity name (lower-cased) → the lists of its own rows its expressions read. */
+    static final String ROWS_READ_KEY = "__rowsRead";
+
+    /** The lists of rows saved with an entity that its rules, show-when conditions and formulas read. */
+    static java.util.Set<String> rowsRead(EntityDefinition entity) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (EntityDefinition.Rule rule : entity.allRules()) {
+            out.addAll(com.menora.initializr.fullstack.expr.ExprCheck.check(rule.check(), entity, null).lists());
+            if (rule.when() != null) {
+                out.addAll(com.menora.initializr.fullstack.expr.ExprCheck.check(rule.when(), entity, null).lists());
+            }
+        }
+        for (FieldDefinition f : entity.fields()) {
+            for (String expr : new String[] {f.showWhen(), f.formula()}) {
+                if (expr != null) out.addAll(com.menora.initializr.fullstack.expr.ExprCheck.check(expr, entity, null).lists());
+            }
+        }
+        return out;
     }
 
     /**
@@ -329,6 +355,7 @@ public final class FeatureContext {
                 TemplateText.putText(c, "formulaText", f.formula());
                 c.put("formulaJava", computedJava(entity, f));
                 c.put("formulaTs", computedTs(entity, f));
+                c.put("rowFormulaTs", computedTs(entity, f, "row"));
                 c.put("readsClock", readsClock(entity, f));
                 c.put("javaType", FieldViewModel.of(Naming.toPascalCase(entity.name()), f).get("javaType"));
                 computed.add(c);
@@ -521,6 +548,10 @@ public final class FeatureContext {
     public static void putInlineEdit(Map<String, Object> ctx, List<EntityDefinition> entities) {
         boolean projectOpt = Boolean.TRUE.equals(ctx.get("optScaffoldInlineEdit"));
         ctx.put("hasInlineEdit", entities.stream().anyMatch(e -> !e.readOnly()
+                && e.fields().stream().filter(FieldDefinition::primaryKey).count() == 1
+                && (e.opts().get("inlineEdit") != null ? e.opts().get("inlineEdit") : projectOpt)));
+        // â€¦and one of them has a set of linked rows: its cell is edited in place too (InlineLinks).
+        ctx.put("hasInlineLinks", entities.stream().anyMatch(e -> !e.readOnly() && !e.collections().isEmpty()
                 && e.fields().stream().filter(FieldDefinition::primaryKey).count() == 1
                 && (e.opts().get("inlineEdit") != null ? e.opts().get("inlineEdit") : projectOpt)));
     }

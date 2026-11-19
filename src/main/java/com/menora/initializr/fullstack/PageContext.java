@@ -1144,6 +1144,11 @@ public final class PageContext {
         for (Map<String, Object> rv : (List<Map<String, Object>>) ev.get("relations")) {
             relationNames.add((String) rv.get("fieldName"));
         }
+        // A set of linked rows reports under <relation>Ids.
+        Set<String> setNames = new java.util.HashSet<>();
+        for (Map<String, Object> cv : (List<Map<String, Object>>) ev.getOrDefault("collections", List.of())) {
+            setNames.add((String) cv.get("fieldName"));
+        }
         List<Map<String, Object>> steps = new ArrayList<>();
         for (int i = 0; i < p.steps().size(); i++) {
             PageDefinition.Step step = p.steps().get(i);
@@ -1152,9 +1157,10 @@ public final class PageContext {
             for (String name : step.fields()) {
                 String camel = Naming.toCamelCase(name);
                 boolean relation = relationNames.contains(camel);
-                String field = relation ? camel : name;
+                boolean set = setNames.contains(camel);
+                String field = relation || set ? camel : name;
                 fields.add(TemplateText.tsString(field));
-                keys.add(TemplateText.tsString(relation ? camel + "Id" : name));
+                keys.add(TemplateText.tsString(relation ? camel + "Id" : set ? camel + "Ids" : name));
             }
             Map<String, Object> sv = new LinkedHashMap<>();
             sv.put("stepTitleExpr", step.title() != null ? TemplateText.tsString(step.title()) : "t('stepX', { x: " + (i + 1) + " })");

@@ -81,6 +81,7 @@
     { "source": "AttachmentsField.tsx", "path": "src/shared/ui/AttachmentsField.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasMultiFiles" },
     { "source": "CsvImport.tsx", "path": "src/shared/ui/CsvImport.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasCsvImport" },
     { "source": "InlineCell.tsx", "path": "src/shared/ui/InlineCell.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasInlineEdit" },
+    { "source": "InlineLinks.tsx", "path": "src/shared/ui/InlineLinks.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasInlineLinks" },
     { "source": "StaleNotice.tsx", "path": "src/shared/ui/StaleNotice.tsx", "perEntity": false, "substitutionType": "NONE", "fileType": "STATIC_COPY", "sortOrder": 150, "gatedBy": "hasOptimisticLocking" },
 
     { "source": "DashboardPage.tsx.mustache", "path": "src/pages/dashboard/ui/DashboardPage.tsx", "perEntity": false, "substitutionType": "MUSTACHE", "fileType": "TEMPLATE", "sortOrder": 150, "gatedBy": "classicShell" },

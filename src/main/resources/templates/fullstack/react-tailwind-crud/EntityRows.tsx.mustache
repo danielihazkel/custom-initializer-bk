@@ -13,6 +13,16 @@ const COLUMNS: RowColumn[] = [
 {{#rowFields}}  { key: '{{name}}', label: '{{labelTs}}'{{#isRequired}}{{^isComputed}}, required: true{{/isComputed}}{{/isRequired}} },
 {{/rowFields}}{{#rowRelations}}  { key: '{{fkFieldName}}', label: '{{labelTs}}'{{#required}}, required: true{{/required}} },
 {{/rowRelations}}]
+{{#rowsDeriveLive}}
+
+/** A row as it will be saved — hidden fields cleared, computed ones computed — so what the record
+ *  itself works out from its rows (a total, a count) follows each edit. */
+function derived(row: Partial<{{EntityName}}>): Partial<{{EntityName}}> {
+{{#hasShowWhenFields}}  row = { ...row{{#hiddenFields}}, {{name}}: {{{rowShowWhenTs}}} ? row.{{name}} : null{{/hiddenFields}} }
+{{/hasShowWhenFields}}{{#hasComputedFields}}  row = { ...row{{#computedFields}}, {{name}}: {{{rowFormulaTs}}}{{/computedFields}} }
+{{/hasComputedFields}}  return row
+}
+{{/rowsDeriveLive}}
 
 interface Props {
   label: string
@@ -32,7 +42,7 @@ export function {{EntityName}}Rows({ label, name, value, onChange, errors }: Pro
       label={label}
       columns={COLUMNS}
       rows={value}
-      onChange={onChange}
+      onChange={{#rowsDeriveLive}}{rows => onChange(rows.map(derived))}{{/rowsDeriveLive}}{{^rowsDeriveLive}}{onChange}{{/rowsDeriveLive}}
       errorOf={(index, column) => errors?.[`${name}[${index}].${column}`]}
       cell={(row, column, set) => {
         switch (column) {

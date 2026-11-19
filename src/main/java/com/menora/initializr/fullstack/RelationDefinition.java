@@ -17,7 +17,10 @@ package com.menora.initializr.fullstack;
  * and labels. {@code joinTable}, {@code joinColumn} (this entity's key in it) and
  * {@code inverseJoinColumn} (the target's) name the join table, each derived when null. Kept
  * apart from the foreign keys: an entity's {@code relations} are its MANY_TO_ONEs, its
- * {@code collections} these.
+ * {@code collections} these. With {@code mappedBy} it is the <em>other</em> side of a
+ * MANY_TO_MANY its target declares ({@code Tag.posts} over {@code Post.tags}): the same links,
+ * read, filtered and saved from here too, with no join table of its own — the target's set holds
+ * the link, and a save from this side changes it there.
  *
  * <p>A {@link RelationType#ONE_TO_MANY} is the other side of a MANY_TO_ONE that
  * {@code targetEntity} declares, read from here: this entity gets the list of the rows that

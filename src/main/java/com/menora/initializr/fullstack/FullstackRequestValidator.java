@@ -397,6 +397,13 @@ public final class FullstackRequestValidator {
                 for (RelationDefinition r : relations) {
                     links.put(r.fieldName(), new EntityDefinition.LinkedEntity(r.targetEntity(), fieldsOf.get(r.targetEntity())));
                 }
+                // …and the rows saved with it (a composition): sum(lines.total), count(lines).
+                for (RelationDefinition list : children) {
+                    if (list.composition()) {
+                        links.put(list.fieldName(), new EntityDefinition.LinkedEntity(list.targetEntity(),
+                                fieldsOf.get(list.targetEntity()), true));
+                    }
+                }
                 // Show-when conditions and formulas read the other fields and the linked rows.
                 checkDerivations(p.fields(), links, p.name(), p.readOnly() || p.viewQuery() != null);
                 EntityDefinition built = new EntityDefinition(p.name(), p.tableName(), p.schema(), p.fields(), relations,
@@ -427,6 +434,7 @@ public final class FullstackRequestValidator {
             }
         }
         result = resolveChildLists(result, body);
+        result = resolveInverseSets(result, body);
         result = RowAccessRules.resolve(result);
         checkGeneratedMemberClashes(result, body);
         return result;
@@ -466,7 +474,88 @@ public final class FullstackRequestValidator {
                             .at("entities[" + ei + "]");
                 }
             }
-            out.add(parent.withChildren(resolved));
+            EntityDefinition settled = parent.withChildren(resolved);
+            // What the parent's expressions know of its rows, now that the rows' entity is whole.
+            Map<String, EntityDefinition.LinkedEntity> known = new LinkedHashMap<>(settled.links());
+            for (RelationDefinition list : resolved) {
+                if (!list.composition()) continue;
+                EntityDefinition child = entities.stream()
+                        .filter(e -> e.name().equals(list.targetEntity())).findFirst().orElseThrow();
+                known.put(list.fieldName(), new EntityDefinition.LinkedEntity(child.name(), child.fields(), true, child.allRules()));
+            }
+            settled = settled.withLinks(known);
+            // Rows saved with their parent are replaced as one: two people editing the same parent
+            // would silently overwrite each other's rows, so the parent carries the version check
+            // unless the model says it should not (its own optimisticLocking: false).
+            if (resolved.stream().anyMatch(RelationDefinition::composition)
+                    && !settled.opts().containsKey(ScaffoldOption.OPTIMISTIC_LOCKING.key())) {
+                settled = settled.withOpt(ScaffoldOption.OPTIMISTIC_LOCKING.key(), true);
+                try {
+                    checkVersionName(settled.name(), settled.fields(), settled.relations(), settled.readOnly(),
+                            settled.viewQuery(), settled.opts(), body);
+                } catch (WizardArgumentException problem) {
+                    throw problem.at("entities[" + ei + "]");
+                }
+            }
+            out.add(settled);
+        }
+        return out;
+    }
+
+    /**
+     * A MANY_TO_MANY with {@code mappedBy} is the other side of one its target declares: the same
+     * links, read and edited from here too. Now that every entity's sets are known, settle which
+     * one — it must be a MANY_TO_MANY of the target to this entity that owns its join table.
+     */
+    private static List<EntityDefinition> resolveInverseSets(List<EntityDefinition> entities,
+                                                             FullstackStarterRequest body) {
+        List<EntityDefinition> out = new ArrayList<>(entities.size());
+        for (int ei = 0; ei < entities.size(); ei++) {
+            EntityDefinition entity = entities.get(ei);
+            if (entity.collections().stream().noneMatch(c -> c.mappedBy() != null)) {
+                out.add(entity);
+                continue;
+            }
+            List<RelationDefinition> resolved = new ArrayList<>(entity.collections().size());
+            Set<String> taken = new HashSet<>();
+            for (RelationDefinition set : entity.collections()) {
+                if (set.mappedBy() == null) {
+                    resolved.add(set);
+                    continue;
+                }
+                try {
+                    EntityDefinition owner = entities.stream()
+                            .filter(e -> e.name().equals(set.targetEntity())).findFirst().orElseThrow();
+                    String where = "entity '" + entity.name() + "' relation '" + set.fieldName() + "'";
+                    List<RelationDefinition> candidates = owner.collections().stream()
+                            .filter(c -> c.mappedBy() == null && c.targetEntity().equals(entity.name())).toList();
+                    RelationDefinition owning = candidates.stream()
+                            .filter(c -> c.fieldName().equalsIgnoreCase(set.mappedBy())).findFirst().orElse(null);
+                    if (owning == null) {
+                        String names = String.join(", ", candidates.stream().map(RelationDefinition::fieldName).toList());
+                        throw new WizardArgumentException(where + ": mappedBy '" + set.mappedBy()
+                                + "' is not a MANY_TO_MANY of '" + owner.name() + "' to '" + entity.name()
+                                + "' that owns its join table" + (candidates.isEmpty() ? "" : " (it has: " + names + ")"))
+                                .on("mappedBy");
+                    }
+                    if (!taken.add(owner.name() + "." + owning.fieldName())) {
+                        throw new WizardArgumentException(where + " is the other side of '" + owner.name() + "."
+                                + owning.fieldName() + "', which another relation of this entity already is").on("mappedBy");
+                    }
+                    // Changing the set from here changes the owner's rows: where those belong to
+                    // users, somebody else's row would change hands with it.
+                    if (owner.access().rowLimited()) {
+                        throw new WizardArgumentException(where + ": '" + owner.name()
+                                + "' rows belong to users, so their links are changed from '" + owner.name()
+                                + "' only — the other side cannot be declared here").on("mappedBy");
+                    }
+                    resolved.add(set.withMappedBy(owning.fieldName()));
+                } catch (WizardArgumentException problem) {
+                    throw problem.at("relations[" + rawRelationIndex(body, ei, set.fieldName()) + "]")
+                            .at("entities[" + ei + "]");
+                }
+            }
+            out.add(entity.withCollections(resolved));
         }
         return out;
     }
@@ -893,12 +982,16 @@ public final class FullstackRequestValidator {
                 String field;
                 if (rule.field() != null && !rule.field().isBlank()) {
                     String wanted = rule.field().trim();
-                    field = fields.stream().map(FieldDefinition::name).filter(n -> n.equalsIgnoreCase(wanted)).findFirst()
+                    // A field — or the rows saved with the record, under their editor in the form.
+                    List<String> shownOn = new ArrayList<>(fields.stream().map(FieldDefinition::name).toList());
+                    links.forEach((name, linked) -> { if (linked.rows()) shownOn.add(name); });
+                    field = shownOn.stream().filter(n -> n.equalsIgnoreCase(wanted)).findFirst()
                             .orElseThrow(() -> new WizardArgumentException(where + " shows its message on '" + wanted
                                     + "', which is not one of its fields").on("field"));
                 } else {
-                    field = checked.refs().stream().findFirst().orElseThrow(() -> new WizardArgumentException(where
-                            + " reads no field: say which field its message is shown on").on("field"));
+                    field = checked.refs().stream().findFirst().or(() -> checked.lists().stream().findFirst())
+                            .orElseThrow(() -> new WizardArgumentException(where
+                                    + " reads no field: say which field its message is shown on").on("field"));
                 }
                 out.add(new EntityDefinition.Rule(when, check, message, field));
             } catch (WizardArgumentException problem) {
@@ -1464,9 +1557,23 @@ public final class FullstackRequestValidator {
                                     + "': mappedBy '" + mappedBy + "' is not a valid identifier").on("mappedBy");
                         }
                     }
+                } else if (manyToMany && r.mappedBy() != null && !r.mappedBy().isBlank()) {
+                    // The other side of a MANY_TO_MANY its target declares: the join table is that
+                    // one's, so this side names none. Which one is settled in resolveInverseSets.
+                    mappedBy = r.mappedBy().trim();
+                    if (!isValidJavaIdentifier(mappedBy)) {
+                        throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                                + "': mappedBy '" + mappedBy + "' is not a valid identifier").on("mappedBy");
+                    }
+                    if (joinTable != null || inverseJoinColumn != null || (r.joinColumn() != null && !r.joinColumn().isBlank())) {
+                        throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
+                                + "': with mappedBy the join table is the one '" + canonicalTarget + "." + mappedBy
+                                + "' names — joinTable, joinColumn and inverseJoinColumn belong there")
+                                .on(joinTable != null ? "joinTable" : inverseJoinColumn != null ? "inverseJoinColumn" : "joinColumn");
+                    }
                 } else if (r.mappedBy() != null && !r.mappedBy().isBlank()) {
                     throw new WizardArgumentException("entity '" + entityName + "' relation '" + fieldName
-                            + "': mappedBy only applies to a ONE_TO_MANY").on("mappedBy");
+                            + "': mappedBy only applies to a ONE_TO_MANY or a MANY_TO_MANY").on("mappedBy");
                 }
 
                 String label = (r.label() == null || r.label().isBlank()) ? null : r.label().trim();
