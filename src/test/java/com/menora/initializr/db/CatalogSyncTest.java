@@ -44,6 +44,7 @@ class CatalogSyncTest {
     @Autowired private FileContributionRepository fileRepo;
     @Autowired private BuildCustomizationRepository buildRepo;
     @Autowired private CatalogSeedRepository seedRepo;
+    @Autowired private CatalogSyncTables tables;
 
     @BeforeEach
     void inStep() {
@@ -350,7 +351,7 @@ class CatalogSyncTest {
         fileRepo.save(file);
         recordAsApplied(CatalogSync.keyOf(file), CatalogSync.fingerprintOf(file));
 
-        CatalogSync off = new CatalogSync(fileRepo, buildRepo, seedRepo, "off");
+        CatalogSync off = new CatalogSync(tables, seedRepo, "off");
         assertThat(off.enabled()).isFalse();
         assertThat(off.sync().changedAnything()).isFalse();
         assertThat(nginx().getContent()).contains("listen 80;");

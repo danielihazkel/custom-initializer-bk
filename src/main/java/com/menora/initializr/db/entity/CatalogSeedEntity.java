@@ -19,8 +19,14 @@ import java.time.Instant;
 @Table(name = "initializer_catalog_seed")
 public class CatalogSeedEntity {
 
-    /** Which catalog table the shipped row belongs to. */
-    public enum RowTable { FILE_CONTRIBUTION, BUILD_CUSTOMIZATION }
+    /**
+     * Which catalog table the shipped row belongs to — in the order the sync writes them: a row
+     * comes after what it needs (an entry after its group, an option, a rule, a file and a build
+     * row after their dependency).
+     */
+    public enum RowTable {
+        DEPENDENCY_GROUP, DEPENDENCY_ENTRY, SUB_OPTION, COMPATIBILITY_RULE, FILE_CONTRIBUTION, BUILD_CUSTOMIZATION
+    }
 
     /** sha256 of the shipped row's identity. */
     @Id
@@ -47,6 +53,13 @@ public class CatalogSeedEntity {
     @Column(nullable = false)
     private boolean kept = false;
 
+    /**
+     * The database row that stands for the shipped one — kept for a dependency group, which an
+     * admin may rename and which is still the same group then. Null for the other tables.
+     */
+    @Column(name = "row_id")
+    private Long rowId;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -72,5 +85,7 @@ public class CatalogSeedEntity {
     public void setAppliedHash(String appliedHash) { this.appliedHash = appliedHash; }
     public boolean isKept() { return kept; }
     public void setKept(boolean kept) { this.kept = kept; }
+    public Long getRowId() { return rowId; }
+    public void setRowId(Long rowId) { this.rowId = rowId; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

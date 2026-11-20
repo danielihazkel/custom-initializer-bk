@@ -131,6 +131,25 @@ class ConfigurationExportImportServiceTest {
                 .isEqualTo(ProjectKind.FRONTEND);
     }
 
+    @Autowired private com.menora.initializr.db.CatalogSync catalogSync;
+
+    @Test
+    void anImportedCatalogIsStillInStepWithTheRelease() {
+        // An import re-inserts every row under a new id. The catalog sync knows a row by what
+        // identifies it — and a dependency group, which it otherwise follows by its row id (so a
+        // rename does not lose it), by its name once that id names nothing.
+        catalogSync.apply(null);
+        service.importAll(service.exportAll());
+
+        assertThat(catalogSync.report().rows()).isNotEmpty().allSatisfy(row -> assertThat(row.status())
+                .as(row.label()).isEqualTo(com.menora.initializr.db.CatalogSync.Status.IN_STEP));
+        // The next start changes nothing, and points each group's record at its new row.
+        assertThat(catalogSync.sync().changedAnything()).isFalse();
+        assertThat(catalogSync.report().rows().stream()
+                .filter(row -> row.table() == com.menora.initializr.db.entity.CatalogSeedEntity.RowTable.DEPENDENCY_GROUP))
+                .allSatisfy(row -> assertThat(groupRepo.findById(row.rowId())).as(row.label()).isPresent());
+    }
+
     @Test
     void importReturnsCountsMatchingExport() {
         ConfigurationExport export = service.exportAll();

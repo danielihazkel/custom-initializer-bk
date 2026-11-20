@@ -15,16 +15,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Where the catalog's file contributions and build customizations stand against the ones this
- * release ships, and the two things an admin can do about a row that differs: take the shipped
- * version, or keep their own. See {@link CatalogSync}.
+ * Where the catalog's rows — dependency groups and entries, sub-options, compatibility rules,
+ * file contributions and build customizations — stand against the ones this release ships, and
+ * the two things an admin can do about a row that differs: take the shipped version, or keep
+ * their own. See {@link CatalogSync}.
  *
  * <ul>
  *   <li>{@code GET /admin/catalog-sync} — {@code {summary, rows}}; {@code ?status=DIFFERS,MISSING}
  *       narrows the rows (the summary always counts all).</li>
  *   <li>{@code GET /admin/catalog-sync/{key}} — one row: the shipped entity beside the database's.</li>
  *   <li>{@code POST /admin/catalog-sync/apply} — {@code {keys: [...]}} takes the shipped version of
- *       those rows; {@code {all: true}} of every row that differs or is missing.</li>
+ *       those rows; {@code {all: true}} of every row that differs or is missing. Answers
+ *       {@code {written, skipped, summary}}: {@code skipped} are the rows that could not be
+ *       written because their dependency (or an entry's group) is not in the catalog, each with
+ *       its {@code reason}.</li>
  *   <li>{@code POST /admin/catalog-sync/keep} — {@code {keys: [...], kept: true|false}} marks rows
  *       as the admin's own (no longer reported, never replaced), or undoes it.</li>
  * </ul>
@@ -34,9 +38,30 @@ import java.util.Map;
 public class CatalogSyncController {
 
     private final CatalogSync catalogSync;
+    private final io.spring.initializr.metadata.InitializrMetadataProvider metadataProvider;
 
-    public CatalogSyncController(CatalogSync catalogSync) {
+    public CatalogSyncController(CatalogSync catalogSync,
+                                 io.spring.initializr.metadata.InitializrMetadataProvider metadataProvider) {
         this.catalogSync = catalogSync;
+        this.metadataProvider = metadataProvider;
+    }
+
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
+    /**
+     * The dependencies a generation offers are read from the database once and kept: a row
+     * taken from the release — a new dependency, another group, a version — shows only after this.
+     *
+     * <p>Read afresh: the groups are read with their entries, and a group this request has
+     * already loaded would answer with the entries it had then — without the one just added to it.
+     */
+    private void refreshMetadata() {
+        if (metadataProvider instanceof com.menora.initializr.config.DatabaseInitializrMetadataProvider dbProvider) {
+            if (entityManager.isJoinedToTransaction()) entityManager.flush();
+            entityManager.clear();
+            dbProvider.refresh();
+        }
     }
 
     /** {@code keys}: the rows meant; {@code all}: every row that differs or is missing; {@code kept}: for keep. */
@@ -67,10 +92,12 @@ public class CatalogSyncController {
             return ResponseEntity.badRequest().body(Map.of("error", "Nothing to apply",
                     "detail", "Name the rows in 'keys', or send 'all': true for every row that differs or is missing"));
         }
-        int written = com.menora.initializr.admin.history.CatalogChangeContext.as("catalog-sync",
-                () -> catalogSync.apply(all ? null : selection.keys()));
+        CatalogSync.Applied applied = com.menora.initializr.admin.history.CatalogChangeContext.as("catalog-sync",
+                () -> catalogSync.applyRows(all ? null : selection.keys()));
+        refreshMetadata();
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("written", written);
+        body.put("written", applied.written());
+        body.put("skipped", applied.skipped());
         body.put("summary", catalogSync.report().summary());
         return ResponseEntity.ok(body);
     }
@@ -82,6 +109,7 @@ public class CatalogSyncController {
                     "detail", "Name the rows in 'keys'"));
         }
         int marked = catalogSync.keep(selection.keys(), !Boolean.FALSE.equals(selection.kept()));
+        refreshMetadata();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("marked", marked);
         body.put("summary", catalogSync.report().summary());

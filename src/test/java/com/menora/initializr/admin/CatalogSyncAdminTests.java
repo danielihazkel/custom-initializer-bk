@@ -4,16 +4,22 @@ import com.menora.initializr.CatalogTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.db.CatalogSync;
+import com.menora.initializr.config.DatabaseInitializrMetadataProvider;
 import com.menora.initializr.db.entity.CatalogSeedEntity;
+import com.menora.initializr.db.entity.CatalogSeedEntity.RowTable;
+import com.menora.initializr.db.entity.DependencyEntryEntity;
 import com.menora.initializr.db.entity.FileContributionEntity;
 import com.menora.initializr.db.entity.ProjectKind;
 import com.menora.initializr.db.repository.CatalogSeedRepository;
+import com.menora.initializr.db.repository.DependencyEntryRepository;
 import com.menora.initializr.db.repository.FileContributionRepository;
+import io.spring.initializr.metadata.InitializrMetadataProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.transaction.AfterTransaction;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +46,18 @@ class CatalogSyncAdminTests {
     @Autowired private CatalogSync catalogSync;
     @Autowired private FileContributionRepository fileRepo;
     @Autowired private CatalogSeedRepository seedRepo;
+    @Autowired private DependencyEntryRepository entryRepo;
+    @Autowired private InitializrMetadataProvider metadataProvider;
+
+    /**
+     * Taking a row refreshes the dependencies a generation offers — from inside this test's
+     * transaction. Once that has rolled back, they are read again, so the context the other test
+     * classes share is left with the catalog the database really has.
+     */
+    @AfterTransaction
+    void rereadTheCatalog() {
+        if (metadataProvider instanceof DatabaseInitializrMetadataProvider dbProvider) dbProvider.refresh();
+    }
 
     @BeforeEach
     void inStep() {
@@ -134,6 +152,92 @@ class CatalogSyncAdminTests {
                 .andExpect(jsonPath("$.written").value(1))
                 .andExpect(jsonPath("$.summary.DIFFERS").value(0));
         assertThat(nginx().getContent()).isEqualTo(shipped);
+    }
+
+    private String keyOf(RowTable table, Long rowId) {
+        return catalogSync.report().rows().stream()
+                .filter(r -> r.table() == table && rowId.equals(r.rowId())).findFirst().orElseThrow().key();
+    }
+
+    private String offered() throws Exception {
+        return mvc.perform(get("/metadata/client").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+    }
+
+    @Test
+    void aDependencyTakenFromTheReleaseIsOfferedAtOnce() throws Exception {
+        String bearer = bearer();
+        DependencyEntryEntity kafka = entryRepo.findByDepId("kafka").orElseThrow();
+        String shippedName = kafka.getName();
+        String key = keyOf(RowTable.DEPENDENCY_ENTRY, kafka.getId());
+        kafka.setName("Kafka (ours)");
+        entryRepo.saveAndFlush(kafka);
+        mvc.perform(post("/admin/refresh").header("Authorization", bearer)).andExpect(status().isOk());
+        assertThat(offered()).contains("Kafka (ours)");
+
+        // The row as a table of fields: the shipped entry beside the database's.
+        mvc.perform(get("/admin/catalog-sync/" + key).header("Authorization", bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.row.table").value("DEPENDENCY_ENTRY"))
+                .andExpect(jsonPath("$.row.dependencyId").value("kafka"))
+                .andExpect(jsonPath("$.row.status").value("DIFFERS"))
+                .andExpect(jsonPath("$.shipped.name").value(shippedName))
+                .andExpect(jsonPath("$.shipped.group").value("Messaging"))
+                .andExpect(jsonPath("$.current.name").value("Kafka (ours)"))
+                .andExpect(jsonPath("$.current.group").value("Messaging"))
+                .andExpect(jsonPath("$.current.id").value(kafka.getId()));
+
+        // Taken: what a generation offers follows without a refresh by hand.
+        mvc.perform(post("/admin/catalog-sync/apply").header("Authorization", bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"keys\":[\"" + key + "\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.written").value(1))
+                .andExpect(jsonPath("$.skipped").isEmpty());
+        assertThat(offered()).contains(shippedName).doesNotContain("Kafka (ours)");
+    }
+
+    @Test
+    void whatCannotBeWrittenComesBackWithTheReason() throws Exception {
+        String bearer = bearer();
+        // An admin deleted Redis; a release ships a file for it that this database never had.
+        FileContributionEntity file = fileRepo.findAll().stream()
+                .filter(f -> "redis".equals(f.getDependencyId())).findFirst().orElseThrow();
+        String fileKey = keyOf(RowTable.FILE_CONTRIBUTION, file.getId());
+        DependencyEntryEntity redis = entryRepo.findByDepId("redis").orElseThrow();
+        String entryKey = keyOf(RowTable.DEPENDENCY_ENTRY, redis.getId());
+        fileRepo.delete(file);
+        seedRepo.deleteById(fileKey);
+        entryRepo.delete(redis);
+        entryRepo.flush();
+
+        JsonNode report = json.readTree(mvc.perform(get("/admin/catalog-sync?status=PARENT_GONE")
+                        .header("Authorization", bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.summary.PARENT_GONE").value(1))
+                .andExpect(jsonPath("$.summary.DELETED").value(1))
+                .andReturn().getResponse().getContentAsString());
+        assertThat(report.get("rows")).hasSize(1);
+        assertThat(report.get("rows").get(0).get("reason").asText()).isEqualTo("the dependency 'redis' is not in the catalog");
+
+        // Named alone it is skipped, and the answer says why.
+        mvc.perform(post("/admin/catalog-sync/apply").header("Authorization", bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"keys\":[\"" + fileKey + "\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.written").value(0))
+                .andExpect(jsonPath("$.skipped[0].key").value(fileKey))
+                .andExpect(jsonPath("$.skipped[0].label").value(org.hamcrest.Matchers.containsString("redis")))
+                .andExpect(jsonPath("$.skipped[0].reason").value("the dependency 'redis' is not in the catalog"));
+        assertThat(offered()).doesNotContain("\"id\":\"redis\"");
+
+        // With its dependency, both are written — and the dependency is offered again.
+        mvc.perform(post("/admin/catalog-sync/apply").header("Authorization", bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"keys\":[\"" + fileKey + "\",\"" + entryKey + "\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.written").value(2))
+                .andExpect(jsonPath("$.skipped").isEmpty())
+                .andExpect(jsonPath("$.summary.PARENT_GONE").value(0));
+        assertThat(offered()).contains("\"id\":\"redis\"");
     }
 
     @Test

@@ -121,23 +121,15 @@ public class DataSeeder implements SmartInitializingSingleton {
             if (groupRepo.count() > 0) {
                 log.info("Database already seeded — skipping main DataSeeder");
                 normalizeLegacyBlankStrings();
-                // File contributions and build customizations nobody edited follow the release.
+                // The catalog's rows nobody edited follow the release.
                 catalogSync.sync();
                 return;
             }
             log.info("Seeding database from classpath resources...");
-            loadDependencyCatalog("catalog/dependencies.json", ProjectKind.BACKEND);
-            fileContribRepo.saveAll(catalogSync.shippedFileContributions(ProjectKind.BACKEND));
-            buildCustomRepo.saveAll(catalogSync.shippedBuildCustomizations(ProjectKind.BACKEND));
-            loadSubOptions("catalog/sub-options.json", ProjectKind.BACKEND);
-            loadCompatibilityRules("catalog/compatibility.json", ProjectKind.BACKEND);
+            seedCatalog(ProjectKind.BACKEND);
             seedStarterTemplates();
             seedModuleTemplates();
-            loadDependencyCatalog("catalog/frontend/dependencies.json", ProjectKind.FRONTEND);
-            fileContribRepo.saveAll(catalogSync.shippedFileContributions(ProjectKind.FRONTEND));
-            buildCustomRepo.saveAll(catalogSync.shippedBuildCustomizations(ProjectKind.FRONTEND));
-            loadSubOptions("catalog/frontend/sub-options.json", ProjectKind.FRONTEND);
-            loadCompatibilityRules("catalog/frontend/compatibility.json", ProjectKind.FRONTEND);
+            seedCatalog(ProjectKind.FRONTEND);
             log.info("Seeded frontend catalog (FRONTEND kind)");
             seedFrontendStarterTemplates();
             // Every row is the shipped one: recorded as such, so later releases can follow.
@@ -190,75 +182,23 @@ public class DataSeeder implements SmartInitializingSingleton {
 
     // ── Manifest-driven backend catalog loaders ──────────────────────────────
     //
-    // The backend dependency catalog, file contributions, build customizations,
-    // sub-options, and compatibility rules live in src/main/resources/catalog/*.json.
-    // These loaders map the manifests to entities. File contributions and build
-    // customizations are read by CatalogSync (shippedFileContributions /
-    // shippedBuildCustomizations), which also keeps them in step with later releases;
-    // the content files they reference by contentResource stay on the classpath.
+    // The dependency catalog — groups and entries, file contributions, build customizations,
+    // sub-options and compatibility rules — lives in src/main/resources/catalog/*.json (and
+    // catalog/frontend/). CatalogSync reads the manifests (shippedDependencyGroups,
+    // shippedFileContributions, …) and keeps the rows in step with later releases; the content
+    // files they reference by contentResource stay on the classpath.
 
-    private <T> T readManifest(String path, Class<T> type) throws IOException {
-        return new ObjectMapper().readValue(readClasspath(path), type);
-    }
-
-    private <T> List<T> readManifestList(String path, Class<T> elementType) throws IOException {
-        ObjectMapper mapper = new ObjectMapper();
-        return mapper.readValue(readClasspath(path),
-                mapper.getTypeFactory().constructCollectionType(List.class, elementType));
-    }
-
-    private void loadDependencyCatalog(String path, ProjectKind kind) throws IOException {
-        DependenciesManifest manifest = readManifest(path, DependenciesManifest.class);
-        for (GroupDef gd : manifest.groups()) {
-            DependencyGroupEntity g = new DependencyGroupEntity();
-            g.setName(gd.name());
-            g.setSortOrder(gd.sortOrder());
-            g.setProjectKind(kind);
-            g = groupRepo.save(g);
-            for (EntryDef ed : gd.entries()) {
-                DependencyEntryEntity e = new DependencyEntryEntity();
-                e.setGroup(g);
-                e.setDepId(ed.depId());
-                e.setName(ed.name());
-                e.setDescription(ed.description());
-                e.setMavenGroupId(ed.mavenGroupId());
-                e.setMavenArtifactId(ed.mavenArtifactId());
-                e.setVersion(ed.version());
-                e.setScope(ed.scope());
-                e.setRepository(ed.repository());
-                e.setSortOrder(ed.sortOrder());
-                e.setCompatibilityRange(ed.compatibilityRange());
-                if (ed.starter() != null) e.setStarter(ed.starter());
-                e.setProjectKind(kind);
-                entryRepo.save(e);
-            }
-        }
-    }
-
-    private void loadSubOptions(String path, ProjectKind kind) throws IOException {
-        for (SubOptionDef d : readManifestList(path, SubOptionDef.class)) {
-            DependencySubOptionEntity e = new DependencySubOptionEntity();
-            e.setDependencyId(d.depId());
-            e.setOptionId(d.optionId());
-            e.setLabel(d.label());
-            e.setDescription(d.description());
-            e.setSortOrder(d.sortOrder());
-            e.setProjectKind(kind);
-            subOptionRepo.save(e);
-        }
-    }
-
-    private void loadCompatibilityRules(String path, ProjectKind kind) throws IOException {
-        for (CompatibilityDef d : readManifestList(path, CompatibilityDef.class)) {
-            DependencyCompatibilityEntity e = new DependencyCompatibilityEntity();
-            e.setSourceDepId(d.sourceDepId());
-            e.setTargetDepId(d.targetDepId());
-            e.setRelationType(DependencyCompatibilityEntity.RelationType.valueOf(d.relationType()));
-            e.setDescription(d.description());
-            e.setSortOrder(d.sortOrder());
-            e.setProjectKind(kind);
-            compatibilityRepo.save(e);
-        }
+    /**
+     * One kind's catalog as this release ships it, through the readers {@link CatalogSync}
+     * compares with — so what a fresh database is seeded with and what a later start calls "the
+     * shipped row" cannot drift apart. Saving a group saves its entries.
+     */
+    private void seedCatalog(ProjectKind kind) throws IOException {
+        groupRepo.saveAll(catalogSync.shippedDependencyGroups(kind));
+        fileContribRepo.saveAll(catalogSync.shippedFileContributions(kind));
+        buildCustomRepo.saveAll(catalogSync.shippedBuildCustomizations(kind));
+        subOptionRepo.saveAll(catalogSync.shippedSubOptions(kind));
+        compatibilityRepo.saveAll(catalogSync.shippedCompatibilityRules(kind));
     }
 
     // ── Starter templates ───────────────────────────────────────────────────
