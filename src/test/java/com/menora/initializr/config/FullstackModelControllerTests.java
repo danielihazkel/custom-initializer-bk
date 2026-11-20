@@ -111,7 +111,7 @@ class FullstackModelControllerTests {
         assertThat(sameName.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         // delete — 204, then 404 on get/put/delete
-        ResponseEntity<Void> deleted = rest.exchange(BASE + "/" + id, HttpMethod.DELETE, null, Void.class);
+        ResponseEntity<Void> deleted = rest.exchange(BASE + "/" + id, HttpMethod.DELETE, json(null), Void.class);
         assertThat(deleted.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         ResponseEntity<JsonNode> gone = rest.getForEntity(BASE + "/" + id, JsonNode.class);
         assertThat(gone.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -119,7 +119,7 @@ class FullstackModelControllerTests {
         assertThat(gone.getBody().get("error").asText()).isEqualTo("Not found");
         assertThat(rest.exchange(BASE + "/" + id, HttpMethod.PUT, json(request("x", null, snapshot)), JsonNode.class)
                 .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        assertThat(rest.exchange(BASE + "/" + id, HttpMethod.DELETE, null, Void.class)
+        assertThat(rest.exchange(BASE + "/" + id, HttpMethod.DELETE, json(null), Void.class)
                 .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(repo.count()).isEqualTo(1);
     }
@@ -214,9 +214,11 @@ class FullstackModelControllerTests {
         return rest.postForEntity(BASE, new HttpEntity<>(body, headers), JsonNode.class);
     }
 
+    /** As alice, who saved the row the round trip changes: only its creator (or an admin) may. */
     private static HttpEntity<Map<String, Object>> json(Map<String, Object> body) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("userinfo", "alice");
         return new HttpEntity<>(body, headers);
     }
 }

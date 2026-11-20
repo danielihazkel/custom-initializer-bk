@@ -39,6 +39,10 @@ public class FullstackModelEntity {
     @Column(name = "created_by", length = 255)
     private String createdBy;
 
+    /** Who last changed the row: the gateway's user, or the admin who did. Null when nothing said. */
+    @Column(name = "updated_by", length = 255)
+    private String updatedBy;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -57,6 +61,8 @@ public class FullstackModelEntity {
     public void setEntityCount(int entityCount) { this.entityCount = entityCount; }
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
+    public String getUpdatedBy() { return updatedBy; }
+    public void setUpdatedBy(String updatedBy) { this.updatedBy = updatedBy; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

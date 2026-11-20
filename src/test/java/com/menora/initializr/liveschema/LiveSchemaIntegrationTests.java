@@ -41,6 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "menora.live-schema.allow-h2=true",
+        // Off unless switched on (Round 14): this class types its connections in.
+        "menora.live-schema.typed-connections=true",
         "menora.live-schema.secrets.test-db=from-the-environment"})
 @Import(TestInvokerConfiguration.class)
 class LiveSchemaIntegrationTests {

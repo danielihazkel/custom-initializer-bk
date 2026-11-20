@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.db.entity.FullstackModelEntity;
 import com.menora.initializr.db.repository.FullstackModelRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,14 +23,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Team-shared fullstack entity models — the Fullstack tab's "Team" presets.
  *
- * <p>Reads and writes are open to every engineer (the only auth in this app is the shared
- * admin password on {@code /admin/*}, and requiring it to save a <em>team</em> preset would
- * defeat the purpose of an internal tool). The stored {@code snapshot} is the UI's
+ * <p>Reading and saving are open to every engineer (requiring a login to save a <em>team</em>
+ * preset would defeat the purpose of an internal tool); changing or deleting a model is for
+ * whoever saved it or a signed-in admin ({@link TeamDataAccess}), and each answer says whether the
+ * caller may ({@code canEdit}) and who changed it last ({@code updatedBy}). The stored {@code snapshot} is the UI's
  * {@code menora-fullstack-model/1} export kept verbatim; the server only checks that it is a
  * JSON object carrying an {@code entities} array and caps its size. Names are unique
  * case-insensitively (409 on a clash). {@code createdBy} comes from the SSO user header —
@@ -50,33 +49,36 @@ public class FullstackModelController {
 
     private final FullstackModelRepository repo;
     private final ObjectMapper objectMapper;
-    private final String userHeader;
+    private final TeamDataAccess access;
 
     public FullstackModelController(FullstackModelRepository repo,
                                     ObjectMapper objectMapper,
-                                    @Value("${menora.audit.user-header:userinfo}") String userHeader) {
+                                    TeamDataAccess access) {
         this.repo = repo;
         this.objectMapper = objectMapper;
-        this.userHeader = userHeader;
+        this.access = access;
     }
 
     // ── Wire shapes ─────────────────────────────────────────────────────────
 
+    /** {@code canEdit}: whether whoever asked may change or delete it. */
     public record ModelSummary(Long id, String name, String description, int entityCount,
-                               String createdBy, Instant createdAt, Instant updatedAt) {
-        static ModelSummary of(FullstackModelEntity e) {
+                               String createdBy, Instant createdAt, Instant updatedAt,
+                               String updatedBy, boolean canEdit) {
+        static ModelSummary of(FullstackModelEntity e, boolean canEdit) {
             return new ModelSummary(e.getId(), e.getName(), e.getDescription(), e.getEntityCount(),
-                    e.getCreatedBy(), e.getCreatedAt(), e.getUpdatedAt());
+                    e.getCreatedBy(), e.getCreatedAt(), e.getUpdatedAt(), e.getUpdatedBy(), canEdit);
         }
 
-        static ModelSummary of(FullstackModelRepository.Summary s) {
+        static ModelSummary of(FullstackModelRepository.Summary s, boolean canEdit) {
             return new ModelSummary(s.getId(), s.getName(), s.getDescription(), s.getEntityCount(),
-                    s.getCreatedBy(), s.getCreatedAt(), s.getUpdatedAt());
+                    s.getCreatedBy(), s.getCreatedAt(), s.getUpdatedAt(), s.getUpdatedBy(), canEdit);
         }
     }
 
     public record ModelDetail(Long id, String name, String description, int entityCount,
-                              String createdBy, Instant createdAt, Instant updatedAt, JsonNode snapshot) {
+                              String createdBy, Instant createdAt, Instant updatedAt, JsonNode snapshot,
+                              String updatedBy, boolean canEdit) {
     }
 
     public record ModelRequest(String name, String description, JsonNode snapshot) {
@@ -85,21 +87,24 @@ public class FullstackModelController {
     // ── Endpoints ───────────────────────────────────────────────────────────
 
     @GetMapping
-    public List<ModelSummary> list() {
-        return repo.findAllSummariesByOrderByUpdatedAtDesc().stream().map(ModelSummary::of).toList();
+    public List<ModelSummary> list(HttpServletRequest request) {
+        TeamDataAccess.Caller caller = access.callerOf(request);
+        return repo.findAllSummariesByOrderByUpdatedAtDesc().stream()
+                .map(s -> ModelSummary.of(s, access.canEdit(s.getCreatedBy(), caller))).toList();
     }
 
     @GetMapping("/{id}")
-    public ModelDetail get(@PathVariable Long id) {
+    public ModelDetail get(@PathVariable Long id, HttpServletRequest request) {
         FullstackModelEntity e = find(id);
         return new ModelDetail(e.getId(), e.getName(), e.getDescription(), e.getEntityCount(),
-                e.getCreatedBy(), e.getCreatedAt(), e.getUpdatedAt(), readSnapshot(e));
+                e.getCreatedBy(), e.getCreatedAt(), e.getUpdatedAt(), readSnapshot(e),
+                e.getUpdatedBy(), access.canEdit(e.getCreatedBy(), access.callerOf(request)));
     }
 
     @PostMapping
     @Transactional
-    public ResponseEntity<ModelSummary> create(@RequestBody ModelRequest body,
-                                               @RequestHeader Map<String, String> headers) {
+    public ResponseEntity<ModelSummary> create(@RequestBody ModelRequest body, HttpServletRequest request) {
+        TeamDataAccess.Caller caller = access.callerOf(request);
         Validated v = validate(body);
         repo.findByNameIgnoreCase(v.name).ifPresent(existing -> {
             throw new ConflictException("A team model named '" + existing.getName() + "' already exists");
@@ -110,16 +115,20 @@ public class FullstackModelController {
         e.setDescription(v.description);
         e.setSnapshot(v.snapshotJson);
         e.setEntityCount(v.entityCount);
-        e.setCreatedBy(currentUser(headers));
+        // The creator is the gateway's user only: a row nobody is named for stays open to all.
+        e.setCreatedBy(caller.user());
+        e.setUpdatedBy(caller.name());
         e.setCreatedAt(now);
         e.setUpdatedAt(now);
-        return ResponseEntity.status(HttpStatus.CREATED).body(ModelSummary.of(repo.save(e)));
+        return ResponseEntity.status(HttpStatus.CREATED).body(ModelSummary.of(repo.save(e), true));
     }
 
     @PutMapping("/{id}")
     @Transactional
-    public ModelSummary update(@PathVariable Long id, @RequestBody ModelRequest body) {
+    public ModelSummary update(@PathVariable Long id, @RequestBody ModelRequest body, HttpServletRequest request) {
         FullstackModelEntity e = find(id);
+        TeamDataAccess.Caller caller = access.callerOf(request);
+        access.requireEdit(e.getCreatedBy(), caller);
         Validated v = validate(body);
         repo.findByNameIgnoreCase(v.name)
                 .filter(other -> !other.getId().equals(id))
@@ -130,13 +139,15 @@ public class FullstackModelController {
         e.setDescription(v.description);
         e.setSnapshot(v.snapshotJson);
         e.setEntityCount(v.entityCount);
+        e.setUpdatedBy(caller.name());
         e.setUpdatedAt(Instant.now());
-        return ModelSummary.of(repo.save(e));
+        return ModelSummary.of(repo.save(e), true);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<Void> delete(@PathVariable Long id, HttpServletRequest request) {
         FullstackModelEntity e = find(id);
+        access.requireEdit(e.getCreatedBy(), access.callerOf(request));
         repo.delete(e);
         return ResponseEntity.noContent().build();
     }
@@ -191,16 +202,6 @@ public class FullstackModelController {
         }
     }
 
-    /** Header names arrive lower-cased in the map; the configured header may not be. */
-    private String currentUser(Map<String, String> headers) {
-        String v = Optional.ofNullable(headers.get(userHeader.toLowerCase()))
-                .orElseGet(() -> headers.get(userHeader));
-        if (v == null) return null;
-        v = v.trim();
-        if (v.isEmpty()) return null;
-        return v.length() > 255 ? v.substring(0, 255) : v;
-    }
-
     // ── Errors (same {error, detail} shape as GlobalExceptionHandler) ──────
 
     static final class InvalidModelException extends RuntimeException {
@@ -213,6 +214,11 @@ public class FullstackModelController {
 
     static final class NotFoundException extends RuntimeException {
         NotFoundException(String message) { super(message); }
+    }
+
+    @ExceptionHandler(TeamDataAccess.NotAllowedException.class)
+    public ResponseEntity<Map<String, String>> handleNotAllowed(TeamDataAccess.NotAllowedException ex) {
+        return TeamDataAccess.refusal(ex);
     }
 
     @ExceptionHandler(InvalidModelException.class)

@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.db.entity.BackendPresetEntity;
 import com.menora.initializr.db.repository.BackendPresetRepository;
-import org.springframework.beans.factory.annotation.Value;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,12 +23,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Team-shared Backend-tab setups — the Backend tab's "Team" presets, beside the ones a browser
  * keeps for itself. The rules are the Fullstack tab's team models' ({@link FullstackModelController}):
- * reads and writes are open to every engineer, names are unique ignoring case (409), the stored
+ * reading and saving are open to every engineer, changing or deleting one is for whoever saved it
+ * or a signed-in admin ({@link TeamDataAccess}), names are unique ignoring case (409), the stored
  * {@code snapshot} is the UI's state of the tab kept verbatim (a JSON object with a {@code form}
  * object and a {@code selected} array, at most a megabyte), {@code createdBy} comes from the SSO
  * user header, and none of it is part of the admin configuration export/import.
@@ -44,38 +43,44 @@ public class BackendPresetController {
 
     private final BackendPresetRepository repo;
     private final ObjectMapper objectMapper;
-    private final String userHeader;
+    private final TeamDataAccess access;
 
     public BackendPresetController(BackendPresetRepository repo,
                                    ObjectMapper objectMapper,
-                                   @Value("${menora.audit.user-header:userinfo}") String userHeader) {
+                                   TeamDataAccess access) {
         this.repo = repo;
         this.objectMapper = objectMapper;
-        this.userHeader = userHeader;
+        this.access = access;
     }
 
     // ── Wire shapes ─────────────────────────────────────────────────────────
 
+    /** {@code canEdit}: whether whoever asked may change or delete it. */
     public record PresetSummary(Long id, String name, String description, String coordinates,
                                 int dependencyCount, int moduleCount,
-                                String createdBy, Instant createdAt, Instant updatedAt) {
-        static PresetSummary of(BackendPresetEntity e) {
+                                String createdBy, Instant createdAt, Instant updatedAt,
+                                String updatedBy, boolean canEdit) {
+        static PresetSummary of(BackendPresetEntity e, boolean canEdit) {
             return new PresetSummary(e.getId(), e.getName(), e.getDescription(), e.getCoordinates(),
-                    e.getDependencyCount(), e.getModuleCount(), e.getCreatedBy(), e.getCreatedAt(), e.getUpdatedAt());
+                    e.getDependencyCount(), e.getModuleCount(), e.getCreatedBy(), e.getCreatedAt(), e.getUpdatedAt(),
+                    e.getUpdatedBy(), canEdit);
         }
 
-        static PresetSummary of(BackendPresetRepository.Summary s) {
+        static PresetSummary of(BackendPresetRepository.Summary s, boolean canEdit) {
             return new PresetSummary(s.getId(), s.getName(), s.getDescription(), s.getCoordinates(),
-                    s.getDependencyCount(), s.getModuleCount(), s.getCreatedBy(), s.getCreatedAt(), s.getUpdatedAt());
+                    s.getDependencyCount(), s.getModuleCount(), s.getCreatedBy(), s.getCreatedAt(), s.getUpdatedAt(),
+                    s.getUpdatedBy(), canEdit);
         }
     }
 
     public record PresetDetail(Long id, String name, String description, String coordinates,
                                int dependencyCount, int moduleCount,
-                               String createdBy, Instant createdAt, Instant updatedAt, JsonNode snapshot) {
-        static PresetDetail of(BackendPresetEntity e, JsonNode snapshot) {
+                               String createdBy, Instant createdAt, Instant updatedAt, JsonNode snapshot,
+                               String updatedBy, boolean canEdit) {
+        static PresetDetail of(BackendPresetEntity e, JsonNode snapshot, boolean canEdit) {
             return new PresetDetail(e.getId(), e.getName(), e.getDescription(), e.getCoordinates(),
-                    e.getDependencyCount(), e.getModuleCount(), e.getCreatedBy(), e.getCreatedAt(), e.getUpdatedAt(), snapshot);
+                    e.getDependencyCount(), e.getModuleCount(), e.getCreatedBy(), e.getCreatedAt(), e.getUpdatedAt(), snapshot,
+                    e.getUpdatedBy(), canEdit);
         }
     }
 
@@ -85,15 +90,18 @@ public class BackendPresetController {
     // ── Endpoints ───────────────────────────────────────────────────────────
 
     @GetMapping
-    public List<PresetSummary> list() {
-        return repo.findAllSummariesByOrderByUpdatedAtDesc().stream().map(PresetSummary::of).toList();
+    public List<PresetSummary> list(HttpServletRequest request) {
+        TeamDataAccess.Caller caller = access.callerOf(request);
+        return repo.findAllSummariesByOrderByUpdatedAtDesc().stream()
+                .map(s -> PresetSummary.of(s, access.canEdit(s.getCreatedBy(), caller))).toList();
     }
 
     @GetMapping("/{id}")
-    public PresetDetail get(@PathVariable Long id) {
+    public PresetDetail get(@PathVariable Long id, HttpServletRequest request) {
         BackendPresetEntity e = find(id);
         try {
-            return PresetDetail.of(e, objectMapper.readTree(e.getSnapshot()));
+            return PresetDetail.of(e, objectMapper.readTree(e.getSnapshot()),
+                    access.canEdit(e.getCreatedBy(), access.callerOf(request)));
         } catch (JsonProcessingException ex) {
             // Only reachable for a hand-edited row: a stored snapshot always came through validate().
             throw new IllegalStateException("Stored snapshot of team preset " + e.getId() + " is not valid JSON", ex);
@@ -102,8 +110,8 @@ public class BackendPresetController {
 
     @PostMapping
     @Transactional
-    public ResponseEntity<PresetSummary> create(@RequestBody PresetRequest body,
-                                                @RequestHeader Map<String, String> headers) {
+    public ResponseEntity<PresetSummary> create(@RequestBody PresetRequest body, HttpServletRequest request) {
+        TeamDataAccess.Caller caller = access.callerOf(request);
         Validated v = validate(body);
         repo.findByNameIgnoreCase(v.name).ifPresent(existing -> {
             throw new ConflictException("A team preset named '" + existing.getName() + "' already exists");
@@ -111,16 +119,20 @@ public class BackendPresetController {
         Instant now = Instant.now();
         BackendPresetEntity e = new BackendPresetEntity();
         apply(e, v);
-        e.setCreatedBy(currentUser(headers));
+        // The creator is the gateway's user only: a row nobody is named for stays open to all.
+        e.setCreatedBy(caller.user());
+        e.setUpdatedBy(caller.name());
         e.setCreatedAt(now);
         e.setUpdatedAt(now);
-        return ResponseEntity.status(HttpStatus.CREATED).body(PresetSummary.of(repo.save(e)));
+        return ResponseEntity.status(HttpStatus.CREATED).body(PresetSummary.of(repo.save(e), true));
     }
 
     @PutMapping("/{id}")
     @Transactional
-    public PresetSummary update(@PathVariable Long id, @RequestBody PresetRequest body) {
+    public PresetSummary update(@PathVariable Long id, @RequestBody PresetRequest body, HttpServletRequest request) {
         BackendPresetEntity e = find(id);
+        TeamDataAccess.Caller caller = access.callerOf(request);
+        access.requireEdit(e.getCreatedBy(), caller);
         Validated v = validate(body);
         repo.findByNameIgnoreCase(v.name)
                 .filter(other -> !other.getId().equals(id))
@@ -128,13 +140,16 @@ public class BackendPresetController {
                     throw new ConflictException("A team preset named '" + other.getName() + "' already exists");
                 });
         apply(e, v);
+        e.setUpdatedBy(caller.name());
         e.setUpdatedAt(Instant.now());
-        return PresetSummary.of(repo.save(e));
+        return PresetSummary.of(repo.save(e), true);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
-        repo.delete(find(id));
+    public ResponseEntity<Void> delete(@PathVariable Long id, HttpServletRequest request) {
+        BackendPresetEntity e = find(id);
+        access.requireEdit(e.getCreatedBy(), access.callerOf(request));
+        repo.delete(e);
         return ResponseEntity.noContent().build();
     }
 
@@ -193,14 +208,6 @@ public class BackendPresetController {
         return repo.findById(id).orElseThrow(() -> new NotFoundException("No team preset with id " + id));
     }
 
-    /** Header names arrive lower-cased in the map; the configured header may not be. */
-    private String currentUser(Map<String, String> headers) {
-        String v = Optional.ofNullable(headers.get(userHeader.toLowerCase())).orElseGet(() -> headers.get(userHeader));
-        if (v == null || v.isBlank()) return null;
-        v = v.trim();
-        return v.length() > 255 ? v.substring(0, 255) : v;
-    }
-
     // ── Errors (the {error, detail} shape GlobalExceptionHandler uses) ─────
 
     static final class InvalidPresetException extends RuntimeException {
@@ -213,6 +220,11 @@ public class BackendPresetController {
 
     static final class NotFoundException extends RuntimeException {
         NotFoundException(String message) { super(message); }
+    }
+
+    @ExceptionHandler(TeamDataAccess.NotAllowedException.class)
+    public ResponseEntity<Map<String, String>> handleNotAllowed(TeamDataAccess.NotAllowedException ex) {
+        return TeamDataAccess.refusal(ex);
     }
 
     @ExceptionHandler(InvalidPresetException.class)

@@ -24,10 +24,16 @@ admin:
   # same password (or token-secret, which takes precedence when set).
   # token-secret:
   token-ttl: 12h
-  # Wrong passwords from one address before it is refused (429) until the window has passed;
-  # 0 switches the limit off. Counted per instance. See AdminLoginThrottle.
+  # Refused sign-ins from one address before it is refused (429) until the window has passed;
+  # 0 switches the limit off. max-failures-total: wrong passwords from every address together
+  # before the password signs nobody in for the rest of the window (signing in as oneself still
+  # works); 0 switches that off. Counted in the database, so instances share the counts.
+  # The address is the connection's: behind a reverse proxy set server.forward-headers-strategy
+  # (native, or framework) — only where nothing but the proxy reaches the application — or every
+  # admin shares the proxy's count. See AdminLoginThrottle.
   login:
     max-failures: 10
+    max-failures-total: 100
     window: 5m
   # Signing in as yourself: the SSO gateway's user header names you, and you are an admin when
   # one of your LDAP groups contains `group`, as Menora's LDAP REST service answers
@@ -135,15 +141,24 @@ management:
         include: health,info,metrics
 
 menora:
+  request:
+    # The largest request body this server reads (413 past it), and the largest admin
+    # configuration import. 0 switches a limit off. Kept above what the wizards take: an update
+    # carries two requests, each with its documents. See RequestBodyLimitFilter.
+    max-body-size: 32MB
+    max-import-size: 100MB
   wizard:
     # The documents pasted into the wizards (SQL, OpenAPI, WSDL, AsyncAPI) of one request,
     # together. Each is parsed in memory, so a request past this is answered 400.
     max-documents-size: 5MB
   live-schema:
     # Reading a database's schema for the SQL wizard and the fullstack import (liveschema/).
-    # true: anyone may type in a database (host, user, password) besides the admins' sources.
-    # MENORA_LIVESCHEMA_TYPEDCONNECTIONS=false leaves the sources only.
-    typed-connections: true
+    # false: only the sources an admin set up (Admin → Schema sources) can be read.
+    # true (MENORA_LIVESCHEMA_TYPEDCONNECTIONS=true): anyone may also type in a database — host,
+    # user, password — and this server connects to it for them. Off unless switched on: a server
+    # that connects wherever it is told is a way to probe the network it stands in. Set
+    # allowed-hosts with it.
+    typed-connections: false
     # Comma-separated host patterns a typed connection may name (*.menora.co.il, 10.20.*);
     # empty: any host. Admin sources are not limited by it.
     allowed-hosts: ""

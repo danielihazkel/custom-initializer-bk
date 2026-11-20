@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menora.initializr.db.entity.FullstackTemplateEntity;
 import com.menora.initializr.db.repository.FullstackTemplateRepository;
-import org.springframework.beans.factory.annotation.Value;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,7 +24,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -33,7 +31,9 @@ import java.util.Set;
  * ({@code kind = "widget"}) saved for everyone who opens the generator, beside the per-browser
  * "My templates" / "My widgets".
  *
- * <p>Open to every engineer, like {@link FullstackModelController} (and for the same reason). The
+ * <p>Reading and saving are open to every engineer, like {@link FullstackModelController} (and for
+ * the same reason); changing or deleting a template is for whoever saved it or a signed-in admin
+ * ({@link TeamDataAccess}). The
  * {@code content} is the UI's page or widget definition kept verbatim; the server checks only
  * that it is a JSON object with a {@code type} (page) or {@code kind} (widget) and caps its size —
  * a template names entities and pages of whatever model it came from, so the designer fits it to
@@ -53,20 +53,22 @@ public class FullstackTemplateController {
 
     private final FullstackTemplateRepository repo;
     private final ObjectMapper objectMapper;
-    private final String userHeader;
+    private final TeamDataAccess access;
 
     public FullstackTemplateController(FullstackTemplateRepository repo,
                                        ObjectMapper objectMapper,
-                                       @Value("${menora.audit.user-header:userinfo}") String userHeader) {
+                                       TeamDataAccess access) {
         this.repo = repo;
         this.objectMapper = objectMapper;
-        this.userHeader = userHeader;
+        this.access = access;
     }
 
     // ── Wire shapes ─────────────────────────────────────────────────────────
 
+    /** {@code canEdit}: whether whoever asked may change or delete it. */
     public record TemplateView(Long id, String kind, String name, String description, String createdBy,
-                               Instant createdAt, Instant updatedAt, JsonNode content) {
+                               Instant createdAt, Instant updatedAt, JsonNode content,
+                               String updatedBy, boolean canEdit) {
     }
 
     public record TemplateRequest(String kind, String name, String description, JsonNode content) {
@@ -75,25 +77,26 @@ public class FullstackTemplateController {
     // ── Endpoints ───────────────────────────────────────────────────────────
 
     @GetMapping
-    public List<TemplateView> list(@RequestParam(required = false) String kind) {
+    public List<TemplateView> list(@RequestParam(required = false) String kind, HttpServletRequest request) {
+        TeamDataAccess.Caller caller = access.callerOf(request);
         List<FullstackTemplateEntity> rows;
         if (kind == null || kind.isBlank()) {
             rows = repo.findAllByOrderByUpdatedAtDesc();
         } else {
             rows = repo.findAllByKindOrderByUpdatedAtDesc(kindOf(kind));
         }
-        return rows.stream().map(this::view).toList();
+        return rows.stream().map(row -> view(row, caller)).toList();
     }
 
     @GetMapping("/{id}")
-    public TemplateView get(@PathVariable Long id) {
-        return view(find(id));
+    public TemplateView get(@PathVariable Long id, HttpServletRequest request) {
+        return view(find(id), access.callerOf(request));
     }
 
     @PostMapping
     @Transactional
-    public ResponseEntity<TemplateView> create(@RequestBody TemplateRequest body,
-                                               @RequestHeader Map<String, String> headers) {
+    public ResponseEntity<TemplateView> create(@RequestBody TemplateRequest body, HttpServletRequest request) {
+        TeamDataAccess.Caller caller = access.callerOf(request);
         Validated v = validate(body);
         repo.findByKindAndNameIgnoreCase(v.kind, v.name).ifPresent(existing -> {
             throw new ConflictException("A team " + v.kind + " template named '" + existing.getName() + "' already exists");
@@ -104,16 +107,20 @@ public class FullstackTemplateController {
         e.setName(v.name);
         e.setDescription(v.description);
         e.setContent(v.contentJson);
-        e.setCreatedBy(currentUser(headers));
+        // The creator is the gateway's user only: a row nobody is named for stays open to all.
+        e.setCreatedBy(caller.user());
+        e.setUpdatedBy(caller.name());
         e.setCreatedAt(now);
         e.setUpdatedAt(now);
-        return ResponseEntity.status(HttpStatus.CREATED).body(view(repo.save(e)));
+        return ResponseEntity.status(HttpStatus.CREATED).body(view(repo.save(e), caller));
     }
 
     @PutMapping("/{id}")
     @Transactional
-    public TemplateView update(@PathVariable Long id, @RequestBody TemplateRequest body) {
+    public TemplateView update(@PathVariable Long id, @RequestBody TemplateRequest body, HttpServletRequest request) {
         FullstackTemplateEntity e = find(id);
+        TeamDataAccess.Caller caller = access.callerOf(request);
+        access.requireEdit(e.getCreatedBy(), caller);
         Validated v = validate(body);
         if (!v.kind.equals(e.getKind())) {
             throw new InvalidTemplateException("kind cannot change (this template is a " + e.getKind() + ")");
@@ -126,13 +133,16 @@ public class FullstackTemplateController {
         e.setName(v.name);
         e.setDescription(v.description);
         e.setContent(v.contentJson);
+        e.setUpdatedBy(caller.name());
         e.setUpdatedAt(Instant.now());
-        return view(repo.save(e));
+        return view(repo.save(e), caller);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
-        repo.delete(find(id));
+    public ResponseEntity<Void> delete(@PathVariable Long id, HttpServletRequest request) {
+        FullstackTemplateEntity e = find(id);
+        access.requireEdit(e.getCreatedBy(), access.callerOf(request));
+        repo.delete(e);
         return ResponseEntity.noContent().build();
     }
 
@@ -185,7 +195,7 @@ public class FullstackTemplateController {
         return repo.findById(id).orElseThrow(() -> new NotFoundException("No team template with id " + id));
     }
 
-    private TemplateView view(FullstackTemplateEntity e) {
+    private TemplateView view(FullstackTemplateEntity e, TeamDataAccess.Caller caller) {
         JsonNode content;
         try {
             content = objectMapper.readTree(e.getContent());
@@ -194,17 +204,8 @@ public class FullstackTemplateController {
             throw new IllegalStateException("Stored content of team template " + e.getId() + " is not valid JSON", ex);
         }
         return new TemplateView(e.getId(), e.getKind(), e.getName(), e.getDescription(), e.getCreatedBy(),
-                e.getCreatedAt(), e.getUpdatedAt(), content);
-    }
-
-    /** Header names arrive lower-cased in the map; the configured header may not be. */
-    private String currentUser(Map<String, String> headers) {
-        String v = Optional.ofNullable(headers.get(userHeader.toLowerCase()))
-                .orElseGet(() -> headers.get(userHeader));
-        if (v == null) return null;
-        v = v.trim();
-        if (v.isEmpty()) return null;
-        return v.length() > 255 ? v.substring(0, 255) : v;
+                e.getCreatedAt(), e.getUpdatedAt(), content,
+                e.getUpdatedBy(), access.canEdit(e.getCreatedBy(), caller));
     }
 
     // ── Errors (same {error, detail} shape as GlobalExceptionHandler) ──────
@@ -219,6 +220,11 @@ public class FullstackTemplateController {
 
     static final class NotFoundException extends RuntimeException {
         NotFoundException(String message) { super(message); }
+    }
+
+    @ExceptionHandler(TeamDataAccess.NotAllowedException.class)
+    public ResponseEntity<Map<String, String>> handleNotAllowed(TeamDataAccess.NotAllowedException ex) {
+        return TeamDataAccess.refusal(ex);
     }
 
     @ExceptionHandler(InvalidTemplateException.class)

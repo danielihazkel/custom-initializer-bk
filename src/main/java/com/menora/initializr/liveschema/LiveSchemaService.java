@@ -50,7 +50,7 @@ public class LiveSchemaService {
     private boolean catalogQueries = true;
 
     public LiveSchemaService(SchemaSourceRepository sources, Environment environment,
-                             @Value("${menora.live-schema.typed-connections:true}") boolean typedConnections,
+                             @Value("${menora.live-schema.typed-connections:false}") boolean typedConnections,
                              @Value("${menora.live-schema.allowed-hosts:}") String allowedHosts,
                              @Value("${menora.live-schema.max-tables:300}") int maxTables,
                              @Value("${menora.live-schema.max-concurrent-reads:4}") int maxConcurrentReads,

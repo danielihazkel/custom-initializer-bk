@@ -42,6 +42,25 @@ class ShippedConfigurationTest {
     void wrongAdminPasswordsAreLimited() throws IOException {
         assertThat((Integer) setting("admin", "login", "max-failures")).isPositive();
         assertThat(setting("admin", "login", "window")).isNotNull();
+        // …from every address together too, by more than one address's share.
+        assertThat((Integer) setting("admin", "login", "max-failures-total"))
+                .isGreaterThan((Integer) setting("admin", "login", "max-failures"));
+    }
+
+    @Test
+    void aDatabaseTypedInByHandIsNotConnectedToUnlessSwitchedOn() throws IOException {
+        // A server that connects wherever a caller says is a way to probe its network.
+        assertThat(setting("menora", "live-schema", "typed-connections")).isEqualTo(false);
+    }
+
+    @Test
+    void requestBodiesHaveASizeLimitAboveWhatTheWizardsTake() throws IOException {
+        DataSize body = DataSize.parse(String.valueOf(setting("menora", "request", "max-body-size")));
+        DataSize imported = DataSize.parse(String.valueOf(setting("menora", "request", "max-import-size")));
+        DataSize documents = DataSize.parse(String.valueOf(setting("menora", "wizard", "max-documents-size")));
+        // An update carries two requests, each with its documents; JSON escaping adds to them.
+        assertThat(body.toBytes()).isGreaterThan(4 * documents.toBytes());
+        assertThat(imported.toBytes()).isGreaterThanOrEqualTo(body.toBytes());
     }
 
     @Test

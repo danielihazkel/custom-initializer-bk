@@ -118,10 +118,88 @@ class AdminLoginTest {
         assertThat(login("s3cret", "10.0.0.10").getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
+    /** A controller over {@code limit}, with {@code admins} signing in as themselves without a directory. */
+    private AdminAuthController controllerOver(AdminLoginThrottle limit, String admins) {
+        return new AdminAuthController("s3cret", true, "userinfo",
+                new AdminTokenStore("s3cret", "", Duration.ofHours(12), clock), limit,
+                new AdminDirectory("", "", admins, org.springframework.web.client.RestClient.builder()));
+    }
+
+    private static ResponseEntity<?> password(AdminAuthController on, String password, String address) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr(address);
+        Map<String, String> body = new HashMap<>();
+        body.put("password", password);
+        return on.login(body, request);
+    }
+
+    private static ResponseEntity<?> asOneself(AdminAuthController on, String user, String address) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr(address);
+        if (user != null) request.addHeader("userinfo", user);
+        return on.loginSso(request);
+    }
+
+    @Test
+    void wrongPasswordsSpreadOverManyAddressesCloseThePasswordForEveryone() {
+        // Three per address, six from everywhere: no address reaches its own limit here.
+        AdminLoginThrottle limit = new AdminLoginThrottle(3, 6, Duration.ofMinutes(5), clock, new AdminLoginThrottle.MemoryStore());
+        AdminAuthController spread = controllerOver(limit, "alice");
+        for (int address = 1; address <= 3; address++) {
+            for (int guess = 0; guess < 2; guess++) {
+                assertThat(password(spread, "guess", "10.1.0." + address).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            }
+            clock.advance(Duration.ofSeconds(30));
+        }
+
+        // An address that never guessed, with the right password: the password signs nobody in.
+        ResponseEntity<?> closed = password(spread, "s3cret", "10.1.0.99");
+        assertThat(closed.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        // Until the oldest of those windows has passed: it began ninety seconds ago.
+        assertThat(closed.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("210");
+        // Signing in as oneself is not held to it: that is how an admin gets in meanwhile.
+        assertThat(asOneself(spread, "alice", "10.1.0.99").getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        clock.advance(Duration.ofSeconds(210));
+        assertThat(password(spread, "s3cret", "10.1.0.99").getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void refusedSignInsAsOneselfAreCountedTooApartFromThePassword() {
+        AdminAuthController sso = controllerOver(throttle, "alice");
+        // Nobody named (not through the gateway), and somebody who is no admin: both are refused, and counted.
+        assertThat(asOneself(sso, null, "10.2.0.1").getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(asOneself(sso, "mallory", "10.2.0.1").getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(asOneself(sso, "mallory", "10.2.0.1").getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        // The fourth from that address is not looked at — not even an admin's.
+        ResponseEntity<?> refused = asOneself(sso, "alice", "10.2.0.1");
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(refused.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("300");
+        assertThat(((Map<?, ?>) refused.getBody()).get("error")).asString().contains("Too many sign-ins that were refused");
+        // The password from that address has its own count, and another address its own.
+        assertThat(password(sso, "s3cret", "10.2.0.1").getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(asOneself(sso, "alice", "10.2.0.2").getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        clock.advance(Duration.ofMinutes(5));
+        assertThat(asOneself(sso, "alice", "10.2.0.1").getStatusCode()).isEqualTo(HttpStatus.OK);
+        // A sign-in that succeeds starts the count over.
+        asOneself(sso, "mallory", "10.2.0.1");
+        asOneself(sso, "mallory", "10.2.0.1");
+        assertThat(asOneself(sso, "alice", "10.2.0.1").getStatusCode()).isEqualTo(HttpStatus.OK);
+        asOneself(sso, "mallory", "10.2.0.1");
+        asOneself(sso, "mallory", "10.2.0.1");
+        assertThat(asOneself(sso, "alice", "10.2.0.1").getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
     @Test
     void zeroSwitchesTheLimitOff() {
         AdminLoginThrottle off = new AdminLoginThrottle(0, Duration.ofMinutes(5), clock);
         for (int i = 0; i < 50; i++) off.failed("10.0.0.11");
         assertThat(off.retryAfterSeconds("10.0.0.11")).isZero();
+        // …and the ceiling over every address is its own switch.
+        AdminLoginThrottle noCeiling = new AdminLoginThrottle(3, 0, Duration.ofMinutes(5), clock, new AdminLoginThrottle.MemoryStore());
+        for (int i = 0; i < 50; i++) noCeiling.failed("10.0.1." + i);
+        assertThat(noCeiling.retryAfterSeconds("10.0.2.1")).isZero();
     }
 }

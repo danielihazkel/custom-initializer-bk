@@ -16,6 +16,7 @@ public interface FullstackModelRepository extends JpaRepository<FullstackModelEn
         String getDescription();
         int getEntityCount();
         String getCreatedBy();
+        String getUpdatedBy();
         Instant getCreatedAt();
         Instant getUpdatedAt();
     }

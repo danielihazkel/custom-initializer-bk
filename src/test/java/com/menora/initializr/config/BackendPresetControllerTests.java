@@ -71,13 +71,13 @@ class BackendPresetControllerTests {
 
         // A setup without modules counts none, whatever selectedModules holds.
         Map<String, Object> single = snapshot("shop", List.of("web"), false, List.of("api"));
-        ResponseEntity<JsonNode> updated = send(HttpMethod.PUT, BASE + "/" + id, request("Shop service v2", null, single), null);
+        ResponseEntity<JsonNode> updated = send(HttpMethod.PUT, BASE + "/" + id, request("Shop service v2", null, single), "alice");
         assertThat(updated.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(updated.getBody().get("name").asText()).isEqualTo("Shop service v2");
         assertThat(updated.getBody().get("moduleCount").asInt()).isZero();
         assertThat(updated.getBody().get("createdBy").asText()).isEqualTo("alice");
 
-        assertThat(send(HttpMethod.DELETE, BASE + "/" + id, null, null).getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(send(HttpMethod.DELETE, BASE + "/" + id, null, "alice").getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         assertThat(rest.getForEntity(BASE + "/" + id, JsonNode.class).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 

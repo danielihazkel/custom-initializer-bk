@@ -18,6 +18,7 @@ public interface BackendPresetRepository extends JpaRepository<BackendPresetEnti
         int getDependencyCount();
         int getModuleCount();
         String getCreatedBy();
+        String getUpdatedBy();
         Instant getCreatedAt();
         Instant getUpdatedAt();
     }

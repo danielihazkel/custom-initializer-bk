@@ -95,8 +95,18 @@ public class AdminAuthController {
     /** Single sign-on: the gateway's user header names the user, the directory says whether they are an admin. */
     @PostMapping("/login/sso")
     public ResponseEntity<?> loginSso(HttpServletRequest request) {
+        // Refused sign-ins are counted here too: each one asks the directory, and a caller who is
+        // not an admin has no business asking it again and again.
+        String address = request.getRemoteAddr();
+        long wait = throttle.retryAfterSeconds(AdminLoginThrottle.Kind.SSO, address);
+        if (wait > 0) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .header(HttpHeaders.RETRY_AFTER, String.valueOf(wait))
+                    .body(Map.of("error", "Too many sign-ins that were refused. Try again in " + minutes(wait) + "."));
+        }
         String user = userOf(request);
         if (user == null) {
+            throttle.failed(AdminLoginThrottle.Kind.SSO, address);
             return ResponseEntity.status(401).body(Map.of("error",
                     "No signed-in user: the request did not come through the single sign-on gateway."));
         }
@@ -109,10 +119,12 @@ public class AdminAuthController {
                     "The directory that says who is an admin did not answer. Try again, or sign in with the password."));
         }
         if (!admin) {
+            throttle.failed(AdminLoginThrottle.Kind.SSO, address);
             log.info("Admin sign-in refused: {} is not in the admin group", user);
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error",
                     user + " is not an admin of this service.", "user", user));
         }
+        throttle.succeeded(AdminLoginThrottle.Kind.SSO, address);
         return ResponseEntity.ok(Map.of("token", tokenStore.issue(user), "user", user));
     }
 

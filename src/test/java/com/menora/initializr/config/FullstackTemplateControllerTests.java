@@ -83,7 +83,7 @@ class FullstackTemplateControllerTests {
         assertThat(rest.exchange(BASE + "/" + id, HttpMethod.PUT, json(request("widget", "x", null, widget)), JsonNode.class)
                 .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 
-        assertThat(rest.exchange(BASE + "/" + id, HttpMethod.DELETE, null, Void.class).getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(rest.exchange(BASE + "/" + id, HttpMethod.DELETE, json(null), Void.class).getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         assertThat(rest.getForEntity(BASE + "/" + id, JsonNode.class).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
@@ -134,9 +134,11 @@ class FullstackTemplateControllerTests {
         return rest.postForEntity(BASE, new HttpEntity<>(body, headers), JsonNode.class);
     }
 
+    /** As alice, who saved the row the round trip changes: only its creator (or an admin) may. */
     private static HttpEntity<Map<String, Object>> json(Map<String, Object> body) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("userinfo", "alice");
         return new HttpEntity<>(body, headers);
     }
 }
