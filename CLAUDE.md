@@ -1403,3 +1403,7 @@ Phase 9 is the generator site's own: the entry chunk's headroom and its two larg
 ### Phase 10: nothing here
 
 Phase 10 is the layout designer's canvas in the generator site (`ui/CLAUDE.md`, *Phase 10*): it draws the header's tools, the gauge, funnel and time-in-state widgets, composed rows, file and picture fields and the change history as the templates here generate them. No backend file changed; the words on the canvas are copies of `i18n-strings.ts.mustache` — **a wording changed there needs the same change in `ui/src/components/fullstack/layoutPreviewModel.ts` `STRINGS`**.
+
+### Phase 11: nothing here
+
+Phase 11 is the generator site's Config → Fullstack Examples form, which now opens the full-screen layout designer (`ui/CLAUDE.md`, *Phase 11*). No backend file changed: the form saves through the same `/admin/fullstack-examples` calls, and what the designer sets beside the pages (template set, palette, language, RTL, navigation) lands in the example's `settings`, which `FullstackExampleAdminController.validateSettings` checks as before.
