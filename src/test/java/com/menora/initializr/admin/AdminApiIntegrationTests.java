@@ -28,8 +28,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>The configured admin password is {@code test} (see
  * {@code src/test/resources/application.properties}).
  *
- * <p>Tests are non-mutating — validation failures don't insert, and the orphan-conflict
- * (409) path doesn't delete — so no DB cleanup is needed across the shared in-memory DB.
+ * <p>Most tests change nothing — validation failures don't insert, and the orphan-conflict
+ * (409) path doesn't delete; the ones that do (the group-save cases) remove what they made, so
+ * the shared in-memory DB is left as it was.
  */
 @CatalogTest
 class AdminApiIntegrationTests {
@@ -152,6 +153,145 @@ class AdminApiIntegrationTests {
 
         mvc.perform(delete("/admin/dependency-groups/" + groupId).header("Authorization", auth))
                 .andExpect(status().isConflict());
+    }
+
+    // ── Saving a group leaves its dependencies alone ─────────────────────────
+
+    private JsonNode groupNamed(String auth, String name) throws Exception {
+        JsonNode groups = json.readTree(mvc.perform(get("/admin/dependency-groups").header("Authorization", auth))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        for (JsonNode g : groups) {
+            if (name.equals(g.path("name").asText())) return g;
+        }
+        throw new AssertionError("no group " + name);
+    }
+
+    private JsonNode entryNamed(String auth, String depId) throws Exception {
+        JsonNode entries = json.readTree(mvc.perform(get("/admin/dependency-entries").header("Authorization", auth))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        for (JsonNode e : entries) {
+            if (depId.equals(e.path("depId").asText())) return e;
+        }
+        return null;
+    }
+
+    /**
+     * The group's row used to be saved as the request body, dependencies and all: a body without
+     * {@code entries} deleted every dependency of the group, and one with them — the Groups tab
+     * sends the list as it was when the tab loaded — wrote them over edits made since.
+     */
+    @Test
+    void savingAGroupNeitherDeletesNorOverwritesItsDependencies() throws Exception {
+        String auth = bearer();
+        JsonNode created = json.readTree(mvc.perform(post("/admin/dependency-groups")
+                        .header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Group save test\",\"sortOrder\":991,\"projectKind\":\"BACKEND\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        long groupId = created.get("id").asLong();
+        try {
+            for (String dep : java.util.List.of("group-save-a", "group-save-b")) {
+                mvc.perform(post("/admin/dependency-entries")
+                                .header("Authorization", auth)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(json.writeValueAsString(Map.of(
+                                        "group", Map.of("id", groupId), "depId", dep, "name", "Before",
+                                        "projectKind", "BACKEND"))))
+                        .andExpect(status().isOk());
+            }
+            // What the Groups tab holds: the group with its two dependencies, as listed now.
+            com.fasterxml.jackson.databind.node.ObjectNode listed =
+                    (com.fasterxml.jackson.databind.node.ObjectNode) groupNamed(auth, "Group save test");
+            assertThat(listed.path("entries")).hasSize(2);
+
+            // Meanwhile one dependency is edited and one is added on the Dependencies tab.
+            com.fasterxml.jackson.databind.node.ObjectNode edited =
+                    (com.fasterxml.jackson.databind.node.ObjectNode) entryNamed(auth, "group-save-a");
+            edited.put("name", "After");
+            mvc.perform(put("/admin/dependency-entries/" + edited.get("id").asLong())
+                            .header("Authorization", auth)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json.writeValueAsString(edited)))
+                    .andExpect(status().isOk());
+            mvc.perform(post("/admin/dependency-entries")
+                            .header("Authorization", auth)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json.writeValueAsString(Map.of(
+                                    "group", Map.of("id", groupId), "depId", "group-save-c", "name", "Added since",
+                                    "projectKind", "BACKEND"))))
+                    .andExpect(status().isOk());
+
+            // The stale list goes back with the group's new name.
+            listed.put("name", "Group save test renamed");
+            mvc.perform(put("/admin/dependency-groups/" + groupId)
+                            .header("Authorization", auth)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json.writeValueAsString(listed)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.name").value("Group save test renamed"));
+            assertThat(entryNamed(auth, "group-save-a").path("name").asText()).isEqualTo("After");
+            assertThat(entryNamed(auth, "group-save-b")).isNotNull();
+            assertThat(entryNamed(auth, "group-save-c")).isNotNull();
+
+            // A body with no dependencies at all, and one with an empty list.
+            for (String body : java.util.List.of(
+                    "{\"name\":\"Group save test\",\"sortOrder\":992,\"projectKind\":\"BACKEND\"}",
+                    "{\"name\":\"Group save test\",\"sortOrder\":992,\"projectKind\":\"BACKEND\",\"entries\":[]}")) {
+                mvc.perform(put("/admin/dependency-groups/" + groupId)
+                                .header("Authorization", auth)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.sortOrder").value(992));
+                JsonNode after = groupNamed(auth, "Group save test");
+                assertThat(after.path("entries")).hasSize(3);
+            }
+            // The generator still offers them.
+            mvc.perform(get("/metadata/client").accept(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString("group-save-c")));
+        } finally {
+            mvc.perform(delete("/admin/dependency-groups/" + groupId + "?force=true").header("Authorization", auth))
+                    .andExpect(status().isNoContent());
+        }
+        assertThat(entryNamed(auth, "group-save-a")).isNull();
+    }
+
+    @Test
+    void savingAGroupThatIsNotThereIs404AndCreatesNothing() throws Exception {
+        String auth = bearer();
+        mvc.perform(put("/admin/dependency-groups/987654")
+                        .header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Nobody's group\",\"sortOrder\":0,\"projectKind\":\"BACKEND\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("No dependency group 987654"));
+        mvc.perform(get("/admin/dependency-groups").header("Authorization", auth))
+                .andExpect(jsonPath("$[?(@.name == \"Nobody's group\")]").doesNotExist());
+    }
+
+    /** A new group starts empty and under its own id, whatever the body carries. */
+    @Test
+    void aNewGroupTakesNeitherAnIdNorDependenciesFromItsBody() throws Exception {
+        String auth = bearer();
+        JsonNode web = groupNamed(auth, "Web");
+        com.fasterxml.jackson.databind.node.ObjectNode copy = web.deepCopy();
+        copy.put("name", "Web copy test");
+        JsonNode created = json.readTree(mvc.perform(post("/admin/dependency-groups")
+                        .header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(copy)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        try {
+            assertThat(created.get("id").asLong()).isNotEqualTo(web.get("id").asLong());
+            assertThat(created.path("entries")).isEmpty();
+            JsonNode still = groupNamed(auth, "Web");
+            assertThat(still.get("id").asLong()).isEqualTo(web.get("id").asLong());
+            assertThat(still.path("entries")).hasSize(web.path("entries").size());
+        } finally {
+            mvc.perform(delete("/admin/dependency-groups/" + created.get("id").asLong()).header("Authorization", auth))
+                    .andExpect(status().isNoContent());
+        }
     }
 
     // ── Entity-template default-deps replace (regression: #8) ────────────────

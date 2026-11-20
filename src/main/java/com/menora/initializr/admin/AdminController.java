@@ -133,9 +133,24 @@ public class AdminController {
 
     @PostMapping("/dependency-groups")
     public DependencyGroupEntity createGroup(@Valid @RequestBody DependencyGroupEntity group) {
-        DependencyGroupEntity saved = groupRepo.save(group);
+        DependencyGroupEntity created = new DependencyGroupEntity();
+        copyGroupFields(group, created);
+        DependencyGroupEntity saved = groupRepo.save(created);
         refreshMetadata();
         return saved;
+    }
+
+    /**
+     * A group is saved by its own fields. Its dependencies are rows of their own
+     * ({@code /admin/dependency-entries}) and are never taken from a group's body: the group
+     * owns the collection with orphan removal, so saving the body as the entity deleted every
+     * dependency the body left out and wrote the ones it carried over newer edits — and the
+     * Groups tab sends back the list as it was when the tab loaded.
+     */
+    private static void copyGroupFields(DependencyGroupEntity from, DependencyGroupEntity to) {
+        to.setName(from.getName());
+        to.setSortOrder(from.getSortOrder());
+        to.setProjectKind(from.getProjectKind());
     }
 
     @PutMapping("/dependency-groups/reorder")
@@ -154,11 +169,17 @@ public class AdminController {
     }
 
     @PutMapping("/dependency-groups/{id}")
-    public DependencyGroupEntity updateGroup(@PathVariable Long id, @Valid @RequestBody DependencyGroupEntity group) {
-        group.setId(id);
-        DependencyGroupEntity saved = groupRepo.save(group);
+    public ResponseEntity<?> updateGroup(@PathVariable Long id, @Valid @RequestBody DependencyGroupEntity group) {
+        DependencyGroupEntity stored = groupRepo.findById(id).orElse(null);
+        if (stored == null) {
+            // Saving the body under an id nothing has used to insert a new group under another id.
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "Not found", "detail", "No dependency group " + id));
+        }
+        copyGroupFields(group, stored);
+        DependencyGroupEntity saved = groupRepo.save(stored);
         refreshMetadata();
-        return saved;
+        return ResponseEntity.ok(saved);
     }
 
     @DeleteMapping("/dependency-groups/{id}")
