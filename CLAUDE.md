@@ -1395,3 +1395,7 @@ Not in the plan — found while walking phase 7 by hand. `PUT /admin/dependency-
 `AdminController.createGroup` / `updateGroup` now copy the group's own fields (`copyGroupFields`: name, sort order, kind) onto a new or the stored row and ignore everything else in the body; a `PUT` to an id nothing has is a 404 `{error, detail}` (it used to insert a group under another id). A group's dependencies are saved only through `/admin/dependency-entries`. `DependencyGroupEntity` is the only catalog entity that owns a child collection, so no other admin endpoint has the fault. The catalog import and the catalog sync build their groups themselves and are unchanged.
 
 Pinned by three cases in `AdminApiIntegrationTests` (`savingAGroupNeitherDeletesNorOverwritesItsDependencies`, `savingAGroupThatIsNotThereIs404AndCreatesNothing`, `aNewGroupTakesNeitherAnIdNorDependenciesFromItsBody`), each of which fails on the old controller.
+
+### Phase 9: nothing here
+
+Phase 9 is the generator site's own: the entry chunk's headroom and its two largest files in parts. No backend file changed. See *Phase 9* in `ui/CLAUDE.md`.
