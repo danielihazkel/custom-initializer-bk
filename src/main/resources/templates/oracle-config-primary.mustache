@@ -56,6 +56,11 @@ public class OracleConfig {
         Map<String, Object> properties = new HashMap<>();
         properties.put("hibernate.dialect", env.getProperty("oracle.hibernate.dialect"));
         properties.put("hibernate.hbm2ddl.auto", env.getProperty("oracle.hibernate.hbm2ddl-auto"));
+{{#hasScaffoldedEntities}}
+        // Booleans are a NUMBER holding 1 or 0 on every Oracle. From Oracle 23 Hibernate would otherwise
+        // use the server's own BOOLEAN — and refuse, validating, the numeric columns the migrations create.
+        properties.put("hibernate.type.preferred_boolean_jdbc_type", "TINYINT");
+{{/hasScaffoldedEntities}}
         em.setJpaPropertyMap(properties);
 
         return em;

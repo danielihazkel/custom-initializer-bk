@@ -50,6 +50,26 @@ class FullstackDatasourceConfigTests extends FullstackEndpointTestSupport {
     }
 
     @Test
+    void fullstackEndpoint_oracleKeepsBooleansNumericOnEveryServerVersion() throws Exception {
+        // Found by running a generated project on Oracle 23: Hibernate asked for the server's own
+        // BOOLEAN there and, validating, refused the number(1,0) columns of the Flyway baseline.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("artifactId", "oraapp");
+        body.put("packageName", "com.menora.oraapp");
+        body.put("dependencies", List.of("data-jpa", "web", "oracle", "flyway"));
+        body.put("entities", List.of(Map.of("name", "Customer", "fields", List.of(pkField(),
+                Map.of("name", "active", "type", "BOOLEAN")))));
+
+        Map<String, String> entries = generateZip(body);
+
+        assertThat(contentEndingWith(entries, "/config/OracleConfig.java"))
+                .contains("properties.put(\"" + com.menora.initializr.fullstack.schema.SchemaDialect.ORACLE_BOOLEAN_SETTING
+                        + "\", \"" + com.menora.initializr.fullstack.schema.SchemaDialect.ORACLE_BOOLEAN_JDBC_TYPE + "\");");
+        // The column the setting is there for, as the baseline writes it.
+        assertThat(contentEndingWith(entries, "/db/migration/V1__init.sql")).contains("active number(1,0)");
+    }
+
+    @Test
     void fullstackEndpoint_explicitSecondaryDatasourceOptIsNotOverridden() throws Exception {
         // When the caller explicitly picks the secondary datasource role, the default-to-primary
         // must not fire — the secondary variant (no @Primary) is rendered.

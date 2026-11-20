@@ -26,6 +26,22 @@ public enum SchemaDialect {
         this.dependencyId = dependencyId;
     }
 
+    /**
+     * The Hibernate setting a generated fullstack project on Oracle carries, and its value: booleans
+     * are a NUMBER holding 1 or 0 on every Oracle. From Oracle 23 Hibernate would otherwise use the
+     * server's own BOOLEAN — and refuse, validating, the {@code number(1,0)} column the baseline
+     * (written once, whatever the server's version) creates. The flag SQL here ({@link #flag},
+     * {@link #flagIs}) is written for the numeric column too.
+     *
+     * <p>{@code TINYINT}, not {@code NUMERIC}: Hibernate binds a Boolean as a byte, and cannot bind
+     * one as a decimal ("Could not convert Boolean to BigDecimal" on every write — seen on a real
+     * Oracle 23). Hibernate itself would write {@code number(3,0)} for it; its validation compares
+     * the type's name, so the baseline's {@code number(1,0)} is accepted, on 19 as on 23.
+     * Spelled out in {@code oracle-config-primary.mustache}.
+     */
+    public static final String ORACLE_BOOLEAN_SETTING = "hibernate.type.preferred_boolean_jdbc_type";
+    public static final String ORACLE_BOOLEAN_JDBC_TYPE = "TINYINT";
+
     /** The catalog dependency that selects this database. */
     public String dependencyId() {
         return dependencyId;

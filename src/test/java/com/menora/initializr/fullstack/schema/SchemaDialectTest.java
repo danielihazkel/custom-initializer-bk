@@ -110,11 +110,50 @@ class SchemaDialectTest {
         assertThat(mismatches).isEmpty();
     }
 
-    /** Column name → everything Hibernate wrote after it, for the fixture's table on one dialect. */
+    /**
+     * Oracle 23 has a real BOOLEAN and Hibernate asks for it there, where the baseline — written
+     * once, for every Oracle — says {@code number(1,0)} as Hibernate does up to 21. A generated
+     * project on Oracle 23 did not start for it (schema validation). The generated configuration
+     * therefore tells Hibernate to keep booleans a NUMBER: with that setting a boolean column is
+     * the same numeric type on 19 and on 23, and every other column is still the baseline's.
+     * (That the baseline's {@code number(1,0)} then validates and takes its values is proven
+     * on a real Oracle 23: {@code LocalRunDockerSmokeTests}.)
+     */
+    @Test
+    void onOracle23TheGeneratedSettingKeepsBooleansNumeric() throws IOException {
+        Target oracle23 = new Target("org.hibernate.dialect.OracleDialect", "Oracle", 23, 0);
+        // What goes wrong without it.
+        Map<String, String> plain = exportedColumns(SchemaDialect.ORACLE, oracle23, Map.of());
+        assertThat(typeOnly(plain.get("deleted"), SchemaDialect.ORACLE)).isEqualTo("boolean");
+
+        // With it: the same on 23 as on the Oracle the baseline was written for.
+        for (Target target : List.of(oracle23, TARGETS.get(SchemaDialect.ORACLE))) {
+            Map<String, String> exported = exportedColumns(SchemaDialect.ORACLE, target,
+                    Map.of(SchemaDialect.ORACLE_BOOLEAN_SETTING, SchemaDialect.ORACLE_BOOLEAN_JDBC_TYPE));
+            for (Map.Entry<String, Column> entry : COLUMNS.entrySet()) {
+                String hibernate = typeOnly(exported.get(entry.getKey()), SchemaDialect.ORACLE);
+                if (entry.getValue().type() == ColumnType.BOOLEAN) {
+                    // A NUMBER like the baseline's: validation compares the name, not the digits.
+                    assertThat(hibernate).as("Oracle " + target.major() + ", " + entry.getKey()).isEqualTo("number(3,0)");
+                    assertThat(SchemaDialect.ORACLE.typeOf(entry.getValue())).startsWith("number(");
+                } else {
+                    assertThat(hibernate).as("Oracle " + target.major() + ", " + entry.getKey())
+                            .isEqualTo(SchemaDialect.ORACLE.typeOf(entry.getValue()));
+                }
+            }
+        }
+    }
+
     private Map<String, String> exportedColumns(SchemaDialect dialect) throws IOException {
-        Target target = TARGETS.get(dialect);
-        Path script = temp.resolve(dialect.name().toLowerCase(Locale.ROOT) + ".sql");
-        StandardServiceRegistry registry = new StandardServiceRegistryBuilder()
+        return exportedColumns(dialect, TARGETS.get(dialect), Map.of());
+    }
+
+    /** Column name → everything Hibernate wrote after it, for the fixture's table on one dialect. */
+    private Map<String, String> exportedColumns(SchemaDialect dialect, Target target, Map<String, String> settings) throws IOException {
+        Path script = temp.resolve(dialect.name().toLowerCase(Locale.ROOT) + "-" + target.major() + "-" + System.nanoTime() + ".sql");
+        StandardServiceRegistryBuilder builder = new StandardServiceRegistryBuilder();
+        settings.forEach(builder::applySetting);
+        StandardServiceRegistry registry = builder
                 .applySetting("hibernate.dialect", target.dialectClass())
                 // No database: the dialect is told its version instead of asking one.
                 .applySetting("hibernate.temp.use_jdbc_metadata_defaults", false)
