@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+            xmlns="http://example.com/country"
+            targetNamespace="http://example.com/country"
+            elementFormDefault="qualified">
+  <xsd:include schemaLocation="types.xsd"/>
+  <xsd:element name="getCountryRequest">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="name" type="xsd:string"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+  <xsd:element name="getCountryResponse">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="country" type="Country"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+  <xsd:element name="getCurrencyRequest">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="country" type="xsd:string"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+  <xsd:element name="getCurrencyResponse">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="currency" type="Currency"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+</xsd:schema>

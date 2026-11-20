@@ -429,6 +429,14 @@ public class DynamicProjectGenerationConfiguration {
             putWizard(request, "sqlByDep", "sqlOptions", sqlContext.all(), sqlContext::optionsFor);
             putWizard(request, "specByDep", "openApiOptions", specContext.all(), specContext::optionsFor);
             putWizard(request, "wsdlByDep", "soapOptions", soapContext.all(), soapContext::optionsFor);
+            // The files a WSDL comes with, beside its main document.
+            com.fasterxml.jackson.databind.node.ObjectNode wsdlFiles = BackendModel.newRequest();
+            new java.util.TreeMap<>(soapContext.all()).forEach((dep, wsdl) -> {
+                com.fasterxml.jackson.databind.node.ObjectNode files = wsdl == null || wsdl.isBlank()
+                        ? null : BackendModel.texts(soapContext.filesFor(dep));
+                if (files != null) wsdlFiles.set(dep, files);
+            });
+            if (!wsdlFiles.isEmpty()) request.set("wsdlFilesByDep", wsdlFiles);
             putWizard(request, "asyncApiByDep", "eventOptions", eventsContext.all(), eventsContext::optionsFor);
 
             String catalogHash = BackendModel.catalogHash(selectedFileContributions.rows(),
@@ -606,7 +614,7 @@ public class DynamicProjectGenerationConfiguration {
                 if (wsdl == null || wsdl.isBlank()) continue;
                 SoapWizardOptions opts = soapContext.optionsFor(entry.getKey());
                 List<GeneratedSoapFile> files = generator.generate(
-                        wsdl, description.getPackageName(), opts);
+                        wsdl, soapContext.filesFor(entry.getKey()), description.getPackageName(), opts);
                 String packagePath = description.getPackageName().replace('.', '/');
                 for (GeneratedSoapFile f : files) {
                     Path target = GeneratedProjectFiles.resolveInside(projectRoot,
@@ -624,7 +632,8 @@ public class DynamicProjectGenerationConfiguration {
 
     /**
      * Configures the JAX-WS Maven plugin (wsimport goal) for every WSDL the
-     * SOAP wizard dropped into {@code src/main/resources/wsdl/}. Generated
+     * SOAP wizard dropped into {@code src/main/resources/wsdl/} — the main document of each;
+     * the plugin follows its imports to the files written beside it. Generated
      * JAXB classes land under {@code <projectPackage>.<payloadSubPackage>}
      * during the {@code generate-sources} phase.
      */
@@ -645,7 +654,7 @@ public class DynamicProjectGenerationConfiguration {
                 if (payloadPackage == null) {
                     payloadPackage = SoapCodeGenerator.payloadFullPackage(description.getPackageName(), opts);
                 }
-                for (String name : generator.resolveWsdlFileNames(wsdl)) {
+                for (String name : generator.resolveWsdlFileNames(wsdl, soapContext.filesFor(entry.getKey()))) {
                     allWsdlFiles.add(name + ".wsdl");
                 }
             }

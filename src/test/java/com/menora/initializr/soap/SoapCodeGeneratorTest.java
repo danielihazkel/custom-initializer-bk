@@ -136,7 +136,8 @@ class SoapCodeGeneratorTest {
                         .hasSize(3)
                         .anySatisfy(m -> assertThat(m).contains("'common/faults.wsdl' (wsdl:import)"))
                         .anySatisfy(m -> assertThat(m).contains("'types.xsd' (xsd:import)"))
-                        .anySatisfy(m -> assertThat(m).contains("'more.xsd' (xsd:include)").contains("self-contained")));
+                        .anySatisfy(m -> assertThat(m).contains("'more.xsd' (xsd:include)")
+                                .contains("not part of the document given").contains("Add that file")));
         // The preview says so too, instead of listing services whose build would fail.
         assertThatThrownBy(() -> generator.detectServices(wsdl)).isInstanceOf(SoapCodeGenerator.SoapParseException.class);
         // An import of a namespace alone is a schema in the same document: fine.
@@ -148,6 +149,195 @@ class SoapCodeGeneratorTest {
                 "<!DOCTYPE d [<!ENTITY x SYSTEM \"file:///etc/hostname\">]>\n" + selfContained))
                 .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class,
                         e -> assertThat(e.messages()).singleElement().asString().contains("not well-formed XML"));
+    }
+
+    private static String split(String path) throws IOException {
+        try (var in = new ClassPathResource("wizard-fixtures/countries-split/" + path).getInputStream()) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+        }
+    }
+
+    /** The three files the split fixture's main document comes with. */
+    private static Map<String, String> splitFiles() throws IOException {
+        Map<String, String> files = new java.util.LinkedHashMap<>();
+        for (String path : List.of("port/country-port.wsdl", "schemas/countries.xsd", "schemas/types.xsd")) {
+            files.put(path, split(path));
+        }
+        return files;
+    }
+
+    private Map<String, String> generateSplit(SoapWizardOptions.GenerationMode mode, Map<String, String> files) throws IOException {
+        return generator.generate(split("countries.wsdl"), files, "com.menora.demo",
+                        new SoapWizardOptions(null, null, null, mode, null, null))
+                .stream().collect(Collectors.toMap(GeneratedSoapFile::relativePath, GeneratedSoapFile::content));
+    }
+
+    @Test
+    void aWsdlInSeveralFilesIsReadThroughItsImports() throws IOException {
+        // The binding and the service are in the main document; the port type and its messages
+        // in a WSDL it imports; the elements in a schema that one imports from a folder beside its
+        // own; their types in a schema the schema includes.
+        assertThat(generator.detectServices(split("countries.wsdl"), splitFiles()))
+                .containsExactly("CountryService.CountryPort: getCountry, getCurrency");
+
+        Map<String, String> files = generateSplit(SoapWizardOptions.GenerationMode.BOTH, splitFiles());
+        // Every file is in the project where the main document's references find it.
+        assertThat(files).containsEntry("src/main/resources/wsdl/country-service.wsdl", split("countries.wsdl"))
+                .containsEntry("src/main/resources/wsdl/port/country-port.wsdl", split("port/country-port.wsdl"))
+                .containsEntry("src/main/resources/wsdl/schemas/countries.xsd", split("schemas/countries.xsd"))
+                .containsEntry("src/main/resources/wsdl/schemas/types.xsd", split("schemas/types.xsd"));
+        // The payload is in the schema's namespace, not the main document's nor the port type's.
+        assertThat(files.get("src/main/java/{{packagePath}}/endpoint/CountryServiceEndpoint.java"))
+                .contains("@PayloadRoot(namespace = \"http://example.com/country\", localPart = \"getCountryRequest\")")
+                .contains("public GetCurrencyResponse getCurrency(@RequestPayload GetCurrencyRequest request)");
+        // And each file is served under its name, so whoever fetches the WSDL can follow it.
+        assertThat(files.get("src/main/java/{{packagePath}}/endpoint/WebServiceConfig.java"))
+                .contains("import org.springframework.xml.xsd.SimpleXsdSchema;")
+                .contains("import org.springframework.xml.xsd.XsdSchema;")
+                .contains("new SimpleWsdl11Definition(new ClassPathResource(\"wsdl/country-service.wsdl\"))")
+                .contains("""
+                            @Bean(name = "country-port")
+                            public SimpleWsdl11Definition countryPortWsdl() {
+                                return new SimpleWsdl11Definition(new ClassPathResource("wsdl/port/country-port.wsdl"));
+                            }
+                        """)
+                .contains("""
+                            @Bean(name = "countries")
+                            public XsdSchema countriesSchema() {
+                                return new SimpleXsdSchema(new ClassPathResource("wsdl/schemas/countries.xsd"));
+                            }
+                        """)
+                .contains("public XsdSchema typesSchema()");
+        // The plugin is given the main document alone.
+        assertThat(generator.resolveWsdlFileNames(split("countries.wsdl"), splitFiles())).containsExactly("country-service");
+        // A client-only project serves nothing.
+        assertThat(generateSplit(SoapWizardOptions.GenerationMode.CLIENT, splitFiles()))
+                .containsKey("src/main/resources/wsdl/schemas/types.xsd")
+                .doesNotContainKey("src/main/java/{{packagePath}}/endpoint/WebServiceConfig.java");
+    }
+
+    @Test
+    void aWsdlInOneDocumentIsWrittenAsBefore() throws IOException {
+        Map<String, String> one = generate(SoapWizardOptions.GenerationMode.BOTH);
+        assertThat(one.get("src/main/java/{{packagePath}}/endpoint/WebServiceConfig.java"))
+                .doesNotContain("XsdSchema").doesNotContain("served under the name");
+        // No files and an empty map are the same request.
+        assertThat(generator.generate(wsdl(), Map.of(), "com.menora.demo",
+                new SoapWizardOptions(null, null, null, SoapWizardOptions.GenerationMode.BOTH, null, null))
+                .stream().collect(Collectors.toMap(GeneratedSoapFile::relativePath, GeneratedSoapFile::content))).isEqualTo(one);
+    }
+
+    @Test
+    void whatTheFilesDoNotHoldIsNamedWithTheFileThatAsksForIt() throws IOException {
+        // A file missing from the set: named, with the document that refers to it.
+        Map<String, String> noTypes = splitFiles();
+        noTypes.remove("schemas/types.xsd");
+        assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), noTypes))
+                .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class, e -> assertThat(e.messages())
+                        .singleElement().asString()
+                        .contains("'schemas/countries.xsd' refers to 'types.xsd' (xsd:include)")
+                        .contains("not among the files given"));
+        // The reference is followed from the folder of the file that makes it.
+        Map<String, String> flat = splitFiles();
+        flat.put("countries.xsd", flat.remove("schemas/countries.xsd"));
+        assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), flat))
+                .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class, e -> assertThat(e.messages())
+                        .anySatisfy(m -> assertThat(m).contains("'port/country-port.wsdl' refers to '../schemas/countries.xsd' (xsd:import)"))
+                        .anySatisfy(m -> assertThat(m).contains("'countries.xsd' refers to 'types.xsd' (xsd:include)")));
+
+        // An address is never fetched, whatever files came along; nor is a path out of the folder followed.
+        Map<String, String> remote = splitFiles();
+        remote.put("schemas/countries.xsd", remote.get("schemas/countries.xsd")
+                .replace("schemaLocation=\"types.xsd\"", "schemaLocation=\"http://127.0.0.1:9/types.xsd\""));
+        assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), remote))
+                .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class, e -> assertThat(e.messages())
+                        .singleElement().asString().contains("'http://127.0.0.1:9/types.xsd' (xsd:include), an address"));
+        for (String address : List.of("file:///etc/hostname", "/etc/hostname", "//host/share/types.xsd", "C:\\types.xsd")) {
+            Map<String, String> local = splitFiles();
+            local.put("schemas/countries.xsd", local.get("schemas/countries.xsd")
+                    .replace("schemaLocation=\"types.xsd\"", "schemaLocation=\"" + address + "\""));
+            assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), local)).as(address)
+                    .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class, e -> assertThat(e.messages())
+                            .singleElement().asString().contains("an address"));
+        }
+        Map<String, String> outside = splitFiles();
+        outside.put("schemas/countries.xsd", outside.get("schemas/countries.xsd")
+                .replace("schemaLocation=\"types.xsd\"", "schemaLocation=\"../../types.xsd\""));
+        assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), outside))
+                .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class, e -> assertThat(e.messages())
+                        .singleElement().asString().contains("outside the folder of the main WSDL"));
+    }
+
+    @Test
+    void aFileIsHeldToWhatTheMainDocumentIs() throws IOException {
+        // A DOCTYPE in any of the files: refused before the WSDL parser sees it, naming the file.
+        Map<String, String> entity = splitFiles();
+        entity.put("schemas/types.xsd", "<!DOCTYPE d [<!ENTITY x SYSTEM \"file:///etc/hostname\">]>\n" + entity.get("schemas/types.xsd"));
+        assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), entity))
+                .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class, e -> assertThat(e.messages())
+                        .singleElement().asString().contains("'schemas/types.xsd' is not well-formed XML"));
+        // Neither a WSDL nor a schema.
+        Map<String, String> other = splitFiles();
+        other.put("notes.xml", "<notes/>");
+        assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), other))
+                .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class, e -> assertThat(e.messages())
+                        .singleElement().asString().contains("'notes.xml' is neither a WSDL"));
+        // A name that is no path inside the project, a kind of file the wizard does not take, an empty file.
+        for (String name : List.of("../types.xsd", "/etc/types.xsd", "C:/types.xsd", "schemas//types.xsd", "a b.xsd",
+                "types.yaml", "types", ".hidden.xsd", "schemas/../../x.xsd")) {
+            Map<String, String> bad = splitFiles();
+            bad.put(name, split("schemas/types.xsd"));
+            assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), bad)).as(name)
+                    .isInstanceOfSatisfying(SoapCodeGenerator.SoapParseException.class, e -> assertThat(e.messages())
+                            .singleElement().asString().contains("is not a file name the wizard takes"));
+        }
+        Map<String, String> empty = splitFiles();
+        empty.put("extra.xsd", " ");
+        assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), empty))
+                .hasMessageContaining("'extra.xsd' is empty");
+        // Windows separators and a leading ./ are the same path.
+        Map<String, String> windows = new java.util.LinkedHashMap<>();
+        windows.put("port\\country-port.wsdl", split("port/country-port.wsdl"));
+        windows.put("./schemas/countries.xsd", split("schemas/countries.xsd"));
+        windows.put("schemas\\types.xsd", split("schemas/types.xsd"));
+        assertThat(generator.detectServices(split("countries.wsdl"), windows)).hasSize(1);
+        // Two names one disk cannot tell apart.
+        Map<String, String> cased = splitFiles();
+        cased.put("schemas/Types.xsd", split("schemas/types.xsd"));
+        assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), cased))
+                .hasMessageContaining("the same file on a disk that ignores case");
+        // More files than the wizard takes.
+        Map<String, String> many = splitFiles();
+        for (int i = 0; i < WsdlFiles.MAX_FILES; i++) many.put("extra/s" + i + ".xsd", split("schemas/types.xsd"));
+        assertThatThrownBy(() -> generator.detectServices(split("countries.wsdl"), many))
+                .hasMessageContaining("the wizard takes " + WsdlFiles.MAX_FILES);
+    }
+
+    @Test
+    void filesThatCannotBeWrittenOrServedSideBySideAreRefused() throws IOException {
+        // The main document is written under its first service's name.
+        Map<String, String> taken = splitFiles();
+        taken.put("Country-Service.wsdl",
+                "<wsdl:definitions xmlns:wsdl=\"http://schemas.xmlsoap.org/wsdl/\" targetNamespace=\"urn:other\"/>");
+        assertThatThrownBy(() -> generateSplit(SoapWizardOptions.GenerationMode.CLIENT, taken))
+                .hasMessageContaining("'Country-Service.wsdl' has the name the main WSDL is written under");
+        // Spring-WS serves a file by its name alone: two of one name, or one named like a service.
+        Map<String, String> twice = splitFiles();
+        twice.put("common/types.xsd", split("schemas/types.xsd"));
+        assertThatThrownBy(() -> generateSplit(SoapWizardOptions.GenerationMode.ENDPOINTS, twice))
+                .hasMessageContaining("'schemas/types.xsd' cannot be served beside 'common/types.xsd'");
+        Map<String, String> likeTheService = splitFiles();
+        likeTheService.put("countryService.xsd", split("schemas/types.xsd"));
+        assertThatThrownBy(() -> generateSplit(SoapWizardOptions.GenerationMode.BOTH, likeTheService))
+                .hasMessageContaining("cannot be served beside the service CountryService");
+        // Nothing is served by a client: both are fine there.
+        assertThat(generateSplit(SoapWizardOptions.GenerationMode.CLIENT, twice)).containsKey("src/main/resources/wsdl/common/types.xsd");
+        // A file that is neither .wsdl nor .xsd is in the project and has no bean.
+        Map<String, String> xml = splitFiles();
+        xml.put("extra/more.xml", split("schemas/types.xsd"));
+        Map<String, String> files = generateSplit(SoapWizardOptions.GenerationMode.ENDPOINTS, xml);
+        assertThat(files).containsKey("src/main/resources/wsdl/extra/more.xml");
+        assertThat(files.get("src/main/java/{{packagePath}}/endpoint/WebServiceConfig.java")).doesNotContain("more");
     }
 
     @Test

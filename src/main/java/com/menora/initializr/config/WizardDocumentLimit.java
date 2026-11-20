@@ -31,6 +31,27 @@ public class WizardDocumentLimit {
         require(document == null ? 0 : document.length());
     }
 
+    /** A document and the files it comes with, as the SOAP drawer's detection sends. */
+    public void check(String document, Map<String, String> files) {
+        long total = document == null ? 0 : document.length();
+        if (files != null) {
+            for (String file : files.values()) {
+                if (file != null) total += file.length();
+            }
+        }
+        require(total);
+    }
+
+    /** The files of every dependency's document as one map, to count beside the documents. */
+    public static Map<String, String> flatten(Map<String, Map<String, String>> filesByDependency) {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        if (filesByDependency == null) return out;
+        filesByDependency.forEach((dependency, files) -> {
+            if (files != null) files.forEach((name, text) -> out.put(dependency + "/" + name, text));
+        });
+        return out;
+    }
+
     /** Every document of a generation request: each map is one wizard's, keyed by dependency. */
     @SafeVarargs
     public final void check(Map<String, String>... byDependency) {

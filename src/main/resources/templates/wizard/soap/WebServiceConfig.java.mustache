@@ -9,6 +9,10 @@ import org.springframework.ws.config.annotation.EnableWs;
 import org.springframework.ws.config.annotation.WsConfigurerAdapter;
 import org.springframework.ws.transport.http.MessageDispatcherServlet;
 import org.springframework.ws.wsdl.wsdl11.SimpleWsdl11Definition;
+{{#hasSchemas}}
+import org.springframework.xml.xsd.SimpleXsdSchema;
+import org.springframework.xml.xsd.XsdSchema;
+{{/hasSchemas}}
 
 @EnableWs
 @Configuration
@@ -29,4 +33,12 @@ public class WebServiceConfig extends WsConfigurerAdapter {
     }
 
 {{/services}}
+{{#documents}}
+    /** The file wsdl/{{path}}, served under the name {{beanName}} for whoever follows the WSDL to it. */
+    @Bean(name = "{{beanName}}")
+    public {{type}} {{method}}() {
+        return new {{implementation}}(new ClassPathResource("wsdl/{{path}}"));
+    }
+
+{{/documents}}
 }

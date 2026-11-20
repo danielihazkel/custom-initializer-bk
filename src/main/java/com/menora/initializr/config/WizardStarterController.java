@@ -207,8 +207,8 @@ public class WizardStarterController {
     /** Server-side service detection for the SOAP wizard's live preview. */
     @PostMapping("/starter-wizard.detect-services")
     public List<String> detectServices(@RequestBody DetectServicesRequest body) {
-        documentLimit.check(body.wsdl());
-        return soapGenerator.detectServices(body.wsdl());
+        documentLimit.check(body.wsdl(), body.files());
+        return soapGenerator.detectServices(body.wsdl(), body.files());
     }
 
     @ExceptionHandler(OpenApiCodeGenerator.OpenApiParseException.class)
@@ -264,7 +264,8 @@ public class WizardStarterController {
     /** What is checked before the request is resolved: its keys and the size of its documents. */
     private void validateShape(WizardStarterRequest body) {
         validateKeys(body);
-        documentLimit.check(body.sqlByDep(), body.specByDep(), body.wsdlByDep(), body.asyncApiByDep());
+        documentLimit.check(body.sqlByDep(), body.specByDep(), body.wsdlByDep(), body.asyncApiByDep(),
+                WizardDocumentLimit.flatten(body.wsdlFilesByDep()));
     }
 
     /**
@@ -298,6 +299,17 @@ public class WizardStarterController {
         requireDependencyKeys(body.openApiOptions(), "openApiOptions");
         requireDependencyKeys(body.wsdlByDep(), "wsdlByDep");
         requireDependencyKeys(body.soapOptions(), "soapOptions");
+        requireDependencyKeys(body.wsdlFilesByDep(), "wsdlFilesByDep");
+        // Files belong to a WSDL: without its main document there is nothing they are the files of.
+        if (body.wsdlFilesByDep() != null) {
+            body.wsdlFilesByDep().forEach((dep, files) -> {
+                String wsdl = body.wsdlByDep() == null ? null : body.wsdlByDep().get(dep);
+                if (files != null && !files.isEmpty() && (wsdl == null || wsdl.isBlank())) {
+                    throw new WizardArgumentException("wsdlFilesByDep." + dep + " names files, but wsdlByDep has no "
+                            + "WSDL for '" + dep + "': the main document goes there", "wsdlFilesByDep");
+                }
+            });
+        }
         requireDependencyKeys(body.asyncApiByDep(), "asyncApiByDep");
         requireDependencyKeys(body.eventOptions(), "eventOptions");
     }
@@ -352,7 +364,7 @@ public class WizardStarterController {
         for (var e : body.wsdlByDep().entrySet()) {
             String wsdl = e.getValue();
             if (wsdl == null || wsdl.isBlank()) continue;
-            soapGenerator.generate(wsdl, packageName, options.get(e.getKey()));
+            soapGenerator.generate(wsdl, wsdlFilesOf(body, e.getKey()), packageName, options.get(e.getKey()));
         }
     }
 
@@ -486,7 +498,8 @@ public class WizardStarterController {
         // options validateDocuments generated with.
         sqlContext.populate(body.sqlByDep() == null ? Map.of() : body.sqlByDep(), sqlOptionsOf(body));
         specContext.populate(body.specByDep() == null ? Map.of() : body.specByDep(), openApiOptionsOf(body));
-        soapContext.populate(body.wsdlByDep() == null ? Map.of() : body.wsdlByDep(), soapOptionsOf(body));
+        soapContext.populate(body.wsdlByDep() == null ? Map.of() : body.wsdlByDep(), body.wsdlFilesByDep(),
+                soapOptionsOf(body));
         eventsContext.populate(body.asyncApiByDep() == null ? Map.of() : body.asyncApiByDep(), eventOptionsOf(body));
     }
 
@@ -517,6 +530,11 @@ public class WizardStarterController {
         Map<String, SoapWizardOptions> out = new LinkedHashMap<>();
         if (body.soapOptions() != null) body.soapOptions().forEach((dep, dto) -> out.put(dep, toSoapOptions(dto)));
         return out;
+    }
+
+    /** The files the WSDL of {@code dep} refers to; null when it is one document. */
+    private static Map<String, String> wsdlFilesOf(WizardStarterRequest body, String dep) {
+        return body.wsdlFilesByDep() == null ? null : body.wsdlFilesByDep().get(dep);
     }
 
     private static Map<String, EventsWizardOptions> eventOptionsOf(WizardStarterRequest body) {
@@ -629,7 +647,10 @@ public class WizardStarterController {
             String department,
             // The events wizard: an AsyncAPI document per dependency (kafka), and its options.
             Map<String, String> asyncApiByDep,
-            Map<String, EventOptionsDto> eventOptions) {
+            Map<String, EventOptionsDto> eventOptions,
+            // A WSDL in several files: per dependency, the documents its wsdlByDep entry refers
+            // to (imported WSDLs and schemas) by their path relative to it.
+            Map<String, Map<String, String>> wsdlFilesByDep) {
     }
 
     /**
@@ -699,5 +720,11 @@ public class WizardStarterController {
 
     public record DetectChannelsRequest(String spec) {}
 
-    public record DetectServicesRequest(String wsdl) {}
+    /** {@code files}: what the WSDL refers to, by relative path — absent for one document. */
+    public record DetectServicesRequest(String wsdl, Map<String, String> files) {
+
+        public DetectServicesRequest(String wsdl) {
+            this(wsdl, null);
+        }
+    }
 }

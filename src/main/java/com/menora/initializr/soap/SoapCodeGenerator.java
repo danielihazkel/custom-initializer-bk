@@ -5,12 +5,7 @@ import com.menora.initializr.gen.WizardMemo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
-import org.xml.sax.SAXException;
-import org.xml.sax.SAXParseException;
 
 import javax.wsdl.Binding;
 import javax.wsdl.BindingOperation;
@@ -24,15 +19,12 @@ import javax.wsdl.WSDLException;
 import javax.wsdl.factory.WSDLFactory;
 import javax.wsdl.xml.WSDLReader;
 import javax.xml.namespace.QName;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -41,7 +33,8 @@ import java.util.TreeSet;
  * Parses a WSDL via wsdl4j and emits Spring Web Services scaffolding —
  * {@code @Endpoint} server stubs, {@code WebServiceGatewaySupport} clients,
  * a {@code WebServiceConfig} bean, and the WSDL itself dropped into
- * {@code src/main/resources/wsdl/}.
+ * {@code src/main/resources/wsdl/} — with the files it imports, when it comes in several
+ * ({@link WsdlFiles}), at their own paths beside it.
  *
  * <p>JAXB payload classes are <em>not</em> emitted here — they are generated
  * at build time by the JAX-WS Maven plugin (configured by
@@ -66,29 +59,45 @@ public class SoapCodeGenerator {
     }
 
     public List<GeneratedSoapFile> generate(String wsdl, String packageName, SoapWizardOptions options) {
+        return generate(wsdl, null, packageName, options);
+    }
+
+    /**
+     * @param files the documents the WSDL refers to, by their path relative to it; null or empty
+     *              for a WSDL in one document
+     */
+    public List<GeneratedSoapFile> generate(String wsdl, Map<String, String> files, String packageName,
+                                            SoapWizardOptions options) {
         if (wsdl == null || wsdl.isBlank()) return List.of();
         SoapWizardOptions opts = options != null ? options
                 : new SoapWizardOptions(null, null, null, null, null, null);
+        WsdlFiles documents = WsdlFiles.of(wsdl, files);
         // A wizard request checks its WSDL by generating it, then writes what the same inputs give.
-        return WizardMemo.get(WizardMemo.Key.of("soap", wsdl, packageName, opts),
-                () -> render(wsdl, packageName, opts));
+        return WizardMemo.get(WizardMemo.Key.of("soap", documents, packageName, opts),
+                () -> render(documents, packageName, opts));
     }
 
-    private List<GeneratedSoapFile> render(String wsdl, String packageName, SoapWizardOptions opts) {
-        List<SoapServiceModel> services = servicesOf(wsdl);
+    private List<GeneratedSoapFile> render(WsdlFiles documents, String packageName, SoapWizardOptions opts) {
+        List<SoapServiceModel> services = servicesOf(documents);
         if (services.isEmpty()) {
             throw new SoapParseException(List.of("WSDL contains no <service> definitions"));
         }
 
         String wsdlBaseName = pickWsdlFileName(services);
+        String taken = documents.pathIgnoringCase(wsdlBaseName + ".wsdl");
+        if (taken != null) {
+            throw new SoapParseException(List.of("The file '" + taken + "' has the name the main WSDL is written "
+                    + "under (it is named after its first service). Rename the file, and the references to it."));
+        }
         List<GeneratedSoapFile> out = new ArrayList<>();
-        out.add(new GeneratedSoapFile("src/main/resources/wsdl/" + wsdlBaseName + ".wsdl", wsdl));
+        out.add(new GeneratedSoapFile(WSDL_FOLDER + wsdlBaseName + ".wsdl", documents.main()));
+        documents.files().forEach((path, text) -> out.add(new GeneratedSoapFile(WSDL_FOLDER + path, text)));
 
         if (opts.emitEndpoints()) {
             for (SoapServiceModel svc : services) {
                 out.add(renderEndpoint(svc, packageName, opts));
             }
-            out.add(renderEndpointConfig(services, packageName, opts, wsdlBaseName));
+            out.add(renderEndpointConfig(services, packageName, opts, wsdlBaseName, documents));
         }
         if (opts.emitClient()) {
             for (SoapServiceModel svc : services) {
@@ -106,8 +115,13 @@ public class SoapCodeGenerator {
      * does not parse or declares no service — the same WSDL {@link #generate} would refuse.
      */
     public List<String> detectServices(String wsdl) {
+        return detectServices(wsdl, null);
+    }
+
+    /** The same for a WSDL that comes with the {@code files} it refers to. */
+    public List<String> detectServices(String wsdl, Map<String, String> files) {
         if (wsdl == null || wsdl.isBlank()) return List.of();
-        List<SoapServiceModel> services = servicesOf(wsdl);
+        List<SoapServiceModel> services = servicesOf(WsdlFiles.of(wsdl, files));
         if (services.isEmpty()) {
             throw new SoapParseException(List.of("WSDL contains no <service> definitions"));
         }
@@ -122,26 +136,35 @@ public class SoapCodeGenerator {
 
     // ── Parsing ───────────────────────────────────────────────────────────────
 
+    /** Where a project keeps its WSDL and the files that come with it. */
+    private static final String WSDL_FOLDER = "src/main/resources/wsdl/";
+
     /** The services of a WSDL, read once per request however many times they are asked for. */
-    private List<SoapServiceModel> servicesOf(String wsdl) {
-        return WizardMemo.get(WizardMemo.Key.of("soap-parse", wsdl), () -> buildServices(parseOrThrow(wsdl)));
+    private List<SoapServiceModel> servicesOf(WsdlFiles documents) {
+        return WizardMemo.get(WizardMemo.Key.of("soap-parse", documents), () -> buildServices(parseOrThrow(documents)));
     }
 
-    private Definition parseOrThrow(String wsdl) {
-        // Before wsdl4j sees it: given a schemaLocation, its reader goes and opens the file —
-        // relative to this server's working directory — or the URL.
-        List<String> outside = unresolvedImports(wsdl);
-        if (!outside.isEmpty()) {
-            throw new SoapParseException(outside);
+    private Definition parseOrThrow(WsdlFiles documents) {
+        // Before wsdl4j sees them: given a schemaLocation and no locator, its reader goes and
+        // opens the file — relative to this server's working directory — or the URL.
+        List<String> problems = documents.problems();
+        if (!problems.isEmpty()) {
+            throw new SoapParseException(problems);
         }
         try {
             WSDLFactory factory = WSDLFactory.newInstance();
             WSDLReader reader = factory.newWSDLReader();
             reader.setFeature("javax.wsdl.verbose", false);
-            // Imports are resolved relative to the document URI, which we don't have
-            // for inline WSDLs — disable to avoid spurious lookup errors.
-            reader.setFeature("javax.wsdl.importDocuments", false);
-            Definition def = reader.readWSDL(null, new InputSource(new StringReader(wsdl)));
+            Definition def;
+            if (documents.alone()) {
+                // Nothing to import: every reference to a file was a problem above.
+                reader.setFeature("javax.wsdl.importDocuments", false);
+                def = reader.readWSDL(null, new InputSource(new StringReader(documents.main())));
+            } else {
+                // Imports come from the files given, through a locator: the reader opens nothing.
+                reader.setFeature("javax.wsdl.importDocuments", true);
+                def = reader.readWSDL(documents.locator());
+            }
             if (def == null) {
                 throw new SoapParseException(List.of("Empty or unrecognised WSDL document"));
             }
@@ -153,59 +176,6 @@ public class SoapCodeGenerator {
         }
     }
 
-    private static final String WSDL_NS = "http://schemas.xmlsoap.org/wsdl/";
-    private static final String XSD_NS = "http://www.w3.org/2001/XMLSchema";
-
-    /**
-     * What the document refers to and does not contain. The wizard is given one document: a
-     * {@code wsdl:import} or an {@code xsd:import}/{@code include}/{@code redefine} that names a
-     * file points at something it never sees. Such a WSDL used to reach the parser, which tried
-     * to open the file on this server; where that happened to succeed, the generated project
-     * failed at its first build, when the JAX-WS plugin went looking for the file. An
-     * {@code xsd:import} of a namespace alone is fine: that schema is inline, in the same
-     * {@code <types>}.
-     *
-     * <p>Read with a parser that takes no DOCTYPE (a WSDL has none; entities are how a document
-     * makes a parser read files). A document that is not XML at all is the WSDL parser's to report.
-     */
-    private static List<String> unresolvedImports(String wsdl) {
-        Document document;
-        try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setNamespaceAware(true);
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            factory.setXIncludeAware(false);
-            factory.setExpandEntityReferences(false);
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            builder.setErrorHandler(null);
-            document = builder.parse(new InputSource(new StringReader(wsdl)));
-        } catch (SAXParseException e) {
-            throw new SoapParseException(List.of("The WSDL is not well-formed XML (line " + e.getLineNumber() + "): "
-                    + e.getMessage()));
-        } catch (ParserConfigurationException | SAXException | IOException e) {
-            throw new SoapParseException(List.of("The WSDL could not be read: " + e.getMessage()));
-        }
-        List<String> out = new ArrayList<>();
-        NodeList elements = document.getElementsByTagNameNS("*", "*");
-        for (int i = 0; i < elements.getLength(); i++) {
-            Element element = (Element) elements.item(i);
-            String name = element.getLocalName();
-            if (WSDL_NS.equals(element.getNamespaceURI()) && "import".equals(name)) {
-                addReference(out, "wsdl:import", element.getAttribute("location"));
-            } else if (XSD_NS.equals(element.getNamespaceURI())
-                    && ("import".equals(name) || "include".equals(name) || "redefine".equals(name))) {
-                addReference(out, "xsd:" + name, element.getAttribute("schemaLocation"));
-            }
-        }
-        return out;
-    }
-
-    private static void addReference(List<String> out, String kind, String location) {
-        if (location == null || location.isBlank()) return;
-        out.add("The WSDL refers to '" + location + "' (" + kind + "), which is not part of the document given. "
-                + "Give one self-contained WSDL: put the imported definitions or schema inline.");
-    }
-
     @SuppressWarnings("unchecked")
     private List<SoapServiceModel> buildServices(Definition def) {
         List<SoapServiceModel> out = new ArrayList<>();
@@ -214,6 +184,10 @@ public class SoapCodeGenerator {
 
         for (var serviceEntry : services.entrySet()) {
             javax.wsdl.Service service = serviceEntry.getValue();
+            // A service of an imported WSDL is in that document's namespace, not the main one's.
+            String namespace = serviceEntry.getKey().getNamespaceURI() == null
+                    || serviceEntry.getKey().getNamespaceURI().isEmpty()
+                    ? def.getTargetNamespace() : serviceEntry.getKey().getNamespaceURI();
             Map<String, Port> ports = service.getPorts();
             if (ports == null) continue;
             for (Port port : ports.values()) {
@@ -227,7 +201,7 @@ public class SoapCodeGenerator {
                 for (BindingOperation bop : (List<BindingOperation>) binding.getBindingOperations()) {
                     Operation op = bop.getOperation();
                     if (op == null) continue;
-                    SoapOperationModel model = toOperationModel(op, def.getTargetNamespace(), usedJavaNames);
+                    SoapOperationModel model = toOperationModel(op, namespace, usedJavaNames);
                     if (model != null) ops.add(model);
                 }
 
@@ -236,7 +210,7 @@ public class SoapCodeGenerator {
                         serviceEntry.getKey().getLocalPart(),
                         port.getName(),
                         portType.getQName() == null ? port.getName() : portType.getQName().getLocalPart(),
-                        def.getTargetNamespace(),
+                        namespace,
                         soapLocation,
                         ops));
             }
@@ -346,7 +320,7 @@ public class SoapCodeGenerator {
     }
 
     private GeneratedSoapFile renderEndpointConfig(List<SoapServiceModel> services, String packageName,
-                                                   SoapWizardOptions opts, String wsdlBaseName) {
+                                                   SoapWizardOptions opts, String wsdlBaseName, WsdlFiles documents) {
         String endpointPkg = opts.endpointPackageOrDefault();
         String fullPkg = packageName + "." + endpointPkg;
         String contextPath = opts.contextPathOrDefault();
@@ -363,10 +337,61 @@ public class SoapCodeGenerator {
             beans.add(sv);
         }
         view.put("services", beans);
+        List<Map<String, Object>> served = servedDocuments(services, documents);
+        view.put("documents", served);
+        view.put("hasSchemas", served.stream().anyMatch(d -> "XsdSchema".equals(d.get("type"))));
 
         return new GeneratedSoapFile(
                 "src/main/java/{{packagePath}}/" + endpointPkg + "/WebServiceConfig.java",
                 WizardTemplates.render("soap/WebServiceConfig.java", view));
+    }
+
+    /**
+     * The files the application serves beside the WSDL, so that whoever fetches the WSDL can
+     * follow what it refers to: Spring-WS answers {@code <name>.wsdl} with the WSDL definition
+     * bean called {@code <name>} and {@code <name>.xsd} with the schema bean of that name —
+     * whatever folder the request names, so {@code schemas/types.xsd} is the bean {@code types}.
+     * That makes two files of one name, or a file named like a service, a clash: a 400 that says
+     * which. A file that is neither {@code .wsdl} nor {@code .xsd} is in the project and not served.
+     */
+    private static List<Map<String, Object>> servedDocuments(List<SoapServiceModel> services, WsdlFiles documents) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (documents.alone()) return out;
+        Map<String, String> beans = new LinkedHashMap<>();
+        Set<String> methods = new LinkedHashSet<>();
+        methods.add("messageDispatcherServlet");
+        for (SoapServiceModel svc : services) {
+            String bean = toCamelCase(svc.serviceName());
+            beans.put(bean, "the service " + svc.serviceName());
+            methods.add(bean + "Wsdl");
+        }
+        for (String path : documents.files().keySet()) {
+            String lower = path.toLowerCase(Locale.ROOT);
+            boolean schema = lower.endsWith(".xsd");
+            if (!schema && !lower.endsWith(".wsdl")) continue;
+            String file = path.substring(path.lastIndexOf('/') + 1);
+            String bean = file.substring(0, file.lastIndexOf('.'));
+            String other = beans.putIfAbsent(bean, "'" + path + "'");
+            if (other != null) {
+                throw new SoapParseException(List.of("'" + path + "' cannot be served beside " + other
+                        + ": Spring-WS serves a WSDL or a schema by its file name alone, and both are '" + bean
+                        + "'. Rename one of them (and the references to it), or generate the client only."));
+            }
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("beanName", escape(bean));
+            view.put("path", escape(path));
+            view.put("type", schema ? "XsdSchema" : "SimpleWsdl11Definition");
+            view.put("implementation", schema ? "SimpleXsdSchema" : "SimpleWsdl11Definition");
+            view.put("method", uniqueName(javaName(bean) + (schema ? "Schema" : "Wsdl"), methods));
+            out.add(view);
+        }
+        return out;
+    }
+
+    /** A file's name as the start of a Java method name. */
+    private static String javaName(String raw) {
+        String name = toCamelCase(raw);
+        return Character.isJavaIdentifierStart(name.charAt(0)) ? name : "file" + name;
     }
 
     // ── Client emission ───────────────────────────────────────────────────────
@@ -499,10 +524,18 @@ public class SoapCodeGenerator {
      * the same JAXB classes generated from the WSDL.
      */
     public List<String> resolveWsdlFileNames(String wsdl) {
+        return resolveWsdlFileNames(wsdl, null);
+    }
+
+    /**
+     * The same for a WSDL in several files: still the main document alone — the plugin follows
+     * its imports to the files beside it.
+     */
+    public List<String> resolveWsdlFileNames(String wsdl, Map<String, String> files) {
         if (wsdl == null || wsdl.isBlank()) return List.of();
         List<SoapServiceModel> services;
         try {
-            services = servicesOf(wsdl);
+            services = servicesOf(WsdlFiles.of(wsdl, files));
         } catch (SoapParseException e) {
             return List.of();
         }

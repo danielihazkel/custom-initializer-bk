@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A WSDL in four files (WizardGoldenOutputTests, soap__multi-file): this one holds the binding
+     and the service and imports the port type; that file imports the schema, from a folder beside
+     its own; the schema includes its types. -->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:port="http://example.com/country/port"
+                  xmlns:tns="http://example.com/country/service"
+                  targetNamespace="http://example.com/country/service">
+  <wsdl:import namespace="http://example.com/country/port" location="port/country-port.wsdl"/>
+  <wsdl:binding name="CountryBinding" type="port:CountryPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="getCountry">
+      <soap:operation soapAction=""/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="getCurrency">
+      <soap:operation soapAction=""/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="CountryService">
+    <wsdl:port name="CountryPort" binding="tns:CountryBinding">
+      <soap:address location="http://localhost:8080/ws"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

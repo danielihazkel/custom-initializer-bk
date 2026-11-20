@@ -2387,6 +2387,134 @@ class GeneratedBackendBuildSmokeTests {
         Files.writeString(file, source, StandardCharsets.UTF_8);
     }
 
+    private static Map<String, Object> soapBody(String artifactId, String wsdl, Map<String, String> files) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("groupId", "com.menora");
+        body.put("artifactId", artifactId);
+        body.put("packageName", "com.menora." + artifactId);
+        body.put("bootVersion", "3.2.1");
+        body.put("javaVersion", "21");
+        body.put("dependencies", List.of("web-services"));
+        body.put("wsdlByDep", Map.of("web-services", wsdl));
+        if (files != null) body.put("wsdlFilesByDep", Map.of("web-services", files));
+        body.put("soapOptions", Map.of("web-services", Map.of("mode", "BOTH")));
+        return body;
+    }
+
+    @org.junit.jupiter.api.Test
+    void soapWizardBackendBuildsItsPayloadsAndAnswersOverSoap(@TempDir Path workDir) throws Exception {
+        // What the SOAP wizard writes had never been built: the JAX-WS plugin makes the payload
+        // classes from the WSDL at build time, and the endpoints and clients are written against
+        // the names it is expected to give them. The Countries fixture, endpoints and client: the
+        // build runs wsimport and compiles; the injected test starts the application, fetches the
+        // WSDL it serves, posts a SOAP request (the stub endpoint answers a fault naming its
+        // TODO), and calls the endpoint through the generated client.
+        Path project = postAndExtractWizard(workDir, soapBody("countries", WizardGoldenOutputTests.fixture("countries.wsdl"), null));
+        writeProjectTest(project, "com.menora.countries", "SoapTests", SOAP_TESTS.formatted("countries", ""));
+        runMvn(project, "-B", "package");
+    }
+
+    @org.junit.jupiter.api.Test
+    void soapWizardBackendBuildsFromAWsdlInSeveralFiles(@TempDir Path workDir) throws Exception {
+        // The same for a WSDL in four files: wsimport follows the main document's import to the
+        // port type and on to the schemas written beside it, and the application serves each
+        // file where a relative reference in the one before it leads.
+        Path project = postAndExtractWizard(workDir, soapBody("atlas",
+                WizardGoldenOutputTests.fixture("countries-split/countries.wsdl"), WizardGoldenOutputTests.splitCountriesFiles()));
+        assertThat(project.resolve("src/main/resources/wsdl/schemas/types.xsd")).isRegularFile();
+        writeProjectTest(project, "com.menora.atlas", "SoapTests", SOAP_TESTS.formatted("atlas", SOAP_SPLIT_TESTS));
+        runMvn(project, "-B", "package");
+    }
+
+    /** {@code %1$s}: the project's package segment; {@code %2$s}: more test methods. */
+    private static final String SOAP_TESTS = """
+            package com.menora.%1$s;
+
+            import com.menora.%1$s.client.CountryServiceClient;
+            import com.menora.%1$s.generated.GetCountryRequest;
+            import org.junit.jupiter.api.Test;
+            import org.springframework.beans.factory.annotation.Autowired;
+            import org.springframework.boot.test.context.SpringBootTest;
+            import org.springframework.boot.test.web.client.TestRestTemplate;
+            import org.springframework.boot.test.web.server.LocalServerPort;
+            import org.springframework.http.HttpEntity;
+            import org.springframework.http.HttpHeaders;
+            import org.springframework.http.MediaType;
+            import org.springframework.http.ResponseEntity;
+            import org.springframework.ws.soap.client.SoapFaultClientException;
+
+            import static org.assertj.core.api.Assertions.assertThat;
+            import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+            @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+            class SoapTests {
+
+                @LocalServerPort
+                private int port;
+
+                @Autowired
+                private TestRestTemplate rest;
+
+                @Autowired
+                private CountryServiceClient client;
+
+                private String get(String path) {
+                    ResponseEntity<String> answer = rest.getForEntity(path, String.class);
+                    assertThat(answer.getStatusCode().value()).as(path).isEqualTo(200);
+                    return answer.getBody();
+                }
+
+                @Test
+                void theWsdlIsServedWithThisServersAddress() {
+                    assertThat(get("/ws/countryService.wsdl")).contains("CountryPort").contains("localhost:" + port + "/ws");
+                }
+
+                @Test
+                void aRequestReachesItsEndpointWhichHasNothingToAnswerYet() {
+                    HttpHeaders headers = new HttpHeaders();
+                    headers.setContentType(MediaType.TEXT_XML);
+                    String envelope = "<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/'"
+                            + " xmlns:c='http://example.com/country'><soapenv:Body><c:getCountryRequest><c:name>Israel</c:name>"
+                            + "</c:getCountryRequest></soapenv:Body></soapenv:Envelope>";
+                    ResponseEntity<String> answer = rest.postForEntity("/ws", new HttpEntity<>(envelope, headers), String.class);
+                    assertThat(answer.getStatusCode().value()).isEqualTo(500);
+                    assertThat(answer.getBody()).contains("Fault").contains("TODO: implement getCountry");
+                }
+
+                @Test
+                void theGeneratedClientCallsTheEndpointAndReadsItsFault() {
+                    client.setDefaultUri("http://localhost:" + port + "/ws");
+                    GetCountryRequest request = new GetCountryRequest();
+                    request.setName("Israel");
+                    assertThatThrownBy(() -> client.getCountry(request))
+                            .isInstanceOf(SoapFaultClientException.class)
+                            .hasMessageContaining("TODO: implement getCountry");
+                }
+            %2$s}
+            """;
+
+    private static final String SOAP_SPLIT_TESTS = """
+
+                @Test
+                void everyFileTheWsdlLeadsToIsServedWhereItsReferencePoints() {
+                    // The main document imports port/country-port.wsdl; that one ../schemas/countries.xsd;
+                    // that one types.xsd, beside it.
+                    assertThat(get("/ws/countryService.wsdl")).contains("port/country-port.wsdl");
+                    assertThat(get("/ws/port/country-port.wsdl")).contains("portType").contains("../schemas/countries.xsd");
+                    assertThat(get("/ws/schemas/countries.xsd")).contains("getCountryRequest").contains("types.xsd");
+                    assertThat(get("/ws/schemas/types.xsd")).contains("Currency");
+                }
+
+                @Test
+                void theTypesOfAnIncludedSchemaAreClassesToo() {
+                    com.menora.atlas.generated.Country country = new com.menora.atlas.generated.Country();
+                    country.setCurrency(com.menora.atlas.generated.Currency.ILS);
+                    com.menora.atlas.generated.GetCountryResponse response = new com.menora.atlas.generated.GetCountryResponse();
+                    response.setCountry(country);
+                    assertThat(response.getCountry().getCurrency().value()).isEqualTo("ILS");
+                }
+            """;
+
     @ParameterizedTest(name = "apiMode {0}")
     @ValueSource(strings = {"INLINE_DTO", "ENTITY_DIRECT"})
     void sqlWizardBackendCompilesAndCreatesItsSchema(String apiMode, @TempDir Path workDir) throws Exception {
@@ -3299,6 +3427,8 @@ class GeneratedBackendBuildSmokeTests {
     private void runMvn(Path cwd, String... args) throws Exception {
         List<String> cmd = new ArrayList<>();
         cmd.add(MVN);
+        // -Dsmoke.offline=true: the nested build may not download; it fails if an artifact is not cached.
+        if (Boolean.getBoolean("smoke.offline")) cmd.add("-o");
         cmd.addAll(List.of(args));
         log.info("[{}] $ {}", cwd.getFileName(), String.join(" ", cmd));
         // stdin from the null device, so nothing can wait on a prompt.

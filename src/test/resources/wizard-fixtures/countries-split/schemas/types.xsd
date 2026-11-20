@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+            xmlns="http://example.com/country"
+            targetNamespace="http://example.com/country"
+            elementFormDefault="qualified">
+  <xsd:complexType name="Country">
+    <xsd:sequence>
+      <xsd:element name="name" type="xsd:string"/>
+      <xsd:element name="capital" type="xsd:string"/>
+      <xsd:element name="population" type="xsd:int"/>
+      <xsd:element name="currency" type="Currency"/>
+    </xsd:sequence>
+  </xsd:complexType>
+  <xsd:simpleType name="Currency">
+    <xsd:restriction base="xsd:string">
+      <xsd:enumeration value="EUR"/>
+      <xsd:enumeration value="ILS"/>
+      <xsd:enumeration value="USD"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+</xsd:schema>

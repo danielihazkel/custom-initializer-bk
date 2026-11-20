@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:c="http://example.com/country"
+                  xmlns:tns="http://example.com/country/port"
+                  targetNamespace="http://example.com/country/port">
+  <wsdl:types>
+    <xsd:schema>
+      <xsd:import namespace="http://example.com/country" schemaLocation="../schemas/countries.xsd"/>
+    </xsd:schema>
+  </wsdl:types>
+  <wsdl:message name="getCountryRequest">
+    <wsdl:part name="parameters" element="c:getCountryRequest"/>
+  </wsdl:message>
+  <wsdl:message name="getCountryResponse">
+    <wsdl:part name="parameters" element="c:getCountryResponse"/>
+  </wsdl:message>
+  <wsdl:message name="getCurrencyRequest">
+    <wsdl:part name="parameters" element="c:getCurrencyRequest"/>
+  </wsdl:message>
+  <wsdl:message name="getCurrencyResponse">
+    <wsdl:part name="parameters" element="c:getCurrencyResponse"/>
+  </wsdl:message>
+  <wsdl:portType name="CountryPort">
+    <wsdl:operation name="getCountry">
+      <wsdl:input message="tns:getCountryRequest"/>
+      <wsdl:output message="tns:getCountryResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="getCurrency">
+      <wsdl:input message="tns:getCurrencyRequest"/>
+      <wsdl:output message="tns:getCurrencyResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+</wsdl:definitions>

@@ -122,6 +122,12 @@ class WizardGoldenOutputTests {
         golden.pin("soap__both", wizard(soapBody("BOTH", Map.of("endpointSubPackage", "ws", "payloadSubPackage", "ws.model",
                 "contextPath", "/services"))));
 
+        // A WSDL in four files: an imported WSDL and two schemas beside the main document, and served.
+        Map<String, Object> split = soapBody("BOTH", null);
+        split.put("wsdlByDep", Map.of("web-services", fixture("countries-split/countries.wsdl")));
+        split.put("wsdlFilesByDep", Map.of("web-services", splitCountriesFiles()));
+        golden.pin("soap__multi-file", wizard(split));
+
         // All three wizards in one request.
         Map<String, Object> all = sqlBody("postgresql", "library-postgresql.sql", "INLINE_DTO", "entity");
         all.put("dependencies", List.of("web", "data-jpa", "postgresql", "web-services", "validation"));
@@ -221,6 +227,15 @@ class WizardGoldenOutputTests {
         if (extra != null) options.putAll(extra);
         body.put("soapOptions", Map.of("web-services", options));
         return body;
+    }
+
+    /** The files the split Countries WSDL comes with, by the paths its documents refer to them. */
+    static Map<String, String> splitCountriesFiles() throws IOException {
+        Map<String, String> files = new LinkedHashMap<>();
+        for (String path : List.of("port/country-port.wsdl", "schemas/countries.xsd", "schemas/types.xsd")) {
+            files.put(path, fixture("countries-split/" + path));
+        }
+        return files;
     }
 
     /** A wizard input, with LF line endings whatever the checkout made of the file. */

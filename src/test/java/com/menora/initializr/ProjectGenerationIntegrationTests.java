@@ -1214,6 +1214,100 @@ class ProjectGenerationIntegrationTests {
     }
 
     @Test
+    void soapWizardTakesAWsdlInSeveralFiles() throws Exception {
+        // The main document in wsdlByDep, what it refers to in wsdlFilesByDep by relative path.
+        Map<String, Object> body = soapBaseBody();
+        body.put("wsdlByDep", Map.of("web-services", WizardGoldenOutputTests.fixture("countries-split/countries.wsdl")));
+        Map<String, String> split = WizardGoldenOutputTests.splitCountriesFiles();
+        body.put("wsdlFilesByDep", Map.of("web-services", split));
+        body.put("soapOptions", Map.of("web-services", Map.of("mode", "BOTH")));
+        ResponseEntity<byte[]> response = restTemplate.postForEntity("/starter-wizard.zip", body, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, String> files = unzip(response.getBody());
+
+        // Each file where the references find it; the plugin reads the main document alone.
+        assertThat(files).containsKeys("demo/src/main/resources/wsdl/country-service.wsdl",
+                "demo/src/main/resources/wsdl/port/country-port.wsdl",
+                "demo/src/main/resources/wsdl/schemas/countries.xsd",
+                "demo/src/main/resources/wsdl/schemas/types.xsd");
+        assertThat(files.get("demo/src/main/resources/wsdl/schemas/types.xsd")).isEqualTo(split.get("schemas/types.xsd"));
+        assertThat(files.get("demo/pom.xml")).contains("<wsdlFile>country-service.wsdl</wsdlFile>")
+                .doesNotContain("country-port.wsdl").doesNotContain("countries.xsd").doesNotContain("types.xsd");
+        // Served, each under its file name.
+        assertThat(files.get("demo/src/main/java/com/menora/demo/endpoint/WebServiceConfig.java"))
+                .contains("@Bean(name = \"countryService\")").contains("@Bean(name = \"country-port\")")
+                .contains("@Bean(name = \"countries\")").contains("@Bean(name = \"types\")");
+        // The model keeps the files, so the project can be reopened and updated.
+        com.fasterxml.jackson.databind.JsonNode request = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(files.get("demo/menora-model.json")).path("request");
+        assertThat(request.path("wsdlFilesByDep").path("web-services").path("schemas/countries.xsd").asText())
+                .isEqualTo(split.get("schemas/countries.xsd"));
+        assertThat(request.path("wsdlFilesByDep").path("web-services").size()).isEqualTo(3);
+
+        // The drawer's preview reads the same files.
+        ResponseEntity<String> detect = restTemplate.postForEntity("/starter-wizard.detect-services",
+                Map.of("wsdl", body.get("wsdlByDep") instanceof Map<?, ?> m ? m.get("web-services") : "", "files", split), String.class);
+        assertThat(detect.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(detect.getBody()).contains("CountryService.CountryPort: getCountry, getCurrency");
+
+        // A WSDL in one document carries no files in its model.
+        Map<String, String> one = unzip(restTemplate.postForEntity("/starter-wizard.zip", soapCountryBody("BOTH"), byte[].class).getBody());
+        assertThat(one.get("demo/menora-model.json")).doesNotContain("wsdlFilesByDep");
+    }
+
+    @Test
+    void soapWizardRefusesFilesItCannotRead() throws Exception {
+        String main = WizardGoldenOutputTests.fixture("countries-split/countries.wsdl");
+        // A file the documents refer to that was not sent: each endpoint says which.
+        Map<String, String> missing = new LinkedHashMap<>(WizardGoldenOutputTests.splitCountriesFiles());
+        missing.remove("schemas/types.xsd");
+        Map<String, Object> body = soapBaseBody();
+        body.put("wsdlByDep", Map.of("web-services", main));
+        body.put("wsdlFilesByDep", Map.of("web-services", missing));
+        for (String endpoint : List.of("/starter-wizard.zip", "/starter-wizard.preview")) {
+            ResponseEntity<String> refused = restTemplate.postForEntity(endpoint, body, String.class);
+            assertThat(refused.getStatusCode()).as(endpoint).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(refused.getBody()).as(endpoint).contains("Invalid WSDL")
+                    .contains("'schemas/countries.xsd' refers to 'types.xsd' (xsd:include)");
+        }
+        ResponseEntity<String> detect = restTemplate.postForEntity("/starter-wizard.detect-services",
+                Map.of("wsdl", main, "files", missing), String.class);
+        assertThat(detect.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(detect.getBody()).contains("not among the files given");
+
+        // A name that leaves the project.
+        Map<String, String> outside = new LinkedHashMap<>(WizardGoldenOutputTests.splitCountriesFiles());
+        outside.put("../../../outside.xsd", outside.get("schemas/types.xsd"));
+        body.put("wsdlFilesByDep", Map.of("web-services", outside));
+        ResponseEntity<String> refused = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody()).contains("'../../../outside.xsd' is not a file name the wizard takes");
+
+        // Files with no main document, and a key that is no dependency id.
+        Map<String, Object> orphans = soapBaseBody();
+        orphans.put("wsdlFilesByDep", Map.of("web-services", WizardGoldenOutputTests.splitCountriesFiles()));
+        refused = restTemplate.postForEntity("/starter-wizard.zip", orphans, String.class);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody()).contains("wsdlFilesByDep.web-services names files, but wsdlByDep has no WSDL");
+        orphans.put("wsdlFilesByDep", Map.of("a/b", Map.of("x.xsd", "<x/>")));
+        refused = restTemplate.postForEntity("/starter-wizard.zip", orphans, String.class);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody()).contains("wsdlFilesByDep");
+
+        // The files count toward what one request may hand the wizards.
+        String large = "<!-- padding -->\n".repeat(5 * 1024 * 1024 / 17 + 1);
+        Map<String, String> heavy = new LinkedHashMap<>(WizardGoldenOutputTests.splitCountriesFiles());
+        heavy.put("schemas/types.xsd", heavy.get("schemas/types.xsd") + large);
+        body.put("wsdlFilesByDep", Map.of("web-services", heavy));
+        refused = restTemplate.postForEntity("/starter-wizard.zip", body, String.class);
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody()).contains("menora.wizard.max-documents-size");
+        detect = restTemplate.postForEntity("/starter-wizard.detect-services", Map.of("wsdl", main, "files", heavy), String.class);
+        assertThat(detect.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(detect.getBody()).contains("menora.wizard.max-documents-size");
+    }
+
+    @Test
     void wizardsAddTheStartersTheirCodeNeeds() throws Exception {
         // A caller that names no web starter (curl, the IDE): the OpenAPI wizard's controllers and
         // client would not compile, nor would SOAP endpoints without Spring-WS. They are added —
