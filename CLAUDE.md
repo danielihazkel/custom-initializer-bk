@@ -1399,3 +1399,7 @@ Pinned by three cases in `AdminApiIntegrationTests` (`savingAGroupNeitherDeletes
 ### Phase 9: nothing here
 
 Phase 9 is the generator site's own: the entry chunk's headroom and its two largest files in parts. No backend file changed. See *Phase 9* in `ui/CLAUDE.md`.
+
+### Phase 10: nothing here
+
+Phase 10 is the layout designer's canvas in the generator site (`ui/CLAUDE.md`, *Phase 10*): it draws the header's tools, the gauge, funnel and time-in-state widgets, composed rows, file and picture fields and the change history as the templates here generate them. No backend file changed; the words on the canvas are copies of `i18n-strings.ts.mustache` — **a wording changed there needs the same change in `ui/src/components/fullstack/layoutPreviewModel.ts` `STRINGS`**.
