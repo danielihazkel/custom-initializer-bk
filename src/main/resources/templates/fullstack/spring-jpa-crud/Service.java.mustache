@@ -1034,16 +1034,28 @@ public class {{EntityName}}Service {
 {{/hasLockedRelations}}    /** Loads first so a missing id surfaces as a 404 (ResourceNotFoundException) rather than a
      *  500 from deleteById's EmptyResultDataAccessException. */
     public void delete({{#hasCompositePk}}{{keyClassName}}{{/hasCompositePk}}{{^hasCompositePk}}{{pkField.javaType}}{{/hasCompositePk}} id) {
-{{^hasAttachmentFields}}{{^parentReadsRows}}        repository.delete({{#unlinksOnDelete}}unlinked({{/unlinksOnDelete}}{{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}}{{#unlinksOnDelete}}){{/unlinksOnDelete}});
-{{/parentReadsRows}}{{#parentReadsRows}}        {{EntityName}} existing = {{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}};
+{{^hasAttachmentFields}}{{^parentReadsRows}}        repository.delete({{#unlinksOnDelete}}unlinked({{/unlinksOnDelete}}{{#deleteKeepsRows}}withoutRows({{/deleteKeepsRows}}{{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}}{{#deleteKeepsRows}}){{/deleteKeepsRows}}{{#unlinksOnDelete}}){{/unlinksOnDelete}});
+{{/parentReadsRows}}{{#parentReadsRows}}        {{EntityName}} existing = {{#deleteKeepsRows}}withoutRows({{/deleteKeepsRows}}{{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}}{{#deleteKeepsRows}}){{/deleteKeepsRows}};
         repository.delete(existing);
         recheckParent(existing.get{{CompositionLinkName}}());
-{{/parentReadsRows}}{{/hasAttachmentFields}}{{#hasAttachmentFields}}        {{EntityName}} existing = {{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}};
+{{/parentReadsRows}}{{/hasAttachmentFields}}{{#hasAttachmentFields}}        {{EntityName}} existing = {{#deleteKeepsRows}}withoutRows({{/deleteKeepsRows}}{{#rowsOwnWrites}}requireMine({{/rowsOwnWrites}}findById(id){{#rowsOwnWrites}}){{/rowsOwnWrites}}{{#deleteKeepsRows}}){{/deleteKeepsRows}};
         repository.delete({{#unlinksOnDelete}}unlinked({{/unlinksOnDelete}}existing{{#unlinksOnDelete}}){{/unlinksOnDelete}});
 {{^softDeleteApplicable}}        // The record's files go with it. (A soft-deleted record keeps them, for a restore.)
 {{#attachmentFields}}        attachments.delete(existing.get{{Name}}());
 {{/attachmentFields}}{{#multiFileFields}}        existing.get{{Name}}().forEach(file -> attachments.delete(file.getId()));
 {{/multiFileFields}}{{/softDeleteApplicable}}{{/hasAttachmentFields}}    }
+{{#deleteKeepsRows}}
+
+    /**
+     * A deleted {{EntityName}} keeps its rows (it can be restored), so the ones read with it are let
+     * go of before it is removed: Hibernate (from 6.6, Spring Boot 3.5) refuses to flush a row
+     * still in the session that points at a removed parent.
+     */
+    private {{EntityName}} withoutRows({{EntityName}} entity) {
+{{#compositions}}        entity.get{{CollectionField}}().forEach(entityManager::detach);
+{{/compositions}}        return entity;
+    }
+{{/deleteKeepsRows}}
 {{#softDeleteApplicable}}
     /** Un-deletes a soft-deleted record (the frontend's Undo after delete). 404 when no row has
      *  that id; restoring a live row is a harmless no-op. */

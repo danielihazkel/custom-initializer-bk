@@ -139,7 +139,19 @@ class FullstackCompositionTests {
         assertThat(files.get(BE + "entity/Order.java"))
                 .contains("cascade = {jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE})");
         assertThat(files.get(BE + "service/OrderService.java"))
-                .contains("            entityManager.lock(existing, jakarta.persistence.LockModeType.OPTIMISTIC_FORCE_INCREMENT);");
+                .contains("            entityManager.lock(existing, jakarta.persistence.LockModeType.OPTIMISTIC_FORCE_INCREMENT);")
+                // Its delete reads the rows (findById does) and keeps them: they are let go of
+                // first. Hibernate 6.6 would not flush a kept row pointing at the removed parent —
+                // every such delete was a 500 on Spring Boot 3.5.
+                .contains("        repository.delete(withoutRows(findById(id)));")
+                .contains("    private Order withoutRows(Order entity) {\n"
+                        + "        entity.getLines().forEach(entityManager::detach);\n"
+                        + "        return entity;\n"
+                        + "    }");
+        // A parent that is really deleted takes its rows with it: nothing to let go of.
+        assertThat(generate(composed("react-tailwind-crud")).get(BE + "service/OrderService.java"))
+                .contains("        repository.delete(findById(id));")
+                .doesNotContain("withoutRows");
     }
 
     @Test

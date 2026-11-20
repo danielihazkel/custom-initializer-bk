@@ -450,6 +450,9 @@ public final class EntityScaffoldContext {
         boolean hasCompositions = !compositions.isEmpty() && mutable;
         ctx.put("compositions", hasCompositions ? compositions : List.of());
         ctx.put("hasCompositions", hasCompositions);
+        // A soft-deleted parent keeps its rows, and its delete reads them (findById does): they are
+        // let go of first — Hibernate 6.6 will not flush a row that points at a removed parent.
+        ctx.put("deleteKeepsRows", hasCompositions && keepsRows);
         ctx.put("usesEntityManager", Boolean.TRUE.equals(ctx.get("statsApplicable")) || importApplicable
                 || (lockedRelations && mutable) || (Boolean.TRUE.equals(ctx.get("hasCollections")) && mutable)
                 || hasCompositions || (Boolean.TRUE.equals(ctx.get("readsLinks")) && mutable) || deletedHoldsKeys
